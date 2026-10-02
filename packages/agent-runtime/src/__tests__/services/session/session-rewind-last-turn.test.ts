@@ -12,9 +12,17 @@ import {
   SessionCheckpointManager,
   type SessionCheckpointHost,
 } from '../../../services/session/checkpoint.js'
-import { readCodexNativeThreadGeneration } from '../../../services/session/codex-native-thread-binding.js'
+import {
+  createCodexNativeThreadMetadataPatch,
+  readCodexNativeThreadBinding,
+  readCodexNativeThreadGeneration,
+} from '../../../services/session/codex-native-thread-binding.js'
+import {
+  createSparkLedgerBindingPatch,
+  readSparkLedgerSessionId,
+} from '../../../services/session/spark-ledger-binding.js'
 
-describe('SessionCheckpointManager.rewindLastTurnForEdit', () => {
+describe('SessionCheckpointManager（历史修订：rewind / clear / delete）', () => {
   let db: SparkDatabase
   let directory: string
   let eventRepo: EventRepository
@@ -43,6 +51,7 @@ describe('SessionCheckpointManager.rewindLastTurnForEdit', () => {
       clearSessionMemoryForEvents: vi.fn(() => false),
       listActiveSessionIds: vi.fn(() => []),
       clearUsageLedgerTurnState: vi.fn(),
+      clearSessionEventSequencer: vi.fn(),
     }
   })
 
@@ -278,5 +287,115 @@ describe('SessionCheckpointManager.rewindLastTurnForEdit', () => {
     await expect(
       new SessionCheckpointManager(db, host).rewindLastTurnForEdit('session-edit', turnId),
     ).rejects.toThrow('只能编辑当前会话最后一轮用户消息')
+  })
+
+  /** 模拟既有原生续跑状态：codex 持久线程 binding + spark ledger binding + 摘要胶囊。 */
+  function seedNativeResumeState(): void {
+    const metadata = sessionRepo.getMetadata('session-edit')
+    sessionRepo.patchMetadata(
+      'session-edit',
+      createCodexNativeThreadMetadataPatch(metadata, {
+        bindingKey: 'native:host:agent-1',
+        threadId: 'thread-before-delete',
+        runtimeFingerprint: 'a'.repeat(64),
+        threadFingerprint: 'b'.repeat(64),
+      }),
+    )
+    sessionRepo.patchMetadata(
+      'session-edit',
+      createSparkLedgerBindingPatch(sessionRepo.getMetadata('session-edit'), {
+        bindingKey: 'native:host:agent-1',
+        sparkSessionId: 'spark-session-before-delete',
+      }),
+    )
+    new SessionSummaryRepository(db).create({
+      id: 'summary-before-delete',
+      sessionId: 'session-edit',
+      summaryTurnId: 'turn-1',
+      summaryText: 'summary mentioning deleted turns',
+      summarizedEntryCount: 2,
+      summarizedFromSeq: 1,
+      summarizedToSeq: 4,
+      estimatedTokens: 12,
+    })
+    expect(
+      readCodexNativeThreadBinding(
+        sessionRepo.get('session-edit')?.metadata_json,
+        'native:host:agent-1',
+      )?.threadId,
+    ).toBe('thread-before-delete')
+    expect(
+      readSparkLedgerSessionId(
+        sessionRepo.get('session-edit')?.metadata_json,
+        'native:host:agent-1',
+      ),
+    ).toBe('spark-session-before-delete')
+  }
+
+  it('clearEvents 同时作废 codex/spark 原生绑定与摘要，事件清空后无残留续跑渠道', async () => {
+    insertTurn('turn-1', 'first')
+    insertTurn('turn-2', 'second')
+    seedNativeResumeState()
+
+    await new SessionCheckpointManager(db, host).clearEvents('session-edit')
+
+    expect(eventRepo.countBySession('session-edit')).toBe(0)
+    // codex：generation 轮换 + binding 清空，runtime 缓存的旧 key 因 scope 变化不可再命中
+    expect(readCodexNativeThreadGeneration(sessionRepo.get('session-edit')?.metadata_json)).toBe(1)
+    expect(
+      readCodexNativeThreadBinding(
+        sessionRepo.get('session-edit')?.metadata_json,
+        'native:host:agent-1',
+      ),
+    ).toBeNull()
+    // spark：ledger binding 清空即断链
+    expect(
+      readSparkLedgerSessionId(
+        sessionRepo.get('session-edit')?.metadata_json,
+        'native:host:agent-1',
+      ),
+    ).toBeNull()
+    // 摘要胶囊作废，fresh 重建的下一轮不会从旧摘要复述被清内容
+    expect(new SessionSummaryRepository(db).getLatest('session-edit')).toBeUndefined()
+    expect(host.clearSessionMemoryForEvents).toHaveBeenCalledWith('session-edit')
+    expect(host.clearSessionEventSequencer).toHaveBeenCalledWith('session-edit')
+  })
+
+  it('deleteMessage 按轮扩展删除并作废原生绑定与摘要（idle 常见路径无残留上下文）', async () => {
+    insertTurn('turn-1', 'first')
+    insertTurn('turn-2', 'second')
+    seedNativeResumeState()
+
+    const result = await new SessionCheckpointManager(db, host).deleteMessage('session-edit', [
+      'turn-1-user',
+    ])
+
+    // turn-1 的 user + assistant 消息整对被删（tool_result / agent_status 留存），
+    // turn-2 完整保留。
+    expect(result.deleted).toBe(2)
+    const remaining = eventRepo.queryAllBySession('session-edit')
+    expect(remaining.filter((row) => row.event_type === 'user_message').map((r) => r.id)).toEqual([
+      'turn-2-user',
+    ])
+    expect(
+      remaining.filter((row) => row.event_type === 'assistant_message').map((r) => r.id),
+    ).toEqual(['turn-2-assistant'])
+    expect(remaining.length).toBe(6)
+    expect(readCodexNativeThreadGeneration(sessionRepo.get('session-edit')?.metadata_json)).toBe(1)
+    expect(
+      readCodexNativeThreadBinding(
+        sessionRepo.get('session-edit')?.metadata_json,
+        'native:host:agent-1',
+      ),
+    ).toBeNull()
+    expect(
+      readSparkLedgerSessionId(
+        sessionRepo.get('session-edit')?.metadata_json,
+        'native:host:agent-1',
+      ),
+    ).toBeNull()
+    expect(new SessionSummaryRepository(db).getLatest('session-edit')).toBeUndefined()
+    // 与 rewind 不同：单条删除不终止在跑的执行器（UI 允许运行中删除）
+    expect(host.clearSessionMemoryForEvents).not.toHaveBeenCalled()
   })
 })

@@ -42,6 +42,8 @@ export interface SessionCheckpointHost {
   listActiveSessionIds(): string[]
   /** 清除被撤回轮次的进程内 usage 累计，避免替代轮次继承旧基线。 */
   clearUsageLedgerTurnState(sessionId: string, turnId?: string): void
+  /** 清空会话事件后重置进程内 seq 缓存，让后续事件序号从删减后的历史重新推导。 */
+  clearSessionEventSequencer(sessionId: string): void
 }
 
 export class SessionCheckpointManager {
@@ -122,16 +124,38 @@ export class SessionCheckpointManager {
 
   async clearEvents(sessionId: string): Promise<{ cleared: boolean }> {
     const eventRepo = new EventRepository(this.db)
+    const sessionRepo = new SessionRepository(this.db)
     // 清空历史同样要先终止在跑的执行器。否则它会成为孤儿：UI 认为会话已空闲、
     // 用户随即再发一条消息，两个 executor 就会并发抢同一个 cwd / 同一个会话。
     const wasRunning = this.host.clearSessionMemoryForEvents(sessionId)
-    eventRepo.deleteBySession(sessionId)
+    // 仅删 agent_events 不够：Codex 持久线程 / Spark ledger 的绑定存在
+    // sessions.metadata_json，下一轮会带着全部被清内容 resume 原生会话；
+    // 摘要胶囊（Continuity Capsule）也是事件历史的派生缓存，可能复述被清
+    // 对话。对齐 /clear 命令与 rewindLastTurnForEdit：轮换 generation 清空
+    // 两个 binding，并作废摘要，强制下一轮从空历史 fresh 重建。
+    const clear = this.db.raw.transaction(() => {
+      sessionRepo.patchMetadata(
+        sessionId,
+        createCodexNativeThreadClearPatch(sessionRepo.getMetadata(sessionId)),
+      )
+      sessionRepo.patchMetadata(
+        sessionId,
+        createSparkLedgerClearPatch(sessionRepo.getMetadata(sessionId)),
+      )
+      new SessionSummaryRepository(this.db).deleteBySession(sessionId)
+      eventRepo.deleteBySession(sessionId)
+    })
+    clear()
+    this.host.clearSessionEventSequencer(sessionId)
     if (wasRunning) {
       // 执行器已被杀，DB 里的 running 状态必须落回 idle，否则重启恢复流程会把
       // 这个会话当成"上次崩溃残留"再处理一遍。
-      new SessionRepository(this.db).updateStatus(sessionId, 'idle')
+      sessionRepo.updateStatus(sessionId, 'idle')
       log.info('cancelled running executor before clearing session events', { sessionId })
     }
+    log.info('cleared session events with native bindings and summaries invalidated', {
+      sessionId,
+    })
     return { cleared: true }
   }
 
@@ -189,7 +213,33 @@ export class SessionCheckpointManager {
       }
     }
 
-    const count = eventRepo.deleteEventsByIds(eventIds)
+    // 硬删事件只影响 Spark 侧回放历史；原生 Claude/Codex/Spark 会话各自持有完整
+    // 上下文——Codex 持久线程与 Spark ledger 的 binding 存在 sessions.metadata_json，
+    // 摘要胶囊也是事件历史的派生缓存。对齐 rewindLastTurnForEdit：轮换 generation
+    // 清空两个 binding 并作废摘要，强制下一轮从删减后的 Spark 历史重建上下文，
+    // 否则被删消息仍会经原生 resume / 摘要回到模型上下文。
+    // 注意：与 rewind 不同，这里不终止在跑的执行器（UI 允许运行中删除单条消息，
+    // 杀执行器会中断在跑轮次）；若删除时恰有 turn 在跑，其轮末回写的 binding 仍
+    // 指向旧原生会话，属已知竞态，idle 会话（常见路径）不受影响。
+    const sessionRepo = new SessionRepository(this.db)
+    const deleteAndInvalidate = this.db.raw.transaction(() => {
+      const count = eventRepo.deleteEventsByIds(eventIds)
+      sessionRepo.patchMetadata(
+        sessionId,
+        createCodexNativeThreadClearPatch(sessionRepo.getMetadata(sessionId)),
+      )
+      sessionRepo.patchMetadata(
+        sessionId,
+        createSparkLedgerClearPatch(sessionRepo.getMetadata(sessionId)),
+      )
+      new SessionSummaryRepository(this.db).deleteBySession(sessionId)
+      return count
+    })
+    const count = deleteAndInvalidate()
+    log.info('deleted message events with native bindings and summaries invalidated', {
+      sessionId,
+      deleted: count,
+    })
     return { deleted: count }
   }
 
@@ -531,9 +581,7 @@ export class SessionCheckpointManager {
     const filePaths: string[] = []
     for (const { rootPath } of targets) {
       if (!(await svc.isGitRepo(rootPath))) continue
-      filePaths.push(
-        ...(await svc.listSnapshotFiles(rootPath, sessionId, checkpoint.checkpointId)),
-      )
+      filePaths.push(...(await svc.listSnapshotFiles(rootPath, sessionId, checkpoint.checkpointId)))
     }
     return { checkpointId: checkpoint.checkpointId, filePaths }
   }

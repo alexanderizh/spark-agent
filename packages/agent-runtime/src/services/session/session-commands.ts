@@ -13,6 +13,7 @@ import {
   ProviderProfileRepository,
   SessionCollaborationRepository,
   SessionRepository,
+  SessionSummaryRepository,
   SettingsRepository,
   SkillRepository,
   UsageLedgerRepository,
@@ -537,6 +538,9 @@ export class SessionCommandController {
         )
         // spark ledger 绑定同源清理：下一轮 spark turn 创建全新引擎会话。
         sessionRepo.patchMetadata(id, createSparkLedgerClearPatch(sessionRepo.getMetadata(id)))
+        // 摘要胶囊是事件历史的派生缓存，可能复述被清对话；一并作废，避免
+        // fresh 重建的下一轮仍从旧摘要"回忆"已清空的内容。
+        new SessionSummaryRepository(this.db).deleteBySession(id)
         eventRepo.deleteBySession(id)
         this.host.clearSessionEventSequencer(id)
         this.host.clearUsageLedgerTurnState(id)
