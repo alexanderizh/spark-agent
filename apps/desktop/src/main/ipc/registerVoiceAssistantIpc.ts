@@ -34,6 +34,13 @@ import { VoiceRouteBinding } from '../services/voice-assistant/VoiceRouteBinding
 import type { CreateVoiceSessionOptions } from '../services/voice-assistant/VoiceRouteBinding.js'
 import { setVoiceAssistantRecognitionHandler } from '../services/voice-assistant/recognitionBridge.js'
 import { isWakeWordModelAvailable } from '../services/voice-assistant/WakeWordDetector.js'
+import {
+  removeTtsArtifactWithin,
+  synthesizeSpeechText,
+} from '../services/voice-assistant/ttsSynthesis.js'
+import { createLogger } from '@spark/shared'
+
+const log = createLogger('voice-assistant-ipc')
 
 export interface RegisterVoiceAssistantIpcDeps {
   /** 设置存储（app_settings） */
@@ -49,10 +56,7 @@ export interface RegisterVoiceAssistantIpcDeps {
    * 同步语音绑定会话的推理档位（思考开关切换/启动对齐时调用）：
    * effort 非空 → 写入该档位；null → 恢复会话所属 agent 的档位
    */
-  setSessionReasoningEffort(
-    sessionId: string,
-    effort: SessionReasoningEffort | null,
-  ): Promise<void>
+  setSessionReasoningEffort(sessionId: string, effort: SessionReasoningEffort | null): Promise<void>
   /** 解析 Agent 适配器信息（agentId 为空取默认 Agent），供设置页按适配器出选项 */
   resolveAgentInfo(agentId: string | null): VoiceAssistantSessionAgentInfo | null
   /** 提交语音轮次 */
@@ -124,11 +128,7 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
         deps.settingsStore.get(VOICE_ASSISTANT_SETTINGS_CATEGORY, VOICE_ASSISTANT_ROUTE_KEY),
       ),
     writeBinding: (binding) =>
-      deps.settingsStore.set(
-        VOICE_ASSISTANT_SETTINGS_CATEGORY,
-        VOICE_ASSISTANT_ROUTE_KEY,
-        binding,
-      ),
+      deps.settingsStore.set(VOICE_ASSISTANT_SETTINGS_CATEGORY, VOICE_ASSISTANT_ROUTE_KEY, binding),
     createSession: deps.createSession,
     isSessionAlive: deps.isSessionAlive,
     onSessionCreated: () => {
@@ -147,7 +147,11 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
   voiceAssistantService = new VoiceAssistantService({
     readSettings: readRawSettings,
     writeSettings: (value) =>
-      deps.settingsStore.set(VOICE_ASSISTANT_SETTINGS_CATEGORY, VOICE_ASSISTANT_SETTINGS_KEY, value),
+      deps.settingsStore.set(
+        VOICE_ASSISTANT_SETTINGS_CATEGORY,
+        VOICE_ASSISTANT_SETTINGS_KEY,
+        value,
+      ),
     shortcutRegistrar: {
       register: (accelerator, callback) => {
         try {
@@ -175,8 +179,7 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
     sendCaptureCommand: (command) => sendToMainWindow('stream:voice-assistant:capture', command),
     sendPlayCommand: (command) => sendToMainWindow('stream:voice-assistant:play', command),
     broadcastState: (event) => pushStreamEvent('stream:voice-assistant:state', event),
-    emitSessionFocus: (event) =>
-      pushStreamEvent(VOICE_ASSISTANT_SESSION_FOCUS_CHANNEL, event),
+    emitSessionFocus: (event) => pushStreamEvent(VOICE_ASSISTANT_SESSION_FOCUS_CHANNEL, event),
     broadcastStatus: (status) => {
       pushStreamEvent('stream:voice-assistant:status', status)
       try {
@@ -232,6 +235,31 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
   typedIpcHandle('voice-assistant:reset-route', async () => {
     route.clearSession()
     return { ok: true, message: '已解绑语音会话，下次唤醒将新建会话' }
+  })
+
+  // 消息语音播报：无状态复用语音助手 TTS 设置（现读现归一，设置热更新即时生效）。
+  // 渲染端逐句调用、边合边播；文件落在 ttsDir（safe-file 白名单内），
+  // 播完由渲染端 cleanup 删除，应用启动另有 sweepTtsDir 清扫兜底。
+  typedIpcHandle('voice-assistant:tts-synthesize', async (request) => {
+    const text = request.text.trim()
+    if (text.length === 0) throw new Error('播报文本为空')
+    const settings = normalizeVoiceAssistantSettings(readRawSettings())
+    const result = await synthesizeSpeechText(
+      {
+        settings,
+        resolveMediaProviders: () => deps.resolveMediaProviders(),
+        mediaRouter: deps.mediaRouter,
+        outputDir: deps.ttsDir,
+      },
+      text,
+    )
+    return { filePath: result.filePath }
+  })
+
+  typedIpcHandle('voice-assistant:tts-cleanup', async (request) => {
+    const ok = await removeTtsArtifactWithin(deps.ttsDir, request.filePath)
+    if (!ok) log.warn(`[voice-assistant] message tts cleanup skipped: ${request.filePath}`)
+    return { ok }
   })
 
   // ── 渲染端反馈（fire-and-forget） ────────────────────────────────────────

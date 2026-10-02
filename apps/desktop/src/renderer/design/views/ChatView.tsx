@@ -14,6 +14,7 @@ import React, {
   useMemo,
   useId,
   Fragment,
+  useSyncExternalStore,
 } from 'react'
 import { MAIN_WINDOW_MIN_WIDTH } from '../../../window-sizing.js'
 import './ChatView.less'
@@ -61,6 +62,8 @@ import {
   shouldAutoCollapseGitEnvPanel,
 } from './chat/git-env-panel-layout'
 import { FileChipIcon } from './chat/ChatFileIcon'
+import { getMessageTtsPlayer } from './chat/MessageTtsPlayer'
+import { useMessageTtsAvailable } from './chat/useMessageTtsAvailable'
 import { GitReviewPanel } from './chat/ChatGitReview'
 import { useLiveWorkspaceGitStatus } from './chat/useLiveWorkspaceGitStatus'
 import { useWorkspaceBranchState } from './chat/useWorkspaceBranchState'
@@ -5006,6 +5009,8 @@ function ChatStream({
       .map((msg) => msg.clientId as string)
     const eventIds = selectedMessages.flatMap((msg) => msg.eventIds)
     if (eventIds.length === 0 && optimisticClientIds.length === 0) return
+    // 批量删除覆盖到正在播报的消息时立即停止
+    for (const msg of selectedMessages) getMessageTtsPlayer().stopIfActive(msg.id)
     const finishLocalState = () => {
       if (optimisticClientIds.length > 0) onDeleteOptimisticMessages?.(optimisticClientIds)
       const nextMessages = builderRef.current
@@ -5045,6 +5050,8 @@ function ChatStream({
         if (clientId != null) onDeleteOptimisticMessages?.([clientId])
         return
       }
+      // 被删消息正在语音播报时立即停止（音频还在队列/合成中，内容已不存在）
+      getMessageTtsPlayer().stopIfActive(msgId)
       deleteMessageEvents({ sessionId, eventIds })
         .then(() => {
           builderRef.current.removeMessage(msgId)
@@ -5190,6 +5197,7 @@ function ChatStream({
       blocks={[]}
       messageStatus="streaming"
       isLatest
+      messageId="agent-running-placeholder"
       assistantId={placeholderIdentity.id}
       assistantName={placeholderIdentity.name}
       assistantAvatarSrc={placeholderIdentity.avatarSrc}
@@ -7895,6 +7903,8 @@ type AssistantRowCompareProps = {
   assistantName: string
   assistantAvatarSrc: string
   showIdentity?: boolean
+  /** 语音播报归属 key（消息 id 变化必须重渲染，否则播报按钮错挂到新消息上） */
+  messageId: string
   running?: boolean
   selectionMode?: boolean
   selected?: boolean
@@ -7920,6 +7930,7 @@ function assistantRowsPropsAreEqual(
     prev.assistantName === next.assistantName &&
     prev.assistantAvatarSrc === next.assistantAvatarSrc &&
     prev.showIdentity === next.showIdentity &&
+    prev.messageId === next.messageId &&
     prev.timestamp === next.timestamp &&
     prev.turnDurationMs === next.turnDurationMs &&
     prev.selectionMode === next.selectionMode &&
@@ -8128,6 +8139,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             workspaceRootPath={workspaceRootPath}
             blocks={segmentBlocks}
             {...(segmentTaskEntry != null ? { sessionTaskEntry: segmentTaskEntry } : {})}
+            messageId={messageId}
             isLatest={segmentIsLatest}
             {...(sessionRunning !== undefined ? { sessionRunning } : {})}
             assistantId={assistantId}
@@ -8176,6 +8188,7 @@ const AgentMsg = React.memo(function AgentMsg({
   onFork,
   onReply,
   onFilePreview,
+  messageId,
   selectionMode = false,
   selected = false,
   onToggleSelected,
@@ -8203,6 +8216,8 @@ const AgentMsg = React.memo(function AgentMsg({
   onFork?: () => void
   onReply?: (selectedText?: string) => void
   onFilePreview?: FileOpenHandler
+  /** 所属消息 id（语音播报播放器以此为播报归属 key） */
+  messageId: string
   selectionMode?: boolean
   selected?: boolean
   onToggleSelected?: () => void
@@ -8290,6 +8305,17 @@ const AgentMsg = React.memo(function AgentMsg({
 
   // 提取纯文本用于复制
   const textContent = extractTextFromBlocks(blocks)
+  // 语音播报：配置了 TTS 模型且正文非空时挂播报按钮；状态订阅播放器单例
+  //（全局仅一条播报进行中，播放器状态变化会唤醒所有订阅的消息）
+  const ttsAvailable = useMessageTtsAvailable()
+  const getMessageTtsStatus = useCallback(
+    () => getMessageTtsPlayer().getStatusFor(messageId),
+    [messageId],
+  )
+  const speechStatus = useSyncExternalStore(getMessageTtsPlayer().subscribe, getMessageTtsStatus)
+  const handleSpeechToggle = useCallback(() => {
+    getMessageTtsPlayer().toggle(messageId, textContent)
+  }, [messageId, textContent])
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -8484,6 +8510,9 @@ const AgentMsg = React.memo(function AgentMsg({
               position="left"
               {...(onDelete ? { onDelete } : {})}
               {...(onFork ? { onFork } : {})}
+              {...(ttsAvailable && textContent
+                ? { onSpeechToggle: handleSpeechToggle, speechStatus }
+                : {})}
             />
           )}
         </div>

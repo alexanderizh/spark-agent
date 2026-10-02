@@ -13,5 +13,6 @@ export * from './anthropic-auth.js'
 export * from './anthropic-endpoint.js'
 export * from './http-retry.js'
 export * from './html-sandbox.js'
+export * from './speechify.js'
 // keystore 不在此处导出（只能从 '@spark/shared/keystore' 按需 import）
 // 原因：keystore 依赖 keytar 原生模块，不应被 renderer 进程的 bundle 引入

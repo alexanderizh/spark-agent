@@ -73,6 +73,110 @@ describe('MessageHoverBar', () => {
   })
 })
 
+describe('MessageHoverBar 语音播报按钮', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('未传 onSpeechToggle（未配置 TTS）时不显示播报按钮', () => {
+    act(() => {
+      root.render(<MessageHoverBar textContent="内容" position="left" />)
+    })
+    expect(container.querySelector('.msg-hover-speech')).toBeNull()
+  })
+
+  it('正文为空时不显示播报按钮', () => {
+    act(() => {
+      root.render(
+        <MessageHoverBar textContent="" position="left" onSpeechToggle={() => undefined} />,
+      )
+    })
+    expect(container.querySelector('.msg-hover-speech')).toBeNull()
+  })
+
+  it('off 态展示播报图标，点击触发播报', () => {
+    const onSpeechToggle = vi.fn()
+    act(() => {
+      root.render(
+        <MessageHoverBar textContent="内容" position="left" onSpeechToggle={onSpeechToggle} />,
+      )
+    })
+    const button = container.querySelector<HTMLButtonElement>('.msg-hover-speech')
+    expect(button?.getAttribute('aria-label')).toBe('语音播报')
+    expect(button?.classList.contains('is-playing')).toBe(false)
+    act(() => button?.click())
+    expect(onSpeechToggle).toHaveBeenCalledOnce()
+  })
+
+  it('loading 态展示加载图标，点击同样是停止（合成中可打断），标题为「停止播报」', () => {
+    act(() => {
+      root.render(
+        <MessageHoverBar
+          textContent="内容"
+          position="left"
+          onSpeechToggle={() => undefined}
+          speechStatus="loading"
+        />,
+      )
+    })
+    const button = container.querySelector<HTMLButtonElement>('.msg-hover-speech')
+    expect(button?.getAttribute('aria-label')).toBe('停止播报')
+    expect(button?.querySelector('svg')?.classList.contains('spin')).toBe(true)
+    expect(button?.classList.contains('is-playing')).toBe(false)
+  })
+
+  it('playing 态切停止图标与「停止播报」标题并带高亮态', () => {
+    act(() => {
+      root.render(
+        <MessageHoverBar
+          textContent="内容"
+          position="left"
+          onSpeechToggle={() => undefined}
+          speechStatus="playing"
+        />,
+      )
+    })
+    const button = container.querySelector<HTMLButtonElement>('.msg-hover-speech')
+    expect(button?.getAttribute('aria-label')).toBe('停止播报')
+    expect(button?.classList.contains('is-playing')).toBe(true)
+  })
+
+  it('按钮顺序：播报紧随复制、位于编辑/分叉之前', () => {
+    act(() => {
+      root.render(
+        <MessageHoverBar
+          textContent="内容"
+          position="left"
+          onSpeechToggle={() => undefined}
+          onEdit={() => undefined}
+          onFork={() => undefined}
+          onDelete={() => undefined}
+        />,
+      )
+    })
+    const buttons = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.msg-hover-bar button'),
+    )
+    expect(buttons.map((button) => button.className.replace(' is-playing', ''))).toEqual([
+      'msg-hover-copy',
+      'msg-hover-speech',
+      'msg-hover-edit',
+      'msg-hover-fork',
+      'msg-hover-delete',
+    ])
+  })
+})
+
 describe('MessageHoverBar 消息时间显示', () => {
   let container: HTMLDivElement
   let root: Root

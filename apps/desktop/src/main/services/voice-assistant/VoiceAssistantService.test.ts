@@ -67,8 +67,7 @@ const integrityMocks = vi.hoisted(() => ({
   refineAvailable: true,
 }))
 vi.mock('../VoiceIntegrityService.js', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../VoiceIntegrityService.js')>()
+  const actual = await importOriginal<typeof import('../VoiceIntegrityService.js')>()
   return {
     ...actual,
     resolveVoiceVadPaths: () =>
@@ -117,6 +116,11 @@ function createHarness(
   settingsPatch: Partial<VoiceAssistantSettings> = {},
   /** 模拟 v1 存量设置：初始对象不含 noisePipelineMigrated 字段（迁移回写分支） */
   legacyV1 = false,
+  /** 覆盖 TTS 相关依赖（providers / mediaRouter），供语音合成选路用例注入误声明渠道 */
+  overrides: {
+    providers?: Array<Record<string, unknown>>
+    mediaRouter?: Record<string, unknown>
+  } = {},
 ): Harness {
   const stateEvents: VoiceAssistantStateEvent[] = []
   const sessionFocusEvents: VoiceAssistantSessionFocusEvent[] = []
@@ -186,8 +190,12 @@ function createHarness(
       unregister: () => undefined,
     },
     resolveMediaProviders: async () =>
-      [{ id: 'p1', name: 'fake-tts', defaultModel: 'tts-1', apiKey: 'k' }] as never,
-    mediaRouter: {
+      (overrides.providers ?? [
+        { id: 'p1', name: 'fake-tts', defaultModel: 'tts-1', apiKey: 'k' },
+      ]) as never,
+    mediaRouter: (overrides.mediaRouter ?? {
+      // 既有用例的 provider 无任何声明数据，supports 恒 true 保持自动选路不缺候选
+      supports: () => true,
       invoke: async () => ({
         output: {
           provider: 'fake-tts',
@@ -197,7 +205,7 @@ function createHarness(
         },
         providerProfileId: 'p1',
       }),
-    } as never,
+    }) as never,
     submitVoiceTurn: async (params) => {
       submitted.push(params)
       turnCounter += 1
@@ -283,6 +291,60 @@ function createHarness(
       installImpl = impl
     },
   }
+}
+
+/** 驱动一轮「唤醒→收口提交→首句 delta」链路，触发逐句 TTS 合成（synthesizeSentence）。 */
+async function driveAssistantSpeech(h: Harness): Promise<void> {
+  expect(h.service.wake().ok).toBe(true)
+  h.service.handleRecognitionEvent({
+    type: 'final',
+    sessionId: 'voice-100-1',
+    text: '念一句话',
+  })
+  await vi.advanceTimersByTimeAsync(1250)
+  expect(h.service.getStatus().state).toBe('thinking')
+  // 收口 flush：尾句并入 + 会话停止 → 真正 submit（activeTurn 建立后 delta 才被消费）
+  h.service.handleRecognitionEvent({
+    type: 'final',
+    sessionId: 'voice-100-1',
+    text: '好吗',
+  })
+  h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+  await vi.advanceTimersByTimeAsync(10)
+  expect(h.submitted.length).toBe(1)
+  h.service.handleTurnEvent({
+    type: 'assistant_message',
+    turnId: 'turn-1',
+    sessionId: 'session-voice-1',
+    mode: 'delta',
+    content: '这是播报的第一句。',
+    provider: 'p',
+    isFinal: false,
+  } as never)
+  await vi.advanceTimersByTimeAsync(20)
+}
+
+/** 语音合成选路用例的渠道 fixtures：误声明 ASR 渠道排前、真 TTS 渠道排后。 */
+function misdeclaredTtsProviders(): Array<Record<string, unknown>> {
+  return [
+    {
+      id: 'p-asr',
+      name: '误声明 ASR 渠道',
+      defaultModel: 'asr-1.0',
+      apiKey: 'k',
+      mediaProvider: 'minimax-hailuo',
+      // 渠道级误声明 audio.speech，模型 manifest 只有转写能力（回归现场）
+      mediaCapabilities: ['audio.speech', 'audio.transcription'],
+      mediaModelManifests: [{ capabilities: [{ id: 'audio.transcription' }] }],
+    },
+    {
+      id: 'p-tts',
+      name: '真 TTS 渠道',
+      defaultModel: 'speech-1',
+      apiKey: 'k',
+      mediaModelManifests: [{ capabilities: [{ id: 'audio.speech' }] }],
+    },
+  ]
 }
 
 describe('VoiceAssistantService 状态机', () => {
@@ -378,6 +440,63 @@ describe('VoiceAssistantService 状态机', () => {
     }
     expect(h.service.getStatus().state).toBe('idle')
     expect(h.stateEvents.at(-1)).toMatchObject({ state: 'idle', reason: 'completed' })
+  })
+
+  it('TTS 自动选路：渠道级误声明 audio.speech 的 ASR 渠道不再抢走语音合成', async () => {
+    const invoke = vi.fn(async (_request: unknown, _options: unknown) => ({
+      output: {
+        provider: 'fake-tts',
+        model: 'speech-1',
+        mode: 'sync',
+        assets: [{ type: 'audio', filePath: '/tmp/va-tts-auto.mp3' }],
+      },
+      providerProfileId: 'p-tts',
+    }))
+    // 查表式 supports：模拟 mediaRouter.supports 对误声明 ASR 渠道拒绝、真 TTS 渠道放行
+    // （supports 本体的「模型级声明优先」语义由 agent-runtime 侧测试锁定）
+    const supports = vi.fn((profile: { id: string }) => profile.id === 'p-tts')
+    const h = createHarness({ ttsVol: 2, ttsPitch: 3, ttsEmotion: 'happy' }, false, {
+      providers: misdeclaredTtsProviders(),
+      mediaRouter: { supports, invoke },
+    })
+    await driveAssistantSpeech(h)
+
+    // 按候选顺序逐个查询 supports：ASR 被拒后落到真 TTS 渠道
+    expect(supports.mock.calls.map((call) => call[0]?.id)).toEqual(['p-asr', 'p-tts'])
+    expect(invoke).toHaveBeenCalledTimes(1)
+    // 选中的是真 TTS 渠道（非 minimax-hailuo），MiniMax 专有参数不得下发；
+    // 旧 OR 逻辑会误选排前的 minimax ASR 渠道，把 vol/pitch/emotion 错发给实际路由的 TTS 渠道
+    const [request] = invoke.mock.calls[0] as unknown as [Record<string, unknown>, unknown]
+    const modelParams = request.modelParams as Record<string, unknown> | undefined
+    expect(modelParams).not.toHaveProperty('vol')
+    expect(modelParams).not.toHaveProperty('pitch')
+    expect(modelParams).not.toHaveProperty('emotion')
+  })
+
+  it('TTS 显式指定渠道：不经 supports 门控，MiniMax 参数仍按渠道类型下发', async () => {
+    const invoke = vi.fn(async (_request: unknown, _options: unknown) => ({
+      output: {
+        provider: 'fake-tts',
+        model: 'asr-1.0',
+        mode: 'sync',
+        assets: [{ type: 'audio', filePath: '/tmp/va-tts-explicit.mp3' }],
+      },
+      providerProfileId: 'p-asr',
+    }))
+    const supports = vi.fn(() => true)
+    const h = createHarness(
+      { ttsProviderProfileId: 'p-asr', ttsVol: 2, ttsPitch: 3, ttsEmotion: 'happy' },
+      false,
+      { providers: misdeclaredTtsProviders(), mediaRouter: { supports, invoke } },
+    )
+    await driveAssistantSpeech(h)
+
+    // 显式 ttsProviderProfileId 直接按 id 命中，不查 supports（既有行为不变）
+    expect(supports).not.toHaveBeenCalled()
+    expect(invoke).toHaveBeenCalledTimes(1)
+    const [explicitRequest] = invoke.mock.calls[0] as unknown as [Record<string, unknown>, unknown]
+    const modelParams = explicitRequest.modelParams as Record<string, unknown> | undefined
+    expect(modelParams).toMatchObject({ vol: 2, pitch: 3, emotion: 'happy' })
   })
 
   it('识别精修：refined 全文整体替换流式拼接后提交', async () => {
@@ -929,9 +1048,7 @@ describe('VoiceAssistantService 状态机', () => {
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(1)
     expect(
-      h.sessionFocusEvents.some(
-        (e) => e.cause === 'turn' && e.sessionId === 'session-voice-1',
-      ),
+      h.sessionFocusEvents.some((e) => e.cause === 'turn' && e.sessionId === 'session-voice-1'),
     ).toBe(true)
   })
 
@@ -977,9 +1094,7 @@ describe('VoiceAssistantService 状态机', () => {
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(
-      h.sessionFocusEvents.some(
-        (e) => e.cause === 'command-switch' && e.sessionId === 'session-a',
-      ),
+      h.sessionFocusEvents.some((e) => e.cause === 'command-switch' && e.sessionId === 'session-a'),
     ).toBe(true)
 
     // 切换工作区 → 绑定其最近会话（session-in-ws1）→ command-workspace

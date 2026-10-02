@@ -8,14 +8,15 @@
  * - 首句即合成即播（不等 Agent 说完，压首字延迟）
  * - isFinal 兜底：若 delta 事件全部丢失，用全文重新喂切分器
  * - 单句合成失败/超时：跳过该句 + 错误提示音（不阻断后续句）
+ * - 整轮全部句子合成失败（成功 0 句）：经 onTurnSynthesisFailed 通知用户一次；
+ *   相同原因 5 分钟内不重复提示，部分成功只记日志
  * - cancel()：清空待合成队列、停播、删除未播放文件
  * - 播放完成的音频文件立即删除；另有服务启动时的目录清扫兜底
  */
 
 import { unlink } from 'node:fs/promises'
-import { createLogger } from '@spark/shared'
+import { createLogger, SentenceSplitter, speechifyText } from '@spark/shared'
 import type { VoiceAssistantPlayCommand } from '@spark/protocol'
-import { SentenceSplitter, speechifyText } from './speechify.js'
 
 const log = createLogger('voice-tts')
 
@@ -24,6 +25,51 @@ const SYNTHESIS_TIMEOUT_MS = 30_000
 /** 流式路径单轮朗读上限（与 speechifyText 整段上限一致；超出截断并提示） */
 const MAX_STREAM_SPEAKABLE_CHARS = 800
 const STREAM_TRUNCATION_SENTENCE = '内容较长，完整回复请在应用中查看。'
+/** 整轮合成失败提示的节流窗口：相同原因 5 分钟内不重复弹（连续对话防刷屏） */
+const FAILURE_NOTICE_THROTTLE_MS = 5 * 60 * 1000
+/** 失败提示里错误要点摘要的最大长度 */
+const FAILURE_NOTICE_MAX_DETAIL_CHARS = 80
+
+/** 整轮合成失败的原因归类：no-channel = 无可用语音合成渠道/能力不支持，other = 渠道等运行错误 */
+export type TtsFailureNoticeReason = 'no-channel' | 'other'
+
+/**
+ * 「无可用语音合成渠道/能力不支持」类错误的特征串：
+ * - media-router 无候选渠道：`No provider supports capability audio.speech`
+ * - ttsSynthesis 渠道列表为空：`未配置支持语音合成的多媒体渠道`
+ * - 各媒体适配器能力不匹配：`capability_not_supported`
+ */
+const NO_TTS_CHANNEL_PATTERNS: readonly string[] = [
+  'No provider supports',
+  'capability_not_supported',
+  '未配置支持语音合成的多媒体渠道',
+]
+
+/** 按错误信息归类失败原因（决定提示文案是否引导去设置配置渠道） */
+export function classifyTtsFailureReason(message: string): TtsFailureNoticeReason {
+  return NO_TTS_CHANNEL_PATTERNS.some((pattern) => message.includes(pattern))
+    ? 'no-channel'
+    : 'other'
+}
+
+/** 错误要点摘要：压缩空白后截断，保证 toast 文案简短不吓人 */
+function summarizeErrorDetail(message: string): string {
+  const cleaned = message.replace(/\s+/g, ' ').trim()
+  return cleaned.length > FAILURE_NOTICE_MAX_DETAIL_CHARS
+    ? `${cleaned.slice(0, FAILURE_NOTICE_MAX_DETAIL_CHARS)}…`
+    : cleaned
+}
+
+/** 整轮失败的用户提示文案：无渠道类给配置引导，其余只展示错误要点 */
+export function buildTtsFailureNoticeMessage(
+  reason: TtsFailureNoticeReason,
+  detail: string,
+): string {
+  if (reason === 'no-channel') {
+    return '本轮语音播报失败：没有可用的语音合成渠道，请在 设置 → 语音助手 中配置播报渠道或模型。'
+  }
+  return `本轮语音播报失败：${summarizeErrorDetail(detail)}`
+}
 
 export interface VoiceTtsSynthesisResult {
   filePath: string
@@ -38,6 +84,12 @@ export interface VoiceTtsPipelineDeps {
   onAllPlayed: () => void
   /** 是否播放提示音（设置项；false 时 cue 由渲染端静默忽略或主进程不发送） */
   shouldPlayCues: () => boolean
+  /**
+   * 整轮全部句子合成失败（成功 0 句、失败 ≥1 句）时的用户通知出口。
+   * 在 onAllPlayed 之后调用（状态机已回 idle/standby，可安全做同态 error 广播）；
+   * 每轮最多一次，节流与文案分类在流水线内完成。
+   */
+  onTurnSynthesisFailed: (message: string) => void
 }
 
 interface QueuedPlayback {
@@ -80,6 +132,12 @@ export class VoiceTtsPipeline {
   /** delta 已喂入切分器的原始累计文本（isFinal 前缀对账用） */
   private fedRaw = ''
   private failureCount = 0
+  /** 本轮合成成功并入播放队列的句子数（部分成功判定：>0 时整轮失败不提示） */
+  private successCount = 0
+  /** 本轮最近一次合成失败的原始错误信息（原因归类输入） */
+  private lastFailureMessage = ''
+  /** 上次整轮失败提示（原因 + 时间戳）：跨轮保持，5 分钟内同原因不重复弹 */
+  private lastFailureNotice: { reason: TtsFailureNoticeReason; at: number } | null = null
   private playedCount = 0
   private allPlayedNotified = false
   /** 已切出句子的累计字符数（流式长度上限） */
@@ -105,6 +163,8 @@ export class VoiceTtsPipeline {
     this.cancelled = false
     this.fedRaw = ''
     this.failureCount = 0
+    this.successCount = 0
+    this.lastFailureMessage = ''
     this.playedCount = 0
     this.allPlayedNotified = false
     this.emittedChars = 0
@@ -233,10 +293,9 @@ export class VoiceTtsPipeline {
           filePath = result.filePath
         } catch (error) {
           this.failureCount += 1
+          this.lastFailureMessage = error instanceof Error ? error.message : String(error)
           log.warn(
-            `[voice-assistant] tts synthesis failed (sentence skipped, total failures ${this.failureCount}): ${
-              error instanceof Error ? error.message : String(error)
-            }`,
+            `[voice-assistant] tts synthesis failed (sentence skipped, total failures ${this.failureCount}): ${this.lastFailureMessage}`,
           )
           // 失败降级：跳句 + 错误提示音（仅首失时提示，避免连续提示音轰炸）
           if (this.failureCount === 1 && this.deps.shouldPlayCues()) {
@@ -249,6 +308,7 @@ export class VoiceTtsPipeline {
           return
         }
         const sentenceId = `va-s-${++this.sequenceCounter}`
+        this.successCount += 1
         this.awaitingPlayback.set(sentenceId, { sentenceId, filePath })
         this.deps.sendPlay({ kind: 'play', sentenceId, sequence: this.sequenceCounter, filePath })
       }
@@ -269,6 +329,29 @@ export class VoiceTtsPipeline {
     ) {
       this.allPlayedNotified = true
       this.deps.onAllPlayed()
+      this.notifyTurnSynthesisFailure()
     }
+  }
+
+  /**
+   * 整轮全部句子合成失败时的用户提示（每轮最多一次，由 allPlayedNotified 保证）：
+   * 部分成功（≥1 句合成成功）只记日志不弹；相同原因 5 分钟内不重复弹。
+   */
+  private notifyTurnSynthesisFailure(): void {
+    if (this.failureCount === 0 || this.successCount > 0) return
+    const reason = classifyTtsFailureReason(this.lastFailureMessage)
+    const last = this.lastFailureNotice
+    if (
+      last != null &&
+      last.reason === reason &&
+      Date.now() - last.at < FAILURE_NOTICE_THROTTLE_MS
+    ) {
+      log.info(
+        `[voice-assistant] tts failure notice suppressed (throttled, reason=${reason}, failures=${this.failureCount})`,
+      )
+      return
+    }
+    this.lastFailureNotice = { reason, at: Date.now() }
+    this.deps.onTurnSynthesisFailed(buildTtsFailureNoticeMessage(reason, this.lastFailureMessage))
   }
 }

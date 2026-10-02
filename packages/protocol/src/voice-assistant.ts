@@ -564,3 +564,29 @@ export interface VoiceAssistantResetRouteResponse {
   ok: boolean
   message: string
 }
+
+// ─── 消息语音播报（会话消息底部按钮，复用语音助手 TTS 渠道/模型/音色设置） ───
+
+/**
+ * 消息语音播报：合成一句话为音频文件。
+ * 渲染端把播报正文清洗切句后逐句调用（边合边播），文件落在语音助手 TTS 目录
+ * （safe-file 白名单内），播完后由渲染端调用 tts-cleanup 删除。
+ */
+export interface VoiceAssistantTtsSynthesizeRequest {
+  /** 单句朗读文本（调用方已做 speechify 清洗；主进程再兜底限长防滥用） */
+  text: string
+}
+
+export interface VoiceAssistantTtsSynthesizeResponse {
+  /** 本地音频文件绝对路径（渲染端经 safe-file:// 协议读取） */
+  filePath: string
+}
+
+/** 消息语音播报：删除合成产物。filePath 必须位于语音助手 TTS 目录内，否则拒绝。 */
+export interface VoiceAssistantTtsCleanupRequest {
+  filePath: string
+}
+
+export interface VoiceAssistantTtsCleanupResponse {
+  ok: boolean
+}

@@ -1227,6 +1227,36 @@ body.sidebar-resizing {
   background: var(--bg-subtle);
 }
 
+/* 语音播报：与复制/编辑同款式；播报中保留主色提醒「再点即停」 */
+.msg-hover-speech {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--r-xs);
+  transition:
+    color 0.15s,
+    background 0.15s;
+  line-height: 0;
+}
+
+.msg-hover-speech:hover {
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+}
+
+.msg-hover-speech.is-playing {
+  color: var(--accent);
+}
+
+.msg-hover-speech.is-playing:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 .msg-hover-fork {
   display: inline-flex;
   align-items: center;

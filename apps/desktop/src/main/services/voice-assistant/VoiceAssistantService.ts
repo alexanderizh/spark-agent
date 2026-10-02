@@ -19,7 +19,7 @@
 import { mkdir, rm, unlink, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { createLogger } from '@spark/shared'
+import { createLogger, hasMeaningfulVoiceText } from '@spark/shared'
 import type {
   AgentEvent,
   SessionReasoningEffort,
@@ -40,7 +40,6 @@ import {
   normalizeVoiceAssistantSettings,
 } from '@spark/protocol'
 import type { MediaProviderProfile, MediaRouterService } from '@spark/agent-runtime'
-import { hasMeaningfulVoiceText } from './speechify.js'
 import {
   feedVoiceAudio,
   startVoiceSession,
@@ -58,6 +57,7 @@ import {
 } from './voiceCommands.js'
 import { buildVoiceUserMessage } from './voiceUserMessage.js'
 import type { VoiceRouteBinding } from './VoiceRouteBinding.js'
+import { synthesizeSpeechText } from './ttsSynthesis.js'
 
 const log = createLogger('voice-assistant')
 
@@ -140,10 +140,7 @@ export interface VoiceAssistantDeps {
   /** M3 语音审批：回应挂起的权限审批（转发 PermissionService.resolveApproval） */
   resolveApproval(requestId: string, decision: 'allow' | 'deny'): boolean
   /** 同步语音绑定会话推理档位（固定档 → 写入该档位；null → 恢复 agent 档位） */
-  setSessionReasoningEffort(
-    sessionId: string,
-    effort: SessionReasoningEffort | null,
-  ): Promise<void>
+  setSessionReasoningEffort(sessionId: string, effort: SessionReasoningEffort | null): Promise<void>
   /** 解析 Agent 适配器信息（agentId 为空时取默认 Agent），供设置页按适配器出选项 */
   resolveAgentInfo(agentId: string | null): VoiceAssistantSessionAgentInfo | null
 }
@@ -212,13 +209,17 @@ export class VoiceAssistantService {
     // 门控，实测严重伤识别率）回退为新默认并置标记，立即持久化防止每次启动重复
     // 迁移；此后用户显式开启降噪/门控不会再被重置
     const rawSettingsRecord =
-      rawSettings != null && typeof rawSettings === 'object' ? (rawSettings as Record<string, unknown>) : null
+      rawSettings != null && typeof rawSettings === 'object'
+        ? (rawSettings as Record<string, unknown>)
+        : null
     const noisePipelineMigratedNow =
-      this.settings.noisePipelineMigrated && !(rawSettingsRecord != null && 'noisePipelineMigrated' in rawSettingsRecord)
+      this.settings.noisePipelineMigrated &&
+      !(rawSettingsRecord != null && 'noisePipelineMigrated' in rawSettingsRecord)
     // 识别精修迁移回写：v1 死字段默认 false 被存量持久化的，normalize 已统一翻回
     // 默认开（SenseVoice 精修对识别率提升显著），同样立即落盘防重复迁移
     const refineTranscriptMigratedNow =
-      this.settings.refineTranscriptMigrated && !(rawSettingsRecord != null && 'refineTranscriptMigrated' in rawSettingsRecord)
+      this.settings.refineTranscriptMigrated &&
+      !(rawSettingsRecord != null && 'refineTranscriptMigrated' in rawSettingsRecord)
     if (noisePipelineMigratedNow || refineTranscriptMigratedNow) {
       deps.writeSettings(this.settings)
       if (noisePipelineMigratedNow) {
@@ -236,6 +237,7 @@ export class VoiceAssistantService {
       sendPlay: (command) => deps.sendPlayCommand(command),
       onAllPlayed: () => this.handleAllPlayed(),
       shouldPlayCues: () => this.settings.soundCues,
+      onTurnSynthesisFailed: (message) => this.notifyTurnSynthesisFailed(message),
     })
     deps.registerCleanup(() => this.dispose())
   }
@@ -1063,7 +1065,12 @@ export class VoiceAssistantService {
         this.collectedFinals = []
         this.partialText = ''
         this.armEmptySpeechTimeout()
-        this.deps.broadcastState({ state: 'listening', previous: 'listening', reason: 'wake', detail: '' })
+        this.deps.broadcastState({
+          state: 'listening',
+          previous: 'listening',
+          reason: 'wake',
+          detail: '',
+        })
         return
       }
       log.info('[voice-assistant] utterance confirmed silent, handing off to thinking')
@@ -1620,6 +1627,21 @@ export class VoiceAssistantService {
   }
 
   /**
+   * 整轮 TTS 合成全失败的用户提示：复用 reason='error' 的状态事件通道
+   * （VoiceAssistantButton 对该事件弹右上角 toast 并附「去设置」动作，无需新增通道）。
+   * 只做同态 detail 广播（收尾后应为 idle/standby），不迁移状态机；若收尾后已
+   * 重新进入 listening（如审批续听已开始），放弃弹窗只记日志，避免打断收听。
+   */
+  private notifyTurnSynthesisFailed(message: string): void {
+    if (this.disposed) return
+    if (this.state !== 'idle' && this.state !== 'standby') {
+      log.warn(`[voice-assistant] tts failure notice skipped (state=${this.state}): ${message}`)
+      return
+    }
+    this.transition(this.state, 'error', message)
+  }
+
+  /**
    * M3 连续对话模式：轮次播报完 → 短暂停顿（等 TTS 尾音消散 + AEC 收敛）→
    * 自动回聆听。期间发生打断/新唤醒则取消。
    */
@@ -1650,58 +1672,16 @@ export class VoiceAssistantService {
   }
 
   private async synthesizeSentence(sentence: string): Promise<{ filePath: string }> {
-    await mkdir(this.deps.ttsDir, { recursive: true })
-    const providers = await this.deps.resolveMediaProviders()
-    if (providers.length === 0) {
-      throw new Error('未配置支持语音合成的多媒体渠道')
-    }
-    const settings = this.settings
-    const modelParams: Record<string, unknown> = { speed: settings.ttsSpeed }
-    if (settings.ttsVoice.trim().length > 0) modelParams.voice = settings.ttsVoice.trim()
-    // MiniMax 专有参数（vol/pitch/emotion）仅对 minimax-hailuo 渠道下发：
-    // 其他渠道 manifest 若开启透传会把未知字段传给供应商引发 400，缺失时编译器回落渠道默认。
-    const chosenProvider =
-      settings.ttsProviderProfileId != null
-        ? providers.find((provider) => provider.id === settings.ttsProviderProfileId)
-        : providers.find(
-            (provider) =>
-              (provider.mediaCapabilities ?? []).includes('audio.speech') ||
-              (provider.mediaModelManifests ?? []).some((manifest) =>
-                manifest.capabilities.some((capability) => capability.id === 'audio.speech'),
-              ),
-          )
-    if (chosenProvider?.mediaProvider === 'minimax-hailuo') {
-      if (settings.ttsVol !== 1) modelParams.vol = settings.ttsVol
-      if (settings.ttsPitch !== 0) modelParams.pitch = settings.ttsPitch
-      if (settings.ttsEmotion.trim().length > 0) modelParams.emotion = settings.ttsEmotion.trim()
-    }
-    const startedAt = Date.now()
-    const { output } = await this.deps.mediaRouter.invoke(
+    // 渠道/模型/音色决策与媒体路由在共享内核（消息语音播报 IPC 同源复用）
+    return synthesizeSpeechText(
       {
-        operation: 'text_to_audio',
-        capability: 'audio.speech',
-        prompt: sentence,
-        modelParams,
+        settings: this.settings,
+        resolveMediaProviders: () => this.deps.resolveMediaProviders(),
+        mediaRouter: this.deps.mediaRouter,
         outputDir: this.deps.ttsDir,
       },
-      {
-        providers,
-        ...(settings.ttsProviderProfileId != null
-          ? { providerProfileId: settings.ttsProviderProfileId }
-          : {}),
-        ...(settings.ttsModelId != null ? { modelId: settings.ttsModelId } : {}),
-      },
+      sentence,
     )
-    const filePath = output.assets.find((asset) => asset.filePath != null)?.filePath
-    if (filePath == null) {
-      throw new Error(`TTS 无文件产物 (provider=${output.provider})`)
-    }
-    log.info(
-      `[voice-assistant] tts synthesized in ${Date.now() - startedAt}ms (${output.provider}, ${
-        filePath.split('/').pop() ?? ''
-      })`,
-    )
-    return { filePath }
   }
 
   private playCue(cue: 'wake' | 'fail' | 'error'): void {

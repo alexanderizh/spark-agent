@@ -3,11 +3,11 @@
  *
  * 语音播报不能直接念 markdown 源码。这里做两层处理：
  *
- * 1. speechifyText(text)：整段清洗（用于最终全文兜底）
+ * 1. speechifyText(text, maxChars?)：整段清洗（用于最终全文兜底）
  *    - 代码块 / 表格 → 「（代码已省略，请在应用中查看）」等占位
  *    - 链接保留文字剥语法；裸 URL 移除
  *    - 标题/列表/引用标记剥除
- *    - 超长文本截断 + 「完整内容请在应用中查看」
+ *    - 超长文本截断 + 「完整内容请在应用中查看」（maxChars 可调，默认 800）
  *
  * 2. SentenceSplitter：面向 TTS 逐句流水线的增量切分器
  *    - delta 到达时喂入，遇到句末边界（。！？；\n 与英文 .?! 后接空白）即出句
@@ -16,12 +16,14 @@
  *
  * 设计约束：切分器只做「尽快出句」的乐观清洗；isFinal 后调用方应以全文
  * speechifyText 的结果作为权威文本（用于会话展示），已朗读句子不做撤回。
+ *
+ * 纯函数、零依赖：语音助手主进程（流式播报）与渲染端（消息语音播报按钮）共用。
  */
 
 /** 单句最短字符数（含句末标点；低于此长度并入下一句，避免「好。」「嗯。」碎片化触发 TTS） */
 const MIN_SENTENCE_CHARS = 3
 
-/** speechify 整段清洗后的最大朗读长度；超出截断并提示 */
+/** speechify 整段清洗后的默认最大朗读长度；超出截断并提示 */
 const MAX_SPEAKABLE_CHARS = 800
 
 const CODE_BLOCK_PLACEHOLDER = '（代码已省略，请在应用中查看）'
@@ -59,13 +61,18 @@ export function cleanInlineMarkdown(text: string): string {
 
 /**
  * 整段 markdown → 朗读文本。代码块/表格整体替换为占位句，行内语法清洗，
- * 超长截断。返回可直接进入句切分的纯文本。
+ * 超长截断（maxChars 可调；语音助手流式路径保持默认 800，消息语音播报等
+ * 整段场景可放宽）。返回可直接进入句切分的纯文本。
  */
-export function speechifyText(text: string): string {
+export function speechifyText(text: string, maxChars: number = MAX_SPEAKABLE_CHARS): string {
   if (text.length === 0) return ''
+  const budget = Math.max(MIN_SENTENCE_CHARS, Math.floor(maxChars))
   let out = text
   // 围栏代码块（``` 或 ~~~，可带语言标注）
-  out = out.replace(/(^|\n)(```|~~~)[^\n]*\n[\s\S]*?(\n```|\n~~~)/g, `$1${CODE_BLOCK_PLACEHOLDER}\n`)
+  out = out.replace(
+    /(^|\n)(```|~~~)[^\n]*\n[\s\S]*?(\n```|\n~~~)/g,
+    `$1${CODE_BLOCK_PLACEHOLDER}\n`,
+  )
   // 表格：连续 >=2 行的 |...| 行（含分隔行）
   out = out.replace(/(^\|.+\|\s*\n)+/gm, `${TABLE_PLACEHOLDER}\n`)
   out = cleanInlineMarkdown(out)
@@ -75,10 +82,15 @@ export function speechifyText(text: string): string {
     .map((line) => line.trim())
     .filter((line, index, arr) => line.length > 0 && line !== arr[index - 1])
     .join('\n')
-  if (collapsed.length <= MAX_SPEAKABLE_CHARS) return collapsed
+  if (collapsed.length <= budget) return collapsed
   // 截断尽量落在句末边界
-  const head = collapsed.slice(0, MAX_SPEAKABLE_CHARS)
-  const lastBoundary = Math.max(head.lastIndexOf('。'), head.lastIndexOf('！'), head.lastIndexOf('？'), head.lastIndexOf('\n'))
+  const head = collapsed.slice(0, budget)
+  const lastBoundary = Math.max(
+    head.lastIndexOf('。'),
+    head.lastIndexOf('！'),
+    head.lastIndexOf('？'),
+    head.lastIndexOf('\n'),
+  )
   const cut = lastBoundary > MIN_SENTENCE_CHARS ? head.slice(0, lastBoundary + 1) : head
   return cut + TRUNCATION_SUFFIX
 }
@@ -159,8 +171,7 @@ export class SentenceSplitter {
       }
       pending += ch
       const isBoundary =
-        isSentenceEndChar(ch) ||
-        (ch === '.' && this.isEnglishSentenceEnd(text, index))
+        isSentenceEndChar(ch) || (ch === '.' && this.isEnglishSentenceEnd(text, index))
       if (isBoundary) {
         const candidate = cleanInlineMarkdown(pending).trim()
         if (candidate.length >= MIN_SENTENCE_CHARS || candidate === CODE_BLOCK_PLACEHOLDER) {

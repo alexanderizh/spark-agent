@@ -51,6 +51,27 @@ describe('speechifyText', () => {
     expect(out).toContain('完整回复请在应用中查看')
   })
 
+  it('maxChars 放宽上限：默认 800 截断的内容在放宽后完整保留', () => {
+    const long = '这是一段很长的内容。'.repeat(120)
+    const out = speechifyText(long, 5000)
+    expect(out).not.toContain('完整回复请在应用中查看')
+    expect(out.length).toBeGreaterThan(800)
+  })
+
+  it('maxChars 收紧上限：按更小预算截断', () => {
+    const long = '这是一段很长的内容。'.repeat(120)
+    const out = speechifyText(long, 60)
+    expect(out.length).toBeLessThanOrEqual(120)
+    expect(out).toContain('完整回复请在应用中查看')
+  })
+
+  it('maxChars 非法值（0/负数/小数）收敛为可用下限', () => {
+    const text = '第一句。第二句。'
+    expect(speechifyText(text, 0)).toBe(speechifyText(text, 3))
+    expect(speechifyText(text, -5)).toBe(speechifyText(text, 3))
+    expect(speechifyText(text, 10.9)).toBe(speechifyText(text, 10))
+  })
+
   it('空文本返回空', () => {
     expect(speechifyText('')).toBe('')
   })
@@ -91,10 +112,7 @@ describe('SentenceSplitter', () => {
   it('未闭合围栏等待后续 delta，闭合后输出占位', () => {
     const splitter = new SentenceSplitter()
     expect(splitter.push('代码：\n```js\nconst x = 1;')).toEqual(['代码：'])
-    expect(splitter.push('\n```\n结束。')).toEqual([
-      '（代码已省略，请在应用中查看）',
-      '结束。',
-    ])
+    expect(splitter.push('\n```\n结束。')).toEqual(['（代码已省略，请在应用中查看）', '结束。'])
     expect(splitter.flush()).toBe('')
   })
 

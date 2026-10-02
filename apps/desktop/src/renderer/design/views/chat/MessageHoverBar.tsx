@@ -36,7 +36,7 @@ function formatMsgTime(timestamp?: string): string {
   return `${Math.floor(diffMs / 3_600_000)} 小时前`
 }
 
-/** 消息悬浮操作栏：时间、复制、重发、分叉和删除，放在气泡底部。 */
+/** 消息悬浮操作栏：时间、复制、重发、语音播报、分叉和删除，放在气泡底部。 */
 export function MessageHoverBar({
   timestamp,
   textContent,
@@ -45,6 +45,8 @@ export function MessageHoverBar({
   onResend,
   onEdit,
   onFork,
+  onSpeechToggle,
+  speechStatus = 'off',
 }: {
   timestamp?: string | undefined
   textContent: string
@@ -56,6 +58,10 @@ export function MessageHoverBar({
   onEdit?: () => void
   /** 仅已完成的助手消息：从该轮创建分支 */
   onFork?: () => void
+  /** 仅配置了 TTS 模型的助手消息：切换语音播报（off→播报，loading/playing→停止） */
+  onSpeechToggle?: () => void
+  /** 播报状态：loading=合成中 playing=播报中（图标切换与 title 依据） */
+  speechStatus?: 'off' | 'loading' | 'playing'
 }) {
   const [copied, setCopied] = useState(false)
 
@@ -82,6 +88,23 @@ export function MessageHoverBar({
       {textContent && (
         <button type="button" className="msg-hover-copy" title="复制" onClick={handleCopy}>
           {copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
+        </button>
+      )}
+      {onSpeechToggle && textContent && (
+        <button
+          type="button"
+          className={`msg-hover-speech${speechStatus === 'playing' ? ' is-playing' : ''}`}
+          title={speechStatus === 'off' ? '语音播报' : '停止播报'}
+          aria-label={speechStatus === 'off' ? '语音播报' : '停止播报'}
+          onClick={onSpeechToggle}
+        >
+          {speechStatus === 'loading' ? (
+            <Icons.Spinner size={12} className="spin" />
+          ) : speechStatus === 'playing' ? (
+            <Icons.VolumeX size={12} />
+          ) : (
+            <Icons.Volume2 size={12} />
+          )}
         </button>
       )}
       {onEdit && (
