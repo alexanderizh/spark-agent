@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+## [0.14.9] - 2026-10-03
+
+### 新增
+
+- **语音助手 HUD 重设计：像素网格动效 + 自由拖拽卡片**：状态图标从 16 根声波条升级为「光晕 + 4×4 像素网格」动效（v2 设计稿方向 1）——listening / speaking 共用一套数据驱动：16 枚方块按离网格中心的曼哈顿距离升序构成点亮序，点亮波前随采集 / 播报电平由中心 2×2「心跳核」向外推进，波前沿途留分数透明度与半尺寸缩放做平滑；thinking 为纯 CSS 对角波纹（`--g` 行+列对角序负相位差，零 JS），wake 改为中心弹亮 + 光晕一次性扩散级联（`--d` 距离档）。光晕属性分治：呼吸动画 keyframes 只声明 transform，电平只写 inline opacity，CSS 动画声明覆盖 inline 但仅限其声明属性，二者叠加互不覆盖——聆听态安静时呼吸仍在、说话时随音量增亮，不再依赖「有人说话」才可见。HUD 卡片同步改为上中下三段式（大留白舞台 / 状态点 + 文案 / 居中胶囊停止钮），并支持卡片整体自由拖拽：新增 `useVoiceHudDrag`，位置以左上角语义存 localStorage，从未拖拽过走 CSS 右下角默认锚点，首次拖拽切换 left/top 内联定位；拖拽期间直写 DOM style 不走 React state（仅 isDragging 进 state 用于 grabbing 光标），pointer capture 保证移出卡片不丢跟踪，恢复与窗口 resize 时按视口夹取保证卡片完整可见，停止按钮不作为拖拽把手（pointerdown 不上冒泡）。性能保持仅 opacity/transform 合成器属性，数据驱动经 useSyncExternalStore 只重渲染本组件。
+
+### 修复
+
+- **自动路由分流器被 Agent 网关 400 拒绝导致每轮降级兜底**：分流器此前经 `ModelService.complete()` 裸 fetch 不携带客户端身份头，OpenCode Zen 等 Agent 网关会拒绝「裸 HTTP 库调用」特征的请求（缺 `x-opencode-session` 直接 400），分流决策每轮必然超时 / 失败走规则降级。新增 `llm-client-identity` 模块对 agent-runtime 直连 HTTP 的 LLM 请求统一注入非默认 UA（`spark-agent-runtime/1.0`）与稳定会话标识头（语义对齐 spark-engine 侧 client-identity），`complete()` 新增可选 `sessionId` 参数：分流器传 `autorouter:<routerId>` 稳定标识、手动探针用固定 `autorouter:probe` 与真实分流区分，缺省回退进程级固定 id（记忆抽取等短平快小任务共用一个 id 语义无损）；不识别该头的渠道直接忽略，对全部渠道统一注入安全。
+
+### 改进
+
+- **分流器决策超时默认 30s → 120s、上限 120s → 300s**：默认值需覆盖带思考时间模型的完整思考链路，30s 对此类模型几乎必然超时降级；上限是故障兜底而非正常耗时（模型快返回时不产生等待），放宽到 5 分钟给长思考模型留配置空间。默认值 / 上限收敛为导出常量（`AUTO_ROUTER_DISPATCHER_TIMEOUT_DEFAULT_MS` / `MAX_MS`），管理弹窗 min/max 与兜底值同步引用常量，提示文案改为「默认 120s 已覆盖多数带思考模型」。
+- **README 知识库预览图更新**：功能预览区知识库卡片由「零预注入与四层预算」预算分层图换为「从生成到读取的架构」全景图（`knowledge-base-lifecycle.svg`），配套文案改为三条生成管道经统一写入原语收敛、读取侧零预注入。
+
 ## [0.14.8] - 2026-10-02
 
 ### 新增
