@@ -4854,8 +4854,8 @@ export function ComposerV2({
             }
             onClick={() => void handleToggleDebugMode()}
           >
-            <Icons.Bug size={14} style={{ marginTop: 2 }} />
-            <span>调试{effectiveDebugMode ? '中' : ''}</span>
+            <Icons.Bug size={15} style={{ marginTop: 2 }} />
+            {/* <span>调试{effectiveDebugMode ? '中' : ''}</span> */}
           </button>
           <SessionWorkflowPicker
             sessionId={session?.id ?? null}
