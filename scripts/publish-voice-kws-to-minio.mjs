@@ -17,9 +17,7 @@ const ARTIFACT_ID = 'voice.kws.zh-en-3m-1.0'
 const OBJECT_DIR = 'voice'
 const ARCHIVE_BASENAME = 'kws-zh-en-3m'
 const version = process.argv[2]
-const artifactDirectory = resolve(
-  process.argv[3] || `/tmp/spark-kws-build`,
-)
+const artifactDirectory = resolve(process.argv[3] || `/tmp/spark-kws-build`)
 const endpoint = process.env.RELEASE_MINIO_ENDPOINT
 const bucket = process.env.RELEASE_MINIO_BUCKET
 const accessKeyId = process.env.RELEASE_MINIO_ACCESS_KEY
@@ -252,6 +250,14 @@ async function hashResponse(response) {
 }
 
 function validateReleaseEntry(entry) {
+  // url 必须相对 artifact-repository/v1/。内嵌仓库前缀会让应用/审计按
+  // baseUrl+url 拼出双前缀 404（2026-10-02 voice.vad.silero-1.0 线上事故），
+  // 发布前直接拒绝。
+  if (typeof entry?.url === 'string' && entry.url.startsWith(`${repositoryPrefix}/`)) {
+    fail(
+      `invalid voice kws release manifest: entry.url must be relative to "${repositoryPrefix}/", got "${entry.url}"`,
+    )
+  }
   if (
     entry == null ||
     typeof entry !== 'object' ||

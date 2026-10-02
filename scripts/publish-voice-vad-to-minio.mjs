@@ -250,6 +250,14 @@ async function hashResponse(response) {
 }
 
 function validateReleaseEntry(entry) {
+  // url 必须相对 artifact-repository/v1/（如 "voice/<archive>.tar.gz"）。
+  // 内嵌仓库前缀会让应用/审计按 baseUrl+url 拼出双前缀 404（2026-10-02
+  // voice.vad.silero-1.0 线上事故），发布前直接拒绝。
+  if (typeof entry?.url === 'string' && entry.url.startsWith(`${repositoryPrefix}/`)) {
+    fail(
+      `invalid voice vad release manifest: entry.url must be relative to "${repositoryPrefix}/" (e.g. "voice/<archive>.tar.gz"), got "${entry.url}"`,
+    )
+  }
   if (
     entry == null ||
     typeof entry !== 'object' ||
