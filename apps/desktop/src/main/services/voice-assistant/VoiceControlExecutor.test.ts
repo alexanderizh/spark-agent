@@ -200,4 +200,26 @@ describe('VoiceControlExecutor', () => {
     expect(result.items?.length).toBe(5)
     expect(result.items?.every((item) => item.isCurrent === false)).toBe(true)
   })
+  it('切换改绑后，模型类操作作用在新绑定会话上（不静默改错会话）', async () => {
+    const h = createHarness()
+    const switched = await h.executor.switchProject('session-voice-1', { name: '个人项目' })
+    expect(switched.ok).toBe(true)
+    expect(h.binding.defaultSessionId).toBe('session-in-ws2')
+    const applied = await h.executor.switchModel('session-voice-1', { name: 'gpt' })
+    expect(applied.ok).toBe(true)
+    // 目标是改绑后的新会话，而不是回合开始时的旧会话
+    expect(h.modelUpdates).toEqual([{ sessionId: 'session-in-ws2', modelId: 'gpt-4o-mini' }])
+  })
+
+  it('切换改绑后，同一轮内的后续调用仍被授权（SID 是回合开始时的快照）', async () => {
+    const h = createHarness()
+    const switched = await h.executor.switchProject('session-voice-1', { name: '个人项目' })
+    expect(switched.ok).toBe(true)
+    // 改绑后 binding.defaultSessionId 已变成 session-in-ws2，但本轮 MCP 子进程
+    // 的 SPARK_VOICE_SID 仍是 session-voice-1（回合开始时注入），后续调用不应被守卫误杀
+    const after = await h.executor.listSessions('session-voice-1', 20)
+    expect(after.ok).toBe(true)
+    const models = await h.executor.listModels('session-voice-1')
+    expect(models.ok).toBe(true)
+  })
 })

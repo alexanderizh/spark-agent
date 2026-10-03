@@ -9,8 +9,14 @@
  * 与正则通道的差异：本执行器**不做 TTS 播报**——工具结果 message 返回给 agent，
  * 由 agent 回复自动走 TTS；也不进入挂起选择态——多轮澄清由 agent 的对话能力承担。
  *
- * 安全边界：每个方法先复核 sessionId 与语音路由绑定一致（纵深防御，防其他本地
- * 进程直击 bridge 端口）；v1 仅 list/switch/new 导航级操作，零破坏性。
+ * 安全边界：每个方法先复核 sessionId 是语音绑定会话（纵深防御，防其他本地进程
+ * 直击 bridge 端口）；v1 仅 list/switch/new 导航级操作，零破坏性。
+ *
+ * 调用方 sessionId 与操作对象分离（两者仅在「同一轮里先切换、再继续调用」时分叉）：
+ * - 鉴权用调用方 sessionId——它是回合开始时注入 MCP 子进程（SPARK_VOICE_SID）的
+ *   绑定快照，同一轮内不会变；
+ * - 操作对象取「当前绑定会话」——切换类操作会立即改绑，后续调用必须作用在新绑定
+ *   上，否则会静默改错会话（例如「换项目再换模型」会把模型设回旧会话）。
  */
 import { createLogger } from '@spark/shared'
 import type {
@@ -81,11 +87,35 @@ function matchModelId(models: string[], name: string): string | undefined {
 }
 
 export class VoiceControlExecutor implements IVoiceControlExecutor {
+  /** 已授权的语音会话 id（回合快照口径，见 isVoiceSession） */
+  private readonly trustedVoiceSessionIds = new Set<string>()
+
   constructor(private readonly deps: VoiceControlExecutorDeps) {}
 
-  /** 纵深防御：仅语音路由绑定的会话可执行（bridge 端口仅监听 127.0.0.1，仍复核绑定） */
+  /**
+   * 纵深防御：仅语音绑定会话可执行（bridge 端口仅监听 127.0.0.1，仍复核绑定）。
+   *
+   * 不能只比对「实时绑定」：切换类操作会立即改绑 route.current.defaultSessionId，
+   * 而调用方 sessionId 是回合开始时的快照，同一轮内不变——只比实时绑定会把
+   * 「先切项目、再列会话/换模型」的后续调用误判为非绑定会话而拒绝（已复现）。
+   * 因此改为：作为绑定会话被授权过一次的 id 一律可信。集合只有「当前实时绑定会话」
+   * 这一个写入入口，本地其他进程无法凭猜测把任意 id 塞进来，纵深防御强度不变。
+   */
   private isVoiceSession(sessionId: string): boolean {
-    return this.deps.route.current.defaultSessionId === sessionId
+    if (sessionId.length === 0) return false
+    if (this.deps.route.current.defaultSessionId === sessionId) {
+      this.trustedVoiceSessionIds.add(sessionId)
+      return true
+    }
+    return this.trustedVoiceSessionIds.has(sessionId)
+  }
+
+  /**
+   * 操作对象会话：当前绑定会话（切换后即为新绑定）。
+   * 绑定尚未落定时回退到调用方 sessionId，保持既有行为。
+   */
+  private targetSessionId(callerSessionId: string): string {
+    return this.deps.route.current.defaultSessionId ?? callerSessionId
   }
 
   async listProjects(sessionId: string): Promise<VoiceControlResult> {
@@ -169,7 +199,8 @@ export class VoiceControlExecutor implements IVoiceControlExecutor {
         })),
       })
     }
-    if (matched.id === sessionId) {
+    const currentSessionId = this.deps.route.current.defaultSessionId
+    if (currentSessionId != null && matched.id === currentSessionId) {
       const label = matched.title.length > 20 ? `${matched.title.slice(0, 20)}…` : matched.title
       return ok(`当前就在会话「${label}」上。`)
     }
@@ -190,7 +221,9 @@ export class VoiceControlExecutor implements IVoiceControlExecutor {
 
   async listModels(sessionId: string): Promise<VoiceControlResult> {
     if (!this.isVoiceSession(sessionId)) return fail('当前会话不是语音绑定会话。')
-    const { models, unsupportedReason } = await this.deps.listSessionModels(sessionId)
+    const { models, unsupportedReason } = await this.deps.listSessionModels(
+      this.targetSessionId(sessionId),
+    )
     if (unsupportedReason != null && unsupportedReason.length > 0) {
       return fail(unsupportedReason)
     }
@@ -202,7 +235,8 @@ export class VoiceControlExecutor implements IVoiceControlExecutor {
 
   async switchModel(sessionId: string, target: VoiceControlTarget): Promise<VoiceControlResult> {
     if (!this.isVoiceSession(sessionId)) return fail('当前会话不是语音绑定会话。')
-    const { models, unsupportedReason } = await this.deps.listSessionModels(sessionId)
+    const targetSessionId = this.targetSessionId(sessionId)
+    const { models, unsupportedReason } = await this.deps.listSessionModels(targetSessionId)
     if (unsupportedReason != null && unsupportedReason.length > 0) {
       return fail(unsupportedReason)
     }
@@ -216,7 +250,7 @@ export class VoiceControlExecutor implements IVoiceControlExecutor {
         candidates: models.slice(0, 5).map((model) => ({ id: model, name: model })),
       })
     }
-    await this.deps.updateSessionModel(sessionId, modelId)
+    await this.deps.updateSessionModel(targetSessionId, modelId)
     log.info(`[voice-assistant] voice-control switched model to ${modelId}`)
     return ok(`已切换到模型 ${modelId}，下一轮对话生效。`)
   }
