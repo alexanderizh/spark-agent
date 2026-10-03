@@ -12,8 +12,10 @@ export const VOICE_DOWNLOAD_CONFIRM_OPTIONS = {
 export async function confirmVoicePackDownload(
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>,
   install: UseVoiceIntegrityResult['install'],
+  /** 场景化文案覆盖（如语音对话入口把「语音输入」改成「语音对话」），缺省用语音输入默认文案 */
+  options?: Partial<ConfirmOptions>,
 ): Promise<boolean> {
-  const confirmed = await requestConfirm(VOICE_DOWNLOAD_CONFIRM_OPTIONS)
+  const confirmed = await requestConfirm({ ...VOICE_DOWNLOAD_CONFIRM_OPTIONS, ...options })
   if (!confirmed) return false
   void install(false).catch(() => undefined)
   return true

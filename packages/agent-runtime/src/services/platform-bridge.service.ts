@@ -92,6 +92,7 @@ import type {
   SessionScheduleUpdateInput,
 } from './session-schedule-agent-tools.js'
 import type { SessionHistoryRetrievalTools } from './session/session-history-retrieval-tools.js'
+import type { VoiceControlAgentTools } from './voice-control-agent-tools.js'
 import {
   normalizeSparkReasoningEffort,
   type SparkReasoningEffort,
@@ -124,6 +125,16 @@ function requireText(params: Record<string, unknown>, key: string, maxLength: nu
   if (!value) throw new Error(`Missing parameter: ${key}`)
   if (value.length > maxLength) throw new Error(`${key} exceeds maximum length ${maxLength}`)
   return value
+}
+
+/** voice.* switch 类参数规整：name/id 可选透传（VoiceControlAgentTools 侧做二选一校验） */
+function optionalVoiceTarget(params: Record<string, unknown>): { name?: string; id?: string } {
+  const name = typeof params.name === 'string' ? params.name.trim() : ''
+  const id = typeof params.id === 'string' ? params.id.trim() : ''
+  return {
+    ...(name.length > 0 ? { name } : {}),
+    ...(id.length > 0 ? { id } : {}),
+  }
 }
 
 type ProviderCreateParams = Parameters<ProviderService['createProvider']>[0]
@@ -432,6 +443,8 @@ export interface PlatformBridgeDeps {
   pluginManager: PluginManager
   githubConnectorService: GitHubConnectorService
   sessionScheduleTools: SessionScheduleAgentTools
+  /** 语音会话应用控制桥（voice.* RPC，stdio spark_voice 子进程路径；desktop 注入执行器） */
+  voiceControlTools: VoiceControlAgentTools
   /** 会话全量历史检索门面（session_history.* RPC，仅当前会话） */
   sessionHistoryTools: SessionHistoryRetrievalTools
   sessionService: {
@@ -973,6 +986,22 @@ export class PlatformBridgeService {
         return this.memorySearch(d, params)
       case 'memory.recall':
         return this.memoryRecall(d, params)
+
+      // ── Voice control（stdio spark_voice 子进程走这条路径，仅语音会话挂载）──
+      case 'voice.list_projects':
+        return this.voiceListProjects(d, params)
+      case 'voice.switch_project':
+        return this.voiceSwitchProject(d, params)
+      case 'voice.list_sessions':
+        return this.voiceListSessions(d, params)
+      case 'voice.switch_session':
+        return this.voiceSwitchSession(d, params)
+      case 'voice.new_session':
+        return this.voiceNewSession(d, params)
+      case 'voice.list_models':
+        return this.voiceListModels(d, params)
+      case 'voice.switch_model':
+        return this.voiceSwitchModel(d, params)
 
       // ── Wiki（codex CLI / claude CLI 的 stdio spark_wiki 子进程走这条路径）──
       case 'wiki.list_spaces':
@@ -2293,6 +2322,51 @@ export class PlatformBridgeService {
     if (!sessionId) throw new Error('Missing parameter: sessionId')
     if (!id) throw new Error('Missing parameter: id')
     return d.sessionService.bridgeMemoryRecall({ sessionId, id })
+  }
+
+  // ── Voice control handlers（stdio spark_voice 子进程路径，仅语音会话挂载）──
+  // sessionId 来自子进程 env 注入的常量（rpc 调用方拼装），不信任模型传参；
+  // executor 侧还会对语音路由绑定做二次复核。
+
+  private async voiceListProjects(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return d.voiceControlTools.listProjects({ sessionId: String(params.sessionId ?? '') })
+  }
+
+  private async voiceSwitchProject(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return d.voiceControlTools.switchProject({
+      sessionId: String(params.sessionId ?? ''),
+      ...optionalVoiceTarget(params),
+    })
+  }
+
+  private async voiceListSessions(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const limit = typeof params.limit === 'number' ? params.limit : 20
+    return d.voiceControlTools.listSessions({
+      sessionId: String(params.sessionId ?? ''),
+      limit,
+    })
+  }
+
+  private async voiceSwitchSession(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return d.voiceControlTools.switchSession({
+      sessionId: String(params.sessionId ?? ''),
+      ...optionalVoiceTarget(params),
+    })
+  }
+
+  private async voiceNewSession(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return d.voiceControlTools.newSession({ sessionId: String(params.sessionId ?? '') })
+  }
+
+  private async voiceListModels(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return d.voiceControlTools.listModels({ sessionId: String(params.sessionId ?? '') })
+  }
+
+  private async voiceSwitchModel(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return d.voiceControlTools.switchModel({
+      sessionId: String(params.sessionId ?? ''),
+      ...optionalVoiceTarget(params),
+    })
   }
 
   /** session.set_worktree_state：stdio spark_session 子进程上报会话 worktree 状态 */

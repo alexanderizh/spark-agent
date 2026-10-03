@@ -16,6 +16,7 @@ export type VoiceCommand =
   | { kind: 'select-model'; index: number | null; name: string | null }
   | { kind: 'switch-workspace'; name: string | null }
   | { kind: 'select-project'; index: number | null; name: string | null }
+  | { kind: 'cancel-selection' }
   | { kind: 'stop-listening' }
 
 /** 「新开会话」类祈使句（「切换会话」语义属于 M2 的会话选择，不在此拦截） */
@@ -81,6 +82,15 @@ const STOP_LISTENING_PATTERNS: RegExp[] = [
   /^(取消|算了|不用了|闭嘴|停止|停下|别说了)[吧了。!！?？\s]*$/u,
 ]
 
+/**
+ * 「放弃选择、回到聊天」类（挂起选择态逃生门）：与 stop-listening 语义解耦——
+ * stop-listening 是「关闭语音监听」，本命令是「不切了，继续正常对话」。
+ * 仅在挂起选择态下生效（非挂起态这些口语必须放行走聊天，不拦普通对话）。
+ */
+const CANCEL_SELECTION_PATTERNS: RegExp[] = [
+  /^(退出|不选了|不用选|不切了|不换了|不切换了|先不切|先不换|返回聊天|继续聊天|继续聊)[吧了。!！?？\s]*$/u,
+]
+
 const CHINESE_DIGITS: Record<string, number> = {
   一: 1,
   二: 2,
@@ -137,6 +147,18 @@ export function parseVoiceCommand(
   }
   for (const pattern of NEW_SESSION_PATTERNS) {
     if (pattern.test(normalized)) return { kind: 'new-session' }
+  }
+  // 挂起选择态逃生门：说「不切了/退出」放弃选择回到聊天（保持聆听）。
+  // 必须在下方挂起态「铁笼」分支之前——挂起后一切文本都会被解析成 select-xxx，
+  // 没有这道门用户会被困在选择流程里（唯一出口只剩关掉整个语音）。
+  const awaitingAnySelection =
+    options.awaitingSessionSelection === true ||
+    options.awaitingModelSelection === true ||
+    options.awaitingProjectSelection === true
+  if (awaitingAnySelection) {
+    for (const pattern of CANCEL_SELECTION_PATTERNS) {
+      if (pattern.test(normalized)) return { kind: 'cancel-selection' }
+    }
   }
   // 三类挂起选择态互斥（同一时刻只挂起一类候选），命中序号/名称即选择
   if (options.awaitingSessionSelection === true) {

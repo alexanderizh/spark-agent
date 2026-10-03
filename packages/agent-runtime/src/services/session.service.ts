@@ -395,6 +395,8 @@ import {
   SPARK_WEB_TOOL_SYSTEM_PROMPT,
   VALIDATION_SUGGESTION_TOOL_NAMES,
   VALIDATION_SUGGESTION_TOOL_DESCRIPTION,
+  VOICE_CONTROL_TOOL_NAMES,
+  VOICE_CONTROL_SYSTEM_PROMPT,
   extractPresentedFiles,
   extractReportedFileChanges,
   workspaceRelativeChangeKey,
@@ -462,6 +464,11 @@ import type { McpOAuthTokenProvider } from './mcp-server.service.js'
 import type { McpChangeEvent } from './mcp-server.service.js'
 import { PlatformBridgeService, type PlatformBridgeDeps } from './platform-bridge.service.js'
 import { SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT } from './session-schedule-agent-tools.js'
+import type {
+  VoiceControlExecutor,
+  VoiceControlResult,
+  VoiceControlTarget,
+} from './voice-control-agent-tools.js'
 import { getDebugLogServer } from './debug-log-server.service.js'
 import {
   BROWSER_AUTOMATION_SYSTEM_PROMPT,
@@ -981,6 +988,8 @@ export type WorkflowMcpProvider = (
   callTool?: ((sessionId: string, toolName: string, args: unknown) => Promise<unknown>) | undefined
 } | null>
 
+export type { VoiceControlExecutor, VoiceControlResult, VoiceControlTarget }
+
 /** Desktop main-process provider for the visible in-app browser MCP bridge. */
 export type BrowserAutomationMcpProvider = (
   sessionId: string,
@@ -1030,6 +1039,8 @@ export class SessionService {
   private canvasMcpProvider: CanvasMcpProvider | null = null
   /** 工作流 Agent MCP server 提供器（由主进程注入） */
   private workflowMcpProvider: WorkflowMcpProvider | null = null
+  /** 语音会话应用控制执行器（desktop 注入；null = 未装配，voice.* 工具安全降级） */
+  private voiceControlExecutor: VoiceControlExecutor | null = null
   /** 会话引擎级 worktree 状态变化回调（主进程注入，用于 UI 推流） */
   private sessionWorktreeChangedHandler?:
     | ((sessionId: string, worktree: SessionRuntimeWorktreeState | null) => void)
@@ -1652,6 +1663,15 @@ export class SessionService {
   /** 注入工作流 Agent MCP provider（主进程持有工作流桥后调用一次） */
   setWorkflowMcpProvider(provider: WorkflowMcpProvider | null): void {
     this.workflowMcpProvider = provider
+  }
+
+  /**
+   * 注入语音会话应用控制执行器（desktop 装配 VoiceControlExecutor 后调用一次）。
+   * spark_voice MCP 的 voice.* RPC 经 PlatformBridge 回到这里；null = 语音服务
+   * 未装配，工具调用安全降级为友好错误。
+   */
+  setVoiceControlExecutor(executor: VoiceControlExecutor | null): void {
+    this.voiceControlExecutor = executor
   }
 
   /**
@@ -3987,6 +4007,13 @@ export class SessionService {
       sessionId,
       workspaceRootPath,
     )
+    // 语音会话应用控制（spark_voice）：仅语音路由绑定会话 resolve 出 server；
+    // 同时注入使用引导 prompt（挂载成功的 turn 才有）
+    const voiceControlMcpServer = await this.getMcpTooling()
+      .resolveVoiceControlMcpServer(sessionId)
+      .catch(() => null)
+    const voiceControlSystemPrompt =
+      voiceControlMcpServer != null ? VOICE_CONTROL_SYSTEM_PROMPT : undefined
     const presentFilesMcpServer = resolvePresentFilesMcpServer(workspaceRootPath)
     const quickRepliesMcpServer = resolveQuickRepliesMcpServer(workspaceRootPath)
     const toolResultReaderAvailable = resolveToolResultReaderMcpServer(workspaceRootPath) != null
@@ -4340,6 +4367,8 @@ export class SessionService {
       WIKI_L0_PROMPT,
       // decomposed（Phase 3）：分流决策预填的子任务派发建议（仅 router 拆分轮次注入）
       autoRouterDispatchPrompt,
+      // 语音会话应用控制引导（仅语音路由绑定会话挂载 spark_voice 工具的轮次注入）
+      voiceControlSystemPrompt,
       conversationHistoryPrompt,
       ...trailingSystemPromptSections,
     )
@@ -4671,6 +4700,7 @@ export class SessionService {
           : {}),
         ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
         ...(subAppMcpServer != null ? { subAppMcpServer } : {}),
+        ...(voiceControlMcpServer != null ? { voiceControlMcpServer } : {}),
         ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
         ...(quickRepliesMcpServer != null ? { quickRepliesMcpServer } : {}),
         ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
@@ -4895,6 +4925,9 @@ export class SessionService {
         .resolveSparkWikiMcpServer(sessionId)
         .catch(() => null)
       const sparkSessionMcpServer = await this.resolveSparkSessionMcpServer(sessionId)
+      const sparkVoiceControlServer = await this.getMcpTooling()
+        .resolveVoiceControlMcpServer(sessionId)
+        .catch(() => null)
       const sparkToolResultServer = resolveToolResultReaderMcpServer(workspaceRootPath)
       const sparkMcpRuntime = buildSparkEngineMcpRuntime({
         customServers: sparkCustomMcpServers,
@@ -4934,6 +4967,7 @@ export class SessionService {
         ...(sparkMemoryMcpServer != null ? { memoryServer: sparkMemoryMcpServer } : {}),
         ...(sparkWikiMcpServer != null ? { wikiServer: sparkWikiMcpServer } : {}),
         ...(sparkSessionMcpServer != null ? { sessionServer: sparkSessionMcpServer } : {}),
+        ...(sparkVoiceControlServer != null ? { voiceControlServer: sparkVoiceControlServer } : {}),
         ...(sparkToolResultServer != null ? { toolResultServer: sparkToolResultServer } : {}),
       })
       const governedSparkMcpServers = governMcpServers(sparkMcpRuntime.servers, {
@@ -5163,6 +5197,7 @@ export class SessionService {
         : {}),
       ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
       ...(subAppMcpServer != null ? { subAppMcpServer } : {}),
+      ...(voiceControlMcpServer != null ? { voiceControlMcpServer } : {}),
       ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
       ...(quickRepliesMcpServer != null ? { quickRepliesMcpServer } : {}),
       ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
@@ -5734,6 +5769,10 @@ export class SessionService {
     if (config.subAppMcpServer != null) {
       mcpServers.spark_app = config.subAppMcpServer
     }
+    // Voice session app-control MCP server (spark_voice) — only the voice-routed session
+    if (config.voiceControlMcpServer != null) {
+      mcpServers.spark_voice = config.voiceControlMcpServer
+    }
     if (config.presentFilesMcpServer != null) {
       mcpServers.spark_files = config.presentFilesMcpServer
     }
@@ -6173,6 +6212,10 @@ export class SessionService {
     if (config.subAppMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, SUB_APP_TOOL_NAMES)
     }
+    if (config.voiceControlMcpServer != null) {
+      // 语音应用控制：全部 list/switch/new 导航级操作，白名单免审批
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, VOICE_CONTROL_TOOL_NAMES)
+    }
     if (config.presentFilesMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PRESENT_FILES_TOOL_NAMES)
     }
@@ -6393,6 +6436,10 @@ export class SessionService {
     // Built-in sub app management MCP server (spark_app) — auto-registered for all sessions
     if (config.subAppMcpServer != null) {
       mcpServers.spark_app = config.subAppMcpServer
+    }
+    // Voice session app-control MCP server (spark_voice) — only the voice-routed session
+    if (config.voiceControlMcpServer != null) {
+      mcpServers.spark_voice = config.voiceControlMcpServer
     }
     if (config.presentFilesMcpServer != null) {
       mcpServers.spark_files = config.presentFilesMcpServer
@@ -8174,6 +8221,10 @@ export class SessionService {
 
   getPlatformBridge(): PlatformBridgeService {
     return this.platformBridge
+  }
+
+  getVoiceControlExecutor(): VoiceControlExecutor | null {
+    return this.voiceControlExecutor
   }
 
   getSubAppRuntimeBridge(): NonNullable<PlatformBridgeDeps['subAppRuntime']> {

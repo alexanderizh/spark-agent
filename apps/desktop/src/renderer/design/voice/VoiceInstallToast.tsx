@@ -8,6 +8,8 @@ export interface VoiceInstallToastProps {
   status: VoiceIntegrityStatus
   /** 重试下载 */
   onRetry?: () => void
+  /** 安装完成文案；缺省为语音输入场景（「现在可以使用语音输入了」） */
+  doneText?: string
 }
 
 const STATE_LABEL: Record<VoiceInstallProgress['state'], string> = {
@@ -33,7 +35,7 @@ const COMPONENT_NAME: Record<VoiceInstallProgress['component'], string> = {
  * 通过 createPortal 挂到 document.body，避免被任何 transformed 祖先容器影响 fixed 定位。
  * 可见性：下载/安装进行中持续展示；成功后 3.5s 自动收起；失败后常驻直至用户操作。
  */
-export function VoiceInstallToast({ progress, status, onRetry }: VoiceInstallToastProps) {
+export function VoiceInstallToast({ progress, status, onRetry, doneText }: VoiceInstallToastProps) {
   const [doneHidden, setDoneHidden] = useState(false)
   const [userDismissed, setUserDismissed] = useState(false)
   const prevState = useRef<string>('')
@@ -109,7 +111,7 @@ export function VoiceInstallToast({ progress, status, onRetry }: VoiceInstallToa
             {progress.message || status.lastError || '请稍后重试'}
           </span>
         ) : isDone ? (
-          <span>现在可以使用语音输入了</span>
+          <span>{doneText ?? '现在可以使用语音输入了'}</span>
         ) : (
           <span>
             {STATE_LABEL[progress.state]} · {Math.round(percent)}%

@@ -520,6 +520,10 @@ export function resolveSparkSessionMcpServerPath(): string | null {
   return resolveRuntimeToolPath('spark-session-mcp-server.mjs')
 }
 
+export function resolveVoiceControlMcpServerPath(): string | null {
+  return resolveRuntimeToolPath('voice-control-mcp-server.mjs')
+}
+
 export function resolveSubAppMcpServerPath(): string | null {
   return resolveRuntimeToolPath('sub-app-mcp-server.mjs')
 }
@@ -656,6 +660,28 @@ export const RENDER_HTML_TOOL_NAMES = ['mcp__spark_ui__render_html']
 export const RENDER_DIAGRAM_TOOL_NAMES = ['mcp__spark_ui__render_diagram']
 
 export const VALIDATION_SUGGESTION_TOOL_NAMES = ['mcp__spark_verify__suggest_validation']
+
+/**
+ * spark_voice（语音会话应用控制）工具名——仅语音路由绑定的会话挂载。
+ * 全部为 list/switch/new 导航级操作，进白名单免审批（与 spark_memory 只读工具同策略）。
+ */
+export const VOICE_CONTROL_TOOL_NAMES = [
+  'mcp__spark_voice__list_projects',
+  'mcp__spark_voice__switch_project',
+  'mcp__spark_voice__list_sessions',
+  'mcp__spark_voice__switch_session',
+  'mcp__spark_voice__new_session',
+  'mcp__spark_voice__list_models',
+  'mcp__spark_voice__switch_model',
+]
+
+export const VOICE_CONTROL_SYSTEM_PROMPT = [
+  '## 语音会话应用控制',
+  '当前会话来自语音对话，你可以调用 spark_voice 工具查询与切换项目、会话和模型。',
+  '用户表达「切到 XX 项目 / 换个会话 / 用 XX 模型 / 新开个会话」等意图时，优先调用对应工具完成操作，而不是只用文字回答。',
+  '切换类操作前先用 list_* 工具获取准确名称/id；名称不唯一或未命中时工具会返回候选，向用户口头澄清后重试。',
+  '操作完成后用一句简短口语确认（例如「已切换到 XX 项目」）——你的回复会直接朗读给用户。',
+].join('\n')
 
 export const VALIDATION_SUGGESTION_TOOL_DESCRIPTION = [
   'Show the user a "run validation" card suggesting relevant project scripts (typecheck/lint/tests) for the files you changed this turn.',

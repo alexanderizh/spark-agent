@@ -1,22 +1,26 @@
 /**
  * VoiceAssistantHost — 语音助手渲染端宿主（App 根部挂载一次）
  *
- * 三件事：
+ * 四件事：
  * 1. 桥接：把主进程的采集指令路由给 AssistantCaptureController，
  *    播放指令路由给 VoicePlaybackController，状态事件供 HUD 消费。
  * 2. HUD：listening / thinking / speaking 状态浮层（可点击打断）。
- * 3. 卸载兜底：释放采集与播放资源。
+ * 3. 全双工元素：迷你麦（thinking/speaking 也在听指示）、插话队列框
+ *    （弱态/正态/衔接只读）、立即发送/放弃、ack 弹亮（提交瞬间反馈）。
+ * 4. 卸载兜底：释放采集与播放资源。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { SessionId } from '@spark/protocol'
+import type { SessionId, VoiceAssistantStatus } from '@spark/protocol'
 import type { VoiceAssistantSessionFocusEvent, VoiceAssistantStateEvent } from '@spark/protocol'
 import { VOICE_ASSISTANT_SESSION_FOCUS_CHANNEL } from '@spark/protocol'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { getAssistantCaptureController } from './AssistantCaptureController'
 import { getVoicePlaybackController } from './VoicePlaybackController'
 import { VoiceHudWaveform, type VoiceHudWaveformState } from './VoiceHudWaveform'
+import { VoiceHudMiniMic } from './VoiceHudMiniMic'
+import { VoiceHudQueueBox } from './VoiceHudQueueBox'
 import { useVoiceHudDrag } from './useVoiceHudDrag'
 import './voiceAssistant.less'
 
@@ -41,7 +45,11 @@ export function VoiceAssistantHost(): React.ReactNode {
     reason?: VoiceAssistantStateEvent['reason']
     /** 声波条唤醒弹跳：非活跃 → listening 跳变时置位，播完由波形组件回调清理 */
     wake?: boolean
+    /** 首响 ack 弹亮：listening→thinking 跳变 / 队列派发 / 抢占时置位（提交瞬间反馈） */
+    ack?: boolean
   } | null>(null)
+  const [status, setStatus] = useState<VoiceAssistantStatus | null>(null)
+  const [dispatchInFlight, setDispatchInFlight] = useState(false)
   const dismissTimerRef = useRef<number | null>(null)
   const { setActiveSession, revealSession } = useSessionSidebar()
 
@@ -85,6 +93,12 @@ export function VoiceAssistantHost(): React.ReactNode {
       playback.handleCommand(command)
     })
 
+    const offStatus = window.spark.on('stream:voice-assistant:status', (payload) => {
+      if (payload != null && typeof payload === 'object' && 'state' in payload) {
+        setStatus(payload as VoiceAssistantStatus)
+      }
+    })
+
     const offState = window.spark.on('stream:voice-assistant:state', (event) => {
       if (dismissTimerRef.current != null) {
         window.clearTimeout(dismissTimerRef.current)
@@ -101,11 +115,18 @@ export function VoiceAssistantHost(): React.ReactNode {
         const detail = event.detail ?? carriedDetail
         // 唤醒词或手动触发进入聆听：给声波条一次弹跳反馈（confirm 等同态续说不触发）
         const wake = event.state === 'listening' && !isWaveformState(event.previous)
+        // 首响 ack 弹亮：提交成功进入思考（listening→thinking）、队列自动派发、
+        // 立即发送抢占——与主进程 ack 提示音同帧的视觉确认
+        const ack =
+          (event.state === 'thinking' && event.previous === 'listening') ||
+          event.reason === 'queue-dispatch' ||
+          event.reason === 'preempt'
         return {
           state: event.state,
           ...(detail != null ? { detail } : {}),
           reason: event.reason,
           ...(wake ? { wake: true } : {}),
+          ...(ack ? { ack: true } : {}),
         }
       })
     })
@@ -113,6 +134,7 @@ export function VoiceAssistantHost(): React.ReactNode {
     return () => {
       offCapture()
       offPlay()
+      offStatus()
       offState()
       if (dismissTimerRef.current != null) window.clearTimeout(dismissTimerRef.current)
       capture.stop()
@@ -125,6 +147,26 @@ export function VoiceAssistantHost(): React.ReactNode {
     setHud((previous) => (previous?.wake ? { ...previous, wake: false } : previous))
   }, [])
 
+  const handleAckDone = useCallback((): void => {
+    setHud((previous) => (previous?.ack ? { ...previous, ack: false } : previous))
+  }, [])
+
+  const handleDispatchQueued = useCallback(
+    (id: string): void => {
+      if (dispatchInFlight) return
+      setDispatchInFlight(true)
+      void window.spark
+        .invoke('voice-assistant:dispatch-queued', { id })
+        .catch(() => undefined)
+        .finally(() => setDispatchInFlight(false))
+    },
+    [dispatchInFlight],
+  )
+
+  const handleDiscardQueued = useCallback((id: string): void => {
+    void window.spark.invoke('voice-assistant:discard-queued', { id }).catch(() => undefined)
+  }, [])
+
   // HUD 矩形卡片自由拖拽（hook 必须在 early return 之前调用）
   const hudCardRef = useRef<HTMLDivElement | null>(null)
   const { isDragging, dragHandlers } = useVoiceHudDrag(hudCardRef)
@@ -135,6 +177,14 @@ export function VoiceAssistantHost(): React.ReactNode {
     void window.spark.invoke('voice-assistant:interrupt', {}).catch(() => undefined)
   }
 
+  // 全双工元素可见性：迷你麦仅 thinking/speaking 且窗口在线（listening 主网格冗余；
+  // 半双工不显示——确实没在听，不「说了谎」）。S8 衔接只读：graceful 派发事件
+  //（queue-dispatch）且仍在播报 = 新轮已跑、旧播报句边界让位中
+  const duplexActive = status?.duplexActive === true
+  const showMiniMic = duplexActive && (hud.state === 'thinking' || hud.state === 'speaking')
+  const takeoverPending =
+    hud.reason === 'queue-dispatch' && hud.state === 'speaking' && duplexActive
+
   return createPortal(
     <div
       ref={hudCardRef}
@@ -144,7 +194,13 @@ export function VoiceAssistantHost(): React.ReactNode {
     >
       {/* 顶部大留白舞台：图标本体小巧，区域占比大（参考稿上中下三段式） */}
       <div className="voice-hud-stage">
-        <VoiceHudWaveform state={hud.state} wake={hud.wake === true} onWakeDone={handleWakeDone} />
+        <VoiceHudWaveform
+          state={hud.state}
+          wake={hud.wake === true}
+          onWakeDone={handleWakeDone}
+          ack={hud.ack === true}
+          onAckDone={handleAckDone}
+        />
       </div>
       <div className="voice-assistant-hud-body">
         <span className="voice-assistant-hud-label">
@@ -154,8 +210,19 @@ export function VoiceAssistantHost(): React.ReactNode {
             ? '请继续说，停顿后将自动发送'
             : STATE_META[hud.state]}
         </span>
+        {showMiniMic ? <VoiceHudMiniMic /> : null}
         {hud.state === 'listening' && hud.detail != null && hud.detail.length > 0 ? (
           <span className="voice-assistant-hud-partial">{hud.detail}</span>
+        ) : null}
+        {(hud.state === 'thinking' || hud.state === 'speaking') && duplexActive ? (
+          <VoiceHudQueueBox
+            draft={status?.queueDraft ?? null}
+            entries={status?.queuedInputs ?? []}
+            takeoverPending={takeoverPending}
+            dispatchInFlight={dispatchInFlight}
+            onDispatch={handleDispatchQueued}
+            onDiscard={handleDiscardQueued}
+          />
         ) : null}
       </div>
       {/* 底部停止：居中胶囊钮（方形图标与方块动画同语言 + 文字）；卡片是拖拽把手，

@@ -126,7 +126,20 @@ export class AssistantCaptureController {
       audioTrack.addEventListener('ended', onTrackEnded)
 
       this.active = { sessionId, context, stream, source, node, onTrackEnded, audioTrack }
-      window.spark.sendVoiceAssistantRendererEvent({ type: 'capture-started', sessionId })
+      // AEC 实际生效值探测（全双工回声治理层 1）：ideal 软约束在不支持的设备
+      // 上会被静默降级，读 settings 回传真实状态供主进程决定是否升严格档
+      let echoCancellationEffective: boolean | undefined
+      try {
+        echoCancellationEffective =
+          audioTrack.getSettings().echoCancellation === true ? true : false
+      } catch {
+        // 读不到设置时不下发字段（旧主进程兼容）
+      }
+      window.spark.sendVoiceAssistantRendererEvent({
+        type: 'capture-started',
+        sessionId,
+        ...(echoCancellationEffective != null ? { echoCancellationEffective } : {}),
+      })
     } catch (error) {
       const message = error instanceof Error ? error.message : voiceCaptureErrorMessage(error)
       // 清理半建立的管线

@@ -10,6 +10,7 @@ import {
   SEARCH_TOOL_NAMES,
   SUB_APP_TOOL_NAMES,
   TOOL_RESULT_TOOL_NAMES,
+  VOICE_CONTROL_TOOL_NAMES,
 } from '../session-mcp-tooling-helpers.js'
 import { SPARK_MEDIA_TOOL_NAMES } from '../media/media-mcp-contract.js'
 
@@ -33,6 +34,7 @@ export interface SparkEngineMcpSources {
   readonly memoryServer?: SDKMcpServerConfig
   readonly wikiServer?: SDKMcpServerConfig
   readonly sessionServer?: SDKMcpServerConfig
+  readonly voiceControlServer?: SDKMcpServerConfig
   readonly toolResultServer?: SDKMcpServerConfig
 }
 
@@ -58,6 +60,7 @@ const SPARK_BUILTIN_SERVER_NAMES = new Set([
   'spark_memory',
   'spark_wiki',
   'spark_session',
+  'spark_voice',
   'spark_tool_results',
 ])
 
@@ -114,6 +117,14 @@ export function buildSparkEngineMcpRuntime(sources: SparkEngineMcpSources): Spar
   addBuiltin(servers, allowedTools, 'spark_session', sources.sessionServer, [
     'mcp__spark_session__set_worktree_state',
   ])
+  // 语音会话应用控制（仅语音路由绑定会话挂载；导航级操作全白名单免审批）
+  addBuiltin(
+    servers,
+    allowedTools,
+    'spark_voice',
+    sources.voiceControlServer,
+    VOICE_CONTROL_TOOL_NAMES,
+  )
   addBuiltin(
     servers,
     allowedTools,

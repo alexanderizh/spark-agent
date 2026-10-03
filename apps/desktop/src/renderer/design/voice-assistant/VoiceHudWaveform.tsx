@@ -34,6 +34,9 @@ const NOISE_GATE = 0.055
 /** wake 弹亮总时长：420ms 动画 + 3 档 × 60ms 级联 + 90ms 交接余量 */
 const WAKE_SETTLE_MS = 660
 
+/** ack 弹亮总时长：420ms 动画（无级联）+ 90ms 交接余量 */
+const ACK_SETTLE_MS = 510
+
 /** 光晕透明度区间：安静 0.30 基线（呼吸可见），满电平 0.78 */
 const HALO_OPACITY_BASE = 0.3
 const HALO_OPACITY_RANGE = 0.48
@@ -100,12 +103,17 @@ export interface VoiceHudWaveformProps {
   /** 唤醒弹亮（由 Host 在 idle/standby → listening 跳变时置 true，播完自动回调清理） */
   wake: boolean
   onWakeDone: () => void
+  /** 首响 ack 弹亮（提交瞬间触发 = listening→thinking 跳变 / 队列派发 / 抢占）：中心 2×2 一次弹亮（无级联，与唤醒的级联语言区分）+ 光晕快闪 */
+  ack?: boolean
+  onAckDone?: () => void
 }
 
 export function VoiceHudWaveform({
   state,
   wake,
   onWakeDone,
+  ack = false,
+  onAckDone,
 }: VoiceHudWaveformProps): React.ReactElement {
   // thinking 无数据驱动；listening/speaking 按状态选订阅源（两源互斥，切态即换订阅）
   const store: VoiceAudioLevelStore | null =
@@ -129,10 +137,24 @@ export function VoiceHudWaveform({
     }
   }, [wake, onWakeDone])
 
+  // ack 弹亮同机制（420ms + 交接余量，无级联尾巴）
+  const ackTimerRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!ack || onAckDone == null) return
+    ackTimerRef.current = window.setTimeout(onAckDone, ACK_SETTLE_MS)
+    return () => {
+      if (ackTimerRef.current != null) window.clearTimeout(ackTimerRef.current)
+      ackTimerRef.current = null
+    }
+  }, [ack, onAckDone])
+
   const dataDriven = state === 'listening' || state === 'speaking'
 
   return (
-    <span className={`voice-hud-viz is-${state}${wake ? ' is-wake' : ''}`} aria-hidden="true">
+    <span
+      className={`voice-hud-viz is-${state}${wake ? ' is-wake' : ''}${ack ? ' is-ack' : ''}`}
+      aria-hidden="true"
+    >
       {/* 光晕：scale 呼吸由 CSS 状态类驱动，opacity 由电平 inline 驱动（属性分治） */}
       <span
         className="voice-hud-halo"
@@ -142,15 +164,17 @@ export function VoiceHudWaveform({
         {Array.from({ length: CELL_COUNT }, (_, index) => {
           const row = Math.floor(index / GRID)
           const col = index % GRID
+          const centerDistance = Math.abs(row - 1.5) + Math.abs(col - 1.5)
           const visual = dataDriven ? cellVisual(level, LIT_POSITION[index] ?? 0) : null
           return (
             <i
               key={index}
+              className={ack && centerDistance === 1 ? 'is-ack-cell' : undefined}
               style={
                 {
                   // --g：对角序（行+列）供思考态波纹；--d：离中心距离档 1/2/3 供唤醒级联
                   '--g': String(row + col),
-                  '--d': String(Math.abs(row - 1.5) + Math.abs(col - 1.5)),
+                  '--d': String(centerDistance),
                   ...(visual
                     ? {
                         opacity: visual.opacity.toFixed(3),

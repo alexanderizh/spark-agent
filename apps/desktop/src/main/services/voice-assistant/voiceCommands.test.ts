@@ -143,6 +143,35 @@ describe('parseVoiceCommand M4（模型/项目/带名会话）', () => {
     })
   })
 
+  it('挂起选择态逃生门：放弃选择回到聊天', () => {
+    // 三类挂起态下「不切了/退出」命中 cancel-selection
+    expect(parseVoiceCommand('不切了', { awaitingModelSelection: true })).toEqual({
+      kind: 'cancel-selection',
+    })
+    expect(parseVoiceCommand('退出', { awaitingSessionSelection: true })).toEqual({
+      kind: 'cancel-selection',
+    })
+    expect(parseVoiceCommand('先不换了。', { awaitingProjectSelection: true })).toEqual({
+      kind: 'cancel-selection',
+    })
+    expect(parseVoiceCommand('继续聊', { awaitingModelSelection: true })?.kind).toBe(
+      'cancel-selection',
+    )
+  })
+
+  it('逃生门仅挂起态生效：非挂起态放行走聊天', () => {
+    expect(parseVoiceCommand('退出')).toBeNull()
+    expect(parseVoiceCommand('不切了', { enableSessionCommands: true })).toBeNull()
+    expect(parseVoiceCommand('继续聊')).toBeNull()
+  })
+
+  it('停止类命令优先级高于逃生门（挂起态下「算了」仍关语音）', () => {
+    expect(parseVoiceCommand('算了', { awaitingModelSelection: true })?.kind).toBe('stop-listening')
+    expect(parseVoiceCommand('取消', { awaitingSessionSelection: true })?.kind).toBe(
+      'stop-listening',
+    )
+  })
+
   it('礼貌前缀只作用于 M4 新意图：会话列表语义保持原样', () => {
     // 「帮我看看会话列表」不算命令的 M2 约定不破坏
     expect(parseVoiceCommand('帮我看看会话列表', { enableSessionCommands: true })).toBeNull()

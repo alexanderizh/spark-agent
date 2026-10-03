@@ -49,10 +49,12 @@ const ASSISTANT_PROCESSED_CONSTRAINTS: ProcessedMediaTrackConstraints = {
   channelCount: { ideal: 1 },
 }
 
-/** 语音助手按设置下发的采集处理开关（browserDenoise） */
+/** 语音助手按设置下发的采集处理开关（browserDenoise / 全双工 AEC） */
 export interface VoiceCaptureProcessing {
   noiseSuppression: boolean
   voiceIsolation: boolean
+  /** 全双工：显式要求回声消除（ideal 软约束，实际生效值由采集控制器探测回传） */
+  echoCancellation?: boolean
 }
 
 function errorName(error: unknown): string {
@@ -158,14 +160,18 @@ function deviceConstraints(
   deviceId?: string,
   processing?: VoiceCaptureProcessing,
 ): MediaStreamConstraints {
-  const base: MediaTrackConstraints =
-    processing != null && (processing.noiseSuppression || processing.voiceIsolation)
-      ? {
-          ...ASSISTANT_PROCESSED_CONSTRAINTS,
-          ...(processing.noiseSuppression ? {} : { noiseSuppression: { exact: false } }),
-          ...(processing.voiceIsolation ? {} : { voiceIsolation: { exact: false } }),
-        }
-      : PREFERRED_AUDIO_CONSTRAINTS
+  const ns = processing?.noiseSuppression === true
+  const vi = processing?.voiceIsolation === true
+  const hasProcessing = ns || vi || processing?.echoCancellation === true
+  const base: MediaTrackConstraints = hasProcessing
+    ? {
+        ...ASSISTANT_PROCESSED_CONSTRAINTS,
+        ...(ns ? {} : { noiseSuppression: { exact: false } }),
+        ...(vi ? {} : { voiceIsolation: { exact: false } }),
+        // echoCancellation 恒 ideal:true（默认即开；显式要求时不改约束强度，
+        // 生效与否由控制器读 track.getSettings() 探测——软约束防 OverconstrainedError）
+      }
+    : PREFERRED_AUDIO_CONSTRAINTS
   return {
     audio: {
       ...base,

@@ -7,7 +7,7 @@
  */
 
 const VOICE_CONTEXT_PROMPT =
-  '【语音助手会话】当前消息来自语音对话（语音转写文本）。请用口语化、简短自然的中文回复，适合直接朗读给用户听；避免使用 markdown 列表、表格和代码块（朗读时代码与表格会被省略），必要时用完整句子表达；如需执行危险操作（删除、覆盖、推送等）请先用一句话向用户确认。\n\n'
+  '【语音助手会话】当前消息来自语音对话（语音转写文本）。请用口语化、简短自然的中文回复，适合直接朗读给用户听；避免使用 markdown 列表、表格和代码块（朗读时代码与表格会被省略），必要时用完整句子表达；如需执行危险操作（删除、覆盖、推送等）请先用一句话向用户确认。用户想切换项目、会话或模型时，优先调用 spark_voice 工具完成操作（目标名先经 list_* 获取），完成后用一句话确认。\n\n'
 
 export function buildVoiceUserMessage(transcript: string, withContext: boolean): string {
   const trimmed = transcript.trim()

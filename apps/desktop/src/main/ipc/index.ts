@@ -293,6 +293,8 @@ import {
   VOICE_ASSISTANT_ROUTE_KEY,
   VOICE_ASSISTANT_SETTINGS_CATEGORY,
   isConversationalProviderCandidate,
+  isAutoRouterProviderProfile,
+  isBuiltInLocalCliProvider,
 } from '@spark/protocol'
 import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
 import type {
@@ -329,6 +331,7 @@ import { registerFontAssetIpc } from './registerFontAssetIpc.js'
 import { registerVoiceIpc } from './registerVoiceIpc.js'
 import {
   getVoiceAssistantService,
+  getVoiceControlExecutor,
   handleVoiceAssistantTurnEvent,
   registerVoiceAssistantIpc,
 } from './registerVoiceAssistantIpc.js'
@@ -5167,7 +5170,9 @@ export function registerAllIpcHandlers(): void {
       return sessions[0]?.id ?? null
     },
     // M4 语音「切换模型」：候选与远程 /models 同源（会话渠道 → buildRemoteProviderModelRows，
-    // 渠道缺省回落默认渠道），保证语音念出的列表与会话实际可切换的模型同一口径
+    // 渠道缺省回落默认渠道），保证语音念出的列表与会话实际可切换的模型同一口径。
+    // 口径升级：内置 CLI / auto-router 渠道与 UI 同款禁止切换（unsupportedReason）；
+    // modelIds 为空时 fallback [defaultModel]（对齐渲染端 getProviderModelOptions）
     listSessionModels: async (sessionId) => {
       const session = new SessionRepository(getDatabase()).get(sessionId)
       const providers = await getProviderService().listProviders()
@@ -5175,8 +5180,19 @@ export function registerAllIpcHandlers(): void {
         providers.find((item) => item.id === (session?.provider_profile_id ?? '')) ??
         providers.find((item) => item.isDefault) ??
         providers[0]
-      if (provider == null) return []
-      return buildRemoteProviderModelRows(provider).map((row) => row.id)
+      if (provider == null) return { models: [] }
+      if (isBuiltInLocalCliProvider(provider) || isAutoRouterProviderProfile(provider)) {
+        return {
+          models: [],
+          unsupportedReason: '当前渠道不支持切换模型，请在文字界面选择其他渠道后再试。',
+        }
+      }
+      const rows = buildRemoteProviderModelRows(provider)
+      const models =
+        rows.length > 0
+          ? rows.map((row) => row.id)
+          : [provider.defaultModel].filter((modelId) => modelId.trim().length > 0)
+      return { models }
     },
     updateSessionModel: async (sessionId, modelId) => {
       await getSessionService().updateSession({ sessionId, modelId })
@@ -5191,6 +5207,9 @@ export function registerAllIpcHandlers(): void {
     },
     onStatusChanged: scheduleVoiceAssistantTrayRefresh,
   })
+  // spark_voice 工具面：语音会话的 agent 经 PlatformBridge voice.* RPC 调到这里。
+  // 注入 SessionService 供 bridge deps 惰性取用（executor 未建时工具安全降级）。
+  getSessionService().setVoiceControlExecutor(getVoiceControlExecutor())
   registerCanvasWorkflowIpc()
   registerWorkflowRunIpc()
   registerWorkflowTestRunIpc({

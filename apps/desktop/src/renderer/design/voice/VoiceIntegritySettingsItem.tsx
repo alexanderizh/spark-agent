@@ -135,16 +135,18 @@ function VoiceProgressView({ progress }: { progress: VoiceInstallProgress }): Re
 export function VoiceIntegritySettingsItem(): ReactElement {
   const { status, progress, checking, refresh, install } = useVoiceIntegrity()
 
-  const native = findComponent(status.components, 'native')
-  const model = findComponent(status.components, 'model')
-  const refine = findComponent(status.components, 'refine')
-
   const isUnsupported = !status.supported
   const isInstalling = status.downloading
   const isReady = status.ready
-  // 核心就绪但可选组件（如精修模型）缺失时不算"全部就绪"，安装按钮走按需补装而非强制重装
-  const allComponentsReady =
-    native?.state === 'ready' && model?.state === 'ready' && refine?.state === 'ready'
+  // 全组件就绪判定与缺失清单覆盖全部 5 个组件（含可选的 kws/vad），
+  // 避免出现「页面声称只缺精修模型、实际唤醒词/人声检测模型也未安装」的误导。
+  const missingComponents = COMPONENT_ORDER.filter(
+    (key) => findComponent(status.components, key)?.state !== 'ready',
+  )
+  const allComponentsReady = missingComponents.length === 0
+  const missingLabels = missingComponents
+    .map((key) => COMPONENT_LABEL[key])
+    .map((label) => label.replace(/\s*\(.*\)$/, ''))
 
   const activeProgress =
     progress != null && progress.state !== 'done' && progress.state !== 'error' ? progress : null
@@ -170,7 +172,9 @@ export function VoiceIntegritySettingsItem(): ReactElement {
   ) : isReady ? (
     <div className="integrity-status-badge ok">
       <Icons.CheckCircle size={14} />
-      <span>{allComponentsReady ? '语音包已就绪' : '语音包已就绪 · 精修模型未安装'}</span>
+      <span>
+        {allComponentsReady ? '语音包已就绪' : `语音包已就绪 · 未安装：${missingLabels.join('、')}`}
+      </span>
     </div>
   ) : isInstalling ? (
     <div className="integrity-status-badge warn">
@@ -192,7 +196,9 @@ export function VoiceIntegritySettingsItem(): ReactElement {
         ? '安装语音包'
         : allComponentsReady
           ? '重新安装'
-          : '安装精修模型'
+          : missingComponents.length === 1 && missingComponents[0] === 'refine'
+            ? '安装精修模型'
+            : `安装缺失组件 (${missingComponents.length})`
 
   return (
     <div className="settings-section voice-integrity-settings">
@@ -231,7 +237,9 @@ export function VoiceIntegritySettingsItem(): ReactElement {
       {!isUnsupported && (
         <div className="settings-card integrity-sdk-card voice-integrity-card">
           {COMPONENT_ORDER.map((key, idx) => {
-            const comp = key === 'native' ? native : key === 'model' ? model : refine
+            // 每行查自己的组件状态：kws/vad 加入 COMPONENT_ORDER 后曾误映射到
+            // refine 的状态，导致未安装的组件跟着精修模型显示「就绪」。
+            const comp = findComponent(status.components, key)
             const latest = describeLatest(comp)
             const versionText = describeVersion(comp)
             const versionRow = latest ? `${versionText} · ${latest}` : versionText
@@ -255,7 +263,7 @@ export function VoiceIntegritySettingsItem(): ReactElement {
                   <div className="voice-integrity-desc">{COMPONENT_DESC[key]}</div>
                 </div>
                 <div className="integrity-sdk-right">
-                  {renderComponentBadge(comp, key === 'refine')}
+                  {renderComponentBadge(comp, key !== 'native' && key !== 'model')}
                   {activeProgress?.component === key && (
                     <span className="badge warning dot">
                       {PROGRESS_STATE_LABEL[activeProgress.state]}

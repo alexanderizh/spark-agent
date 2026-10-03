@@ -962,6 +962,8 @@ export interface SDKExecutorConfig {
   webSearchMcpServer?: SDKMcpServerConfig | undefined
   /** Built-in sub app management MCP server (spark_app) — auto-injected for all sessions */
   subAppMcpServer?: SDKMcpServerConfig | undefined
+  /** Voice session app-control MCP server (spark_voice) — only mounted for the voice-routed session */
+  voiceControlMcpServer?: SDKMcpServerConfig | undefined
   /** Built-in user-facing file presentation MCP server (spark_files). */
   presentFilesMcpServer?: SDKMcpServerConfig | undefined
   /** Optional user-facing quick reply MCP server (spark_ui). */

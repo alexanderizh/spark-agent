@@ -30,6 +30,8 @@ import { VOICE_AUDIO_CHUNK_CHANNEL } from '@spark/protocol/voice'
 import type { MediaProviderProfile, MediaRouterService } from '@spark/agent-runtime'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
 import { VoiceAssistantService } from '../services/voice-assistant/VoiceAssistantService.js'
+import type { VoiceSessionModelsResult } from '../services/voice-assistant/VoiceAssistantService.js'
+import { VoiceControlExecutor } from '../services/voice-assistant/VoiceControlExecutor.js'
 import { VoiceRouteBinding } from '../services/voice-assistant/VoiceRouteBinding.js'
 import type { CreateVoiceSessionOptions } from '../services/voice-assistant/VoiceRouteBinding.js'
 import { setVoiceAssistantRecognitionHandler } from '../services/voice-assistant/recognitionBridge.js'
@@ -97,8 +99,8 @@ export interface RegisterVoiceAssistantIpcDeps {
   listWorkspaces(): Promise<Array<{ id: string; name: string }>>
   /** M2 语音命令：某工作区最近会话 */
   findLatestSessionIdInWorkspace(workspaceId: string): Promise<string | null>
-  /** M4 语音命令：会话当前渠道的可选模型（与远程 /models 同源 buildRemoteProviderModelRows） */
-  listSessionModels(sessionId: string): Promise<string[]>
+  /** M4 语音命令：会话当前渠道的可选模型（口径对齐 UI：defaultModel fallback + 内置渠道禁改） */
+  listSessionModels(sessionId: string): Promise<VoiceSessionModelsResult>
   /** M4 语音命令：切换会话模型（转发 SessionService.updateSession） */
   updateSessionModel(sessionId: string, modelId: string): Promise<void>
   /** M3 语音审批：回应挂起的权限审批（转发 PermissionService.resolveApproval） */
@@ -110,9 +112,15 @@ export interface RegisterVoiceAssistantIpcDeps {
 }
 
 let voiceAssistantService: VoiceAssistantService | null = null
+/** 语音应用控制执行器（spark_voice 工具面的 desktop 实现；registerVoiceAssistantIpc 装配） */
+let voiceControlExecutor: VoiceControlExecutor | null = null
 
 export function getVoiceAssistantService(): VoiceAssistantService | null {
   return voiceAssistantService
+}
+
+export function getVoiceControlExecutor(): VoiceControlExecutor | null {
+  return voiceControlExecutor
 }
 
 /** 常驻聆听是否具备条件（服务已装配 + KWS 模型已安装），供托盘/设置展示 */
@@ -211,6 +219,18 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
     resolveApproval: deps.resolveApproval,
   })
 
+  // spark_voice 工具面执行器：与正则命令共用同一批数据依赖与 route 绑定，
+  // 切换语义（改绑 + emitSessionFocus）与 VoiceAssistantService 私有执行器同源。
+  voiceControlExecutor = new VoiceControlExecutor({
+    route,
+    listRecentSessions: deps.listRecentSessions,
+    listWorkspaces: deps.listWorkspaces,
+    findLatestSessionIdInWorkspace: deps.findLatestSessionIdInWorkspace,
+    listSessionModels: deps.listSessionModels,
+    updateSessionModel: deps.updateSessionModel,
+    emitSessionFocus: (event) => pushStreamEvent(VOICE_ASSISTANT_SESSION_FOCUS_CHANNEL, event),
+  })
+
   // 识别事件桥接：VoiceRecognitionService 内部会话（ownerId=-1）事件 → 编排服务
   setVoiceAssistantRecognitionHandler((event) => {
     voiceAssistantService?.handleRecognitionEvent(event)
@@ -243,6 +263,16 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
   typedIpcHandle('voice-assistant:interrupt', async () => {
     service().interrupt()
     return { ok: true, message: '已打断' }
+  })
+
+  // 立即发送（抢占）：中止当前轮次与播报（TTS 淡出），提交指定排队输入
+  typedIpcHandle('voice-assistant:dispatch-queued', async (request) => {
+    return service().dispatchQueued(request.id)
+  })
+
+  // 放弃排队输入：移除指定条目（HUD 队列框「放弃」按钮）
+  typedIpcHandle('voice-assistant:discard-queued', async (request) => {
+    return service().discardQueued(request.id)
   })
 
   typedIpcHandle('voice-assistant:reset-route', async () => {

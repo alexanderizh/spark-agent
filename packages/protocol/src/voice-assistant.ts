@@ -137,6 +137,31 @@ export interface VoiceAssistantSettings {
    * 各适配器映射到自身最近档位（codex/spark 同样支持六档语义）。
    */
   sessionThinkingEffort: SessionReasoningEffort
+  /**
+   * 全双工聆听（默认开）：对话进行中（思考/播报）麦克风与 ASR 保持在线，
+   * 可随时插话——新输入默认排队到当前轮完成后自动提交，不自动打断播报；
+   * 想马上处理可点 HUD 上的「立即发送」。仅本地识别引擎生效（cloud 引擎
+   * 强制回落半双工）。关闭后回到「播报结束后才继续聆听」的现状行为。
+   */
+  fullDuplex: boolean
+  /**
+   * 首响即时反馈（默认 cue 提示音）：一句话确认提交的瞬间给出反馈，消除
+   * 等待模型首句期间的无声空窗。cue = 本地振荡器短双音（零成本零延迟）；
+   * voice = 合成一句短应答（P2 预留，normalize 收敛为合法值）；off = 只保留
+   * 界面反馈。
+   */
+  firstResponseFeedback: 'cue' | 'voice' | 'off'
+  /**
+   * 说话端点三档（默认 standard）：决定「说完 → 提交」的尾部等待
+   * （VAD 尾静音 + 确认窗口）。relaxed=从容（1200+1200ms，现状节奏）、
+   * standard=标准（800+500ms）、snappy=迅捷（600+350ms，误截断率升、
+   * 靠确认窗口撤销兜底）。未显式设置时按旧 utteranceConfirmMs 单向迁移。
+   */
+  utteranceEndpointProfile: 'relaxed' | 'standard' | 'snappy'
+  /** N+1 句预取（默认开）：合成并发 2，消除句间合成间隙；渠道限流时可关 */
+  ttsPrefetch: boolean
+  /** 首句快切（默认开）：首句凑齐 ≥10 字或首 delta 后 400ms 强切，压首字延迟 */
+  firstSentenceFastCut: boolean
 }
 
 export const DEFAULT_VOICE_ASSISTANT_SETTINGS: VoiceAssistantSettings = {
@@ -166,6 +191,24 @@ export const DEFAULT_VOICE_ASSISTANT_SETTINGS: VoiceAssistantSettings = {
   refineTranscript: true,
   sessionThinkingEnabled: true,
   sessionThinkingEffort: 'minimal',
+  fullDuplex: true,
+  firstResponseFeedback: 'cue',
+  utteranceEndpointProfile: 'standard',
+  ttsPrefetch: true,
+  firstSentenceFastCut: true,
+}
+
+/**
+ * 说话端点三档参数表（VAD 句尾静音 + 说完确认窗口，毫秒）。
+ * 主进程 startListening 与插话队列确认窗口共用，保证两处节奏一致。
+ */
+export const VOICE_ASSISTANT_ENDPOINT_PROFILES: Record<
+  VoiceAssistantSettings['utteranceEndpointProfile'],
+  { vadSilenceMs: number; confirmMs: number; label: string }
+> = {
+  relaxed: { vadSilenceMs: 1200, confirmMs: 1200, label: '从容' },
+  standard: { vadSilenceMs: 800, confirmMs: 500, label: '标准' },
+  snappy: { vadSilenceMs: 600, confirmMs: 350, label: '迅捷' },
 }
 
 function readBool(raw: unknown, fallback: boolean): boolean {
@@ -182,6 +225,26 @@ function readString(raw: unknown, fallback: string, maxLength: number): string {
   if (typeof raw !== 'string') return fallback
   const trimmed = raw.trim()
   return trimmed.length === 0 ? fallback : trimmed.slice(0, maxLength)
+}
+
+/**
+ * 端点档位解析（单向迁移，不留双写）：显式 profile 优先；未设置时按旧
+ * utteranceConfirmMs 迁移——旧默认 1200（非用户显式选择）迁移为新默认
+ * standard，更大的自定义值（长停顿说话风格）迁移 relaxed，更小值迁移
+ * snappy 语义最接近的 standard。迁移后以 profile 为唯一事实源，旧字段
+ * 仅为兼容保留的迁移输入，服务与设置 UI 均不再消费它。
+ */
+function resolveEndpointProfile(
+  source: Record<string, unknown>,
+): VoiceAssistantSettings['utteranceEndpointProfile'] {
+  const explicit = source.utteranceEndpointProfile
+  if (explicit === 'relaxed' || explicit === 'standard' || explicit === 'snappy') {
+    return explicit
+  }
+  if (typeof source.utteranceConfirmMs === 'number' && Number.isFinite(source.utteranceConfirmMs)) {
+    return source.utteranceConfirmMs > 1200 ? 'relaxed' : 'standard'
+  }
+  return DEFAULT_VOICE_ASSISTANT_SETTINGS.utteranceEndpointProfile
 }
 
 /**
@@ -293,6 +356,19 @@ export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSet
     )
       ? (source.sessionThinkingEffort as SessionReasoningEffort)
       : DEFAULT_VOICE_ASSISTANT_SETTINGS.sessionThinkingEffort,
+    fullDuplex: readBool(source.fullDuplex, DEFAULT_VOICE_ASSISTANT_SETTINGS.fullDuplex),
+    firstResponseFeedback:
+      source.firstResponseFeedback === 'voice' || source.firstResponseFeedback === 'off'
+        ? source.firstResponseFeedback
+        : source.firstResponseFeedback === 'cue'
+          ? 'cue'
+          : DEFAULT_VOICE_ASSISTANT_SETTINGS.firstResponseFeedback,
+    ttsPrefetch: readBool(source.ttsPrefetch, DEFAULT_VOICE_ASSISTANT_SETTINGS.ttsPrefetch),
+    firstSentenceFastCut: readBool(
+      source.firstSentenceFastCut,
+      DEFAULT_VOICE_ASSISTANT_SETTINGS.firstSentenceFastCut,
+    ),
+    utteranceEndpointProfile: resolveEndpointProfile(source),
   }
   // v1→v2 噪音管线一次性迁移：存量设置仍是 v1 默认组合（browserDenoise=true +
   // voiceFocus=standard，均为 v1 发布默认值而非用户显式选择）时回退识别率优先的
@@ -377,13 +453,19 @@ export interface VoiceAssistantStatus {
   lastError: string | null
   /** 当前绑定会话 id（可能为 null = 尚未创建） */
   boundSessionId: string | null
+  /** 全双工对话窗口是否在线（思考/播报期间采集+ASR 常开中；HUD 迷你麦显示条件） */
+  duplexActive: boolean
+  /** thinking/speaking 期捕获的排队输入（FIFO；HUD 队列框数据源，展示最新条） */
+  queuedInputs: Array<{ id: string; text: string; capturedState: string; createdAt: number }>
+  /** 确认窗口中的插话草稿（停顿确认中，尚未正式入队；HUD 队列框弱态数据源） */
+  queueDraft: { text: string } | null
 }
 
 /** 状态迁移事件（stream 主→渲染），HUD 与调试依据 */
 export interface VoiceAssistantStateEvent {
   state: VoiceAssistantState
   previous: VoiceAssistantState
-  /** 触发原因：wake=唤醒 timeout=听超时 empty=转写为空 cancelled=打断 error=错误 completed=轮次完成 standby-on/standby-off=常驻开关 confirm=说完确认窗口期 */
+  /** 触发原因：wake=唤醒 timeout=听超时 empty=转写为空 cancelled=打断 error=错误 completed=轮次完成 standby-on/standby-off=常驻开关 confirm=说完确认窗口期 queue-dispatch=队列自动派发 preempt=立即发送抢占 takeover-live=graceful 接管完成（新代首句开播，冲掉渲染端挂着的 queue-dispatch 衔接态） */
   reason:
     | 'wake'
     | 'timeout'
@@ -396,6 +478,9 @@ export interface VoiceAssistantStateEvent {
     | 'command'
     | 'manual'
     | 'confirm'
+    | 'queue-dispatch'
+    | 'preempt'
+    | 'takeover-live'
   /** listening 时的实时 partial / 错误信息等附加文本 */
   detail?: string
 }
@@ -434,6 +519,9 @@ export interface VoiceAssistantCaptureCommand {
   audioProcessing?: {
     noiseSuppression: boolean
     voiceIsolation: boolean
+    /** 全双工：显式要求浏览器回声消除（渲染端仍用 ideal 软约束防 OverconstrainedError，
+     *  实际生效值经 capture-started 事件回传探测） */
+    echoCancellation?: boolean
   }
 }
 
@@ -450,17 +538,23 @@ export interface VoiceAssistantPlayPayload {
 
 export type VoiceAssistantPlayCommand =
   | VoiceAssistantPlayPayload
-  /** 停止当前播放并清空播放队列（打断） */
-  | { kind: 'stop' }
-  /** 本地合成提示音（唤醒/失效/错误，非 TTS 文件） */
-  | { kind: 'cue'; cue: 'wake' | 'fail' | 'error' }
+  /** 停止当前播放并清空播放队列（打断）。fadeMs=淡出时长（立即发送抢占≈120ms，
+   *  缺省硬切）；graceful=true=当前句自然播完、余句清空（边播边处理让位新首句） */
+  | { kind: 'stop'; fadeMs?: number; graceful?: boolean }
+  /** 本地合成提示音（唤醒/失效/错误/提交确认，非 TTS 文件） */
+  | { kind: 'cue'; cue: 'wake' | 'fail' | 'error' | 'ack' }
 
 // ─── 渲染端反馈（fire-and-forget，渲染→主） ─────────────────────────────────
 
 export const VOICE_ASSISTANT_RENDERER_EVENT_CHANNEL = 'voice-assistant:renderer-event'
 
 export type VoiceAssistantRendererEvent =
-  | { type: 'capture-started'; sessionId: string }
+  | {
+      type: 'capture-started'
+      sessionId: string
+      /** AEC 实际生效值（track.getSettings().echoCancellation；全双工回声治理层 1 探测） */
+      echoCancellationEffective?: boolean
+    }
   | { type: 'capture-stopped'; sessionId: string }
   | { type: 'capture-failed'; sessionId?: string; message: string }
   | { type: 'playback-started'; sentenceId: string }
@@ -471,9 +565,20 @@ export function isVoiceAssistantRendererEvent(
   value: unknown,
 ): value is VoiceAssistantRendererEvent {
   if (value == null || typeof value !== 'object') return false
-  const candidate = value as { type?: unknown; sessionId?: unknown; sentenceId?: unknown }
+  const candidate = value as {
+    type?: unknown
+    sessionId?: unknown
+    sentenceId?: unknown
+    echoCancellationEffective?: unknown
+  }
   switch (candidate.type) {
     case 'capture-started':
+      return (
+        typeof candidate.sessionId === 'string' &&
+        candidate.sessionId.length <= 200 &&
+        (candidate.echoCancellationEffective == null ||
+          typeof candidate.echoCancellationEffective === 'boolean')
+      )
     case 'capture-stopped':
       return typeof candidate.sessionId === 'string' && candidate.sessionId.length <= 200
     case 'capture-failed':
@@ -561,6 +666,29 @@ export interface VoiceAssistantInterruptResponse {
 export interface VoiceAssistantResetRouteRequest extends Record<string, never> {}
 
 export interface VoiceAssistantResetRouteResponse {
+  ok: boolean
+  message: string
+}
+
+/**
+ * 立即发送（抢占）：中止当前轮次与播报（TTS 淡出），立即提交指定排队输入。
+ * id 缺省 = 队首（HUD 队列框「立即发送」按钮指向最新展示条）。
+ */
+export interface VoiceAssistantDispatchQueuedRequest {
+  id?: string
+}
+
+export interface VoiceAssistantDispatchQueuedResponse {
+  ok: boolean
+  message: string
+}
+
+/** 放弃排队输入：移除指定条目（HUD 队列框「放弃」按钮，仅移除当前展示条） */
+export interface VoiceAssistantDiscardQueuedRequest {
+  id: string
+}
+
+export interface VoiceAssistantDiscardQueuedResponse {
   ok: boolean
   message: string
 }

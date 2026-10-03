@@ -294,6 +294,9 @@ export type {
   WorkflowMcpProvider,
   BrowserAutomationMcpProvider,
   ComputerUseMcpProvider,
+  VoiceControlExecutor,
+  VoiceControlResult,
+  VoiceControlTarget,
 } from './services/session.service.js'
 export { createCanvasMcpServer, canvasAllowedToolNames } from './services/canvas-mcp-server.js'
 export type {

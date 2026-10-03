@@ -78,9 +78,13 @@ describe('speechifyText', () => {
 })
 
 describe('SentenceSplitter', () => {
-  it('中文句末标点切句', () => {
+  it('中文句末标点切句（低于最短句长的短句并入下一句）', () => {
     const splitter = new SentenceSplitter()
-    expect(splitter.push('你好。我是语音助手！')).toEqual(['你好。', '我是语音助手！'])
+    expect(splitter.push('你好。我是语音助手！')).toEqual(['你好。我是语音助手！'])
+    expect(splitter.push('这是一段正常长度的句子。后面还有一句正常长度的话。')).toEqual([
+      '这是一段正常长度的句子。',
+      '后面还有一句正常长度的话。',
+    ])
   })
 
   it('增量 delta 跨 chunk 切句', () => {
@@ -97,23 +101,27 @@ describe('SentenceSplitter', () => {
     expect(out).toEqual(['Pi is 3.14 exactly.'])
   })
 
-  it('换行是句边界', () => {
+  it('换行是句边界：短行内容跨行合并（不丢弃）', () => {
     const splitter = new SentenceSplitter()
-    expect(splitter.push('第一行\n第二行\n')).toEqual(['第一行', '第二行'])
+    expect(splitter.push('第一行\n第二行\n')).toEqual(['第一行第二行'])
+    expect(splitter.push('足够长的一行文本\n足够长的第二行\n')).toEqual([
+      '足够长的一行文本',
+      '足够长的第二行',
+    ])
   })
 
-  it('代码围栏内容不朗读，整块替换为省略句', () => {
+  it('代码围栏内容不朗读，整块替换为省略句（短尾句 flush 补出）', () => {
     const splitter = new SentenceSplitter()
     const out = splitter.push('如下：\n```python\nprint("hello")\n```\n完毕。')
-    expect(out).toEqual(['如下：', '（代码已省略，请在应用中查看）', '完毕。'])
-    expect(splitter.flush()).toBe('')
+    expect(out).toEqual(['如下：', '（代码已省略，请在应用中查看）'])
+    expect(splitter.flush()).toBe('完毕。')
   })
 
   it('未闭合围栏等待后续 delta，闭合后输出占位', () => {
     const splitter = new SentenceSplitter()
     expect(splitter.push('代码：\n```js\nconst x = 1;')).toEqual(['代码：'])
-    expect(splitter.push('\n```\n结束。')).toEqual(['（代码已省略，请在应用中查看）', '结束。'])
-    expect(splitter.flush()).toBe('')
+    expect(splitter.push('\n```\n结束。')).toEqual(['（代码已省略，请在应用中查看）'])
+    expect(splitter.flush()).toBe('结束。')
   })
 
   it('flush 时未闭合围栏输出省略句', () => {
@@ -128,6 +136,76 @@ describe('SentenceSplitter', () => {
     expect(out).toEqual(['好。这里继续说更多内容。'])
   })
 
+  it('连续碎句超过等待上限强制放行（防无限合并）', () => {
+    const splitter = new SentenceSplitter()
+    // 三个 2 字碎句：前两次并入等待，第三次边界强制出句
+    const out = splitter.push('好。嗯。哦。后面是正常句子。')
+    expect(out).toEqual(['好。嗯。哦。', '后面是正常句子。'])
+  })
+
+  it('叠标点归一为单一边界（不在中间断句）', () => {
+    const splitter = new SentenceSplitter()
+    // 「真的吗？！」「嗯…好吧。」均低于最短句长 → 与前句合并后出句
+    expect(splitter.push('这太惊人了！！！真的吗？！嗯…好吧。')).toEqual([
+      '这太惊人了！！！',
+      '真的吗？！嗯…好吧。',
+    ])
+  })
+
+  it('长句软切：无句末边界超过 80 字在最近逗号处切', () => {
+    const splitter = new SentenceSplitter()
+    const longNoBoundary = '这是一段没有任何句末标点的超长文本'.repeat(5) // 75 字无边界
+    const withComma = `${'这是一段没有句末标点的超长文本'.repeat(4)}，后半段还有内容继续攒。`
+    const out = splitter.push(`${longNoBoundary}${withComma}`)
+    const tail = splitter.flush()
+    const all = [...out, ...(tail.length > 0 ? [tail] : [])]
+    expect(all.length).toBeGreaterThanOrEqual(2)
+    for (const sentence of all) {
+      expect(sentence.length).toBeLessThanOrEqual(125)
+    }
+  })
+
+  it('长句硬切：完全无边界超过 120 字强制切（残留留缓冲等 flush）', () => {
+    const splitter = new SentenceSplitter()
+    const giant = '中英混合无标点长串'.repeat(20) // 180 字无任何边界
+    const out = splitter.push(giant)
+    expect(splitter.bufferedChars).toBe(60) // 180 - 120 硬切后残留
+    const tail = splitter.flush()
+    const all = [...out, ...(tail.length > 0 ? [tail] : [])]
+    expect(all.length).toBe(2)
+    expect(all[0]?.length).toBeLessThanOrEqual(122)
+    expect(all[1]?.length).toBeLessThanOrEqual(122)
+  })
+
+  it('forceTake 强制取句：不等边界整体出句、尾部补句号', () => {
+    const splitter = new SentenceSplitter()
+    splitter.push('好的没问题，我现在就')
+    expect(splitter.bufferedChars).toBeGreaterThan(0)
+    const taken = splitter.forceTake()
+    expect(taken).toBe('好的没问题，我现在就。')
+    expect(splitter.bufferedChars).toBe(0)
+    // 取空后再 forceTake 返回 null
+    expect(splitter.forceTake()).toBeNull()
+  })
+
+  it('forceTake 已有终止符不重复补句号', () => {
+    const splitter = new SentenceSplitter()
+    splitter.push('完成了！') // 4 字低于最短句长 → 滞留缓冲
+    expect(splitter.forceTake()).toBe('完成了！')
+  })
+
+  it('forceTake 围栏未闭合时跳过快切，围栏闭合后的正文不被吞（回归）', () => {
+    const splitter = new SentenceSplitter()
+    // 回复以代码围栏开头、首句快切在围栏闭合前触发：
+    // 若此时清掉围栏状态伪造占位句，后续闭合围栏会被误判为新开围栏，
+    // 围栏之后的全部正文都会被当代码吞掉
+    splitter.push('```ts\nconst x = 1;')
+    expect(splitter.forceTake()).toBeNull()
+    const out = splitter.push('\n```\n围栏后面是正经正文。')
+    expect(out).toContain('（代码已省略，请在应用中查看）')
+    expect(out).toContain('围栏后面是正经正文。')
+  })
+
   it('纯符号句被过滤', () => {
     const splitter = new SentenceSplitter()
     expect(splitter.push('！！！？？？')).toEqual([])
@@ -135,15 +213,19 @@ describe('SentenceSplitter', () => {
 })
 
 describe('splitSentences', () => {
-  it('整段切分（isFinal 后权威切分入口）', () => {
+  it('整段切分（isFinal 后权威切分入口；短句按最短句长合并）', () => {
     const out = splitSentences('第一点。第二点！第三点？')
-    expect(out).toEqual(['第一点。', '第二点！', '第三点？'])
+    expect(out).toEqual(['第一点。第二点！', '第三点？'])
+    expect(splitSentences('这是第一句完整内容。这是第二句完整内容！')).toEqual([
+      '这是第一句完整内容。',
+      '这是第二句完整内容！',
+    ])
   })
 
-  it('markdown 语法先清洗再切分', () => {
+  it('markdown 语法先清洗再切分（整段清洗已预替换围栏，短前缀并入占位句）', () => {
     const out = splitSentences('**重点**如下：\n```js\nx()\n```\n完成。')
-    expect(out).toContain('重点如下：')
-    expect(out).toContain('（代码已省略，请在应用中查看）')
+    expect(out).toContain('重点如下：（代码已省略，请在应用中查看）')
+    expect(out).toContain('完成。')
   })
 })
 

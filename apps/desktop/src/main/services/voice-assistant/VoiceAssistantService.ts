@@ -35,6 +35,7 @@ import type {
 } from '@spark/protocol'
 import {
   VOICE_ASSISTANT_DIALOGUE_SESSION_PREFIX,
+  VOICE_ASSISTANT_ENDPOINT_PROFILES,
   VOICE_ASSISTANT_INTERNAL_OWNER_ID,
   VOICE_ASSISTANT_KWS_SESSION_ID,
   normalizeVoiceAssistantSettings,
@@ -60,6 +61,9 @@ import {
 import { buildVoiceUserMessage } from './voiceUserMessage.js'
 import type { VoiceRouteBinding } from './VoiceRouteBinding.js'
 import { synthesizeSpeechText } from './ttsSynthesis.js'
+import { VoiceBargeInGate } from './VoiceBargeInGate.js'
+import { describeEchoMatch, isLikelyTtsEcho } from './VoiceEchoGuard.js'
+import { VoiceInputQueue } from './VoiceInputQueue.js'
 
 const log = createLogger('voice-assistant')
 
@@ -74,10 +78,12 @@ const EMPTY_SPEECH_TIMEOUT_MS = 20_000
  * speech-activity 重置）时的强制收口兜底，防会话无限滞留。
  */
 const LISTENING_HARD_LIMIT_MS = 120_000
-/** VAD 句尾静音阈值（对齐语音输入默认，略放宽换气停顿） */
-const ASR_VAD_SILENCE_MS = 1200
 /** M3 连续对话：播报到续听的间隔（等 TTS 尾音消散，防录进自己的播报） */
 const CONTINUOUS_LISTEN_DELAY_MS = 800
+/** 插话输入队列容量（语音插话是短时行为，深队列无意义；超限挤最旧） */
+const BARGE_IN_QUEUE_CAPACITY = 3
+/** 回声守卫近期命中后的门控严格档保持时长（防间歇性回声反复穿透） */
+const ECHO_GUARD_STRICT_WINDOW_MS = 60_000
 /** 外部入口安装在途时的等待轮询间隔 */
 const KWS_INSTALL_WAIT_INTERVAL_MS = 5_000
 /** 等待轮询上限（120 × 5s = 10 分钟，覆盖全量语音包慢速下载） */
@@ -86,6 +92,15 @@ const KWS_INSTALL_WAIT_MAX_ATTEMPTS = 120
 export interface VoiceAssistantSubmitResult {
   turnId: string
   started: boolean
+}
+
+/**
+ * 会话可选模型查询结果：models 为候选清单（modelIds 为空时 fallback [defaultModel]）；
+ * unsupportedReason 非空表示渠道不支持切换（内置 CLI / auto-router），models 恒为空。
+ */
+export interface VoiceSessionModelsResult {
+  models: string[]
+  unsupportedReason?: string
 }
 
 export interface VoiceAssistantDeps {
@@ -139,8 +154,12 @@ export interface VoiceAssistantDeps {
   listWorkspaces(): Promise<Array<{ id: string; name: string }>>
   /** M2 语音命令：某工作区下最近的会话（无则新建） */
   findLatestSessionIdInWorkspace(workspaceId: string): Promise<string | null>
-  /** M4 语音命令：会话当前渠道的可选模型（与远程 /models 同源 buildRemoteProviderModelRows） */
-  listSessionModels(sessionId: string): Promise<string[]>
+  /**
+   * M4 语音命令：会话当前渠道的可选模型（与远程 /models 同源 buildRemoteProviderModelRows；
+   * modelIds 为空 fallback [defaultModel]，对齐渲染端 getProviderModelOptions）。
+   * unsupportedReason 非空 = 渠道不支持切换（内置 CLI / auto-router，对齐 UI 禁改语义）。
+   */
+  listSessionModels(sessionId: string): Promise<VoiceSessionModelsResult>
   /** M4 语音命令：切换会话模型（转发 SessionService.updateSession） */
   updateSessionModel(sessionId: string, modelId: string): Promise<void>
   /** M3 语音审批：回应挂起的权限审批（转发 PermissionService.resolveApproval） */
@@ -171,6 +190,8 @@ export class VoiceAssistantService {
   /** 说完确认窗口定时器：VAD final 后再静默 utteranceConfirmMs 才真正收口提交 */
   private handoffConfirmTimer: ReturnType<typeof setTimeout> | null = null
   private activeTurn: { turnId: string; sessionId: string } | null = null
+  /** 生成是否已完成（agent_status completed 已到；与播报收尾独立——执行器释放信号） */
+  private generationCompleted = false
   /** 非轮次播报（命令确认/错误提示）进行中 */
   private announcing = false
   private armedAccelerator: string | null = null
@@ -211,6 +232,38 @@ export class VoiceAssistantService {
   private turnEpoch = 0
   /** 对话进行中请求开启常驻聆听 → 延迟到对话收尾再起（避免抢走对话麦克风） */
   private standbyPending = false
+  // ── 全双工（D1 对话窗口 / D2 回声治理 / D3 输入队列） ──
+  /** 对话窗口是否在线（窗口内采集+ASR 常开，thinking/speaking 期间也在听） */
+  private duplexWindowActive = false
+  /** 队列派发在途（dequeue 到 submitTranscript 落定之间，防二次触发重复提交） */
+  private queueDispatchInFlight = false
+  /** 渲染端 AEC 实际生效值（capture-started 探测；false 时门控/守卫升严格档） */
+  private aecEffective: boolean | null = null
+  /** 回声守卫最近命中时刻（严格档保持窗口） */
+  private echoGuardHitAt: number | null = null
+  /**
+   * graceful 接管桥接中（派发 → 新代首句开播的间隙）：HUD「本句播完后衔接」
+   * 只应覆盖这个间隙。queue-dispatch 是同态广播，reason 会一直挂在渲染端，
+   * 新代首句 play 指令发出时同态补一次广播把 reason 冲掉，否则衔接态贯穿
+   * 整个新回答播报、还压住播报期新插话的队列框展示。
+   */
+  private gracefulTakeoverBridge = false
+  private readonly bargeInGate = new VoiceBargeInGate()
+  private readonly inputQueue: VoiceInputQueue
+
+  /** 全双工是否可用（设置开关 + 仅本地识别引擎；cloud 引擎整段上传与常开窗口不匹配） */
+  private get duplexEnabled(): boolean {
+    return this.settings.fullDuplex && this.settings.recognitionEngine === 'local'
+  }
+
+  /** 当前是否处于「插话可听」态（thinking/speaking 且对话窗口在线） */
+  private isDuplexBargeInState(): boolean {
+    return (
+      this.duplexEnabled &&
+      this.duplexWindowActive &&
+      (this.state === 'thinking' || this.state === 'speaking')
+    )
+  }
 
   constructor(private readonly deps: VoiceAssistantDeps) {
     const rawSettings = deps.readSettings()
@@ -244,11 +297,50 @@ export class VoiceAssistantService {
     this.route = deps.route
     this.pipeline = new VoiceTtsPipeline({
       synthesize: (sentence) => this.synthesizeSentence(sentence),
-      sendPlay: (command) => deps.sendPlayCommand(command),
+      // 包装 sendPlay：graceful 接管桥接的收口点——新代首句开播即冲掉渲染端
+      // 挂着的 queue-dispatch reason（同态广播，无迁移日志）。beginTurn 的
+      // graceful 分支会丢弃旧代在途合成，派发后首个 play 必属新代，判据精确。
+      sendPlay: (command) => {
+        deps.sendPlayCommand(command)
+        if (command.kind === 'play' && this.gracefulTakeoverBridge) {
+          this.gracefulTakeoverBridge = false
+          log.info('[voice-assistant] graceful takeover live (new generation speaking)')
+          this.deps.broadcastState({
+            state: this.state,
+            previous: this.state,
+            reason: 'takeover-live',
+          })
+        }
+      },
       onAllPlayed: () => this.handleAllPlayed(),
       shouldPlayCues: () => this.settings.soundCues,
       onTurnSynthesisFailed: (message) => this.notifyTurnSynthesisFailed(message),
+      shouldFastCutFirstSentence: () => this.settings.firstSentenceFastCut,
+      shouldPrefetch: () => this.settings.ttsPrefetch,
     })
+    this.inputQueue = new VoiceInputQueue(
+      BARGE_IN_QUEUE_CAPACITY,
+      () => VOICE_ASSISTANT_ENDPOINT_PROFILES[this.settings.utteranceEndpointProfile].confirmMs,
+      {
+        onEnqueued: (entry, evicted) => {
+          log.info(
+            `[voice-assistant] queued input enqueued (${entry.id}, ${entry.text.length} chars, ${entry.capturedState}${evicted != null ? `, evictedOldest=${evicted.id}` : ''})`,
+          )
+          if (evicted != null) this.playCue('fail')
+          this.deps.broadcastStatus(this.getStatus())
+        },
+        onDraftChanged: () => {
+          this.deps.broadcastStatus(this.getStatus())
+        },
+        onDraftConfirmed: (text) => {
+          this.routeConfirmedBargeIn(text)
+        },
+        onRemoved: (entry, cause) => {
+          log.info(`[voice-assistant] queued input ${cause} (${entry.id})`)
+          this.deps.broadcastStatus(this.getStatus())
+        },
+      },
+    )
     deps.registerCleanup(() => this.dispose())
   }
 
@@ -285,6 +377,9 @@ export class VoiceAssistantService {
       clearTimeout(this.continuousListenTimer)
       this.continuousListenTimer = null
     }
+    this.duplexWindowActive = false
+    this.inputQueue.dispose()
+    this.bargeInGate.setPlaybackActive(false, false)
     this.teardownListening()
     this.pipeline.cancel()
     try {
@@ -339,6 +434,15 @@ export class VoiceAssistantService {
     if (shortcutChanged) this.rearmShortcut()
     if (standbyConfigChanged) this.applyAlwaysListeningSetting()
     if (sessionThinkingChanged) void this.syncSessionReasoningEffort()
+    // 全双工关闭（或引擎切 cloud 致不可用）：窗口收口 + 存量排队输入清空
+    // （UI 侧随 duplexActive=false 一并隐藏队列框/迷你麦，不「说了谎」）
+    if (!this.duplexEnabled && this.duplexWindowActive) {
+      this.duplexWindowActive = false
+      const removed = this.inputQueue.clear()
+      if (removed.length > 0) {
+        log.info(`[voice-assistant] queue cleared on duplex off (${removed.length})`)
+      }
+    }
     // 人声聚焦开启但 silero 模型未装：后台静默补装（不阻塞，失败只记日志，
     // 期间门控自动降级为纯能量层）
     if (normalized.voiceFocus !== 'off') void this.ensureVadModelInstalled()
@@ -474,6 +578,14 @@ export class VoiceAssistantService {
           : null,
       lastError: null,
       boundSessionId: this.route.current.defaultSessionId ?? null,
+      duplexActive: this.isDuplexBargeInState(),
+      queuedInputs: this.inputQueue.snapshot().map((entry) => ({
+        id: entry.id,
+        text: entry.text,
+        capturedState: entry.capturedState,
+        createdAt: entry.createdAt,
+      })),
+      queueDraft: this.inputQueue.draft,
     }
   }
 
@@ -538,6 +650,13 @@ export class VoiceAssistantService {
       clearTimeout(this.continuousListenTimer)
       this.continuousListenTimer = null
     }
+    // E9：打断保留插话队列（打断的是「播报/生成」，不是「我说过的话」——
+    // 下次进对话（唤醒/续听）时由 maybeDispatchQueue 补发）；只撤草稿确认窗口
+    const retained = this.inputQueue.size
+    if (retained > 0) {
+      log.info(`[voice-assistant] interrupted (queue retained ${retained})`)
+    }
+    this.inputQueue.cancelDraft()
     if (this.state === 'listening') {
       this.teardownListening()
       this.transition('idle', 'cancelled')
@@ -555,7 +674,7 @@ export class VoiceAssistantService {
     this.pendingApproval = null // 打断语音审批：卡片保留给应用内手动处理
     // 挂起选择态不清：打断播报（抢话）后说序号/名称仍要能选——
     // 「切换模型 → 嫌列表啰嗦按快捷键打断 → 直接说第2个」是合法主流程
-    this.pipeline.cancel() // 同步停播 + 清队列 + 删未播文件 + 推送 stop
+    this.pipeline.cancel() // 同步停播（淡出）+ 清队列 + 删未播文件
     this.transition('idle', 'cancelled')
     this.logDialogueExit('interrupted')
   }
@@ -748,6 +867,23 @@ export class VoiceAssistantService {
     if (this.state === 'listening' || this.state === 'thinking' || this.state === 'speaking') {
       return
     }
+    const endpoint = VOICE_ASSISTANT_ENDPOINT_PROFILES[this.settings.utteranceEndpointProfile]
+    // 全双工对话窗口内（播报收尾续听等场景）：采集与 ASR 已在线，复用免重建
+    // （重建的代价 = 一次 ASR 会话泄漏 + 渲染端 getUserMedia 重起时延）
+    if (this.duplexEnabled && this.duplexWindowActive && this.asrSessionId != null) {
+      this.partialText = ''
+      this.collectedFinals = []
+      this.handoffPending = false
+      this.armEmptySpeechTimeout()
+      this.armListeningHardLimit()
+      this.transition('listening', reason)
+      log.info(
+        `[voice-assistant] duplex listening resumed (reason=${reason}, asr=${this.asrSessionId})`,
+      )
+      // 打断保留的队列输入先派发（E9：打断≠丢用户的话，下次进对话时补发）
+      this.maybeDispatchQueue('listen-resume')
+      return
+    }
     this.captureCounter += 1
     const captureSessionId = `${VOICE_ASSISTANT_DIALOGUE_SESSION_PREFIX}${Date.now()}-${this.captureCounter}`
     // 安装/等待在途时给准确的引导文案，而非「请先安装语音包」误导正在下载的用户
@@ -763,7 +899,7 @@ export class VoiceAssistantService {
           sampleRate: 16000,
           language: 'auto',
           enableVad: true,
-          vadSilenceMs: ASR_VAD_SILENCE_MS,
+          vadSilenceMs: endpoint.vadSilenceMs,
           // 人声聚焦门控（off 时省略，走识别服务旧行为）
           ...(this.settings.voiceFocus !== 'off' ? { noiseGate: this.settings.voiceFocus } : {}),
         },
@@ -784,7 +920,7 @@ export class VoiceAssistantService {
     }
     // 采集/识别管线组合落日志：排查识别率问题时据此确认实际生效的处理链
     log.info(
-      `[voice-assistant] asr pipeline: denoise=${this.settings.browserDenoise}, focus=${this.settings.voiceFocus}, refine=${this.settings.refineTranscript}, engine=${this.settings.recognitionEngine}, vadSilence=${ASR_VAD_SILENCE_MS}ms`,
+      `[voice-assistant] asr pipeline: denoise=${this.settings.browserDenoise}, focus=${this.settings.voiceFocus}, refine=${this.settings.refineTranscript}, engine=${this.settings.recognitionEngine}, vadSilence=${endpoint.vadSilenceMs}ms, duplex=${this.duplexEnabled}, endpoint=${this.settings.utteranceEndpointProfile}`,
     )
     this.captureSessionId = captureSessionId
     this.asrSessionId = handle.sessionId
@@ -794,28 +930,42 @@ export class VoiceAssistantService {
     this.handoffPending = false
     this.cloudPcmChunks = []
     this.cloudTotalSamples = 0
+    // 全双工：打开对话窗口（thinking/speaking 期间采集+ASR 常开）
+    if (this.duplexEnabled) this.duplexWindowActive = true
     this.transition('listening', reason)
     this.playCue('wake')
     // 对话循环进入日志（与 dialogue loop ended 成对）：排查「一轮后退出」时
     // 据此确认每轮续听是否真的拉起
     log.info(
-      `[voice-assistant] dialogue listening started (reason=${reason}, capture=${captureSessionId})`,
+      `[voice-assistant] dialogue listening started (reason=${reason}, capture=${captureSessionId}, duplex=${this.duplexWindowActive})`,
     )
     // 2. 请求渲染端起采集（常驻 KWS 采集在线时复用同一流，不重起 getUserMedia）；
-    //    对话采集按设置下发浏览器级降噪（远场对话优先保噪音免疫）
+    //    对话采集按设置下发浏览器级降噪（远场对话优先保噪音免疫）；全双工
+    //    显式要求 AEC（回声治理层 1，实际生效值经 capture-started 探测回传）
     if (!this.kwsCaptureActive) {
       this.deps.sendCaptureCommand({
         action: 'start',
         sessionId: captureSessionId,
         mode: 'dialogue',
-        ...(this.settings.browserDenoise
-          ? { audioProcessing: { noiseSuppression: true, voiceIsolation: true } }
+        ...(this.settings.browserDenoise || this.duplexEnabled
+          ? {
+              audioProcessing: {
+                noiseSuppression: this.settings.browserDenoise,
+                voiceIsolation: this.settings.browserDenoise,
+                ...(this.duplexEnabled ? { echoCancellation: true } : {}),
+              },
+            }
           : {}),
       })
     }
     // 3. 空转兜底超时（检测到人声活动会重置；说话后的收口由确认窗口负责）
     this.armEmptySpeechTimeout()
     // 4. 硬上限兜底（持续说话/持续噪音时的强制收口，不受活动重置影响）
+    this.armListeningHardLimit()
+  }
+
+  /** listening 硬上限兜底的统一布防（新建/全双工复用两条路径共用） */
+  private armListeningHardLimit(): void {
     if (this.listeningHardTimer != null) clearTimeout(this.listeningHardTimer)
     this.listeningHardTimer = setTimeout(() => {
       this.listeningHardTimer = null
@@ -930,6 +1080,8 @@ export class VoiceAssistantService {
     this.partialText = ''
     this.collectedFinals = []
     this.handoffPending = false
+    this.duplexWindowActive = false
+    this.inputQueue.cancelDraft()
   }
 
   // ─── 音频 chunk 与识别事件（由 registerVoiceAssistantIpc 路由进来） ────────
@@ -942,17 +1094,28 @@ export class VoiceAssistantService {
   /** 渲染端 chunk 到达（已通过 voice-assistant 前缀校验） */
   handleAudioChunk(sessionId: string, samples: Int16Array): void {
     // 常驻 KWS 采集流：按状态机路由（idle/standby→唤醒词检测；listening→对话 ASR；
-    // thinking/speaking→丢弃，播放期间挂起检测防 TTS 回声自触发）
+    // thinking/speaking 且全双工→插话门控后喂 ASR（KWS 检测保持挂起防 TTS 自触发）；
+    // 半双工 thinking/speaking→丢弃）
     if (sessionId === VOICE_ASSISTANT_KWS_SESSION_ID) {
       if (this.state === 'standby' || this.state === 'idle') {
         this.kwsDetector?.feed(samples)
       } else if (this.state === 'listening' && this.asrSessionId != null) {
         this.bufferCloudPcm(samples)
         feedVoiceAudio(this.asrSessionId, samples, VOICE_ASSISTANT_INTERNAL_OWNER_ID)
+      } else if (this.isDuplexBargeInState() && this.asrSessionId != null) {
+        const gated = this.bargeInGate.process(samples)
+        feedVoiceAudio(this.asrSessionId, gated, VOICE_ASSISTANT_INTERNAL_OWNER_ID)
       }
       return
     }
     if (this.asrSessionId == null || sessionId !== this.captureSessionId) return
+    if (this.isDuplexBargeInState()) {
+      // 播报/思考期插话：能量门控（层 2）后再喂 ASR，被压制 chunk 置零保时间推进
+      const gated = this.bargeInGate.process(samples)
+      feedVoiceAudio(this.asrSessionId, gated, VOICE_ASSISTANT_INTERNAL_OWNER_ID)
+      return
+    }
+    if (this.state !== 'listening') return
     this.bufferCloudPcm(samples)
     feedVoiceAudio(this.asrSessionId, samples, VOICE_ASSISTANT_INTERNAL_OWNER_ID)
   }
@@ -995,16 +1158,23 @@ export class VoiceAssistantService {
         return
       }
       case 'partial': {
-        if (!isActiveSession || this.state !== 'listening') return
-        // 确认窗口内用户继续开口：撤销本次收口，继续聆听拼接
-        this.cancelHandoffConfirm()
-        this.partialText = event.text ?? ''
-        this.deps.broadcastState({
-          state: 'listening',
-          previous: 'listening',
-          reason: 'wake',
-          detail: this.partialText,
-        })
+        if (!isActiveSession) return
+        if (this.state === 'listening') {
+          // 确认窗口内用户继续开口：撤销本次收口，继续聆听拼接
+          this.cancelHandoffConfirm()
+          this.partialText = event.text ?? ''
+          this.deps.broadcastState({
+            state: 'listening',
+            previous: 'listening',
+            reason: 'wake',
+            detail: this.partialText,
+          })
+          return
+        }
+        if (this.isDuplexBargeInState()) {
+          // 插话确认窗口内继续开口：撤销计时继续拼接（与 handoff 确认窗口同构）
+          this.inputQueue.extendDraft(this.state === 'speaking' ? 'speaking' : 'thinking')
+        }
         return
       }
       case 'final': {
@@ -1019,6 +1189,9 @@ export class VoiceAssistantService {
             `[voice-assistant] vad final captured (${text.length} chars), entering utterance confirm window`,
           )
           this.scheduleHandoffConfirm()
+        } else if (isActiveSession && this.isDuplexBargeInState()) {
+          // 播报/思考期插话：回声守卫（层 3）→ 命令旁路 / 审批解析 / 确认窗口
+          this.handleBargeInFinal(text)
         } else if (isClosingSession) {
           // flush 尾句（VAD final 之后残留的短句）并入本轮转写
           this.collectedFinals.push(text)
@@ -1101,8 +1274,17 @@ export class VoiceAssistantService {
       log.info('[voice-assistant] utterance confirmed silent, handing off to thinking')
       this.handoffPending = true
       this.transition('thinking', 'wake')
+      if (this.duplexEnabled && this.duplexWindowActive) {
+        // 全双工：采集/ASR 保持在线（thinking/speaking 继续听插话），直接用流式
+        // 结果提交——窗口内不做整段 refine（一次会话跨多轮，整段重识别会卷入
+        // 前几轮音频；识别率敏感用户可关 fullDuplex 回 refine 路径）
+        log.info('[voice-assistant] duplex window disables per-turn refine')
+        this.handoffPending = false
+        this.submitCollectedTranscript(true)
+        return
+      }
       this.stopCaptureAndAsr()
-    }, this.settings.utteranceConfirmMs)
+    }, VOICE_ASSISTANT_ENDPOINT_PROFILES[this.settings.utteranceEndpointProfile].confirmMs)
     // 窗口期告知用户：可以继续说，静默后自动发送
     this.deps.broadcastState({
       state: 'listening',
@@ -1120,12 +1302,132 @@ export class VoiceAssistantService {
     log.info('[voice-assistant] speech resumed within confirm window, keep listening')
   }
 
+  // ─── 全双工插话路径（三分：命令旁路 / graceful 边播边处理 / 排队） ────────
+
+  /**
+   * 播报/思考期捕获一句 final（ASR 层已过 BargeInGate 能量门控）：
+   * 层 3 文本回声守卫 → 审批解析（挂起期冻结队列）→ 确认窗口草稿。
+   */
+  private handleBargeInFinal(text: string): void {
+    // 层 3：与在播/待播/最近播完 TTS 文本模糊匹配（AEC/门控漏网的回声兜底）
+    const ttsTexts = this.pipeline.getRecentTtsTexts()
+    if (isLikelyTtsEcho(text, ttsTexts)) {
+      const match = describeEchoMatch(text, ttsTexts)
+      this.echoGuardHitAt = Date.now()
+      log.info(
+        `[voice-assistant] echo guard dropped final (len=${text.length}, bestRatio=${match.bestRatio}, matchedTtsLen=${match.matchedTtsLen})`,
+      )
+      return
+    }
+    // 审批挂起期（问题正在念/等待答复）：插话只走审批解析，队列冻结（C12）
+    if (this.pendingApproval != null) {
+      if (parseApprovalDecision(text) != null) {
+        void this.settleApprovalFromTranscript(text)
+        return
+      }
+      log.info('[voice-assistant] barge-in frozen during pending approval')
+      return
+    }
+    this.inputQueue.feedDraftFinal(text, this.state === 'speaking' ? 'speaking' : 'thinking')
+  }
+
+  /**
+   * 插话确认窗口收口（一条输入就绪）的三分路径判定（R2）：
+   * 命令 → 旁路立即执行；执行器闲 + 播报未完 → graceful 边播边处理；
+   * 其余（执行器忙）→ 排队等释放。
+   * 守卫用「对话窗口在线」而非瞬时相位——draft 在 thinking/speaking 期捕获，
+   * 收口时可能已迁移到 listening（续听拉起）或 idle（播报收尾间隙），已确认的
+   * 话不应因相位迁移被丢弃。
+   */
+  private routeConfirmedBargeIn(text: string): void {
+    if (!this.duplexEnabled || !this.duplexWindowActive) {
+      log.info('[voice-assistant] barge-in draft confirmed after window closed, dropped')
+      return
+    }
+    const command = parseVoiceCommand(text, {
+      enableSessionCommands: true,
+      awaitingSessionSelection: this.awaitingSessionCandidates != null,
+      awaitingModelSelection: this.awaitingModelCandidates != null,
+      awaitingProjectSelection: this.awaitingProjectCandidates != null,
+    })
+    if (command != null) {
+      log.info(`[voice-assistant] barge-in voice command hit: ${JSON.stringify(command)}`)
+      void this.executeVoiceCommand(command)
+      return
+    }
+    if (
+      // announcing（候选列表/确认提示）不是轮次播报：非选择内容在此期间只入队，
+      // 等播报完由 listen-resume 派发（C3「非选择内容 → 入队」）。若放行 graceful
+      // 会当场砍断候选播报起聊天轮，allPlayed 走 announcing 分支把 activeTurn
+      // 悬挂一轮、挂起选择态也无人清理
+      !this.announcing &&
+      (this.activeTurn == null || this.generationCompleted) &&
+      this.pipeline.isPlaybackActive()
+    ) {
+      // 执行器已释放（生成完，activeTurn 可能仍挂着等播报收尾）、播报未完：
+      // 边播边处理（当前句播完即止，新首句句边界接上）
+      log.info('[voice-assistant] dispatch path = graceful (barge-in while playback trailing)')
+      void this.submitTranscript(text)
+      return
+    }
+    this.inputQueue.enqueue(text, this.state === 'speaking' ? 'speaking' : 'thinking')
+  }
+
+  /**
+   * 队列自动派发（R4：执行器释放瞬间，不等播报完）。
+   * 两个到达路径合流：turn completed 先到（播报未完 → graceful）与
+   * handleAllPlayed 先到（播报已完 → 正常提交，替换 800ms 续听延迟）。
+   * 派发防抖由「activeTurn 占用」+ dispatchInFlight 防重入共同保证。
+   */
+  private maybeDispatchQueue(trigger: 'turn-completed' | 'all-played' | 'listen-resume'): void {
+    if (this.disposed || !this.duplexEnabled) return
+    if (this.pendingApproval != null || this.announcing) return
+    // 派发在途（submitTranscript 的 ensureSession/submitVoiceTurn await 间隙，
+    // activeTurn 尚未就位）：allPlayed 等二次触发在此窗口会重复 dequeue 双提交
+    if (this.queueDispatchInFlight) return
+    // 执行器忙（生成中）不派发；生成完（agent_status completed 已到）即释放，
+    // 播报是否结束只决定接管模式（graceful / immediate）
+    if (this.activeTurn != null && !this.generationCompleted) return
+    const entry = this.inputQueue.dequeueHead()
+    if (entry == null) return
+    const graceful = this.pipeline.isPlaybackActive()
+    log.info(
+      `[voice-assistant] queue auto-advance (trigger=${trigger}, id=${entry.id}, remaining=${this.inputQueue.size}, graceful=${graceful})`,
+    )
+    // 同态 detail 广播（HUD 感知队列派发；状态类别不变不打迁移日志）
+    this.deps.broadcastState({
+      state: this.state,
+      previous: this.state,
+      reason: 'queue-dispatch',
+      detail: entry.text,
+    })
+    // 状态机对齐：all-played/listen-resume 触发时状态是 idle/listening（或被常驻
+    // 顶替的 standby），而 submitTranscript 不做 thinking 迁移、maybeTransitionSpeaking
+    // 又只从 thinking 迁入 speaking——不迁移的话派发轮的整个生成+播报期卡在原态
+    // （HUD 错态、回声门控不武装、listening 态下 TTS 回声无门控直喂 ASR）。
+    // turn-completed 触发时已在 speaking（graceful 接管），保持不动。
+    if (this.state === 'idle' || this.state === 'listening' || this.state === 'standby') {
+      this.transition('thinking', 'queue-dispatch', entry.text)
+    }
+    this.queueDispatchInFlight = true
+    void this.submitTranscript(entry.text).finally(() => {
+      this.queueDispatchInFlight = false
+    })
+  }
+
   /** ASR 会话结束（flush 完成）后的统一收口 */
   private finishAfterListeningClosed(): void {
     const wasHandoff = this.handoffPending
     this.captureSessionId = null
     this.handoffPending = false
+    this.duplexWindowActive = false
+    this.inputQueue.cancelDraft()
     if (this.state !== 'listening' && this.state !== 'thinking') return
+    this.submitCollectedTranscript(wasHandoff)
+  }
+
+  /** collectedFinals 组装转写并按优先级提交（审批 → cloud → 普通聊天） */
+  private submitCollectedTranscript(wasHandoff: boolean): void {
     const transcript = this.collectedFinals.join(' ').trim()
     this.collectedFinals = []
     this.partialText = ''
@@ -1247,6 +1549,18 @@ export class VoiceAssistantService {
   handleRendererEvent(event: VoiceAssistantRendererEvent): void {
     switch (event.type) {
       case 'capture-started': {
+        // AEC 实际生效值探测（回声治理层 1）：false 时播报期门控与文本守卫
+        // 自动升严格档（AEC 是优化不是依赖——蓝牙 HFP/部分驱动会失效）
+        if (event.echoCancellationEffective != null) {
+          this.aecEffective = event.echoCancellationEffective
+          if (!event.echoCancellationEffective) {
+            log.warn(
+              `[voice-assistant] capture aec effective=false (${event.sessionId}), echo guard escalating to strict`,
+            )
+          } else {
+            log.info(`[voice-assistant] capture aec effective=true (${event.sessionId})`)
+          }
+        }
         if (event.sessionId === VOICE_ASSISTANT_KWS_SESSION_ID) {
           this.kwsCaptureActive = true
           this.kwsRestartAttempts = 0
@@ -1318,36 +1632,8 @@ export class VoiceAssistantService {
     })
     if (command != null) {
       log.info(`[voice-assistant] voice command hit: ${JSON.stringify(command)}`)
-      switch (command.kind) {
-        case 'stop-listening':
-          this.clearPendingSelections()
-          this.transition('idle', 'cancelled')
-          return
-        case 'new-session':
-          this.clearPendingSelections()
-          await this.handleNewSessionCommand()
-          return
-        case 'switch-session':
-          await this.handleSwitchSessionCommand(command.name)
-          return
-        case 'select-session':
-          await this.handleSelectSessionCommand(command.index, command.name)
-          return
-        case 'switch-model':
-          await this.handleSwitchModelCommand(command.name)
-          return
-        case 'select-model':
-          await this.handleSelectModelCommand(command.index, command.name)
-          return
-        case 'switch-workspace':
-          await this.handleSwitchWorkspaceCommand(command.name)
-          return
-        case 'select-project':
-          await this.handleSelectProjectCommand(command.index, command.name)
-          return
-        default:
-          break
-      }
+      await this.executeVoiceCommand(command)
+      return
     }
     this.clearPendingSelections()
     let session: { sessionId: string }
@@ -1378,9 +1664,16 @@ export class VoiceAssistantService {
         void this.deps.cancelSessionTurn(session.sessionId).catch(() => undefined)
         return
       }
-      this.pipeline.beginTurn()
+      // 接管模式：新轮起跑时旧播报仍在响 → graceful 句边界让位（边播边处理）；
+      // 播报已停 → immediate（含 fadeOut 淡出的现状语义）
+      const takeover = this.pipeline.isPlaybackActive() ? 'graceful' : 'immediate'
+      this.gracefulTakeoverBridge = takeover === 'graceful'
+      this.pipeline.beginTurn(takeover)
+      this.generationCompleted = false
+      // 首响 ack：提交成功瞬间（不等 LLM 首字），消除「说完后无声空窗」
+      this.playAckCue()
       log.info(
-        `[voice-assistant] voice turn submitted (${result.turnId}, session ${session.sessionId}, started=${result.started})`,
+        `[voice-assistant] voice turn submitted (${result.turnId}, session ${session.sessionId}, started=${result.started}, takeover=${takeover})`,
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -1389,6 +1682,107 @@ export class VoiceAssistantService {
         this.announceSpeech(`抱歉，语音请求发送失败。${shortError(message)}`)
       }
     }
+  }
+
+  /** 语音命令执行（listening 期与插话旁路共用同一优先级链） */
+  private async executeVoiceCommand(
+    command: NonNullable<ReturnType<typeof parseVoiceCommand>>,
+  ): Promise<void> {
+    switch (command.kind) {
+      case 'stop-listening': {
+        this.clearPendingSelections()
+        // E8：清空插话队列（逐条记 discarded）+ 窗口收口
+        const removed = this.inputQueue.clear()
+        if (removed.length > 0) {
+          log.info(`[voice-assistant] queue cleared on exit (${removed.length})`)
+        }
+        this.duplexWindowActive = false
+        this.teardownListening()
+        this.transition('idle', 'cancelled')
+        return
+      }
+      case 'cancel-selection': {
+        // 挂起选择态逃生门：清候选回到聊天（与 stop-listening「关语音」语义解耦）。
+        // 不动状态机——播报收尾后既有连续对话链路自动续听
+        this.clearPendingSelections()
+        this.announceSpeech('好，不切了，我们继续聊。')
+        log.info('[voice-assistant] pending selection cancelled by voice')
+        return
+      }
+      case 'new-session':
+        this.clearPendingSelections()
+        await this.handleNewSessionCommand()
+        return
+      case 'switch-session':
+        await this.handleSwitchSessionCommand(command.name)
+        return
+      case 'select-session':
+        await this.handleSelectSessionCommand(command.index, command.name)
+        return
+      case 'switch-model':
+        await this.handleSwitchModelCommand(command.name)
+        return
+      case 'select-model':
+        await this.handleSelectModelCommand(command.index, command.name)
+        return
+      case 'switch-workspace':
+        await this.handleSwitchWorkspaceCommand(command.name)
+        return
+      case 'select-project':
+        await this.handleSelectProjectCommand(command.index, command.name)
+        return
+      default:
+        return
+    }
+  }
+
+  /** 首响 ack 提示音（firstResponseFeedback 独立设置，与 soundCues 语义分离） */
+  private playAckCue(): void {
+    if (this.disposed) return
+    if (this.settings.firstResponseFeedback !== 'cue') return
+    this.deps.sendPlayCommand({ kind: 'cue', cue: 'ack' })
+  }
+
+  /** 放弃排队输入（E6：仅移除当前展示条 = 最新入队条，可重说） */
+  discardQueued(id: string): { ok: boolean; message: string } {
+    if (this.disposed) return { ok: false, message: '服务已停止' }
+    const entry = this.inputQueue.removeById(id)
+    if (entry == null) return { ok: false, message: '该输入已不在队列中' }
+    return { ok: true, message: '已放弃' }
+  }
+
+  /**
+   * 立即发送（抢占，E5）：epoch+1 → 中止旧轮（cancelTurn）→ TTS 立即淡出 →
+   * 提交指定排队输入（缺省 = 最新条，与 HUD 展示一致「动作所指一致」）。
+   * 队列剩余条目与确认窗口草稿保留（抢占只处理「这一条」）。
+   */
+  async dispatchQueued(id?: string): Promise<{ ok: boolean; message: string }> {
+    if (this.disposed) return { ok: false, message: '服务已停止' }
+    if (!this.duplexEnabled) return { ok: false, message: '全双工聆听未开启' }
+    const entry = id != null ? this.inputQueue.findById(id) : this.inputQueue.latest()
+    if (entry == null) return { ok: false, message: '没有排队中的输入' }
+    log.info(`[voice-assistant] preempt dispatch (queuedId=${entry.id}, ttsFade=true)`)
+    this.turnEpoch += 1
+    this.inputQueue.removeById(entry.id, 'dispatched')
+    if (this.activeTurn != null) {
+      const { sessionId } = this.activeTurn
+      this.activeTurn = null
+      try {
+        await this.deps.cancelSessionTurn(sessionId)
+      } catch (error) {
+        log.warn(`[voice-assistant] preempt cancelTurn failed: ${String(error)}`)
+      }
+    }
+    // TTS 立即淡出（120ms ramp，不等句尾——抢占语义与低时延都要求）
+    this.pipeline.cancel()
+    this.announcing = false
+    this.pendingApproval = null
+    // 抢占的是聊天输入：挂起选择态一并作废（C3 同族——非选择内容放弃候选，
+    // 否则抢占后残留的候选列表会让后续插话被误解析成选择）
+    this.clearPendingSelections()
+    this.transition('thinking', 'preempt', entry.text)
+    await this.submitTranscript(entry.text)
+    return { ok: true, message: '已发送' }
   }
 
   private async handleNewSessionCommand(): Promise<void> {
@@ -1489,7 +1883,11 @@ export class VoiceAssistantService {
         this.announceSpeech('当前没有语音会话，先说一句话或新开会话后再切换模型。')
         return
       }
-      const models = await this.deps.listSessionModels(sessionId)
+      const { models, unsupportedReason } = await this.deps.listSessionModels(sessionId)
+      if (unsupportedReason != null && unsupportedReason.length > 0) {
+        this.announceSpeech(unsupportedReason)
+        return
+      }
       if (models.length === 0) {
         this.announceSpeech('当前渠道没有配置可选模型。')
         return
@@ -1779,6 +2177,13 @@ export class VoiceAssistantService {
               log.warn(`[voice-assistant] final recovery failed: ${String(error)}`)
             } finally {
               this.pipeline.turnDone()
+              // 执行器已释放（生成完）：队列非空立即派发——播报未完走 graceful
+              // 句边界让位（R4：不等播报完，兑现并行性）。activeTurn 保留到
+              // allPlayed（播报收尾语义不变），执行器释放用独立标志表达
+              if (this.activeTurn?.turnId === turnId) {
+                this.generationCompleted = true
+                this.maybeDispatchQueue('turn-completed')
+              }
             }
           })()
         }, 300)
@@ -1835,6 +2240,12 @@ export class VoiceAssistantService {
     if (this.activeTurn != null) {
       this.activeTurn = null
       this.transition('idle', 'completed')
+      // 队列非空：0ms 派发队首（播放已停、执行器已释放，无续听间隙——
+      // 排队输入在捕获时已过回声守卫）；空 → 现行为续听
+      if (this.inputQueue.size > 0) {
+        this.maybeDispatchQueue('all-played')
+        return
+      }
       this.scheduleNextRoundListening()
     }
   }
@@ -1930,6 +2341,18 @@ export class VoiceAssistantService {
       ...(detail != null ? { detail } : {}),
     })
     this.deps.broadcastStatus(this.getStatus())
+    // 回声门控（层 2）随播报相位武装/解除：speaking = 有本进程 TTS 在响
+    if (next === 'speaking') {
+      const echoGuardRecentHit =
+        this.echoGuardHitAt != null &&
+        Date.now() - this.echoGuardHitAt < ECHO_GUARD_STRICT_WINDOW_MS
+      const strict = this.aecEffective === false || echoGuardRecentHit
+      this.bargeInGate.setPlaybackActive(true, strict)
+    } else if (previous === 'speaking') {
+      this.bargeInGate.setPlaybackActive(false, false)
+      // graceful 桥接随播报相位结束一并收口（新代零句/合成全失败的兜底路径）
+      this.gracefulTakeoverBridge = false
+    }
     // 对话结束回 idle 后：常驻采集在线直接回 standby；否则有挂起的常驻请求则补启动
     if (next === 'idle' && this.settings.alwaysListening && !this.disposed) {
       if (this.kwsCaptureActive && this.kwsDetector != null && this.kwsDetector.isActive()) {

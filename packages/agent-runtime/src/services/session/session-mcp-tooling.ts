@@ -25,9 +25,15 @@ import {
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import { createLogger } from '@spark/shared'
+import {
+  normalizeVoiceAssistantRouteBinding,
+  VOICE_ASSISTANT_ROUTE_KEY,
+  VOICE_ASSISTANT_SETTINGS_CATEGORY,
+} from '@spark/protocol'
 import type { SDKMcpServerConfig } from '../../sdk/index.js'
 import type { McpService, McpOAuthTokenProvider } from '../mcp-server.service.js'
 import type { PlatformBridgeDeps, PlatformBridgeService } from '../platform-bridge.service.js'
+import type { VoiceControlExecutor } from '../voice-control-agent-tools.js'
 import type { PluginManager } from '../plugins/plugin-manager.service.js'
 import type { CustomToolService } from '../custom-tools/custom-tool.service.js'
 import type { ToolPackageService } from '../tool-packages/tool-package.service.js'
@@ -41,6 +47,7 @@ import { getDebugLogServer } from '../debug-log-server.service.js'
 import { resolveProviderApiKey } from '../provider-credential-resolver.js'
 import { ScheduledTaskService } from '../scheduled-task.service.js'
 import { SessionScheduleAgentTools } from '../session-schedule-agent-tools.js'
+import { VoiceControlAgentTools } from '../voice-control-agent-tools.js'
 import { SessionHistoryRetrievalTools } from './session-history-retrieval-tools.js'
 import {
   resolveMediaMcpProviderRoutes,
@@ -59,6 +66,7 @@ import {
   resolveSparkMemoryMcpServerPath,
   resolveSparkWikiMcpServerPath,
   resolveSubAppMcpServerPath,
+  resolveVoiceControlMcpServerPath,
   resolveWebSearchMcpServerPath,
 } from '../session-mcp-tooling-helpers.js'
 
@@ -86,6 +94,8 @@ export interface SessionMcpToolingHost {
   /** Platform Bridge deps 需回调会话服务公共方法（引用/运行时切换/记忆桥等）。 */
   getSessionService(): SessionService
   getSubAppRuntimeBridge(): PlatformBridgeDeps['subAppRuntime']
+  /** 语音应用控制执行器（desktop 注入；null = 语音服务未装配，工具安全降级） */
+  getVoiceControlExecutor(): VoiceControlExecutor | null
 }
 
 export class SessionMcpTooling {
@@ -220,6 +230,8 @@ export class SessionMcpTooling {
       ),
       // 会话全量历史检索（session_history.* RPC）：直读 append-only 的 agent_events
       sessionHistoryTools: new SessionHistoryRetrievalTools(new SessionHistoryRepository(this.db)),
+      // 语音会话应用控制（voice.* RPC）：desktop 注入执行器，惰性取用（未装配时安全降级）
+      voiceControlTools: new VoiceControlAgentTools(() => this.host.getVoiceControlExecutor()),
       githubConnectorService: new GitHubConnectorService(
         new ConnectorConnectionRepository(this.db),
         () => pluginManager.isRuntimeEnabled('github'),
@@ -387,6 +399,53 @@ export class SessionMcpTooling {
     } catch (err) {
       log.warn(
         `Failed to start spark_memory MCP server: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return null
+    }
+  }
+
+  /**
+   * 解析语音会话应用控制 MCP server（spark_voice）—— 仅语音路由绑定的会话挂载。
+   *
+   * 挂载判断：读 app_settings voice-assistant/route 的 defaultSessionId 与当前
+   * sessionId 比对（语音会话无独立标记字段，绑定关系就是唯一口径）。每 turn resolve：
+   * 语音切换项目/会话后，新绑定会话下一 turn 自动获得工具、旧会话自动失去。
+   *
+   * stdio 形态（而非 in-process SDK MCP）：spark 引擎消费不了 type='sdk' 的 server
+   * （isSparkSupportedMcpServer 明确跳过），而 stdio 在 claude-sdk / spark / CLI
+   * 全部引擎路径都可挂载，一份实现覆盖所有语音会话。
+   */
+  async resolveVoiceControlMcpServer(sessionId: string): Promise<SDKMcpServerConfig | null> {
+    try {
+      const raw = new SettingsRepository(this.db).get(
+        VOICE_ASSISTANT_SETTINGS_CATEGORY,
+        VOICE_ASSISTANT_ROUTE_KEY,
+      )
+      if (normalizeVoiceAssistantRouteBinding(raw).defaultSessionId !== sessionId) return null
+    } catch {
+      // settings 不可用时按不挂载处理（语音工具是增强能力，静默降级）
+      return null
+    }
+
+    const serverPath = resolveVoiceControlMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Voice control MCP server script not found')
+      return null
+    }
+    try {
+      const port = await this.ensurePlatformBridge()
+      return {
+        type: 'stdio',
+        command: resolveMcpNodeRuntimeExecutable(),
+        args: [serverPath],
+        env: {
+          SPARK_PLATFORM_BRIDGE_PORT: String(port),
+          SPARK_VOICE_SID: sessionId,
+        },
+      }
+    } catch (err) {
+      log.warn(
+        `Failed to start spark_voice MCP server: ${err instanceof Error ? err.message : String(err)}`,
       )
       return null
     }

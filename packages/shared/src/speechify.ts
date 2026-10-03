@@ -21,7 +21,17 @@
  */
 
 /** 单句最短字符数（含句末标点；低于此长度并入下一句，避免「好。」「嗯。」碎片化触发 TTS） */
-const MIN_SENTENCE_CHARS = 3
+const MIN_SENTENCE_CHARS = 6
+/** 最短句长保护的强制放行：连续等待超过该边界数仍未达标则出句（防极端碎句无限合并） */
+const MAX_SHORT_SENTENCE_WAITS = 2
+/** 最短句长保护的总长兜底：pending 达该长度强制出句 */
+const MIN_GUARD_FORCE_FLUSH_CHARS = 60
+/** 长句软切阈值：无句末边界累计超过该长度时在最近的逗号/顿号处切 */
+const SOFT_CUT_CHARS = 80
+/** 长句硬切阈值：无任何边界超过该长度强制切（对齐 TTS 单句合成时长上限） */
+const HARD_CUT_CHARS = 120
+/** 软切可用的次级边界字符（逗号/顿号/冒号/分号——软切断点） */
+const SOFT_CUT_BOUNDARY_CHARS = '，、；;:'
 
 /** speechify 整段清洗后的默认最大朗读长度；超出截断并提示 */
 const MAX_SPEAKABLE_CHARS = 800
@@ -105,12 +115,27 @@ function isSentenceEndChar(ch: string): boolean {
  *
  * push(delta) 返回本次新切出的完整句（已行内清洗；代码块整体替换为省略句）。
  * flush() 返回缓冲区中剩余文本作为最后一句（可为空串）。
+ * forceTake() 把当前缓冲整体出一句（首句快切用：不等自然边界，尾部补句号防语气悬置）。
+ *
+ * 切分规则（按优先级）：
+ * - 句末边界（。！？；与换行，英文 .?! 后接空白）出句；叠标点（！！/？！/。。。/…）
+ *   归一为单一边界，不在中间断句
+ * - 最短句长保护：边界命中但累计 <6 字并入下一句；连续等待超过 2 个边界或累计
+ *   60 字仍未达标则强制出句（防碎句无限合并，也防短行内容被丢）
+ * - 长句软切：无句末边界累计 >80 字在最近逗号/顿号处切；>120 字强制切
  *
  * 英文句点规则：'.' 仅在后随空白/行尾/引号时视为边界（避免 3.14、e.g 被切）。
  */
 export class SentenceSplitter {
   private buffer = ''
   private insideCodeFence = false
+  /** 因低于最短句长而连续等待的边界数（强制放行判定用） */
+  private shortSentenceWaits = 0
+
+  /** 当前缓冲的原始字符数（首句快切的凑字判断用） */
+  get bufferedChars(): number {
+    return this.buffer.length
+  }
 
   push(delta: string): string[] {
     this.buffer += delta
@@ -129,10 +154,28 @@ export class SentenceSplitter {
     return rest
   }
 
+  /**
+   * 强制取句（首句快切）：不等自然边界，把当前缓冲整体作为一句切出。
+   * 清洗后无正文返回 null（不产生空句）；尾部无终止符时补「。」防 TTS 语气悬置。
+   * 围栏未闭合时返回 null 跳过快切——此处若清掉围栏状态，后续到达的闭合围栏
+   * 会被误判为新开围栏，把围栏之后的全部正文当代码吞掉；等围栏自然闭合后
+   * 走正常切句路径（占位句）更安全。
+   */
+  forceTake(): string | null {
+    if (this.insideCodeFence) return null
+    const rest = cleanInlineMarkdown(this.buffer).trim()
+    this.buffer = ''
+    this.shortSentenceWaits = 0
+    if (rest.length === 0) return null
+    const sentence = /[。！？；!?;]$/.test(rest) ? rest : `${rest}。`
+    return /[\p{L}\p{N}]/u.test(sentence) ? sentence : null
+  }
+
   /** 丢弃当前缓冲（用于打断/重置） */
   reset(): void {
     this.buffer = ''
     this.insideCodeFence = false
+    this.shortSentenceWaits = 0
   }
 
   private drainBoundarySentences(): string[] {
@@ -158,6 +201,7 @@ export class SentenceSplitter {
       if (ch === '`' && this.startsWithFence(text, index)) {
         if (pending.trim().length > 0) sentences.push(cleanInlineMarkdown(pending).trim())
         pending = ''
+        this.shortSentenceWaits = 0
         const closeIdx = this.findFenceClose(text, index + 3)
         if (closeIdx < 0) {
           // 围栏未闭合：剩余内容全部留在缓冲等待后续 delta
@@ -173,13 +217,46 @@ export class SentenceSplitter {
       const isBoundary =
         isSentenceEndChar(ch) || (ch === '.' && this.isEnglishSentenceEnd(text, index))
       if (isBoundary) {
+        // 叠标点归一：连续终止符（含省略号 …）吸收为单一边界，不在中间断句
+        while (index + 1 < text.length && isSentenceEndChar(text[index + 1] as string)) {
+          index += 1
+          pending += text[index] as string
+        }
         const candidate = cleanInlineMarkdown(pending).trim()
-        if (candidate.length >= MIN_SENTENCE_CHARS || candidate === CODE_BLOCK_PLACEHOLDER) {
+        const meetsMin =
+          candidate.length >= MIN_SENTENCE_CHARS ||
+          candidate === CODE_BLOCK_PLACEHOLDER ||
+          pending.length >= MIN_GUARD_FORCE_FLUSH_CHARS
+        if (meetsMin || this.shortSentenceWaits >= MAX_SHORT_SENTENCE_WAITS) {
           sentences.push(candidate)
           pending = ''
+          this.shortSentenceWaits = 0
+        } else if (!meetsMin) {
+          // 低于最短句长：内容保留与后续拼接（换行只贡献断点语义，剥掉换行符本身）
+          this.shortSentenceWaits += 1
+          if (pending.endsWith('\n')) pending = pending.slice(0, -1)
         }
-        // 低于最短长度的碎片留在 pending 里与后续内容合并
-        if (ch === '\n') pending = '' // 换行边界即使碎片太短也丢弃空白
+      } else if (pending.length >= HARD_CUT_CHARS) {
+        // 长句硬切：无任何边界的超长串（常见于中英混杂无标点输出）
+        sentences.push(cleanInlineMarkdown(pending).trim())
+        pending = ''
+        this.shortSentenceWaits = 0
+      } else if (pending.length >= SOFT_CUT_CHARS) {
+        // 长句软切：在最近的逗号/顿号等次级边界处切
+        let softCutIndex = -1
+        for (let i = pending.length - 1; i >= 0; i -= 1) {
+          if (SOFT_CUT_BOUNDARY_CHARS.includes(pending[i] as string)) {
+            softCutIndex = i
+            break
+          }
+        }
+        if (softCutIndex >= SOFT_CUT_CHARS / 2) {
+          const head = pending.slice(0, softCutIndex + 1)
+          pending = pending.slice(softCutIndex + 1)
+          sentences.push(cleanInlineMarkdown(head).trim())
+          this.shortSentenceWaits = 0
+        }
+        // 无次级边界：继续攒，等 HARD_CUT 强制切
       }
       index += 1
     }

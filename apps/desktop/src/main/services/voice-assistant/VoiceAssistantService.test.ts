@@ -163,6 +163,11 @@ function createHarness(
     ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
     // 状态机测试不涉及门控；显式关闭避免触发 vad 模型后台补装（多调 installVoicePack）
     voiceFocus: 'off',
+    // 既有用例锚定半双工契约（确认窗口 1200ms + stopCaptureAndAsr 收口链路）；
+    // 全双工行为由「全双工对话窗口」专项 describe 覆盖（patch fullDuplex: true）
+    fullDuplex: false,
+    // 半双工契约下的端点节奏 = 旧默认（relaxed 档 1200+1200ms）
+    utteranceEndpointProfile: 'relaxed',
     ...settingsPatch,
   }
   if (legacyV1) {
@@ -257,7 +262,7 @@ function createHarness(
       workspaceId === 'ws-1' ? 'session-in-ws1' : null,
     listSessionModels: async (sessionId) => {
       listedModels.push(sessionId)
-      return ['claude-sonnet-4-5', 'gpt-4o-mini']
+      return { models: ['claude-sonnet-4-5', 'gpt-4o-mini'] }
     },
     updateSessionModel: async (sessionId, modelId) => {
       modelUpdates.push({ sessionId, modelId })
@@ -685,15 +690,15 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.stateEvents.some((e) => e.state === 'thinking')).toBe(false)
   })
 
-  it('防抖：说完判定灵敏度设置生效（从容 2 秒档）', async () => {
-    const h = createHarness({ utteranceConfirmMs: 2000 })
+  it('防抖：端点档位设置生效（standard 500ms vs relaxed 1200ms 确认窗口）', async () => {
+    const h = createHarness({ utteranceEndpointProfile: 'relaxed' })
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '慢速说话' })
-    // 推进 1200ms（标准档时长）→ 从容档尚未到期
-    await vi.advanceTimersByTimeAsync(1200)
+    // 推进 500ms（standard 档时长）→ relaxed 档尚未到期
+    await vi.advanceTimersByTimeAsync(500)
     expect(h.service.getStatus().state).toBe('listening')
-    // 推进到 2000ms → 到期收口
-    await vi.advanceTimersByTimeAsync(800)
+    // 推进到 1200ms → 到期收口
+    await vi.advanceTimersByTimeAsync(700)
     expect(h.service.getStatus().state).toBe('thinking')
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
@@ -1179,6 +1184,59 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.modelUpdates).toEqual([])
   })
 
+  it('M4 挂起选择态：说「不切了」取消选择回到聊天（不关语音）', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换模型' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.service.getStatus().state).toBe('speaking') // 候选列表播报中（挂起态已建立）
+    h.service.wake() // speaking 态唤醒 = 打断，回到 idle 后再听
+    h.service.wake()
+    const playMark = h.playCommands.length // 取消播报这批 play 的起点（此前是候选列表播报）
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '不切了' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(0) // cancel-selection 命令不进会话
+    expect(h.modelUpdates).toEqual([]) // 未发生模型切换
+    // 播报「好，不切了」→ 收尾后自动续听（连续对话链路），语音未被关闭。
+    // 多轮 sentenceId 已不撞号，须按批标记后逐句回收（而非从头取第一个）
+    const cancelPlays = h.playCommands
+      .slice(playMark)
+      .filter((c): c is Extract<VoiceAssistantPlayCommand, { kind: 'play' }> => c.kind === 'play')
+    for (const play of cancelPlays) {
+      h.service.handleRendererEvent({ type: 'playback-ended', sentenceId: play.sentenceId })
+    }
+    expect(cancelPlays.length).toBeGreaterThan(0)
+    await vi.advanceTimersByTimeAsync(900) // 播完 → idle → 800ms 后自动 listening
+    expect(h.service.getStatus().state).toBe('listening')
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '今天天气怎么样',
+    })
+    await vi.advanceTimersByTimeAsync(1250)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    // 挂起态已清 + 逃生门不放行普通对话，正常提交轮次
+    expect(h.submitted.length).toBe(1)
+  })
+
+  it('stop-listening 命令完全收口：停采集停识别再转 idle', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '取消' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.service.getStatus().state).toBe('idle')
+    // A3：stop-listening 需真正拆除采集（发 stop 指令），而非仅收状态机
+    const stopCommands = h.captureCommands.filter((c) => c.action === 'stop')
+    expect(stopCommands.length).toBeGreaterThan(0)
+  })
+
   it('会话聚焦：唤醒预跳 + 提交轮次 → emitSessionFocus 驱动 UI 跳转', async () => {
     const h = createHarness()
     h.service.wake()
@@ -1476,5 +1534,428 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.service.getStatus().state).toBe('idle')
     await vi.advanceTimersByTimeAsync(1_000)
     expect(h.service.getStatus().state).toBe('idle')
+  })
+})
+
+// ─── M5 全双工（对话窗口 / 插话队列 / 抢占 / graceful） ─────────────────────
+
+describe('VoiceAssistantService 全双工对话窗口', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** 全双工 harness（标准端点档 800+500ms） */
+  function createDuplexHarness(patch: Partial<VoiceAssistantSettings> = {}): Harness {
+    return createHarness({ fullDuplex: true, utteranceEndpointProfile: 'standard', ...patch })
+  }
+
+  /** 驱动一轮完整对话到 speaking（提交 + 首句播放指令下发） */
+  async function driveToSpeaking(h: Harness, text = '今天天气怎么样'): Promise<void> {
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text })
+    await vi.advanceTimersByTimeAsync(500) // standard 档确认窗口
+    expect(h.service.getStatus().state).toBe('thinking')
+    expect(h.submitted.length).toBe(1)
+    h.service.handleTurnEvent({
+      type: 'assistant_message',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      mode: 'delta',
+      content: '今天晴，气温二十五度。',
+      provider: 'p',
+      isFinal: false,
+    } as never)
+    await vi.advanceTimersByTimeAsync(20)
+    expect(h.service.getStatus().state).toBe('speaking')
+  }
+
+  it('窗口内提交不停采集不停 ASR（纯流式直接提交，duplexActive 广播）', async () => {
+    const h = createDuplexHarness()
+    h.service.wake()
+    expect(h.service.getStatus().duplexActive).toBe(false) // listening 态不算插话窗口
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '查个日程' })
+    await vi.advanceTimersByTimeAsync(500)
+    // 全双工：确认到期直接提交，不 stopCaptureAndAsr
+    expect(h.service.getStatus().state).toBe('thinking')
+    expect(h.service.getStatus().duplexActive).toBe(true)
+    expect(h.captureCommands.some((c) => c.action === 'stop')).toBe(false)
+    expect(h.submitted.length).toBe(1)
+  })
+
+  it('thinking 期插话 → 确认窗口 → 入队（queuedInputs 广播，容量语义）', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    // thinking/speaking 期插话（speaking 态）：final → draft → 确认 → 入队
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '顺便帮我查下明天的日程安排',
+    })
+    expect(h.service.getStatus().queueDraft).toEqual({ text: '顺便帮我查下明天的日程安排' })
+    await vi.advanceTimersByTimeAsync(500)
+    const queued = h.service.getStatus().queuedInputs
+    expect(queued.length).toBe(1)
+    expect(queued[0]).toMatchObject({
+      text: '顺便帮我查下明天的日程安排',
+      capturedState: 'speaking',
+    })
+    expect(h.service.getStatus().queueDraft).toBeNull()
+  })
+
+  it('插话确认窗口内继续说 → 撤销拼接为一条', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '等一下' })
+    await vi.advanceTimersByTimeAsync(300)
+    // 窗口内继续说（partial 撤销计时 + 新 final 拼接）
+    h.service.handleRecognitionEvent({
+      type: 'partial',
+      sessionId: 'voice-100-1',
+      text: '换个话题',
+    })
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '换个话题' })
+    await vi.advanceTimersByTimeAsync(500)
+    const queued = h.service.getStatus().queuedInputs
+    expect(queued.length).toBe(1)
+    expect(queued[0]?.text).toBe('等一下 换个话题')
+  })
+
+  it('回声守卫：speaking 期 final 与在播 TTS 文本一致 → 静默丢弃不入队', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h) // 在播「今天晴，气温二十五度。」
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '今天晴，气温二十五度。',
+    })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(h.service.getStatus().queuedInputs.length).toBe(0)
+    expect(h.service.getStatus().queueDraft).toBeNull()
+  })
+
+  it('语音命令旁路：speaking 期说「切换会话」→ 不入队直接执行', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换会话' })
+    await vi.advanceTimersByTimeAsync(600)
+    // 命令立即执行（念列表），无排队输入
+    expect(h.listedRecent.length).toBe(1)
+    expect(h.service.getStatus().queuedInputs.length).toBe(0)
+  })
+
+  it('队列自动派发（completed 先到，播报未完 → graceful 接管）', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '再查下湿度',
+    })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(h.service.getStatus().queuedInputs.length).toBe(1)
+    // 生成完成（播报未完）：completed → 300ms 回捞 → 队列派发（graceful）
+    h.service.handleTurnEvent({
+      type: 'agent_status',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      status: 'completed',
+    } as never)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(h.submitted.length).toBe(2)
+    expect(h.submitted[1]?.userMessageDisplayContent).toBe('再查下湿度')
+    // graceful 停止指令（非硬停）：stop 带 graceful 标记
+    const gracefulStop = h.playCommands.find((c) => c.kind === 'stop' && c.graceful === true)
+    expect(gracefulStop).toBeDefined()
+    // 队列已清空
+    expect(h.service.getStatus().queuedInputs.length).toBe(0)
+  })
+
+  it('graceful 接管完成即冲掉 queue-dispatch 衔接态（takeover-live 同态广播）', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '再查下湿度',
+    })
+    await vi.advanceTimersByTimeAsync(500)
+    h.service.handleTurnEvent({
+      type: 'agent_status',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      status: 'completed',
+    } as never)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(h.stateEvents.some((e) => e.reason === 'queue-dispatch')).toBe(true)
+    expect(h.stateEvents.some((e) => e.reason === 'takeover-live')).toBe(false) // 新首句未开播
+    // 新代首句 delta → 合成 → play 指令 → takeover-live 同态广播（HUD 衔接态翻篇）
+    h.service.handleTurnEvent({
+      type: 'assistant_message',
+      turnId: 'turn-2',
+      sessionId: 'session-voice-1',
+      mode: 'delta',
+      content: '湿度百分之六十。',
+      provider: 'p',
+      isFinal: false,
+    } as never)
+    await vi.advanceTimersByTimeAsync(20)
+    expect(h.stateEvents.some((e) => e.reason === 'takeover-live')).toBe(true)
+    const live = h.stateEvents.find((e) => e.reason === 'takeover-live')
+    expect(live).toMatchObject({ state: 'speaking', previous: 'speaking' })
+    // 桥接标志只触发一次：后续句子开播不重复广播
+    h.service.handleTurnEvent({
+      type: 'assistant_message',
+      turnId: 'turn-2',
+      sessionId: 'session-voice-1',
+      mode: 'delta',
+      content: '适合晾晒衣服。',
+      provider: 'p',
+      isFinal: false,
+    } as never)
+    await vi.advanceTimersByTimeAsync(20)
+    expect(h.stateEvents.filter((e) => e.reason === 'takeover-live').length).toBe(1)
+  })
+
+  it('命令确认播报期非选择插话只入队不起聊天轮（C3：announcing 冻结 graceful）', async () => {
+    const h = createDuplexHarness()
+    // 首句即命令（无轮次、无挂起选择态）：新建会话 → 播报确认（announcing）
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '新建会话' })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(h.createdSessions.length).toBe(1)
+    expect(h.submitted.length).toBe(0)
+    expect(h.service.getStatus().state).toBe('speaking')
+    // 确认播报期间说聊天内容：应入队（等播报完 listen-resume 派发），
+    // 不当场起聊天轮砍断播报（graceful 分支被 announcing 守卫拦下）
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '顺便讲个笑话吧',
+    })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(h.submitted.length).toBe(0)
+    expect(h.service.getStatus().queuedInputs.length).toBe(1)
+    expect(h.service.getStatus().queuedInputs[0]).toMatchObject({ text: '顺便讲个笑话吧' })
+  })
+
+  it('立即发送抢占作废挂起选择态（抢占后残留候选会误解析后续插话）', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    // 轮次生成中（activeTurn busy）→ 聊天插话入队
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '先回答刚才的问题',
+    })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(h.service.getStatus().queuedInputs.length).toBe(1)
+    // 命令旁路（不排队直接执行）：念模型候选 → 挂起选择态 + 队列仍有条目
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换模型' })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(h.listedModels.length).toBe(1)
+    expect(h.service.getStatus().queuedInputs.length).toBe(1)
+    // 立即发送抢占：作废挂起选择态 + 提交排队输入
+    await h.service.dispatchQueued()
+    expect(h.submitted.length).toBe(2)
+    expect(h.submitted[1]?.userMessageDisplayContent).toBe('先回答刚才的问题')
+    // 抢占后说「第二个」：挂起选择已作废 → 不再按模型序号执行
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '第二个' })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(h.modelUpdates.length).toBe(0)
+  })
+
+  it('队列自动派发（allPlayed 路径：生成中入队，播完 0ms 派发不续听）', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    // 生成仍在跑（activeTurn busy）→ 插话入队
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '查下湿度' })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(h.service.getStatus().queuedInputs.length).toBe(1)
+    // isFinal 收口（不经 completed 的 300ms 回捞）→ 播完 → allPlayed → 0ms 派发
+    h.service.handleTurnEvent({
+      type: 'assistant_message',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      mode: 'complete',
+      content: '今天晴，气温二十五度。',
+      provider: 'p',
+      isFinal: true,
+    } as never)
+    await vi.advanceTimersByTimeAsync(20)
+    const plays = h.playCommands.filter((c) => c.kind === 'play')
+    for (const command of plays) {
+      if (command.kind === 'play') {
+        h.service.handleRendererEvent({ type: 'playback-ended', sentenceId: command.sentenceId })
+      }
+    }
+    // allPlayed 后队列非空立即派发（不进 800ms 续听）
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(2)
+    expect(h.stateEvents.some((e) => e.reason === 'queue-dispatch')).toBe(true)
+  })
+
+  it('队列派发状态对齐：allPlayed 触发进入 thinking，首 delta 后正常转 speaking', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '查下湿度' })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(h.service.getStatus().queuedInputs.length).toBe(1)
+    h.service.handleTurnEvent({
+      type: 'assistant_message',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      mode: 'complete',
+      content: '今天晴，气温二十五度。',
+      provider: 'p',
+      isFinal: true,
+    } as never)
+    await vi.advanceTimersByTimeAsync(20)
+    const plays = h.playCommands.filter((c) => c.kind === 'play')
+    for (const command of plays) {
+      if (command.kind === 'play') {
+        h.service.handleRendererEvent({ type: 'playback-ended', sentenceId: command.sentenceId })
+      }
+    }
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(2)
+    // 原缺陷：派发轮卡在 idle——回声门控不武装、插话丢失、HUD 错态
+    expect(h.service.getStatus().state).toBe('thinking')
+    // 派发轮首个 delta → speaking（原缺陷：maybeTransitionSpeaking 只认 thinking，永不迁移）
+    h.service.handleTurnEvent({
+      type: 'assistant_message',
+      turnId: 'turn-2',
+      sessionId: 'session-voice-1',
+      mode: 'delta',
+      content: '湿度百分之四十。',
+      provider: 'p',
+      isFinal: false,
+    } as never)
+    await vi.advanceTimersByTimeAsync(20)
+    expect(h.service.getStatus().state).toBe('speaking')
+  })
+
+  it('立即发送（抢占）：cancelTurn + TTS 淡出 + 新提交 + ack', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '马上回答我',
+    })
+    await vi.advanceTimersByTimeAsync(500)
+    const queued = h.service.getStatus().queuedInputs
+    expect(queued.length).toBe(1)
+    const result = await h.service.dispatchQueued(queued[0]?.id)
+    expect(result.ok).toBe(true)
+    // 旧轮被取消（cancelTurn）
+    expect(h.cancelledSessions).toContain('session-voice-1')
+    // 新轮提交（抢占语义：不等旧轮）
+    expect(h.submitted.length).toBe(2)
+    expect(h.submitted[1]?.userMessageDisplayContent).toBe('马上回答我')
+    // TTS 立即淡出（stop 带 fadeMs）
+    const fadeStop = h.playCommands.filter((c) => c.kind === 'stop').find((c) => c.fadeMs != null)
+    expect(fadeStop).toBeDefined()
+    // 抢占状态事件
+    expect(h.stateEvents.some((e) => e.reason === 'preempt')).toBe(true)
+    // ack cue（首响反馈默认 cue）
+    expect(h.playCommands.some((c) => c.kind === 'cue' && c.cue === 'ack')).toBe(true)
+  })
+
+  it('打断保留队列：interrupt 后条目仍在，唤醒续听时补发', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '别忘了查日程',
+    })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(h.service.getStatus().queuedInputs.length).toBe(1)
+    // 用户打断（E9：打断的是播报，不是「我说过的话」）
+    h.service.interrupt()
+    expect(h.service.getStatus().state).toBe('idle')
+    expect(h.service.getStatus().queuedInputs.length).toBe(1)
+    // 再次唤醒进入对话 → 队首补发（提交链微任务落定后断言）
+    h.service.wake()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(2)
+    expect(h.submitted[1]?.userMessageDisplayContent).toBe('别忘了查日程')
+  })
+
+  it('停止聆听命令清空队列（E8）', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '排队的话' })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(h.service.getStatus().queuedInputs.length).toBe(1)
+    h.service.interrupt()
+    // 唤醒 → 队列派发（listen-resume）→ listening；说「停止」走命令路径清空
+    h.service.wake()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(2) // 队首「排队的话」已补发
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '停止' })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(h.service.getStatus().state).toBe('idle')
+    expect(h.service.getStatus().queuedInputs.length).toBe(0)
+  })
+
+  it('队列容量 3：第 4 条挤掉最旧', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    for (const text of ['第一条排队', '第二条排队', '第三条排队', '第四条排队']) {
+      h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text })
+      await vi.advanceTimersByTimeAsync(500)
+    }
+    const queued = h.service.getStatus().queuedInputs
+    expect(queued.length).toBe(3)
+    expect(queued.map((q) => q.text)).toEqual(['第二条排队', '第三条排队', '第四条排队'])
+  })
+
+  it('全双工续听复用 ASR 会话（duplex listening resumed，无重复 start 指令）', async () => {
+    const h = createDuplexHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '你好' })
+    await vi.advanceTimersByTimeAsync(500)
+    h.service.handleTurnEvent({
+      type: 'assistant_message',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      mode: 'complete',
+      content: '你好，有什么可以帮你？',
+      provider: 'p',
+      isFinal: true,
+    } as never)
+    await vi.advanceTimersByTimeAsync(20)
+    h.service.handleTurnEvent({
+      type: 'agent_status',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      status: 'completed',
+    } as never)
+    await vi.advanceTimersByTimeAsync(400)
+    const plays = h.playCommands.filter((c) => c.kind === 'play')
+    for (const command of plays) {
+      if (command.kind === 'play') {
+        h.service.handleRendererEvent({ type: 'playback-ended', sentenceId: command.sentenceId })
+      }
+    }
+    // 播完 → 续听（800ms 后）→ 复用窗口（不重发 capture start）
+    await vi.advanceTimersByTimeAsync(900)
+    expect(h.service.getStatus().state).toBe('listening')
+    const starts = h.captureCommands.filter((c) => c.action === 'start')
+    expect(starts.length).toBe(1)
+  })
+
+  it('云引擎强制半双工：fullDuplex=true 但 recognitionEngine=cloud → 不开窗口', async () => {
+    const h = createDuplexHarness({ recognitionEngine: 'cloud' })
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '云转写' })
+    await vi.advanceTimersByTimeAsync(500)
+    // cloud 引擎：确认到期走 stopCaptureAndAsr（半双工收口链路）
+    expect(h.captureCommands.some((c) => c.action === 'stop')).toBe(true)
+    expect(h.service.getStatus().duplexActive).toBe(false)
   })
 })

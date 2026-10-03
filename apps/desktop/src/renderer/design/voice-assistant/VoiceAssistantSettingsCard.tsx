@@ -277,6 +277,35 @@ export function VoiceAssistantSettingsCard() {
           }
         />
         <SettingsRow
+          title="全双工聆听"
+          tip={
+            settings.recognitionEngine === 'cloud'
+              ? '对话进行中（思考/播报）麦克风保持聆听：可随时插话，新输入默认排队到当前轮完成后自动提交，不自动打断当前回答；想马上处理可点 HUD 上的「立即发送」。当前使用云端识别引擎，暂不支持全双工。'
+              : '对话进行中（思考/播报）麦克风保持聆听：可随时插话，新输入默认排队到当前轮完成后自动提交，不自动打断当前回答；想马上处理可点 HUD 上的「立即发送」。关闭后回到半双工（播报结束后才继续聆听）。'
+          }
+          right={
+            <Switch
+              checked={settings.fullDuplex && settings.recognitionEngine === 'local'}
+              disabled={settings.recognitionEngine === 'cloud'}
+              onChange={(v) => void update({ fullDuplex: v })}
+            />
+          }
+        />
+        <SettingsRow
+          title="首响反馈"
+          tip="一句话说完、确认提交的瞬间给出即时反馈，等待模型首句期间不再「无声」。提示音为本地合成的短双音（零成本零延迟）；关闭只保留界面反馈。"
+          right={
+            <Select
+              value={settings.firstResponseFeedback}
+              onChange={(v) => void update({ firstResponseFeedback: v })}
+              options={[
+                { label: '提示音（推荐）', value: 'cue' },
+                { label: '关闭', value: 'off' },
+              ]}
+            />
+          }
+        />
+        <SettingsRow
           title="口语化回复提示"
           tip="语音轮次自动要求 Agent 用简短口语回复，避免朗读代码块与表格。"
           right={
@@ -314,15 +343,15 @@ export function VoiceAssistantSettingsCard() {
         />
         <SettingsRow
           title="说完判定"
-          tip="检测到停顿后再等待一段静默确认才发送，期间继续说话会自动拼接，防止换气/思考停顿把话截断。「从容」适合说话慢或爱停顿的场景。"
+          tip="检测到停顿后等待一段静默确认才发送（尾静音 + 确认窗口合计：迅捷约 1 秒 / 标准约 1.3 秒 / 从容 2.4 秒），期间继续说话会自动拼接，防止换气/思考停顿把话截断。「迅捷」可能截断长停顿（靠续说纠正兜底）；「从容」适合说话慢或爱停顿的场景。"
           right={
             <Select
-              value={String(settings.utteranceConfirmMs)}
-              onChange={(v) => void update({ utteranceConfirmMs: Number(v) })}
+              value={settings.utteranceEndpointProfile}
+              onChange={(v) => void update({ utteranceEndpointProfile: v })}
               options={[
-                { label: '快（0.6 秒）', value: '600' },
-                { label: '标准（1.2 秒）', value: '1200' },
-                { label: '从容（2 秒）', value: '2000' },
+                { label: '迅捷（约 1 秒）', value: 'snappy' },
+                { label: '标准（推荐）', value: 'standard' },
+                { label: '从容（2.4 秒）', value: 'relaxed' },
               ]}
             />
           }

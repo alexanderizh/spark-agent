@@ -57,6 +57,17 @@ function firstPlaySentenceId(deps: ReturnType<typeof createDeps>): string {
   return (play as Extract<VoiceAssistantPlayCommand, { kind: 'play' }>).sentenceId
 }
 
+/** 从 sendPlay 记录里取全部 play 指令的 sentenceId */
+function allPlaySentenceIds(deps: ReturnType<typeof createDeps>): string[] {
+  return deps.sendPlay.mock.calls
+    .map((call) => call[0] as VoiceAssistantPlayCommand)
+    .filter(
+      (command): command is Extract<VoiceAssistantPlayCommand, { kind: 'play' }> =>
+        command.kind === 'play',
+    )
+    .map((command) => command.sentenceId)
+}
+
 describe('classifyTtsFailureReason', () => {
   it('media-router 无候选渠道特征串归为 no-channel', () => {
     expect(classifyTtsFailureReason('No provider supports capability audio.speech')).toBe(
@@ -153,6 +164,90 @@ describe('VoiceTtsPipeline 整轮合成失败提示', () => {
 
     expect(deps.onAllPlayed).toHaveBeenCalledTimes(1)
     expect(deps.onTurnSynthesisFailed).not.toHaveBeenCalled()
+  })
+
+  it('graceful 接管时新轮 sentenceId 与未回收旧句不撞号（回归）', async () => {
+    const deps = createDeps()
+    const pipeline = new VoiceTtsPipeline(deps)
+
+    // 第 1 轮：两句合成入队（模拟播放中，awaitingPlayback 未回收）
+    pipeline.beginTurn()
+    pipeline.finalize('这是第一句播报内容。这是第二句播报内容。')
+    await flushSynthesisQueue()
+    const firstTurnIds = allPlaySentenceIds(deps)
+    deps.sendPlay.mockClear()
+
+    // graceful 接管：旧句留在 awaitingPlayback 等渲染端回收，counter 归零
+    pipeline.beginTurn('graceful')
+    pipeline.finalize('新轮的第一句内容。新轮的第二句内容。')
+    await flushSynthesisQueue()
+    const secondTurnIds = allPlaySentenceIds(deps)
+
+    // 新旧两轮 id 不得相交：撞号会让 Map 条目被覆盖（旧文件泄漏）、
+    // 渲染端回收旧句的事件误删同号新句的条目与文件
+    expect(firstTurnIds).toHaveLength(2)
+    expect(secondTurnIds).toHaveLength(2)
+    for (const id of secondTurnIds) {
+      expect(firstTurnIds).not.toContain(id)
+    }
+    // graceful 接管发的是 graceful stop（非硬停）
+    const stop = deps.sendPlay.mock.calls
+      .map((call) => call[0] as VoiceAssistantPlayCommand)
+      .find((command) => command.kind === 'stop')
+    expect(stop).toMatchObject({ kind: 'stop', graceful: true })
+  })
+
+  it('预取乱序完成时 play 严格按 sequence 序下发（发送水位线，回归）', async () => {
+    // seq1 合成慢（延迟 3 轮 microtask）、seq2 立即完成——预取并发 2 下典型乱序
+    let call = 0
+    const deps = createDeps({
+      synthesize: vi.fn(async () => {
+        call += 1
+        if (call === 1) {
+          for (let i = 0; i < 3; i += 1) await Promise.resolve()
+        }
+        return { filePath: `/virtual/va-tts/seg-${call}.mp3` }
+      }),
+    })
+    const pipeline = new VoiceTtsPipeline(deps)
+
+    pipeline.beginTurn()
+    pipeline.finalize('这是第一句播报内容。这是第二句播报内容。')
+    await flushSynthesisQueue()
+
+    const plays = deps.sendPlay.mock.calls
+      .map((c) => c[0] as VoiceAssistantPlayCommand)
+      .filter(
+        (command): command is Extract<VoiceAssistantPlayCommand, { kind: 'play' }> =>
+          command.kind === 'play',
+      )
+    expect(plays.map((p) => p.sequence)).toEqual([1, 2])
+  })
+
+  it('前句合成失败不卡水位：失败句跳过，后续句照常按序下发', async () => {
+    let call = 0
+    const deps = createDeps({
+      shouldPlayCues: vi.fn(() => false),
+      synthesize: vi.fn(async () => {
+        call += 1
+        if (call === 1) throw new Error('seq1 synthesis failed')
+        return { filePath: `/virtual/va-tts/seg-${call}.mp3` }
+      }),
+    })
+    const pipeline = new VoiceTtsPipeline(deps)
+
+    pipeline.beginTurn()
+    pipeline.finalize('这是第一句播报内容。这是第二句播报内容。')
+    await flushSynthesisQueue()
+
+    const plays = deps.sendPlay.mock.calls
+      .map((c) => c[0] as VoiceAssistantPlayCommand)
+      .filter(
+        (command): command is Extract<VoiceAssistantPlayCommand, { kind: 'play' }> =>
+          command.kind === 'play',
+      )
+    // 失败句不下发，成功句不被缺失序卡住
+    expect(plays.map((p) => p.sequence)).toEqual([2])
   })
 
   it('相同原因 5 分钟内重复整轮失败被节流，跨窗口后恢复提示', async () => {

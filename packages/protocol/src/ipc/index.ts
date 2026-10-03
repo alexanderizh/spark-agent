@@ -163,6 +163,10 @@ import type {
 } from '../voice.js'
 import type {
   VoiceAssistantCaptureCommand,
+  VoiceAssistantDiscardQueuedRequest,
+  VoiceAssistantDiscardQueuedResponse,
+  VoiceAssistantDispatchQueuedRequest,
+  VoiceAssistantDispatchQueuedResponse,
   VoiceAssistantGetSettingsRequest,
   VoiceAssistantGetSettingsResponse,
   VoiceAssistantGetStatusRequest,
@@ -8223,6 +8227,14 @@ export interface IpcChannelMap
   'voice-assistant:trigger': [VoiceAssistantTriggerRequest, VoiceAssistantTriggerResponse]
   'voice-assistant:interrupt': [VoiceAssistantInterruptRequest, VoiceAssistantInterruptResponse]
   'voice-assistant:reset-route': [VoiceAssistantResetRouteRequest, VoiceAssistantResetRouteResponse]
+  'voice-assistant:dispatch-queued': [
+    VoiceAssistantDispatchQueuedRequest,
+    VoiceAssistantDispatchQueuedResponse,
+  ]
+  'voice-assistant:discard-queued': [
+    VoiceAssistantDiscardQueuedRequest,
+    VoiceAssistantDiscardQueuedResponse,
+  ]
   // 消息语音播报（会话消息底部按钮；复用语音助手 TTS 设置与产物目录）
   'voice-assistant:tts-synthesize': [
     VoiceAssistantTtsSynthesizeRequest,
