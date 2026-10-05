@@ -85,4 +85,12 @@ describe('officeViewerOptions', () => {
     expect(component).toContain('refreshCapabilities(true)')
     expect(component).toContain('正在检查当前平台可用的 Office 预览资源')
   })
+
+  it('attaches the Word line-height correction to the mounted viewer container', () => {
+    expect(component).toContain('attachDocxLineHeightCorrection')
+    expect(component).toContain(
+      'const container = viewerRef.current?.getController()?.container',
+    )
+    expect(component).toContain("}, [officeReady])")
+  })
 })

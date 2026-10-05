@@ -3,6 +3,7 @@ import type { FileViewerHandle, FileViewerProps, ViewerViewState } from '@file-v
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useResolvedTheme } from '../hooks/useResolvedTheme'
 import { createOfficeViewerOptions } from './officeViewerOptions'
+import { attachDocxLineHeightCorrection } from './officeViewerDocxLineHeight'
 import { useOptionalCapabilities } from '../optional-capabilities/useOptionalCapabilities'
 
 export default function OfficeFileViewer({
@@ -68,6 +69,16 @@ export default function OfficeFileViewer({
       setInstallError(error instanceof Error ? error.message : 'Office 预览资源安装失败，请重试')
     }
   }
+
+  // Word 预览行距校正：docx-preview 的倍数行距按字号计算而 Word 按字体自然行高，
+  // 中文文档行距整体偏紧约 30%。渲染完成后在 Shadow DOM 内做幂等改写（见模块注释）。
+  useEffect(() => {
+    if (!officeReady) return
+    const container = viewerRef.current?.getController()?.container
+    if (!container) return
+    return attachDocxLineHeightCorrection(container)
+  }, [officeReady])
+
   if (!officeReady) {
     const progress = capabilities.progress['office-viewer']
     const installing =
