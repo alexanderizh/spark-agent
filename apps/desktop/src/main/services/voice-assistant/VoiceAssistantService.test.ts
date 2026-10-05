@@ -19,7 +19,10 @@ import type {
   VoiceAssistantSettings,
   VoiceAssistantStateEvent,
 } from '@spark/protocol'
-import { DEFAULT_VOICE_ASSISTANT_SETTINGS } from '@spark/protocol'
+import {
+  DEFAULT_VOICE_ASSISTANT_SETTINGS,
+  VOICE_ASSISTANT_INTERNAL_OWNER_ID,
+} from '@spark/protocol'
 
 vi.mock('../VoiceRecognitionService.js', () => ({
   startVoiceSession: vi.fn(() => ({
@@ -29,6 +32,16 @@ vi.mock('../VoiceRecognitionService.js', () => ({
   })),
   stopVoiceSession: vi.fn(() => false),
   feedVoiceAudio: vi.fn(),
+  // standby 空闲期识别器预热：mock 下恒 true（命中缓存），预热行为语义由
+  // VoiceRecognitionService 侧单测锁定
+  warmupVoiceRecognizer: vi.fn((): boolean => true),
+  // 按轮区间精修链路：默认无音频游标（null → 跳过精修直接提交流式），
+  // 精修专项用例里按需 mockImplementation 覆盖
+  getVoiceSessionSampleCursor: vi.fn((): number | null => null),
+  refineVoiceSessionInterval: vi.fn(async () => null),
+  // 全双工长会话的缓存裁剪：mock 下恒 false（无裁剪发生），行为语义由
+  // VoiceRecognitionService 侧单测锁定
+  trimVoiceSessionPcmCache: vi.fn((): boolean => false),
 }))
 
 // TTS 产物目录操作走内存 fake（真实 fs promise 在 fake timers 下不会推进）
@@ -78,6 +91,7 @@ vi.mock('../VoiceIntegrityService.js', async (importOriginal) => {
 })
 
 import { VoiceAssistantService } from './VoiceAssistantService.js'
+import { stopVoiceSession } from '../VoiceRecognitionService.js'
 import type { VoiceAssistantRouteBinding } from '@spark/protocol'
 import type { VoiceRouteBinding } from './VoiceRouteBinding.js'
 
@@ -87,6 +101,8 @@ interface Harness {
   sessionFocusEvents: VoiceAssistantSessionFocusEvent[]
   captureCommands: VoiceAssistantCaptureCommand[]
   playCommands: VoiceAssistantPlayCommand[]
+  /** 送 TTS 合成的句子文本（经 mediaRouter.invoke 的 prompt 捕获，播报断言用） */
+  ttsPrompts: string[]
   submitted: Array<{ sessionId: string; message: string; userMessageDisplayContent: string }>
   cancelledSessions: string[]
   recovered: Array<{ sessionId: string; turnId: string }>
@@ -131,6 +147,7 @@ function createHarness(
   let peekAliveSessionId: string | null = 'session-voice-1'
   const captureCommands: VoiceAssistantCaptureCommand[] = []
   const playCommands: VoiceAssistantPlayCommand[] = []
+  const ttsPrompts: string[] = []
   const submitted: Harness['submitted'] = []
   const cancelledSessions: string[] = []
   const recovered: Harness['recovered'] = []
@@ -163,10 +180,10 @@ function createHarness(
     ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
     // 状态机测试不涉及门控；显式关闭避免触发 vad 模型后台补装（多调 installVoicePack）
     voiceFocus: 'off',
-    // 既有用例锚定半双工契约（确认窗口 1200ms + stopCaptureAndAsr 收口链路）；
+    // 既有用例锚定半双工契约（确认窗口 1800ms + stopCaptureAndAsr 收口链路）；
     // 全双工行为由「全双工对话窗口」专项 describe 覆盖（patch fullDuplex: true）
     fullDuplex: false,
-    // 半双工契约下的端点节奏 = 旧默认（relaxed 档 1200+1200ms）
+    // 半双工契约下的端点节奏 = relaxed 档（2000+1800ms，长停顿容忍优先）
     utteranceEndpointProfile: 'relaxed',
     ...settingsPatch,
   }
@@ -207,15 +224,18 @@ function createHarness(
     mediaRouter: (overrides.mediaRouter ?? {
       // 既有用例的 provider 无任何声明数据，supports 恒 true 保持自动选路不缺候选
       supports: () => true,
-      invoke: async () => ({
-        output: {
-          provider: 'fake-tts',
-          model: 'tts-1',
-          mode: 'sync',
-          assets: [{ type: 'audio', filePath: `/tmp/va-tts-${Date.now()}-${Math.random()}.mp3` }],
-        },
-        providerProfileId: 'p1',
-      }),
+      invoke: async (request: { prompt?: string }) => {
+        ttsPrompts.push(request.prompt ?? '')
+        return {
+          output: {
+            provider: 'fake-tts',
+            model: 'tts-1',
+            mode: 'sync',
+            assets: [{ type: 'audio', filePath: `/tmp/va-tts-${Date.now()}-${Math.random()}.mp3` }],
+          },
+          providerProfileId: 'p1',
+        }
+      },
     }) as never,
     submitVoiceTurn: async (params) => {
       submitted.push(params)
@@ -284,6 +304,7 @@ function createHarness(
     sessionFocusEvents,
     captureCommands,
     playCommands,
+    ttsPrompts,
     submitted,
     cancelledSessions,
     recovered,
@@ -321,7 +342,7 @@ async function driveAssistantSpeech(h: Harness): Promise<void> {
     sessionId: 'voice-100-1',
     text: '念一句话',
   })
-  await vi.advanceTimersByTimeAsync(1250)
+  await vi.advanceTimersByTimeAsync(1850)
   expect(h.service.getStatus().state).toBe('thinking')
   // 收口 flush：尾句并入 + 会话停止 → 真正 submit（activeTurn 建立后 delta 才被消费）
   h.service.handleRecognitionEvent({
@@ -395,7 +416,7 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.service.getStatus().state).toBe('listening')
     expect(h.stateEvents.some((e) => e.reason === 'confirm')).toBe(true)
     // 确认窗口内持续静默 → 到期收口 → thinking → flush 收尾
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     expect(h.service.getStatus().state).toBe('thinking')
     expect(h.captureCommands.some((c) => c.action === 'stop')).toBe(true)
     // flush 尾句并入
@@ -460,6 +481,40 @@ describe('VoiceAssistantService 状态机', () => {
     }
     expect(h.service.getStatus().state).toBe('idle')
     expect(h.stateEvents.at(-1)).toMatchObject({ state: 'idle', reason: 'completed' })
+  })
+
+  it('等待播报卡死兜底：渲染端 ended 全丢失，看门狗宽限满后自动收口回 idle', async () => {
+    const h = createHarness()
+    await driveAssistantSpeech(h)
+    // 权威全文 + 轮次终态（与完整链路一致，此后只等播放回收）
+    h.service.handleTurnEvent({
+      type: 'assistant_message',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      mode: 'complete',
+      content: '这是播报的第一句。',
+      provider: 'p',
+      isFinal: true,
+    } as never)
+    await vi.advanceTimersByTimeAsync(20)
+    h.service.handleTurnEvent({
+      type: 'agent_status',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      status: 'completed',
+    } as never)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(h.service.getStatus().state).toBe('speaking')
+
+    // 现场复刻：渲染端 ended 事件全部丢失（播放悬挂/主进程阻塞后事件被丢）——
+    // 不回发任何 playback-ended，推进超过看门狗宽限（120s）
+    await vi.advanceTimersByTimeAsync(119_800)
+    // 看门狗回收丢失句 → allPlayed → 状态机脱离 speaking 卡死
+    expect(h.stateEvents.some((e) => e.state === 'idle' && e.reason === 'completed')).toBe(true)
+    expect(['idle', 'listening', 'standby']).toContain(h.service.getStatus().state)
+    // 回收路径补发带淡出的停播指令（复位渲染端播放态）
+    const fadeStop = h.playCommands.filter((c) => c.kind === 'stop').find((c) => c.fadeMs != null)
+    expect(fadeStop).toBeDefined()
   })
 
   it('TTS 自动选路：渠道级误声明 audio.speech 的 ASR 渠道不再抢走语音合成', async () => {
@@ -528,7 +583,7 @@ describe('VoiceAssistantService 状态机', () => {
       text: '今天天气怎么样',
     })
     // 确认窗口静默到期 → thinking → stop（refine 模式）
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     expect(h.service.getStatus().state).toBe('thinking')
     // flush 尾句并入流式拼接
     h.service.handleRecognitionEvent({
@@ -662,11 +717,11 @@ describe('VoiceAssistantService 状态机', () => {
       sessionId: 'voice-100-1',
       text: '明天北京的天气',
     })
-    // 推进 800ms（不到 1200ms 窗口）→ 仍未收口
-    await vi.advanceTimersByTimeAsync(800)
+    // 推进 1000ms（不到 1800ms 窗口）→ 仍未收口
+    await vi.advanceTimersByTimeAsync(1000)
     expect(h.service.getStatus().state).toBe('listening')
-    // 再推进 500ms → 窗口到期 → thinking → flush 收口
-    await vi.advanceTimersByTimeAsync(500)
+    // 再推进 850ms → 窗口到期 → thinking → flush 收口
+    await vi.advanceTimersByTimeAsync(850)
     expect(h.service.getStatus().state).toBe('thinking')
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
@@ -690,14 +745,14 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.stateEvents.some((e) => e.state === 'thinking')).toBe(false)
   })
 
-  it('防抖：端点档位设置生效（standard 500ms vs relaxed 1200ms 确认窗口）', async () => {
+  it('防抖：端点档位设置生效（standard 1200ms vs relaxed 1800ms 确认窗口）', async () => {
     const h = createHarness({ utteranceEndpointProfile: 'relaxed' })
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '慢速说话' })
-    // 推进 500ms（standard 档时长）→ relaxed 档尚未到期
-    await vi.advanceTimersByTimeAsync(500)
+    // 推进 1200ms（standard 档时长）→ relaxed 档尚未到期
+    await vi.advanceTimersByTimeAsync(1200)
     expect(h.service.getStatus().state).toBe('listening')
-    // 推进到 1200ms → 到期收口
+    // 推进到 1900ms → 到期收口
     await vi.advanceTimersByTimeAsync(700)
     expect(h.service.getStatus().state).toBe('thinking')
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
@@ -723,7 +778,7 @@ describe('VoiceAssistantService 状态机', () => {
     const confirmEvent = h.stateEvents.find((e) => e.reason === 'confirm')
     expect(confirmEvent?.detail).toBe('你能干什么')
     // 窗口到期正常提交一遍
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(1)
@@ -735,7 +790,7 @@ describe('VoiceAssistantService 状态机', () => {
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '。。' })
     // 确认窗口到期 → 无有效正文 → 不收口、不停采集、继续聆听
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     expect(h.service.getStatus().state).toBe('listening')
     expect(h.captureCommands.some((c) => c.action === 'stop')).toBe(false)
     expect(h.submitted.length).toBe(0)
@@ -746,7 +801,7 @@ describe('VoiceAssistantService 状态机', () => {
       sessionId: 'voice-100-1',
       text: '现在帮你查询',
     })
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     expect(h.service.getStatus().state).toBe('thinking')
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
@@ -757,8 +812,14 @@ describe('VoiceAssistantService 状态机', () => {
   it('收口兜底：精修后仅剩标点 → 恢复聆听而非提交', async () => {
     const h = createHarness()
     h.service.wake()
-    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '嗯，啊' })
-    await vi.advanceTimersByTimeAsync(1250)
+    // 流式转写含有效字（「帮我看下」），不触发确认窗口的纯语气字退化过滤；
+    // 纯语气字碎片（「嗯，啊」类）在确认窗口已被丢弃，到不了精修环节
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '嗯，帮我看下',
+    })
+    await vi.advanceTimersByTimeAsync(1850)
     expect(h.service.getStatus().state).toBe('thinking')
     // 精修整体替换为纯标点（噪音段的典型精修产出）
     h.service.handleRecognitionEvent({ type: 'refined', sessionId: 'voice-100-1', text: '。' })
@@ -768,6 +829,99 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.submitted.length).toBe(0)
     expect(h.service.getStatus().state).toBe('listening')
     expect(h.captureCommands.filter((c) => c.action === 'start').length).toBe(2)
+  })
+
+  it('纯语气字碎片不提交：「我 我」类瞬态噪音碎片确认窗口到期继续聆听', async () => {
+    const h = createHarness()
+    h.service.wake()
+    // 日志实锤形态：鼠标点击被 ASR 硬解成「我 我」（2 字，恰在孤立单字 <2
+    // 过滤的空档），退化判定补上这个空档
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '我 我' })
+    await vi.advanceTimersByTimeAsync(1850)
+    expect(h.service.getStatus().state).toBe('listening')
+    expect(h.captureCommands.some((c) => c.action === 'stop')).toBe(false)
+    expect(h.submitted.length).toBe(0)
+    expect(h.stateEvents.some((e) => e.state === 'thinking')).toBe(false)
+    // 多段碎片拼接（3 字仍 ≤4 上限）同样拦截
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '嗯嗯 嗯' })
+    await vi.advanceTimersByTimeAsync(1850)
+    expect(h.service.getStatus().state).toBe('listening')
+    expect(h.submitted.length).toBe(0)
+    // 随后真实内容照常收口提交（过滤只是一次性丢弃，不损伤后续输入）
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '现在帮你查询',
+    })
+    await vi.advanceTimersByTimeAsync(1850)
+    expect(h.service.getStatus().state).toBe('thinking')
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(1)
+    expect(h.submitted[0]?.userMessageDisplayContent).toBe('现在帮你查询')
+  })
+
+  it('真实短答不误伤：「好的」正常提交（好/对 不在退化语气字集合）', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '好的' })
+    await vi.advanceTimersByTimeAsync(1850)
+    expect(h.service.getStatus().state).toBe('thinking')
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(1)
+    expect(h.submitted[0]?.userMessageDisplayContent).toBe('好的')
+    // 「对」单字在无挂起态下由既有孤立单字过滤（<2 有效字）处理——退化集合
+    // 「对」永不命中，纯函数层已断言（speechify.test.ts），本过滤不改变其行为
+  })
+
+  it('挂起选择态例外：说「嗯」不按噪音丢弃，正常到达命令解析（铁笼语义接管）', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换模型' })
+    await vi.advanceTimersByTimeAsync(1850)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.service.getStatus().state).toBe('speaking') // 候选列表播报中（挂起态已建立）
+    h.service.interrupt() // 打断播报不作废候选
+    expect(h.service.getStatus().state).toBe('idle')
+    h.service.wake()
+    // 挂起选择态等待序号短答：「嗯」（单字 + 退化语气字）不被确认窗口噪音过滤
+    // 吞掉——例外放行保证短答总能到达命令解析（序号/取消短语依赖同一通道）
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '嗯' })
+    await vi.advanceTimersByTimeAsync(1850)
+    // 未被丢弃：收口进入 thinking（若退化过滤误杀会停留 listening）
+    expect(h.service.getStatus().state).toBe('thinking')
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    // 既有铁笼语义：非序号文本按 select-model 名称尝试，「嗯」未命中候选 →
+    // 播报未匹配提示并清挂起态，不按普通输入提交（提交「嗯」反而是幻影输入）
+    expect(h.submitted.length).toBe(0)
+    expect(h.service.getStatus().state).toBe('speaking')
+    // 播报文本是未匹配提示（名称未命中 → 清挂起态 → 播报，同一分支收口）
+    expect(h.ttsPrompts.join('')).toContain('没有匹配的模型')
+    // 挂起态已清理：「第1个」不再进选择通道（选择态铁笼已解除），按普通输入
+    // 提交且不触发模型切换——若挂起态未清，「第1个」会命中序号选择改模型
+    h.service.interrupt()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '第1个' })
+    await vi.advanceTimersByTimeAsync(1850)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.modelUpdates).toEqual([])
+    expect(h.submitted.map((s) => s.userMessageDisplayContent)).toContain('第1个')
+  })
+
+  it('语音命令「停止」放行：确认窗口到期直接执行收口，不经噪音过滤', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '停止' })
+    await vi.advanceTimersByTimeAsync(1850)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.service.getStatus().state).toBe('idle')
+    expect(h.captureCommands.filter((c) => c.action === 'stop').length).toBeGreaterThan(0)
+    expect(h.submitted.length).toBe(0)
   })
 
   it('语音会话思考：开关/档位切换 → 同步绑定会话推理档位', async () => {
@@ -820,7 +974,7 @@ describe('VoiceAssistantService 状态机', () => {
     h.service.wake()
     await vi.advanceTimersByTimeAsync(20_100)
     // stopVoiceSession(flush) 后需送 session-stopped 才收口
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     expect(h.service.getStatus().state).toBe('idle')
     expect(h.stateEvents.at(-1)).toMatchObject({ state: 'idle', reason: 'timeout' })
@@ -842,7 +996,7 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.service.getStatus().state).toBe('listening')
     // 总时长越过原 20s 空转窗口仍未超时；到 40s（重置后再满 20s）才收口
     await vi.advanceTimersByTimeAsync(600)
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     expect(h.service.getStatus().state).toBe('idle')
     expect(h.stateEvents.at(-1)).toMatchObject({ state: 'idle', reason: 'timeout' })
@@ -863,7 +1017,7 @@ describe('VoiceAssistantService 状态机', () => {
     // 105s 已过仍 listening；推进越过 120s 硬上限 → 强制收口
     expect(h.service.getStatus().state).toBe('listening')
     await vi.advanceTimersByTimeAsync(20_000)
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     expect(h.service.getStatus().state).toBe('idle')
     expect(h.stateEvents.at(-1)).toMatchObject({ state: 'idle', reason: 'timeout' })
@@ -878,7 +1032,7 @@ describe('VoiceAssistantService 状态机', () => {
       sessionId: 'voice-100-1',
       text: '随便说点什么',
     })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     h.service.handleTurnEvent({
@@ -904,7 +1058,7 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '新开会话' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.createdSessions).toEqual(['session-voice-new'])
@@ -981,17 +1135,22 @@ describe('VoiceAssistantService 状态机', () => {
     })
     await vi.advanceTimersByTimeAsync(10)
     h.service.handleRendererEvent({ type: 'capture-started', sessionId: 'voice-assistant:kws' })
-    // 快捷键唤醒（复用常驻采集，不应对话采集 start）
+    // 快捷键唤醒（常驻采集在线：下发带 replayPreRoll 的对话 start——渲染端据此
+    // 复用常驻流不重起 getUserMedia，仅回放 pre-roll 补齐唤醒切换空窗的字头）
     h.service.wake()
     expect(h.service.getStatus().state).toBe('listening')
-    expect(h.captureCommands.some((c) => c.action === 'start' && c.mode === 'dialogue')).toBe(false)
+    const dialogueStart = h.captureCommands.find(
+      (c) => c.action === 'start' && c.mode === 'dialogue',
+    )
+    expect(dialogueStart?.replayPreRoll).toBe(true)
+    expect(dialogueStart?.sessionId).not.toBe('voice-assistant:kws')
     // 说话 → 提交 → isFinal → 播完
     h.service.handleRecognitionEvent({
       type: 'final',
       sessionId: 'voice-100-1',
       text: '说点什么',
     })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     h.service.handleTurnEvent({
@@ -1018,7 +1177,7 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换会话' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(0)
@@ -1027,7 +1186,7 @@ describe('VoiceAssistantService 状态机', () => {
     h.service.wake() // speaking 态唤醒 = 打断，回到 idle 后再听
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '第1个' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(0) // 选择命中仍不进会话
@@ -1042,7 +1201,7 @@ describe('VoiceAssistantService 状态机', () => {
       sessionId: 'voice-100-1',
       text: '切换到Spark工作区',
     })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(0)
@@ -1059,7 +1218,7 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换模型' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(0) // 命中命令不进会话
@@ -1069,7 +1228,7 @@ describe('VoiceAssistantService 状态机', () => {
     h.service.wake() // speaking 态唤醒 = 打断，回到 idle 后再听
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '第2个' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.modelUpdates).toEqual([{ sessionId: 'session-voice-1', modelId: 'gpt-4o-mini' }])
@@ -1084,7 +1243,7 @@ describe('VoiceAssistantService 状态机', () => {
       sessionId: 'voice-100-1',
       text: '切换到claude sonnet 4 5模型',
     })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.modelUpdates).toEqual([{ sessionId: 'session-voice-1', modelId: 'claude-sonnet-4-5' }])
@@ -1100,7 +1259,7 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换项目' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(0)
@@ -1110,7 +1269,7 @@ describe('VoiceAssistantService 状态机', () => {
     h.service.wake() // speaking 态唤醒 = 打断，回到 idle 后再听
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '个人项目' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.bindingUpdates.some((patch) => patch.defaultWorkspaceId === 'ws-2')).toBe(true)
@@ -1126,7 +1285,7 @@ describe('VoiceAssistantService 状态机', () => {
       sessionId: 'voice-100-1',
       text: '切换到画布功能的会话',
     })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(0)
@@ -1140,7 +1299,7 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换模型' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.service.getStatus().state).toBe('speaking') // 候选列表播报中（挂起态已建立）
@@ -1148,7 +1307,7 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.service.getStatus().state).toBe('idle')
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '第2个' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.modelUpdates).toEqual([{ sessionId: 'session-voice-1', modelId: 'gpt-4o-mini' }])
@@ -1159,14 +1318,14 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换模型' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.service.getStatus().state).toBe('speaking') // 候选列表播报中（挂起态已建立）
     h.service.wake() // speaking 态唤醒 = 打断，回到 idle 后再听
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '算了' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(0) // 「算了」= stop-listening 命令，清挂起态
@@ -1176,7 +1335,7 @@ describe('VoiceAssistantService 状态机', () => {
       sessionId: 'voice-100-1',
       text: '今天天气怎么样',
     })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     // 挂起态已清，不再被解析成 select-model，正常提交轮次
@@ -1188,7 +1347,7 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换模型' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.service.getStatus().state).toBe('speaking') // 候选列表播报中（挂起态已建立）
@@ -1196,7 +1355,7 @@ describe('VoiceAssistantService 状态机', () => {
     h.service.wake()
     const playMark = h.playCommands.length // 取消播报这批 play 的起点（此前是候选列表播报）
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '不切了' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(0) // cancel-selection 命令不进会话
@@ -1217,7 +1376,7 @@ describe('VoiceAssistantService 状态机', () => {
       sessionId: 'voice-100-1',
       text: '今天天气怎么样',
     })
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     // 挂起态已清 + 逃生门不放行普通对话，正常提交轮次
@@ -1228,7 +1387,7 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '取消' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.service.getStatus().state).toBe('idle')
@@ -1245,7 +1404,7 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.sessionFocusEvents).toEqual([{ sessionId: 'session-voice-1', cause: 'wake' }])
 
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '你好' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(1)
@@ -1262,7 +1421,7 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.sessionFocusEvents.filter((e) => e.cause === 'wake')).toHaveLength(0)
 
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '你好' })
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.sessionFocusEvents.some((e) => e.cause === 'turn')).toBe(true)
@@ -1273,7 +1432,7 @@ describe('VoiceAssistantService 状态机', () => {
     // 新开会话 → command-new
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '新开会话' })
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(
@@ -1286,13 +1445,13 @@ describe('VoiceAssistantService 状态机', () => {
     h.service.wake() // speaking 态唤醒 = 打断，回 idle
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换会话' })
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     h.service.wake() // speaking 打断 → idle
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '第1个' })
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(
@@ -1307,7 +1466,7 @@ describe('VoiceAssistantService 状态机', () => {
       sessionId: 'voice-100-1',
       text: '切换到Spark工作区',
     })
-    await vi.advanceTimersByTimeAsync(1250)
+    await vi.advanceTimersByTimeAsync(1850)
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(
@@ -1430,7 +1589,7 @@ describe('VoiceAssistantService 状态机', () => {
       sessionId: 'voice-100-1',
       text: '删掉那个文件',
     })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(1)
@@ -1456,7 +1615,7 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.service.getStatus().state).toBe('listening')
     // 说「同意」
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '同意' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.approvals).toEqual([{ requestId: 'req-1', decision: 'allow' }])
@@ -1479,7 +1638,7 @@ describe('VoiceAssistantService 状态机', () => {
     // 建轮次后接手 + 拒绝
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '执行命令' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(
@@ -1499,7 +1658,7 @@ describe('VoiceAssistantService 状态机', () => {
       }
     }
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '拒绝' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.approvals).toEqual([{ requestId: 'req-2', decision: 'deny' }])
@@ -1509,7 +1668,7 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness({ continuousMode: true })
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '讲个笑话' })
-    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    await vi.advanceTimersByTimeAsync(1850) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     h.service.handleTurnEvent({
@@ -1547,7 +1706,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
     vi.useRealTimers()
   })
 
-  /** 全双工 harness（标准端点档 800+500ms） */
+  /** 全双工 harness（标准端点档 1500+1200ms） */
   function createDuplexHarness(patch: Partial<VoiceAssistantSettings> = {}): Harness {
     return createHarness({ fullDuplex: true, utteranceEndpointProfile: 'standard', ...patch })
   }
@@ -1556,7 +1715,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
   async function driveToSpeaking(h: Harness, text = '今天天气怎么样'): Promise<void> {
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text })
-    await vi.advanceTimersByTimeAsync(500) // standard 档确认窗口
+    await vi.advanceTimersByTimeAsync(1250) // standard 档确认窗口
     expect(h.service.getStatus().state).toBe('thinking')
     expect(h.submitted.length).toBe(1)
     h.service.handleTurnEvent({
@@ -1577,7 +1736,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
     h.service.wake()
     expect(h.service.getStatus().duplexActive).toBe(false) // listening 态不算插话窗口
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '查个日程' })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     // 全双工：确认到期直接提交，不 stopCaptureAndAsr
     expect(h.service.getStatus().state).toBe('thinking')
     expect(h.service.getStatus().duplexActive).toBe(true)
@@ -1595,7 +1754,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
       text: '顺便帮我查下明天的日程安排',
     })
     expect(h.service.getStatus().queueDraft).toEqual({ text: '顺便帮我查下明天的日程安排' })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     const queued = h.service.getStatus().queuedInputs
     expect(queued.length).toBe(1)
     expect(queued[0]).toMatchObject({
@@ -1617,7 +1776,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
       text: '换个话题',
     })
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '换个话题' })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     const queued = h.service.getStatus().queuedInputs
     expect(queued.length).toBe(1)
     expect(queued[0]?.text).toBe('等一下 换个话题')
@@ -1631,16 +1790,49 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
       sessionId: 'voice-100-1',
       text: '今天晴，气温二十五度。',
     })
-    await vi.advanceTimersByTimeAsync(600)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.service.getStatus().queuedInputs.length).toBe(0)
     expect(h.service.getStatus().queueDraft).toBeNull()
+  })
+
+  it('thinking 期退化碎片 final「我 我」→ 不开草稿不入队，轮次不受扰动', async () => {
+    const h = createDuplexHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '今天天气怎么样',
+    })
+    await vi.advanceTimersByTimeAsync(1250)
+    expect(h.service.getStatus().state).toBe('thinking')
+    expect(h.submitted.length).toBe(1)
+    // thinking 期插话噪声碎片（日志实锤 viq-8/9/11/14 全为 thinking 期入队）：
+    // 播报活跃与时间窗判据都不在场，退化判定须全时段生效
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '我 我' })
+    expect(h.service.getStatus().queueDraft).toBeNull()
+    await vi.advanceTimersByTimeAsync(1250) // 若误开草稿，此处会确认入队
+    expect(h.service.getStatus().queuedInputs.length).toBe(0)
+    expect(h.service.getStatus().queueDraft).toBeNull()
+    // 原轮次不受扰动：正常进 speaking
+    h.service.handleTurnEvent({
+      type: 'assistant_message',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      mode: 'delta',
+      content: '今天晴，气温二十五度。',
+      provider: 'p',
+      isFinal: false,
+    } as never)
+    await vi.advanceTimersByTimeAsync(20)
+    expect(h.service.getStatus().state).toBe('speaking')
+    expect(h.submitted.length).toBe(1)
   })
 
   it('语音命令旁路：speaking 期说「切换会话」→ 不入队直接执行', async () => {
     const h = createDuplexHarness()
     await driveToSpeaking(h)
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换会话' })
-    await vi.advanceTimersByTimeAsync(600)
+    await vi.advanceTimersByTimeAsync(1250)
     // 命令立即执行（念列表），无排队输入
     expect(h.listedRecent.length).toBe(1)
     expect(h.service.getStatus().queuedInputs.length).toBe(0)
@@ -1654,7 +1846,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
       sessionId: 'voice-100-1',
       text: '再查下湿度',
     })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.service.getStatus().queuedInputs.length).toBe(1)
     // 生成完成（播报未完）：completed → 300ms 回捞 → 队列派发（graceful）
     h.service.handleTurnEvent({
@@ -1681,7 +1873,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
       sessionId: 'voice-100-1',
       text: '再查下湿度',
     })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     h.service.handleTurnEvent({
       type: 'agent_status',
       turnId: 'turn-1',
@@ -1724,7 +1916,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
     // 首句即命令（无轮次、无挂起选择态）：新建会话 → 播报确认（announcing）
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '新建会话' })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.createdSessions.length).toBe(1)
     expect(h.submitted.length).toBe(0)
     expect(h.service.getStatus().state).toBe('speaking')
@@ -1735,7 +1927,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
       sessionId: 'voice-100-1',
       text: '顺便讲个笑话吧',
     })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.submitted.length).toBe(0)
     expect(h.service.getStatus().queuedInputs.length).toBe(1)
     expect(h.service.getStatus().queuedInputs[0]).toMatchObject({ text: '顺便讲个笑话吧' })
@@ -1750,11 +1942,11 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
       sessionId: 'voice-100-1',
       text: '先回答刚才的问题',
     })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.service.getStatus().queuedInputs.length).toBe(1)
     // 命令旁路（不排队直接执行）：念模型候选 → 挂起选择态 + 队列仍有条目
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换模型' })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.listedModels.length).toBe(1)
     expect(h.service.getStatus().queuedInputs.length).toBe(1)
     // 立即发送抢占：作废挂起选择态 + 提交排队输入
@@ -1763,7 +1955,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
     expect(h.submitted[1]?.userMessageDisplayContent).toBe('先回答刚才的问题')
     // 抢占后说「第二个」：挂起选择已作废 → 不再按模型序号执行
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '第二个' })
-    await vi.advanceTimersByTimeAsync(600)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.modelUpdates.length).toBe(0)
   })
 
@@ -1772,7 +1964,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
     await driveToSpeaking(h)
     // 生成仍在跑（activeTurn busy）→ 插话入队
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '查下湿度' })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.service.getStatus().queuedInputs.length).toBe(1)
     // isFinal 收口（不经 completed 的 300ms 回捞）→ 播完 → allPlayed → 0ms 派发
     h.service.handleTurnEvent({
@@ -1801,7 +1993,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
     const h = createDuplexHarness()
     await driveToSpeaking(h)
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '查下湿度' })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.service.getStatus().queuedInputs.length).toBe(1)
     h.service.handleTurnEvent({
       type: 'assistant_message',
@@ -1845,7 +2037,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
       sessionId: 'voice-100-1',
       text: '马上回答我',
     })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     const queued = h.service.getStatus().queuedInputs
     expect(queued.length).toBe(1)
     const result = await h.service.dispatchQueued(queued[0]?.id)
@@ -1872,7 +2064,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
       sessionId: 'voice-100-1',
       text: '别忘了查日程',
     })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.service.getStatus().queuedInputs.length).toBe(1)
     // 用户打断（E9：打断的是播报，不是「我说过的话」）
     h.service.interrupt()
@@ -1889,7 +2081,7 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
     const h = createDuplexHarness()
     await driveToSpeaking(h)
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '排队的话' })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.service.getStatus().queuedInputs.length).toBe(1)
     h.service.interrupt()
     // 唤醒 → 队列派发（listen-resume）→ listening；说「停止」走命令路径清空
@@ -1897,28 +2089,30 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(2) // 队首「排队的话」已补发
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '停止' })
-    await vi.advanceTimersByTimeAsync(600)
+    await vi.advanceTimersByTimeAsync(1250)
     expect(h.service.getStatus().state).toBe('idle')
     expect(h.service.getStatus().queuedInputs.length).toBe(0)
   })
 
-  it('队列容量 3：第 4 条挤掉最旧', async () => {
+  it('忙碌期聚合：连说多段并成队尾同一条（一句话不拆成 N 个轮次）', async () => {
     const h = createDuplexHarness()
     await driveToSpeaking(h)
+    // agent 仍在生成（activeTurn 忙）：每段静默收口后不再各开一条，
+    // 追加到队尾同一条，派发时一轮发完
     for (const text of ['第一条排队', '第二条排队', '第三条排队', '第四条排队']) {
       h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text })
-      await vi.advanceTimersByTimeAsync(500)
+      await vi.advanceTimersByTimeAsync(1250)
     }
     const queued = h.service.getStatus().queuedInputs
-    expect(queued.length).toBe(3)
-    expect(queued.map((q) => q.text)).toEqual(['第二条排队', '第三条排队', '第四条排队'])
+    expect(queued.length).toBe(1)
+    expect(queued[0]?.text).toBe('第一条排队 第二条排队 第三条排队 第四条排队')
   })
 
   it('全双工续听复用 ASR 会话（duplex listening resumed，无重复 start 指令）', async () => {
     const h = createDuplexHarness()
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '你好' })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     h.service.handleTurnEvent({
       type: 'assistant_message',
       turnId: 'turn-1',
@@ -1953,9 +2147,147 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
     const h = createDuplexHarness({ recognitionEngine: 'cloud' })
     h.service.wake()
     h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '云转写' })
-    await vi.advanceTimersByTimeAsync(500)
+    await vi.advanceTimersByTimeAsync(1250)
     // cloud 引擎：确认到期走 stopCaptureAndAsr（半双工收口链路）
     expect(h.captureCommands.some((c) => c.action === 'stop')).toBe(true)
     expect(h.service.getStatus().duplexActive).toBe(false)
+  })
+
+  it('全双工按轮精修：区间音频离线重识别成功 → 精修文本整体替换流式结果提交', async () => {
+    const { getVoiceSessionSampleCursor, refineVoiceSessionInterval } =
+      await import('../VoiceRecognitionService.js')
+    // 本轮区间 3 秒音频（0 → 48000 samples @16k）
+    let cursor = 0
+    vi.mocked(getVoiceSessionSampleCursor).mockImplementation(() => cursor)
+    vi.mocked(refineVoiceSessionInterval).mockImplementation(async () => '今天天气怎么样？')
+    const h = createDuplexHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '今天天起怎么样',
+    })
+    cursor = 48_000
+    await vi.advanceTimersByTimeAsync(1250)
+    expect(h.submitted.length).toBe(1)
+    // 精修结果替换了流式的错字（天起 → 天气，补全标点）
+    expect(h.submitted[0]?.userMessageDisplayContent).toBe('今天天气怎么样？')
+    // 区间精修只认本轮音频：owner = 内部通道哨兵，fromSample = 轮起始游标
+    expect(vi.mocked(refineVoiceSessionInterval)).toHaveBeenCalledWith(
+      'voice-100-1',
+      VOICE_ASSISTANT_INTERNAL_OWNER_ID,
+      0,
+    )
+    vi.mocked(getVoiceSessionSampleCursor).mockImplementation(() => null)
+    vi.mocked(refineVoiceSessionInterval).mockImplementation(async () => null)
+  })
+
+  it('全双工按轮精修：精修失败/超时 → 自动回退流式结果，不阻断提交', async () => {
+    const { getVoiceSessionSampleCursor, refineVoiceSessionInterval } =
+      await import('../VoiceRecognitionService.js')
+    let cursor = 0
+    vi.mocked(getVoiceSessionSampleCursor).mockImplementation(() => cursor)
+    vi.mocked(refineVoiceSessionInterval).mockImplementation(async () => null)
+    const h = createDuplexHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '流式识别的原句',
+    })
+    cursor = 48_000
+    await vi.advanceTimersByTimeAsync(1250)
+    expect(h.submitted.length).toBe(1)
+    expect(h.submitted[0]?.userMessageDisplayContent).toBe('流式识别的原句')
+    vi.mocked(getVoiceSessionSampleCursor).mockImplementation(() => null)
+    vi.mocked(refineVoiceSessionInterval).mockImplementation(async () => null)
+  })
+
+  it('播报期门控由播放相位驱动武装（合成完成晚于 transition(speaking) 不漏整场）', async () => {
+    const { feedVoiceAudio } = await import('../VoiceRecognitionService.js')
+    const feedMock = vi.mocked(feedVoiceAudio)
+    feedMock.mockClear()
+    const h = createDuplexHarness()
+    const captureId = () =>
+      h.captureCommands.find((c) => c.action === 'start' && c.mode === 'dialogue')?.sessionId ?? ''
+
+    // 对照：listening 态（无播报、门控未武装）高能量音频原样直通 ASR
+    h.service.wake()
+    await vi.advanceTimersByTimeAsync(10) // flush startListening 的微任务（capture/asr 会话建立）
+    const loud = new Int16Array(1600).fill(20000)
+    h.service.handleAudioChunk(captureId(), loud)
+    const fedBefore = feedMock.mock.calls.at(-1)?.[1] as Int16Array
+    expect(fedBefore?.every((s) => s !== 0)).toBe(true)
+
+    // 驱动到 speaking 且首句合成完成（play 已下发）：transition('speaking') 早于
+    // 合成完成，此时门控武装只能来自管线的播放相位翻转回调（缺陷回归点）
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '今天天气怎么样',
+    })
+    await vi.advanceTimersByTimeAsync(1250)
+    h.service.handleTurnEvent({
+      type: 'assistant_message',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      mode: 'delta',
+      content: '今天晴，气温二十五度。',
+      provider: 'p',
+      isFinal: false,
+    } as never)
+    await vi.advanceTimersByTimeAsync(20)
+    expect(h.service.getStatus().state).toBe('speaking')
+    expect(h.playCommands.some((c) => c.kind === 'play')).toBe(true)
+
+    // 播报期喂高能量 chunk：门控已武装（warmup 期不放行）→ 等长置零压制
+    feedMock.mockClear()
+    h.service.handleAudioChunk(captureId(), loud)
+    const fedDuring = feedMock.mock.calls.at(-1)?.[1] as Int16Array
+    expect(fedDuring?.length).toBe(1600)
+    expect(fedDuring?.every((s) => s === 0)).toBe(true)
+
+    // 播放全部结束（相位翻 false）→ 门控解除；回到 listening 后恢复原样直通
+    for (const command of h.playCommands) {
+      if (command.kind === 'play') {
+        h.service.handleRendererEvent({ type: 'playback-ended', sentenceId: command.sentenceId })
+      }
+    }
+    h.service.handleTurnEvent({
+      type: 'agent_status',
+      turnId: 'turn-1',
+      sessionId: 'session-voice-1',
+      status: 'completed',
+    } as never)
+    await vi.advanceTimersByTimeAsync(1500) // 回捞兜底 300ms + 续听延迟 800ms（嵌套计时器）
+    feedMock.mockClear()
+    h.service.handleAudioChunk(captureId(), loud)
+    const fedAfter = feedMock.mock.calls.at(-1)?.[1] as Int16Array
+    expect(fedAfter?.every((s) => s !== 0)).toBe(true)
+  })
+
+  it('打断彻底收口：speaking 态 interrupt 释放双工采集/ASR，残留定时器不再拉起状态机', async () => {
+    const h = createDuplexHarness()
+    await driveToSpeaking(h)
+    const captureStopsBefore = h.captureCommands.filter((c) => c.action === 'stop').length
+    vi.mocked(stopVoiceSession).mockClear()
+
+    h.service.interrupt()
+    expect(h.service.getStatus().state).toBe('idle')
+    // 全双工下 thinking/speaking 期采集与 ASR 在线（插话聆听）：打断 = 用户显式
+    // 结束对话循环，麦克风与会话必须同步释放（旧实现只在 listening 态收）
+    expect(h.captureCommands.filter((c) => c.action === 'stop').length).toBe(captureStopsBefore + 1)
+    expect(vi.mocked(stopVoiceSession)).toHaveBeenCalledWith(
+      'voice-100-1',
+      VOICE_ASSISTANT_INTERNAL_OWNER_ID,
+      'flush',
+    )
+    expect(h.service.getStatus().duplexActive).toBe(false)
+
+    // 无差别清定时器回归：推进跨过全部对话定时器周期（空转 20s / 硬上限 120s /
+    // 续听 800ms），打断后的状态机不得被残留定时器拉回对话态或误报 error
+    await vi.advanceTimersByTimeAsync(130_000)
+    expect(['idle', 'standby']).toContain(h.service.getStatus().state)
+    expect(h.stateEvents.some((e) => e.reason === 'error')).toBe(false)
   })
 })

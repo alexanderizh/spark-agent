@@ -19,7 +19,7 @@
 import { mkdir, rm, unlink, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { createLogger, hasMeaningfulVoiceText } from '@spark/shared'
+import { createLogger, hasMeaningfulVoiceText, isDegenerateVoiceTranscript } from '@spark/shared'
 import type {
   AgentEvent,
   SessionReasoningEffort,
@@ -43,8 +43,12 @@ import {
 import type { MediaProviderProfile, MediaRouterService } from '@spark/agent-runtime'
 import {
   feedVoiceAudio,
+  getVoiceSessionSampleCursor,
+  refineVoiceSessionInterval,
   startVoiceSession,
   stopVoiceSession,
+  trimVoiceSessionPcmCache,
+  warmupVoiceRecognizer,
   type VoiceSessionHandle,
 } from '../VoiceRecognitionService.js'
 import { VoiceTtsPipeline } from './VoiceTtsPipeline.js'
@@ -80,10 +84,29 @@ const EMPTY_SPEECH_TIMEOUT_MS = 20_000
 const LISTENING_HARD_LIMIT_MS = 120_000
 /** M3 连续对话：播报到续听的间隔（等 TTS 尾音消散，防录进自己的播报） */
 const CONTINUOUS_LISTEN_DELAY_MS = 800
+/**
+ * 全双工 + AEC 确认生效时的更短续听间隔：尾音残余已由浏览器 AEC 消除，
+ * 800ms 空窗反而把用户抢话说出的字头丢掉（快节奏对话明显缺字）。AEC 未
+ * 确认生效（蓝牙 HFP/驱动失效）时维持 800ms 原节奏。
+ */
+const DUPLEX_CONTINUOUS_LISTEN_DELAY_MS = 300
 /** 插话输入队列容量（语音插话是短时行为，深队列无意义；超限挤最旧） */
 const BARGE_IN_QUEUE_CAPACITY = 3
 /** 回声守卫近期命中后的门控严格档保持时长（防间歇性回声反复穿透） */
 const ECHO_GUARD_STRICT_WINDOW_MS = 60_000
+/**
+ * 播报收尾后的回声尾音窗：续听延迟（800ms~1.2s）+ 约 3s 的 AEC 再收敛/
+ * TTS 尾音消散余量。窗口内整轮 <3 有效字的收口按幻影丢弃（真实短开场白
+ * 「你好」不受影响——只覆盖「播报→续听」衔接期，手动唤醒进入的聆听不设防）。
+ */
+const PLAYBACK_TAIL_ECHO_WINDOW_MS = 4_000
+/**
+ * 全双工按轮精修的兜底超时：基线 1.2s + 每秒有效音频 0.4s，上限 4s。超时
+ * （模型慢/积压）自动回退流式结果——精修是增强，不得阻塞轮次提交链路。
+ */
+const DUPLEX_REFINE_TIMEOUT_BASE_MS = 1_200
+const DUPLEX_REFINE_TIMEOUT_PER_SECOND_MS = 400
+const DUPLEX_REFINE_TIMEOUT_MAX_MS = 4_000
 /** 外部入口安装在途时的等待轮询间隔 */
 const KWS_INSTALL_WAIT_INTERVAL_MS = 5_000
 /** 等待轮询上限（120 × 5s = 10 分钟，覆盖全量语音包慢速下载） */
@@ -241,6 +264,8 @@ export class VoiceAssistantService {
   private aecEffective: boolean | null = null
   /** 回声守卫最近命中时刻（严格档保持窗口） */
   private echoGuardHitAt: number | null = null
+  /** 回声尾音窗到期时刻（播报收尾布防，见 scheduleHandoffConfirm 的幻影过滤） */
+  private listeningEchoGuardUntil = 0
   /**
    * graceful 接管桥接中（派发 → 新代首句开播的间隙）：HUD「本句播完后衔接」
    * 只应覆盖这个间隙。queue-dispatch 是同态广播，reason 会一直挂在渲染端，
@@ -248,6 +273,12 @@ export class VoiceAssistantService {
    * 整个新回答播报、还压住播报期新插话的队列框展示。
    */
   private gracefulTakeoverBridge = false
+  /**
+   * 全双工按轮精修的区间起点（ASR 会话采样偏移）：上一轮音频的消费边界。
+   * 轮次提交快照、插话 final 消费、队列派发等「本轮音频已用掉」的时刻推进，
+   * 下一轮精修只重识别 (本边界, 当前游标) 的音频，不卷入前几轮。
+   */
+  private duplexTurnStartSample = 0
   private readonly bargeInGate = new VoiceBargeInGate()
   private readonly inputQueue: VoiceInputQueue
 
@@ -313,6 +344,9 @@ export class VoiceAssistantService {
         }
       },
       onAllPlayed: () => this.handleAllPlayed(),
+      // 真实播报相位翻转（合成完成/全部回收）：回声门控的主驱动源——状态机
+      // 进 speaking 早于合成完成，只靠迁移武装会漏整场播报（缺陷回归点）
+      onPlaybackPhaseChange: () => this.syncPlaybackGate(),
       shouldPlayCues: () => this.settings.soundCues,
       onTurnSynthesisFailed: (message) => this.notifyTurnSynthesisFailed(message),
       shouldFastCutFirstSentence: () => this.settings.firstSentenceFastCut,
@@ -327,6 +361,12 @@ export class VoiceAssistantService {
             `[voice-assistant] queued input enqueued (${entry.id}, ${entry.text.length} chars, ${entry.capturedState}${evicted != null ? `, evictedOldest=${evicted.id}` : ''})`,
           )
           if (evicted != null) this.playCue('fail')
+          this.deps.broadcastStatus(this.getStatus())
+        },
+        onAppended: (entry) => {
+          log.info(
+            `[voice-assistant] queued input appended (${entry.id}, ${entry.text.length} chars)`,
+          )
           this.deps.broadcastStatus(this.getStatus())
         },
         onDraftChanged: () => {
@@ -429,11 +469,16 @@ export class VoiceAssistantService {
     const sessionThinkingChanged =
       normalized.sessionThinkingEnabled !== this.settings.sessionThinkingEnabled ||
       normalized.sessionThinkingEffort !== this.settings.sessionThinkingEffort
+    // 换档会改变 vadSilenceMs → 识别器缓存键失效，standby 预热需要按新档重做，
+    // 否则换档后首次唤醒退回同步构造路径（阻塞窗口重现、首句易丢）
+    const endpointProfileChanged =
+      normalized.utteranceEndpointProfile !== this.settings.utteranceEndpointProfile
     this.settings = normalized
     this.deps.writeSettings(normalized)
     if (shortcutChanged) this.rearmShortcut()
     if (standbyConfigChanged) this.applyAlwaysListeningSetting()
     if (sessionThinkingChanged) void this.syncSessionReasoningEffort()
+    if (endpointProfileChanged) this.scheduleRecognizerWarmup()
     // 全双工关闭（或引擎切 cloud 致不可用）：窗口收口 + 存量排队输入清空
     // （UI 侧随 duplexActive=false 一并隐藏队列框/迷你麦，不「说了谎」）
     if (!this.duplexEnabled && this.duplexWindowActive) {
@@ -646,10 +691,16 @@ export class VoiceAssistantService {
   /** 手动打断（HUD 按钮 / IPC）：任何活跃态立即回到 idle（用户显式结束对话循环） */
   interrupt(): void {
     this.turnEpoch += 1
-    if (this.continuousListenTimer != null) {
-      clearTimeout(this.continuousListenTimer)
-      this.continuousListenTimer = null
-    }
+    // 无差别清对话定时器（不按当前态挑）：卡死态下任何一个残留定时器晚触发都
+    // 会把已回 idle 的状态机再拉进非预期迁移（空转超时→error、续听→listening、
+    // 确认窗口→提交幻影转写），用户显式打断后状态机必须彻底静默
+    this.clearDialogueTimers()
+    // 卡死态取证快照：打断时刻的状态与在途资源（「等待播报不恢复」类缺陷的
+    // post-mortem 数据源——正常打断 state=speaking/ttsPending>0，异常卡死会
+    // 看到 state 与资源占用的错位组合）。一行 info，开销可忽略
+    log.info(
+      `[voice-assistant] interrupted (state=${this.state}, ttsPending=${this.pipeline.getPendingCount()}, turn=${this.activeTurn != null ? 'active' : 'none'}, queue=${this.inputQueue.size}, announcing=${this.announcing})`,
+    )
     // E9：打断保留插话队列（打断的是「播报/生成」，不是「我说过的话」——
     // 下次进对话（唤醒/续听）时由 maybeDispatchQueue 补发）；只撤草稿确认窗口
     const retained = this.inputQueue.size
@@ -657,8 +708,12 @@ export class VoiceAssistantService {
       log.info(`[voice-assistant] interrupted (queue retained ${retained})`)
     }
     this.inputQueue.cancelDraft()
+    // 统一走 teardownListening：listening 态收定时器/采集/ASR；thinking/speaking
+    // 态在全双工下采集与 ASR 仍在线（插话聆听），打断是用户显式结束对话循环，
+    // 麦克风与会话不能挂着（半双工下两值已为 null，空跑无害；字段全部判空，
+    // 幂等）。IPC 入口无状态守卫，standby 态到达时同样安全（KWS 常驻流不受影响）
+    this.teardownListening()
     if (this.state === 'listening') {
-      this.teardownListening()
       this.transition('idle', 'cancelled')
       this.logDialogueExit('interrupted')
       return
@@ -767,9 +822,34 @@ export class VoiceAssistantService {
         mode: 'kws',
       })
     }
+    // 对话识别器预热（startStandby 与档位切换共用，见 scheduleRecognizerWarmup）
+    this.scheduleRecognizerWarmup()
     if (this.state === 'idle' || this.state === 'standby') {
       this.transition('standby', 'standby-on')
     }
+  }
+
+  /**
+   * 对话识别器预热：standby 空闲期（或档位切换后）提前构造 OnlineRecognizer 命中
+   * cachedRecognizer，消除「唤醒→聆听」切换窗口内的模型加载阻塞（首句丢失根因
+   * 之一）。推迟到 setImmediate：不打断本次 standby 收尾（transition/采集指令先
+   * 落），阻塞发生在真正空闲的下一个宏任务。参数必须与 startListening 的
+   * startVoiceSession 入参逐字段一致（缓存键含 vadSilenceMs/enableVad）才能命中；
+   * 换档后 vadSilenceMs 变化会使缓存键失效，updateSettings 检测到即重新预热。
+   * 尽力而为：模型未装/运行时缺失时 warmup 内部静默降级，不影响任何主流程。
+   */
+  private scheduleRecognizerWarmup(): void {
+    setImmediate(() => {
+      if (this.disposed) return
+      warmupVoiceRecognizer({
+        sampleRate: 16000,
+        language: 'auto',
+        enableVad: true,
+        vadSilenceMs:
+          VOICE_ASSISTANT_ENDPOINT_PROFILES[this.settings.utteranceEndpointProfile].vadSilenceMs,
+        ...(this.settings.voiceFocus !== 'off' ? { noiseGate: this.settings.voiceFocus } : {}),
+      })
+    })
   }
 
   /** 外部安装在途的等待轮询：5s 一次，上限 10 分钟，超时提示手动处理 */
@@ -874,6 +954,19 @@ export class VoiceAssistantService {
       this.partialText = ''
       this.collectedFinals = []
       this.handoffPending = false
+      // 上一轮的插话/回声音频至此已全部消费：精修区间边界推到当前游标，
+      // 本轮聆听新说的话不再与历史音频混在同一段离线重识别里
+      this.markDuplexTurnBoundary()
+      // 边界之前的缓存音频同步裁剪：窗口会话跨轮存活，不裁则 PCM 缓存随对话
+      // 时长无限增长（≈1.9MB/分钟）。此处是安全点——上一轮区间精修的 await
+      // 必已结束（收口提交是它的下一步，轮次完成回到这里的前提）
+      if (this.asrSessionId != null) {
+        trimVoiceSessionPcmCache(
+          this.asrSessionId,
+          VOICE_ASSISTANT_INTERNAL_OWNER_ID,
+          this.duplexTurnStartSample,
+        )
+      }
       this.armEmptySpeechTimeout()
       this.armListeningHardLimit()
       this.transition('listening', reason)
@@ -891,7 +984,29 @@ export class VoiceAssistantService {
       this.kwsInstallInFlight || this.kwsInstallWaitTimer != null
         ? '语音包正在安装中，请稍候再试'
         : null
-    // 1. 先起主进程 ASR（失败则无需惊动渲染端采集）
+    // 1. 先请求渲染端起采集（渲染端 getUserMedia 数百 ms 与主进程 ASR 会话建立
+    //    并行；原「先 ASR 后采集」的顺序把两段串行延迟叠加，阻塞窗口内用户
+    //    已开口的音频无处可去——首句丢失根因之二）。captureSessionId 先行赋值：
+    //    起流完成先于 ASR 就绪到达的 chunk 通过 handleAudioChunk 的会话校验后
+    //    在事件循环排队，startVoiceSession 同步返回后依序喂入，不丢字头。
+    //    KWS 常驻采集在线时同样下发：渲染端收到 replayPreRoll 复用常驻流不重起
+    //    getUserMedia（重起丢字头），仅回放 pre-roll 补齐唤醒切换空窗。
+    //    audioProcessing 无条件强制下发（AEC+降噪+声源隔离）：语音助手对话
+    //    链路绝不采系统声音，不再依赖 browserDenoise 设置（该设置只影响会话
+    //    输入框语音录入）。
+    this.captureSessionId = captureSessionId
+    this.deps.sendCaptureCommand({
+      action: 'start',
+      sessionId: captureSessionId,
+      mode: 'dialogue',
+      replayPreRoll: true,
+      audioProcessing: {
+        noiseSuppression: true,
+        voiceIsolation: true,
+        echoCancellation: true,
+      },
+    })
+    // 2. 再起主进程 ASR（识别器已由 standby 预热命中缓存时瞬时完成）
     let handle: VoiceSessionHandle
     try {
       handle = startVoiceSession(
@@ -909,12 +1024,14 @@ export class VoiceAssistantService {
       const rawMessage = error instanceof Error ? error.message : String(error)
       const message = installPending ?? rawMessage
       log.warn(`[voice-assistant] asr start failed: ${rawMessage}`)
+      this.abortPendingDialogueCapture(captureSessionId)
       this.playCue('fail')
       this.transition('idle', 'error', message)
       return
     }
     if (!handle.success || handle.sessionId == null) {
       this.playCue('fail')
+      this.abortPendingDialogueCapture(captureSessionId)
       this.transition('idle', 'error', installPending ?? handle.error ?? '语音识别启动失败')
       return
     }
@@ -922,9 +1039,9 @@ export class VoiceAssistantService {
     log.info(
       `[voice-assistant] asr pipeline: denoise=${this.settings.browserDenoise}, focus=${this.settings.voiceFocus}, refine=${this.settings.refineTranscript}, engine=${this.settings.recognitionEngine}, vadSilence=${endpoint.vadSilenceMs}ms, duplex=${this.duplexEnabled}, endpoint=${this.settings.utteranceEndpointProfile}`,
     )
-    this.captureSessionId = captureSessionId
     this.asrSessionId = handle.sessionId
     this.closingAsrSessionId = null
+    this.duplexTurnStartSample = 0
     this.partialText = ''
     this.collectedFinals = []
     this.handoffPending = false
@@ -939,29 +1056,31 @@ export class VoiceAssistantService {
     log.info(
       `[voice-assistant] dialogue listening started (reason=${reason}, capture=${captureSessionId}, duplex=${this.duplexWindowActive})`,
     )
-    // 2. 请求渲染端起采集（常驻 KWS 采集在线时复用同一流，不重起 getUserMedia）；
-    //    对话采集按设置下发浏览器级降噪（远场对话优先保噪音免疫）；全双工
-    //    显式要求 AEC（回声治理层 1，实际生效值经 capture-started 探测回传）
-    if (!this.kwsCaptureActive) {
-      this.deps.sendCaptureCommand({
-        action: 'start',
-        sessionId: captureSessionId,
-        mode: 'dialogue',
-        ...(this.settings.browserDenoise || this.duplexEnabled
-          ? {
-              audioProcessing: {
-                noiseSuppression: this.settings.browserDenoise,
-                voiceIsolation: this.settings.browserDenoise,
-                ...(this.duplexEnabled ? { echoCancellation: true } : {}),
-              },
-            }
-          : {}),
-      })
-    }
     // 3. 空转兜底超时（检测到人声活动会重置；说话后的收口由确认窗口负责）
     this.armEmptySpeechTimeout()
     // 4. 硬上限兜底（持续说话/持续噪音时的强制收口，不受活动重置影响）
     this.armListeningHardLimit()
+    // 5. 打断保留的队列输入补发（E9）：interrupt/超时收尾后走全路径重建采集与
+    //    ASR，wake 重建即「下次进对话」，与上方 duplex 复用分支对齐补发队列
+    //    （打断保留下来的话不悬着）。队列为空时 dequeueHead 返回 null，零开销直落
+    this.maybeDispatchQueue('listen-resume')
+  }
+
+  /**
+   * 采集先行路径的 ASR 失败收回：渲染端可能已按 start 指令起流（或正在起流），
+   * 补发 stop 释放麦克风并清除先行赋值的 captureSessionId（否则后续迟到 chunk
+   * 通过会话校验喂向不存在的 ASR）。KWS 常驻流在线时渲染端只做了 pre-roll 回放
+   * 未建新流，stop 会被其忽略——与 stopCaptureAndAsr 的条件保持一致。
+   */
+  private abortPendingDialogueCapture(captureSessionId: string): void {
+    if (this.captureSessionId === captureSessionId) this.captureSessionId = null
+    if (!this.kwsCaptureActive) {
+      this.deps.sendCaptureCommand({
+        action: 'stop',
+        sessionId: captureSessionId,
+        mode: 'dialogue',
+      })
+    }
   }
 
   /** listening 硬上限兜底的统一布防（新建/全双工复用两条路径共用） */
@@ -985,6 +1104,31 @@ export class VoiceAssistantService {
   /** 对话循环退出统一日志（与 dialogue listening started 成对）：reason 说明退出归属 */
   private logDialogueExit(reason: string): void {
     log.info(`[voice-assistant] dialogue loop ended (reason=${reason})`)
+  }
+
+  /**
+   * 对话期定时器无差别清除（interrupt 用）：空转超时/硬上限/确认窗口/续听四类。
+   * 不含 KWS 安装等待与重启定时器——那是常驻聆听（standby）的生命周期，
+   * 打断对话不应杀掉待命态。不走 cancelHandoffConfirm（其「keep listening」
+   * 日志语义不符打断场景）。
+   */
+  private clearDialogueTimers(): void {
+    if (this.listeningTimer != null) {
+      clearTimeout(this.listeningTimer)
+      this.listeningTimer = null
+    }
+    if (this.listeningHardTimer != null) {
+      clearTimeout(this.listeningHardTimer)
+      this.listeningHardTimer = null
+    }
+    if (this.handoffConfirmTimer != null) {
+      clearTimeout(this.handoffConfirmTimer)
+      this.handoffConfirmTimer = null
+    }
+    if (this.continuousListenTimer != null) {
+      clearTimeout(this.continuousListenTimer)
+      this.continuousListenTimer = null
+    }
   }
 
   private onListeningTimeout(): void {
@@ -1254,14 +1398,49 @@ export class VoiceAssistantService {
     this.handoffConfirmTimer = setTimeout(() => {
       this.handoffConfirmTimer = null
       if (this.state !== 'listening' || this.asrSessionId == null) return
-      // 纯标点/无正文的转写（环境噪音硬解的典型产出）不是用户输入：
-      // 不收口、清空已收集文本，继续聆听（采集与 ASR 未停，零切换成本）
-      if (!hasMeaningfulVoiceText([...this.collectedFinals, this.partialText].join(''))) {
+      // 纯标点/无正文，或孤立单字（环境噪音/残余回声硬解的典型产出；挂起选择态
+      // 等待「一」「1」这类序号短答的场景除外）都不是用户输入：不收口、清空已
+      // 收集文本，继续聆听（采集与 ASR 未停，零切换成本）
+      const collectedText = [...this.collectedFinals, this.partialText].join('')
+      // 纯语气字碎片（瞬态噪声被 ASR 硬解成「我 我」类，恰在孤立单字 <2 过滤的
+      // 2~4 字空档）：无挂起选择/审批态且命令未命中时同样按噪音丢弃——例外语义
+      // 与孤立单字过滤完全一致（「好的」「对」类真实短答字符不在退化集合，不受影响）
+      const degenerateFiller =
+        !this.hasPendingSelectionContext() &&
+        isDegenerateVoiceTranscript(collectedText) &&
+        parseVoiceCommand(collectedText, {
+          enableSessionCommands: true,
+          awaitingSessionSelection: this.awaitingSessionCandidates != null,
+          awaitingModelSelection: this.awaitingModelCandidates != null,
+          awaitingProjectSelection: this.awaitingProjectCandidates != null,
+        }) == null
+      if (
+        !hasMeaningfulVoiceText(collectedText) ||
+        (!this.hasPendingSelectionContext() && countMeaningfulVoiceChars(collectedText) < 2) ||
+        degenerateFiller ||
+        // 回声尾音窗：播报刚结束自动续听后的短窗口（TTS 尾音/AEC 再收敛期），
+        // 整轮 <3 有效字的收口按幻影丢弃——真实短开场白（「你好」类）不受影响：
+        // 窗口只覆盖「播报 → 续听」的衔接期，wake 手动进入的聆听不设防。命令
+        // 解析命中与挂起选择/审批先于本过滤放行（「停止」类短命令/序号短答）。
+        // 无全程 speech-activity 记录可叠加（现有 speech-activity 只驱动空转计时
+        // 重置，不留轮内标记），仅按字数 + 时间窗判定。
+        (Date.now() < this.listeningEchoGuardUntil &&
+          !this.hasPendingSelectionContext() &&
+          countMeaningfulVoiceChars(collectedText) < 3 &&
+          parseVoiceCommand(collectedText, {
+            enableSessionCommands: true,
+            awaitingSessionSelection: this.awaitingSessionCandidates != null,
+            awaitingModelSelection: this.awaitingModelCandidates != null,
+            awaitingProjectSelection: this.awaitingProjectCandidates != null,
+          }) == null)
+      ) {
         log.info(
-          `[voice-assistant] transcript has no meaningful text (${this.collectedFinals.length} finals), keep listening`,
+          `[voice-assistant] transcript ${degenerateFiller ? 'is degenerate filler' : 'has no meaningful text'} (${this.collectedFinals.length} finals, ${collectedText.length} chars, ${countMeaningfulVoiceChars(collectedText)} meaningful), keep listening`,
         )
         this.collectedFinals = []
         this.partialText = ''
+        // 噪音音频同样消费完毕：推进精修边界，防下一轮区间重识别卷进这段杂音
+        this.markDuplexTurnBoundary()
         this.armEmptySpeechTimeout()
         this.deps.broadcastState({
           state: 'listening',
@@ -1275,12 +1454,11 @@ export class VoiceAssistantService {
       this.handoffPending = true
       this.transition('thinking', 'wake')
       if (this.duplexEnabled && this.duplexWindowActive) {
-        // 全双工：采集/ASR 保持在线（thinking/speaking 继续听插话），直接用流式
-        // 结果提交——窗口内不做整段 refine（一次会话跨多轮，整段重识别会卷入
-        // 前几轮音频；识别率敏感用户可关 fullDuplex 回 refine 路径）
-        log.info('[voice-assistant] duplex window disables per-turn refine')
+        // 全双工：采集/ASR 保持在线（thinking/speaking 继续听插话）。本轮音频
+        // 先按区间做 SenseVoice 精修再提交（边界推进隔离下一轮，不卷前几轮），
+        // 精修失败/超时自动回退流式结果
         this.handoffPending = false
-        this.submitCollectedTranscript(true)
+        void this.submitDuplexTurnWithRefine()
         return
       }
       this.stopCaptureAndAsr()
@@ -1302,6 +1480,67 @@ export class VoiceAssistantService {
     log.info('[voice-assistant] speech resumed within confirm window, keep listening')
   }
 
+  /**
+   * 全双工轮次提交（带按轮精修）：把本轮区间的音频交给 SenseVoice 离线重识别，
+   * 成功则整体替换流式拼接后走统一提交链（审批/cloud/普通聊天），失败或超时
+   * 回退流式结果。精修 await 期间的新语音已隔离到下一轮（边界在快照时推进）。
+   */
+  private async submitDuplexTurnWithRefine(): Promise<void> {
+    const epoch = this.turnEpoch
+    const sessionId = this.asrSessionId
+    const streaming = this.collectedFinals.join(' ').trim()
+    this.collectedFinals = []
+    this.partialText = ''
+    let transcript = streaming
+    if (
+      sessionId != null &&
+      this.settings.refineTranscript &&
+      this.settings.recognitionEngine === 'local'
+    ) {
+      const fromSample = this.duplexTurnStartSample
+      const endSample = getVoiceSessionSampleCursor(sessionId) ?? -1
+      const audioSeconds = (endSample - fromSample) / 16000
+      if (endSample > fromSample && audioSeconds >= 0.3) {
+        // 先推进边界再精修：精修期间用户继续说的话属于下一轮，采样快照隔离
+        this.duplexTurnStartSample = endSample
+        const timeoutMs = Math.min(
+          DUPLEX_REFINE_TIMEOUT_MAX_MS,
+          DUPLEX_REFINE_TIMEOUT_BASE_MS +
+            Math.ceil(audioSeconds) * DUPLEX_REFINE_TIMEOUT_PER_SECOND_MS,
+        )
+        const startedAt = Date.now()
+        const refined = await withTimeout(
+          refineVoiceSessionInterval(sessionId, VOICE_ASSISTANT_INTERNAL_OWNER_ID, fromSample),
+          timeoutMs,
+        )
+        if (refined != null && refined.length > 0) {
+          transcript = refined
+          log.info(
+            `[voice-assistant] duplex turn refined: ${refined.length} chars replace ${streaming.length} streaming chars, ${Date.now() - startedAt}ms`,
+          )
+        } else {
+          log.info(
+            `[voice-assistant] duplex turn refine unavailable (${Date.now() - startedAt}ms), submitting streaming result`,
+          )
+        }
+      }
+    }
+    // 精修 await 期间被打断/抢占：放弃提交（打断语义优先，防「打断复活」）
+    if (epoch !== this.turnEpoch || this.disposed) return
+    this.collectedFinals = transcript.length > 0 ? [transcript] : []
+    this.submitCollectedTranscript(true)
+  }
+
+  /** 推进全双工按轮精修边界到当前音频游标（本轮音频已消费的时刻调用） */
+  private markDuplexTurnBoundary(): void {
+    if (this.asrSessionId == null) {
+      this.duplexTurnStartSample = 0
+      return
+    }
+    const cursor = getVoiceSessionSampleCursor(this.asrSessionId)
+    if (cursor != null) this.duplexTurnStartSample = cursor
+  }
+
   // ─── 全双工插话路径（三分：命令旁路 / graceful 边播边处理 / 排队） ────────
 
   /**
@@ -1309,6 +1548,9 @@ export class VoiceAssistantService {
    * 层 3 文本回声守卫 → 审批解析（挂起期冻结队列）→ 确认窗口草稿。
    */
   private handleBargeInFinal(text: string): void {
+    // 本句音频已消费（无论后续走哪条分支）：推进按轮精修边界，防下一轮区间
+    // 离线重识别把这段插话再转写一遍（与流式文本重复）
+    this.markDuplexTurnBoundary()
     // 层 3：与在播/待播/最近播完 TTS 文本模糊匹配（AEC/门控漏网的回声兜底）
     const ttsTexts = this.pipeline.getRecentTtsTexts()
     if (isLikelyTtsEcho(text, ttsTexts)) {
@@ -1326,6 +1568,35 @@ export class VoiceAssistantService {
         return
       }
       log.info('[voice-assistant] barge-in frozen during pending approval')
+      return
+    }
+    // 回声幻影兜底（层 4）：播报活跃期漏网的 1~2 有效字 final——层 3 对 <6 字
+    // 不判定（误杀不可控，见 VoiceEchoGuard 头注释），AEC 残余回声经能量门控
+    // 后常被硬解成「我」「嗯」这类幻影短字（实测 echo guard dropped=0、
+    // dropped as noise=0，从未拦住过）。判据：播报真实相位活跃（pipeline 优先，
+    // 覆盖 graceful 桥接的 thinking 间隙）且无挂起选择/审批态。放行例外先于
+    // 丢弃：语音命令命中（「停止」类短命令）。final 事件不带音频段时长，
+    // 无法叠加「<1.2s」条件，仅按有效字数判定。
+    // 纯语气字碎片（「我 我」类，≤4 字且全为退化语气字）不限播放窗口——thinking
+    // 期两个既有判据（播报活跃 + 时间窗）都不在场，是日志实锤的幻影提交空档
+    // （viq-8/9/11/14 全为 thinking 期入队），退化判定在此全时段生效。
+    const phantomEcho =
+      (this.pipeline.isPlaybackActive() || this.state === 'speaking') &&
+      countMeaningfulVoiceChars(text) < 3
+    const degenerateFiller = isDegenerateVoiceTranscript(text)
+    if (
+      !this.hasPendingSelectionContext() &&
+      (phantomEcho || degenerateFiller) &&
+      parseVoiceCommand(text, {
+        enableSessionCommands: true,
+        awaitingSessionSelection: this.awaitingSessionCandidates != null,
+        awaitingModelSelection: this.awaitingModelCandidates != null,
+        awaitingProjectSelection: this.awaitingProjectCandidates != null,
+      }) == null
+    ) {
+      log.info(
+        `[voice-assistant] barge-in dropped as phantom echo (chars=${countMeaningfulVoiceChars(text)}, len=${text.length}, degenerate=${degenerateFiller})`,
+      )
       return
     }
     this.inputQueue.feedDraftFinal(text, this.state === 'speaking' ? 'speaking' : 'thinking')
@@ -1355,6 +1626,18 @@ export class VoiceAssistantService {
       void this.executeVoiceCommand(command)
       return
     }
+    // 孤立单字/纯标点/纯语气字碎片（残余回声与噪音硬解的典型产出）不进队列：
+    // 无挂起选择态时按噪音静默丢弃（选择态等待「一」「1」类序号短答，不做此
+    // 过滤；命令解析命中已在上游旁路执行，不会到达此处）
+    if (
+      !this.hasPendingSelectionContext() &&
+      (countMeaningfulVoiceChars(text) < 2 || isDegenerateVoiceTranscript(text))
+    ) {
+      log.info(
+        `[voice-assistant] barge-in dropped as noise (len=${text.length} chars, meaningful=${countMeaningfulVoiceChars(text)}, degenerate=${isDegenerateVoiceTranscript(text)})`,
+      )
+      return
+    }
     if (
       // announcing（候选列表/确认提示）不是轮次播报：非选择内容在此期间只入队，
       // 等播报完由 listen-resume 派发（C3「非选择内容 → 入队」）。若放行 graceful
@@ -1370,7 +1653,9 @@ export class VoiceAssistantService {
       void this.submitTranscript(text)
       return
     }
-    this.inputQueue.enqueue(text, this.state === 'speaking' ? 'speaking' : 'thinking')
+    // agent 仍在输出（执行器忙）：聚合到队尾同一条——忙碌期被停顿拆开的多段
+    // 输入不各开一条、不拆成 N 个独立轮次，派发时一轮发完
+    this.inputQueue.appendToTail(text, this.state === 'speaking' ? 'speaking' : 'thinking')
   }
 
   /**
@@ -1450,6 +1735,26 @@ export class VoiceAssistantService {
       return
     }
     if (hasMeaningfulVoiceText(transcript)) {
+      // 最后防线：纯语气字碎片穿透上游过滤（确认窗口/插话入队/幻影兜底）时不
+      // 提交派发。例外语义与孤立单字过滤一致：挂起选择/审批态放行（序号短答）、
+      // 命令解析命中放行——命令旁路在后续 submitTranscript 内，此处需自带放行。
+      if (
+        !this.hasPendingSelectionContext() &&
+        isDegenerateVoiceTranscript(transcript) &&
+        parseVoiceCommand(transcript, {
+          enableSessionCommands: true,
+          awaitingSessionSelection: this.awaitingSessionCandidates != null,
+          awaitingModelSelection: this.awaitingModelCandidates != null,
+          awaitingProjectSelection: this.awaitingProjectCandidates != null,
+        }) == null
+      ) {
+        log.info(
+          `[voice-assistant] closed transcript dropped as degenerate filler (${transcript.length} chars, ${countMeaningfulVoiceChars(transcript)} meaningful), resuming listening`,
+        )
+        this.transition('idle', 'empty')
+        void this.startListening('wake')
+        return
+      }
       if (this.settings.recognitionEngine === 'cloud') {
         // 云转写：整段上传（本地流式结果仅作 VAD 断句与兜底）
         void this.submitCloudTranscript(transcript)
@@ -2071,6 +2376,16 @@ export class VoiceAssistantService {
     this.awaitingProjectCandidates = null
   }
 
+  /** 是否有挂起的候选选择/审批态（「一」「1」等序号短答属合法输入，不做单字噪音过滤） */
+  private hasPendingSelectionContext(): boolean {
+    return (
+      this.awaitingSessionCandidates != null ||
+      this.awaitingModelCandidates != null ||
+      this.awaitingProjectCandidates != null ||
+      this.pendingApproval != null
+    )
+  }
+
   // ─── M3 语音审批桥（挂起-收听-消费环） ─────────────────────────────────────
 
   /**
@@ -2218,6 +2533,10 @@ export class VoiceAssistantService {
   }
 
   private handleAllPlayed(): void {
+    // 回声尾音窗布防：播报刚收尾，随后的自动续听（800ms~1.2s 延迟）落在窗口内，
+    // 期间 <3 有效字的整轮收口按幻影丢弃（见 scheduleHandoffConfirm）。窗长 =
+    // 续听延迟 + 约 3s 的 AEC 再收敛/尾音消散余量。
+    this.listeningEchoGuardUntil = Date.now() + PLAYBACK_TAIL_ECHO_WINDOW_MS
     // announcing（审批问题/命令确认）优先于轮次收尾判定：
     // 审批播报时轮次仍活跃（agent 挂起等批准），不能误判为轮次完成
     if (this.announcing) {
@@ -2276,6 +2595,10 @@ export class VoiceAssistantService {
   private scheduleNextRoundListening(): void {
     if (this.disposed) return
     if (this.continuousListenTimer != null) clearTimeout(this.continuousListenTimer)
+    const resumeDelayMs =
+      this.duplexEnabled && this.aecEffective === true
+        ? DUPLEX_CONTINUOUS_LISTEN_DELAY_MS
+        : CONTINUOUS_LISTEN_DELAY_MS
     this.continuousListenTimer = setTimeout(() => {
       this.continuousListenTimer = null
       if (this.disposed || !this.settings.enabled) return
@@ -2283,7 +2606,7 @@ export class VoiceAssistantService {
       // 新的聆听/思考/播报在途，不应再拉起
       if (this.state !== 'idle' && this.state !== 'standby') return
       void this.startListening('completed')
-    }, CONTINUOUS_LISTEN_DELAY_MS)
+    }, resumeDelayMs)
   }
 
   // ─── TTS 合成与播报 ───────────────────────────────────────────────────────
@@ -2319,6 +2642,28 @@ export class VoiceAssistantService {
 
   // ─── 状态机 ───────────────────────────────────────────────────────────────
 
+  /**
+   * 回声门控（层 2）同步：跟踪真实播报相位（pipeline.isPlaybackActive）而非
+   * 状态机相位——graceful 接管时旧播报延续到 thinking 期（该间隙不解除门控，
+   * 否则 TTS 回声无门控直喂 ASR）；播报真正结束（含淡出收尾）才解除。播报期
+   * 默认严格档——能量门控是「扬声器→空气→麦克风」回声在 AEC 之后的主防线，
+   * 仅当 AEC 探测确认生效且守卫近期未命中才放宽到常规档（AEC 是优化不是
+   * 依赖，蓝牙 HFP 会失效）。调用点：状态迁移尾部 + 管线播放相位翻转回调
+   * （合成完成晚于 transition('speaking')，迁移点武装不到整场播报）。
+   */
+  private syncPlaybackGate(): void {
+    const playbackActive = this.pipeline.isPlaybackActive()
+    if (playbackActive && (this.state === 'thinking' || this.state === 'speaking')) {
+      const echoGuardRecentHit =
+        this.echoGuardHitAt != null &&
+        Date.now() - this.echoGuardHitAt < ECHO_GUARD_STRICT_WINDOW_MS
+      const strict = this.aecEffective !== true || echoGuardRecentHit
+      this.bargeInGate.setPlaybackActive(true, strict)
+    } else if (!playbackActive) {
+      this.bargeInGate.setPlaybackActive(false, false)
+    }
+  }
+
   private transition(
     next: VoiceAssistantState,
     reason: VoiceAssistantStateEvent['reason'],
@@ -2341,15 +2686,9 @@ export class VoiceAssistantService {
       ...(detail != null ? { detail } : {}),
     })
     this.deps.broadcastStatus(this.getStatus())
-    // 回声门控（层 2）随播报相位武装/解除：speaking = 有本进程 TTS 在响
-    if (next === 'speaking') {
-      const echoGuardRecentHit =
-        this.echoGuardHitAt != null &&
-        Date.now() - this.echoGuardHitAt < ECHO_GUARD_STRICT_WINDOW_MS
-      const strict = this.aecEffective === false || echoGuardRecentHit
-      this.bargeInGate.setPlaybackActive(true, strict)
-    } else if (previous === 'speaking') {
-      this.bargeInGate.setPlaybackActive(false, false)
+    this.syncPlaybackGate()
+    const playbackActive = this.pipeline.isPlaybackActive()
+    if (previous === 'speaking' && next !== 'speaking' && !playbackActive) {
       // graceful 桥接随播报相位结束一并收口（新代零句/合成全失败的兜底路径）
       this.gracefulTakeoverBridge = false
     }
@@ -2372,4 +2711,24 @@ export class VoiceAssistantService {
 function shortError(message: string): string {
   const cleaned = message.replace(/\s+/g, ' ').trim()
   return cleaned.length > 60 ? `${cleaned.slice(0, 60)}…` : cleaned
+}
+
+/** 转写中有效字符（字母/数字/文字）计数：孤立单字是噪音/残余回声硬解的典型产出 */
+function countMeaningfulVoiceChars(text: string): number {
+  return (text.match(/[\p{L}\p{N}]/gu) ?? []).length
+}
+
+/** Promise 超时兜底：超时返回 null（不 abort 底层任务，晚到的结果仅被丢弃） */
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), ms)
+      }),
+    ])
+  } finally {
+    if (timer != null) clearTimeout(timer)
+  }
 }
