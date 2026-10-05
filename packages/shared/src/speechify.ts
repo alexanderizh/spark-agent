@@ -304,3 +304,27 @@ export function splitSentences(text: string): string[] {
 export function hasMeaningfulVoiceText(text: string): boolean {
   return /[\p{L}\p{N}]/u.test(text)
 }
+
+/** 纯语气字碎片判定的有效字符数上限（≤4 才参与判定；更长的转写视为真实输入） */
+const MAX_DEGENERATE_FILLER_CHARS = 4
+
+/**
+ * 退化语气字集合：ASR 把瞬态噪声（鼠标点击、键盘、桌面碰撞等）硬解出的常见
+ * 单字。严格排除真实短答字符——「好」「对」「行」「可」「以」「一」与全部数字
+ * 不在集合内，「好的」「对」「可以」「1」类合法输入永不命中。
+ */
+const DEGENERATE_VOICE_FILLER_CHARS = '我嗯啊哦呃唉欸诶嘿哈呀哇唔噢喔嘛吧呢的了'
+
+/**
+ * 转写是否为「纯语气字碎片」：剥离空白与标点后有效字符数 ≤4（与有效字计数
+ * 同口径：字母/数字/文字）且每个字符都属于退化语气字集合。用于拦截 ASR 把
+ * 瞬态噪声解出的碎片（实测鼠标点击被解成「我 我」）穿透「孤立单字/字数下限」
+ * 过滤后被提交派发给模型的幻影输入。
+ * 返回 true 仅为丢弃建议——调用方须自行保证挂起选择/审批态与命令解析命中的
+ * 例外放行（与既有孤立单字过滤同一例外语义）。
+ */
+export function isDegenerateVoiceTranscript(text: string): boolean {
+  const chars = text.match(/[\p{L}\p{N}]/gu) ?? []
+  if (chars.length === 0 || chars.length > MAX_DEGENERATE_FILLER_CHARS) return false
+  return chars.every((ch) => DEGENERATE_VOICE_FILLER_CHARS.includes(ch))
+}

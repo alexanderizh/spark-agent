@@ -44,7 +44,7 @@ export interface TtsSynthesisTarget {
 export interface TtsSynthesisResult {
   filePath: string
   provider: string
-  /** 是否来自磁盘缓存（命中时本轮未请求渠道，调用方不得删除该文件） */
+  /** 文件是否由磁盘缓存接管（命中，或刚合成成功并移入缓存）：调用方不得删除该文件 */
   cached: boolean
 }
 
@@ -176,11 +176,13 @@ export async function synthesizeSpeechText(
       filePath.split('/').pop() ?? ''
     })`,
   )
-  // put 内部 rename：成功后原 temp 产物即缓存文件本身；失败回落原路径（sweep 兜底清理）
+  // put 内部 rename：成功后原 temp 产物即缓存文件本身，生命周期移交 LRU——
+  // 必须按 cached=true 上报：否则渲染端把它当临时产物，解码后调 tts-cleanup
+  // 删除（缓存目录在 ttsDir 外时被拒并刷「outside ttsDir」告警，在内时把
+  // 刚建好的缓存条目直接删掉，缓存永远不命中）。失败回落原临时路径（sweep 兜底清理）
   if (cache != null && cacheKey != null) {
     const cachedPath = await cache.put(cacheKey, filePath)
-    if (cachedPath != null)
-      return { filePath: cachedPath, provider: output.provider, cached: false }
+    if (cachedPath != null) return { filePath: cachedPath, provider: output.provider, cached: true }
   }
   return { filePath, provider: output.provider, cached: false }
 }

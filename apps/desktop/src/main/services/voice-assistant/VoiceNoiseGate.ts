@@ -71,6 +71,13 @@ const ENERGY_ATTACK_RELAX_DB = 4
  * 正常语句覆盖率 >0.6、远场噪音硬解接近 0，该阈值有充分区分度。
  */
 const SILERO_COVERAGE_MIN: Record<VoiceFocusMode, number> = { standard: 0.3, strict: 0.45 }
+/**
+ * confirm-only 档 final 区间内 silero 人声段绝对时长下限（ms）。点击瞬态
+ * （10-50ms）即便骗过 silero 也远达不到该时长；正常中文单字 150-300ms。
+ * sherpa Vad 的 min_speech_duration 参数可能不被执行（分析已标记该不确定
+ * 性），故用自身时间轴计算绝对时长兜底，不依赖该参数。
+ */
+export const MIN_VOICED_MS_FOR_FINAL = 120
 
 /** 绝对下限（dBFS）：低于此必为底噪，防止极安静环境下门限退化过低 */
 const ABSOLUTE_FLOOR_DB = -55
@@ -105,7 +112,7 @@ function loadVad(): SherpaVad | null {
       try {
         sharedVad = new vadModuleOverride.Vad(
           {
-            sileroVad: { model: '/virtual/model.onnx', threshold: 0.5, windowSize: 512 },
+            sileroVad: { model: '/virtual/model.onnx', threshold: 0.6, windowSize: 512 },
             sampleRate: 16000,
           },
           30,
@@ -135,7 +142,8 @@ function loadVad(): SherpaVad | null {
       {
         sileroVad: {
           model: vadPaths.modelPath,
-          threshold: 0.5,
+          // 0.6：收紧瞬态/窄带噪音的误检（点击宽带脉冲的 silero 得分低于人声）
+          threshold: 0.6,
           minSpeechDuration: 0.1,
           minSilenceDuration: 0.5,
           windowSize: 512,
@@ -163,8 +171,26 @@ export function resetVoiceNoiseGateVad(): void {
   sharedVad = null
 }
 
+/** Int16 PCM → Float32 [-1, 1]（confirm-only 旁路喂 silero 用） */
+function int16ToFloat32(samples: Int16Array): Float32Array {
+  const out = new Float32Array(samples.length)
+  for (let i = 0; i < samples.length; i += 1) {
+    out[i] = (samples[i] ?? 0) / 32768
+  }
+  return out
+}
+
 export interface VoiceNoiseGateOptions {
   mode: VoiceFocusMode
+  /**
+   * confirm-only 模式：跳过能量置零与 attack-hysteresis 丢样（历史教训：
+   * v1 能量置零式门控严重伤识别率被显式回退），音频流完全不动，仅保留
+   * silero 旁路时间轴与 shouldAcceptFinal 判定语义。v2 迁移默认
+   * voiceFocus='off' 的会话用它获得「final 级瞬态过滤」而识别路径零改动。
+   */
+  confirmOnly?: boolean
+  /** 采样率（默认 16000，silero 时间轴毫秒换算用） */
+  sampleRate?: number
   /** 实时人声活动翻转回调（false→true / true→false），供空转计时重置 */
   onSpeechActivity?: (active: boolean) => void
   /** 测试注入：跳过 silero 层 */
@@ -178,6 +204,8 @@ interface SpeechSpan {
 
 export class VoiceNoiseGate {
   private readonly mode: VoiceFocusMode
+  private readonly confirmOnly: boolean
+  private readonly sampleRate: number
   private readonly onSpeechActivity?: ((active: boolean) => void) | undefined
   private readonly useSilero: boolean
 
@@ -202,6 +230,8 @@ export class VoiceNoiseGate {
 
   constructor(options: VoiceNoiseGateOptions) {
     this.mode = options.mode
+    this.confirmOnly = options.confirmOnly === true
+    this.sampleRate = options.sampleRate ?? 16000
     this.onSpeechActivity = options.onSpeechActivity
     this.useSilero = options.disableSilero !== true
   }
@@ -210,8 +240,26 @@ export class VoiceNoiseGate {
    * 处理一个 PCM chunk：能量门控 + silero 旁路跟踪。
    * 返回门控后的 chunk（低能量段为全零，长度不变——时间推进必须保留，
    * 否则 ASR 的尾静音端点检测会因"没有静音"而永不触发）。
+   * confirm-only 模式音频原样返回，只推进 silero 时间轴。
    */
   process(samples: Int16Array): Int16Array {
+    if (this.confirmOnly) {
+      // 确认层旁路：不判定能量、不置零、不丢样——识别率不可伤（v1 教训），
+      // 仅 silero 时间轴随音频推进，供 final 接受判定使用
+      if (this.useSilero) {
+        const vad = loadVad()
+        if (vad != null) {
+          try {
+            vad.acceptWaveform(int16ToFloat32(samples))
+            this.drainSpans(vad)
+          } catch (error) {
+            log.warn(`silero VAD feed error: ${String(error)}`)
+          }
+        }
+      }
+      this.fedSamples += samples.length
+      return samples
+    }
     const float = new Float32Array(samples.length)
     let sumSquares = 0
     for (let i = 0; i < samples.length; i += 1) {
@@ -394,8 +442,42 @@ export class VoiceNoiseGate {
     return Math.min(1, covered / activeTotal)
   }
 
-  /** final 是否放行：放行样本的 silero 人声覆盖率低于档位阈值判为噪音硬解 */
+  /**
+   * [startSample, endSample) 区间内 silero 人声段的绝对毫秒数（confirm-only
+   * 判据的度量）。silero 层不可用（模型缺失/未安装/测试禁用）返回 null，
+   * 调用方据此降级到 VoiceTransientGuard 兜底，而不是误判为 0ms 拒绝。
+   */
+  voicedMsSince(startSample: number, endSample: number): number | null {
+    if (!this.useSilero) return null
+    const vad = loadVad()
+    if (vad == null) return null
+    const span = Math.max(0, endSample - startSample)
+    if (span === 0) return 0
+    let covered = 0
+    for (const speech of this.speechSpans) {
+      if (speech.end <= startSample) continue
+      if (speech.start >= endSample) break
+      covered += Math.min(speech.end, endSample) - Math.max(speech.start, startSample)
+    }
+    return covered / (this.sampleRate / 1000)
+  }
+
+  /**
+   * final 是否放行。confirm-only：区间 silero 人声绝对时长 ≥120ms 才接受
+   * （点击瞬态即便骗过 silero 也远短于该时长）；silero 不可用时放行交由
+   * 外层 guard 兜底。完整门控：放行样本的 silero 人声覆盖率低于档位阈值
+   * 判为噪音硬解。
+   */
   shouldAcceptFinal(startSample: number, endSample: number): boolean {
+    if (this.confirmOnly) {
+      const voicedMs = this.voicedMsSince(startSample, endSample)
+      if (voicedMs == null) return true
+      if (voicedMs >= MIN_VOICED_MS_FOR_FINAL) return true
+      log.info(
+        `[voice-gate] final dropped: silero voiced ${voicedMs.toFixed(0)}ms below ${MIN_VOICED_MS_FOR_FINAL}ms minimum (confirm-only)`,
+      )
+      return false
+    }
     const ratio = this.coverageRatioOverActive(startSample, endSample)
     const accept = ratio >= SILERO_COVERAGE_MIN[this.mode]
     if (!accept) {

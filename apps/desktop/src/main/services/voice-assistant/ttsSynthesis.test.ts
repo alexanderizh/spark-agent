@@ -231,14 +231,14 @@ describe('synthesizeSpeechText 缓存分支', () => {
     expect(harness.mediaRouter.invoke).toHaveBeenCalledOnce()
   })
 
-  it('miss → 合成 → put 落盘：返回缓存路径，cached=false', async () => {
+  it('miss → 合成 → put 落盘：返回缓存路径，cached=true（文件已归 LRU，渲染端不得删）', async () => {
     const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
     const cache = makeFakeCache()
     const result = await synthesizeSpeechText(
       { ...makeTarget(harness), useCache: true, speechCache: cache },
       sentence,
     )
-    expect(result.cached).toBe(false)
+    expect(result.cached).toBe(true)
     expect(result.filePath).toBe(
       `/virtual/cache/${computeTtsCacheKey({
         providerId: 'provider-tts',

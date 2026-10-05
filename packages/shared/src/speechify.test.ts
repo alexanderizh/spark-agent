@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   cleanInlineMarkdown,
   hasMeaningfulVoiceText,
+  isDegenerateVoiceTranscript,
   SentenceSplitter,
   speechifyText,
   splitSentences,
@@ -243,5 +244,40 @@ describe('hasMeaningfulVoiceText', () => {
     expect(hasMeaningfulVoiceText('hello world')).toBe(true)
     expect(hasMeaningfulVoiceText('3.14 是圆周率')).toBe(true)
     expect(hasMeaningfulVoiceText('。。。嗯。')).toBe(true)
+  })
+})
+
+describe('isDegenerateVoiceTranscript', () => {
+  it('纯语气字碎片（≤4 有效字全为退化语气字）判为退化', () => {
+    // 日志实锤的幻影形态：鼠标点击被 ASR 解成「我 我」
+    expect(isDegenerateVoiceTranscript('我 我')).toBe(true)
+    expect(isDegenerateVoiceTranscript('嗯嗯 嗯')).toBe(true)
+    expect(isDegenerateVoiceTranscript('嗯，啊，哦。')).toBe(true)
+    expect(isDegenerateVoiceTranscript('的了了了')).toBe(true)
+    // 标点/空白剥离后计入：语气字 + 大量标点仍命中
+    expect(isDegenerateVoiceTranscript('呃。。。啊？？')).toBe(true)
+  })
+
+  it('真实短答/短句放行（好/对/行/可以/数字/一 绝不进集合）', () => {
+    expect(isDegenerateVoiceTranscript('好的')).toBe(false)
+    expect(isDegenerateVoiceTranscript('对')).toBe(false)
+    expect(isDegenerateVoiceTranscript('行')).toBe(false)
+    expect(isDegenerateVoiceTranscript('可以')).toBe(false)
+    expect(isDegenerateVoiceTranscript('一')).toBe(false)
+    expect(isDegenerateVoiceTranscript('1')).toBe(false)
+    expect(isDegenerateVoiceTranscript('第1个')).toBe(false)
+    expect(isDegenerateVoiceTranscript('嗯，好的')).toBe(false) // 好 不在集合
+    expect(isDegenerateVoiceTranscript('是的')).toBe(false)
+    expect(isDegenerateVoiceTranscript('你好')).toBe(false)
+    expect(isDegenerateVoiceTranscript('停止')).toBe(false)
+  })
+
+  it('超长或含非语气字内容的转写不判退化', () => {
+    expect(isDegenerateVoiceTranscript('')).toBe(false)
+    expect(isDegenerateVoiceTranscript('。！！')).toBe(false) // 无有效字走 hasMeaningfulVoiceText 路径
+    expect(isDegenerateVoiceTranscript('嗯嗯嗯嗯嗯嗯')).toBe(false) // 6 字超出上限
+    expect(isDegenerateVoiceTranscript('帮我查下日程')).toBe(false)
+    expect(isDegenerateVoiceTranscript('ok')).toBe(false) // 字母不在集合
+    expect(isDegenerateVoiceTranscript('嗯 ok')).toBe(false)
   })
 })

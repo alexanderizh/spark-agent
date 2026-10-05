@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { VoiceInputQueue, type QueuedVoiceInput } from './VoiceInputQueue.js'
+import {
+  VoiceInputQueue,
+  VOICE_QUEUE_ENTRY_TTL_MS,
+  type QueuedVoiceInput,
+} from './VoiceInputQueue.js'
 
 describe('VoiceInputQueue', () => {
   beforeEach(() => {
@@ -72,6 +76,44 @@ describe('VoiceInputQueue', () => {
     expect(queue.snapshot().map((e) => e.text)).toEqual(['第二条', '第三条'])
     expect(enqueued[2]).toEqual({ text: '第三条', evicted: '第一条' })
     expect(removed).toContain('第一条')
+  })
+
+  it('appendToTail 队列空时等同 enqueue 新开一条', () => {
+    const enqueued: string[] = []
+    const queue = createQueue(3, {
+      onEnqueued: (entry) => enqueued.push(entry.text),
+    })
+    const entry = queue.appendToTail('忙碌期第一段', 'thinking')
+    expect(entry?.text).toBe('忙碌期第一段')
+    expect(queue.snapshot().map((e) => e.text)).toEqual(['忙碌期第一段'])
+    expect(enqueued).toEqual(['忙碌期第一段'])
+  })
+
+  it('appendToTail 队列非空时并入队尾同一条（忙碌期多段不拆轮次）', () => {
+    const appended: string[] = []
+    const queue = new VoiceInputQueue(3, () => 500, {
+      onEnqueued: () => undefined,
+      onDraftChanged: () => undefined,
+      onDraftConfirmed: () => undefined,
+      onRemoved: () => undefined,
+      onAppended: (entry) => appended.push(entry.text),
+    })
+    queue.enqueue('第一段', 'thinking')
+    const tail = queue.enqueue('另一条独立输入', 'thinking')
+    const merged = queue.appendToTail('第二段补充', 'speaking')
+    expect(merged?.id).toBe(tail?.id) // 追加的是队尾同一条，不是新条目
+    expect(queue.size).toBe(2) // 条数不增
+    expect(queue.snapshot().map((e) => e.text)).toEqual(['第一段', '另一条独立输入 第二段补充'])
+    expect(merged?.capturedState).toBe('speaking') // 捕获态更新为最新段
+    expect(appended).toEqual(['另一条独立输入 第二段补充'])
+  })
+
+  it('appendToTail 空白文本与 dispose 后拒绝', () => {
+    const queue = createQueue(3)
+    expect(queue.appendToTail('   ', 'thinking')).toBeNull()
+    queue.dispose()
+    expect(queue.appendToTail('有效文本', 'thinking')).toBeNull()
+    expect(queue.size).toBe(0)
   })
 
   it('removeById 移除指定条目（放弃按钮）', () => {
@@ -149,5 +191,53 @@ describe('VoiceInputQueue', () => {
     queue.removeById(discarded.id) // 缺省 = 放弃按钮
     queue.removeById(dispatched.id, 'dispatched') // 立即发送抢占
     expect(removed.map((r) => r.cause)).toEqual(['discarded', 'dispatched'])
+  })
+
+  it('TTL 内条目正常派发（E9 打断保留不受影响）', () => {
+    const removed: Array<{ text: string; cause: string }> = []
+    const queue = createQueue(3, {
+      onRemoved: (entry, cause) => removed.push({ text: entry.text, cause }),
+    })
+    const entry = queue.enqueue('刚说完的插话', 'speaking')
+    if (entry == null) throw new Error('enqueue 不应返回 null')
+    vi.advanceTimersByTime(VOICE_QUEUE_ENTRY_TTL_MS - 1000) // 未到 TTL
+    expect(queue.dequeueHead()?.text).toBe('刚说完的插话')
+    expect(removed).toEqual([{ text: '刚说完的插话', cause: 'dispatched' }])
+  })
+
+  it('超 TTL 条目出队时逐条丢弃不派发，存活条目不受牵连', () => {
+    const removed: Array<{ text: string; cause: string }> = []
+    const queue = createQueue(3, {
+      onRemoved: (entry, cause) => removed.push({ text: entry.text, cause }),
+    })
+    queue.enqueue('僵尸输入', 'thinking') // t=0 入队
+    vi.advanceTimersByTime(60 * 1000)
+    queue.enqueue('紧跟的一条', 'thinking') // t=1min 入队
+    vi.advanceTimersByTime(6 * 60 * 1000) // t=7min：两条分别 7min/6min，均已超 5min TTL
+    expect(queue.dequeueHead()).toBeNull()
+    expect(removed).toEqual([
+      { text: '僵尸输入', cause: 'discarded' },
+      { text: '紧跟的一条', cause: 'discarded' },
+    ])
+    expect(queue.size).toBe(0)
+    // 过期条目清完后队列恢复正常派发
+    queue.enqueue('新鲜输入', 'thinking')
+    expect(queue.dequeueHead()?.text).toBe('新鲜输入')
+  })
+
+  it('appendToTail 刷新 createdAt：聚合条目从最后一段起算 TTL，未被聚合的条目照常过期', () => {
+    const queue = createQueue(3)
+    const untouched = queue.enqueue('无人补充的条目', 'thinking') // t=0：队首，之后不再聚合
+    vi.advanceTimersByTime(60 * 1000)
+    queue.enqueue('活跃条目', 'thinking') // t=1min：队尾，持续被聚合补充
+    vi.advanceTimersByTime(3 * 60 * 1000) // t=4min：对队尾聚合补充
+    const merged = queue.appendToTail('补充说明', 'speaking')
+    expect(merged?.text).toBe('活跃条目 补充说明') // 聚合目标 = 队尾活跃条目
+    if (untouched == null || merged == null) throw new Error('enqueue 不应返回 null')
+    vi.advanceTimersByTime(4.5 * 60 * 1000) // t=8.5min：未聚合条 8.5min 已过期；聚合条自最后一段 4.5min 存活
+    const head = queue.dequeueHead()
+    expect(head?.id).toBe(merged.id)
+    expect(head?.text).toBe('活跃条目 补充说明')
+    expect(queue.findById(untouched.id)).toBeNull() // 未聚合条已被 TTL 丢弃
   })
 })

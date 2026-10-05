@@ -334,3 +334,74 @@ describe('VoiceTtsPipeline 整轮合成失败提示', () => {
     expect(deps.onTurnSynthesisFailed).toHaveBeenCalledWith('本轮语音播报失败：connect ETIMEDOUT')
   })
 })
+
+describe('VoiceTtsPipeline 播报看门狗', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('ended 丢失（渲染端悬挂/事件被丢）：宽限满后按回收路径清理并触发 allPlayed', async () => {
+    const deps = createDeps()
+    const pipeline = new VoiceTtsPipeline(deps)
+
+    pipeline.beginTurn()
+    pipeline.finalize('这是第一句播报内容。')
+    await flushSynthesisQueue()
+    expect(deps.onAllPlayed).not.toHaveBeenCalled()
+
+    // 宽限内无任何 ended：看门狗判播报丢失 → 回收 → allPlayed 重估（脱离卡死）
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(deps.onAllPlayed).toHaveBeenCalledTimes(1)
+    // 回收路径补发停播（带淡出）复位渲染端播放态
+    const stop = deps.sendPlay.mock.calls
+      .map((call) => call[0] as VoiceAssistantPlayCommand)
+      .find((command) => command.kind === 'stop')
+    expect(stop).toMatchObject({ kind: 'stop', fadeMs: 120 })
+    // 句子从未真正念出：不计入 playedCount
+    expect(pipeline.getPlayedCount()).toBe(0)
+    // 回收后播放相位归零（回声门控解除）
+    expect(pipeline.isPlaybackActive()).toBe(false)
+  })
+
+  it('排队顺播不累计误杀：前句 ended 喂狗，队尾句计时重置', async () => {
+    const deps = createDeps()
+    const pipeline = new VoiceTtsPipeline(deps)
+
+    pipeline.beginTurn()
+    pipeline.finalize('这是第一句播报内容。这是第二句播报内容。')
+    await flushSynthesisQueue()
+    const ids = allPlaySentenceIds(deps)
+    expect(ids).toHaveLength(2)
+
+    // 句 1 在宽限内正常 ended（链路活着）→ 其余句看门狗重置计时
+    await vi.advanceTimersByTimeAsync(60_000)
+    pipeline.onPlaybackEnded(ids[0] as string)
+
+    // 再推进 119s：若未喂狗，句 2 自 play 下发起已累计 179s 必被误杀
+    await vi.advanceTimersByTimeAsync(119_000)
+    expect(deps.onAllPlayed).not.toHaveBeenCalled()
+
+    pipeline.onPlaybackEnded(ids[1] as string)
+    expect(deps.onAllPlayed).toHaveBeenCalledTimes(1)
+    expect(pipeline.getPlayedCount()).toBe(2)
+  })
+
+  it('cancel 清看门狗：打断后宽限到期不再触发回收与 allPlayed', async () => {
+    const deps = createDeps()
+    const pipeline = new VoiceTtsPipeline(deps)
+
+    pipeline.beginTurn()
+    pipeline.finalize('这是第一句播报内容。')
+    await flushSynthesisQueue()
+    pipeline.cancel()
+    deps.sendPlay.mockClear()
+
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(deps.onAllPlayed).not.toHaveBeenCalled()
+    expect(deps.sendPlay).not.toHaveBeenCalled()
+  })
+})

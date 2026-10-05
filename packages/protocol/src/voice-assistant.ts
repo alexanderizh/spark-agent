@@ -153,9 +153,10 @@ export interface VoiceAssistantSettings {
   firstResponseFeedback: 'cue' | 'voice' | 'off'
   /**
    * 说话端点三档（默认 standard）：决定「说完 → 提交」的尾部等待
-   * （VAD 尾静音 + 确认窗口）。relaxed=从容（1200+1200ms，现状节奏）、
-   * standard=标准（800+500ms）、snappy=迅捷（600+350ms，误截断率升、
-   * 靠确认窗口撤销兜底）。未显式设置时按旧 utteranceConfirmMs 单向迁移。
+   * （VAD 尾静音 + 确认窗口）。relaxed=从容（2000+1800ms）、
+   * standard=标准（1500+1200ms，约 2.7s 停顿容忍，覆盖中文换气/措辞/思考停顿）、
+   * snappy=迅捷（1100+900ms，误截断率升、靠确认窗口撤销兜底）。
+   * 未显式设置时按旧 utteranceConfirmMs 单向迁移。
    */
   utteranceEndpointProfile: 'relaxed' | 'standard' | 'snappy'
   /** N+1 句预取（默认开）：合成并发 2，消除句间合成间隙；渠道限流时可关 */
@@ -206,9 +207,9 @@ export const VOICE_ASSISTANT_ENDPOINT_PROFILES: Record<
   VoiceAssistantSettings['utteranceEndpointProfile'],
   { vadSilenceMs: number; confirmMs: number; label: string }
 > = {
-  relaxed: { vadSilenceMs: 1200, confirmMs: 1200, label: '从容' },
-  standard: { vadSilenceMs: 800, confirmMs: 500, label: '标准' },
-  snappy: { vadSilenceMs: 600, confirmMs: 350, label: '迅捷' },
+  relaxed: { vadSilenceMs: 2000, confirmMs: 1800, label: '从容' },
+  standard: { vadSilenceMs: 1500, confirmMs: 1200, label: '标准' },
+  snappy: { vadSilenceMs: 1100, confirmMs: 900, label: '迅捷' },
 }
 
 function readBool(raw: unknown, fallback: boolean): boolean {
@@ -523,6 +524,14 @@ export interface VoiceAssistantCaptureCommand {
      *  实际生效值经 capture-started 事件回传探测） */
     echoCancellation?: boolean
   }
+  /**
+   * 字头保护（pre-roll 回放）：true 时渲染端在建立/复用对话采集前，先把 KWS
+   * 常驻采集期间缓存的最近约 2.5s 音频作为首批 chunk 回放给主进程，覆盖
+   * 「唤醒词刚说完就接正文」的切换空窗，防止首句字头丢失。
+   * 仅 standby→对话首次进入时置 true；全双工轮间续听不发 start 指令，
+   * 天然不会回放（避免把 TTS 尾音回声喂进 ASR）。旧渲染端忽略该字段。
+   */
+  replayPreRoll?: boolean
 }
 
 // ─── TTS 播放指令（stream 主→渲染） ────────────────────────────────────────
@@ -709,8 +718,10 @@ export interface VoiceAssistantTtsSynthesizeResponse {
   /** 本地音频文件绝对路径（渲染端经 safe-file:// 协议读取；缓存命中时为缓存文件） */
   filePath: string
   /**
-   * 是否命中 TTS 磁盘缓存：命中时本轮未请求 TTS 渠道（零费用），文件由主进程
-   * LRU 管理生命周期，渲染端不得删除；false 时为临时产物，播完需清理。
+   * 文件是否由 TTS 磁盘缓存接管（本轮命中缓存，或刚合成成功并移入缓存）：
+   * 接管时文件生命周期归主进程 LRU 管理，渲染端不得登记在途、不得清理；
+   * false 时为临时产物，播完需清理。命中与新鲜合成只差「本轮是否请求了
+   * 渠道」，该区分仅体现在主进程日志（tts cache hit / tts synthesized）。
    */
   cached: boolean
 }

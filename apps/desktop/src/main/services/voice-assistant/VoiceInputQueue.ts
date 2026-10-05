@@ -7,10 +7,28 @@
  *   （新 final/partial）撤销计时继续拼接——与 listening 态 handoff 确认
  *   窗口同构，给用户完整的说话空间；
  * - FIFO 容量 3：语音插话是短时行为，超限挤掉最旧并回调告知（HUD 闪烁 + cue）；
+ * - 派发时效（TTL）：条目跨打断保留（E9），但日志实锤存在跨打断残留最长
+ *   17.7 小时后仍被派发提交的僵尸输入——派发出队时超过 TTL 的条目直接丢弃；
  * - 生命周期事件回调（入队/挤出/派发/丢弃/清空），状态广播由 service 侧消费。
  *
  * 命令与挂起选择态不进本模块（service 侧旁路，R3：控制面不走数据面）。
  */
+import { createLogger } from '@spark/shared'
+
+const log = createLogger('voice-assistant')
+
+/** 队列条目派发时效：超过该年龄的条目在出队时直接丢弃不派发（E9 打断后立即
+ * 续听补发是秒级恢复，远小于该阈值，不受影响；阈值可按真机日志回归调整） */
+export const VOICE_QUEUE_ENTRY_TTL_MS = 5 * 60 * 1000
+
+/** 丢弃日志的内容摘要上限（只用于日志定位，不截断条目本体） */
+const EXPIRED_LOG_TEXT_MAX_CHARS = 30
+
+function summarizeEntryText(text: string): string {
+  return text.length > EXPIRED_LOG_TEXT_MAX_CHARS
+    ? `${text.slice(0, EXPIRED_LOG_TEXT_MAX_CHARS)}…`
+    : text
+}
 
 /** 入队条目（status 广播与立即发送按钮的数据源） */
 export interface QueuedVoiceInput {
@@ -30,6 +48,8 @@ export interface VoiceInputQueueEvents {
   onDraftConfirmed(text: string): void
   /** 条目被移除（放弃按钮 / 派发完成 / 清空逐条） */
   onRemoved(entry: QueuedVoiceInput, cause: 'discarded' | 'dispatched' | 'cleared'): void
+  /** 聚合追加：忙碌期新输入并入队尾已有条目（agent 输出期间多段输入不拆轮次） */
+  onAppended?(entry: QueuedVoiceInput): void
 }
 
 let queueCounter = 0
@@ -121,10 +141,40 @@ export class VoiceInputQueue {
     return entry
   }
 
-  /** 队首弹出（派发）：触发 onRemoved(dispatched)——status 广播随派发即时刷新，
-   * 否则 graceful 派发后无状态迁移，渲染端 queuedInputs 挂着已派发条目到收尾 */
+  /**
+   * 聚合追加（agent 忙碌期语义）：队列非空时把后续输入并入队尾同一条（一句话
+   * 被停顿拆成的多段不再各开一条、派发成 N 个独立轮次）；队列空时等同 enqueue
+   * 新开一条。容量语义不变（聚合只减条数，不会触发挤出）。聚合追加视为条目
+   * 仍活跃：createdAt 刷新到最后一段，TTL 从最后一段起算（用户还在补充说明
+   * 的活跃条目不因首段年龄被误杀）。
+   */
+  appendToTail(text: string, capturedState: 'thinking' | 'speaking'): QueuedVoiceInput | null {
+    if (this.disposed) return null
+    const trimmed = text.trim()
+    if (trimmed.length === 0) return null
+    const last = this.entries[this.entries.length - 1]
+    if (last == null) return this.enqueue(trimmed, capturedState)
+    last.text = last.text.length > 0 ? `${last.text} ${trimmed}` : trimmed
+    last.capturedState = capturedState
+    last.createdAt = Date.now()
+    this.events.onAppended?.(last)
+    return last
+  }
+
+  /** 队首弹出（派发）：过期条目（超 VOICE_QUEUE_ENTRY_TTL_MS，跨打断残留的
+   * 僵尸输入）逐条丢弃不派发并触发 onRemoved(discarded)——手动「立即发送」
+   * 走 removeById 不受 TTL 约束；存活条目触发 onRemoved(dispatched)——status
+   * 广播随派发即时刷新，否则 graceful 派发后无状态迁移，渲染端 queuedInputs
+   * 挂着已派发条目到收尾 */
   dequeueHead(): QueuedVoiceInput | null {
-    const entry = this.entries.shift() ?? null
+    let entry = this.entries.shift() ?? null
+    while (entry != null && Date.now() - entry.createdAt > VOICE_QUEUE_ENTRY_TTL_MS) {
+      log.info(
+        `[voice-assistant] queued input expired (id=${entry.id}, ageMs=${Date.now() - entry.createdAt}, text=${summarizeEntryText(entry.text)})`,
+      )
+      this.events.onRemoved(entry, 'discarded')
+      entry = this.entries.shift() ?? null
+    }
     if (entry != null) this.events.onRemoved(entry, 'dispatched')
     return entry
   }

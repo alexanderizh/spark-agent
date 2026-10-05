@@ -15,6 +15,9 @@
  *   相同原因 5 分钟内不重复提示，部分成功只记日志
  * - cancel()：清空待合成队列、中止在途合成结果（generation 校验）、停播
  *   （带 120ms 淡出）、删除未播放文件
+ * - 播报看门狗：play 下发后 PLAYBACK_WATCHDOG_GRACE_MS 内无该句 ended 且整条
+ *   链路无任何进展 → 判播报丢失，按正常回收路径清理并触发 allPlayed 重估
+ *   （ended 丢失/渲染端悬挂导致「播报中/衔接中」永久卡死的兜底）
  * - graceful takeover（边播边处理）：当前句自然播完、余句按 playback-error
  *   回收、新首句就绪后按 sequence 在句边界无缝接上；15s 兜底强制收口
  * - 每句文本随队列保留（EchoGuard 回声守卫的数据源：在播/待播/最近播完）
@@ -42,6 +45,15 @@ const FIRST_SENTENCE_MIN_CHARS = 10
 const FIRST_SENTENCE_FORCE_CUT_MS = 400
 /** graceful takeover 后等待旧句 ended 的兜底上限（单句音频时长上限量级） */
 const GRACEFUL_TAKEOVER_TIMEOUT_MS = 15_000
+/**
+ * 播报看门狗宽限：play 指令下发后等待该句 playback-ended 的保守上限。
+ * 依据：切句按自然边界，单句通常 ≤120 字（≈40s 音频），120s 覆盖单句全程
+ * 仍富余；渲染端排队（前序句顺播）不累计误杀——任一句 ended/failed 到手
+ * 即视为播放链路活着，会重置其余句的计时（喂狗）。只有整条链路 120s 无
+ * 任何回收（ended 事件丢失/渲染端播放悬挂/主进程阻塞后事件被丢）才判
+ * 播报丢失并回收兜底。拿不到音频时长做动态估算，取保守固定值。
+ */
+const PLAYBACK_WATCHDOG_GRACE_MS = 120_000
 /** 播放启动间隙健康度日志阈值 */
 const PLAYBACK_GAP_LOG_THRESHOLD_MS = 50
 /** 回声守卫可见的最近播完句数（环形缓冲） */
@@ -108,6 +120,13 @@ export interface VoiceTtsPipelineDeps {
    * 每轮最多一次，节流与文案分类在流水线内完成。
    */
   onTurnSynthesisFailed: (message: string) => void
+  /**
+   * 播放相位变化（false→true：首句合成完成入待播；true→false：待播全部回收/
+   * 清空）。回声门控（层 2）的真实驱动源：状态机进 speaking 早于合成完成，
+   * 只靠状态迁移武装门控会漏掉整场播报（合成完成后再无迁移），必须在管线
+   * 侧的相位翻转点同步通知。
+   */
+  onPlaybackPhaseChange?: (active: boolean) => void
   /** 首句快切开关（设置项；false 时首句也走自然边界） */
   shouldFastCutFirstSentence?: () => boolean
   /** N+1 预取开关（设置项；false 时合成串行 = 现状行为） */
@@ -191,6 +210,9 @@ export class VoiceTtsPipeline {
   // ── graceful takeover ──
   private gracefulOldIds: Set<string> = new Set()
   private gracefulTimeoutTimer: ReturnType<typeof setTimeout> | null = null
+  // ── 播报看门狗（ended 丢失/渲染端播放悬挂兜底） ──
+  /** sentenceId → 回收计时器（play 下发起表，正常回收/取消解除，链路进展喂狗） */
+  private playbackWatchdogs = new Map<string, ReturnType<typeof setTimeout>>()
   // ── 发送水位线（乱序合成不乱播的发送半边） ──
   /** 已发送的最大 sequence（发送序 = sequence 序，防预取乱序完成乱序下发） */
   private sendWatermark = 0
@@ -204,8 +226,21 @@ export class VoiceTtsPipeline {
   private awaitingSendSequences = new Map<number, { sentenceId: string; filePath: string }>()
   /** 最近播完句文本（EchoGuard 环形缓冲） */
   private recentPlayedTexts: string[] = []
+  /** 上次通知外部的播放相位（去重：只在翻转点发 onPlaybackPhaseChange） */
+  private playbackPhaseActive = false
 
   constructor(private readonly deps: VoiceTtsPipelineDeps) {}
+
+  /**
+   * 播放相位翻转通知（awaitingPlayback 空/非空的变化点调用）：门控武装、
+   * 状态展示等消费方靠它跟踪真实播报起止，而非状态机的 speaking 相位。
+   */
+  private syncPlaybackPhase(): void {
+    const active = this.awaitingPlayback.size > 0
+    if (active === this.playbackPhaseActive) return
+    this.playbackPhaseActive = active
+    this.deps.onPlaybackPhaseChange?.(active)
+  }
 
   /** 新一轮回复开始（由状态机在 submitTurn 成功后调用） */
   beginTurn(takeover: TurnTakeoverMode = 'immediate'): void {
@@ -231,6 +266,8 @@ export class VoiceTtsPipeline {
       }
       this.awaitingPlayback.clear()
       this.gracefulOldIds.clear()
+      this.teardownPlaybackWatchdogs()
+      this.syncPlaybackPhase()
     }
     this.splitter.reset()
     this.pending = []
@@ -353,11 +390,14 @@ export class VoiceTtsPipeline {
     this.splitter.reset()
     for (const queued of this.awaitingPlayback.values()) safeUnlink(queued.filePath)
     this.awaitingPlayback.clear()
+    this.teardownPlaybackWatchdogs()
     this.deps.sendPlay({ kind: 'stop', fadeMs: 120 })
+    this.syncPlaybackPhase()
   }
 
   /** 渲染端播放反馈 */
   onPlaybackEnded(sentenceId: string): void {
+    this.disarmPlaybackWatchdog(sentenceId)
     const queued = this.awaitingPlayback.get(sentenceId)
     if (queued == null) return
     this.awaitingPlayback.delete(sentenceId)
@@ -369,6 +409,9 @@ export class VoiceTtsPipeline {
       if (this.gracefulOldIds.size === 0) this.teardownGracefulTimer()
     }
     safeUnlink(queued.filePath)
+    this.syncPlaybackPhase()
+    // 链路活着：重置其余在等句的看门狗（排队顺播不累计误杀）
+    this.feedPlaybackWatchdogs()
     this.checkAllPlayed()
   }
 
@@ -507,6 +550,7 @@ export class VoiceTtsPipeline {
       )
       this.completedSequences.add(item.sequence)
       this.flushReadySends()
+      this.syncPlaybackPhase()
     } finally {
       this.inflightSynthesis -= 1
       if (!this.cancelled) {
@@ -550,6 +594,8 @@ export class VoiceTtsPipeline {
           sequence: this.sendWatermark,
           filePath: entry.filePath,
         })
+        // 下发即起表：从这一刻起等待渲染端回传该句 ended（看门狗）
+        this.armPlaybackWatchdog(entry.sentenceId)
       }
       // 失败句无待发条目：只推水位（跳过发送）
     }
@@ -584,6 +630,7 @@ export class VoiceTtsPipeline {
         }
       }
       this.awaitingPlayback.clear()
+      this.teardownPlaybackWatchdogs()
       this.deps.sendPlay({ kind: 'stop' })
       // 重发新句（渲染端 stopped 复位后按 sequence 重新入队；按 sequence 排序——
       // Map 插入序是合成完成序，兜底重发同样不能乱序）
@@ -601,8 +648,12 @@ export class VoiceTtsPipeline {
           sequence: item.sequence,
           filePath: item.filePath,
         })
+        // 重发视同新下发：看门狗按重发时刻重新起表
+        this.armPlaybackWatchdog(item.sentenceId)
       }
       this.gracefulOldIds.clear()
+      // clear→replay 已收敛到最终态，只在收口后同步一次相位（避免中间态抖动）
+      this.syncPlaybackPhase()
     }, GRACEFUL_TAKEOVER_TIMEOUT_MS)
   }
 
@@ -611,6 +662,68 @@ export class VoiceTtsPipeline {
       clearTimeout(this.gracefulTimeoutTimer)
       this.gracefulTimeoutTimer = null
     }
+  }
+
+  // ── 播报看门狗：play 下发 → 等待 ended；宽限内无回收即判播报丢失 ──
+
+  private armPlaybackWatchdog(sentenceId: string): void {
+    this.disarmPlaybackWatchdog(sentenceId)
+    this.playbackWatchdogs.set(
+      sentenceId,
+      setTimeout(() => {
+        this.playbackWatchdogs.delete(sentenceId)
+        this.reclaimLostPlayback(sentenceId)
+      }, PLAYBACK_WATCHDOG_GRACE_MS),
+    )
+  }
+
+  private disarmPlaybackWatchdog(sentenceId: string): void {
+    const timer = this.playbackWatchdogs.get(sentenceId)
+    if (timer != null) {
+      clearTimeout(timer)
+      this.playbackWatchdogs.delete(sentenceId)
+    }
+  }
+
+  /**
+   * 播放链路有进展（任一句 ended/failed 回收）：重置其余句的看门狗计时。
+   * 渲染端按 sequence 顺播，前序句正常结束只说明排队还在推进，不应让队尾句
+   * 的等待时间被排队时长累加误杀；只有整条链静默满宽限才判悬挂。
+   */
+  private feedPlaybackWatchdogs(): void {
+    for (const sentenceId of [...this.playbackWatchdogs.keys()]) {
+      this.armPlaybackWatchdog(sentenceId)
+    }
+  }
+
+  private teardownPlaybackWatchdogs(): void {
+    for (const timer of this.playbackWatchdogs.values()) clearTimeout(timer)
+    this.playbackWatchdogs.clear()
+  }
+
+  /**
+   * 看门狗超时回收（播报丢失兜底）：走与正常回收一致的清理路径——删条目、
+   * 删文件、同步播放相位、重估 checkAllPlayed（可能触发 allPlayed 收口，
+   * 状态机随之脱离「播报中/衔接中」卡死）。与 onPlaybackEnded 的差异：
+   * 不计入 playedCount、不进 EchoGuard 环形缓冲（句子从未真正念出来，
+   * 其文本不是回声源），并补发停播指令复位渲染端播放态（事件丢失但
+   * 渲染端仍活着时，防后续轮次音频排在僵尸队列后）。
+   */
+  private reclaimLostPlayback(sentenceId: string): void {
+    const queued = this.awaitingPlayback.get(sentenceId)
+    if (queued == null) return
+    log.warn(
+      `[voice-assistant] playback watchdog reclaimed sentence ${sentenceId} (no ended within ${PLAYBACK_WATCHDOG_GRACE_MS}ms)`,
+    )
+    this.awaitingPlayback.delete(sentenceId)
+    if (this.gracefulOldIds.size > 0) {
+      this.gracefulOldIds.delete(sentenceId)
+      if (this.gracefulOldIds.size === 0) this.teardownGracefulTimer()
+    }
+    safeUnlink(queued.filePath)
+    this.deps.sendPlay({ kind: 'stop', fadeMs: 120 })
+    this.syncPlaybackPhase()
+    this.checkAllPlayed()
   }
 
   /**
