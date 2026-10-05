@@ -374,64 +374,83 @@ export class ModelService {
           `provider_type=${provider.provider_type} isAnthropic=${isAnthropic} prompt=${prompt.length}字符 maxTokens=${maxTokens}`,
       )
       const disableGlmThinking = isAnthropic && isGlmModel(model)
-      const json = await fetchJson<{
+      // 曾因 thinking 参数被该渠道 400 拒绝过：命中记忆直接省略字段，不再先打一发失败请求
+      const glmThinkingDisabled =
+        disableGlmThinking && !thinkingRejectedKeys.has(thinkingRejectionKey(providerId, model))
+      type CompletionJson = {
         content?: Array<{ type?: string; text?: string; thinking?: string }>
         stop_reason?: string
         usage?: { input_tokens?: number; output_tokens?: number }
         choices?: Array<{ message?: { content?: string } }>
-      }>(url, {
-        method: 'POST',
-        headers: isAnthropic
-          ? {
-              'Content-Type': 'application/json',
-              // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
-              ...(apiKey.length > 0 ? buildAnthropicAuthHeaders(apiEndpoint, apiKey) : {}),
-              'anthropic-version': '2023-06-01',
-              // 客户端身份头（UA + x-opencode-session）：Agent 网关（OpenCode Zen
-              // 等）会 400 拒绝裸 HTTP 库调用特征请求，见 llm-client-identity.ts。
-              ...llmClientIdentityHeaders(opts?.sessionId),
-            }
-          : {
-              'Content-Type': 'application/json',
-              ...(apiKey.length > 0 ? { Authorization: `Bearer ${apiKey}` } : {}),
-              ...llmClientIdentityHeaders(opts?.sessionId),
-            },
-        body: JSON.stringify(
-          isAnthropic
+      }
+      // 抽出为局部发送函数：正常发送与「thinking 参数被拒」后的去参重试共用同一份请求配置
+      const sendCompletion = (withThinkingDisabled: boolean): Promise<CompletionJson> =>
+        fetchJson<CompletionJson>(url, {
+          method: 'POST',
+          headers: isAnthropic
             ? {
-                model,
-                max_tokens: maxTokens,
-                // 缺省不传 temperature：anthropic 扩展思考开启时只接受 temperature=1，
-                // 不显式下发可避免与渠道侧默认行为冲突。
-                ...(opts?.temperature != null ? { temperature: opts.temperature } : {}),
-                ...(disableGlmThinking ? { thinking: { type: 'disabled' } } : {}),
-                ...(opts?.systemPrompt ? { system: opts.systemPrompt } : {}),
-                messages: [{ role: 'user', content: prompt }],
+                'Content-Type': 'application/json',
+                // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
+                ...(apiKey.length > 0 ? buildAnthropicAuthHeaders(apiEndpoint, apiKey) : {}),
+                'anthropic-version': '2023-06-01',
+                // 客户端身份头（UA + x-opencode-session）：Agent 网关（OpenCode Zen
+                // 等）会 400 拒绝裸 HTTP 库调用特征请求，见 llm-client-identity.ts。
+                ...llmClientIdentityHeaders(opts?.sessionId),
               }
             : {
-                model,
-                messages: [
-                  ...(opts?.systemPrompt ? [{ role: 'system', content: opts.systemPrompt }] : []),
-                  { role: 'user', content: prompt },
-                ],
-                max_tokens: maxTokens,
-                temperature: opts?.temperature ?? 0,
+                'Content-Type': 'application/json',
+                ...(apiKey.length > 0 ? { Authorization: `Bearer ${apiKey}` } : {}),
+                ...llmClientIdentityHeaders(opts?.sessionId),
               },
-        ),
-        timeoutMs: opts?.timeoutMs ?? COMPLETE_HTTP_TIMEOUT_MS,
-        ...(opts?.abortSignal != null ? { signal: opts.abortSignal } : {}),
-        // 该路径只做确定性记忆抽取；瞬时失败允许一次重试，避免单次抖动静默丢记忆。
-        // 调用方可显式传 maxRetries:0 关闭（问候语等自带逐档降级的场景）。
-        maxRetries: opts?.maxRetries ?? 1,
-        retryBackoffMs: 250,
-        onRetry: ({ retryCount, error }) => {
-          log.warn(
-            `【抽取LLM调用】瞬时失败，准备重试 ${retryCount}/1：${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          )
-        },
-      })
+          body: JSON.stringify(
+            isAnthropic
+              ? {
+                  model,
+                  max_tokens: maxTokens,
+                  // 缺省不传 temperature：anthropic 扩展思考开启时只接受 temperature=1，
+                  // 不显式下发可避免与渠道侧默认行为冲突。
+                  ...(opts?.temperature != null ? { temperature: opts.temperature } : {}),
+                  ...(withThinkingDisabled ? { thinking: { type: 'disabled' } } : {}),
+                  ...(opts?.systemPrompt ? { system: opts.systemPrompt } : {}),
+                  messages: [{ role: 'user', content: prompt }],
+                }
+              : {
+                  model,
+                  messages: [
+                    ...(opts?.systemPrompt ? [{ role: 'system', content: opts.systemPrompt }] : []),
+                    { role: 'user', content: prompt },
+                  ],
+                  max_tokens: maxTokens,
+                  temperature: opts?.temperature ?? 0,
+                },
+          ),
+          timeoutMs: opts?.timeoutMs ?? COMPLETE_HTTP_TIMEOUT_MS,
+          ...(opts?.abortSignal != null ? { signal: opts.abortSignal } : {}),
+          // 该路径只做确定性记忆抽取；瞬时失败允许一次重试，避免单次抖动静默丢记忆。
+          // 调用方可显式传 maxRetries:0 关闭（问候语等自带逐档降级的场景）。
+          maxRetries: opts?.maxRetries ?? 1,
+          retryBackoffMs: 250,
+          onRetry: ({ retryCount, error }) => {
+            log.warn(
+              `【抽取LLM调用】瞬时失败，准备重试 ${retryCount}/1：${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            )
+          },
+        })
+      // 火山方舟等渠道不支持 thinking:{type:'disabled'}（直接 HTTP 400）：命中「400 + 错误含
+      // thinking」时去掉该字段重试一次，并把 provider+model 记入进程内缓存，后续请求直接省略。
+      let json: CompletionJson
+      try {
+        json = await sendCompletion(glmThinkingDisabled)
+      } catch (err) {
+        if (!glmThinkingDisabled || !isThinkingParamRejection400(err)) throw err
+        thinkingRejectedKeys.add(thinkingRejectionKey(providerId, model))
+        log.warn(
+          `【抽取LLM调用】渠道拒绝 thinking 参数（provider=${provider.name}(${providerId}) model=${model}），去参重试一次并记忆该渠道`,
+        )
+        json = await sendCompletion(false)
+      }
       const elapsedMs = Date.now() - t0
       let text: string | undefined
       if (isAnthropic) {
@@ -501,6 +520,18 @@ export class ModelService {
     }
     return seeded
   }
+}
+
+/** 记录「provider+model 曾因 thinking 参数被 400 拒绝」，命中后直接省略该字段（进程内缓存，重启清空） */
+const thinkingRejectedKeys = new Set<string>()
+
+function thinkingRejectionKey(providerId: string, model: string): string {
+  return `${providerId}::${model.trim().toLowerCase()}`
+}
+
+/** 400 且错误信息指向 thinking 参数（如火山方舟 thinking.type 'disabled' is not supported by this model） */
+function isThinkingParamRejection400(err: unknown): boolean {
+  return err instanceof HttpError && err.statusCode === 400 && /thinking/i.test(err.message)
 }
 
 function isGlmModel(model: string): boolean {

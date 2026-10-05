@@ -396,3 +396,119 @@ describe('ModelService.complete — agent chat model fallback', () => {
     expect(headers.get('x-opencode-session')?.length ?? 0).toBeGreaterThan(0)
   })
 })
+
+describe('ModelService.complete — thinking 参数 400 自适应', () => {
+  const realFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = realFetch
+    vi.restoreAllMocks()
+  })
+
+  /** 构造一个 anthropic 兼容渠道 provider 行（各用例用互不相同的 providerId，避免模块级记忆跨用例串扰） */
+  function makeAnthropicProvider(id: string, apiEndpoint: string) {
+    return {
+      id,
+      keystore_ref: null,
+      provider_type: 'anthropic',
+      config_json: JSON.stringify({ apiEndpoint }),
+    }
+  }
+
+  it('400 指向 thinking 参数时去参重试一次，且记忆生效后续直接省略', async () => {
+    const thinking400 = () =>
+      new Response(
+        JSON.stringify({
+          error: { message: "thinking.type 'disabled' is not supported by this model" },
+        }),
+        { status: 400 },
+      )
+    const ok = () =>
+      new Response(JSON.stringify({ content: [{ type: 'text', text: 'ok' }] }), { status: 200 })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(thinking400())
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(ok())
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
+    const { svc } = makeService(
+      { extractionProviderId: 'volc-glm-prov', extractionModel: 'glm-5.3' },
+      fetchMock,
+      {
+        providers: {
+          'volc-glm-prov': makeAnthropicProvider('volc-glm-prov', 'https://volc.example.com'),
+        },
+      },
+    )
+
+    const result = await svc.complete('extract')
+
+    expect(result).toEqual({ available: true, text: 'ok' })
+    // 第 1 次带 thinking 打出 400（fetchJson 对 4xx 不内部重试）→ 第 2 次去参重试成功
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const [, firstInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(firstInit.body as string).thinking).toEqual({ type: 'disabled' })
+    const [, secondInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
+    expect(JSON.parse(secondInit.body as string).thinking).toBeUndefined()
+
+    // 同一 svc 再调一次：命中进程内记忆直接省略 thinking，不再先打一发 400
+    const again = await svc.complete('extract again')
+    expect(again).toEqual({ available: true, text: 'ok' })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    const [, thirdInit] = fetchMock.mock.calls[2] as unknown as [string, RequestInit]
+    expect(JSON.parse(thirdInit.body as string).thinking).toBeUndefined()
+  })
+
+  it('无关 400（错误不含 thinking）不做去参重试', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ error: { message: 'invalid request: max_tokens too large' } }),
+          { status: 400 },
+        ),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
+    const { svc } = makeService(
+      { extractionProviderId: 'glm-400-other', extractionModel: 'glm-4.7' },
+      fetchMock,
+      {
+        providers: {
+          'glm-400-other': makeAnthropicProvider('glm-400-other', 'https://other.example.com'),
+        },
+      },
+    )
+
+    const r = await svc.complete('extract')
+
+    expect(r.available).toBe(false)
+    if (!r.available) expect(r.reason).toMatch(/HTTP 400/)
+    // 4xx 不进 fetchJson 内部重试，也不触发去参重试：只打一发
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('支持 thinking 的渠道行为不回归（仍发送 thinking:{type:"disabled"}）', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ content: [{ type: 'text', text: '[]' }] }), { status: 200 }),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
+    const { svc } = makeService(
+      { extractionProviderId: 'glm-success-prov', extractionModel: 'glm-5.3' },
+      fetchMock,
+      {
+        providers: {
+          'glm-success-prov': makeAnthropicProvider(
+            'glm-success-prov',
+            'https://success.example.com',
+          ),
+        },
+      },
+    )
+
+    const result = await svc.complete('extract')
+
+    expect(result).toEqual({ available: true, text: '[]' })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string).thinking).toEqual({ type: 'disabled' })
+  })
+})
