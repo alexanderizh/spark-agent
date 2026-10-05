@@ -343,15 +343,15 @@ export function VoiceAssistantSettingsCard() {
         />
         <SettingsRow
           title="说完判定"
-          tip="检测到停顿后等待一段静默确认才发送（尾静音 + 确认窗口合计：迅捷约 1 秒 / 标准约 1.3 秒 / 从容 2.4 秒），期间继续说话会自动拼接，防止换气/思考停顿把话截断。「迅捷」可能截断长停顿（靠续说纠正兜底）；「从容」适合说话慢或爱停顿的场景。"
+          tip="检测到停顿后等待一段静默确认才发送（尾静音 + 确认窗口合计：迅捷约 2 秒 / 标准约 2.7 秒 / 从容约 3.8 秒），期间继续说话会自动拼接，防止换气/思考停顿把话截断。「迅捷」可能截断长停顿（靠续说纠正兜底）；「从容」适合说话慢或爱停顿的场景。"
           right={
             <Select
               value={settings.utteranceEndpointProfile}
               onChange={(v) => void update({ utteranceEndpointProfile: v })}
               options={[
-                { label: '迅捷（约 1 秒）', value: 'snappy' },
+                { label: '迅捷（约 2 秒）', value: 'snappy' },
                 { label: '标准（推荐）', value: 'standard' },
-                { label: '从容（2.4 秒）', value: 'relaxed' },
+                { label: '从容（约 3.8 秒）', value: 'relaxed' },
               ]}
             />
           }

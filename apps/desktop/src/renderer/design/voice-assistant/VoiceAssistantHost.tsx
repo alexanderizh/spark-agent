@@ -83,7 +83,10 @@ export function VoiceAssistantHost(): React.ReactNode {
 
     const offCapture = window.spark.on('stream:voice-assistant:capture', (command) => {
       if (command.action === 'start') {
-        void capture.start(command.sessionId, command.audioProcessing)
+        void capture.start(command.sessionId, command.audioProcessing, {
+          mode: command.mode,
+          replayPreRoll: command.replayPreRoll,
+        })
       } else {
         capture.stop(command.sessionId)
       }

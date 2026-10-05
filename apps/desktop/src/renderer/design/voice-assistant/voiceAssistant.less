@@ -329,50 +329,42 @@
   line-height: 1;
 }
 
-// 动作行：主色实心胶囊（立即发送）+ 轻文字钮（放弃，误触代价次级）
+// 动作行：两枚 26px 图标钮右对齐贴文本右缘（» 立即处理 / × 放弃）。
+// 语义靠 title/aria-label 承载，版面零文字——与 HUD「彩色信息只由点阵/光晕+
+// 状态点承担」的轻盈语言一致；主次用颜色区分（发送=主色描边、放弃=中性描边）
 .voice-hud-queue-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 6px;
   animation: voice-hud-queue-in 0.12s ease both;
 }
 
-.voice-hud-queue-dispatch {
+.voice-hud-queue-icon-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 14px;
-  border: none;
-  border-radius: 15px;
-  background: var(--primary);
-  color: var(--primary-fg);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 7px;
+  background: transparent;
+  color: color-mix(in srgb, var(--text) 64%, transparent);
   cursor: pointer;
-  transition: background 0.15s ease;
-
-  // 两个 3px 错位方块组成的「快进 »」，延续像素网格的方块语言
-  i {
-    width: 10px;
-    height: 9px;
-    position: relative;
-    background:
-      linear-gradient(var(--primary-fg), var(--primary-fg)) left/3px 5px no-repeat,
-      linear-gradient(var(--primary-fg), var(--primary-fg)) right/3px 9px no-repeat;
-    background-position:
-      0 center,
-      7px center;
-  }
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
 
   &:hover:not(:disabled) {
-    background: var(--primary-hover);
+    background: var(--hover);
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--text) 32%, transparent);
   }
 
   &:active:not(:disabled) {
-    transform: scale(0.97);
+    transform: scale(0.94);
     transition: transform 0.08s ease-out;
   }
 
@@ -382,37 +374,73 @@
   }
 
   &:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: default;
   }
-}
 
-.voice-hud-queue-discard {
-  border: none;
-  background: transparent;
-  padding: 6px 8px;
-  // 放弃钮对比度：text 64%（≈4.5:1），不用 text-muted（2.2:1 不达标）
-  color: color-mix(in srgb, var(--text) 64%, transparent);
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    color 0.15s ease,
-    background 0.15s ease;
+  // » 立即处理（快进/抢占语义）：两枚 45° 描边角标，线条语言与描边图标一致
+  &.is-dispatch {
+    color: var(--primary);
+    border-color: color-mix(in srgb, var(--primary) 36%, transparent);
 
-  &:hover:not(:disabled) {
-    color: var(--text);
-    background: var(--hover);
+    i {
+      position: relative;
+      width: 11px;
+      height: 11px;
+    }
+
+    i::before,
+    i::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 6px;
+      height: 6px;
+      border-top: 1.6px solid currentColor;
+      border-right: 1.6px solid currentColor;
+      transform: translateY(-50%) rotate(45deg);
+    }
+
+    i::before {
+      left: 0;
+    }
+
+    i::after {
+      left: 5px;
+    }
+
+    &:hover:not(:disabled) {
+      background: var(--primary-soft);
+      color: var(--primary);
+      border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+    }
   }
 
-  &:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
+  // × 放弃：两根 1.6px 细杠正交，同粗细的线条语言
+  &.is-discard i {
+    position: relative;
+    width: 10px;
+    height: 10px;
   }
 
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
+  &.is-discard i::before,
+  &.is-discard i::after {
+    content: '';
+    position: absolute;
+    left: calc(50% - 0.8px);
+    top: 0;
+    width: 1.6px;
+    height: 100%;
+    border-radius: 1px;
+    background: currentColor;
+  }
+
+  &.is-discard i::before {
+    transform: rotate(45deg);
+  }
+
+  &.is-discard i::after {
+    transform: rotate(-45deg);
   }
 }
 

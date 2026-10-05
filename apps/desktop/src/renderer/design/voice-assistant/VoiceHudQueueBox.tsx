@@ -3,7 +3,8 @@
  *
  * 三时机（与 VoiceInputQueue 生命周期一一对应）：
  * - 弱态（draft）：确认窗口中——仅文本 +「停顿确认中…」，无按钮，整框 0.64 透明度
- * - 正态（queued）：已入队——「已听到 · ×N」+ 文本 + 立即发送（主色胶囊）/放弃（轻文字钮）
+ * - 正态（queued）：已入队——「已听到 · ×N」+ 文本 + 两枚 26px 图标钮（» 立即处理 /
+ *   × 放弃，右对齐贴文本右缘；语义靠 title/aria-label，不占版面）
  * - 只读衔接（takeover）：graceful 边播边处理已启动——「本句播完后衔接新回答」，无按钮
  *
  * 展示最新条（显示最新、动作所指一致）：徽标 ×N 告知还有 N-1 条在排，FIFO 顺序不变。
@@ -71,24 +72,25 @@ export function VoiceHudQueueBox({
       <span className="voice-hud-queue-actions">
         <button
           type="button"
-          className="voice-hud-queue-dispatch"
+          className="voice-hud-queue-icon-btn is-dispatch"
           disabled={dispatchInFlight}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={() => onDispatch(latest.id)}
-          title="立即处理这条（中止当前回答）"
+          title={dispatchInFlight ? '发送中…' : '立即处理这条（中止当前回答）'}
+          aria-label={dispatchInFlight ? '发送中' : '立即处理这条，中止当前回答'}
         >
           <i aria-hidden="true" />
-          <span>{dispatchInFlight ? '发送中…' : '立即发送'}</span>
         </button>
         <button
           type="button"
-          className="voice-hud-queue-discard"
+          className="voice-hud-queue-icon-btn is-discard"
           disabled={dispatchInFlight}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={() => onDiscard(latest.id)}
           title="放弃这条（仅移出队列）"
+          aria-label="放弃这条，仅移出队列"
         >
-          放弃
+          <i aria-hidden="true" />
         </button>
       </span>
     </div>
