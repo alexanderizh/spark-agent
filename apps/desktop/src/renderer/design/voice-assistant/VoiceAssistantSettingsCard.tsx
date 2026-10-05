@@ -32,8 +32,11 @@ import {
   matchesValueOrLabel,
 } from '../utils/autoCompleteEchoFilter'
 import {
+  resolveSttChannelId,
   resolveTtsChannelId,
   resolveTtsModel,
+  sttChannelModels,
+  sttChannelOptions,
   ttsChannelModels,
   ttsChannelOptions,
   ttsVoiceOptions,
@@ -62,6 +65,9 @@ const THINKING_EFFORT_OPTIONS: Array<{ label: string; value: SessionReasoningEff
  */
 const TTS_AUTO_CHANNEL_VALUE = '__auto__'
 const TTS_DEFAULT_MODEL_VALUE = '__default__'
+/** 云端识别（STT）下拉哨兵：语义同上方 TTS 哨兵，独立取值避免与渠道/模型 id 混淆。 */
+const STT_AUTO_CHANNEL_VALUE = '__stt_auto__'
+const STT_DEFAULT_MODEL_VALUE = '__stt_default__'
 
 const STATE_LABEL: Record<string, string> = {
   idle: '空闲',
@@ -103,6 +109,7 @@ export function VoiceAssistantSettingsCard() {
   const [loaded, setLoaded] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [ttsModels, setTtsModels] = useState<CanvasMediaModelSummary[]>([])
+  const [sttModels, setSttModels] = useState<CanvasMediaModelSummary[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -132,6 +139,16 @@ export function VoiceAssistantSettingsCard() {
         if (!cancelled) setTtsModels(modelsRes.models)
       } catch {
         /* 渠道列举失败不阻塞设置读取：候选为空时音色回落手输 */
+      }
+      try {
+        // 云端识别渠道 / 模型候选：与主进程云转写同一份 audio.transcription 渠道口径。
+        const sttRes = await window.spark.invoke('canvas:media-models:list', {
+          capability: 'audio.transcription',
+          enabledOnly: true,
+        })
+        if (!cancelled) setSttModels(sttRes.models)
+      } catch {
+        /* 列举失败不阻塞设置读取：候选为空时识别渠道下拉仅剩自动档 */
       }
     })()
     const off = window.spark.on('stream:voice-assistant:status', (next) => {
@@ -221,6 +238,60 @@ export function VoiceAssistantSettingsCard() {
       })
     },
     [settings.ttsModelId, ttsModels, update],
+  )
+
+  // ── 云端识别渠道 / 模型候选（与 TTS 同一份渠道→模型推导，清单换 audio.transcription）──
+  const effectiveSttChannelId = useMemo(
+    () => resolveSttChannelId(sttModels, settings.sttProviderProfileId),
+    [sttModels, settings.sttProviderProfileId],
+  )
+  const effectiveSttChannelModels = useMemo(
+    () => sttChannelModels(sttModels, effectiveSttChannelId),
+    [sttModels, effectiveSttChannelId],
+  )
+  const sttChannelSelectOptions = useMemo(() => {
+    const base = [
+      { label: '自动（第一个可用转写渠道）', value: STT_AUTO_CHANNEL_VALUE },
+      ...sttChannelOptions(sttModels).map((option) => ({
+        label: option.label,
+        value: option.value,
+      })),
+    ]
+    const current = settings.sttProviderProfileId
+    // 已保存渠道可能已删除或停用：补一条占位项，避免下拉直接暴露裸 id。
+    if (current == null || base.some((option) => option.value === current)) return base
+    return [...base, { label: '当前渠道（不在转写渠道列表）', value: current }]
+  }, [sttModels, settings.sttProviderProfileId])
+  const sttModelSelectOptions = useMemo(() => {
+    const base = [
+      { label: '渠道默认模型', value: STT_DEFAULT_MODEL_VALUE },
+      ...effectiveSttChannelModels.map((model) => ({
+        label: model.displayName,
+        value: model.modelId,
+      })),
+    ]
+    const current = settings.sttModelId
+    if (current == null || base.some((option) => option.value === current)) return base
+    return [...base, { label: '当前模型（不在渠道模型列表）', value: current }]
+  }, [effectiveSttChannelModels, settings.sttModelId])
+
+  const handleSttChannelChange = useCallback(
+    (value: string) => {
+      const nextChannel = value === STT_AUTO_CHANNEL_VALUE ? null : value
+      // 换渠道后原模型多半不属于新渠道：仅当它仍属于新渠道时保留，否则回落到渠道默认。
+      const keepModel =
+        nextChannel != null &&
+        settings.sttModelId != null &&
+        sttModels.some(
+          (model) =>
+            model.providerProfileId === nextChannel && model.modelId === settings.sttModelId,
+        )
+      void update({
+        sttProviderProfileId: nextChannel,
+        ...(keepModel ? {} : { sttModelId: null }),
+      })
+    },
+    [settings.sttModelId, sttModels, update],
   )
 
   const handleTryWake = useCallback(async () => {
@@ -329,7 +400,7 @@ export function VoiceAssistantSettingsCard() {
       <div className="settings-card" style={{ marginBottom: 10 }}>
         <SettingsRow
           title="识别引擎"
-          tip="本地 Paraformer：流式实时（推荐）。云端 whisper：说完后整段上传转写，准确率更高但延迟增加 1–3 秒，且音频会上传到所配置的渠道。"
+          tip="本地 Paraformer：流式实时（推荐）。云端 whisper：说完后整段上传转写，准确率更高但延迟增加 1–3 秒，且音频会上传到所配置的渠道——使用的转写渠道/模型可在下方两行指定。"
           right={
             <Select
               value={settings.recognitionEngine}
@@ -338,6 +409,37 @@ export function VoiceAssistantSettingsCard() {
                 { label: '本地（实时）', value: 'local' },
                 { label: '云端（whisper）', value: 'cloud' },
               ]}
+            />
+          }
+        />
+        <SettingsRow
+          title="识别渠道"
+          tip="云端识别使用的语音转文字（STT）渠道；默认自动选择第一个可用的转写渠道。仅识别引擎为「云端」时生效；本地引擎音频不出本机。"
+          right={
+            <Select
+              value={settings.sttProviderProfileId ?? STT_AUTO_CHANNEL_VALUE}
+              onChange={(value) => handleSttChannelChange(String(value))}
+              options={sttChannelSelectOptions}
+              disabled={settings.recognitionEngine !== 'cloud'}
+            />
+          }
+        />
+        <SettingsRow
+          title="识别模型"
+          tip="该渠道下用于语音转文字的模型；「渠道默认模型」由渠道自身决定。需先选定识别渠道，且仅云端识别引擎生效。"
+          right={
+            <Select
+              value={settings.sttModelId ?? STT_DEFAULT_MODEL_VALUE}
+              onChange={(value) => {
+                const next = String(value)
+                void update({ sttModelId: next === STT_DEFAULT_MODEL_VALUE ? null : next })
+              }}
+              options={sttModelSelectOptions}
+              disabled={
+                settings.recognitionEngine !== 'cloud' ||
+                settings.sttProviderProfileId == null ||
+                effectiveSttChannelModels.length === 0
+              }
             />
           }
         />

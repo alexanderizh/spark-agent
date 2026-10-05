@@ -1791,6 +1791,9 @@ export class VoiceAssistantService {
         try {
           const providers = await this.deps.resolveMediaProviders()
           if (providers.length === 0) throw new Error('未配置支持语音转写的多媒体渠道')
+          // 渠道/模型选择与 TTS 同口径：显式设置（sttProviderProfileId/sttModelId）
+          // 优先下发锁定，未设置时由路由器自动选第一个支持 audio.transcription 的渠道。
+          // 显式渠道已删除/停用时 invoke 报错，走下方 catch 回落本地识别。
           const { output } = await this.deps.mediaRouter.invoke(
             {
               operation: 'audio_transcribe',
@@ -1798,7 +1801,13 @@ export class VoiceAssistantService {
               inputFiles: [{ type: 'audio', path: wavPath, role: 'input' }],
               outputDir: this.deps.ttsDir,
             },
-            { providers },
+            {
+              providers,
+              ...(this.settings.sttProviderProfileId != null
+                ? { providerProfileId: this.settings.sttProviderProfileId }
+                : {}),
+              ...(this.settings.sttModelId != null ? { modelId: this.settings.sttModelId } : {}),
+            },
           )
           const text = output.assets.find((asset) => asset.contentText != null)?.contentText ?? ''
           const cleaned = text.trim()

@@ -73,6 +73,13 @@ export interface VoiceAssistantSettings {
    * 整体替换流式结果，识别率显著提升。云引擎下不生效（云转写本就是整段识别）。
    */
   refineTranscript: boolean
+  /**
+   * 云端识别渠道（null = 自动取第一个支持 audio.transcription 的已配置渠道）。
+   * 仅 recognitionEngine='cloud' 时生效：云转写把整段 PCM 上传到该渠道转写。
+   */
+  sttProviderProfileId: string | null
+  /** 云端识别模型（null = 渠道默认模型）；与 sttProviderProfileId 配套生效。 */
+  sttModelId: string | null
   /** TTS 渠道（null = 自动取第一个支持 audio.speech 的已配置渠道） */
   ttsProviderProfileId: string | null
   /** TTS 模型（null = 渠道默认模型） */
@@ -174,6 +181,8 @@ export const DEFAULT_VOICE_ASSISTANT_SETTINGS: VoiceAssistantSettings = {
   wakeThreshold: 0.1,
   wakeBoost: 3.0,
   recognitionEngine: 'local',
+  sttProviderProfileId: null,
+  sttModelId: null,
   ttsProviderProfileId: null,
   ttsModelId: null,
   ttsVoice: '',
@@ -275,6 +284,20 @@ export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSet
     source.ttsModelId.length <= 300
       ? source.ttsModelId
       : null
+  // 云端识别渠道/模型：与 TTS 同款宽容解析；旧版本设置缺字段回落 null（自动选路），
+  // 保证升级后云端识别行为与之前完全一致。
+  const sttProviderProfileId =
+    typeof source.sttProviderProfileId === 'string' &&
+    source.sttProviderProfileId.trim().length > 0 &&
+    source.sttProviderProfileId.length <= 200
+      ? source.sttProviderProfileId
+      : null
+  const sttModelId =
+    typeof source.sttModelId === 'string' &&
+    source.sttModelId.trim().length > 0 &&
+    source.sttModelId.length <= 300
+      ? source.sttModelId
+      : null
   const settings: VoiceAssistantSettings = {
     enabled: readBool(source.enabled, DEFAULT_VOICE_ASSISTANT_SETTINGS.enabled),
     wakeShortcut: readString(
@@ -306,6 +329,8 @@ export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSet
       source.refineTranscript,
       DEFAULT_VOICE_ASSISTANT_SETTINGS.refineTranscript,
     ),
+    sttProviderProfileId,
+    sttModelId,
     ttsProviderProfileId,
     ttsModelId,
     ttsVoice: typeof source.ttsVoice === 'string' ? source.ttsVoice.slice(0, 200) : '',

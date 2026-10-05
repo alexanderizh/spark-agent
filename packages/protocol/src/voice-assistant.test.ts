@@ -52,8 +52,7 @@ describe('normalizeVoiceAssistantSettings', () => {
     ).toBe(false)
     // 档位白名单：非法值回落默认，合法档位透传
     expect(
-      normalizeVoiceAssistantSettings({ sessionThinkingEffort: 'ultra' })
-        .sessionThinkingEffort,
+      normalizeVoiceAssistantSettings({ sessionThinkingEffort: 'ultra' }).sessionThinkingEffort,
     ).toBe('minimal')
     expect(
       normalizeVoiceAssistantSettings({ sessionThinkingEffort: 'high' }).sessionThinkingEffort,
@@ -70,6 +69,27 @@ describe('normalizeVoiceAssistantSettings', () => {
     expect(normalized.utteranceConfirmMs).toBe(2000)
     expect(normalized.browserDenoise).toBe(false)
     expect(normalized.voiceFocus).toBe('off')
+  })
+
+  it('云端识别渠道/模型：缺省回落 null（自动选路），合法值透传，脏数据收敛', () => {
+    // 旧版本设置无 stt 字段：回落 null = 自动选第一个可用转写渠道 + 渠道默认模型
+    expect(normalizeVoiceAssistantSettings({}).sttProviderProfileId).toBeNull()
+    expect(normalizeVoiceAssistantSettings({}).sttModelId).toBeNull()
+    // 合法值透传
+    const explicit = normalizeVoiceAssistantSettings({
+      sttProviderProfileId: 'provider-asr-1',
+      sttModelId: 'whisper-large-v3',
+    })
+    expect(explicit.sttProviderProfileId).toBe('provider-asr-1')
+    expect(explicit.sttModelId).toBe('whisper-large-v3')
+    // 空串/非字符串脏数据收敛为 null
+    expect(
+      normalizeVoiceAssistantSettings({ sttProviderProfileId: '  ', sttModelId: 42 })
+        .sttProviderProfileId,
+    ).toBeNull()
+    expect(
+      normalizeVoiceAssistantSettings({ sttProviderProfileId: '  ', sttModelId: 42 }).sttModelId,
+    ).toBeNull()
   })
 
   it('v1 存量默认组合（denoise+standard 且无标记）一次性迁移回新默认', () => {

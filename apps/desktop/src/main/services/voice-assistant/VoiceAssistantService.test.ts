@@ -49,6 +49,8 @@ vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
   unlink: vi.fn(async () => undefined),
   rm: vi.fn(async () => undefined),
+  // 云转写 writePcmWav 的 WAV 落盘：fake 之（真实写盘在 fake timers 下同样不推进）
+  writeFile: vi.fn(async () => undefined),
 }))
 
 // KWS 检测器整体 mock（真实模型加载依赖已安装的语音包）；
@@ -2151,6 +2153,104 @@ describe('VoiceAssistantService 全双工对话窗口', () => {
     // cloud 引擎：确认到期走 stopCaptureAndAsr（半双工收口链路）
     expect(h.captureCommands.some((c) => c.action === 'stop')).toBe(true)
     expect(h.service.getStatus().duplexActive).toBe(false)
+  })
+
+  it('云转写渠道/模型设置透传：显式 sttProviderProfileId/sttModelId 下发 invoke 锁定', async () => {
+    const invokeCalls: Array<{
+      request: Record<string, unknown>
+      options: Record<string, unknown>
+    }> = []
+    const h = createHarness(
+      {
+        recognitionEngine: 'cloud',
+        sttProviderProfileId: 'p-asr',
+        sttModelId: 'whisper-large',
+      },
+      false,
+      {
+        providers: [{ id: 'p-asr', name: 'fake-asr', defaultModel: 'whisper-large', apiKey: 'k' }],
+        mediaRouter: {
+          supports: () => true,
+          invoke: async (request: Record<string, unknown>, options: Record<string, unknown>) => {
+            invokeCalls.push({ request, options })
+            return {
+              output: {
+                provider: 'fake-asr',
+                model: 'whisper-large',
+                mode: 'sync',
+                assets: [{ type: 'text', contentText: '云端转写的结果文本' }],
+              },
+              providerProfileId: 'p-asr',
+            }
+          },
+        },
+      },
+    )
+    h.service.wake()
+    // 聆听期喂 0.6s 音频（≥0.3s 阈值，触发整段上传转写）：handleAudioChunk 校验的
+    // 是采集会话 id（start 指令下发值），传 ASR 会话 id 会被会话校验丢弃
+    h.service.handleAudioChunk(
+      h.captureCommands.find((c) => c.action === 'start' && c.mode === 'dialogue')?.sessionId ?? '',
+      new Int16Array(9600),
+    )
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '本地流式兜底',
+    })
+    await vi.advanceTimersByTimeAsync(3900)
+    // mock 的 stopVoiceSession 不回调事件：与既有用例同模式手动补发 session-stopped
+    // 驱动收尾 flush（真实实现里 stopVoiceSession 异步 flush 后回调）
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(invokeCalls.length).toBe(1)
+    expect(invokeCalls[0]?.request.operation).toBe('audio_transcribe')
+    expect(invokeCalls[0]?.options.providerProfileId).toBe('p-asr')
+    expect(invokeCalls[0]?.options.modelId).toBe('whisper-large')
+    // 云端文本替换本地流式兜底提交
+    expect(h.submitted.length).toBe(1)
+    expect(h.submitted[0]?.userMessageDisplayContent).toBe('云端转写的结果文本')
+  })
+
+  it('云转写未指定渠道/模型：invoke 不携带锁定字段，由路由器自动选路', async () => {
+    const invokeCalls: Array<{ options: Record<string, unknown> }> = []
+    const h = createHarness({ recognitionEngine: 'cloud' }, false, {
+      providers: [{ id: 'p-any', name: 'fake-asr', defaultModel: 'whisper-1', apiKey: 'k' }],
+      mediaRouter: {
+        supports: () => true,
+        invoke: async (_request: unknown, options: Record<string, unknown>) => {
+          invokeCalls.push({ options })
+          return {
+            output: {
+              provider: 'fake-asr',
+              model: 'whisper-1',
+              mode: 'sync',
+              assets: [{ type: 'text', contentText: '自动选路转写' }],
+            },
+            providerProfileId: 'p-any',
+          }
+        },
+      },
+    })
+    h.service.wake()
+    // 采集会话 id 同上：从 start 指令提取
+    h.service.handleAudioChunk(
+      h.captureCommands.find((c) => c.action === 'start' && c.mode === 'dialogue')?.sessionId ?? '',
+      new Int16Array(9600),
+    )
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '本地流式兜底',
+    })
+    await vi.advanceTimersByTimeAsync(3900)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(invokeCalls.length).toBe(1)
+    const autoRouteOptions = invokeCalls[0]?.options ?? {}
+    expect('providerProfileId' in autoRouteOptions).toBe(false)
+    expect('modelId' in autoRouteOptions).toBe(false)
+    expect(h.submitted[0]?.userMessageDisplayContent).toBe('自动选路转写')
   })
 
   it('全双工按轮精修：区间音频离线重识别成功 → 精修文本整体替换流式结果提交', async () => {

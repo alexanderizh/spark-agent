@@ -1,12 +1,16 @@
 /**
- * 语音助手 TTS 候选推导（纯函数，便于单测）。
+ * 语音助手 TTS / 云端识别（STT）候选推导（纯函数，便于单测）。
  *
- * 数据源是 `canvas:media-models:list`（capability=audio.speech），与主进程
- * VoiceAssistantService.synthesizeSentence 使用同一份「已配置渠道 + 已启用模型」口径：
- * - 未显式指定渠道时，主进程取 providers 中第一个支持 audio.speech 的渠道；列表顺序
+ * 数据源是 `canvas:media-models:list`（TTS 用 capability=audio.speech，STT 用
+ * capability=audio.transcription），与主进程 VoiceAssistantService 的合成/云转写
+ * 链路使用同一份「已配置渠道 + 已启用模型」口径：
+ * - 未显式指定渠道时，主进程取 providers 中第一个支持对应能力的渠道；列表顺序
  *   同为 ProviderService.listProviders()，因此这里用首个模型所属渠道对齐展示。
  * - 模型候选取渠道下按 modelId 去重的清单：同一渠道可复用同一 modelId 的多个 manifest，
  *   媒体路由器按 modelId 命中首个，这里同口径去重，避免下拉出现同值项。
+ *
+ * 下方的 stt* 系列是 tts* 同实现的语义别名：云端识别渠道/模型选择复用完全相同的
+ * 「渠道去重 → 渠道下模型 → 默认模型」推导，仅候选清单的 capability 过滤不同。
  */
 
 import type { CanvasMediaModelSummary } from '@spark/protocol'
@@ -89,3 +93,14 @@ export function ttsVoiceOptions(
     useLabels: true,
   })
 }
+
+// ─── 云端识别（STT）候选：与 TTS 同实现的语义别名 ───────────────────────────
+
+/** 云端识别渠道候选：与 ttsChannelOptions 同口径（capability=audio.transcription 清单）。 */
+export const sttChannelOptions = ttsChannelOptions
+
+/** 生效云端识别渠道：与 resolveTtsChannelId 同口径（显式选择优先，否则首个可用渠道）。 */
+export const resolveSttChannelId = resolveTtsChannelId
+
+/** 指定渠道下的云端识别模型：与 ttsChannelModels 同口径（按 modelId 去重，保序）。 */
+export const sttChannelModels = ttsChannelModels
