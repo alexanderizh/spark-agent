@@ -40,9 +40,19 @@
   &.is-speaking {
     --voice-viz: color-mix(in srgb, var(--primary) 45%, var(--text));
   }
+
+  // 采集准备期（丢首字修复）：麦克风管道未就绪，舞台降调明示「还没到说话的时候」，
+  // capture-started 到达后（captureReady 翻转）恢复常规聆听视觉
+  &.is-preparing {
+    .voice-hud-stage {
+      opacity: 0.55;
+      filter: saturate(0.6);
+    }
+  }
 }
 
 // 顶部舞台：大留白 + 内容居中（区域占比大，图标本体小巧由网格自身尺寸决定）
+// transition 供准备期降调（is-preparing 的 opacity/滤镜）与恢复平滑过渡，不突变
 .voice-hud-stage {
   flex: none;
   display: flex;
@@ -50,6 +60,9 @@
   justify-content: center;
   height: 128px;
   margin-top: 6px;
+  transition:
+    opacity 0.2s ease,
+    filter 0.2s ease;
 }
 
 // 可视组件（光晕 + 网格叠层）：状态类挂这里，供 halo/网格选择器共用
@@ -581,5 +594,120 @@
 @media (max-width: 980px) {
   .voice-settings-control {
     width: 100%;
+  }
+}
+
+// ============================================================
+// HUD 播报设置条（VoiceHudTtsSettings）——HUD 卡内嵌的 TTS 快捷切换
+// 「真·无边框小选择器」：11px 灰标签 + antd borderless Select（值同正文色，
+// 整器 hover 出轻底色）；HUD 卡自带毛玻璃底，本分区背景透明，仅加一条顶部
+// 细分隔线与左右 padding。卡片是拖拽把手：分区根节点 onPointerDown
+// stopPropagation（同停止钮做法），点选下拉不被拖拽抢走。
+// ============================================================
+
+.voice-hud-tts {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 14px 4px;
+  border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  background: transparent;
+}
+
+.voice-hud-tts-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 10px;
+  min-width: 0;
+}
+
+.voice-hud-tts-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.voice-hud-tts-label {
+  flex: none;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.voice-hud-tts-select.ant-select {
+  // flex item 允许收缩到 max-width 内，超长文案（渠道名/音色 ID）走 ellipsis
+  min-width: 0;
+  max-width: 72px;
+  border-radius: 5px;
+  transition: background 0.15s ease;
+
+  &:hover:not(.ant-select-disabled) {
+    background: var(--hover);
+  }
+
+  // 键盘可达：聚焦时容器出 outline（focus 落在内部 input，用 focus-within 上提）
+  &:focus-within {
+    outline: 2px solid var(--primary);
+    outline-offset: -1px;
+  }
+
+  .ant-select-selector {
+    padding: 0 4px;
+    background: transparent;
+  }
+
+  // 值同正文色；v6 选中项文案容器 .ant-select-content（v5 selection-item 兜底）
+  .ant-select-content,
+  .ant-select-selection-item {
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ant-select-arrow {
+    font-size: 9px;
+    color: var(--text-muted);
+  }
+
+  &.ant-select-disabled {
+    opacity: 0.5;
+  }
+}
+
+.voice-hud-tts-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--text) 64%, transparent);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+
+  &:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+  }
+
+  // 展开态图标高亮（主色），与 HUD 状态色的主色语言一致
+  &.is-active {
+    color: var(--primary);
   }
 }

@@ -12,6 +12,9 @@
  *
  * 缓存键与合成同源：resolveTtsRoute 一次解析出「实际参数 + 实际渠道/模型」，
  * 同一份 route 既驱动 invoke 也驱动缓存键，杜绝「设置变了命中旧音频」。
+ *
+ * 渠道合成失败（未配置渠道 / 调用失败）时经 ttsLocalFallback 落回系统自带语音
+ * 合成（详见该模块头注释）；语音助手流式播报与消息播报两条链路同源生效。
  */
 
 import { mkdir, unlink } from 'node:fs/promises'
@@ -20,6 +23,7 @@ import { createLogger } from '@spark/shared'
 import type { VoiceAssistantSettings } from '@spark/protocol'
 import type { MediaProviderProfile, MediaRouterService } from '@spark/agent-runtime'
 import { computeTtsCacheKey, type TtsSpeechCache } from './ttsSpeechCache.js'
+import { synthesizeSpeechLocally } from './ttsLocalFallback.js'
 
 const log = createLogger('voice-assistant')
 
@@ -109,11 +113,46 @@ export function resolveTtsRoute(
 }
 
 /**
- * 合成一段文本为音频文件。抛错由调用方决定降级策略（流水线跳句 / IPC 错误响应）。
- * 启用缓存时：命中直接返回缓存文件（零请求）；未命中合成后移入缓存并返回缓存路径，
- * 失败（put 返回 null）时回退临时产物路径。
+ * 合成一段文本为音频文件。渠道合成任何失败（未配置渠道 / 调用失败 / 无文件产物）
+ * 且设置 ttsLocalFallback 开启时，回落操作系统自带语音合成（say/SAPI/espeak-ng）
+ * 产 wav 落 ttsDir——播放链路（safe-file + WebAudio + 打断/看门狗/HUD）完全复用，
+ * 兜底产物不入磁盘缓存（渠道恢复后自动回到云端合成）。两级都失败抛组合错误，
+ * 由调用方决定降级策略（流水线跳句 / IPC 错误响应）。
  */
 export async function synthesizeSpeechText(
+  target: TtsSynthesisTarget,
+  sentence: string,
+): Promise<TtsSynthesisResult> {
+  try {
+    return await synthesizeViaChannel(target, sentence)
+  } catch (channelError) {
+    if (target.settings.ttsLocalFallback === false) throw channelError
+    const channelMessage = channelError instanceof Error ? channelError.message : String(channelError)
+    log.warn(`[voice-assistant] tts channel failed, falling back to local system voice: ${channelMessage}`)
+    try {
+      const local = await synthesizeSpeechLocally({
+        text: sentence.slice(0, TTS_SYNTHESIS_MAX_TEXT_CHARS),
+        speed: target.settings.ttsSpeed,
+        outputDir: target.outputDir,
+      })
+      return { filePath: local.filePath, provider: `local-fallback:${local.engine}`, cached: false }
+    } catch (localError) {
+      const localMessage = localError instanceof Error ? localError.message : String(localError)
+      log.warn(`[voice-assistant] local tts fallback also failed: ${localMessage}`)
+      throw new Error(
+        `语音合成失败（渠道与本地兜底均失败）：${channelMessage}｜本地兜底：${localMessage}`,
+        { cause: localError },
+      )
+    }
+  }
+}
+
+/**
+ * 云端渠道路径（原 synthesizeSpeechText 主体）。启用缓存时：命中直接返回缓存文件
+ * （零请求）；未命中合成后移入缓存并返回缓存路径，失败（put 返回 null）时回退
+ * 临时产物路径。
+ */
+async function synthesizeViaChannel(
   target: TtsSynthesisTarget,
   sentence: string,
 ): Promise<TtsSynthesisResult> {

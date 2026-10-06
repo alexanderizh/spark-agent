@@ -42,6 +42,7 @@ import {
   ttsVoiceOptions,
 } from './voiceAssistantTtsOptions'
 import { Icons } from '../Icons'
+import { useOptionalToast } from '../components/Toast'
 
 const ADAPTER_LABEL: Record<SessionAgentAdapter, string> = {
   claude: 'Claude',
@@ -110,6 +111,8 @@ export function VoiceAssistantSettingsCard() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [ttsModels, setTtsModels] = useState<CanvasMediaModelSummary[]>([])
   const [sttModels, setSttModels] = useState<CanvasMediaModelSummary[]>([])
+  // 可选 toast：无 Provider（如单测）时为 null，静默降级不抛错。
+  const toastCtx = useOptionalToast()
 
   useEffect(() => {
     let cancelled = false
@@ -161,7 +164,7 @@ export function VoiceAssistantSettingsCard() {
   }, [])
 
   const update = useCallback(
-    async (patch: Partial<VoiceAssistantSettings>) => {
+    async (patch: Partial<VoiceAssistantSettings>): Promise<boolean> => {
       const next = { ...settings, ...patch }
       setSettings(next)
       setSaveError(null)
@@ -170,8 +173,10 @@ export function VoiceAssistantSettingsCard() {
           settings: next,
         })
         setSettings(res.settings)
+        return true
       } catch (error) {
         setSaveError(error instanceof Error ? error.message : String(error))
+        return false
       }
     },
     [settings],
@@ -301,6 +306,23 @@ export function VoiceAssistantSettingsCard() {
       /* 触发失败静默；HUD 与提示音反馈结果 */
     }
   }, [])
+
+  /**
+   * 恢复默认设置：整体回到协议层 DEFAULT_VOICE_ASSISTANT_SETTINGS（权威单一来源），
+   * 覆盖本页全部字段（唤醒/识别/播报/门控/思考档/唤醒词等）。失败时不 toast——
+   * 保存错误已由底部 saveError 行内提示，避免双报。保存期间禁用按钮防重复
+   * 提交（语音设置保存涉及快捷键重注册，成本高于普通表单）。
+   */
+  const [restoringDefaults, setRestoringDefaults] = useState(false)
+  const handleRestoreDefaults = useCallback(() => {
+    if (restoringDefaults) return
+    setRestoringDefaults(true)
+    void update(DEFAULT_VOICE_ASSISTANT_SETTINGS)
+      .then((ok) => {
+        if (ok) toastCtx?.toast.success('已恢复默认设置')
+      })
+      .finally(() => setRestoringDefaults(false))
+  }, [restoringDefaults, toastCtx, update])
 
   if (!loaded) {
     return (
@@ -630,6 +652,16 @@ export function VoiceAssistantSettingsCard() {
             />
           }
         />
+        <SettingsRow
+          title="本地兜底播报"
+          tip="云端语音渠道不可用（未配置渠道，或调用失败如网络错误、鉴权失败、限流）时，自动改用系统自带语音合成播报（macOS say / Windows 系统语音），保证语音不中断。系统语音为机械音质仅作兜底；渠道恢复后自动回到云端合成，兜底结果不占用播报缓存。"
+          right={
+            <Switch
+              checked={settings.ttsLocalFallback}
+              onChange={(v) => void update({ ttsLocalFallback: v })}
+            />
+          }
+        />
       </div>
 
       <div className="settings-card" style={{ marginBottom: 10 }}>
@@ -733,6 +765,19 @@ export function VoiceAssistantSettingsCard() {
             />
           }
         />
+      </div>
+
+      <div className="settings-card" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          type="button"
+          className="btn text"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          onClick={handleRestoreDefaults}
+          disabled={restoringDefaults}
+        >
+          <Icons.RotateCcw size={12} />
+          恢复默认设置
+        </button>
       </div>
 
       {saveError != null ? (

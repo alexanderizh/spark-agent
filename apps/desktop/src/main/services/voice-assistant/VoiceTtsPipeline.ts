@@ -500,14 +500,22 @@ export class VoiceTtsPipeline {
     const generation = this.generation
     try {
       let filePath: string
+      const synthesis = this.deps.synthesize(item.text)
       try {
         const result = await withTimeout(
-          this.deps.synthesize(item.text),
+          synthesis,
           SYNTHESIS_TIMEOUT_MS,
           'tts synthesis',
         )
         filePath = result.filePath
       } catch (error) {
+        // 超时被掐的链路（withTimeout 只丢弃结果不中止计算）若晚到完成，产物文件
+        // 无人认领：补删防磁盘泄漏（重启 sweep 之外的唯一回收点）。正常失败时该
+        // promise 已 reject，onFulfilled 不会触发，无误删风险。
+        synthesis.then(
+          (late) => safeUnlink(late.filePath),
+          () => {},
+        )
         this.failureCount += 1
         this.lastFailureMessage = error instanceof Error ? error.message : String(error)
         log.warn(

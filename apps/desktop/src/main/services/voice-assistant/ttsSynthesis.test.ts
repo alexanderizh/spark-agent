@@ -4,13 +4,23 @@
  * 覆盖：渠道自动选路（mediaRouter.supports 同源口径）、显式渠道/模型透传、
  * MiniMax 专有参数仅对 minimax-hailuo 下发、超长文本兜底限长、ttsSpeechCache
  * 磁盘缓存（命中零 invoke / miss 后落盘 / 配置变化重新合成 / put 失败回退）、
- * 产物清理的 ttsDir 路径逃逸防护。
+ * 本地系统语音兜底（未配置渠道 / 渠道调用失败触发、可关闭、双失败组合错误、
+ * 兜底不入缓存）、产物清理的 ttsDir 路径逃逸防护。
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MediaProviderProfile, MediaRouterService } from '@spark/agent-runtime'
 import type { MediaModelManifest } from '@spark/protocol'
 import { DEFAULT_VOICE_ASSISTANT_SETTINGS } from '@spark/protocol'
+
+// 本地系统语音兜底整体 mock：进程编排依赖真实子进程（say/powershell/espeak-ng），
+// 这里只验证 ttsSynthesis 对它的调用契约（文本/语速/输出目录）与降级行为
+vi.mock('./ttsLocalFallback.js', () => ({
+  synthesizeSpeechLocally: vi.fn(async () => ({
+    filePath: '/virtual/tts/local-1.wav',
+    engine: 'say',
+  })),
+}))
 
 // ttsSpeechCache.ts 由 ttsSynthesis 引入（computeTtsCacheKey 为运行时导入），模块
 // 加载时其 import 的 fs API 需在本 mock 中齐全（本文件用内存假缓存，不触发真实 IO）。
@@ -32,8 +42,10 @@ import {
   synthesizeSpeechText,
 } from './ttsSynthesis.js'
 import { computeTtsCacheKey } from './ttsSpeechCache.js'
+import { synthesizeSpeechLocally } from './ttsLocalFallback.js'
 
 const unlinkMock = vi.mocked(unlink)
+const localFallbackMock = vi.mocked(synthesizeSpeechLocally)
 
 function makeProvider(overrides: Partial<MediaProviderProfile> = {}): MediaProviderProfile {
   return {
@@ -90,6 +102,11 @@ function makeTarget(
 beforeEach(() => {
   unlinkMock.mockClear()
   unlinkMock.mockImplementation(async () => undefined)
+  localFallbackMock.mockClear()
+  localFallbackMock.mockImplementation(async () => ({
+    filePath: '/virtual/tts/local-1.wav',
+    engine: 'say',
+  }))
 })
 
 describe('synthesizeSpeechText', () => {
@@ -187,15 +204,97 @@ describe('synthesizeSpeechText', () => {
     expect((request.prompt as string).length).toBe(TTS_SYNTHESIS_MAX_TEXT_CHARS)
   })
 
-  it('未配置渠道抛错；无文件产物抛错', async () => {
+  it('未配置渠道抛错；无文件产物抛错（关闭本地兜底时）', async () => {
     const empty = makeHarness({ filePath: '/virtual/tts/a.wav' })
-    await expect(synthesizeSpeechText(makeTarget(empty, {}, []), '你好。')).rejects.toThrow(
-      '未配置支持语音合成的多媒体渠道',
-    )
+    await expect(
+      synthesizeSpeechText(makeTarget(empty, { ttsLocalFallback: false }, []), '你好。'),
+    ).rejects.toThrow('未配置支持语音合成的多媒体渠道')
 
     const noAsset = makeHarness({ provider: 'provider-a', assets: [] })
-    await expect(synthesizeSpeechText(makeTarget(noAsset), '你好。')).rejects.toThrow(
-      'TTS 无文件产物',
+    await expect(
+      synthesizeSpeechText(makeTarget(noAsset, { ttsLocalFallback: false }), '你好。'),
+    ).rejects.toThrow('TTS 无文件产物')
+  })
+})
+
+describe('synthesizeSpeechText 本地系统语音兜底', () => {
+  const sentence = '你好。'
+
+  it('未配置渠道：默认设置下走本地兜底，返回兜底产物且不入缓存', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const result = await synthesizeSpeechText(makeTarget(harness, {}, []), sentence)
+    expect(localFallbackMock).toHaveBeenCalledOnce()
+    expect(localFallbackMock).toHaveBeenCalledWith({
+      text: sentence,
+      speed: DEFAULT_VOICE_ASSISTANT_SETTINGS.ttsSpeed,
+      outputDir: '/virtual/tts',
+    })
+    expect(result).toEqual({
+      filePath: '/virtual/tts/local-1.wav',
+      provider: 'local-fallback:say',
+      cached: false,
+    })
+  })
+
+  it('渠道调用失败（网络/鉴权/限流）：同样触发兜底', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    harness.mediaRouter.invoke.mockRejectedValueOnce(new Error('渠道请求失败（401）'))
+    const result = await synthesizeSpeechText(makeTarget(harness), sentence)
+    expect(result.provider).toBe('local-fallback:say')
+    expect(result.cached).toBe(false)
+  })
+
+  it('渠道成功时不触发兜底（行为与既有链路完全一致）', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    await synthesizeSpeechText(makeTarget(harness), sentence)
+    expect(localFallbackMock).not.toHaveBeenCalled()
+  })
+
+  it('ttsLocalFallback=false：不兜底，原样抛出渠道错误', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    harness.mediaRouter.invoke.mockRejectedValueOnce(new Error('渠道请求失败（429）'))
+    await expect(
+      synthesizeSpeechText(makeTarget(harness, { ttsLocalFallback: false }), sentence),
+    ).rejects.toThrow('渠道请求失败（429）')
+    expect(localFallbackMock).not.toHaveBeenCalled()
+  })
+
+  it('本地兜底也失败：抛组合错误（含渠道与本地两边信息）', async () => {
+    localFallbackMock.mockRejectedValueOnce(new Error('say 退出码 1'))
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    harness.mediaRouter.invoke.mockRejectedValueOnce(new Error('渠道请求失败（超时）'))
+    await expect(synthesizeSpeechText(makeTarget(harness), sentence)).rejects.toThrow(
+      '语音合成失败（渠道与本地兜底均失败）：渠道请求失败（超时）｜本地兜底：say 退出码 1',
+    )
+  })
+
+  it('兜底产物不入磁盘缓存：get/put 均不被调用（渠道恢复后重新走云端合成）', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const cache = makeFakeCache()
+    harness.mediaRouter.invoke.mockRejectedValueOnce(new Error('渠道请求失败（网络）'))
+    const result = await synthesizeSpeechText(
+      { ...makeTarget(harness, {}, []), useCache: true, speechCache: cache },
+      sentence,
+    )
+    expect(cache.get).not.toHaveBeenCalled()
+    expect(cache.put).not.toHaveBeenCalled()
+    expect(result.cached).toBe(false)
+  })
+
+  it('兜底文本继承超长限长（与渠道路径同一上限）', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const long = '字'.repeat(TTS_SYNTHESIS_MAX_TEXT_CHARS + 500)
+    await synthesizeSpeechText(makeTarget(harness, {}, []), long)
+    expect(localFallbackMock).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '字'.repeat(TTS_SYNTHESIS_MAX_TEXT_CHARS) }),
+    )
+  })
+
+  it('语速透传：ttsSpeed 变化映射到兜底调用参数', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    await synthesizeSpeechText(makeTarget(harness, { ttsSpeed: 1.5 }, []), sentence)
+    expect(localFallbackMock).toHaveBeenCalledWith(
+      expect.objectContaining({ speed: 1.5 }),
     )
   })
 })

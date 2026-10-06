@@ -66,6 +66,7 @@ import { buildVoiceUserMessage } from './voiceUserMessage.js'
 import type { VoiceRouteBinding } from './VoiceRouteBinding.js'
 import { synthesizeSpeechText } from './ttsSynthesis.js'
 import { VoiceBargeInGate } from './VoiceBargeInGate.js'
+import { resetVoiceGateCoverageRelax } from './VoiceNoiseGate.js'
 import { describeEchoMatch, isLikelyTtsEcho } from './VoiceEchoGuard.js'
 import { VoiceInputQueue } from './VoiceInputQueue.js'
 
@@ -82,6 +83,8 @@ const EMPTY_SPEECH_TIMEOUT_MS = 20_000
  * speech-activity 重置）时的强制收口兜底，防会话无限滞留。
  */
 const LISTENING_HARD_LIMIT_MS = 120_000
+/** capture-started 等待兜底：渲染端起流迟滞时到点强行解锁提示音（丢首字修复配套） */
+const CAPTURE_READY_FALLBACK_MS = 1_500
 /** M3 连续对话：播报到续听的间隔（等 TTS 尾音消散，防录进自己的播报） */
 const CONTINUOUS_LISTEN_DELAY_MS = 800
 /**
@@ -198,6 +201,16 @@ export class VoiceAssistantService {
   private state: VoiceAssistantState = 'idle'
   /** 当前对话采集会话（voice-assistant:dialogue:*，渲染端 chunk 携带） */
   private captureSessionId: string | null = null
+  /**
+   * 采集就绪门（丢首字修复）：已上报 capture-started 的会话 id。等于当前
+   * captureSessionId 才算「麦克风真正在录」；HUD 据此显示准备态，wake 提示音
+   * 据此延迟到就绪后再播（announceCaptureReady）。
+   */
+  private captureReadySessionId: string | null = null
+  /** capture-started 等待兜底定时器（announceCaptureReady 配套） */
+  private captureReadyTimer: NodeJS.Timeout | null = null
+  /** capture start 指令下发时刻（就绪耗时观测日志用） */
+  private captureCommandSentAt = 0
   /** 当前活跃 ASR 会话（VoiceRecognitionService 生成） */
   private asrSessionId: string | null = null
   /** 停止中的 ASR 会话（stopVoiceSession flush 期间仍会吐 final/session-stopped） */
@@ -473,12 +486,16 @@ export class VoiceAssistantService {
     // 否则换档后首次唤醒退回同步构造路径（阻塞窗口重现、首句易丢）
     const endpointProfileChanged =
       normalized.utteranceEndpointProfile !== this.settings.utteranceEndpointProfile
+    // 人声聚焦档位变更：清零门控自愈的跨会话粘性——环境前提已被用户主动调整，
+    // 后续会话恢复严格阈值重新评估，而不是沿用旧档触发的降档
+    const voiceFocusChanged = normalized.voiceFocus !== this.settings.voiceFocus
     this.settings = normalized
     this.deps.writeSettings(normalized)
     if (shortcutChanged) this.rearmShortcut()
     if (standbyConfigChanged) this.applyAlwaysListeningSetting()
     if (sessionThinkingChanged) void this.syncSessionReasoningEffort()
     if (endpointProfileChanged) this.scheduleRecognizerWarmup()
+    if (voiceFocusChanged) resetVoiceGateCoverageRelax()
     // 全双工关闭（或引擎切 cloud 致不可用）：窗口收口 + 存量排队输入清空
     // （UI 侧随 duplexActive=false 一并隐藏队列框/迷你麦，不「说了谎」）
     if (!this.duplexEnabled && this.duplexWindowActive) {
@@ -613,6 +630,8 @@ export class VoiceAssistantService {
     return {
       state: this.state,
       captureSessionId: this.captureSessionId,
+      captureReady:
+        this.captureSessionId != null && this.captureReadySessionId === this.captureSessionId,
       partialText: this.partialText,
       speakingProgress:
         this.state === 'speaking'
@@ -912,8 +931,10 @@ export class VoiceAssistantService {
   private onWakeWordHit(_keyword: string): void {
     if (this.disposed) return
     if (this.state === 'standby' || (this.state === 'idle' && this.kwsCaptureActive)) {
-      // 播放/思考期间 KWS 已被路由层挂起（handleAudioChunk 丢弃），此处不会触发
-      this.playCue('wake')
+      // 播放/思考期间 KWS 已被路由层挂起（handleAudioChunk 丢弃），此处不会触发。
+      // wake 提示音不在此预播：KWS 复用路径的 capture-started 近乎即时回报，
+      // 预播会让就绪门（announceCaptureReady）再播一次造成双响；统一交给
+      // 就绪门在麦克风确认开门后发令
       void this.startListening('wake')
     }
   }
@@ -995,6 +1016,9 @@ export class VoiceAssistantService {
     //    链路绝不采系统声音，不再依赖 browserDenoise 设置（该设置只影响会话
     //    输入框语音录入）。
     this.captureSessionId = captureSessionId
+    this.captureReadySessionId = null
+    this.captureCommandSentAt = Date.now()
+    log.info(`[voice-hud-ready] capture start command sent (session=${captureSessionId})`)
     this.deps.sendCaptureCommand({
       action: 'start',
       sessionId: captureSessionId,
@@ -1050,7 +1074,9 @@ export class VoiceAssistantService {
     // 全双工：打开对话窗口（thinking/speaking 期间采集+ASR 常开）
     if (this.duplexEnabled) this.duplexWindowActive = true
     this.transition('listening', reason)
-    this.playCue('wake')
+    // wake 提示音延后到 capture-started（announceCaptureReady）：提示音=「可以说了」
+    // 的发令枪，必须与麦克风真正开门对齐；HUD 先出现并显示准备态（丢首字修复）
+    this.announceCaptureReady()
     // 对话循环进入日志（与 dialogue loop ended 成对）：排查「一轮后退出」时
     // 据此确认每轮续听是否真的拉起
     log.info(
@@ -1081,6 +1107,41 @@ export class VoiceAssistantService {
         mode: 'dialogue',
       })
     }
+  }
+
+  /**
+   * 聆听就绪宣布（丢首字修复）：wake 提示音是「可以说了」的发令枪，须等渲染端
+   * capture-started（getUserMedia 完成、AudioWorklet 连通）后再播——否则用户闻声
+   * 开口，头几个字落在麦克风开门前的物理空窗里（此时 pre-roll 也是空的，无从回补）。
+   * 状态事件仍即时迁移（HUD 先出现），HUD 依据 status.captureReady 显示准备态。
+   * 兜底：CAPTURE_READY_FALLBACK_MS 内未收到上报（渲染端迟滞/消息丢失）强行解锁，
+   * cue 与 captureReady 同口径解锁（HUD 不滞留准备态）——宁可提示音略早，
+   * 不可永远无声。
+   */
+  private announceCaptureReady(): void {
+    if (this.captureReadyTimer != null) {
+      clearTimeout(this.captureReadyTimer)
+      this.captureReadyTimer = null
+    }
+    // 渲染端可能先于本方法上报（KWS 常驻流复用路径几乎瞬时）
+    if (this.captureSessionId != null && this.captureReadySessionId === this.captureSessionId) {
+      this.playCue('wake')
+      return
+    }
+    this.captureReadyTimer = setTimeout(() => {
+      this.captureReadyTimer = null
+      // 期间已被打断/收口：不再补枪（cue 语义已失效）
+      if (this.state !== 'listening') return
+      log.warn(
+        `[voice-hud-ready] capture-started overdue ${CAPTURE_READY_FALLBACK_MS}ms, unlocking cue anyway (session=${this.captureSessionId ?? 'none'})`,
+      )
+      // 提示音与 HUD 同口径解锁：只播 cue 不置就绪会让 capture-started 丢失
+      // 场景下 HUD 整个聆听期停在「正在准备麦克风…」——两路信号自相矛盾。
+      // 置位后迟到的 capture-started 被 sessionId 守卫挡住，不会二次播 cue/广播
+      if (this.captureSessionId != null) this.captureReadySessionId = this.captureSessionId
+      this.deps.broadcastStatus(this.getStatus())
+      this.playCue('wake')
+    }, CAPTURE_READY_FALLBACK_MS)
   }
 
   /** listening 硬上限兜底的统一布防（新建/全双工复用两条路径共用） */
@@ -1150,6 +1211,12 @@ export class VoiceAssistantService {
       clearTimeout(this.listeningHardTimer)
       this.listeningHardTimer = null
     }
+    // 就绪门随收口撤销：等待中的 cue 不再补播，就绪标记不跨会话泄漏
+    if (this.captureReadyTimer != null) {
+      clearTimeout(this.captureReadyTimer)
+      this.captureReadyTimer = null
+    }
+    this.captureReadySessionId = null
     this.cancelHandoffConfirm()
     if (this.captureSessionId != null && !this.kwsCaptureActive) {
       this.deps.sendCaptureCommand({
@@ -1194,6 +1261,12 @@ export class VoiceAssistantService {
       clearTimeout(this.handoffConfirmTimer)
       this.handoffConfirmTimer = null
     }
+    // 就绪门随拆除撤销（同 stopCaptureAndAsr：等待中的 cue 不补播、标记不跨会话泄漏）
+    if (this.captureReadyTimer != null) {
+      clearTimeout(this.captureReadyTimer)
+      this.captureReadyTimer = null
+    }
+    this.captureReadySessionId = null
     if (this.captureSessionId != null) {
       // 常驻采集在线时保留麦克风流（stopStandby/收尾逻辑负责停采集）
       if (!this.kwsCaptureActive) {
@@ -1885,6 +1958,25 @@ export class VoiceAssistantService {
           return
         }
         log.info(`[voice-assistant] renderer capture started (${event.sessionId})`)
+        // 就绪门收口（丢首字修复）：对应当前会话的首次上报解锁 wake 提示音，
+        // 并广播 status 让 HUD 从「正在准备麦克风…」切到真正的聆听态
+        if (
+          event.sessionId === this.captureSessionId &&
+          this.captureReadySessionId !== event.sessionId
+        ) {
+          this.captureReadySessionId = event.sessionId
+          const elapsed =
+            this.captureCommandSentAt > 0 ? Date.now() - this.captureCommandSentAt : -1
+          log.info(
+            `[voice-hud-ready] capture ready in ${elapsed}ms (session=${event.sessionId}), cue & listening UI unlocked`,
+          )
+          this.deps.broadcastStatus(this.getStatus())
+          if (this.state === 'listening' && this.captureReadyTimer != null) {
+            clearTimeout(this.captureReadyTimer)
+            this.captureReadyTimer = null
+            this.playCue('wake')
+          }
+        }
         return
       }
       case 'capture-stopped': {

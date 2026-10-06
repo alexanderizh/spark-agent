@@ -72,6 +72,26 @@ const ENERGY_ATTACK_RELAX_DB = 4
  */
 const SILERO_COVERAGE_MIN: Record<VoiceFocusMode, number> = { standard: 0.3, strict: 0.45 }
 /**
+ * 连续拦截自愈（「说话不触发发送」修复）：实测故障日志显示，安静人声/低增益
+ * 麦克风/稍远场下 silero 与能量层失配，真话的覆盖率在 14–29% 徘徊，一刀切
+ * 阈值把整场对话的 final 全部丢弃——用户一直说、一直被吞、永远不发送。连续
+ * N 个 final 因覆盖率被拦即判定「真话正在被饿死」，本会话剩余时间阈值减半：
+ * 噪音硬解覆盖率接近 0，降半档仍拦得住；真话不再全灭。放行会归零连续计数，
+ * 零星噪音拦截不会误触发。
+ */
+const COVERAGE_DROPS_BEFORE_RELAX = 3
+/** 自愈后的阈值系数（standard 30%→15%，strict 45%→22.5%） */
+const COVERAGE_RELAX_FACTOR = 0.5
+/**
+ * 自愈降档的跨会话粘性窗口：半双工每轮续听都重建 ASR 会话（新 gate 实例），
+ * 粘性只落在实例上时低增益/远场用户每一轮都要重新被吞 N 个 final 才解锁，
+ * 且每轮刷一条 warn。触发自愈时刷新该时间戳，后续新会话在窗口内直接继承
+ * 降档；时间衰减保证环境好转（换安静场所/调整麦克风/修改聚焦档位）后自动
+ * 恢复严格阈值，无需重启应用。
+ */
+const COVERAGE_RELAX_STICKY_MS = 10 * 60_000
+let coverageRelaxStickyUntil = 0
+/**
  * confirm-only 档 final 区间内 silero 人声段绝对时长下限（ms）。点击瞬态
  * （10-50ms）即便骗过 silero 也远达不到该时长；正常中文单字 150-300ms。
  * sherpa Vad 的 min_speech_duration 参数可能不被执行（分析已标记该不确定
@@ -171,6 +191,14 @@ export function resetVoiceNoiseGateVad(): void {
   sharedVad = null
 }
 
+/**
+ * 清零自愈降档的跨会话粘性窗口。用户主动调整人声聚焦档位时由设置更新链路
+ * 调用——环境前提已变，恢复严格阈值重新评估；测试用例间隔离同样依赖它。
+ */
+export function resetVoiceGateCoverageRelax(): void {
+  coverageRelaxStickyUntil = 0
+}
+
 /** Int16 PCM → Float32 [-1, 1]（confirm-only 旁路喂 silero 用） */
 function int16ToFloat32(samples: Int16Array): Float32Array {
   const out = new Float32Array(samples.length)
@@ -227,6 +255,10 @@ export class VoiceNoiseGate {
   private activeStart = -1
   /** 最近一个 active chunk 的结束偏移（span 收尾用） */
   private activePendingEnd = 0
+  /** 连续因覆盖率被拦的 final 数（放行即归零；饿死自愈判定依据） */
+  private consecutiveCoverageDrops = 0
+  /** 本会话是否已触发阈值自愈（粘性：真话被饿死后本场降半档，不再收回） */
+  private coverageRelaxed = false
 
   constructor(options: VoiceNoiseGateOptions) {
     this.mode = options.mode
@@ -479,11 +511,26 @@ export class VoiceNoiseGate {
       return false
     }
     const ratio = this.coverageRatioOverActive(startSample, endSample)
-    const accept = ratio >= SILERO_COVERAGE_MIN[this.mode]
+    // 实例内已降档，或处于跨会话粘性窗口内（半双工续听重建的 gate 直接继承）
+    const relaxed = this.coverageRelaxed || Date.now() < coverageRelaxStickyUntil
+    const threshold = relaxed
+      ? SILERO_COVERAGE_MIN[this.mode] * COVERAGE_RELAX_FACTOR
+      : SILERO_COVERAGE_MIN[this.mode]
+    const accept = ratio >= threshold
     if (!accept) {
+      this.consecutiveCoverageDrops += 1
+      if (!relaxed && this.consecutiveCoverageDrops >= COVERAGE_DROPS_BEFORE_RELAX) {
+        this.coverageRelaxed = true
+        coverageRelaxStickyUntil = Date.now() + COVERAGE_RELAX_STICKY_MS
+        log.warn(
+          `[voice-gate] ${this.consecutiveCoverageDrops} consecutive finals dropped by coverage — speech likely starved, threshold relaxed to ${SILERO_COVERAGE_MIN[this.mode] * COVERAGE_RELAX_FACTOR * 100}% (sticky ${COVERAGE_RELAX_STICKY_MS / 60_000}min across sessions; frequent hits may call for a lower voice-focus mode)`,
+        )
+      }
       log.info(
-        `[voice-gate] final dropped: speech coverage of admitted audio ${(ratio * 100).toFixed(0)}% below ${SILERO_COVERAGE_MIN[this.mode] * 100}%`,
+        `[voice-gate] final dropped: speech coverage of admitted audio ${(ratio * 100).toFixed(0)}% below ${(threshold * 100).toFixed(0)}%${relaxed ? ' (relaxed)' : ''}`,
       )
+    } else {
+      this.consecutiveCoverageDrops = 0
     }
     return accept
   }
@@ -515,6 +562,8 @@ export class VoiceNoiseGate {
     this.activeSpans = []
     this.activeStart = -1
     this.activePendingEnd = 0
+    this.consecutiveCoverageDrops = 0
+    this.coverageRelaxed = false
     if (this.useSilero) {
       const vad = loadVad()
       try {

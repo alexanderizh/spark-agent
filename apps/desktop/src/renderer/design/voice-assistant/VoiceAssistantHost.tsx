@@ -51,6 +51,8 @@ export function VoiceAssistantHost(): React.ReactNode {
   const [status, setStatus] = useState<VoiceAssistantStatus | null>(null)
   const [dispatchInFlight, setDispatchInFlight] = useState(false)
   const dismissTimerRef = useRef<number | null>(null)
+  /** 采集就绪门观测：最近一次 status 是否处于 listening+未就绪（展示过准备态才给就绪弹跳） */
+  const sawPreparingRef = useRef(false)
   const { setActiveSession, revealSession } = useSessionSidebar()
 
   // 语音活动发生时 UI 跳转到语音绑定会话（选中 + 侧栏定位，对齐命令面板行为）。
@@ -98,7 +100,28 @@ export function VoiceAssistantHost(): React.ReactNode {
 
     const offStatus = window.spark.on('stream:voice-assistant:status', (payload) => {
       if (payload != null && typeof payload === 'object' && 'state' in payload) {
-        setStatus(payload as VoiceAssistantStatus)
+        const next = payload as VoiceAssistantStatus
+        setStatus(next)
+        // 就绪弹跳（丢首字修复配套）：listening 且 captureReady false→true 翻转 =
+        // 「可以说了」的瞬间，给声波条一次弹跳；仅在实际展示过准备态时触发，
+        // 就绪即时到达（KWS 常驻流复用）不双跳。
+        const wasPreparing = sawPreparingRef.current
+        sawPreparingRef.current = next.state === 'listening' && next.captureReady === false
+        if (wasPreparing && next.state === 'listening' && next.captureReady === true) {
+          // 先清再置产生完整的 false→true 跳变：进入聆听的首次弹跳（state 事件
+          // 置位）常在 660ms 动画窗口内仍为 true，直接重复置 true 不会重跑波形
+          // 的弹跳 effect，就绪弹跳会被吞。双 rAF 确保摘类帧先提交，动画必定重启
+          setHud((previous) =>
+            previous?.state === 'listening' ? { ...previous, wake: false } : previous,
+          )
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              setHud((previous) =>
+                previous?.state === 'listening' ? { ...previous, wake: true } : previous,
+              )
+            })
+          })
+        }
       }
     })
 
@@ -187,11 +210,14 @@ export function VoiceAssistantHost(): React.ReactNode {
   const showMiniMic = duplexActive && (hud.state === 'thinking' || hud.state === 'speaking')
   const takeoverPending =
     hud.reason === 'queue-dispatch' && hud.state === 'speaking' && duplexActive
+  // 采集就绪门（丢首字修复）：listening 但 captureReady=false = 麦克风管道仍在建立，
+  // 明确告知用户先别开口；旧版本负载无该字段时视为已就绪（向后兼容）
+  const capturePreparing = hud.state === 'listening' && status?.captureReady === false
 
   return createPortal(
     <div
       ref={hudCardRef}
-      className={`voice-assistant-hud is-${hud.state}${isDragging ? ' is-dragging' : ''}`}
+      className={`voice-assistant-hud is-${hud.state}${capturePreparing ? ' is-preparing' : ''}${isDragging ? ' is-dragging' : ''}`}
       role="status"
       {...dragHandlers}
     >
@@ -209,9 +235,13 @@ export function VoiceAssistantHost(): React.ReactNode {
         <span className="voice-assistant-hud-label">
           {/* 状态点：状态的彩色信息由点阵/光晕 + 状态点承担，文字保持中性色 */}
           <span className="voice-assistant-hud-dot" aria-hidden="true" />
-          {hud.state === 'listening' && hud.reason === 'confirm'
-            ? '请继续说，停顿后将自动发送'
-            : STATE_META[hud.state]}
+          {/* 准备态优先于 confirm 续说文案：半双工 confirm 续说走全路径重建采集，
+              就绪前麦克风确实没开门，「请继续说」与降调舞台同时出现会自相矛盾 */}
+          {capturePreparing
+            ? '正在准备麦克风…'
+            : hud.state === 'listening' && hud.reason === 'confirm'
+              ? '请继续说，停顿后将自动发送'
+              : STATE_META[hud.state]}
         </span>
         {showMiniMic ? <VoiceHudMiniMic /> : null}
         {hud.state === 'listening' && hud.detail != null && hud.detail.length > 0 ? (

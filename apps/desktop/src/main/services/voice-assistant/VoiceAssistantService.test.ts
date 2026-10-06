@@ -61,6 +61,8 @@ const kwsMocks = vi.hoisted(() => ({
   stop: vi.fn(),
   /** 模拟 KWS 模型是否已安装（安装等待场景需要动态切换） */
   available: true,
+  /** 构造时捕获的唤醒命中回调（模拟唤醒词命中路径用） */
+  onHit: null as ((keyword: string) => void) | null,
 }))
 vi.mock('./WakeWordDetector.js', () => ({
   WakeWordDetector: class {
@@ -70,6 +72,9 @@ vi.mock('./WakeWordDetector.js', () => ({
     start = kwsMocks.start
     stop = kwsMocks.stop
     feed = kwsMocks.feed
+    constructor(options: { onHit: (keyword: string) => void }) {
+      kwsMocks.onHit = options.onHit
+    }
   },
   isWakeWordModelAvailable: () => kwsMocks.available,
 }))
@@ -399,6 +404,93 @@ describe('VoiceAssistantService 状态机', () => {
     vi.useRealTimers()
     vi.clearAllMocks()
     kwsMocks.available = true
+    kwsMocks.onHit = null
+  })
+
+  it('就绪门：capture-started 到达才播 wake 提示音并置就绪（丢首字修复）', () => {
+    const h = createHarness()
+    expect(h.service.wake().ok).toBe(true)
+    expect(h.service.getStatus().state).toBe('listening')
+    // 提示音=「可以说了」发令枪：麦克风真正开门（渲染端 capture-started）前不播
+    expect(h.playCommands.length).toBe(0)
+    expect(h.service.getStatus().captureReady).toBe(false)
+    h.service.handleRendererEvent({
+      type: 'capture-started',
+      sessionId: h.captureCommands[0]!.sessionId,
+    })
+    expect(h.playCommands[0]).toEqual({ kind: 'cue', cue: 'wake' })
+    expect(h.service.getStatus().captureReady).toBe(true)
+  })
+
+  it('就绪门兜底：capture-started 迟滞时超时后强行解锁提示音', async () => {
+    const h = createHarness()
+    expect(h.service.wake().ok).toBe(true)
+    expect(h.playCommands.length).toBe(0)
+    await vi.advanceTimersByTimeAsync(1499)
+    expect(h.playCommands.length).toBe(0)
+    await vi.advanceTimersByTimeAsync(2)
+    expect(h.playCommands[0]).toEqual({ kind: 'cue', cue: 'wake' })
+  })
+
+  it('就绪门兜底与 HUD 同口径：超时解锁同时置 captureReady 并广播状态', async () => {
+    const h = createHarness()
+    expect(h.service.wake().ok).toBe(true)
+    expect(h.service.getStatus().captureReady).toBe(false)
+    await vi.advanceTimersByTimeAsync(1501)
+    // 只播提示音不解锁 HUD 会让准备态文案与「可以说了」的提示音自相矛盾
+    expect(h.playCommands[0]).toEqual({ kind: 'cue', cue: 'wake' })
+    expect(h.service.getStatus().captureReady).toBe(true)
+  })
+
+  it('就绪门兜底后迟到的 capture-started 幂等：不二次播提示音', async () => {
+    const h = createHarness()
+    expect(h.service.wake().ok).toBe(true)
+    await vi.advanceTimersByTimeAsync(1501)
+    expect(h.playCommands.length).toBe(1)
+    h.service.handleRendererEvent({
+      type: 'capture-started',
+      sessionId: h.captureCommands[0]!.sessionId,
+    })
+    // 兜底已置就绪标记：迟到上报被 sessionId 守卫挡住，无双重提示音
+    expect(h.playCommands.length).toBe(1)
+    expect(h.service.getStatus().captureReady).toBe(true)
+  })
+
+  it('就绪门等待期取消：超时到点不补播提示音（cue 语义已失效）', async () => {
+    const h = createHarness()
+    expect(h.service.wake().ok).toBe(true)
+    h.service.interrupt()
+    await vi.advanceTimersByTimeAsync(1600)
+    expect(h.playCommands.length).toBe(0)
+  })
+
+  it('KWS 唤醒词路径不预播提示音：cue 统一由就绪门在 capture-started 后发令', async () => {
+    const h = createHarness()
+    h.service.updateSettings({
+      ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+      voiceFocus: 'off',
+      alwaysListening: true,
+    })
+    await vi.advanceTimersByTimeAsync(10)
+    h.service.handleRendererEvent({ type: 'capture-started', sessionId: 'voice-assistant:kws' })
+    expect(h.service.getStatus().state).toBe('standby')
+    expect(h.playCommands.length).toBe(0)
+    // 唤醒词命中：KWS 常驻流复用，渲染端对 dialogue 会话近乎即时回报
+    // capture-started——预播 + 就绪门再播会构成双响（回归缺陷）
+    kwsMocks.onHit?.('嘿 Spark')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(h.service.getStatus().state).toBe('listening')
+    expect(h.playCommands.length).toBe(0) // 唤醒瞬间不预播
+    const dialogueStart = h.captureCommands.find(
+      (c) => c.action === 'start' && c.mode === 'dialogue',
+    )
+    expect(dialogueStart).toBeDefined()
+    h.service.handleRendererEvent({
+      type: 'capture-started',
+      sessionId: dialogueStart!.sessionId,
+    })
+    expect(h.playCommands.length).toBe(1) // 仅就绪门一响
+    expect(h.playCommands[0]).toEqual({ kind: 'cue', cue: 'wake' })
   })
 
   it('完整链路：唤醒→聆听→VAD final→提交→逐句播报→完成回 idle', async () => {
@@ -406,7 +498,11 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.service.wake().ok).toBe(true)
     expect(h.service.getStatus().state).toBe('listening')
     expect(h.captureCommands[0]?.action).toBe('start')
-    // 唤醒提示音
+    // 唤醒提示音：就绪门延迟至 capture-started（丢首字修复，见上方就绪门用例）
+    h.service.handleRendererEvent({
+      type: 'capture-started',
+      sessionId: h.captureCommands[0]!.sessionId,
+    })
     expect(h.playCommands[0]).toEqual({ kind: 'cue', cue: 'wake' })
 
     // VAD final → 进入说完确认窗口（防抖：不立即收口，仍可继续说）

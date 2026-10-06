@@ -170,6 +170,14 @@ export interface VoiceAssistantSettings {
   ttsPrefetch: boolean
   /** 首句快切（默认开）：首句凑齐 ≥10 字或首 delta 后 400ms 强切，压首字延迟 */
   firstSentenceFastCut: boolean
+  /**
+   * 本地兜底播报（默认开）：云端 TTS 渠道不可用（未配置渠道，或调用失败——
+   * 网络错误/鉴权失败/限流等）时，自动改用操作系统自带语音合成（macOS say /
+   * Windows SAPI / Linux espeak-ng）合成 wav 复用既有播放链路，保证播报不中断。
+   * 系统语音为机械音质仅作兜底；兜底产物不入磁盘缓存，渠道恢复后自动回到
+   * 云端合成。存量设置缺字段按默认开启解析。
+   */
+  ttsLocalFallback: boolean
 }
 
 export const DEFAULT_VOICE_ASSISTANT_SETTINGS: VoiceAssistantSettings = {
@@ -206,6 +214,7 @@ export const DEFAULT_VOICE_ASSISTANT_SETTINGS: VoiceAssistantSettings = {
   utteranceEndpointProfile: 'standard',
   ttsPrefetch: true,
   firstSentenceFastCut: true,
+  ttsLocalFallback: true,
 }
 
 /**
@@ -394,6 +403,10 @@ export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSet
       source.firstSentenceFastCut,
       DEFAULT_VOICE_ASSISTANT_SETTINGS.firstSentenceFastCut,
     ),
+    ttsLocalFallback: readBool(
+      source.ttsLocalFallback,
+      DEFAULT_VOICE_ASSISTANT_SETTINGS.ttsLocalFallback,
+    ),
     utteranceEndpointProfile: resolveEndpointProfile(source),
   }
   // v1→v2 噪音管线一次性迁移：存量设置仍是 v1 默认组合（browserDenoise=true +
@@ -472,6 +485,12 @@ export interface VoiceAssistantStatus {
   state: VoiceAssistantState
   /** 当前 ASR 会话 id（listening 时有值） */
   captureSessionId: string | null
+  /**
+   * 渲染端麦克风是否真正就绪（capture-started 已上报且对应当前会话）。
+   * false = 采集管道仍在建立，HUD 应显示「正在准备麦克风…」、唤醒提示音尚未播；
+   * 可选字段：旧版本负载缺失时按已就绪处理（向后兼容）。
+   */
+  captureReady?: boolean
   /** listening 实时 partial（HUD 展示） */
   partialText: string
   /** speaking 时已播/待播句子计数 */

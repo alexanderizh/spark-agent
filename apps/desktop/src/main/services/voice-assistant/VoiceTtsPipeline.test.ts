@@ -8,6 +8,7 @@
  * 4. 部分成功（≥1 句成功）→ 只回 onAllPlayed，不触发失败提示
  * 5. 相同原因 5 分钟节流；跨过窗口或原因变化后恢复提示
  * 6. beginTurn 重置轮内失败/成功计数：上一轮部分成功不吞掉下一轮的整轮失败
+ * 7. 超时链路资源回收：合成超时跳句后晚到产物补删防泄漏；正常失败不误删
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,6 +17,8 @@ import type { VoiceAssistantPlayCommand } from '@spark/protocol'
 vi.mock('node:fs/promises', () => ({
   unlink: vi.fn(async () => undefined),
 }))
+
+import { unlink } from 'node:fs/promises'
 
 import {
   VoiceTtsPipeline,
@@ -403,5 +406,57 @@ describe('VoiceTtsPipeline 播报看门狗', () => {
     await vi.advanceTimersByTimeAsync(120_000)
     expect(deps.onAllPlayed).not.toHaveBeenCalled()
     expect(deps.sendPlay).not.toHaveBeenCalled()
+  })
+})
+
+describe('VoiceTtsPipeline 超时链路资源回收', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    // 模块级 mock 的 spy 会跨用例累积调用记录，先清零再断言本组行为
+    vi.mocked(unlink).mockClear()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('合成超时跳句后，晚到完成的产物文件被补删（防无人认领泄漏）', async () => {
+    const deps = createDeps({
+      // 慢于 30s 预算：35s 才完成——withTimeout 已 reject 跳句，底层仍在跑
+      synthesize: vi.fn(
+        () =>
+          new Promise<{ filePath: string }>((resolve) => {
+            setTimeout(() => resolve({ filePath: '/virtual/va-tts/late.wav' }), 35_000)
+          }),
+      ),
+    })
+    const pipeline = new VoiceTtsPipeline(deps)
+
+    pipeline.beginTurn()
+    pipeline.finalize('这是第一句播报内容。')
+
+    // 推过 30s 预算：跳句（失败计数）但晚到产物尚未产生
+    await vi.advanceTimersByTimeAsync(31_000)
+    expect(deps.onTurnSynthesisFailed).toHaveBeenCalledTimes(1)
+
+    // 再推到 35s：晚到的合成结果落进补删钩子，文件被回收
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(vi.mocked(unlink)).toHaveBeenCalledWith('/virtual/va-tts/late.wav')
+  })
+
+  it('合成正常失败（非超时）：晚到补删钩子不误删任何文件', async () => {
+    const deps = createDeps({
+      synthesize: vi.fn(async () => {
+        throw new Error('渠道请求失败（401）')
+      }),
+    })
+    const pipeline = new VoiceTtsPipeline(deps)
+
+    pipeline.beginTurn()
+    pipeline.finalize('这是第一句播报内容。')
+    await flushSynthesisQueue()
+
+    expect(deps.onTurnSynthesisFailed).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(unlink)).not.toHaveBeenCalled()
   })
 })

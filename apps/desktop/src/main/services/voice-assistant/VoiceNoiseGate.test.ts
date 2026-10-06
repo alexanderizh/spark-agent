@@ -11,7 +11,11 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { setVadModuleForTests, VoiceNoiseGate } from './VoiceNoiseGate'
+import {
+  resetVoiceGateCoverageRelax,
+  setVadModuleForTests,
+  VoiceNoiseGate,
+} from './VoiceNoiseGate'
 
 // ─── 测试音频构造 ────────────────────────────────────────────────────────────
 
@@ -84,6 +88,9 @@ class MockVad {
 
 beforeEach(() => {
   MockVad.instances = []
+  // 自愈降档的跨会话粘性窗口是模块级状态：用例间必须清零，否则先行用例触发的
+  // 降档会让后续用例的新 gate 直接继承半档阈值（断言全乱）
+  resetVoiceGateCoverageRelax()
   setVadModuleForTests({
     Vad: MockVad as unknown as new (config: unknown, bufferSeconds: number) => MockVad,
   })
@@ -253,6 +260,93 @@ describe('silero 确认层', () => {
     strictVad2.emitSegment(0, 8000) // 覆盖 20800 中的 8000 ≈ 38%：strict 拦截、standard 放行
     strictGate2.flushSilero()
     expect(strictGate2.shouldAcceptFinal(0, 20 * 1600)).toBe(false)
+  })
+
+  it('连续拦截自愈：3 个 final 被覆盖率拦截后本会话降半档放行（说话不发送修复）', () => {
+    const gate = new VoiceNoiseGate({ mode: 'standard' })
+    gate.reset()
+    warmUp(gate)
+    for (let i = 0; i < 4; i += 1) gate.process(tone(0.5))
+    for (let i = 0; i < 6; i += 1) gate.process(silence())
+    for (let i = 0; i < 3; i += 1) gate.process(silence()) // 置零段
+    const vad = MockVad.instances[MockVad.instances.length - 1]!
+    // silero 覆盖放行段 20800 中的 4160 ≈ 20%（实测故障日志的真话覆盖区间）：
+    // standard 满档 30% 拦截；连续 3 次后自愈降半档 15% 放行
+    vad.emitSegment(1600, 4160)
+    gate.flushSilero()
+    expect(gate.shouldAcceptFinal(0, 20 * 1600)).toBe(false) // 连续第 1 次拦截
+    expect(gate.shouldAcceptFinal(0, 20 * 1600)).toBe(false) // 连续第 2 次拦截
+    expect(gate.shouldAcceptFinal(0, 20 * 1600)).toBe(false) // 第 3 次 → 触发自愈
+    expect(gate.shouldAcceptFinal(0, 20 * 1600)).toBe(true) // 20% ≥ 15%，真话不再被吞
+  })
+
+  it('零星拦截不误触发自愈：放行归零连续计数', () => {
+    const gate = new VoiceNoiseGate({ mode: 'standard' })
+    gate.reset()
+    warmUp(gate)
+    for (let i = 0; i < 4; i += 1) gate.process(tone(0.5))
+    for (let i = 0; i < 6; i += 1) gate.process(silence())
+    for (let i = 0; i < 3; i += 1) gate.process(silence())
+    const vad = MockVad.instances[MockVad.instances.length - 1]!
+    vad.emitSegment(1600, 4160) // 低覆盖 ≈ 20% + 高覆盖子区间 [1600, 5760) = 100%
+    gate.flushSilero()
+    // 高覆盖子区间放行 → 连续计数归零
+    expect(gate.shouldAcceptFinal(1600, 5760)).toBe(true)
+    expect(gate.shouldAcceptFinal(0, 20 * 1600)).toBe(false) // 零星 1
+    expect(gate.shouldAcceptFinal(0, 20 * 1600)).toBe(false) // 零星 2
+    expect(gate.shouldAcceptFinal(1600, 5760)).toBe(true) // 再次放行 → 计数再归零
+    expect(gate.shouldAcceptFinal(0, 20 * 1600)).toBe(false) // 零星 1'
+    expect(gate.shouldAcceptFinal(0, 20 * 1600)).toBe(false) // 零星 2'
+    // 若放行未归零计数，此刻累计早已 ≥3 触发自愈，20% 会以 15% 半档放行；
+    // 仍按满档拦截 = 计数确实被放行归零过
+    expect(gate.shouldAcceptFinal(0, 20 * 1600)).toBe(false)
+  })
+
+  it('自愈降档跨会话粘性：半双工下一轮新 gate 在窗口内继承半档，过期恢复满档', () => {
+    // 第一轮 ASR 会话：连续 3 次覆盖率拦截触发自愈（同时写模块级粘性时间戳）
+    const gate1 = new VoiceNoiseGate({ mode: 'standard' })
+    gate1.reset()
+    warmUp(gate1)
+    for (let i = 0; i < 4; i += 1) gate1.process(tone(0.5))
+    for (let i = 0; i < 6; i += 1) gate1.process(silence())
+    for (let i = 0; i < 3; i += 1) gate1.process(silence()) // 置零段
+    const vad1 = MockVad.instances[MockVad.instances.length - 1]!
+    vad1.emitSegment(1600, 4160) // 放行段覆盖率 ≈20%（实测故障日志的真话区间）
+    gate1.flushSilero()
+    expect(gate1.shouldAcceptFinal(0, 20 * 1600)).toBe(false) // 连续第 1 次拦截
+    expect(gate1.shouldAcceptFinal(0, 20 * 1600)).toBe(false) // 连续第 2 次拦截
+    expect(gate1.shouldAcceptFinal(0, 20 * 1600)).toBe(false) // 第 3 次 → 自愈 + 粘性
+
+    // 第二轮（半双工续听重建 ASR 会话 = 全新 gate 实例）：粘性窗口内直接半档
+    // 放行——低增益/远场用户不必每轮重新被吞 3 个 final
+    const gate2 = new VoiceNoiseGate({ mode: 'standard' })
+    gate2.reset()
+    warmUp(gate2)
+    for (let i = 0; i < 4; i += 1) gate2.process(tone(0.5))
+    for (let i = 0; i < 6; i += 1) gate2.process(silence())
+    for (let i = 0; i < 3; i += 1) gate2.process(silence())
+    const vad2 = MockVad.instances[MockVad.instances.length - 1]!
+    vad2.emitSegment(1600, 4160)
+    gate2.flushSilero()
+    expect(gate2.shouldAcceptFinal(0, 20 * 1600)).toBe(true) // 20% ≥ 15%
+
+    // 粘性窗口过期（10 分钟）：新会话恢复满档拦截——环境好转自愈可逆
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(Date.now() + 11 * 60_000)
+      const gate3 = new VoiceNoiseGate({ mode: 'standard' })
+      gate3.reset()
+      warmUp(gate3)
+      for (let i = 0; i < 4; i += 1) gate3.process(tone(0.5))
+      for (let i = 0; i < 6; i += 1) gate3.process(silence())
+      for (let i = 0; i < 3; i += 1) gate3.process(silence())
+      const vad3 = MockVad.instances[MockVad.instances.length - 1]!
+      vad3.emitSegment(1600, 4160)
+      gate3.flushSilero()
+      expect(gate3.shouldAcceptFinal(0, 20 * 1600)).toBe(false) // 恢复 30% 满档
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reset 隔离会话状态：段时间轴与底噪基线清空', () => {
