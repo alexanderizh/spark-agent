@@ -28,13 +28,29 @@ export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDec
   const tooltipId = useId()
   const degraded = decision.fallbackUsed
   const mismatched = decision.adapterMismatch === true
-  const action = mismatched ? '引擎不匹配回退' : degraded ? '分流降级' : '已路由'
+  const healthAvoided =
+    decision.skippedFrozenExecutors != null && decision.skippedFrozenExecutors.length > 0
+  const action = mismatched
+    ? '引擎不匹配回退'
+    : healthAvoided
+      ? '故障避让路由'
+      : degraded
+        ? '分流降级'
+        : '已路由'
   const modelName = decision.modelDisplayName || decision.resolvedModelId
+  const frozenSummary = healthAvoided
+    ? decision
+        .skippedFrozenExecutors!.map((item) => {
+          const minutes = Math.ceil((item.frozenRemainingMs ?? 0) / 60_000)
+          return `${item.modelId}（剩 ${Math.max(1, minutes)} 分钟）`
+        })
+        .join('、')
+    : ''
   return (
     <div className="model-switch-notice auto-router-notice" role="status">
       <span className="model-switch-notice-line" />
       <span className="model-switch-notice-content">
-        {degraded || mismatched ? (
+        {degraded || mismatched || healthAvoided ? (
           <TriangleAlert aria-hidden size={16} strokeWidth={1.8} />
         ) : (
           <Shuffle aria-hidden size={16} strokeWidth={1.8} />
@@ -63,6 +79,10 @@ export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDec
               ｜推理强度：{decision.reasoningEffort ?? '跟随会话'}
               ｜分流耗时：{Math.round(decision.latencyMs)}ms
               {decision.fallbackUsed ? `｜兜底：${decision.fallbackStage ?? 'unknown'}` : ''}
+              {healthAvoided ? `｜避让冻结模型：${frozenSummary}` : ''}
+              {decision.healthFallbackUsed === true
+                ? '｜全部执行模型冻结中，已选最快解冻的条目尽力执行'
+                : ''}
             </span>
           </span>
         </span>

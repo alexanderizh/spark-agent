@@ -478,6 +478,21 @@ export class EventRepository extends BaseRepository {
   }
 
   /**
+   * 判定指定 turn 是否已产出用户可见或有副作用的内容（assistant/团队/子代理
+   * 消息、工具调用任一）。auto-router 故障切换用它决定能否安全重跑本轮：
+   * 已跑过工具的轮次静默重跑可能重复写文件/重复计费，必须交回用户处理。
+   */
+  hasTurnProducedSideEffects(sessionId: string, turnId: string): boolean {
+    const stmt = this.raw.prepare(
+      `SELECT 1 FROM agent_events
+       WHERE session_id = ? AND turn_id = ?
+         AND event_type IN ('assistant_message', 'team_member_message', 'subagent_message', 'tool_call', 'tool_result')
+       LIMIT 1`,
+    )
+    return stmt.get(sessionId, turnId) != null
+  }
+
+  /**
    * 列出会话内没有任何终态 agent_status 的轮次（断流轮），按时间线正序返回。
    * 断流轮 = 执行器死亡/应用退出导致事件流缺失收尾，重放时该轮消息会永远
    * 停留在 streaming。调用方需自行保证该会话当前确实没有任何执行在跑。

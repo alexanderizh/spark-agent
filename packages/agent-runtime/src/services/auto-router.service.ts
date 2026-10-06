@@ -11,6 +11,7 @@ import {
   type SessionReasoningEffort,
 } from '@spark/protocol'
 import type { ModelService } from './model.service'
+import { autoRouterHealthRegistry, type AutoRouterHealthRegistry } from './auto-router-health'
 
 const log = createLogger('auto-router')
 
@@ -82,6 +83,20 @@ export interface AutoRouterRouteResult {
   cancelled: boolean
   /** 有效性校验剔除的失效条目（日志用）。 */
   invalidEntries: Array<{ entryId: string; providerId: string; reason: string }>
+  /**
+   * 执行器健康避让：本轮选执行器时被跳过的冻结条目（短期熔断中，去重）。
+   * 缺省/空 = 无冻结避让。观察用（透出到决策事件），不参与控制流。
+   */
+  skippedFrozenExecutors?: Array<{
+    providerId: string
+    modelId: string
+    frozenRemainingMs: number
+  }>
+  /**
+   * 全部执行器处于冻结中，本轮 best-effort 选择了最快解冻的条目
+   * （比直接报错好：冻结中的模型可能已恢复）。缺省 = false。
+   */
+  healthFallbackUsed?: boolean
 }
 
 /** 依赖注入（全部可 mock，服务自身无 IO 依赖）。 */
@@ -90,6 +105,8 @@ export interface AutoRouterServiceDeps {
   getProviderRow: (providerId: string) => ProviderProfileRow | null
   /** 反查会话最近一条分流决策的强度（强度粘性）。 */
   getLatestDecisionIntensity: (sessionId: string) => RouterIntensity | null
+  /** 执行器健康注册表（测试注入隔离实例；缺省用进程内单例）。 */
+  healthRegistry?: AutoRouterHealthRegistry
 }
 
 // ─── 规则兜底分类器（精简版，仅 LLM 失败时降级） ─────────────────────────────
@@ -216,6 +233,11 @@ function buildDispatcherUserPayload(
  */
 export class AutoRouterService {
   private readonly deps: AutoRouterServiceDeps
+
+  /** 健康注册表：测试注入隔离实例，缺省回落进程内单例（与失败上报方共用）。 */
+  private get health(): AutoRouterHealthRegistry {
+    return this.deps.healthRegistry ?? autoRouterHealthRegistry
+  }
 
   constructor(deps: AutoRouterServiceDeps) {
     this.deps = deps
@@ -346,25 +368,54 @@ export class AutoRouterService {
       })
     }
 
-    // 5. 选执行器：该强度第一个有效条目 → fallbackIntensity → 任意第一个
-    let executor: AutoRouterExecutorRef | null | undefined =
-      findExecutorByIntensity({ ...input.config, executors: validExecutors }, intensity) ??
-      findExecutorByIntensity(
-        { ...input.config, executors: validExecutors },
-        input.config.fallbackIntensity,
-      ) ??
-      validExecutors[0]
+    // 5. 选执行器（健康避让）：同强度第一条健康条目 → fallbackIntensity 第一条健康
+    //    条目 → 任意健康条目；全部冻结时 best-effort 取最快解冻的（比直接报错好：
+    //    冻结中的模型可能已恢复，报错则肯定不可用）。同强度配多个模型因此成为真热备。
+    const now = Date.now()
+    const sameIntensityPool = validExecutors.filter((entry) => entry.intensity === intensity)
+    const fallbackPool =
+      input.config.fallbackIntensity === intensity
+        ? []
+        : validExecutors.filter((entry) => entry.intensity === input.config.fallbackIntensity)
+    let executor: AutoRouterExecutorRef | null =
+      this.health.firstHealthy(sameIntensityPool, now) ??
+      this.health.firstHealthy(fallbackPool, now) ??
+      this.health.firstHealthy(validExecutors, now)
+    let healthFallbackUsed = false
+    if (executor == null && validExecutors.length > 0) {
+      const soonest = this.health.soonestUnfreeze(validExecutors, now)
+      if (soonest != null) {
+        executor = soonest
+        healthFallbackUsed = true
+        log.warn('all executors frozen; best-effort picked soonest-unfreeze', {
+          turnId: input.turnId,
+          routerId: input.routerId,
+          picked: { providerId: soonest.providerProfileId, modelId: soonest.modelId },
+        })
+      }
+    }
+    const skippedFrozenExecutors = this.collectFrozenSkips(
+      [...sameIntensityPool, ...fallbackPool, ...validExecutors],
+      now,
+    )
+    if (skippedFrozenExecutors.length > 0) {
+      log.info('executor health avoidance applied', {
+        turnId: input.turnId,
+        routerId: input.routerId,
+        skipped: skippedFrozenExecutors,
+        healthFallbackUsed,
+      })
+    }
     if (executor != null && executor.intensity !== intensity) {
-      // 强度档位未配置执行器 → 回落兜底强度（或任意第一条），必须把强度一起改成
-      // 实际执行条目的强度：标签是渲染端"这轮谁在干活"的唯一依据，若保留请求强度
-      // 会出现「提示条显示●低、实际跑的是高强度模型」的错误标注（规则兜底 + 该强度
-      // 档未配置时最易触发，因为 fallbackUsed 已为 true）。
-      reason = `${reason}（${intensity} 档未配置，回落 ${executor.intensity}）`.slice(0, 300)
+      // 强度档位未配置（或全部冻结被避让）→ 回落实际执行条目的强度，必须把强度
+      // 一起改掉：标签是渲染端"这轮谁在干活"的唯一依据，若保留请求强度会出现
+      // 「提示条显示●低、实际跑的是高强度模型」的错误标注（规则兜底 + 该强度
+      // 档未配置/健康避让时最易触发，因为 fallbackUsed 已为 true）。
+      reason = `${reason}（${intensity} 档不可用，回落 ${executor.intensity}）`.slice(0, 300)
       intensity = executor.intensity
       fallbackUsed = true
       fallbackStage = fallbackStage ?? 'rule'
     }
-    executor = executor ?? null
 
     // 6. 强度粘性标记：决策强度与上轮相同且执行器一致 → kept（减少 resume 断裂）
     let keptPrevIntensity = false
@@ -400,6 +451,8 @@ export class AutoRouterService {
       subtasks,
       keptPrevIntensity,
       invalidEntries,
+      skippedFrozenExecutors,
+      healthFallbackUsed,
     })
   }
 
@@ -492,18 +545,43 @@ export class AutoRouterService {
     validExecutors: AutoRouterExecutorRef[],
     sessionAdapter: RouterAdapter,
   ): AutoRouterExecutorRef | null {
-    // 优先兜底强度、再按声明顺序找第一条匹配会话引擎的渠道
+    // 优先兜底强度、再按声明顺序找第一条匹配会话引擎的健康渠道；全部匹配项都
+    // 冻结时 best-effort 返回第一条匹配项（mismatch 兜底不宜因冻结直接判 no_executor）
     const candidates = [
       ...validExecutors.filter((entry) => entry.intensity === config.fallbackIntensity),
       ...validExecutors.filter((entry) => entry.intensity !== config.fallbackIntensity),
     ]
+    const adapterMatched: AutoRouterExecutorRef[] = []
     for (const entry of candidates) {
       const providerRow = this.deps.getProviderRow(entry.providerProfileId)
       if (providerRow != null && providerRowMatchesAdapter(providerRow, sessionAdapter)) {
-        return entry
+        adapterMatched.push(entry)
       }
     }
-    return null
+    return this.health.firstHealthy(adapterMatched) ?? adapterMatched[0] ?? null
+  }
+
+  /** 收集候选池中仍处于冻结期的条目（provider::model 去重；观察字段用）。 */
+  private collectFrozenSkips(
+    candidates: readonly AutoRouterExecutorRef[],
+    now: number,
+  ): Array<{ providerId: string; modelId: string; frozenRemainingMs: number }> {
+    const skipped: Array<{ providerId: string; modelId: string; frozenRemainingMs: number }> = []
+    const seen = new Set<string>()
+    for (const entry of candidates) {
+      const key = `${entry.providerProfileId}::${entry.modelId}`
+      if (seen.has(key)) continue
+      const remaining = this.health.frozenRemainingMs(entry.providerProfileId, entry.modelId, now)
+      if (remaining != null && remaining > 0) {
+        seen.add(key)
+        skipped.push({
+          providerId: entry.providerProfileId,
+          modelId: entry.modelId,
+          frozenRemainingMs: remaining,
+        })
+      }
+    }
+    return skipped
   }
 
   private async callDispatcher(
@@ -638,6 +716,8 @@ export class AutoRouterService {
     subtasks?: AutoRouterDispatchDecision['subtasks']
     keptPrevIntensity?: boolean
     invalidEntries: Array<{ entryId: string; providerId: string; reason: string }>
+    skippedFrozenExecutors?: AutoRouterRouteResult['skippedFrozenExecutors']
+    healthFallbackUsed?: boolean
   }): AutoRouterRouteResult {
     return {
       ok: args.resolved != null,
@@ -659,6 +739,10 @@ export class AutoRouterService {
       subtasks: args.subtasks ?? [],
       cancelled: args.cancelled === true,
       invalidEntries: args.invalidEntries,
+      ...(args.skippedFrozenExecutors != null && args.skippedFrozenExecutors.length > 0
+        ? { skippedFrozenExecutors: args.skippedFrozenExecutors }
+        : {}),
+      ...(args.healthFallbackUsed === true ? { healthFallbackUsed: true } : {}),
     }
   }
 }

@@ -99,6 +99,7 @@ import {
   COMMAND_FOLLOW_UP_TURN_PRESENTATION,
   GOAL_CONTRACT_DRAFT_TURN_PRESENTATION,
   GOAL_ITERATION_TURN_PRESENTATION,
+  AUTO_ROUTER_REDISPATCH_TURN_PRESENTATION,
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
   pickUserMessagePresentation,
@@ -114,6 +115,7 @@ import {
 import { normalizeReasoningBudgetTokens, SparkError } from '@spark/shared'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
+import { AutoRouterTurnSupervisor, type AutoRouterFailoverSeed } from './auto-router-turn-supervisor.js'
 import { createTeamDispatchGovernanceHooks } from './team-dispatch-governance.js'
 import { DispatchGovernor } from './dispatch-governor/dispatch-governor.js'
 import type {
@@ -1102,6 +1104,11 @@ export class SessionService {
    * 成功、用户手动改名、达到重试上限或会话删除时清除。
    */
   private readonly pendingTitleRefinements = new Map<string, PendingTitleRefinement>()
+  /**
+   * AutoRouter 轮次监督器：路由成功后登记轮次上下文；终态失败时冻结执行器并
+   * 判定一次性故障切换（重派发）。纯状态管理，事件发出与新轮次派发在本类挂点完成。
+   */
+  private readonly autoRouterSupervisor = new AutoRouterTurnSupervisor()
   /** 引擎注册表（P1-W1-D5）：kind → 执行器构造 + 能力声明；第三引擎接入只需 register。 */
   private readonly engineRegistry = createDefaultEngineRegistry()
   private readonly usageLedger: SessionUsageLedger
@@ -3523,8 +3530,34 @@ export class SessionService {
           routerId: provider.id,
           intensity: autoRouterRouting.intensity,
         })
+        // 换绑前捕获 router 身份（换绑后 provider 已是执行器渠道行）
+        const autoRouterOrigin = { routerId: provider.id, routerName: provider.name }
         effectiveRuntimeProviderProfileId = autoRouterRouting.resolvedProviderId
         provider = loadProvider(effectiveRuntimeProviderProfileId)
+        // 登记本轮 auto-router 上下文：终态失败时冻结该执行器，并在「未产出任何
+        // 用户可见输出」时武装一次故障切换重派发（重派发轮自身不再武装，防循环）。
+        this.autoRouterSupervisor.registerTurn({
+          turnId,
+          sessionId,
+          routerId: autoRouterOrigin.routerId,
+          routerName: autoRouterOrigin.routerName,
+          providerId: autoRouterRouting.resolvedProviderId,
+          modelId: autoRouterRouting.resolvedModelId,
+          isRedispatch:
+            userMessagePresentation != null &&
+            userMessagePresentation.turnSource === 'auto_router_redispatch',
+          seed: {
+            sessionId,
+            message,
+            ...(skillId != null ? { skillId } : {}),
+            ...(skillParams != null ? { skillParams } : {}),
+            ...(attachments != null && attachments.length > 0 ? { attachments } : {}),
+            ...(mentionAgentId != null ? { mentionAgentId } : {}),
+            ...(sessionReferences != null && sessionReferences.length > 0
+              ? { sessionReferences }
+              : {}),
+          },
+        })
       }
       // 本轮生效推理强度：router 执行器显式配置最具体（用户在 router 里为该模型指定
       // 了思考深度），优先于会话 reasoning_effort；均缺省时走 SDK 默认（undefined）。
@@ -5387,6 +5420,8 @@ export class SessionService {
     onTurnSucceeded?: () => void
   }): void {
     args.onTurnSucceeded?.()
+    // auto-router 轮次成功：清零执行器失败计数（半开恢复探针通过）。未登记为 no-op。
+    this.autoRouterSupervisor.onTurnSuccess(args.turnId)
     const { sessionId, turnId } = args
     const assistantTurnText = collectCompleteAssistantTurnText(args.completeAssistantEvents)
     const titleCtx = args.options.firstTurnTitleContext
@@ -5608,13 +5643,21 @@ export class SessionService {
     if (this.turnRegistry.isActiveExecutor(sessionId, executor)) {
       this.turnRegistry.releaseExecutorIfOwned(sessionId, turnId, executor)
       this.reconcileSessionExecutionStatus(sessionId)
-      if (shouldAutoContinue) {
+      // auto-router 故障切换优先于队列推进/团队续跑：用户消息尚未被服务，且原轮
+      // 未产出任何内容（armed 时已判定），静默改派重试是用户预期内的"智能"。
+      const failoverSeed = this.autoRouterSupervisor.consumeFailover(sessionId, turnId)
+      if (failoverSeed != null) {
+        this.resetTeamDispatchAutoContinuation(sessionId)
+        this.dispatchAutoRouterFailover(failoverSeed)
+      } else if (shouldAutoContinue) {
         void this.continueAfterTeamDispatchBudget(sessionId, turnId)
       } else {
         this.resetTeamDispatchAutoContinuation(sessionId)
         void this.continueGoalOrQueue(sessionId)
       }
     }
+    // 轮次上下文回收（无论是否拥有所有权都要遗忘，防泄漏）
+    this.autoRouterSupervisor.forgetTurn(turnId)
   }
 
   private async tryStartSDKTurn(
@@ -10805,6 +10848,10 @@ export class SessionService {
         ...(routing.reasoningEffort != null ? { reasoningEffort: routing.reasoningEffort } : {}),
         decompose: routing.decompose,
         ...(routing.subtasks.length > 0 ? { subtasks: routing.subtasks } : {}),
+        ...(routing.skippedFrozenExecutors != null && routing.skippedFrozenExecutors.length > 0
+          ? { skippedFrozenExecutors: routing.skippedFrozenExecutors }
+          : {}),
+        ...(routing.healthFallbackUsed === true ? { healthFallbackUsed: true } : {}),
       },
       params.eventRepo,
     )
@@ -10871,6 +10918,11 @@ export class SessionService {
         event as unknown as { type: string } & Record<string, unknown>,
       )
     }
+    // auto-router 轮次终态失败：冻结执行器并判定一次性故障切换（未登记轮次为 no-op）。
+    // 位于取消闸门之后 → 只有真实落库的 agent_error 才触发（取消后的残留错误不会）。
+    if (event.type === 'agent_error') {
+      this.handleAutoRouterTerminalError(sessionId, turnId, event, eventRepo)
+    }
     if (event.type === 'usage_update') {
       this.usageLedger.recordUpdate(sessionId, turnId, event)
     }
@@ -10925,6 +10977,134 @@ export class SessionService {
         this.usageLedger.clearTurnState(sessionId, turnId)
       }
     }
+  }
+
+  /**
+   * auto-router 轮次终态失败处理（emitAndPersist 的 agent_error 钩子）：
+   * 归类 → 冻结执行器 → 判定一次性故障切换，并落 runtime_signal 让用户知道
+   * 「为什么这轮换了模型 / 为什么建议直接重试」。environment 类失败（与执行
+   * 模型上游无关）不冻结、不重派发、不发信号。
+   */
+  private handleAutoRouterTerminalError(
+    sessionId: string,
+    turnId: string,
+    event: Extract<AgentEvent, { type: 'agent_error' }>,
+    eventRepo: EventRepository,
+  ): void {
+    const errorText = `${event.message ?? ''} ${event.rawError ?? ''}`.trim()
+    let outcome: ReturnType<typeof this.autoRouterSupervisor.onTerminalError> = null
+    try {
+      outcome = this.autoRouterSupervisor.onTerminalError({
+        turnId,
+        errorText,
+        hasProducedSideEffects: eventRepo.hasTurnProducedSideEffects(sessionId, turnId),
+      })
+    } catch (err) {
+      // 健康判定失败不改变错误呈现本身：只降级日志，事件流照常。
+      // outcome 保持 null，落到底部守卫直接结束（等同原 catch 内 return）。
+      log.warn('auto-router terminal error handling failed', {
+        sessionId,
+        turnId,
+        error: err,
+      })
+    }
+    if (outcome == null) return
+    const modelLabel = outcome.failoverArmed ? '原执行模型' : '执行模型'
+    const freezeMinutes = Math.max(1, Math.round(outcome.freezeMs / 60_000))
+    const makeSignalBase = () => ({
+      id: crypto.randomUUID(),
+      sessionId,
+      turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+    })
+    if (outcome.failoverArmed) {
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeSignalBase(),
+          type: 'runtime_signal',
+          signal: 'executor_failover',
+          level: 'info',
+          title: '自动路由已切换执行模型',
+          message: `${modelLabel}上游失败（${outcome.kind === 'deterministic' ? '鉴权/配额类错误' : '限流/服务异常'}，已冻结 ${freezeMinutes} 分钟），本轮尚未产出任何内容，正在自动改派其他健康执行模型重试。`,
+          details: [
+            { label: '失败归类', value: outcome.kind },
+            { label: '冻结时长', value: `${freezeMinutes} 分钟` },
+          ],
+        },
+        eventRepo,
+      )
+      return
+    }
+    if (outcome.frozen) {
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeSignalBase(),
+          type: 'runtime_signal',
+          signal: 'executor_failover',
+          level: 'warning',
+          title: '自动路由执行模型已短期冻结',
+          message: `${modelLabel}终态失败，已冻结 ${freezeMinutes} 分钟（期间新轮次自动避让；到期自动恢复）。${
+            event.message != null && event.message.length > 0 ? `失败摘要：${event.message.slice(0, 160)}` : ''
+          }`,
+          details: [
+            { label: '失败归类', value: outcome.kind },
+            { label: '冻结时长', value: `${freezeMinutes} 分钟` },
+          ],
+        },
+        eventRepo,
+      )
+    }
+  }
+
+  /**
+   * 消费已武装的 auto-router 故障切换种子并重派发一次（settleTurnFinally 处调用，
+   * 此时原轮所有权已释放、会话已复位）。错误暂停闸门激活（用户排了消息在等处理）
+   * 时放弃自动重跑，交回用户手动重试——重试将自动避让被冻结的执行模型。
+   */
+  private dispatchAutoRouterFailover(seed: AutoRouterFailoverSeed): void {
+    if (this.disposing) return
+    if (
+      this.getQueueErrorPauseGate().isBlocked(
+        seed.sessionId,
+        this.pendingTurns.get(seed.sessionId)?.length ?? 0,
+      )
+    ) {
+      this.autoRouterSupervisor.discardFailover(seed.sessionId)
+      log.info('auto-router failover skipped: queue error pause active', {
+        sessionId: seed.sessionId,
+      })
+      return
+    }
+    log.info('auto-router failover redispatching turn', {
+      sessionId: seed.sessionId,
+      messageLength: seed.message.length,
+    })
+    void this.sendTurn({
+      sessionId: seed.sessionId,
+      message: seed.message,
+      ...(seed.skillId != null ? { skillId: seed.skillId } : {}),
+      ...(seed.skillParams != null ? { skillParams: seed.skillParams } : {}),
+      ...(seed.attachments != null && seed.attachments.length > 0
+        ? { attachments: seed.attachments }
+        : {}),
+      ...(seed.mentionAgentId != null ? { mentionAgentId: seed.mentionAgentId } : {}),
+      ...(seed.sessionReferences != null && seed.sessionReferences.length > 0
+        ? { sessionReferences: seed.sessionReferences }
+        : {}),
+      // 面向模型的输入与原 turn 一致；用户消息隐藏（原 turn 已展示过），轮次来源
+      // 标记为 auto_router_redispatch：注册上下文时不再武装下一次故障切换。
+      ...AUTO_ROUTER_REDISPATCH_TURN_PRESENTATION,
+    }).catch((err) => {
+      log.error('auto-router failover redispatch failed', {
+        sessionId: seed.sessionId,
+        error: err,
+      })
+    })
   }
 
   private updateQueueErrorPauseFromStatus(
@@ -11555,6 +11735,9 @@ export class SessionService {
   private handleQueuedTurnStartFailure(sessionId: string, turn: PendingTurn, error: unknown): void {
     const eventRepo = new EventRepository(this.db)
     const sessionRepo = new SessionRepository(this.db)
+    // 启动失败路径不走 settleTurnFinally：这里回收 auto-router 轮次上下文防泄漏。
+    // TURN_START_FAILED 归类为 environment（不冻结不重派发），无需消费故障切换。
+    this.autoRouterSupervisor.forgetTurn(turn.turnId)
     // startTurn 可能在 executor 注册为 active 后、真正 executeTurn 前的异步预处理阶段失败。
     // 此时若只写错误事件，activeLoops 会一直让 renderer 认为会话仍在运行。
     const activeLoop = this.turnRegistry.executorFor(sessionId)

@@ -186,6 +186,7 @@ export {
   type GreetingServiceDeps,
 } from './services/greeting.service.js'
 export { AutoRouterService } from './services/auto-router.service.js'
+export { autoRouterHealthRegistry } from './services/auto-router-health.js'
 export {
   McpService,
   MANAGED_MCP_SCOPE,

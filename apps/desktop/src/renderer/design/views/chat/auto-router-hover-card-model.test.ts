@@ -209,4 +209,56 @@ describe('buildAutoRouterHoverCardModel', () => {
     })
     expect(model.adapterLabel).toBe('Codex 引擎')
   })
+
+  it('marks frozen executors with remaining time first in meta and isFrozen', () => {
+    const model = buildAutoRouterHoverCardModel({
+      name: '路由',
+      config: config({
+        executors: [
+          {
+            id: 'e1',
+            providerProfileId: 'p-high',
+            modelId: 'claude-opus-4-6',
+            intensity: 'high',
+            enabled: true,
+          },
+          {
+            id: 'e2',
+            providerProfileId: 'p-balanced',
+            modelId: 'claude-sonnet-4-5',
+            intensity: 'balanced',
+            enabled: true,
+          },
+        ],
+      }),
+      providers,
+      healthByExecutor: new Map([
+        [
+          'p-high::claude-opus-4-6',
+          {
+            providerId: 'p-high',
+            modelId: 'claude-opus-4-6',
+            state: 'frozen',
+            frozenUntil: Date.now() + 4 * 60_000,
+            frozenRemainingMs: 4 * 60_000,
+            consecutiveFailures: 1,
+            lastFailureKind: 'retryable',
+            lastErrorDetail: 'HTTP 429',
+            lastFailureAt: Date.now(),
+          },
+        ],
+      ]),
+    })
+    const high = model.rows.find((row) => row.key === 'intensity:high')
+    expect(high?.isFrozen).toBe(true)
+    expect(high?.meta).toContain('已冻结剩 4 分钟')
+    // 冻结提示置首（该行模型当前不会被选中的直接原因）
+    expect(high?.meta?.startsWith('已冻结剩')).toBe(true)
+    // 未冻结与无数据的行不受影响
+    const balanced = model.rows.find((row) => row.key === 'intensity:balanced')
+    expect(balanced?.isFrozen).toBe(false)
+    expect(balanced?.meta == null || !balanced.meta.includes('已冻结剩')).toBe(true)
+    const dispatcherRow = model.rows.find((row) => row.key === 'dispatcher')
+    expect(dispatcherRow?.isFrozen).toBe(false)
+  })
 })

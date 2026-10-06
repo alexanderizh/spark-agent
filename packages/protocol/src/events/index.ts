@@ -1108,6 +1108,11 @@ export interface RuntimeSignalEvent extends BaseEvent {
     | 'background_tasks'
     /** Provider 流式连接中断后的自动重连提示；SDK 自恢复，不算整轮失败。 */
     | 'stream_reconnect'
+    /**
+     * 自动路由执行器故障切换：原执行模型终态失败且未产出用户可见输出，
+     * runtime 已冻结该执行器并自动重派发到其他健康执行器（每条用户消息仅一次）。
+     */
+    | 'executor_failover'
   level: 'info' | 'warning' | 'error'
   title: string
   message: string
@@ -1226,6 +1231,20 @@ export interface AutoRouterDecisionEvent extends BaseEvent {
     intensity: RouterIntensity
     parallelizable: boolean
   }>
+  /**
+   * 执行器健康避让：本轮选执行器时被跳过的冻结条目（短期熔断中）。
+   * 缺省/空 = 无冻结避让。观察用，不参与控制流。
+   */
+  skippedFrozenExecutors?: Array<{
+    providerId: string
+    modelId: string
+    frozenRemainingMs: number
+  }>
+  /**
+   * 全部执行器处于冻结中，本轮 best-effort 选择了最快解冻的条目
+   * （比直接报错好：冻结中的模型可能已恢复）。缺省 = false。
+   */
+  healthFallbackUsed?: boolean
 }
 
 export type AgentEvent =

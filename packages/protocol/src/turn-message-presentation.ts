@@ -10,6 +10,12 @@ export type TurnSource =
   | 'system_continuity'
   /** 语音助手 Turn（快捷键/唤醒词唤起，转写文本进入会话，回复走 TTS 播报）。 */
   | 'voice'
+  /**
+   * 自动路由执行器故障切换 Turn：原 turn 的执行模型上游失败且未产出任何
+   * 用户可见输出时，由 runtime 冻结故障执行器并以同参数自动重派发一次。
+   * 用户消息隐藏（原 turn 已展示），仅作为时间线续跑标记。
+   */
+  | 'auto_router_redispatch'
 
 /** 用户消息正文在产品时间线中的呈现策略；不影响持久化或模型上下文。 */
 export type UserMessageVisibility = 'visible' | 'hidden'
@@ -74,6 +80,15 @@ export const GOAL_ITERATION_TURN_PRESENTATION = {
  */
 export const COMMAND_FOLLOW_UP_TURN_PRESENTATION = {
   turnSource: 'command_follow_up',
+  userMessageVisibility: 'hidden',
+} as const satisfies UserMessagePresentation
+
+/**
+ * 自动路由执行器故障切换的重派发 Turn：面向模型的输入与原 turn 完全一致，
+ * 但原 turn 已在时间线展示过用户消息，这里隐藏避免重复气泡。
+ */
+export const AUTO_ROUTER_REDISPATCH_TURN_PRESENTATION = {
+  turnSource: 'auto_router_redispatch',
   userMessageVisibility: 'hidden',
 } as const satisfies UserMessagePresentation
 

@@ -212,7 +212,7 @@ import type {
 } from '@spark/agent-runtime'
 import * as keystore from '@spark/shared/keystore'
 import { ScheduledTaskService } from '@spark/agent-runtime'
-import { AutoRouterService } from '@spark/agent-runtime'
+import { AutoRouterService, autoRouterHealthRegistry } from '@spark/agent-runtime'
 import { DEFAULT_DISPATCH_GOVERNANCE_CONFIG } from '@spark/agent-runtime'
 import type { TaskExecutorFn } from '@spark/agent-runtime'
 import { runSessionScheduledTaskTurn } from './scheduled-task-executor.js'
@@ -5781,6 +5781,33 @@ export function registerAllIpcHandlers(): void {
       )
     }
     return result
+  })
+
+  // 执行器运行时健康查询（管理弹层/悬浮卡展示冻结状态）：数据来自进程内健康注册表，
+  // 应用重启后清零，属观察性信息。可选按 routerId 过滤该 router 引用的执行器。
+  typedIpcHandle('provider:auto-router:executor-health', async (req) => {
+    let executors = autoRouterHealthRegistry.snapshot()
+    if (req.routerId != null && req.routerId.length > 0) {
+      const routerRow = new ProviderProfileRepository(getDatabase()).get(req.routerId)
+      let configJson: unknown = null
+      try {
+        configJson = routerRow != null ? JSON.parse(routerRow.config_json) : null
+      } catch {
+        // 宽松解析：config_json 损坏时保持缺省 null（返回全部被追踪条目）。
+      }
+      const config = parseAutoRouterConfig(configJson)
+      if (config != null) {
+        const referenced = new Set(
+          config.executors
+            .filter((entry) => entry.enabled)
+            .map((entry) => `${entry.providerProfileId}::${entry.modelId}`),
+        )
+        executors = executors.filter(
+          (item) => referenced.has(`${item.providerId}::${item.modelId}`),
+        )
+      }
+    }
+    return { executors }
   })
 
   typedIpcHandle('provider:update', async (req) => {

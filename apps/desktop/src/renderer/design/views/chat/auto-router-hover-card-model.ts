@@ -2,6 +2,7 @@ import {
   ROUTER_INTENSITIES,
   findExecutorByIntensity,
   type AutoRouterConfig,
+  type AutoRouterExecutorHealthSnapshot,
   type ProviderProfile,
   type RouterAdapter,
   type RouterIntensity,
@@ -11,10 +12,10 @@ import { routerIntensityColor, routerIntensityLabel } from '../../utils/auto-rou
 /**
  * 会话模型选择器「智能路由」行悬浮卡片的视图模型（纯函数，可单测）。
  *
- * 数据全部来自 ProviderProfile.autoRouterConfig（与运行时读的是同一份配置）；
- * 执行模型行展示"运行时真正会用到的那一条"（findExecutorByIntensity 与
- * auto-router.service 选执行器同源），备用 / 停用条目只在行尾以计数提示，
- * 卡片本身不引入任何新的数据来源或协议字段。
+ * 数据来自 ProviderProfile.autoRouterConfig（与运行时读的是同一份配置）与可选的
+ * 执行器健康快照（进程内注册表投影，重启清零）；执行模型行展示"运行时真正会用
+ * 到的那一条"（findExecutorByIntensity 与 auto-router.service 选执行器同源），
+ * 备用 / 停用条目只在行尾以计数提示。
  */
 
 const ADAPTER_LABELS: Record<RouterAdapter, string> = {
@@ -43,6 +44,11 @@ export interface AutoRouterHoverCardRow {
    * 兜底说明放在 meta（与运行时「该强度 → fallbackIntensity → 首个有效条目」一致）。
    */
   isFallback: boolean
+  /**
+   * 该行执行模型当前处于健康冻结期（上游失败后的短期熔断）：行内以警示样式
+   * 展示剩余解冻时间；运行时选执行器会自动避让，档位实际走备用或兜底条目。
+   */
+  isFrozen: boolean
 }
 
 export interface AutoRouterHoverCardModel {
@@ -99,11 +105,23 @@ function fallbackHint(config: AutoRouterConfig, intensity: RouterIntensity): str
   return '走首个启用条目'
 }
 
+/** 冻结剩余时长的人话展示：<1min 用秒，其余向上取整分钟。 */
+export function formatFrozenRemaining(remainingMs: number | null): string | null {
+  if (remainingMs == null || !Number.isFinite(remainingMs) || remainingMs <= 0) return null
+  if (remainingMs < 60_000) return `${Math.max(1, Math.round(remainingMs / 1000))}s`
+  return `${Math.ceil(remainingMs / 60_000)} 分钟`
+}
+
 export function buildAutoRouterHoverCardModel(input: {
   name: string
   config: AutoRouterConfig | null
   /** 全量渠道（含 router 行自身之外的普通渠道），用于把 providerProfileId 解析成渠道名。 */
   providers: readonly ProviderProfile[]
+  /**
+   * 执行器健康快照（key = `providerId::modelId`；缺省 = 无冻结数据，正常展示）。
+   * 来自进程内健康注册表的 IPC 投影，与运行时选执行器避让共用同一状态源。
+   */
+  healthByExecutor?: ReadonlyMap<string, AutoRouterExecutorHealthSnapshot>
 }): AutoRouterHoverCardModel {
   const { name, config, providers } = input
   const providerNames = new Map<string, string>()
@@ -130,16 +148,28 @@ export function buildAutoRouterHoverCardModel(input: {
       providerLabel: resolveProviderLabel(providerNames, config.dispatcher.providerProfileId),
       meta: formatAutoRouterTimeout(config.dispatcher.timeoutMs),
       isFallback: false,
+      isFrozen: false,
     },
   ]
 
   for (const intensity of ROUTER_INTENSITIES) {
     const executor = findExecutorByIntensity(config, intensity)
     const modelId = executor?.modelId.trim() ?? ''
+    const frozenRemaining =
+      executor != null
+        ? formatFrozenRemaining(
+            input.healthByExecutor?.get(`${executor.providerProfileId}::${executor.modelId}`)
+              ?.frozenRemainingMs ?? null,
+          )
+        : null
     const metaParts =
       executor != null
         ? executorMeta(config, executor.reasoningEffort ?? null, intensity)
         : [fallbackHint(config, intensity)]
+    if (frozenRemaining != null) {
+      // 冻结提示置首：这是"该行模型当前不会被选中"的直接原因
+      metaParts.unshift(`已冻结剩 ${frozenRemaining}`)
+    }
     rows.push({
       key: `intensity:${intensity}`,
       label: routerIntensityLabel(intensity),
@@ -151,6 +181,7 @@ export function buildAutoRouterHoverCardModel(input: {
           : null,
       meta: metaParts.length > 0 ? metaParts.join(' · ') : null,
       isFallback: executor == null,
+      isFrozen: frozenRemaining != null,
     })
   }
 

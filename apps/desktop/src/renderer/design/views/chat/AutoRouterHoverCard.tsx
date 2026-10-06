@@ -62,7 +62,10 @@ export function AutoRouterHoverCard({
         <>
           <div className="composer-auto-router-card-rows">
             {model.rows.map((row) => (
-              <div key={row.key} className="composer-auto-router-card-row">
+              <div
+                key={row.key}
+                className={`composer-auto-router-card-row${row.isFrozen ? ' is-frozen' : ''}`}
+              >
                 <span
                   className={`composer-auto-router-card-dot${
                     row.dotColor == null ? ' is-placeholder' : row.isFallback ? ' is-empty' : ''

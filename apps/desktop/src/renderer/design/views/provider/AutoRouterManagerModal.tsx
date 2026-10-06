@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Switch } from 'antd'
 import { Button, Input, Modal, Select } from '@lobehub/ui'
 import { Icons } from '../../Icons'
@@ -9,6 +9,7 @@ import {
   AUTO_ROUTER_DISPATCHER_TIMEOUT_MAX_MS,
   AUTO_ROUTER_PROVIDER_TYPE,
   type AutoRouterConfig,
+  type AutoRouterExecutorHealthSnapshot,
   type AutoRouterExecutorRef,
   type ProviderAutoRouterTestDispatcherResponse,
   type ProviderProfile,
@@ -72,6 +73,12 @@ function providerModels(provider: ProviderProfile): string[] {
   return [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))]
 }
 
+/** 执行器冻结剩余时长展示：<1min 用秒，其余向上取整分钟。 */
+function formatExecutorFrozenRemaining(remainingMs: number): string {
+  if (remainingMs < 60_000) return `${Math.max(1, Math.round(remainingMs / 1000))}s`
+  return `${Math.ceil(remainingMs / 60_000)} 分钟`
+}
+
 export function AutoRouterManagerModal({
   open,
   providers,
@@ -84,6 +91,7 @@ export function AutoRouterManagerModal({
   const { invoke: updateRouter } = useIpcInvoke('provider:auto-router:update')
   const { invoke: deleteProvider } = useIpcInvoke('provider:delete')
   const { invoke: testDispatcherInvoke } = useIpcInvoke('provider:auto-router:test-dispatcher')
+  const { invoke: fetchExecutorHealth } = useIpcInvoke('provider:auto-router:executor-health')
 
   const routers = useMemo(
     () => providers.filter((provider) => provider.providerType === AUTO_ROUTER_PROVIDER_TYPE),
@@ -102,6 +110,41 @@ export function AutoRouterManagerModal({
   const [dispatcherTesting, setDispatcherTesting] = useState(false)
   const [dispatcherTestResult, setDispatcherTestResult] =
     useState<ProviderAutoRouterTestDispatcherResponse | null>(null)
+  // 执行器运行时健康（冻结避让展示）：选中 router 时拉取 + 30s 轮询刷新倒计时；
+  // 失败静默——健康属观察性信息，缺失时退回纯配置展示。
+  const [executorHealth, setExecutorHealth] = useState<ReadonlyMap<
+    string,
+    AutoRouterExecutorHealthSnapshot
+  > | null>(null)
+  const healthRefreshTimer = useRef<number | null>(null)
+  useEffect(() => {
+    if (!open || selectedId == null) {
+      setExecutorHealth(null)
+      return
+    }
+    let disposed = false
+    const load = () => {
+      fetchExecutorHealth({ routerId: selectedId })
+        .then((res) => {
+          if (disposed) return
+          const map = new Map<string, AutoRouterExecutorHealthSnapshot>()
+          for (const item of res.executors) map.set(`${item.providerId}::${item.modelId}`, item)
+          setExecutorHealth(map)
+        })
+        .catch(() => {
+          if (!disposed) setExecutorHealth(null)
+        })
+    }
+    load()
+    healthRefreshTimer.current = window.setInterval(load, 30_000)
+    return () => {
+      disposed = true
+      if (healthRefreshTimer.current != null) {
+        window.clearInterval(healthRefreshTimer.current)
+        healthRefreshTimer.current = null
+      }
+    }
+  }, [open, selectedId, fetchExecutorHealth])
 
   // 打开时优先聚焦外部指定的 router（卡片编辑入口）；否则默认选中第一个，
   // 列表为空进入新建态
@@ -484,11 +527,27 @@ export function AutoRouterManagerModal({
                   尚未配置执行模型；每轮任务按分流器判定的强度分派给对应档位
                 </div>
               )}
-              {draft.executors.map((executor) => (
+              {draft.executors.map((executor) => {
+                const executorHealthEntry =
+                  executorHealth?.get(`${executor.providerProfileId}::${executor.modelId}`) ?? null
+                const frozenRemainingText =
+                  executorHealthEntry?.state === 'frozen' &&
+                  executorHealthEntry.frozenRemainingMs != null
+                    ? formatExecutorFrozenRemaining(executorHealthEntry.frozenRemainingMs)
+                    : null
+                return (
                 <div key={executor.id} className="arm_executor_row">
                   <span className={intensityBadgeClass(executor.intensity)}>
                     {INTENSITY_OPTIONS.find((o) => o.value === executor.intensity)?.label}
                   </span>
+                  {frozenRemainingText != null && (
+                    <span
+                      className="badge warning"
+                      title={`执行模型上游失败后短期冻结中（${executorHealthEntry?.lastFailureKind === 'deterministic' ? '鉴权/配额类，请检查渠道配置' : '限流/服务异常，到期自动恢复'}）\n最近失败：${executorHealthEntry?.lastErrorDetail ?? '—'}\n冻结期间新轮次自动避让该模型`}
+                    >
+                      冻结剩 {frozenRemainingText}
+                    </span>
+                  )}
                   <Select
                     size="small"
                     value={executor.providerProfileId || undefined}
@@ -550,7 +609,8 @@ export function AutoRouterManagerModal({
                     <Icons.Trash size={13} />
                   </button>
                 </div>
-              ))}
+                )
+              })}
               <Button size="small" icon={<Icons.Plus size={14} />} onClick={addExecutor}>
                 添加执行模型
               </Button>

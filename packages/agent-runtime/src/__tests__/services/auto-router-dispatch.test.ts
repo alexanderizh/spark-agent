@@ -248,7 +248,8 @@ describe('AutoRouterService 分流决策链', () => {
     expect(result.fallbackUsed).toBe(true)
     expect(result.resolvedModelId).toBe('sonnet-mid')
     expect(result.intensity).toBe('balanced')
-    expect(result.reason).toContain('档未配置')
+    // 文案为「档不可用」：涵盖未配置与健康冻结避让两种回落来源
+    expect(result.reason).toContain('档不可用')
   })
 
   it('取消分支契约：cancelled=true 且 resolved 为空（调用方须先判 cancelled，不得报配置错）', async () => {

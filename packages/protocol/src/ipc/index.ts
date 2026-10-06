@@ -25,7 +25,7 @@ import type {
   WorkflowProgressNode,
 } from '../events/index.js'
 import type { UserMessagePresentation } from '../turn-message-presentation.js'
-import type { AutoRouterConfig } from '../auto-router-config.js'
+import type { AutoRouterConfig, AutoRouterExecutorHealthSnapshot } from '../auto-router-config.js'
 import type {
   ImageProcessProgress,
   ImageProcessRequest,
@@ -1316,6 +1316,20 @@ export interface ProviderAutoRouterTestDispatcherResponse {
   latencyMs: number
   /** ok=false 时的人话失败原因（HTTP 状态 + 业务 message 摘要）。 */
   error?: string
+}
+
+/**
+ * 执行器运行时健康查询（管理弹层/悬浮卡展示冻结状态）。
+ * 数据来自进程内健康注册表：应用重启后清零，属观察性信息而非配置。
+ */
+export interface ProviderAutoRouterExecutorHealthRequest {
+  /** 可选：只返回该 router 配置引用的执行器；缺省返回全部被追踪条目。 */
+  routerId?: string
+}
+
+export interface ProviderAutoRouterExecutorHealthResponse {
+  /** 执行器健康快照（providerId:modelId 粒度）。 */
+  executors: AutoRouterExecutorHealthSnapshot[]
 }
 
 export interface ProviderUpdateRequest {
@@ -7607,6 +7621,10 @@ export interface IpcChannelMap
   'provider:auto-router:test-dispatcher': [
     ProviderAutoRouterTestDispatcherRequest,
     ProviderAutoRouterTestDispatcherResponse,
+  ]
+  'provider:auto-router:executor-health': [
+    ProviderAutoRouterExecutorHealthRequest,
+    ProviderAutoRouterExecutorHealthResponse,
   ]
   'provider:delete': [ProviderDeleteRequest, ProviderDeleteResponse]
   'provider:health-check': [ProviderHealthCheckRequest, ProviderHealthCheckResponse]

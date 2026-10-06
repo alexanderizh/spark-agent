@@ -79,6 +79,33 @@ export interface AutoRouterDispatcherConfig {
   timeoutMs: number
 }
 
+/**
+ * 执行器运行时健康快照（进程内注册表的只读投影）。
+ *
+ * 执行器以上游错误（429/5xx/超时/鉴权失败等）终态失败时会被短期"冻结"：
+ * 冻结期间选执行器自动避让（同强度按声明顺序取下一条健康条目），到期自动
+ * 解冻（半开恢复：解冻后第一笔成功即清零计数，失败则递进升级冻结时长）。
+ * 状态仅存活于进程内存，重启即清零——分钟级临时态没有持久化价值。
+ */
+export interface AutoRouterExecutorHealthSnapshot {
+  providerId: string
+  modelId: string
+  /** frozen = 冻结中（选执行器时避让）；healthy = 可用。 */
+  state: 'healthy' | 'frozen'
+  /** 解冻时间戳（epoch ms）；healthy 时为 null。 */
+  frozenUntil: number | null
+  /** 距解冻剩余毫秒（快照生成时刻）；healthy 时为 null。 */
+  frozenRemainingMs: number | null
+  /** 连续失败次数（成功一次即清零；冻结到期不清零，下次失败递进升级）。 */
+  consecutiveFailures: number
+  /** 最近一次失败归类：retryable（瞬时）/ deterministic（鉴权/配额类，不会自愈）。 */
+  lastFailureKind: 'retryable' | 'deterministic' | null
+  /** 最近一次失败的人话摘要（截断）。 */
+  lastErrorDetail: string | null
+  /** 最近一次失败时间戳（epoch ms）。 */
+  lastFailureAt: number | null
+}
+
 export interface AutoRouterConfig {
   kind: 'auto-router'
   version: 1

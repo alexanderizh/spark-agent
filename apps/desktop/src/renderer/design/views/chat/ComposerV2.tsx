@@ -70,6 +70,7 @@ import {
   type ManagedTeam,
   type PermissionApprovalRequest,
   type ProviderProfile,
+  type AutoRouterExecutorHealthSnapshot,
   type TurnPromptSnapshotEvent,
   type SessionChatMode,
   type SessionId,
@@ -5887,12 +5888,39 @@ export function ProviderModelPicker({
     open && providerQuotaHoverTarget != null
       ? providers.find((provider) => provider.id === providerQuotaHoverTarget?.key)
       : undefined
+  // 智能路由悬浮卡：hover 到 router 行时拉取执行器健康快照（冻结避让展示）。
+  // 健康是进程内易变态，只在目标 router 变化时拉一次；失败静默（卡片退回纯配置展示）。
+  const hoveredAutoRouterId = hoveredAutoRouter?.id ?? null
+  const { invoke: fetchExecutorHealth } = useIpcInvoke('provider:auto-router:executor-health')
+  const [autoRouterExecutorHealth, setAutoRouterExecutorHealth] = useState<
+    ReadonlyMap<string, AutoRouterExecutorHealthSnapshot> | null
+  >(null)
+  useEffect(() => {
+    if (hoveredAutoRouterId == null) return
+    let disposed = false
+    fetchExecutorHealth({ routerId: hoveredAutoRouterId })
+      .then((res) => {
+        if (disposed) return
+        const map = new Map<string, AutoRouterExecutorHealthSnapshot>()
+        for (const item of res.executors) map.set(`${item.providerId}::${item.modelId}`, item)
+        setAutoRouterExecutorHealth(map)
+      })
+      .catch(() => {
+        if (!disposed) setAutoRouterExecutorHealth(null)
+      })
+    return () => {
+      disposed = true
+    }
+  }, [hoveredAutoRouterId, fetchExecutorHealth])
   const autoRouterHoverModel =
     hoveredAutoRouter != null
       ? buildAutoRouterHoverCardModel({
           name: hoveredAutoRouter.name,
           config: hoveredAutoRouter.autoRouterConfig ?? null,
           providers,
+          ...(autoRouterExecutorHealth != null
+            ? { healthByExecutor: autoRouterExecutorHealth }
+            : {}),
         })
       : null
 
