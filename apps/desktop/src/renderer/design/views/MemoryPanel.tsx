@@ -18,6 +18,8 @@ import {
 } from '@lobehub/ui'
 import { Switch, message, Modal, Segmented, Spin, Checkbox } from 'antd'
 import { Icons } from '../Icons'
+import { MEMORY_PENDING_CHANGED_EVENT } from '../hooks/useMemoryPendingCount'
+import { MemoryCandidateDetailModal } from './MemoryCandidateDetailModal'
 import type {
   MemoryEntry,
   MemoryScope,
@@ -268,7 +270,10 @@ export function MemoryPanel() {
       setCandidateBusy(id)
       try {
         const res = await confirmCandidate({ id, contentDigest })
-        if (res?.ok) message.success('已确认并保存为正式记忆')
+        if (res?.ok) {
+          window.dispatchEvent(new CustomEvent(MEMORY_PENDING_CHANGED_EVENT))
+          message.success('已确认并保存为正式记忆')
+        }
         else {
           const reasonText: Record<string, string> = {
             digest_mismatch: '内容已变化，请重新查看后确认',
@@ -298,7 +303,10 @@ export function MemoryPanel() {
       setCandidateBusy(id)
       try {
         const res = await rejectCandidate({ id })
-        if (res?.ok) message.success('已忽略该提议')
+        if (res?.ok) {
+          window.dispatchEvent(new CustomEvent(MEMORY_PENDING_CHANGED_EVENT))
+          message.success('已忽略该提议')
+        }
         else message.warning('该候选不在待确认状态')
       } catch {
         message.error('操作失败（IPC 异常）')
@@ -309,6 +317,20 @@ export function MemoryPanel() {
     },
     [rejectCandidate, refreshCandidates],
   )
+  // 候选详情弹层：点击候选行主体打开，审阅完整正文后再确认/忽略
+  const [detailCandidateId, setDetailCandidateId] = useState<number | null>(null)
+  const detailCandidate = useMemo(
+    () => candidates.find((c) => c.id === detailCandidateId) ?? null,
+    [candidates, detailCandidateId],
+  )
+  // 确认/忽略成功后（handler 内 dispatch MEMORY_PENDING_CHANGED_EVENT）立即关闭详情；
+  // 刷新后候选从列表消失时 detailCandidate 变 null，弹层也会随之关闭（双保险）
+  useEffect(() => {
+    if (detailCandidateId == null) return undefined
+    const close = () => setDetailCandidateId(null)
+    window.addEventListener(MEMORY_PENDING_CHANGED_EVENT, close)
+    return () => window.removeEventListener(MEMORY_PENDING_CHANGED_EVENT, close)
+  }, [detailCandidateId])
   // scopeRef 输入 debounce 300ms，避免每字符触发请求
   const [scopeRefInput, setScopeRefInput] = useState('')
   useEffect(() => {
@@ -414,7 +436,7 @@ export function MemoryPanel() {
           </div>
           {candidates.map((c) => (
             <div className="mp_candidate_row" key={c.id}>
-              <div className="mp_candidate_body">
+              <div className="mp_candidate_body" onClick={() => setDetailCandidateId(c.id)}>
                 <div className="mp_candidate_name">
                   {c.payload?.name ?? '（内容不可解析）'}
                   <Tag size="middle">{c.scope}</Tag>
@@ -436,14 +458,20 @@ export function MemoryPanel() {
                   type="primary"
                   disabled={c.payload == null}
                   loading={candidateBusy === c.id}
-                  onClick={() => void onConfirmCandidate(c.id, c.contentDigest)}
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    void onConfirmCandidate(c.id, c.contentDigest)
+                  }}
                 >
                   确认保存
                 </Button>
                 <Button
                   size="middle"
                   loading={candidateBusy === c.id}
-                  onClick={() => void onRejectCandidate(c.id)}
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    void onRejectCandidate(c.id)
+                  }}
                 >
                   忽略
                 </Button>
@@ -495,6 +523,13 @@ export function MemoryPanel() {
         )}
       </div>
 
+      <MemoryCandidateDetailModal
+        candidate={detailCandidate}
+        busy={detailCandidate != null && candidateBusy === detailCandidate.id}
+        onConfirm={(id, contentDigest) => void onConfirmCandidate(id, contentDigest)}
+        onReject={(id) => void onRejectCandidate(id)}
+        onClose={() => setDetailCandidateId(null)}
+      />
       <Drawer
         open={detailId != null}
         onClose={() => setDetailId(null)}

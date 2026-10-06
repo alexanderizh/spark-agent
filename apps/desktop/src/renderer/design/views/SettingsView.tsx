@@ -79,6 +79,7 @@ import { AccountSyncSettingsSection } from './account-sync/AccountSyncSettingsSe
 import { UpdateReleaseNotesCard } from './UpdateReleaseNotesCard'
 import { HooksV2Section } from './hooks/HooksV2Section'
 import { SettingsNavResizer } from './settings-nav/SettingsNavResizer'
+import { MemoryPendingBadge } from '../MemoryPendingBadge'
 import './SettingsView.less'
 import type {
   SessionAgentAdapter,
@@ -546,6 +547,7 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
                   >
                     <span className="nav-icon">{it.icon}</span>
                     <span className="nav-label">{it.label}</span>
+                    {it.id === 'memory' && <MemoryPendingBadge refreshKey={section} />}
                   </button>
                 ))}
               </div>

@@ -240,7 +240,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 0;
+  /* 垂直内边距移交 body（4px+4px），行高与「row 8px + body 0」基本持平 */
+  padding: 4px 0;
   &:not(:last-child) {
     border-bottom: 1px dashed var(--line-1, rgba(128, 128, 128, 0.12));
   }
@@ -248,6 +249,16 @@
 .mp_candidate_body {
   flex: 1;
   min-width: 0;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+  /* 内边距给 hover 色块呼吸空间，同 .mp_row 先例的 padding: 10px 12px 思路 */
+  padding: 4px 8px;
+
+  /* hover 语言与 .mp_row（既有记忆行）一致：整行背景变化 */
+  &:hover {
+    background: var(--color-fill-2, rgba(0, 0, 0, 0.03));
+  }
 }
 .mp_candidate_name {
   display: flex;
@@ -271,4 +282,54 @@
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+}
+
+// 候选详情弹层（MemoryCandidateDetailModal）：完整正文审阅 + 元信息
+.mp_candidate_detail_tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.mp_candidate_detail_label {
+  font-size: 12px;
+  opacity: 0.55;
+}
+.mp_candidate_detail_body {
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.mp_candidate_detail_text {
+  margin: 4px 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  opacity: 0.8;
+}
+.mp_candidate_detail_unparsed {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary, #888);
+}
+.mp_candidate_detail_meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.65;
+}
+.mp_candidate_detail_sources {
+  word-break: break-all;
 }

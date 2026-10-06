@@ -13,6 +13,7 @@ import {
 } from './design/AppContext'
 import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSidebarContext'
 import { useTeamStoreBadge } from './design/hooks/useTeamStoreBadge'
+import { MemoryPendingBadge } from './design/MemoryPendingBadge'
 import { CanvasProjectSelectionProvider } from './design/views/canvas/CanvasProjectSelectionContext'
 import { SubAppSurfaceProvider } from './design/sub-app/SubAppSurfaceHost'
 import { subAppClient } from './design/sub-app/subAppClient'
@@ -1291,6 +1292,8 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               onClick={() => setTweak('view', 'settings')}
             >
               <Icons.Settings size={13} />
+              {/* 记忆待确认候选未读角标；refreshKey=当前视图，进入设置页即刷新 */}
+              <MemoryPendingBadge refreshKey={t.view} />
             </button>
           </Tooltip>
         </div>

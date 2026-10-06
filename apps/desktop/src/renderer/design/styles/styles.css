@@ -935,6 +935,7 @@ body.floating-sidebar-resizing * {
   background: transparent;
   color: var(--text);
   cursor: pointer;
+  position: relative; /* 角标（.memory-pending-badge）绝对定位锚点 */
   transition:
     background 0.15s ease,
     color 0.15s ease;
@@ -942,6 +943,32 @@ body.floating-sidebar-resizing * {
 .sidebar-user-settings:hover {
   background: var(--hover);
   color: var(--text);
+}
+/* ─── 记忆待确认候选角标（侧栏设置按钮 + 设置页「记忆」导航项共用） ───
+     颜色走 --danger（明/暗主题各自有定义），白字常读；不影响按钮 hover 与点击。 */
+.memory-pending-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger, #ef4444);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+}
+.sidebar-user-settings .memory-pending-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  z-index: 1;
+}
+.nav-item .memory-pending-badge {
+  margin-left: auto; /* 与 .nav-kbd 同款行尾对齐 */
 }
 .sidebar-user {
   display: flex;
