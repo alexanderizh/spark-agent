@@ -7254,9 +7254,15 @@ export class SessionService {
         }
         return result.text
       }
-      // V2 演化决策服务：FTS 召回相似 + LLM 判定 ADD/UPDATE/DELETE/NOOP
-      const memorySearchRepo = new MemorySearchRepository(this.db)
-      const evolutionService = new MemoryEvolutionService(memorySearchRepo, callExtractionLLM)
+      // V2 演化决策服务：FTS+向量混合召回相似 + LLM 判定 ADD/UPDATE/DELETE/NOOP。
+      // 【P2-C】改用共享 repo/embedding 实例：复用 vec0 加载状态与 provider 宕机负缓存
+      //（每次 turn 新建实例会重复尝试加载 vec 扩展、绕开 5 分钟负缓存）
+      const memorySearchRepo = this.getMemorySearchRepo()
+      const evolutionService = new MemoryEvolutionService(
+        memorySearchRepo,
+        callExtractionLLM,
+        this.getMemoryEmbeddingService(),
+      )
       // V2 实体关联图：抽取 prompt 的 entities 落库，供检索一跳扩展
       const entityRepo = new MemoryEntityRepository(this.db)
       const writer = new MemoryWriterService(
@@ -7266,6 +7272,12 @@ export class SessionService {
         callExtractionLLM,
         evolutionService,
         entityRepo,
+        // commitService 传 undefined 触发构造器默认值（repo+store 内部构造，
+        // 与装配前的行为一致）
+        undefined,
+        // 【P2-A】冲突写入守卫依赖：演化判定 UPDATE/DELETE 且目标是手动创建/用户明确
+        // 表达的记忆时转候选区等确认，不再全自动执行
+        new MemoryCandidateRepository(this.db),
       )
       await writer.maybeWriteFromTurn({
         sessionId,

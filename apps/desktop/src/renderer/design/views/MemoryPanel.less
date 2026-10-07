@@ -102,6 +102,11 @@
     border-color: var(--color-primary, #1677ff);
     background: var(--color-primary-bg, rgba(22, 119, 255, 0.06));
   }
+  // 【P0.3】supersededBy 跳转目标行短暂高亮（3 秒后自动消退）
+  &_highlight {
+    border-color: var(--color-primary, #1677ff);
+    background: var(--color-primary-bg, rgba(22, 119, 255, 0.08));
+  }
   &_main {
     flex: 1;
     min-width: 0;
@@ -114,6 +119,20 @@
   }
   &_name {
     font-weight: 500;
+  }
+  // 【P0.1】证据状态 / 来源角色短标签：灰阶紧凑，过长截断（完整信息看原生 title）
+  &_tag {
+    display: inline-block;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+    font-size: 11px;
+    line-height: 16px;
+    padding: 0 6px;
+    // 行内标题区 gap: 6px 已提供间距，去掉 Tag 自带外边距避免双份
+    margin: 0;
   }
   &_desc {
     font-size: 12px;
@@ -157,6 +176,16 @@
   background: var(--color-warning-bg, rgba(255, 200, 0, 0.12));
   color: var(--color-warning-text, #b8860b);
   font-size: 12px;
+}
+
+// 【P0.3】详情内 supersededBy 可点击跳转链接
+.mp_jump_link {
+  color: var(--color-primary, #1677ff);
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
 }
 
 .mp_meta_grid {
@@ -332,4 +361,99 @@
 }
 .mp_candidate_detail_sources {
   word-break: break-all;
+}
+
+/* ──【P1-④】历史版本区（memory:history）：版本链 + 派生关系 + coverage ── */
+.mp_history_section {
+  margin: 12px 0 4px;
+}
+.mp_history_open {
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.mp_history_header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.mp_history_title {
+  font-weight: 500;
+  font-size: 13px;
+}
+.mp_history_list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mp_history_item {
+  border-radius: 6px;
+  transition: background 0.15s;
+  &:hover {
+    background: var(--color-fill-2, rgba(0, 0, 0, 0.03));
+  }
+  &_open {
+    background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
+  }
+  &_head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+}
+.mp_history_version {
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--color-text-secondary, #888);
+}
+.mp_history_name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp_history_time {
+  font-size: 11px;
+  color: var(--color-text-tertiary, #aaa);
+  white-space: nowrap;
+}
+.mp_history_body {
+  padding: 4px 8px 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.mp_history_desc {
+  color: var(--color-text-secondary, #888);
+  margin-bottom: 4px;
+}
+.mp_history_text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  opacity: 0.8;
+}
+.mp_history_note {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--color-text-tertiary, #aaa);
+}
+.mp_history_deriv {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #888);
+}
+.mp_history_deriv_ids {
+  word-break: break-all;
+}
+.mp_history_coverage {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-tertiary, #aaa);
 }

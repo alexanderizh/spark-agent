@@ -4,7 +4,8 @@
  * 记忆演化决策服务 — 取代 V1 的 merge/replace/skip 去重闸门（Mem0 模式）。
  *
  * 对每个通过置信度/敏感词/瞬时闸门的候选：
- *   1. 用 FTS（同 scope）召回相似已有条目 top5（同步、不需 embed，writer 后台路径够用）
+ *   1. 混合召回相似已有条目 top5（同 scope：FTS BM25 + 向量 KNN → RRF 融合；
+ *      embedding 未配置/失败时降级 FTS-only）
  *   2. 喂给小模型 buildEvolutionPrompt，返回 ADD / UPDATE / DELETE / NOOP + targetId
  *   3. 调用方（writer）按决策执行（ADD=新建、UPDATE=更新 target 保 id/hit_count+History、
  *      DELETE=使 target 失效（bi-temporal invalid_at）、NOOP=丢弃）
@@ -16,9 +17,11 @@
  */
 
 import { createLogger } from '@spark/shared'
-import type { MemorySearchRepository } from '@spark/storage'
+import type { MemorySearchRepository, MemoryEntryRow } from '@spark/storage'
+import type { EmbeddingService } from './embedding.service.js'
 import type { MemoryCandidate } from './memory-writer.service.js'
 import { buildEvolutionPrompt } from './memory-extraction.prompt.js'
+import { rrfFuse } from './memory-search.service.js'
 
 const log = createLogger('memory:evolution')
 
@@ -32,7 +35,7 @@ export interface EvolutionVerdict {
   reason: string
 }
 
-/** FTS 召回相似条目数 */
+/** 每路（FTS/向量）召回的相似条目数，也是 RRF 融合后的截断值 */
 const SIMILAR_LIMIT = 5
 
 export class MemoryEvolutionService {
@@ -40,20 +43,22 @@ export class MemoryEvolutionService {
     private readonly searchRepo: MemorySearchRepository,
     /** 小模型补全（与 writer 同一通道，writer 传入） */
     private readonly callLLM: (prompt: string) => Promise<string>,
+    /** 向量召回通道（未配置 embedding 时传 null，降级 FTS-only） */
+    private readonly embeddingService: EmbeddingService | null = null,
   ) {}
 
   /**
    * 对一条候选记忆做演化决策。
    *
-   * FTS 召回相似条目（同 scope，未归档未失效）→ LLM 判定。
-   * 任何环节失败（FTS 异常 / LLM 异常 / 解析失败）默认返回 ADD（保守，不丢信息）。
+   * 混合召回（FTS + 向量，RRF 融合）相似条目（同 scope，未归档未失效）→ LLM 判定。
+   * 任何环节失败（召回异常 / LLM 异常 / 解析失败）默认返回 ADD（保守，不丢信息）。
    */
   async decide(
     candidate: MemoryCandidate,
     scope: 'user' | 'project' | 'agent',
     scopeRef: string | null,
   ): Promise<EvolutionVerdict> {
-    const similar = this.recallSimilar(candidate, scope, scopeRef)
+    const similar = await this.recallSimilar(candidate, scope, scopeRef)
 
     // 没有相似条目 → 直接 ADD，省一次 LLM 调用
     if (similar.length === 0) {
@@ -86,22 +91,48 @@ export class MemoryEvolutionService {
   }
 
   /**
-   * FTS 召回同 scope 相似条目（用候选的 name + description 作查询）。
+   * 混合召回同 scope 相似条目（用候选的 name + description 作查询，与 embedding
+   * 索引口径一致）。FTS BM25 + 向量 KNN 两路各取 SIMILAR_LIMIT 条，rrfFuse 融合后
+   * 截 SIMILAR_LIMIT。
    * searchRepo.searchBm25 内部已 segmentCjk 分词；FTS 表不存在时返回 []（旧库降级）。
+   * 向量路（embedding 未配置 / embed 失败 / KNN 异常）静默降级 FTS-only。
    */
-  private recallSimilar(
+  private async recallSimilar(
     candidate: MemoryCandidate,
     scope: 'user' | 'project' | 'agent',
     scopeRef: string | null,
-  ) {
+  ): Promise<MemoryEntryRow[]> {
     try {
       const query = `${candidate.name} ${candidate.description}`.trim()
       if (query.length === 0) return []
-      const hits = this.searchRepo.searchBm25(query, {
+      const channelOpts = {
         scopes: [{ scope, scopeRef }],
         limit: SIMILAR_LIMIT,
-      })
-      return hits.map((h) => h.entry)
+      }
+
+      // ── FTS 路 ──
+      const ftsEntries = this.searchRepo.searchBm25(query, channelOpts).map((h) => h.entry)
+
+      // ── 向量路（不可用自动降级，样式同 memory-search.service searchWithStatus） ──
+      let vecEntries: MemoryEntryRow[] = []
+      if (this.embeddingService != null) {
+        try {
+          const embedded = await this.embeddingService.embedTexts([query])
+          if (embedded != null && embedded.vectors.length > 0) {
+            vecEntries = this.searchRepo
+              .searchKnn(embedded.vectors[0]!, channelOpts)
+              .map((h) => h.entry)
+          }
+        } catch (err) {
+          log.warn(
+            `evolution vector recall failed, degrading to FTS-only: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
+      }
+
+      return rrfFuse(ftsEntries, vecEntries)
+        .slice(0, SIMILAR_LIMIT)
+        .map((h) => h.entry)
     } catch (err) {
       log.warn(
         `evolution FTS recall failed (defaulting to ADD): ${err instanceof Error ? err.message : String(err)}`,

@@ -24,8 +24,9 @@ import { isMemorySensitive, detectTransientMemory } from './sanitizer.js'
 import { resolveValidUntil } from './memory-temporal.js'
 import { buildExtractionPrompt, buildDedupPrompt } from './memory-extraction.prompt.js'
 import { MemoryEvolutionService } from './memory-evolution.service.js'
+import type { EvolutionVerdict } from './memory-evolution.service.js'
 import { MemoryCommitService } from './memory-commit.service.js'
-import type { MemoryEntityRepository } from '@spark/storage'
+import type { MemoryCandidateRepository, MemoryEntityRepository } from '@spark/storage'
 
 const log = createLogger('memory:writer')
 
@@ -130,6 +131,12 @@ export class MemoryWriterService {
       memoryRepo,
       storeService,
     ),
+    /**
+     * 【P2-A 冲突性写入】候选确认区 repo。提供时，演化 UPDATE/DELETE 的目标
+     * 是"用户明确表达/手动创建"的记忆 → 不自动执行，转候选等用户确认；
+     * 为 null（旧测试 / 未接候选区）保持全自动原行为。
+     */
+    private readonly candidateRepo: MemoryCandidateRepository | null = null,
   ) {}
 
   // ─── Public API ──────────────────────────────────────────────────────
@@ -516,6 +523,11 @@ export class MemoryWriterService {
         return
       }
       if (verdict.decision === 'DELETE' && verdict.targetId != null) {
+        // 【P2-A 冲突性写入】目标是用户明确表达/手动创建的记忆 → 不自动失效，
+        // 转候选进确认区等用户裁决（候选区不可用/入候选失败时降级走原路径）
+        if (await this.deferManualTargetToCandidate(candidate, scopeRef, verdict, 'delete')) {
+          return
+        }
         await this.invalidateEntry(verdict.targetId)
         log.info(
           `Memory invalidated (evolution DELETE): ${verdict.targetId} ← "${candidate.name}"（reason ${verdict.reason.length} 字符，内容不入日志）`,
@@ -523,6 +535,10 @@ export class MemoryWriterService {
         return
       }
       if (verdict.decision === 'UPDATE' && verdict.targetId != null) {
+        // 【P2-A 冲突性写入】同上：手动来源目标的更新同样转候选
+        if (await this.deferManualTargetToCandidate(candidate, scopeRef, verdict, 'update')) {
+          return
+        }
         await this.updateEntry(verdict.targetId, candidate, scopeRef)
         log.info(
           `Memory updated (evolution UPDATE): ${verdict.targetId} ← "${candidate.name}"（reason ${verdict.reason.length} 字符，内容不入日志）`,
@@ -628,19 +644,7 @@ export class MemoryWriterService {
     const target = this.memoryRepo.getById(targetId)
     if (target == null) return
 
-    let newBody = candidate.body
-    try {
-      const oldBody = await this.storeService.readFile(target.file_path).catch(() => '')
-      if (oldBody.length > 0) {
-        const stamp = new Date().toISOString()
-        const oldExcerpt = oldBody.slice(0, 500)
-        newBody = `${candidate.body}\n\n## History\n\n### ${stamp}（被 "${candidate.name}" 更新）\n${oldExcerpt}${oldBody.length > 500 ? ' …' : ''}`
-      }
-    } catch (err) {
-      log.warn(
-        `updateEntry: failed to read old body, overwriting: ${err instanceof Error ? err.message : String(err)}`,
-      )
-    }
+    const newBody = await this.buildEvolvedBody(target, candidate)
 
     // 【S2.5】演化 UPDATE 生成新版本：置信度独立评估、不继承旧值（用户
     // 纠正/实质改写允许下降 —— 单调 max 会让错误的高分永远压过纠正）
@@ -668,6 +672,103 @@ export class MemoryWriterService {
       return
     }
     this.persistEntities(targetId, candidate, scopeRef)
+  }
+
+  /**
+   * 演化 UPDATE 的演化后正文：候选正文在前，旧正文摘录追加到 ## History
+   * 区段（500 字截断）。旧正文读取失败如实回退为纯候选正文（不中断更新）。
+   * 自动执行（updateEntry）与冲突转候选（deferManualTargetToCandidate，P2-A）
+   * 共用本口径，保证用户确认后落库结果与自动路径一致。
+   */
+  private async buildEvolvedBody(
+    target: MemoryEntryRow,
+    candidate: MemoryCandidate,
+  ): Promise<string> {
+    let newBody = candidate.body
+    try {
+      const oldBody = await this.storeService.readFile(target.file_path).catch(() => '')
+      if (oldBody.length > 0) {
+        const stamp = new Date().toISOString()
+        const oldExcerpt = oldBody.slice(0, 500)
+        newBody = `${candidate.body}\n\n## History\n\n### ${stamp}（被 "${candidate.name}" 更新）\n${oldExcerpt}${oldBody.length > 500 ? ' …' : ''}`
+      }
+    } catch (err) {
+      log.warn(
+        `buildEvolvedBody: failed to read old body, overwriting: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+    return newBody
+  }
+
+  /**
+   * 【P2-A 冲突性写入】演化 UPDATE/DELETE 的目标是"用户明确表达/手动创建"
+   * 的记忆（author_role='manual_user' 或 extraction_kind='manual'）时不自动
+   * 执行，转为携带 action/targetId 的候选进确认区，等用户确认后由
+   * MemoryCandidateService.confirm 按动作路由执行。
+   *
+   * DELETE 候选展示目标当前内容（删除对象）；UPDATE 候选展示演化后正文
+   * （确认后按此落库）。digest 去重由 insertPending 承担（同一冲突反复
+   * 演化不累积候选票数）。
+   *
+   * 降级约定（候选区故障不能阻断写入链路）：repo 未注入 / 目标不存在 /
+   * 目标非手动来源 / insertPending 抛错或 digest 已存在（inserted:false）
+   * → 返回 false，调用方继续原自动执行路径。
+   *
+   * @returns true = 已转候选（调用方不再执行原失效/更新）
+   */
+  private async deferManualTargetToCandidate(
+    candidate: MemoryCandidate,
+    scopeRef: string | null,
+    verdict: EvolutionVerdict,
+    action: 'update' | 'delete',
+  ): Promise<boolean> {
+    const targetId = verdict.targetId
+    if (targetId == null) return false
+    if (this.candidateRepo == null) return false
+    const target = this.memoryRepo.getById(targetId)
+    if (target == null) return false
+    if (target.author_role !== 'manual_user' && target.extraction_kind !== 'manual') return false
+
+    try {
+      const body =
+        action === 'delete'
+          ? await this.storeService.readFile(target.file_path).catch(() => '')
+          : await this.buildEvolvedBody(target, candidate)
+      const { inserted, row } = this.candidateRepo.insertPending({
+        scope: candidate.scope,
+        scopeRef,
+        payload: {
+          // target.type 与候选 type 同为四值枚举，直接兼容
+          type: action === 'delete' ? target.type : candidate.type,
+          name: action === 'delete' ? target.name : candidate.name,
+          description: action === 'delete' ? target.description : candidate.description,
+          body,
+          confidence: action === 'delete' ? 1 : candidate.confidence,
+          sourceIds: [],
+          action,
+          targetId,
+        },
+      })
+      if (!inserted) {
+        log.warn(
+          `【冲突写入转候选】降级自动执行：同摘要候选已存在（status=${row?.status ?? '?'}）：` +
+            `target=${target.id} ← "${candidate.name}"`,
+        )
+        return false
+      }
+      log.info(
+        `【冲突写入转候选】演化 ${action === 'delete' ? 'DELETE' : 'UPDATE'} 目标为手动记忆，` +
+          `转候选 #${row?.id ?? '?'} 等用户确认：target=${target.id} "${target.name}" ← ` +
+          `"${candidate.name}"（reason ${verdict.reason.length} 字符，内容不入日志）`,
+      )
+      return true
+    } catch (err) {
+      log.warn(
+        `【冲突写入转候选】降级自动执行（候选区故障）：target=${targetId} ← ` +
+          `"${candidate.name}" — ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return false
+    }
   }
 
   private async llmDedupDecide(

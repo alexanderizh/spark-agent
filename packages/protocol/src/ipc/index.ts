@@ -4098,6 +4098,16 @@ export interface MemoryEntry {
   authorRole?: string | null
   /** 【S2.5】证据状态（available/unavailable）—— 来源不可用时不补造 */
   evidenceStatus?: string | null
+  /** 【P2-D】来源归因明细（migration 107）：内部事件/轮次引用，仅作展示溯源 */
+  sourceEventId?: string | null
+  /** 【P2-D】来源轮次 ID（agent turn 引用，纯展示） */
+  sourceTurnId?: string | null
+  /** 【P2-D】产生该条目的 agent ID（host_agent 角色时有值） */
+  authorAgentId?: string | null
+  /** 【P2-D】抽取方式（manual/extraction/consolidation/sync…）—— 与 authorRole 互补的可解释维度 */
+  extractionKind?: string | null
+  /** 【P2-D】抽取模型 ID（如 glm-4-flash；手动/整合写入为 null） */
+  extractionModel?: string | null
   /** 【S2.6】有效期结束（UTC ms，半开区间右端）；null = 长期 */
   validUntil?: number | null
   /** 【S2.6】精度/时区原始表达（JSON：{"precision":"date","timezone":...}） */
@@ -4165,6 +4175,20 @@ export interface MemoryArchiveResponse {
   ok: boolean
   status?: 'complete' | 'blocked_locally' | 'not_found'
   operationId?: string
+  error?: string
+}
+export interface MemoryUnarchiveRequest {
+  id: string
+}
+/**
+ * 恢复归档（memory:archive 的逆操作）：主进程直接走 repository —— 清 archived
+ * 位并重建 FTS 行（正文由主进程从权威文件读取），无文件清理屏障故不经过
+ * 生命周期协调服务，也没有 operationId。status：complete=恢复完成（含
+ * 已是非归档的幂等重放）；not_found=目标不存在（幂等成功，同 archive 口径）。
+ */
+export interface MemoryUnarchiveResponse {
+  ok: boolean
+  status?: 'complete' | 'not_found'
   error?: string
 }
 export interface MemoryDeleteRequest {
@@ -4267,6 +4291,11 @@ export interface MemoryCandidateListResponse {
       body: string
       confidence: number
       sourceIds: string[]
+      /** 【P2-A】候选动作：缺省 create=新建（ELEVATE 晋级）；update/delete=冲突写入
+          待确认（targetId 为被改目标）；merge=整合合并待确认（P2-B） */
+      action?: 'create' | 'update' | 'delete' | 'merge'
+      /** update/delete/merge 的目标条目 ID */
+      targetId?: string
     } | null
   }>
 }
@@ -7933,6 +7962,7 @@ export interface IpcChannelMap
   'memory:create': [MemoryCreateRequest, MemoryCreateResponse]
   'memory:update': [MemoryUpdateRequest, MemoryUpdateResponse]
   'memory:archive': [MemoryArchiveRequest, MemoryArchiveResponse]
+  'memory:unarchive': [MemoryUnarchiveRequest, MemoryUnarchiveResponse]
   'memory:delete': [MemoryDeleteRequest, MemoryDeleteResponse]
   'memory:rebuild-vectors': [MemoryRebuildVectorsRequest, MemoryRebuildVectorsResponse]
   'memory:test-extraction': [MemoryTestExtractionRequest, MemoryTestExtractionResponse]

@@ -11,6 +11,10 @@
  *   某 scope 有效条目 ≥ threshold 且距上次整合 ≥ intervalDays → 在 reader 注入点
  *   fire-and-forget 触发。进程度量：app_settings(memory / lastConsolidationAt:<scopeKey>)。
  *
+ * 【P2-B】MERGE 预确认（memory.consolidationMergeRequiresConfirm，默认关）：
+ *   开启时 MERGE 不直接执行，转候选区待真实用户结构化确认（candidate
+ *   confirm 侧经共用 executeMemoryMerge 执行同款语义）。
+ *
  * 全程 fire-and-forget + try/catch：任何失败仅 log，绝不阻塞主对话。
  */
 
@@ -25,6 +29,7 @@ import type {
 import { normalizeBodyForGuard } from '@spark/storage'
 import type { MemoryStoreService } from './memory-store.service.js'
 import { MemoryCommitService } from './memory-commit.service.js'
+import { executeMemoryMerge } from './memory-merge-executor.js'
 import { buildConsolidationPrompt } from './memory-extraction.prompt.js'
 import { isMemorySensitive } from './sanitizer.js'
 
@@ -199,7 +204,8 @@ export class MemoryConsolidationService {
     if (drops.length === 0) return // 没有有效 drop，不操作
 
     // 【S2.4 统一写入不变量】入口 4 敏感内容闸门：整合产物（合并描述/正文）
-    // 不得绕过 —— 命中即丢弃本动作（code=sensitive，结构化日志按类别断言）
+    // 不得绕过 —— 命中即丢弃本动作（code=sensitive，结构化日志按类别断言）。
+    // 转候选（下方 P2-B 分支）同样过此闸门：候选载荷就是合并产物本身。
     if (isMemorySensitive(action.mergedDescription, mergedBody)) {
       log.info(
         `consolidation MERGE dropped (rejection_code=sensitive): keep=${keep.id} — ` +
@@ -208,47 +214,74 @@ export class MemoryConsolidationService {
       return
     }
 
-    // 【S2.5】合并重复不升置信：多条同义条目合并成一个槽位是去重，不是
-    // 多份独立证据（"十篇转载不算十份独立证据"）；keep 维持自身评估
-    const nextConfidence = keep.confidence
-    // 【审查修复】经提交原语 CAS 更新（先写文件后 CAS 的顺序不变，但失配时
-    // 会尽力恢复被覆盖的权威正文——原实现直接 compareAndSwap 失配后 keep 的
-    // 正文文件已被 mergedBody 覆盖，违反"旧权威版本仍完整"）。expectedVersion
-    // 持读取时版本，整合期间 keep 被并发更新/归档时失配丢弃，不覆盖当前状态。
-    // 被覆盖的 keep 版本进 revision 历史（kind='merge'）。
-    const committed = await this.commitSvc.commitWrite({
-      entryId: keep.id,
-      expectedVersion: keep.version,
-      scope: keep.scope,
-      scopeRef: keep.scope_ref,
-      type: keep.type,
-      name: keep.name,
-      description: action.mergedDescription,
-      confidence: nextConfidence,
-      body: mergedBody,
-      preserveFrom: keep,
-      revisionKind: 'merge',
+    // 【P2-B】MERGE 预确认：开关开启时不直接执行合并，构造候选进候选区待
+    // 真实用户结构化确认（confirm 侧 confirmMerge 经共用 executeMemoryMerge
+    // 执行同款语义）。同摘要既有候选（任意状态，含已拒绝）不重复征集
+    //（N1/N2：markConsolidated 已占坑，用户不确认也不重复征集，digest 去重
+    // 兜底）。候选区故障（未接线 / insertPending 抛错）不阻断整合 —— 降级
+    // 走下方原自动合并路径。
+    if (this.mergeRequiresConfirm) {
+      if (this.candidateRepo == null) {
+        log.warn('consolidation MERGE 候选区未接线（candidateRepo=null），降级自动合并')
+      } else {
+        try {
+          const { inserted, row } = this.candidateRepo.insertPending({
+            scope,
+            scopeRef,
+            payload: {
+              type: toCandidateType(keep.type),
+              name: keep.name,
+              description: action.mergedDescription,
+              body: mergedBody,
+              confidence: keep.confidence,
+              // 语义：sourceIds 在 merge 候选中是合并依据来源（dropIds），
+              // 确认时据此重读 drops 现势执行合并
+              sourceIds: drops.map((d) => d.id),
+              action: 'merge',
+              targetId: keep.id,
+            },
+          })
+          if (!inserted) {
+            log.debug(
+              `consolidation MERGE deduped (digest exists, status=${row?.status ?? '?'}): ` +
+                `keep=${keep.id}`,
+            )
+            return
+          }
+          log.info(
+            `consolidation MERGE proposed as candidate #${row?.id ?? '?'} ` +
+              `(${scope}/${scopeRef ?? '∅'} "${keep.name}" ← ${drops.length} drops) — 等待用户确认合并`,
+          )
+          return
+        } catch (err) {
+          log.warn(
+            `consolidation MERGE 候选征集失败，降级自动合并：keep=${keep.id} — ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          )
+          // 落到下方自动合并路径（不 return：不能因候选区故障阻断整合）
+        }
+      }
+    }
+
+    // 执行段（commitWrite revisionKind='merge' + drops 失效指向 keep + 派生边）
+    // 与候选确认合并共用 memory-merge-executor（P2-B 抽取，语义逐行等价）
+    const merged = await executeMemoryMerge({
+      keep,
+      drops,
+      mergedDescription: action.mergedDescription,
+      mergedBody,
+      dropBodies,
+      commitService: this.commitSvc,
+      memoryRepo: this.memoryRepo,
+      revisionRepo: this.revisionRepo,
+      note: 'consolidation merge',
     })
-    if (!committed.ok) {
+    if (!merged.ok) {
       log.warn(
-        `consolidation MERGE discarded (${committed.reason}): keep=${keep.id} ` +
+        `consolidation MERGE discarded (${merged.reason}): keep=${keep.id} ` +
           `expectedVersion=${keep.version}（并发写入/归档，不覆盖当前状态）`,
       )
       return
-    }
-
-    // dropIds 失效，指向 keep。【S2.2】每个 drop 的当前版本进 revision 历史
-    // （kind='supersede'，successor 指向 keep）+ 记录派生边 drop → keep
-    //（来源撤回时可沿边找到派生条目，H2 纠正影响传播）
-    const now = Date.now()
-    for (const drop of drops) {
-      this.memoryRepo.update(drop.id, { invalid_at: now, superseded_by: keep.id }, undefined, {
-        oldBody: dropBodies.get(drop.id) ?? '',
-        kind: 'supersede',
-        successorId: keep.id,
-        note: 'consolidation merge',
-      })
-      this.revisionRepo?.insertDerivation(drop.id, keep.id, 'merge')
     }
     log.debug(`consolidation MERGE: keep ${keep.id} ← drop ${drops.map((d) => d.id).join(',')}`)
   }
@@ -337,6 +370,11 @@ export class MemoryConsolidationService {
     const v = this.settingsGet('memory', 'consolidationIntervalDays')
     return typeof v === 'number' && v > 0 ? v : DEFAULT_INTERVAL_DAYS
   }
+  /** 【P2-B】MERGE 预确认开关：开启时整合 MERGE 转候选区待用户确认（默认关） */
+  private get mergeRequiresConfirm(): boolean {
+    const v = this.settingsGet('memory', 'consolidationMergeRequiresConfirm')
+    return v === true
+  }
 
   private scopeKey(scope: Scope, scopeRef: string | null): string {
     return `lastConsolidationAt:${scope}:${scopeRef ?? '∅'}`
@@ -351,6 +389,8 @@ export class MemoryConsolidationService {
     }
     return null
   }
+  // 【P2-B】MERGE 转候选（consolidationMergeRequiresConfirm）时占坑语义不变：
+  // 本轮整合仍算完成 —— 用户不确认也不重复征集，候选 digest 去重兜底。
   private markConsolidated(scope: Scope, scopeRef: string | null): void {
     try {
       this.settingsSet?.('memory', this.scopeKey(scope, scopeRef), Date.now())
@@ -365,6 +405,11 @@ export class MemoryConsolidationService {
 // ─── 动作解析 ────────────────────────────────────────────────────────────
 
 type MemoryType = 'user' | 'feedback' | 'project' | 'reference'
+
+/** keep 条目 type → 候选载荷合法四值枚举（防御旧库异常值，回落 user） */
+function toCandidateType(t: string): MemoryType {
+  return t === 'feedback' || t === 'project' || t === 'reference' ? t : 'user'
+}
 
 type ConsolidationAction =
   | {

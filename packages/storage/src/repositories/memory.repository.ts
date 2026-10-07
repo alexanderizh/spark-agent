@@ -491,6 +491,40 @@ export class MemoryRepository extends BaseRepository {
   }
 
   /**
+   * Restore an archived entry —— archive 的逆操作。同一事务内清 archived 位并
+   * 重建 FTS 行，逐项镜像 archive 的副作用：
+   *
+   * - 归档改了 archived/updated_at → 恢复时同样只动这两列；invalid_at 等
+   *   生命周期列不碰（先失效后归档的条目恢复归档后仍保持失效，语义不变）。
+   * - 归档从 FTS 删除了行 → 恢复时重新 upsert。文本构造口径照抄 insert：
+   *   name/description 取行内当前值，body 由调用方从权威文件读出传入；
+   *   缺 body 时以 name+description 重建（正文检索缺失，可由 backfill 补齐）。
+   * - version 不自增 —— 与 archive 一致（生命周期位翻转不走有效写入路径）。
+   * - 向量索引不立即重建：vec 为懒回填设计（见 invalidateVecIndex / E5），
+   *   条目回到有效集后由回填队列重新覆盖；entity_link 在归档时已物理清理，
+   *   不在本层恢复。
+   *
+   * @returns 恢复后的行；条目不存在返回 null；已是非归档状态幂等返回现值。
+   */
+  unarchive(id: string, body?: string): MemoryEntryRow | null {
+    const existing = this.findById<MemoryEntryRow>(id)
+    if (existing == null) return null
+    if (existing.archived !== 1) return existing
+    const tx = this.raw.transaction(() => {
+      this.raw
+        .prepare(`UPDATE memory_entry SET archived = 0, updated_at = ? WHERE id = ?`)
+        .run(Date.now(), id)
+      this.maintainFts('upsert', id, {
+        name: existing.name,
+        description: existing.description,
+        ...(body != null ? { body } : {}),
+      })
+    })
+    tx()
+    return this.findById<MemoryEntryRow>(id)!
+  }
+
+  /**
    * Permanently delete an entry。同一事务内从 FTS/vec/entity_link 移除。
    * 顺序：先清索引（依赖主行 rowid 映射），再删主行。
    */

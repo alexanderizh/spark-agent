@@ -32,6 +32,15 @@ export interface MemoryCandidatePayload {
   entities?: unknown
   /** 升华来源条目 id（确认时记派生边）；至少 2 条才成候选 */
   sourceIds: string[]
+  /**
+   * 【P2-A 冲突性写入】候选动作：缺省 'create'（既有 ELEVATE 晋级新建）；
+   * 'update' / 'delete' 为演化判定对"用户明确表达/手动创建"条目的改写提议，
+   * 确认时对 targetId 指向的既有条目执行而非新建；'merge' 仅预留枚举
+   * （MERGE 预确认由后续任务实现，confirm 侧 unsupported_action 拒绝）。
+   */
+  action?: 'create' | 'update' | 'delete' | 'merge'
+  /** action 为 update/delete 时的目标条目 id（memory_entry.id） */
+  targetId?: string
 }
 
 export interface MemoryCandidateRow {
@@ -73,6 +82,11 @@ export function hashCandidateContent(name: string, description: string, body: st
   return hashIndexInput([name, description, body])
 }
 
+/** 【P2-A】候选动作合法枚举守卫（parsePayload 校验用；非法值按缺省 create 处理） */
+function isCandidateAction(value: unknown): value is NonNullable<MemoryCandidatePayload['action']> {
+  return value === 'create' || value === 'update' || value === 'delete' || value === 'merge'
+}
+
 export class MemoryCandidateRepository extends BaseRepository {
   constructor(db: SparkDatabase) {
     super(db, 'memory_candidate')
@@ -90,6 +104,16 @@ export class MemoryCandidateRepository extends BaseRepository {
         Array.isArray(parsed.sourceIds) &&
         parsed.sourceIds.every((id) => typeof id === 'string')
       ) {
+        // 【P2-A】action/targetId 透传校验：action 非四值之一按缺省（create）
+        // 处理，不 throw（解析健壮性优先）仅 warn 留痕；targetId 非 string 丢弃。
+        if (parsed.action != null && !isCandidateAction(parsed.action)) {
+          console.warn(
+            `[memory-candidate] parsePayload: 非法 action ${JSON.stringify(parsed.action)}，` +
+              `按缺省 create 处理（row id=${row.id}）`,
+          )
+        }
+        const action = isCandidateAction(parsed.action) ? parsed.action : undefined
+        const targetId = typeof parsed.targetId === 'string' ? parsed.targetId : undefined
         return {
           type:
             parsed.type === 'feedback' || parsed.type === 'project' || parsed.type === 'reference'
@@ -101,6 +125,8 @@ export class MemoryCandidateRepository extends BaseRepository {
           confidence: parsed.confidence,
           ...(parsed.entities != null ? { entities: parsed.entities } : {}),
           sourceIds: parsed.sourceIds,
+          ...(action != null ? { action } : {}),
+          ...(targetId != null ? { targetId } : {}),
         }
       }
       return null

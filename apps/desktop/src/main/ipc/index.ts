@@ -9904,6 +9904,12 @@ export function registerAllIpcHandlers(): void {
     version: r.version,
     authorRole: r.author_role,
     evidenceStatus: r.evidence_status,
+    // 【P2-D】migration 107 来源归因明细透传（旧库行可能为 null，DTO 可选字段兼容）
+    sourceEventId: r.source_event_id,
+    sourceTurnId: r.source_turn_id,
+    authorAgentId: r.author_agent_id,
+    extractionKind: r.extraction_kind,
+    extractionModel: r.extraction_model,
     validUntil: r.valid_until,
     validUntilMeta: r.valid_until_meta,
   })
@@ -10185,6 +10191,32 @@ export function registerAllIpcHandlers(): void {
     }
   })
 
+  typedIpcHandle('memory:unarchive', async (req) => {
+    log.info(`memory:unarchive requested, id=${req.id}`)
+    // 恢复归档是 archive 的逆操作，但归档时正文文件未删、无清理屏障需要
+    // 协调 —— 直接走 repository：同一事务清 archived 位 + 重建 FTS 行。
+    // 幂等口径同 archive：目标不存在按成功处理（not_found）。
+    const repo = new MemoryRepository(getDatabase())
+    const existing = repo.getById(req.id)
+    if (existing == null) return { ok: true, status: 'not_found' }
+    // 仅真正处于归档态才需要读正文重建 FTS（幂等重放不产生文件 IO）；
+    // 文件缺失时降级为 name+description 重建，不阻断恢复本身。
+    let body: string | undefined
+    if (existing.archived === 1) {
+      try {
+        body = await getMemoryStore(
+          resolveWorkspaceRootPath(existing.scope, existing.scope_ref),
+        ).readFile(existing.file_path)
+      } catch (err) {
+        log.warn(
+          `memory:unarchive body read failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
+    repo.unarchive(req.id, body)
+    return { ok: true, status: 'complete' }
+  })
+
   typedIpcHandle('memory:delete', async (req) => {
     log.info(`memory:delete requested, id=${req.id}`)
     // S1B.4：删除走生命周期协调（DB 屏障 + 磁盘清理 + 投影刷新）
@@ -10293,6 +10325,9 @@ export function registerAllIpcHandlers(): void {
                 body: r.payload.body,
                 confidence: r.payload.confidence,
                 sourceIds: r.payload.sourceIds,
+                // 【P2-A】候选动作透传（缺省 create；exactOptionalPropertyTypes 用条件展开）
+                ...(r.payload.action != null ? { action: r.payload.action } : {}),
+                ...(r.payload.targetId != null ? { targetId: r.payload.targetId } : {}),
               },
       })),
     }

@@ -52,11 +52,18 @@ export function MemoryCandidateDetailModal({
             </Button>
             <Button
               type="primary"
+              danger={candidate.payload?.action === 'delete'}
               disabled={candidate.payload == null}
               loading={busy}
               onClick={() => onConfirm(candidate.id, candidate.contentDigest)}
             >
-              确认保存
+              {candidate.payload?.action === 'update'
+                ? '确认更新'
+                : candidate.payload?.action === 'delete'
+                  ? '确认删除'
+                  : candidate.payload?.action === 'merge'
+                    ? '确认合并'
+                    : '确认保存'}
             </Button>
           </>
         )
@@ -67,6 +74,22 @@ export function MemoryCandidateDetailModal({
           <div className="mp_candidate_detail_tags">
             <Tag size="middle">{candidate.scope}</Tag>
             {candidate.payload != null && <Tag size="middle">{candidate.payload.type}</Tag>}
+            {/* 【P2-A】动作分化：冲突写入候选醒目标注将执行的动作 */}
+            {candidate.payload?.action === 'update' && (
+              <Tag size="middle" color="orange">
+                更新提议
+              </Tag>
+            )}
+            {candidate.payload?.action === 'delete' && (
+              <Tag size="middle" color="red">
+                删除提议
+              </Tag>
+            )}
+            {candidate.payload?.action === 'merge' && (
+              <Tag size="middle" color="purple">
+                合并提议
+              </Tag>
+            )}
             {expired && (
               <Tag size="middle" color="red">
                 已过期

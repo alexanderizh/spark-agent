@@ -22,12 +22,14 @@ import type {
   MemoryCandidateRow,
   MemoryCandidateRepository,
   MemoryEntityRepository,
+  MemoryEntryRow,
   MemoryRepository,
   MemoryRevisionRepository,
 } from '@spark/storage'
 import { hashCandidateContent, normalizeBodyForGuard } from '@spark/storage'
 import { MemoryCommitService } from './memory-commit.service.js'
 import type { CommitWriteResult } from './memory-commit.service.js'
+import { executeMemoryMerge } from './memory-merge-executor.js'
 import { isMemorySensitive } from './sanitizer.js'
 import type { MemoryStoreService } from './memory-store.service.js'
 
@@ -45,6 +47,13 @@ export type ConfirmFailure =
   | 'sensitive_content'
   | 'name_collision'
   | 'commit_failed'
+  /** 【P2-A】update 确认时 commitWrite 版本失配（目标被并发更新，可重试） */
+  | 'version_conflict'
+  /**
+   * 【P2-A】枚举预留；P2-B 起 merge 已实现真实路由（confirmMerge），confirm
+   * 不再产生该原因（保留枚举兼容既有消费方 / UI 映射）
+   */
+  | 'unsupported_action'
 
 export type CandidateConfirmResult =
   | { ok: true; candidate: MemoryCandidateRow; entryId: string }
@@ -135,12 +144,33 @@ export class MemoryCandidateService {
       }
     }
 
+    // 【P2-A/P2-B】按 payload.action 路由：缺省 create 走既有晋级新建；
+    // update/delete/merge 为冲突性写入的确认执行（对 targetId 指向的既有
+    // 条目改写 / 合并，见下方分发）。
+    const action = payloadPre.action ?? 'create'
+
     // 【审查修复 F2】崩溃残留恢复：confirm 状态迁移成功但条目 attach 前进程
     // 中断（或 attachSafely 两次重试均失败），行停在 confirmed + entry_id=NULL。
     // 重试会在下方 repo.confirm 处被 not_pending 挡回（旧版自愈分支不可达）——
     // 这里先识别该悬状态：同名有效条目内容确属本候选 → 补 attach 收尾；
     // 不匹配/不存在 → 回滚 pending 走正常重试（届时撞名走 name_collision）。
     if (rowPre.status === 'confirmed' && rowPre.entry_id == null) {
+      // 【P2-A/P2-B】update/delete/merge 悬状态不按晋级产物匹配恢复：执行
+      // 本身幂等（update 重读目标当前版本 CAS / delete 失效幂等 / merge 重读
+      // keep+drops 现势执行），回滚 pending 让用户重试即可安全收敛，不会错绑
+      // 无关条目。
+      if (action !== 'create') {
+        const reverted = this.candidateRepo.revertToPendingIfUnattached(candidateId)
+        log.warn(
+          `candidate ${action} 确认中断残留，回滚待确认：id=${candidateId}` +
+            `${reverted ? '' : '（回滚未生效，请检查行状态）'}`,
+        )
+        return {
+          ok: false,
+          reason: 'not_pending',
+          message: `确认中断${reverted ? '，候选已恢复为待确认，可重试' : ''}。`,
+        }
+      }
       return await this.recoverDanglingConfirmed(candidateId, rowPre, payloadPre)
     }
 
@@ -148,7 +178,10 @@ export class MemoryCandidateService {
     // 建立同名有效条目（自动抽取/手工创建/同步导入）。先检出并给出可区分的
     // name_collision（不迁移状态）——不能等到 commitWrite 撞唯一索引后再
     // "自愈"，那会把用户确认的候选正文静默替换为无关同名条目（错绑）。
-    if (rowPre.status === 'pending') {
+    // 【P2-A】仅 create 需要预检：update 更新目标自身不构成撞名（候选名是
+    // 演化候选名，落库保留目标名），delete 的 findByName 命中即目标自身，
+    // 预检都会误拦。
+    if (rowPre.status === 'pending' && action === 'create') {
       const collision = this.memoryRepo.findByName(rowPre.scope, rowPre.scope_ref, payloadPre.name)
       if (collision != null) {
         return {
@@ -178,6 +211,32 @@ export class MemoryCandidateService {
     }
     const row = confirmed.candidate
     const payload = payloadPre
+
+    // 【P2-A/P2-B】冲突性写入的确认执行：对 payload.targetId 指向的既有条目
+    // 改写/合并（目标行在各自路由内重读；执行口径分别对齐 writer.updateEntry、
+    // lifecycle.retractEntry 与 consolidation.applyMerge）。缺 targetId（merge
+    // 还包括缺 sourceIds/dropIds）属于载荷残缺（写入侧总是成对写入），回滚
+    // pending 如实相告。
+    if (action === 'update' || action === 'delete' || action === 'merge') {
+      if (payload.targetId == null || (action === 'merge' && payload.sourceIds.length === 0)) {
+        const missing = payload.targetId == null ? '目标条目' : '合并来源条目'
+        const actionLabel = action === 'update' ? '更新' : action === 'delete' ? '删除' : '合并'
+        const reverted = this.candidateRepo.revertToPendingIfUnattached(candidateId)
+        log.warn(`candidate ${action} 缺少${missing}，拒绝执行：id=${candidateId}`)
+        return {
+          ok: false,
+          reason: 'payload_unreadable',
+          message: `候选缺少${missing}，无法执行${actionLabel}（可拒绝该条）${
+            reverted ? '；候选已恢复为待确认' : ''
+          }。`,
+        }
+      }
+      return action === 'update'
+        ? await this.confirmUpdate(candidateId, row, payload, payload.targetId)
+        : action === 'delete'
+          ? await this.confirmDelete(candidateId, row, payload, payload.targetId)
+          : await this.confirmMerge(candidateId, row, payload, payload.targetId)
+    }
 
     const body = buildPromotedBody(payload)
     // 【审查修复 F1】project scope 的正文文件在 workspace 目录下——按行 scope
@@ -286,6 +345,196 @@ export class MemoryCandidateService {
   }
 
   /**
+   * 【P2-A】冲突性 UPDATE 的确认执行：对 targetId 指向的既有条目做 CAS 更新，
+   * 口径对齐 writer.updateEntry —— 保留目标 name 与命中统计（preserveFrom），
+   * 正文用候选暂存的演化后正文，来源固定 consolidation（改写经用户确认）。
+   * 目标不存在/已归档 → not_found；版本失配（目标被并发更新）→ 透传
+   * version_conflict；失败均回滚 pending 可重试，不留"已确认但未执行"悬状态。
+   */
+  private async confirmUpdate(
+    candidateId: number,
+    row: MemoryCandidateRow,
+    payload: MemoryCandidatePayload,
+    targetId: string,
+  ): Promise<CandidateConfirmResult> {
+    const target = this.memoryRepo.getById(targetId)
+    if (target == null || target.archived === 1) {
+      const reverted = this.candidateRepo.revertToPendingIfUnattached(candidateId)
+      log.warn(
+        `candidate update 目标不存在或已归档：candidate=${candidateId} target=${targetId}` +
+          `${reverted ? '，已回滚为待确认（可拒绝处理）' : ''}`,
+      )
+      return {
+        ok: false,
+        reason: 'not_found',
+        message: `目标记忆不存在或已归档${reverted ? '，候选已恢复为待确认，可直接拒绝' : ''}。`,
+      }
+    }
+    const committed = await this.commitServiceFor(target.scope, target.scope_ref).commitWrite({
+      entryId: target.id,
+      expectedVersion: target.version,
+      scope: target.scope,
+      scopeRef: target.scope_ref,
+      type: payload.type,
+      name: target.name,
+      description: payload.description,
+      confidence: payload.confidence,
+      body: payload.body,
+      sourceSessionId: SOURCE_TAG,
+      authorRole: SOURCE_TAG,
+      extractionKind: SOURCE_TAG,
+      preserveFrom: target,
+    })
+    if (!committed.ok) {
+      const reverted = this.candidateRepo.revertToPendingIfUnattached(candidateId)
+      log.warn(
+        `candidate update commit failed (${committed.reason}): candidate=${candidateId} ` +
+          `target=${targetId}${reverted ? '，已回滚为待确认（可重试）' : ''}`,
+      )
+      return {
+        ok: false,
+        reason: committed.reason === 'version_conflict' ? 'version_conflict' : 'commit_failed',
+        message:
+          `更新写入失败（${committed.reason}）：${committed.message}` +
+          `${reverted ? '；候选已恢复为待确认，可重试' : ''}`,
+      }
+    }
+    await this.finishPromotion(candidateId, row, payload, target.id, 'updated')
+    return { ok: true, candidate: this.candidateRepo.getById(candidateId)!, entryId: target.id }
+  }
+
+  /**
+   * 【P2-A】冲突性 DELETE 的确认执行：标记 targetId 指向的既有条目失效
+   * （bi-temporal，不物理删除），口径对齐 lifecycle.retractEntry —— 当前版本
+   * 进 revision 历史（kind='retract'），FTS/索引随 update 事务清理，收尾复用
+   * finishPromotion（attach + 投影刷新）。目标已失效/归档视为幂等成功
+   * （删除语义已达成）。
+   */
+  private async confirmDelete(
+    candidateId: number,
+    row: MemoryCandidateRow,
+    payload: MemoryCandidatePayload,
+    targetId: string,
+  ): Promise<CandidateConfirmResult> {
+    const target = this.memoryRepo.getById(targetId)
+    if (target == null) {
+      const reverted = this.candidateRepo.revertToPendingIfUnattached(candidateId)
+      log.warn(
+        `candidate delete 目标不存在：candidate=${candidateId} target=${targetId}` +
+          `${reverted ? '，已回滚为待确认' : ''}`,
+      )
+      return {
+        ok: false,
+        reason: 'not_found',
+        message: `目标记忆不存在${reverted ? '，候选已恢复为待确认，可直接拒绝' : ''}。`,
+      }
+    }
+    if (target.invalid_at == null && target.archived === 0) {
+      let oldBody = ''
+      try {
+        // 守卫哈希同款规范化，revision 正文口径统一（与 retractEntry 一致）
+        oldBody = normalizeBodyForGuard(
+          await this.storeFor(target.scope, target.scope_ref).readFile(target.file_path),
+        )
+      } catch {
+        log.warn(`candidate delete: 正文读取失败（历史版本以空正文入档）：${target.file_path}`)
+      }
+      this.memoryRepo.update(targetId, { invalid_at: Date.now(), superseded_by: null }, undefined, {
+        oldBody,
+        kind: 'retract',
+        note: '候选确认删除',
+      })
+    }
+    await this.finishPromotion(candidateId, row, payload, target.id, 'deleted')
+    return { ok: true, candidate: this.candidateRepo.getById(candidateId)!, entryId: target.id }
+  }
+
+  /**
+   * 【P2-B】冲突性 MERGE 的确认执行：对 targetId（keep）执行候选暂存的合并 —
+   * 描述/正文用候选征集时的合并产物（确认绑定 content_digest，"展示什么就
+   * 存什么"），执行段与 consolidation.applyMerge 共用 executeMemoryMerge
+   * （commitWrite revisionKind='merge' + drops 失效指向 keep + 派生边）。
+   *
+   * 目标不存在/已归档 → not_found；keep 被并发修改 → version_conflict；失败
+   * 均回滚 pending 可重试，不留"已确认但未执行"悬状态。drops（sourceIds）
+   * 确认时逐个重读现势：部分失效 → 只合并仍有效的；全部失效/不存在 → 幂等
+   * 成功（合并语义已达成，keep 视为已合并直接收尾）。
+   */
+  private async confirmMerge(
+    candidateId: number,
+    row: MemoryCandidateRow,
+    payload: MemoryCandidatePayload,
+    targetId: string,
+  ): Promise<CandidateConfirmResult> {
+    const keep = this.memoryRepo.getById(targetId)
+    if (keep == null || keep.archived === 1) {
+      const reverted = this.candidateRepo.revertToPendingIfUnattached(candidateId)
+      log.warn(
+        `candidate merge 目标不存在或已归档：candidate=${candidateId} target=${targetId}` +
+          `${reverted ? '，已回滚为待确认（可拒绝处理）' : ''}`,
+      )
+      return {
+        ok: false,
+        reason: 'not_found',
+        message: `合并目标记忆不存在或已归档${reverted ? '，候选已恢复为待确认，可直接拒绝' : ''}。`,
+      }
+    }
+
+    // 重读 drops（sourceIds = dropIds）：只合并仍有效的（与 applyMerge 同过滤
+    // 口径：不存在/已失效/自引用跳过）；正文按守卫规范口径现读，随 supersede
+    // revision 入档
+    const drops: MemoryEntryRow[] = []
+    const dropBodies = new Map<string, string>()
+    for (const dropId of payload.sourceIds) {
+      const drop = this.memoryRepo.getById(dropId)
+      if (drop == null || drop.invalid_at != null || drop.id === keep.id) continue
+      drops.push(drop)
+      try {
+        dropBodies.set(
+          drop.id,
+          normalizeBodyForGuard(
+            await this.storeFor(drop.scope, drop.scope_ref).readFile(drop.file_path).catch(() => ''),
+          ),
+        )
+      } catch {
+        /* 读不到也继续（supersede 历史以空正文入档） */
+      }
+    }
+
+    if (drops.length > 0) {
+      const merged = await executeMemoryMerge({
+        keep,
+        drops,
+        mergedDescription: payload.description,
+        mergedBody: payload.body,
+        dropBodies,
+        commitService: this.commitServiceFor(keep.scope, keep.scope_ref),
+        memoryRepo: this.memoryRepo,
+        revisionRepo: this.revisionRepo,
+        note: '候选确认合并',
+      })
+      if (!merged.ok) {
+        const reverted = this.candidateRepo.revertToPendingIfUnattached(candidateId)
+        log.warn(
+          `candidate merge commit failed (${merged.reason}): candidate=${candidateId} ` +
+            `keep=${targetId}${reverted ? '，已回滚为待确认（可重试）' : ''}`,
+        )
+        return {
+          ok: false,
+          reason: merged.reason,
+          message:
+            `合并写入失败（${merged.reason}）：${merged.message}` +
+            `${reverted ? '；候选已恢复为待确认，可重试或拒绝' : ''}`,
+        }
+      }
+    }
+
+    // 全部 drop 已失效/不存在（drops.length === 0）→ 幂等成功：keep 视为已合并
+    await this.finishPromotion(candidateId, row, payload, keep.id, 'merged')
+    return { ok: true, candidate: this.candidateRepo.getById(candidateId)!, entryId: keep.id }
+  }
+
+  /**
    * 晋级收尾（confirm 成功路径与崩溃恢复共用）：attach → 派生边 → 实体 →
    * 投影刷新。全部幂等，可安全重复执行。
    */
@@ -294,19 +543,25 @@ export class MemoryCandidateService {
     row: MemoryCandidateRow,
     payload: MemoryCandidatePayload,
     entryId: string,
+    /** 收尾日志的动作标签（create=promoted / update / delete / merge；其余行为一致） */
+    logAction: 'promoted' | 'updated' | 'deleted' | 'merged' = 'promoted',
   ): Promise<void> {
     this.attachSafely(candidateId, entryId)
-    // 派生边：来源条目 → 晋级条目（elevate）—— H2 纠正影响传播可沿边追溯
-    for (const sourceId of payload.sourceIds) {
-      try {
-        if (this.memoryRepo.getById(sourceId) != null) {
-          this.revisionRepo?.insertDerivation(sourceId, entryId, 'elevate')
+    // 派生边：来源条目 → 晋级条目（elevate）—— H2 纠正影响传播可沿边追溯。
+    // 【P2-B】merge 候选的 sourceIds 是合并依据（drop → keep），派生边已由
+    // executeMemoryMerge 以 kind='merge' 记录，不在此重复记 elevate 边。
+    if ((payload.action ?? 'create') !== 'merge') {
+      for (const sourceId of payload.sourceIds) {
+        try {
+          if (this.memoryRepo.getById(sourceId) != null) {
+            this.revisionRepo?.insertDerivation(sourceId, entryId, 'elevate')
+          }
+        } catch (err) {
+          log.warn(
+            `derivation edge insert failed (non-fatal): ${sourceId} → ${entryId}: ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          )
         }
-      } catch (err) {
-        log.warn(
-          `derivation edge insert failed (non-fatal): ${sourceId} → ${entryId}: ` +
-            `${err instanceof Error ? err.message : String(err)}`,
-        )
       }
     }
     // 实体落库（ELEVATE 抽取结果随确认生效）
@@ -321,7 +576,7 @@ export class MemoryCandidateService {
     }
     await this.refreshIndex(row.scope, row.scope_ref)
     log.info(
-      `candidate promoted: id=${candidateId} → entry=${entryId} ` +
+      `candidate ${logAction}: id=${candidateId} → entry=${entryId} ` +
         `(${row.scope}/${row.scope_ref ?? '∅'} "${payload.name}")`,
     )
   }
@@ -347,7 +602,7 @@ export class MemoryCandidateService {
     const expected = hashCandidateContent(
       payload.name,
       payload.description,
-      normalizeBodyForGuard(buildPromotedBody(payload)),
+      normalizeBodyForGuard(buildConfirmedBodyForCurrency(payload)),
     )
     const actual = hashCandidateContent(entry.name, entry.description, fileBody)
     return expected === actual
@@ -452,4 +707,14 @@ export class MemoryCandidateService {
 /** 晋级落库的规范正文：候选原文 + 升华来源段（confirm 与确认货币性校验共用口径） */
 function buildPromotedBody(payload: MemoryCandidatePayload): string {
   return `${payload.body}\n\n## 升华来源\n${payload.sourceIds.map((id) => `- [${id}]`).join('\n')}`
+}
+
+/**
+ * 确认货币性比对的落库口径：create 晋级正文带升华来源段（buildPromotedBody）；
+ * 【P2-A/P2-B】update/merge 按候选暂存正文原样落库（confirmUpdate/confirmMerge
+ * 不追加来源段），非 create 一律按 payload.body 比对 —— 否则合并/更新确认后
+ * isConfirmationCurrent 会立即误报"确认已过时"。
+ */
+function buildConfirmedBodyForCurrency(payload: MemoryCandidatePayload): string {
+  return (payload.action ?? 'create') === 'create' ? buildPromotedBody(payload) : payload.body
 }

@@ -22,6 +22,7 @@ import { MEMORY_PENDING_CHANGED_EVENT } from '../hooks/useMemoryPendingCount'
 import { MemoryCandidateDetailModal } from './MemoryCandidateDetailModal'
 import type {
   MemoryEntry,
+  MemoryHistoryResponse,
   MemoryScope,
   MemoryType,
   ProviderProfile,
@@ -75,6 +76,14 @@ function memoryEvidenceState(entry: {
   }
 }
 
+/** 【P0.1】authorRole → 来源短标签（列表行灰阶标签用）；未知角色回退显示原值 */
+const AUTHOR_ROLE_SHORT: Record<string, string> = {
+  manual_user: '手动',
+  host_agent: '对话',
+  consolidation: '整合',
+  sync_import: '导入',
+}
+
 export function MemoryPanel() {
   const { invoke: listMemory } = useIpcInvoke('memory:list')
   const { invoke: listAgents } = useIpcInvoke('agent:list')
@@ -103,7 +112,9 @@ export function MemoryPanel() {
   const [scope, setScope] = useState<ScopeFilter>('user')
   const [scopeRef, setScopeRef] = useState<string>('')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
-  const [includeInvalid, setIncludeInvalid] = useState(false)
+  // 【P1-⑥】三态视图：仅有效（默认）/ 含失效 / 已归档。
+  // 后端 includeArchived=true 是「包含归档」而非「只看归档」，归档视图需客户端过滤
+  const [viewMode, setViewMode] = useState<'active' | 'withInvalid' | 'archived'>('active')
   const [entries, setEntries] = useState<MemoryEntry[]>([])
   const [loading, setLoading] = useState(false)
   // 前端文本搜索（按 name/description 模糊匹配）
@@ -126,12 +137,14 @@ export function MemoryPanel() {
     [agents],
   )
   const filteredEntries = useMemo(() => {
+    // 归档视图只显示归档条目（后端 includeArchived 是包含语义，见 viewMode 注释）
+    const base = viewMode === 'archived' ? entries.filter((e) => e.archived) : entries
     const q = searchText.trim().toLowerCase()
-    if (q === '') return entries
-    return entries.filter(
+    if (q === '') return base
+    return base.filter(
       (e) => e.name.toLowerCase().includes(q) || e.description.toLowerCase().includes(q),
     )
-  }, [entries, searchText])
+  }, [entries, searchText, viewMode])
   const [detailId, setDetailId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -139,6 +152,8 @@ export function MemoryPanel() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const { invoke: deleteMemory } = useIpcInvoke('memory:delete')
   const { invoke: archiveMemory } = useIpcInvoke('memory:archive')
+  // 【P1-⑥】恢复归档（主进程直连 repo，幂等：非归档条目重放也返回 complete）
+  const { invoke: unarchiveMemory } = useIpcInvoke('memory:unarchive')
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -162,7 +177,7 @@ export function MemoryPanel() {
   // 切 scope/过滤维度时清空选择，避免跨批次误操作
   useEffect(() => {
     clearSelection()
-  }, [scope, scopeRef, typeFilter, includeInvalid, clearSelection])
+  }, [scope, scopeRef, typeFilter, viewMode, clearSelection])
   const batchDelete = async () => {
     const ids = [...selectedIds]
     Modal.confirm({
@@ -195,21 +210,47 @@ export function MemoryPanel() {
       },
     })
   }
-  const batchArchive = async () => {
+  // 【P0.4】批量归档对齐删除先例：Modal.confirm 二次确认（归档可恢复，文案弱于删除）
+  const batchArchive = () => {
     const ids = [...selectedIds]
+    Modal.confirm({
+      title: `批量归档 ${ids.length} 条记忆？`,
+      content: '归档后将从列表移除，可在已归档视图中恢复。',
+      onOk: async () => {
+        let ok = 0
+        let blocked = 0
+        for (const id of ids) {
+          try {
+            const res = await archiveMemory({ id })
+            if (res?.status === 'blocked_locally') blocked++
+            else ok++
+          } catch {
+            /* 单条失败不阻断 */
+          }
+        }
+        if (blocked === 0) message.success(`已归档 ${ok}/${ids.length} 条`)
+        else message.warning(`已归档 ${ok} 条，${blocked} 条清理未完成（详见日志）`)
+        clearSelection()
+        void refreshFn()
+      },
+    })
+  }
+
+  // 【P1-⑥】批量恢复（归档视图）：与 batchDelete 同构；unarchive 幂等（非归档重放也成功）
+  const batchRestore = async () => {
+    const ids = [...selectedIds].filter((id) => entries.find((e) => e.id === id)?.archived)
+    if (ids.length === 0) return
     let ok = 0
-    let blocked = 0
     for (const id of ids) {
       try {
-        const res = await archiveMemory({ id })
-        if (res?.status === 'blocked_locally') blocked++
-        else ok++
+        const res = await unarchiveMemory({ id })
+        if (res?.ok) ok++
       } catch {
         /* 单条失败不阻断 */
       }
     }
-    if (blocked === 0) message.success(`已归档 ${ok}/${ids.length} 条`)
-    else message.warning(`已归档 ${ok} 条，${blocked} 条清理未完成（详见日志）`)
+    if (ok === ids.length) message.success(`已恢复 ${ok}/${ids.length} 条`)
+    else message.warning(`已恢复 ${ok}/${ids.length} 条（详见日志）`)
     clearSelection()
     void refreshFn()
   }
@@ -222,7 +263,10 @@ export function MemoryPanel() {
         scope,
         scopeRef: ref,
         ...(typeFilter !== 'all' ? { type: typeFilter } : {}),
-        includeInvalid,
+        // 归档视图：includeArchived（包含语义）+ includeInvalid（归档条目可能已失效），
+        // 客户端再过滤只留 archived；含失效视图同旧行为
+        ...(viewMode === 'archived' ? { includeArchived: true, includeInvalid: true } : {}),
+        ...(viewMode === 'withInvalid' ? { includeInvalid: true } : {}),
       })
       setEntries(res?.entries ?? [])
     } catch (err) {
@@ -230,9 +274,35 @@ export function MemoryPanel() {
     } finally {
       setLoading(false)
     }
-  }, [listMemory, scope, scopeRef, typeFilter, includeInvalid])
+  }, [listMemory, scope, scopeRef, typeFilter, viewMode])
 
   const refreshFn = useRefreshable(refresh)
+
+  // 【P0.3】supersededBy 跳转：关闭详情抽屉露出列表 → 目标行短暂高亮 + 滚动居中；
+  // 目标不在当前过滤列表时给提示态（不静默失败）
+  const [jumpTargetId, setJumpTargetId] = useState<string | null>(null)
+  useEffect(() => {
+    if (jumpTargetId == null) return undefined
+    const t = setTimeout(() => setJumpTargetId(null), 3000)
+    return () => clearTimeout(t)
+  }, [jumpTargetId])
+  const jumpToMemory = useCallback(
+    (targetId: string) => {
+      if (!entries.some((e) => e.id === targetId)) {
+        message.info('目标记忆不在当前列表（可能属于其他层级/类型或已归档），请调整筛选后查看')
+        return
+      }
+      setDetailId(null)
+      setJumpTargetId(targetId)
+      // 行已在列表渲染，rAF 等 Drawer 关闭动效启动后滚动不影响目标存在性
+      requestAnimationFrame(() => {
+        document
+          .getElementById(`mp-row-${targetId}`)
+          ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      })
+    },
+    [entries],
+  )
 
   // S2.3 候选确认区：推断行为规则晋级须真实用户确认（N12 —— 模型自称确认不可达）
   const { invoke: listCandidates } = useIpcInvoke('memory:candidate:list')
@@ -253,6 +323,9 @@ export function MemoryPanel() {
         body: string
         confidence: number
         sourceIds: string[]
+        /** 【P2-A】缺省 create；update/delete=冲突写入待确认；merge=整合合并待确认 */
+        action?: 'create' | 'update' | 'delete' | 'merge'
+        targetId?: string
       } | null
     }>
   >([])
@@ -408,11 +481,16 @@ export function MemoryPanel() {
           allowClear
         />
         <Segmented
-          value={includeInvalid ? 'with-invalid' : 'active-only'}
-          onChange={(v) => setIncludeInvalid(v === 'with-invalid')}
+          value={viewMode === 'archived' ? 'archived-only' : viewMode === 'withInvalid' ? 'with-invalid' : 'active-only'}
+          onChange={(v) =>
+            setViewMode(
+              v === 'archived-only' ? 'archived' : v === 'with-invalid' ? 'withInvalid' : 'active',
+            )
+          }
           options={[
             { label: '仅有效', value: 'active-only' },
             { label: '含失效', value: 'with-invalid' },
+            { label: '已归档', value: 'archived-only' },
           ]}
         />
         <LobeInput
@@ -431,7 +509,7 @@ export function MemoryPanel() {
           <div className="mp_candidate_header">
             <span className="mp_candidate_title">待确认提议</span>
             <span className="mp_candidate_hint">
-              整合升华的行为规则候选 · 确认后才会保存为正式记忆（{candidates.length} 条待处理）
+              整合升华与冲突写入的待确认队列 · 确认后才会生效（{candidates.length} 条待处理）
             </span>
           </div>
           {candidates.map((c) => (
@@ -441,6 +519,22 @@ export function MemoryPanel() {
                   {c.payload?.name ?? '（内容不可解析）'}
                   <Tag size="middle">{c.scope}</Tag>
                   {c.payload != null && <Tag size="middle">{c.payload.type}</Tag>}
+                  {/* 【P2-A】动作分化标签：冲突写入产生的 update/delete 候选醒目区分 */}
+                  {c.payload?.action === 'update' && (
+                    <Tag size="middle" color="orange">
+                      更新提议
+                    </Tag>
+                  )}
+                  {c.payload?.action === 'delete' && (
+                    <Tag size="middle" color="red">
+                      删除提议
+                    </Tag>
+                  )}
+                  {c.payload?.action === 'merge' && (
+                    <Tag size="middle" color="purple">
+                      合并提议
+                    </Tag>
+                  )}
                 </div>
                 <div className="mp_candidate_desc">
                   {c.payload?.description ?? '该候选内容无法解析，建议忽略'}
@@ -456,6 +550,7 @@ export function MemoryPanel() {
                 <Button
                   size="middle"
                   type="primary"
+                  danger={c.payload?.action === 'delete'}
                   disabled={c.payload == null}
                   loading={candidateBusy === c.id}
                   onClick={(ev) => {
@@ -463,7 +558,13 @@ export function MemoryPanel() {
                     void onConfirmCandidate(c.id, c.contentDigest)
                   }}
                 >
-                  确认保存
+                  {c.payload?.action === 'update'
+                    ? '确认更新'
+                    : c.payload?.action === 'delete'
+                      ? '确认删除'
+                      : c.payload?.action === 'merge'
+                        ? '确认合并'
+                        : '确认保存'}
                 </Button>
                 <Button
                   size="middle"
@@ -484,9 +585,16 @@ export function MemoryPanel() {
       {selectedIds.size > 0 && (
         <div className="mp_batch_bar">
           <span>已选 {selectedIds.size} 条</span>
-          <Button size="middle" onClick={batchArchive}>
-            批量归档
-          </Button>
+          {/* 归档视图：归档无意义改为批量恢复；删除对归档条目同样合法（清理场景） */}
+          {viewMode === 'archived' ? (
+            <Button size="middle" onClick={batchRestore}>
+              批量恢复
+            </Button>
+          ) : (
+            <Button size="middle" onClick={batchArchive}>
+              批量归档
+            </Button>
+          )}
           <Button size="middle" danger onClick={batchDelete}>
             批量删除
           </Button>
@@ -502,7 +610,17 @@ export function MemoryPanel() {
             <Spin />
           </div>
         ) : filteredEntries.length === 0 ? (
-          <Empty description={searchText.trim() ? '无匹配记忆' : '暂无记忆'} />
+          <Empty
+            description={
+              viewMode === 'archived'
+                ? searchText.trim()
+                  ? '无匹配的归档记忆'
+                  : '暂无归档记忆'
+                : searchText.trim()
+                  ? '无匹配记忆'
+                  : '暂无记忆'
+            }
+          />
         ) : (
           <>
             <div className="mp_list_header">
@@ -515,8 +633,10 @@ export function MemoryPanel() {
                 key={e.id}
                 entry={e}
                 selected={selectedIds.has(e.id)}
+                highlighted={jumpTargetId === e.id}
                 onToggleSelect={() => toggleSelect(e.id)}
                 onOpen={() => setDetailId(e.id)}
+                onRestored={refreshFn}
               />
             ))}
           </>
@@ -545,6 +665,7 @@ export function MemoryPanel() {
               void refreshFn()
             }}
             onSaved={refreshFn}
+            onJumpToSuperseded={jumpToMemory}
           />
         )}
       </Drawer>
@@ -593,21 +714,57 @@ function typeColor(type: MemoryType): string {
 function MemoryRow({
   entry: e,
   selected,
+  highlighted,
   onToggleSelect,
   onOpen,
+  onRestored,
 }: {
   entry: MemoryEntry
   selected: boolean
+  highlighted: boolean
   onToggleSelect: () => void
   onOpen: () => void
+  /** 【P1-⑥】归档行恢复成功后通知父组件刷新列表 */
+  onRestored: () => void
 }) {
   const invalid = e.invalidAt != null
-  const isConsolidation = e.sourceSessionId === 'consolidation'
+  // 【P1-⑥】行级恢复：仅归档条目显示；幂等（非归档重放也成功），失败静默降级到提示
+  const { invoke: unarchiveMemory } = useIpcInvoke('memory:unarchive')
+  const [restoring, setRestoring] = useState(false)
+  const restore = async () => {
+    setRestoring(true)
+    try {
+      const res = await unarchiveMemory({ id: e.id })
+      if (res?.ok) {
+        message.success('已恢复（回到有效视图可见）')
+        onRestored()
+      } else {
+        message.warning(`恢复失败：${res?.error ?? res?.status ?? '未知原因'}`)
+      }
+    } catch (err) {
+      message.error(`恢复失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setRestoring(false)
+    }
+  }
+  // 【P0.1】legacy 回退：旧数据无 authorRole，沿用 sourceSessionId==='consolidation' 识别整合
+  const authorRole = e.authorRole ?? (e.sourceSessionId === 'consolidation' ? 'consolidation' : null)
+  const evidenceState = memoryEvidenceState({
+    archived: e.archived,
+    invalidAt: e.invalidAt,
+    // exactOptionalPropertyTypes：optional 属性直传会带 undefined，归一为 null
+    evidenceStatus: e.evidenceStatus ?? null,
+    authorRole,
+  })
+  const roleShort = authorRole != null ? (AUTHOR_ROLE_SHORT[authorRole] ?? authorRole) : null
   // scopeRef 截断显示（project/agent scope 列出全部时，让用户能区分各条属于哪个项目/agent）
   const refTail = e.scopeRef != null && e.scopeRef.length > 8 ? e.scopeRef.slice(-8) : e.scopeRef
   return (
     <div
-      className={`mp_row${invalid ? ' mp_row_invalid' : ''}${selected ? ' mp_row_selected' : ''}`}
+      id={`mp-row-${e.id}`}
+      className={`mp_row${invalid ? ' mp_row_invalid' : ''}${selected ? ' mp_row_selected' : ''}${
+        highlighted ? ' mp_row_highlight' : ''
+      }`}
     >
       <Checkbox
         checked={selected}
@@ -630,9 +787,22 @@ function MemoryRow({
               失效
             </Tag>
           )}
-          {isConsolidation && (
-            <Tag size="middle" color="purple">
-              整合
+          {/* 【P0.1】证据状态 + 来源角色短标签：灰阶紧凑、原生 title 提示、过长截断；
+              失效/归档已有专属标签，状态标签不重复显示（原紫色「整合」标签并入灰阶体系） */}
+          {!invalid && !e.archived && (
+            <Tag
+              size="middle"
+              className="mp_row_tag"
+              title={`证据状态：${evidenceState}（来源角色：${authorRole ?? '未知'} · 证据：${
+                e.evidenceStatus ?? '默认可用'
+              }）`}
+            >
+              {evidenceState}
+            </Tag>
+          )}
+          {roleShort != null && (
+            <Tag size="middle" className="mp_row_tag" title={`来源角色：${authorRole}`}>
+              {roleShort}
             </Tag>
           )}
           {e.archived && <Tag size="middle">归档</Tag>}
@@ -642,6 +812,18 @@ function MemoryRow({
       <div className="mp_row_meta">
         {/* <span>命中 {e.hitCount}</span> */}
         <span>{new Date(e.updatedAt).toLocaleDateString()}</span>
+        {e.archived && (
+          <Button
+            size="small"
+            loading={restoring}
+            onClick={(ev) => {
+              ev.stopPropagation()
+              void restore()
+            }}
+          >
+            恢复
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -651,15 +833,19 @@ function MemoryDetail({
   id,
   onSaved,
   onArchivedOrDeleted,
+  onJumpToSuperseded,
 }: {
   id: string
   onSaved: () => void
   onArchivedOrDeleted: () => void
+  onJumpToSuperseded: (targetId: string) => void
 }) {
   const { invoke: getMemory } = useIpcInvoke('memory:get')
   const { invoke: updateMemory } = useIpcInvoke('memory:update')
   const { invoke: archiveMemory } = useIpcInvoke('memory:archive')
   const { invoke: deleteMemory } = useIpcInvoke('memory:delete')
+  // 【P1-⑤】撤回作废：停止作为当前事实但保留历史，是删除之外的安全一档
+  const { invoke: retractMemory } = useIpcInvoke('memory:retract')
   const [entry, setEntry] = useState<MemoryEntry | null>(null)
   const [body, setBody] = useState('')
   const [desc, setDesc] = useState('')
@@ -697,6 +883,16 @@ function MemoryDetail({
       </div>
     )
 
+  // 【P0.2】来源可读化：会话 ID 截前 8 位；整合/手工保留语义标签（title 提供完整原始值）
+  const sourceLabel =
+    entry.sourceSessionId == null
+      ? '手工/对话'
+      : entry.sourceSessionId === 'consolidation'
+        ? '整合生成'
+        : `会话 ${entry.sourceSessionId.slice(0, 8)}…`
+  // 【P0.3】提局部 const：supersededBy 的 TS 窄化在闭包内保留（属性访问不保留）
+  const supersededBy = entry.supersededBy
+
   const save = async () => {
     setSaving(true)
     try {
@@ -730,7 +926,20 @@ function MemoryDetail({
       {entry.invalidAt != null && (
         <div className="mp_warn">
           此记忆已于 {new Date(entry.invalidAt).toLocaleString()} 失效
-          {entry.supersededBy != null ? `，已被 ${entry.supersededBy} 取代` : ''}。仅作历史参考。
+          {supersededBy != null ? (
+            <>
+              ，已被{' '}
+              <span
+                className="mp_jump_link"
+                title={`跳转到取代它的记忆（${supersededBy}）`}
+                onClick={() => onJumpToSuperseded(supersededBy)}
+              >
+                {supersededBy.slice(0, 8)}…
+              </span>{' '}
+              取代
+            </>
+          ) : null}
+          。仅作历史参考。
         </div>
       )}
       <div className="mp_field">
@@ -766,32 +975,77 @@ function MemoryDetail({
           </span>
         )}
         <span>命中: {entry.hitCount}</span>
-        <span>来源: {entry.sourceSessionId ?? '手工/对话'}</span>
+        <span title={entry.sourceSessionId ?? undefined}>来源: {sourceLabel}</span>
+        {/* 【P2-D】抽取方式/模型明细（migration 107 归因；手动/整合写入为 null 不显示） */}
+        {(entry.extractionKind != null || entry.extractionModel != null) && (
+          <span>
+            抽取: {entry.extractionKind ?? '—'}
+            {entry.extractionModel != null ? ` · ${entry.extractionModel}` : ''}
+          </span>
+        )}
         <span>创建: {new Date(entry.createdAt).toLocaleString()}</span>
         <span>更新: {new Date(entry.updatedAt).toLocaleString()}</span>
       </div>
+      {/* 【P1-④】历史版本区：懒加载（点击才拉 memory:history），不增加详情打开成本 */}
+      <MemoryHistorySection id={id} onJumpToMemory={onJumpToSuperseded} />
       <div className="mp_detail_actions">
         <Button type="primary" onClick={save} loading={saving}>
           保存
         </Button>
+        {/* 【P0.4】归档也走二次确认（对齐删除先例）；归档可恢复，文案弱于删除的 danger 措辞 */}
         <Button
-          onClick={async () => {
-            try {
-              // S1B.4：返回 status（complete/blocked_locally/not_found）
-              const res = await archiveMemory({ id })
-              if (res?.status === 'blocked_locally') {
-                message.warning('已归档，但部分清理未完成（磁盘文件或索引待重试，详见日志）')
-              } else {
-                message.success('已归档')
-              }
-              onArchivedOrDeleted()
-            } catch (err) {
-              message.error(`归档失败：${err instanceof Error ? err.message : String(err)}`)
-            }
-          }}
+          onClick={() =>
+            Modal.confirm({
+              title: '归档该记忆？',
+              content: '归档后将从列表移除，可在已归档视图中恢复。',
+              onOk: async () => {
+                try {
+                  // S1B.4：返回 status（complete/blocked_locally/not_found）
+                  const res = await archiveMemory({ id })
+                  if (res?.status === 'blocked_locally') {
+                    message.warning('已归档，但部分清理未完成（磁盘文件或索引待重试，详见日志）')
+                  } else {
+                    message.success('已归档')
+                  }
+                  onArchivedOrDeleted()
+                } catch (err) {
+                  message.error(`归档失败：${err instanceof Error ? err.message : String(err)}`)
+                }
+              },
+            })
+          }
         >
           归档
         </Button>
+        {/* 【P1-⑤】撤回作废：仅当前有效条目可撤回（已失效/已归档无此动作）。
+            撤回后 invalidAt 置位、不再参与检索，历史版本保留可查 —— 文案明确弱于删除 */}
+        {entry.invalidAt == null && !entry.archived && (
+          <Button
+            onClick={() =>
+              Modal.confirm({
+                title: '撤回该记忆？',
+                content:
+                  '撤回后停止作为当前事实（不再参与检索），但内容与历史版本保留，可在「含失效」视图中查看。比删除安全。',
+                onOk: async () => {
+                  try {
+                    const res = await retractMemory({ id })
+                    if (res?.ok) {
+                      message.success('已撤回（可在「含失效」视图中查看）')
+                      await load()
+                      onSaved()
+                    } else {
+                      message.warning(`撤回失败：${res?.error ?? res?.status ?? '未知原因'}`)
+                    }
+                  } catch (err) {
+                    message.error(`撤回失败：${err instanceof Error ? err.message : String(err)}`)
+                  }
+                },
+              })
+            }
+          >
+            撤回
+          </Button>
+        )}
         <Button
           danger
           onClick={() =>
@@ -821,6 +1075,193 @@ function MemoryDetail({
           删除
         </Button>
       </div>
+    </div>
+  )
+}
+
+/** 【P1-④】supersedeKind → 中文短标签（历史版本链的动作标注） */
+const SUPERSEDE_KIND_LABEL: Record<string, string> = {
+  update: '更新',
+  merge: '合并',
+  supersede: '替代',
+  retract: '撤回',
+}
+
+/** 单条历史版本：v{N} + 动作标签 + 时间 + name，点击展开 description/body/note */
+function MemoryRevisionItemRow({
+  rev,
+  expanded,
+  onToggle,
+  onJumpToMemory,
+}: {
+  rev: NonNullable<MemoryHistoryResponse['revisions']>[number]
+  expanded: boolean
+  onToggle: () => void
+  onJumpToMemory: (targetId: string) => void
+}) {
+  // 提局部 const：successorId 的 TS 窄化在 JSX 闭包内不保留（属性访问不保留），
+  // 与详情 supersededBy 跳转（P0.3）同款处理
+  const successorId = rev.successorId
+  return (
+    <div className={`mp_history_item${expanded ? ' mp_history_item_open' : ''}`}>
+      <div className="mp_history_item_head" onClick={onToggle}>
+        <span className="mp_history_version">v{rev.version}</span>
+        <Tag size="middle" className="mp_row_tag">
+          {SUPERSEDE_KIND_LABEL[rev.supersedeKind] ?? rev.supersedeKind}
+        </Tag>
+        <span className="mp_history_name" title={rev.description}>
+          {rev.name}
+        </span>
+        <span className="mp_history_time">{new Date(rev.supersededAt).toLocaleString()}</span>
+      </div>
+      {expanded && (
+        <div className="mp_history_body">
+          {rev.description !== '' && <div className="mp_history_desc">{rev.description}</div>}
+          {rev.body !== '' && (
+            <div className="mp_history_text" title={rev.body}>
+              {rev.body}
+            </div>
+          )}
+          {rev.note != null && rev.note !== '' && (
+            <div className="mp_history_note">备注：{rev.note}</div>
+          )}
+          {successorId != null && (
+            <div className="mp_history_note">
+              后继：
+              <span
+                className="mp_jump_link"
+                title={`跳转到取代它的记忆（${successorId}）`}
+                onClick={() => onJumpToMemory(successorId)}
+              >
+                {successorId.slice(0, 8)}…
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 【P1-④】历史版本区（memory:history）：版本链（旧 → 新，不含当前版）+ 派生关系 +
+ * coverage 说明（migration 108 之前的历史不存在，如实展示不补造）。懒加载：首次点击才拉取。
+ */
+function MemoryHistorySection({
+  id,
+  onJumpToMemory,
+}: {
+  id: string
+  onJumpToMemory: (targetId: string) => void
+}) {
+  const { invoke: getHistory } = useIpcInvoke('memory:history')
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [data, setData] = useState<MemoryHistoryResponse | null>(null)
+  const [expandedVersion, setExpandedVersion] = useState<number | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const res = await getHistory({ id })
+      if (res?.ok) setData(res)
+      else setLoadError(res?.error ?? '加载失败')
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [getHistory, id])
+
+  const toggleOpen = () => {
+    const next = !open
+    setOpen(next)
+    // 首次展开才拉取；再次展开复用已加载数据（详情抽屉内操作后重新打开会重挂载）
+    if (next && data == null && loadError == null) void load()
+  }
+
+  if (!open) {
+    return (
+      <div className="mp_history_section">
+        <Button size="small" onClick={toggleOpen}>
+          查看历史版本
+          {data?.entry != null ? `（当前 v${data.entry.currentVersion}）` : ''}
+        </Button>
+      </div>
+    )
+  }
+
+  const revisions = data?.revisions ?? []
+  // 展示顺序：新 → 旧（最近的变更在最上，与"更新于"直觉一致）
+  const ordered = [...revisions].reverse()
+  const derivFrom = data?.derivationsFrom ?? []
+  const derivOf = data?.derivationsOf ?? []
+
+  return (
+    <div className="mp_history_section mp_history_open">
+      <div className="mp_history_header">
+        <span className="mp_history_title">
+          历史版本{data?.entry != null ? `（当前 v${data.entry.currentVersion}）` : ''}
+        </span>
+        <Button size="small" type="link" onClick={toggleOpen}>
+          收起
+        </Button>
+      </div>
+      {loading ? (
+        <div className="mp_list_loading">
+          <Spin />
+        </div>
+      ) : loadError != null ? (
+        <div className="mp_history_coverage">
+          历史加载失败：{loadError}
+          <Button size="small" type="link" onClick={() => void load()}>
+            重试
+          </Button>
+        </div>
+      ) : (
+        <>
+          {ordered.length === 0 ? (
+            <div className="mp_history_coverage">
+              暂无历史版本（{data?.coverage?.complete === false ? '此条目的变更记录早于历史功能上线，早期轨迹不可追溯' : '尚未发生过修改'}）
+            </div>
+          ) : (
+            <div className="mp_history_list">
+              {ordered.map((rev) => (
+                <MemoryRevisionItemRow
+                  key={rev.version}
+                  rev={rev}
+                  expanded={expandedVersion === rev.version}
+                  onToggle={() =>
+                    setExpandedVersion((cur) => (cur === rev.version ? null : rev.version))
+                  }
+                  onJumpToMemory={onJumpToMemory}
+                />
+              ))}
+            </div>
+          )}
+          {derivFrom.length > 0 && (
+            <div className="mp_history_deriv">
+              派生出 {derivFrom.length} 条下游记忆（撤回来源时的待复核范围）
+            </div>
+          )}
+          {derivOf.length > 0 && (
+            <div className="mp_history_deriv">
+              由 {derivOf.length} 条既有记忆派生而来
+              {derivOf.length <= 3 && (
+                <span className="mp_history_deriv_ids">
+                  {' '}
+                  （{derivOf.map((d) => `${d.sourceId.slice(0, 8)}…`).join('、')}）
+                </span>
+              )}
+            </div>
+          )}
+          {data?.coverage != null && data.coverage.complete === false && (
+            <div className="mp_history_coverage">{data.coverage.note}</div>
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -1217,6 +1658,15 @@ function MemorySettings() {
           <Switch
             checked={getBool('consolidationEnabled', true)}
             onChange={(v) => set('consolidationEnabled', v)}
+          />
+        </div>
+        {/* 【P2-B】合并需确认：开启后整合 MERGE 不直接落库，先进候选区等用户确认
+            （与 ELEVATE 晋级同路径；默认关闭 = 保持全自动合并的现行为） */}
+        <div className="mp_settings_row">
+          <span>合并需确认（MERGE 转候选）</span>
+          <Switch
+            checked={getBool('consolidationMergeRequiresConfirm', false)}
+            onChange={(v) => set('consolidationMergeRequiresConfirm', v)}
           />
         </div>
         <div className="mp_field">
