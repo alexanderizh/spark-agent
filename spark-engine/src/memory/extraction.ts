@@ -26,6 +26,8 @@ Extract only:
 - User preferences and working style (scope "user", type "user" or "feedback")
 - Project facts: build/test commands, architecture decisions, constraints, key file locations (scope "project", type "project" or "reference")
 
+A <recent_context> block (conversation from BEFORE this turn) may precede the <turn>. Use it ONLY to resolve references made by the current turn (e.g. "that approach we discussed earlier"). Never extract memories from <recent_context> alone — every candidate must be explicitly confirmed by the current turn. If a reference cannot be resolved from it, skip the candidate; do not guess.
+
 Do NOT extract:
 - Transient task state, in-progress work, or one-off instructions
 - Anything directly readable from the repository at any time
@@ -39,6 +41,12 @@ Return a JSON array with at most 3 items, each shaped exactly:
 /** Input is capped so extraction itself can never overflow the window. */
 const EXTRACTION_INPUT_TOKEN_CAP = 30_000
 const EXTRACTION_MAX_OUTPUT_TOKENS = 2_048
+/**
+ * Prior-turn reference context budget. The newest turn stays the only extraction
+ * source; earlier dialogue is included just so phrases like "that approach from
+ * earlier" can resolve. Bounded separately from the turn transcript.
+ */
+const RECENT_CONTEXT_TOKEN_BUDGET = 2_000
 
 export interface ExtractedMemory {
   readonly scope: 'user' | 'project'
@@ -109,13 +117,16 @@ export async function extractMemoriesFromTurn(
   if (events.length === 0) return []
   const transcript = renderTurnTranscript(events)
   if (transcript.trim() === '') return []
+  const priorContext = renderPriorTurnContext(options.events)
+  const recentContextBlock =
+    priorContext.trim() === '' ? '' : `<recent_context>\n${priorContext}\n</recent_context>\n\n`
 
   const request: LlmRequest = {
     system: [{ id: 'memory-extraction', stability: 'volatile', content: MEMORY_EXTRACTION_PROMPT }],
     messages: [
       {
         role: 'user',
-        content: `<turn>\n${transcript}\n</turn>\n\nExtract memories as a JSON array (max ${maxItems} items, [] if nothing qualifies).`,
+        content: `${recentContextBlock}<turn>\n${transcript}\n</turn>\n\nExtract memories as a JSON array (max ${maxItems} items, [] if nothing qualifies).`,
         sourceSeqs: [],
       },
     ],
@@ -139,6 +150,35 @@ function newestTurnEvents(events: readonly AgentEvent[]): readonly AgentEvent[] 
   const last = ranges.at(-1)
   if (last === undefined) return []
   return events.filter((event) => event.seq >= last.fromSeq && event.seq < last.toSeq)
+}
+
+/**
+ * Renders user/assistant text from every turn BEFORE the newest one — bounded,
+ * oldest parts trimmed first. Reference-resolution context only: the newest
+ * turn remains the sole extraction source (see MEMORY_EXTRACTION_PROMPT).
+ */
+function renderPriorTurnContext(events: readonly AgentEvent[]): string {
+  const ranges = turnRanges(events)
+  const newest = ranges.at(-1)
+  if (newest === undefined) return ''
+  const parts: string[] = []
+  for (const event of events) {
+    if (event.seq >= newest.fromSeq) continue
+    switch (event.type) {
+      case 'turn.started':
+        if (event.input.text) parts.push(`[user]\n${event.input.text}`)
+        break
+      case 'assistant.completed':
+        if (event.message.text) parts.push(`[assistant]\n${event.message.text}`)
+        break
+      default:
+        break
+    }
+  }
+  while (parts.length > 1 && estimateTokens(parts) > RECENT_CONTEXT_TOKEN_BUDGET) {
+    parts.shift()
+  }
+  return parts.join('\n\n')
 }
 
 const TOOL_RESULT_HEAD_CHARS = 400

@@ -160,20 +160,97 @@ describe('extractMemoriesFromTurn', () => {
 
     expect(extracted).toHaveLength(1)
     expect(extracted[0]?.name).toBe('verify')
-    // The extractor request must contain the newest turn's content and not
-    // the older turn's.
+    // The extractor request must contain the newest turn's content inside
+    // <turn>, with prior-turn dialogue available only as bounded
+    // <recent_context> for reference resolution.
     const extractorRequest = base.fixtures.model.requests[0]
-    const prompt = extractorRequest?.messages
-      .map((message) => (message.role === 'user' ? message.content : ''))
-      .join('\n')
+    const prompt =
+      (extractorRequest?.messages
+        .map((message) => (message.role === 'user' ? message.content : ''))
+        .join('\n') ?? '')
     expect(prompt).toContain('npm run verify')
-    expect(prompt).not.toContain('old answer')
+    expect(prompt).toContain('<recent_context>')
+    expect(prompt).toContain('old answer')
+    const turnBlock = prompt.slice(prompt.indexOf('<turn>'), prompt.indexOf('</turn>'))
+    expect(turnBlock).not.toContain('old answer')
   })
 
   it('returns no candidates when the turn has nothing to distill', async () => {
     const base = createDeterministicEnv([text('[]')])
     const extracted = await extractMemoriesFromTurn({ env: base, events: twoTurnHistory() })
     expect(extracted).toEqual([])
+  })
+
+  it('omits the recent_context block when there is no prior turn', async () => {
+    const base = createDeterministicEnv([text('[]')])
+    const events = twoTurnHistory().slice(3)
+    await extractMemoriesFromTurn({ env: base, events })
+
+    const prompt = base.fixtures.model.requests[0]?.messages
+      .map((message) => (message.role === 'user' ? message.content : ''))
+      .join('\n')
+    expect(prompt).not.toContain('<recent_context>')
+    expect(prompt).toContain('<turn>')
+  })
+
+  it('bounds prior-turn context by trimming the oldest parts first', async () => {
+    const base = createDeterministicEnv([text('[]')])
+    const events: AgentEvent[] = [twoTurnHistory()[0]!]
+    // Two bulky prior turns followed by the newest turn.
+    for (let i = 0; i < 2; i += 1) {
+      const bulky = ` bulky-prior-${i} `.repeat(600)
+      events.push(
+        event(
+          { type: 'turn.started', schemaVersion: 1, turnId: `p${i}`, input: { kind: 'text', text: bulky } },
+          events.length,
+        ),
+      )
+      events.push(
+        event(
+          {
+            type: 'assistant.completed',
+            schemaVersion: 1,
+            turnId: `p${i}`,
+            stepId: `ps${i}`,
+            message: { text: `answer-${i}`, toolCalls: [] },
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              reasoningTokens: 0,
+            },
+            llmMs: 1,
+            ttftMs: 1,
+          },
+          events.length,
+        ),
+      )
+    }
+    events.push(
+      event(
+        {
+          type: 'turn.started',
+          schemaVersion: 1,
+          turnId: 't9',
+          input: { kind: 'text', text: 'final turn' },
+        },
+        events.length,
+      ),
+    )
+    await extractMemoriesFromTurn({ env: base, events })
+
+    const prompt =
+      (base.fixtures.model.requests[0]?.messages
+        .map((message) => (message.role === 'user' ? message.content : ''))
+        .join('\n') ?? '')
+    const recentBlock = prompt.slice(
+      prompt.indexOf('<recent_context>'),
+      prompt.indexOf('</recent_context>'),
+    )
+    // The oldest bulky turn is trimmed; the newest prior answer survives.
+    expect(recentBlock).not.toContain('bulky-prior-0')
+    expect(recentBlock).toContain('answer-1')
   })
 })
 

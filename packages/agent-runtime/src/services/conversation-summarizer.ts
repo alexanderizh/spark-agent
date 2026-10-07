@@ -16,6 +16,20 @@ import {
 import { parseStoredCapsule } from './session-continuity-capsule.js'
 
 const MEMORY_EXTRACTION_CONTEXT_MAX_TOKENS = 1_000
+/**
+ * 本轮出现后向指代（"刚才那个方式"、"按之前定的架构"）时的扩展窗口。
+ * 默认 1000 token 只够覆盖最近一两轮，远距离指代会解析失败导致漏抽；
+ * 扩展只在命中指代信号时启用，避免每轮都为抽取多付 3 倍 token。
+ */
+export const MEMORY_EXTRACTION_CONTEXT_MAX_TOKENS_EXPANDED = 4_000
+/** 中英后向指代信号词。只收"明确回指"的表达，"那个/这个"这类常见口语单独命中会大量误触发。 */
+const BACK_REFERENCE_SIGNAL_PATTERN =
+  /(刚才|之前|前面|上述|上文|上面(说|提|聊|讨论|提到)|我们(之前|刚才)?(说|定|聊|讨论|提到|约定)|说过|提到过|上次说到|as i said|as we discussed|earlier|previously|above(,| we| you)?|the (one|way|approach) we (discussed|agreed|defined))/i
+
+/** 判断本轮用户消息是否携带后向指代，需要放大抽取的近期上下文窗口。 */
+export function shouldExpandMemoryExtractionContext(userMessage: string): boolean {
+  return BACK_REFERENCE_SIGNAL_PATTERN.test(userMessage)
+}
 /** 历史上下文 token 预算的默认上限（未传入时使用）。 */
 const DEFAULT_HISTORY_TOKEN_BUDGET = 8_000
 /** 单条 entry token 预算的默认上限（未传入时使用）。 */
@@ -148,13 +162,19 @@ export function buildMemoryExtractionRecentContext(
   options?: {
     agentNameById?: Record<string, string>
     maxTokens?: number
+    /** 排除当前轮：本轮 USER/ASSISTANT 已单独进抽取 prompt，窗口留给更早的历史。 */
+    excludeTurnId?: string
   },
 ): string {
   // Memory 抽取只需要 recent context，强制使用 SDK resume fallback 的小预算。
   const historyOptions: {
     agentNameById?: Record<string, string>
     skipForSdkResume?: boolean
+    excludeTurnId?: string
   } = { skipForSdkResume: true }
+  if (options?.excludeTurnId != null && options.excludeTurnId.length > 0) {
+    historyOptions.excludeTurnId = options.excludeTurnId
+  }
   if (options?.agentNameById != null) {
     historyOptions.agentNameById = options.agentNameById
   }

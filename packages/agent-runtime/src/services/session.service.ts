@@ -508,6 +508,8 @@ import type { SparkReasoningEffort } from '../sdk/reasoning-effort.js'
 import {
   buildConversationHistory,
   buildMemoryExtractionRecentContext,
+  MEMORY_EXTRACTION_CONTEXT_MAX_TOKENS_EXPANDED,
+  shouldExpandMemoryExtractionContext,
 } from './conversation-summarizer.js'
 import { SessionContinuityCoordinator } from './session-continuity-coordinator.js'
 import { ExecutionSupervisor, type TurnRecoveryDelegate } from './execution-continuity/index.js'
@@ -7222,7 +7224,15 @@ export class SessionService {
       const memoryRepo = new MemoryRepository(this.db)
       const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
       const eventRepo = new EventRepository(this.db)
-      const recentSummary = buildMemoryExtractionRecentContext(eventRepo, sessionId)
+      // 远距离指代修复：本轮用户消息携带后向指代（"刚才那个方式"、"按之前定的架构"）时
+      // 放大近期上下文窗口；同时排除当前轮事件——本轮 USER/ASSISTANT 已单独进抽取
+      // prompt，默认 1000 token 窗口不应被本轮重复内容挤占，要留给更早的历史。
+      const recentSummary = buildMemoryExtractionRecentContext(eventRepo, sessionId, {
+        excludeTurnId: source?.turnId,
+        maxTokens: shouldExpandMemoryExtractionContext(userMessage)
+          ? MEMORY_EXTRACTION_CONTEXT_MAX_TOKENS_EXPANDED
+          : undefined,
+      })
       // 真实 LLM 抽取：走 ModelService.complete()（OpenAI 兼容 /chat/completions 或 anthropic /v1/messages）。
       // 未配置 extraction 模型 / 调用失败 → complete 返回 unavailable，这里降级为 '[]'，
       // 写入静默跳过（与原 stub 行为一致，绝不阻塞主对话）。
