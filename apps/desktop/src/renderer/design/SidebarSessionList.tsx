@@ -2639,8 +2639,20 @@ export function SidebarSessionList() {
   }, [ctx.revealSessionId, displayGroups])
   const showProjectToolbar = ctx.workspaces.length > 0 || ctx.sessions.length > 0
 
+  // 项目筛选激活时，拖入的新项目必须并入筛选集合：否则新项目分组不在可见集合里，
+  // 用户拖完立刻看不到刚加的项目（筛选未激活时全部可见，无需合并）。
+  const handleDroppedProjects = useCallback(
+    async (paths: string[]) => {
+      const summary = await ctx.handleAddDroppedProjects(paths)
+      if (summary.addedWorkspaceIds.length === 0 || filter.projectIds.length === 0) return
+      const merged = Array.from(new Set([...filter.projectIds, ...summary.addedWorkspaceIds]))
+      handleFilterChange({ ...filter, projectIds: merged })
+    },
+    [ctx.handleAddDroppedProjects, filter, handleFilterChange],
+  )
+
   return (
-    <SidebarProjectDropZone onDropPaths={ctx.handleAddDroppedProjects}>
+    <SidebarProjectDropZone onDropPaths={handleDroppedProjects}>
       <div className="sidebar-session-list-inner">
         {/* Current session params panel 已移除 — 权限/推理控制在 ChatView Composer param bar 中 */}
 

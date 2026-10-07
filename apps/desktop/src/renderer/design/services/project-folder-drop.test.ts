@@ -68,7 +68,13 @@ describe('addProjectsFromDroppedPaths', () => {
       },
     )
 
-    expect(result).toEqual({ added: 2, ignoredFiles: 1, duplicates: 1, failed: 0 })
+    expect(result).toEqual({
+      added: 2,
+      ignoredFiles: 1,
+      duplicates: 1,
+      failed: 0,
+      addedWorkspaceIds: ['ws:/work/alpha', 'ws:/work/beta'],
+    })
     expect(openWorkspace).toHaveBeenNthCalledWith(1, {
       create: { name: 'alpha', rootPath: '/work/alpha' },
     })
@@ -89,7 +95,13 @@ describe('addProjectsFromDroppedPaths', () => {
       setActiveWorkspace: vi.fn(),
     })
 
-    expect(result).toEqual({ added: 0, ignoredFiles: 0, duplicates: 1, failed: 0 })
+    expect(result).toEqual({
+      added: 0,
+      ignoredFiles: 0,
+      duplicates: 1,
+      failed: 0,
+      addedWorkspaceIds: [],
+    })
     expect(openWorkspace).not.toHaveBeenCalled()
   })
 
@@ -115,7 +127,13 @@ describe('addProjectsFromDroppedPaths', () => {
       },
     )
 
-    expect(result).toEqual({ added: 1, ignoredFiles: 0, duplicates: 0, failed: 2 })
+    expect(result).toEqual({
+      added: 1,
+      ignoredFiles: 0,
+      duplicates: 0,
+      failed: 2,
+      addedWorkspaceIds: ['ws:/work/good'],
+    })
     expect(refreshData).toHaveBeenCalledTimes(1)
     expect(setActiveWorkspace).toHaveBeenCalledWith('ws:/work/good')
   })
@@ -131,14 +149,26 @@ describe('addProjectsFromDroppedPaths', () => {
       setActiveWorkspace,
     })
 
-    expect(result).toEqual({ added: 0, ignoredFiles: 1, duplicates: 0, failed: 0 })
+    expect(result).toEqual({
+      added: 0,
+      ignoredFiles: 1,
+      duplicates: 0,
+      failed: 0,
+      addedWorkspaceIds: [],
+    })
     expect(refreshData).not.toHaveBeenCalled()
     expect(setActiveWorkspace).not.toHaveBeenCalled()
   })
 
   it('formats a single aggregate result message', () => {
     expect(
-      formatDroppedProjectSummary({ added: 2, ignoredFiles: 1, duplicates: 1, failed: 1 }),
+      formatDroppedProjectSummary({
+        added: 2,
+        ignoredFiles: 1,
+        duplicates: 1,
+        failed: 1,
+        addedWorkspaceIds: [],
+      }),
     ).toBe('已添加 2 个项目；忽略 1 个文件、1 个重复目录，1 个目录添加失败')
   })
 })

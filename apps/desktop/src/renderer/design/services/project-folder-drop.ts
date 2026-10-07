@@ -9,6 +9,8 @@ export type DroppedProjectSummary = {
   ignoredFiles: number
   duplicates: number
   failed: number
+  /** 本次成功加入的项目 id（按加入顺序），供调用方把新项目并入侧边栏项目筛选。 */
+  addedWorkspaceIds: string[]
 }
 
 type FileKindProbe = (params: { path: string }) => Promise<{ kind: string }>
@@ -78,6 +80,7 @@ export async function addProjectsFromDroppedPaths(
     ignoredFiles: 0,
     duplicates: 0,
     failed: 0,
+    addedWorkspaceIds: [],
   }
   const seenRootPaths = new Set(dependencies.existingRootPaths.map(normalizePathForComparison))
   let lastWorkspaceId: string | null = null
@@ -112,6 +115,7 @@ export async function addProjectsFromDroppedPaths(
         create: { name: getFileNameFromPath(rootPath), rootPath },
       })
       summary.added += 1
+      summary.addedWorkspaceIds.push(result.workspace.id)
       lastWorkspaceId = result.workspace.id
       seenRootPaths.add(comparisonPath)
     } catch {

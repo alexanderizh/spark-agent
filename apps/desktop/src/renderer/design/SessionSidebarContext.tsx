@@ -46,6 +46,7 @@ import { listAllWorkspaces } from './services/list-all-workspaces'
 import {
   addProjectsFromDroppedPaths,
   formatDroppedProjectSummary,
+  type DroppedProjectSummary,
 } from './services/project-folder-drop'
 import {
   buildSessionScheduleSummaries,
@@ -433,7 +434,7 @@ type SessionSidebarCtx = {
 
   // Create project dialog
   handleCreateProject: (useTempDir?: boolean) => Promise<void>
-  handleAddDroppedProjects: (paths: string[]) => Promise<void>
+  handleAddDroppedProjects: (paths: string[]) => Promise<DroppedProjectSummary>
   handlePickProjectPath: () => Promise<void>
   handleDropProjectPath: (path: string) => Promise<void>
   projectDialog: 'create' | null
@@ -1575,7 +1576,14 @@ export function SessionSidebarProvider({
   )
 
   const handleAddDroppedProjects = useCallback(
-    async (paths: string[]) => {
+    async (paths: string[]): Promise<DroppedProjectSummary> => {
+      const emptySummary: DroppedProjectSummary = {
+        added: 0,
+        ignoredFiles: 0,
+        duplicates: 0,
+        failed: 0,
+        addedWorkspaceIds: [],
+      }
       try {
         const summary = await addProjectsFromDroppedPaths(paths, {
           existingRootPaths: workspaces.map((workspace) => workspace.rootPath),
@@ -1588,9 +1596,11 @@ export function SessionSidebarProvider({
         if (summary.added > 0) toast.success(message)
         else if (summary.failed > 0) toast.error(message)
         else toast.info(message)
+        return summary
       } catch (err) {
         console.error('Add dropped projects failed', err)
         toast.error(err instanceof Error ? err.message : '拖拽添加项目失败')
+        return emptySummary
       }
     },
     [openWorkspace, refreshData, setActiveWorkspace, statFileKind, toast, workspaces],
