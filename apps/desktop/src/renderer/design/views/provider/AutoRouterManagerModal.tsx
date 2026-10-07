@@ -17,8 +17,10 @@ import {
   type RouterIntensity,
   type SessionReasoningEffort,
   createDefaultAutoRouterConfig,
+  executorHealthKey,
   isProviderAllowedForAutoRouter,
 } from '@spark/protocol'
+import { formatFrozenRemaining } from '../../utils/auto-router-display'
 
 /**
  * AutoRouter 管理弹层（重构版）：router = provider_profiles 中 provider_type='auto-router'
@@ -73,12 +75,6 @@ function providerModels(provider: ProviderProfile): string[] {
   return [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))]
 }
 
-/** 执行器冻结剩余时长展示：<1min 用秒，其余向上取整分钟。 */
-function formatExecutorFrozenRemaining(remainingMs: number): string {
-  if (remainingMs < 60_000) return `${Math.max(1, Math.round(remainingMs / 1000))}s`
-  return `${Math.ceil(remainingMs / 60_000)} 分钟`
-}
-
 export function AutoRouterManagerModal({
   open,
   providers,
@@ -119,7 +115,6 @@ export function AutoRouterManagerModal({
   const healthRefreshTimer = useRef<number | null>(null)
   useEffect(() => {
     if (!open || selectedId == null) {
-      setExecutorHealth(null)
       return
     }
     let disposed = false
@@ -128,7 +123,9 @@ export function AutoRouterManagerModal({
         .then((res) => {
           if (disposed) return
           const map = new Map<string, AutoRouterExecutorHealthSnapshot>()
-          for (const item of res.executors) map.set(`${item.providerId}::${item.modelId}`, item)
+          for (const item of res.executors) {
+            map.set(executorHealthKey(item.providerId, item.modelId), item)
+          }
           setExecutorHealth(map)
         })
         .catch(() => {
@@ -143,6 +140,8 @@ export function AutoRouterManagerModal({
         window.clearInterval(healthRefreshTimer.current)
         healthRefreshTimer.current = null
       }
+      // 关闭弹窗/切换 router 时清掉旧数据（cleanup 内重置，避免 effect 体内 setState）。
+      setExecutorHealth(null)
     }
   }, [open, selectedId, fetchExecutorHealth])
 
@@ -529,11 +528,10 @@ export function AutoRouterManagerModal({
               )}
               {draft.executors.map((executor) => {
                 const executorHealthEntry =
-                  executorHealth?.get(`${executor.providerProfileId}::${executor.modelId}`) ?? null
+                  executorHealth?.get(executorHealthKey(executor.providerProfileId, executor.modelId)) ?? null
                 const frozenRemainingText =
-                  executorHealthEntry?.state === 'frozen' &&
-                  executorHealthEntry.frozenRemainingMs != null
-                    ? formatExecutorFrozenRemaining(executorHealthEntry.frozenRemainingMs)
+                  executorHealthEntry?.state === 'frozen'
+                    ? formatFrozenRemaining(executorHealthEntry.frozenRemainingMs)
                     : null
                 return (
                 <div key={executor.id} className="arm_executor_row">

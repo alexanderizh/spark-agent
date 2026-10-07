@@ -1,5 +1,5 @@
 import { createLogger } from '@spark/shared'
-import type { AutoRouterExecutorHealthSnapshot } from '@spark/protocol'
+import { executorHealthKey, type AutoRouterExecutorHealthSnapshot } from '@spark/protocol'
 
 const log = createLogger('auto-router-health')
 
@@ -98,8 +98,9 @@ const ENVIRONMENT_FAILURE_PATTERNS: readonly RegExp[] = [
   /引擎.*不匹配|不匹配.*渠道|协议.*不支持/,
   /已到定时禁用时段|定时禁用/i,
   /TURN_START_FAILED/,
-  /Reached maximum turns/i,
-  /PLAN_MODE/i,
+  // 来源：claude-sdk-executor 的 buildMaxTurnLimitMessage（"Reached maximum
+  // number of turns"）；错误码 MAX_ITERATIONS 已优先覆盖，此处为文本兜底。
+  /Reached maximum (number of )?turns/i,
 ]
 
 /**
@@ -163,15 +164,15 @@ interface HealthEntry {
   lastFailureAt: number | null
 }
 
-/** 统一 `providerId::modelId` 追踪键（同渠道不同模型独立计数）。 */
+/** 统一追踪键：与渲染端共用 protocol 的 `executorHealthKey`（防两侧手拼漂移）。 */
 function healthKey(providerId: string, modelId: string): string {
-  return `${providerId}::${modelId}`
+  return executorHealthKey(providerId, modelId)
 }
 
-/** 冻结时长（毫秒）：递进档位越界取最后一档。 */
+/** 冻结时长（毫秒）：递进档位越界取最后一档（档位为非空常量，兜底同最末档）。 */
 function retryableFreezeMs(consecutiveFailures: number): number {
-  const index = Math.min(consecutiveFailures, RETRYABLE_FREEZE_STEPS_MS.length) - 1
-  return RETRYABLE_FREEZE_STEPS_MS[Math.max(index, 0)] ?? RETRYABLE_FREEZE_STEPS_MS[RETRYABLE_FREEZE_STEPS_MS.length - 1]!
+  const index = Math.min(Math.max(consecutiveFailures, 1), RETRYABLE_FREEZE_STEPS_MS.length) - 1
+  return RETRYABLE_FREEZE_STEPS_MS[index] ?? RETRYABLE_FREEZE_STEPS_MS[RETRYABLE_FREEZE_STEPS_MS.length - 1] ?? 0
 }
 
 /**
@@ -267,7 +268,7 @@ export class AutoRouterHealthRegistry {
       lastErrorDetail: detail.slice(0, 200),
       lastFailureAt: now,
     })
-    this.pruneIfNeeded()
+    this.pruneIfNeeded(now)
     log.warn('executor frozen after terminal failure', {
       providerId,
       modelId,
@@ -316,12 +317,12 @@ export class AutoRouterHealthRegistry {
   }
 
   /** 超出上限时淘汰最久未失败的条目（冻结中的条目保留，保证避让语义）。 */
-  private pruneIfNeeded(): void {
+  private pruneIfNeeded(now: number): void {
     if (this.entries.size <= MAX_TRACKED_ENTRIES) return
     let oldestKey: string | null = null
     let oldestAt = Number.POSITIVE_INFINITY
     for (const [key, entry] of this.entries) {
-      if (entry.frozenUntil != null && entry.frozenUntil > Date.now()) continue
+      if (entry.frozenUntil != null && entry.frozenUntil > now) continue
       if ((entry.lastFailureAt ?? 0) < oldestAt) {
         oldestAt = entry.lastFailureAt ?? 0
         oldestKey = key

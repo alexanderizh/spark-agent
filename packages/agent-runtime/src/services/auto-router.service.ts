@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { ProviderProfileRow } from '@spark/storage'
 import {
   RouterIntensitySchema,
+  executorHealthKey,
   findExecutorByIntensity,
   type AutoRouterConfig,
   type AutoRouterExecutorRef,
@@ -573,7 +574,7 @@ export class AutoRouterService {
     const skipped: Array<{ providerId: string; modelId: string; frozenRemainingMs: number }> = []
     const seen = new Set<string>()
     for (const entry of candidates) {
-      const key = `${entry.providerProfileId}::${entry.modelId}`
+      const key = executorHealthKey(entry.providerProfileId, entry.modelId)
       if (seen.has(key)) continue
       const remaining = this.health.frozenRemainingMs(entry.providerProfileId, entry.modelId, now)
       if (remaining != null && remaining > 0) {

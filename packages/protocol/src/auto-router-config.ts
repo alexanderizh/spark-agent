@@ -297,3 +297,12 @@ export function isProviderAllowedForAutoRouter(
   if (adapter === 'claude') return provider.provider === 'anthropic'
   return CODEX_TEXT_PROVIDER_TYPES.has(provider.provider)
 }
+
+/**
+ * 执行器健康追踪键（`providerId::modelId`，同渠道不同模型独立计数）。
+ * 主进程写入（健康注册表）与渲染端查询（悬浮卡/管理弹窗）必须逐字节一致，
+ * 统一由此函数生成——两侧任何一侧手拼出偏差都会让健康展示静默消失。
+ */
+export function executorHealthKey(providerId: string, modelId: string): string {
+  return `${providerId}::${modelId}`
+}

@@ -1,5 +1,6 @@
 import {
   ROUTER_INTENSITIES,
+  executorHealthKey,
   findExecutorByIntensity,
   type AutoRouterConfig,
   type AutoRouterExecutorHealthSnapshot,
@@ -7,7 +8,11 @@ import {
   type RouterAdapter,
   type RouterIntensity,
 } from '@spark/protocol'
-import { routerIntensityColor, routerIntensityLabel } from '../../utils/auto-router-display'
+import {
+  formatFrozenRemaining,
+  routerIntensityColor,
+  routerIntensityLabel,
+} from '../../utils/auto-router-display'
 
 /**
  * 会话模型选择器「智能路由」行悬浮卡片的视图模型（纯函数，可单测）。
@@ -105,13 +110,6 @@ function fallbackHint(config: AutoRouterConfig, intensity: RouterIntensity): str
   return '走首个启用条目'
 }
 
-/** 冻结剩余时长的人话展示：<1min 用秒，其余向上取整分钟。 */
-export function formatFrozenRemaining(remainingMs: number | null): string | null {
-  if (remainingMs == null || !Number.isFinite(remainingMs) || remainingMs <= 0) return null
-  if (remainingMs < 60_000) return `${Math.max(1, Math.round(remainingMs / 1000))}s`
-  return `${Math.ceil(remainingMs / 60_000)} 分钟`
-}
-
 export function buildAutoRouterHoverCardModel(input: {
   name: string
   config: AutoRouterConfig | null
@@ -158,7 +156,9 @@ export function buildAutoRouterHoverCardModel(input: {
     const frozenRemaining =
       executor != null
         ? formatFrozenRemaining(
-            input.healthByExecutor?.get(`${executor.providerProfileId}::${executor.modelId}`)
+            input.healthByExecutor?.get(
+              executorHealthKey(executor.providerProfileId, executor.modelId),
+            )
               ?.frozenRemainingMs ?? null,
           )
         : null

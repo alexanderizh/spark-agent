@@ -86,6 +86,16 @@ export function resolveAutoRouterWorkerAvatarId(memberAgentId: string): string |
 }
 
 /**
+ * 冻结剩余时长的人话展示：<1min 用秒，其余向上取整分钟。
+ * 悬浮卡与管理弹窗共用同一口径，防止两处分叉漂移。
+ */
+export function formatFrozenRemaining(remainingMs: number | null | undefined): string | null {
+  if (remainingMs == null || !Number.isFinite(remainingMs) || remainingMs <= 0) return null
+  if (remainingMs < 60_000) return `${Math.max(1, Math.round(remainingMs / 1000))}s`
+  return `${Math.ceil(remainingMs / 60_000)} 分钟`
+}
+
+/**
  * 按事件时间锚点衰减冻结剩余时长：决策事件持久化的 frozenRemainingMs 是路由
  * 时刻的瞬时值，直接展示会让历史会话永远显示「剩 N 分钟」。以事件 timestamp
  * 为锚推算当前剩余；返回 null 表示已到期（解冻）。锚点不可解析时原样返回。

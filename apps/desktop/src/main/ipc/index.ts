@@ -295,6 +295,7 @@ import {
   isConversationalProviderCandidate,
   isAutoRouterProviderProfile,
   isBuiltInLocalCliProvider,
+  executorHealthKey,
 } from '@spark/protocol'
 import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
 import type {
@@ -5803,10 +5804,10 @@ export function registerAllIpcHandlers(): void {
         const referenced = new Set(
           config.executors
             .filter((entry) => entry.enabled)
-            .map((entry) => `${entry.providerProfileId}::${entry.modelId}`),
+            .map((entry) => executorHealthKey(entry.providerProfileId, entry.modelId)),
         )
-        executors = executors.filter(
-          (item) => referenced.has(`${item.providerId}::${item.modelId}`),
+        executors = executors.filter((item) =>
+          referenced.has(executorHealthKey(item.providerId, item.modelId)),
         )
       }
     }

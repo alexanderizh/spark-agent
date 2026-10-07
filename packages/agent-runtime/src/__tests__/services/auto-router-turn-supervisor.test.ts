@@ -50,7 +50,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     const outcome = supervisor.onTerminalError({
       turnId: 't1',
       errorText: 'HTTP 429: too many requests',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     expect(outcome?.frozen).toBe(true)
     expect(outcome?.kind).toBe('retryable')
@@ -68,7 +68,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     const outcome = supervisor.onTerminalError({
       turnId: 't1',
       errorText: 'HTTP 503: service unavailable',
-      hasProducedSideEffects: true,
+      hasProducedSideEffects: () => true,
     })
     expect(outcome?.frozen).toBe(true)
     expect(outcome?.failoverArmed).toBe(false)
@@ -81,7 +81,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     const outcome = supervisor.onTerminalError({
       turnId: 't1',
       errorText: 'WORKSPACE_UNAVAILABLE: path missing',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     expect(outcome?.frozen).toBe(false)
     expect(outcome?.failoverArmed).toBe(false)
@@ -94,7 +94,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     const outcome = supervisor.onTerminalError({
       turnId: 't1',
       errorText: 'request timeout after 120s',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     expect(outcome?.frozen).toBe(true)
     expect(outcome?.failoverArmed).toBe(false)
@@ -106,7 +106,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     const outcome = supervisor.onTerminalError({
       turnId: 't2',
       errorText: 'HTTP 429: too many requests',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     expect(outcome?.frozen).toBe(true)
     expect(outcome?.failoverArmed).toBe(false)
@@ -118,7 +118,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
       supervisor.onTerminalError({
         turnId: 't-unknown',
         errorText: 'HTTP 429',
-        hasProducedSideEffects: false,
+        hasProducedSideEffects: () => false,
       }),
     ).toBeNull()
     expect(supervisor.onTurnSuccess('t-unknown')).toBeUndefined()
@@ -142,7 +142,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     supervisor.onTerminalError({
       turnId: 't1',
       errorText: 'HTTP 500: internal server error',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     expect(supervisor.consumeFailover('s1', 't9')).toBeNull()
     expect(supervisor.consumeFailover('s1', 't1')?.message).toBe('帮我把这个模块重构一下')
@@ -156,7 +156,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
       supervisor.onTerminalError({
         turnId: 't1',
         errorText: 'HTTP 429',
-        hasProducedSideEffects: false,
+        hasProducedSideEffects: () => false,
       }),
     ).toBeNull()
   })
@@ -167,7 +167,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     supervisor.onTerminalError({
       turnId: 't1',
       errorText: 'HTTP 429: too many requests',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     supervisor.discardFailover('s1')
     expect(supervisor.consumeFailover('s1', 't1')).toBeNull()
@@ -179,7 +179,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     const outcome = supervisor.onTerminalError({
       turnId: 't1',
       errorText: 'HTTP 429: too many requests',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     // 冻结照记（执行器确实失败），但静默重跑编排型轮次会注入重复执行，不武装
     expect(outcome?.frozen).toBe(true)
@@ -192,7 +192,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     const outcome = supervisor.onTerminalError({
       turnId: 't1',
       errorText: 'HTTP 429: too many requests',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     expect(outcome?.failoverArmed).toBe(false)
   })
@@ -203,7 +203,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     supervisor.onTerminalError({
       turnId: 't1',
       errorText: 'HTTP 500: internal server error',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     // SDK 自愈续流，轮次最终成功：种子必须被作废，否则收尾会把已成功轮次重跑
     supervisor.onTurnSuccess('t1')
@@ -217,7 +217,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     supervisor.onTerminalError({
       turnId: 't2',
       errorText: 'HTTP 500: internal server error',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     supervisor.onTurnSuccess('t1')
     expect(supervisor.consumeFailover('s1', 't2')?.message).toBe('帮我把这个模块重构一下')
@@ -230,7 +230,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
       turnId: 't1',
       errorText: 'permission request timed out after 300s waiting',
       errorCode: 'PERMISSION_TIMEOUT',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     expect(outcome?.kind).toBe('environment')
     expect(outcome?.frozen).toBe(false)
@@ -244,7 +244,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     supervisor.onTerminalError({
       turnId: 't1',
       errorText: 'HTTP 429: too many requests',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     supervisor.forgetTurn('t1')
     expect(supervisor.consumeFailover('s1', 't1')).toBeNull()
@@ -257,7 +257,7 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     supervisor.onTerminalError({
       turnId: 't2',
       errorText: 'HTTP 500: internal server error',
-      hasProducedSideEffects: false,
+      hasProducedSideEffects: () => false,
     })
     supervisor.forgetTurn('t1')
     expect(supervisor.consumeFailover('s1', 't2')?.message).toBe('帮我把这个模块重构一下')

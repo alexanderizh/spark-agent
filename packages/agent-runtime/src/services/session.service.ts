@@ -115,7 +115,10 @@ import {
 import { normalizeReasoningBudgetTokens, SparkError } from '@spark/shared'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
-import { AutoRouterTurnSupervisor, type AutoRouterFailoverSeed } from './auto-router-turn-supervisor.js'
+import {
+  AutoRouterTurnSupervisor,
+  type ArmedAutoRouterFailover,
+} from './auto-router-turn-supervisor.js'
 import { createTeamDispatchGovernanceHooks } from './team-dispatch-governance.js'
 import { DispatchGovernor } from './dispatch-governor/dispatch-governor.js'
 import type {
@@ -11036,7 +11039,8 @@ export class SessionService {
         turnId,
         errorText,
         errorCode: event.code,
-        hasProducedSideEffects: eventRepo.hasTurnProducedSideEffects(sessionId, turnId),
+        // 惰性求值：未登记轮次（非 auto-router 会话）在监督器早退时不触发这次 DB 查询。
+        hasProducedSideEffects: () => eventRepo.hasTurnProducedSideEffects(sessionId, turnId),
       })
     } catch (err) {
       // 健康判定失败不改变错误呈现本身：只降级日志，事件流照常。
@@ -11058,28 +11062,10 @@ export class SessionService {
       seq: 0,
     })
     if (outcome.failoverArmed) {
-      try {
-        this.emitAndPersist(
-          sessionId,
-          turnId,
-          {
-            ...makeSignalBase(),
-            type: 'runtime_signal',
-            signal: 'executor_failover',
-            level: 'info',
-            title: '自动路由已切换执行模型',
-            message: `${modelLabel}上游失败（${outcome.kind === 'deterministic' ? '鉴权/配额类错误' : '限流/服务异常'}，已冻结 ${freezeMinutes} 分钟），本轮尚未产出任何内容，正在自动改派其他健康执行模型重试。`,
-            details: [
-              { label: '失败归类', value: outcome.kind },
-              { label: '冻结时长', value: `${freezeMinutes} 分钟` },
-            ],
-          },
-          eventRepo,
-        )
-      } catch (err) {
-        // 信号是增强信息，落库失败不得把异常抛回事件管线（否则中断后续事件处理）。
-        log.warn('auto-router failover signal persist failed', { sessionId, turnId, error: err })
-      }
+      // info 信号（「正在自动改派重试」）不在错误时刻发，推迟到重派发点过完
+      // 队列暂停闸门之后再发（见 dispatchAutoRouterFailover）：错误时刻承诺
+      // 自动重试，随后可能被 pause 闸门（用户排了消息在等）静默丢弃，承诺
+      // 落空还会连带抑制错误卡的手动重试按钮——先确认能派，再承诺。
       return
     }
     if (outcome.frozen) {
@@ -11116,42 +11102,96 @@ export class SessionService {
    * 此时原轮所有权已释放、会话已复位）。错误暂停闸门激活（用户排了消息在等处理）
    * 时放弃自动重跑，交回用户手动重试——重试将自动避让被冻结的执行模型。
    */
-  private dispatchAutoRouterFailover(seed: AutoRouterFailoverSeed): void {
+  private dispatchAutoRouterFailover(armed: ArmedAutoRouterFailover): void {
     if (this.disposing) return
+    const emitFailoverSignal = (
+      level: 'info' | 'warning',
+      title: string,
+      message: string,
+      details: Array<{ label: string; value: string }>,
+    ): void => {
+      try {
+        this.emitAndPersist(
+          armed.sessionId,
+          armed.turnId,
+          {
+            id: crypto.randomUUID(),
+            sessionId: armed.sessionId,
+            turnId: armed.turnId,
+            timestamp: new Date().toISOString(),
+            seq: 0,
+            type: 'runtime_signal',
+            signal: 'executor_failover',
+            level,
+            title,
+            message,
+            details,
+          },
+          new EventRepository(this.db),
+        )
+      } catch (err) {
+        // 信号是增强信息，落库失败不得影响重派发本身。
+        log.warn('auto-router failover signal persist failed', {
+          sessionId: armed.sessionId,
+          turnId: armed.turnId,
+          error: err,
+        })
+      }
+    }
     if (
       this.getQueueErrorPauseGate().isBlocked(
-        seed.sessionId,
-        this.pendingTurns.get(seed.sessionId)?.length ?? 0,
+        armed.sessionId,
+        this.pendingTurns.get(armed.sessionId)?.length ?? 0,
       )
     ) {
-      this.autoRouterSupervisor.discardFailover(seed.sessionId)
+      this.autoRouterSupervisor.discardFailover(armed.sessionId)
       log.info('auto-router failover skipped: queue error pause active', {
-        sessionId: seed.sessionId,
+        sessionId: armed.sessionId,
       })
+      // 与错误时刻不再预发 info 对应：此处发 warning 补偿，明确告知自动重试
+      // 已取消（warning 级不抑制错误卡的手动重试按钮）。
+      emitFailoverSignal(
+        'warning',
+        '自动重试已取消：队列中有等待消息',
+        '原执行模型失败已冻结，但检测到队列中有等待处理的消息，自动改派重试已取消以免与排队消息交错。手动重试将自动避让被冻结的执行模型。',
+        [{ label: '失败归类', value: armed.kind }],
+      )
       return
     }
     log.info('auto-router failover redispatching turn', {
-      sessionId: seed.sessionId,
-      messageLength: seed.message.length,
+      sessionId: armed.sessionId,
+      messageLength: armed.message.length,
     })
+    const freezeMinutes = Math.max(1, Math.round(armed.freezeMs / 60_000))
+    // 过闸门后才承诺「正在自动改派」：此刻重派发确定会启动（info 级会抑制
+    // 原错误卡的手动重试按钮，防双执行）。
+    emitFailoverSignal(
+      'info',
+      '自动路由已切换执行模型',
+      `原执行模型上游失败（${armed.kind === 'deterministic' ? '鉴权/配额类错误' : '限流/服务异常'}，已冻结 ${freezeMinutes} 分钟），本轮尚未产出任何内容，正在自动改派其他健康执行模型重试。`,
+      [
+        { label: '失败归类', value: armed.kind },
+        { label: '冻结时长', value: `${freezeMinutes} 分钟` },
+      ],
+    )
     void this.sendTurn({
-      sessionId: seed.sessionId,
-      message: seed.message,
-      ...(seed.skillId != null ? { skillId: seed.skillId } : {}),
-      ...(seed.skillParams != null ? { skillParams: seed.skillParams } : {}),
-      ...(seed.attachments != null && seed.attachments.length > 0
-        ? { attachments: seed.attachments }
+      sessionId: armed.sessionId,
+      message: armed.message,
+      ...(armed.skillId != null ? { skillId: armed.skillId } : {}),
+      ...(armed.skillParams != null ? { skillParams: armed.skillParams } : {}),
+      ...(armed.attachments != null && armed.attachments.length > 0
+        ? { attachments: armed.attachments }
         : {}),
-      ...(seed.mentionAgentId != null ? { mentionAgentId: seed.mentionAgentId } : {}),
-      ...(seed.sessionReferences != null && seed.sessionReferences.length > 0
-        ? { sessionReferences: seed.sessionReferences }
+      ...(armed.mentionAgentId != null ? { mentionAgentId: armed.mentionAgentId } : {}),
+      ...(armed.sessionReferences != null && armed.sessionReferences.length > 0
+        ? { sessionReferences: armed.sessionReferences }
         : {}),
       // 面向模型的输入与原 turn 一致；用户消息隐藏（原 turn 已展示过），轮次来源
       // 标记为 auto_router_redispatch：注册上下文时不再武装下一次故障切换。
       ...AUTO_ROUTER_REDISPATCH_TURN_PRESENTATION,
     }).catch((err) => {
       log.error('auto-router failover redispatch failed', {
-        sessionId: seed.sessionId,
+        sessionId: armed.sessionId,
         error: err,
       })
     })
@@ -13234,7 +13274,12 @@ export class SessionService {
   }
 
   async deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
-    return this.getCrudController().deleteSession(sessionId)
+    const result = await this.getCrudController().deleteSession(sessionId)
+    if (result.deleted) {
+      // 会话删除后作废可能滞留的故障切换种子（含完整用户消息文本），防内存滞留。
+      this.autoRouterSupervisor.discardFailover(sessionId)
+    }
+    return result
   }
 
   // ── SessionCrudHost 窄回调 ──

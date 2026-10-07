@@ -5,13 +5,21 @@ import {
   classifyExecutorFailure,
   isFailoverWorthyFailure,
   type AutoRouterFailureKind,
+  type AutoRouterHealthRegistry,
 } from './auto-router-health'
 
 const log = createLogger('auto-router-health')
 
 /**
- * 自动路由轮次重派发种子：与故障切换时刻的原 turn 面向模型输入保持一致所需的
- * 全部参数。从 startTurnExecution 的入参原样保存（浅拷贝数组防外部复用改写）。
+ * 自动路由轮次重派发种子：与故障切换时刻的原 turn 面向模型输入一致的核心参数，
+ * 从 startTurnExecution 的入参保存（浅拷贝数组防外部复用改写）。
+ *
+ * 有意排除的字段（重派发语义下不应携带）：
+ * - `runtimePatch`：重派发的目的就是重新路由换绑执行器，原运行时补丁作废；
+ * - `clientMessageId`：重派发是服务端行为，不复用客户端消息幂等键；
+ * - `teamConfig` / `agentId`：已知取舍——团队轮故障切换会退化为普通轮重跑。
+ *   团队编排轮的 turnSource 多为编排入口（不在 'user' 白名单内，不武装），
+ *   仅「用户聊天 + 临时指定成员」的窄场景会走该退化路径。
  */
 export interface AutoRouterFailoverSeed {
   sessionId: string
@@ -52,6 +60,18 @@ export interface AutoRouterTerminalErrorOutcome {
 }
 
 /**
+ * 已武装待消费的重派发条目：seed 外加原轮 turnId 与武装时刻的冻结信息，
+ * 供重派发点（过闸门后发 info 信号 / 被闸门拦截时发 warning 补偿）使用。
+ */
+export interface ArmedAutoRouterFailover extends AutoRouterFailoverSeed {
+  turnId: string
+  /** 武装时刻的冻结时长（毫秒）。 */
+  freezeMs: number
+  /** 武装时刻的失败归类。 */
+  kind: AutoRouterFailureKind
+}
+
+/**
  * AutoRouter 轮次监督器：登记每条由 router 派发的轮次上下文，在终态时驱动
  * 执行器健康注册表（冻结/恢复）与一次性故障切换（重派发）判定。
  *
@@ -66,15 +86,34 @@ export interface AutoRouterTerminalErrorOutcome {
 export class AutoRouterTurnSupervisor {
   private readonly turns = new Map<string, AutoRouterTurnContext>()
   /** 已武装待消费的重派发（sessionId 维度至多一个；失败轮收尾时消费）。 */
-  private readonly armedFailovers = new Map<string, AutoRouterFailoverSeed & { turnId: string }>()
+  private readonly armedFailovers = new Map<string, ArmedAutoRouterFailover>()
+  /**
+   * 已上报成功的轮次（exactly-once 去重）：session.service 的成功路径会对同一
+   * turnId 调用两次 onTurnSuccess（后处理入口 + settle 尾部守卫版），今天靠
+   * reportSuccess/种子作废的幂等性撑住；此守卫保证未来向 onTurnSuccess 添加
+   * 非幂等逻辑（打点、通知）时不会双计。forgetTurn 时清理。
+   */
+  private readonly succeededTurns = new Set<string>()
+  /** 健康注册表（默认进程内单例；测试可注入独立实例，与 AutoRouterService 的 DI 对齐）。 */
+  private readonly registry: AutoRouterHealthRegistry
+
+  constructor(registry: AutoRouterHealthRegistry = autoRouterHealthRegistry) {
+    this.registry = registry
+  }
 
   /**
    * 路由成功换绑执行器后登记本轮上下文（startTurnExecution 路由消费点调用）。
    *
    * 故障切换白名单：只有 `turnSource === 'user'`（用户聊天入口显式标记）的轮次
-   * 才允许武装重派发。画布/工作流/定时/语音等编排型轮次静默重跑会注入重复执行
+   * 才允许武装重派发。画布/工作流/定时等编排型轮次静默重跑会注入重复执行
    * （重复计费、重复写文件），一律不武装；未标记来源默认视为非用户聊天（安全兜底：
    * 未来新增的内部调用方不设 turnSource 就自然排除）。
+   *
+   * 有意排除的用户型来源：`remote_user`（Telegram/飞书/QQ/微信远程消息）与
+   * `voice`（语音助手）同为用户亲自发起，但**远程/语音管线有自己的投递语义**
+   * （结果回传、TTS 播报、断线重试），静默重派一轮会产生双份投递/双份播报，
+   * 故不纳入自动重派发——这两类轮次失败时仍会冻结执行器并发 warning 信号，
+   * 用户重发一次即可。若后续远程链路支持幂等投递，可将其加入白名单。
    */
   registerTurn(params: {
     turnId: string
@@ -114,7 +153,9 @@ export class AutoRouterTurnSupervisor {
   onTurnSuccess(turnId: string): void {
     const ctx = this.turns.get(turnId)
     if (ctx == null) return
-    autoRouterHealthRegistry.reportSuccess(ctx.providerId, ctx.modelId)
+    if (this.succeededTurns.has(turnId)) return
+    this.succeededTurns.add(turnId)
+    this.registry.reportSuccess(ctx.providerId, ctx.modelId)
     const armed = this.armedFailovers.get(ctx.sessionId)
     if (armed != null && armed.turnId === turnId) {
       this.armedFailovers.delete(ctx.sessionId)
@@ -127,15 +168,16 @@ export class AutoRouterTurnSupervisor {
 
   /**
    * 轮次终态失败（真实落库的 agent_error）：归类 → 冻结 → 判定是否武装重派发。
-   * `hasProducedSideEffects` 由挂点查询事件库给出（assistant/团队消息/工具调用）；
-   * `errorCode` 是 agent_error 事件的错误码，优先于文本参与归类（权限等待等本地
-   * 闸门错误靠错误码识别，防文本误判为可重试而误冻结执行器）。
+   * `hasProducedSideEffects` 是惰性 thunk：由挂点查询事件库给出（assistant/
+   * 团队消息/工具调用）——非 auto-router 会话（未登记轮次）在早退时不会触发
+   * 这次 DB 查询；`errorCode` 是 agent_error 事件的错误码，优先于文本参与
+   * 归类（权限等待等本地闸门错误靠错误码识别，防文本误判为可重试而误冻结执行器）。
    */
   onTerminalError(params: {
     turnId: string
     errorText: string
     errorCode?: string
-    hasProducedSideEffects: boolean
+    hasProducedSideEffects: () => boolean
   }): AutoRouterTerminalErrorOutcome | null {
     const ctx = this.turns.get(params.turnId)
     if (ctx == null) return null
@@ -153,18 +195,22 @@ export class AutoRouterTurnSupervisor {
       })
       return { kind, frozen: false, freezeMs: 0, failoverArmed: false }
     }
-    const freezeMs = autoRouterHealthRegistry.reportFailure(
+    const freezeMs = this.registry.reportFailure(
       ctx.providerId,
       ctx.modelId,
       kind,
       params.errorText,
     )
+    const hadSideEffects = params.hasProducedSideEffects()
     const failoverWorthy =
-      ctx.failoverArmed &&
-      !params.hasProducedSideEffects &&
-      isFailoverWorthyFailure(kind, params.errorText)
+      ctx.failoverArmed && !hadSideEffects && isFailoverWorthyFailure(kind, params.errorText)
     if (failoverWorthy) {
-      this.armedFailovers.set(ctx.sessionId, { ...ctx.seed, turnId: params.turnId })
+      this.armedFailovers.set(ctx.sessionId, {
+        ...ctx.seed,
+        turnId: params.turnId,
+        freezeMs,
+        kind,
+      })
     }
     log.warn('executor terminal failure recorded', {
       turnId: params.turnId,
@@ -174,7 +220,7 @@ export class AutoRouterTurnSupervisor {
       kind,
       freezeMs,
       failoverArmed: failoverWorthy,
-      hadSideEffects: params.hasProducedSideEffects,
+      hadSideEffects,
       detail: params.errorText.slice(0, 120),
     })
     return { kind, frozen: true, freezeMs, failoverArmed: failoverWorthy }
@@ -185,7 +231,7 @@ export class AutoRouterTurnSupervisor {
    * 错误暂停激活时放弃自动重跑」的闸门在 session.service 的 dispatchAutoRouterFailover
    * 调用点（queue-error-pause 检查）。
    */
-  consumeFailover(sessionId: string, finalizedTurnId: string): AutoRouterFailoverSeed | null {
+  consumeFailover(sessionId: string, finalizedTurnId: string): ArmedAutoRouterFailover | null {
     const armed = this.armedFailovers.get(sessionId)
     if (armed == null || armed.turnId !== finalizedTurnId) return null
     this.armedFailovers.delete(sessionId)
@@ -211,6 +257,7 @@ export class AutoRouterTurnSupervisor {
       }
     }
     this.turns.delete(turnId)
+    this.succeededTurns.delete(turnId)
   }
 
   /** 测试隔离用：清空全部状态。 */

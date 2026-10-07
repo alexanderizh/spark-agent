@@ -182,6 +182,106 @@ describe('buildErrorRetryPayload', () => {
     ]
     expect(buildErrorRetryPayload(frozenOnly as UIMessage[], 1)?.text).toBe('run it')
   })
+
+  it('re-opens manual retry when the auto-redispatched turn itself terminally failed', () => {
+    const messages: UIMessage[] = [
+      {
+        id: 'user-1',
+        turnId: 'turn-1',
+        role: 'user',
+        status: 'completed',
+        blocks: [{ kind: 'text', content: 'run the report', isStreaming: false }],
+        usage: null,
+        eventIds: ['user-1'],
+      },
+      {
+        id: 'assistant-error',
+        turnId: 'turn-1',
+        role: 'assistant',
+        status: 'error',
+        blocks: [
+          { kind: 'error', code: 'HTTP_429', message: 'rate limited', retryable: true },
+          {
+            kind: 'runtime_signal',
+            signal: 'executor_failover',
+            level: 'info',
+            title: '自动路由已切换执行模型',
+            message: '正在自动改派其他健康执行模型重试',
+            retryable: true,
+          },
+        ],
+        usage: null,
+        eventIds: ['assistant-error'],
+      },
+      {
+        // 重派发轮（投影后：隐藏用户消息被过滤，assistant 带来源标记）自身也失败
+        id: 'assistant-redispatch-error',
+        turnId: 'turn-2',
+        role: 'assistant',
+        status: 'error',
+        turnSource: 'auto_router_redispatch',
+        userMessageVisibility: 'hidden',
+        blocks: [{ kind: 'error', code: 'HTTP_500', message: 'backup down', retryable: true }],
+        usage: null,
+        eventIds: ['assistant-redispatch-error'],
+      },
+    ]
+
+    // 自动重试已耗尽：原错误卡的手动重试重新开放，载荷还原原文
+    expect(buildErrorRetryPayload(messages, 1)?.text).toBe('run the report')
+
+    // 重派发轮自身的错误卡：从原用户消息还原重试载荷（seed 即原文）
+    expect(buildErrorRetryPayload(messages, 2)?.text).toBe('run the report')
+
+    // 队列恢复路径同样能还原（重派发轮的 failedTurnId → 原文）
+    expect(buildTurnRetryPayload(messages, 'turn-2')?.text).toBe('run the report')
+  })
+
+  it('keeps retry suppressed while the redispatched turn is still running', () => {
+    const messages: UIMessage[] = [
+      {
+        id: 'user-1',
+        turnId: 'turn-1',
+        role: 'user',
+        status: 'completed',
+        blocks: [{ kind: 'text', content: 'run the report', isStreaming: false }],
+        usage: null,
+        eventIds: ['user-1'],
+      },
+      {
+        id: 'assistant-error',
+        turnId: 'turn-1',
+        role: 'assistant',
+        status: 'error',
+        blocks: [
+          { kind: 'error', code: 'HTTP_429', message: 'rate limited', retryable: true },
+          {
+            kind: 'runtime_signal',
+            signal: 'executor_failover',
+            level: 'info',
+            title: '自动路由已切换执行模型',
+            message: '正在自动改派其他健康执行模型重试',
+            retryable: true,
+          },
+        ],
+        usage: null,
+        eventIds: ['assistant-error'],
+      },
+      {
+        // 重派发轮进行中（无终态错误块）：抑制保持，防双执行
+        id: 'assistant-redispatch-running',
+        turnId: 'turn-2',
+        role: 'assistant',
+        status: 'streaming',
+        turnSource: 'auto_router_redispatch',
+        blocks: [{ kind: 'text', content: 'partial', isStreaming: true }],
+        usage: null,
+        eventIds: ['assistant-redispatch-running'],
+      },
+    ]
+
+    expect(buildErrorRetryPayload(messages, 1)).toBeNull()
+  })
 })
 
 describe('buildTurnRetryPayload', () => {
