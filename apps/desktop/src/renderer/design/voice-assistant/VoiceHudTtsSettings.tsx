@@ -47,11 +47,13 @@ const HUD_TTS_SPEED_STEPS: Array<{ label: string; value: number }> = [
 
 /** 与 speed 最接近的档位（Math.abs 最小差；中点并列时先出现的档位胜出）。 */
 function nearestSpeedStep(speed: number): number {
-  let nearest = HUD_TTS_SPEED_STEPS[0]
+  // noUncheckedIndexedAccess 下首元素可能 undefined：档位表是非空常量，1（1× 档）
+  // 兜底仅为类型收窄，首轮循环即被真实首档覆盖
+  let nearestValue = HUD_TTS_SPEED_STEPS[0]?.value ?? 1
   for (const step of HUD_TTS_SPEED_STEPS) {
-    if (Math.abs(step.value - speed) < Math.abs(nearest.value - speed)) nearest = step
+    if (Math.abs(step.value - speed) < Math.abs(nearestValue - speed)) nearestValue = step.value
   }
-  return nearest.value
+  return nearestValue
 }
 
 /** localStorage 读取异常（隐私模式 / 被禁用）回落收起。 */

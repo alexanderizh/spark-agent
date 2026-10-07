@@ -15,7 +15,8 @@
  * 安全与健壮性：文本一律经 stdin / base64 传递（argv 不出现正文，杜绝命令注入）；
  * 单句独立超时 kill；产物文件名随机防并发碰撞；探测结果缓存避免每句开销（探测
  * 失败不落正式缓存、短 TTL 负缓存退避、并发去重，仅成功探测才定档）；成功产物
- * 统一做 RIFF/WAVE 魔数校验，坏文件当场按失败处理而非把错误推迟到渲染端解码层。
+ * 统一做 RIFF/WAVE 魔数 + 尺寸自洽校验（RIFF/data 声明长度 vs 文件实际长度，
+ * 防增量写盘未收尾的截断产物），坏文件当场按失败处理而非把错误推迟到渲染端。
  * 命令构造与解析逻辑均为导出纯函数（buildSayArgs / parseSayChineseVoice /
  * buildSapiScript / mapSpeed* / isPlausibleWav / localEngineForPlatform /
  * resolvePowerShellCommand / estimateSapiEncodedCommandChars），探测编排
@@ -89,18 +90,52 @@ export function mapSpeedToEspeakWpm(speed: number): number {
 }
 
 /**
- * 解析 `say -v ?` 输出中的首个中文语音名。行格式：
+ * 经典优质中文语音（按简→繁→粤优先）：婷婷/美佳/善怡是 Apple 长期维护的标准
+ * 中文音色。macOS 13+ 的 `say -v ?` 清单按字母序排列，首个 zh 语音常是 novelty
+ * 搞笑/机器人音色（如 Eddy），首-match 策略会让所有现代 macOS 兜底都选中机械
+ * 变声音色——与「可懂兜底」意图相悖，故优先白名单。
+ */
+const PREFERRED_ZH_VOICE_BASENAMES = ['Tingting', 'Meijia', 'Sinji']
+/**
+ * macOS novelty/机器人音色基础名（去尾部括注后比对）。清单按字母序时它们常排在
+ * 标准 zh 语音之前；Eddy/Flo/Grandma/Grandpa/Reed/Rocko/Sandy/Shelley 为
+ * Ventura+ 新增多语言 novelty 音色（会注册 zh_CN locale），其余为经典英文
+ * novelty（防御性收录）。
+ */
+const NOVELTY_VOICE_BASENAMES = new Set([
+  'Eddy', 'Flo', 'Grandma', 'Grandpa', 'Reed', 'Rocko', 'Sandy', 'Shelley',
+  'Eaton', 'Jacqui', 'Tinker', 'Albert', 'Bad News', 'Bahh', 'Bells', 'Boing',
+  'Bubbles', 'Cellos', 'Deranged', 'Good News', 'Hysterical', 'Junior',
+  'Pipe Organ', 'Princess', 'Ralph', 'Trinoids', 'Whisper', 'Zarvox',
+])
+
+/** 语音显示名 → 基础名（去掉尾部 ASCII 括注，如 "Tingting (中文…)" → "Tingting"） */
+function voiceBaseName(name: string): string {
+  const cut = name.replace(/\(.*\)$/, '').trim()
+  return cut.length > 0 ? cut : name
+}
+
+/**
+ * 解析 `say -v ?` 输出中的中文语音名。行格式：
  * `Tingting            zh_CN    # 你好，我是婷婷。`
  * 语音名可含空格（如 "Yu-shu (Premium)"），按「名称 + zh locale + # 注释」
- * 三段式匹配；找不到中文语音返回 null（调用方回落系统默认语音，尽力朗读）。
+ * 三段式匹配。择音三级策略：① 经典优质中文语音白名单优先；② 排除 novelty
+ * 搞笑/机器人音色取首个；③ 全部都是 novelty 时取首个（有总比没有强）。
+ * 找不到中文语音返回 null（调用方回落系统默认语音，尽力朗读）。
  */
 export function parseSayChineseVoice(voiceListOutput: string): string | null {
+  const zhVoices: string[] = []
   for (const rawLine of voiceListOutput.split('\n')) {
     const match = /^(\S.*?)\s+(zh[-_][A-Za-z]+)\s+#/.exec(rawLine)
     const name = match?.[1]
-    if (name != null && name.length > 0) return name.trim()
+    if (name != null && name.length > 0) zhVoices.push(name.trim())
   }
-  return null
+  if (zhVoices.length === 0) return null
+  for (const preferred of PREFERRED_ZH_VOICE_BASENAMES) {
+    const hit = zhVoices.find((voice) => voiceBaseName(voice) === preferred)
+    if (hit != null) return hit
+  }
+  return zhVoices.find((voice) => !NOVELTY_VOICE_BASENAMES.has(voiceBaseName(voice))) ?? zhVoices[0] ?? null
 }
 
 /** 构造 macOS say 参数（文本经 stdin 传入：`-f -`，argv 不出现正文） */
@@ -138,7 +173,9 @@ export function buildSapiScript(options: { text: string; rate: number; outputPat
     'Add-Type -AssemblyName System.Speech',
     `$text=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${textB64}'))`,
     '$synth=New-Object System.Speech.Synthesis.SpeechSynthesizer',
-    '$zh=$synth.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like "zh*" } | Select-Object -First 1',
+    // Enabled 过滤：GetInstalledVoices() 按微软文档返回含 Enabled=false 的已禁用
+    // 语音；选中禁用语音会让 SelectVoice/Speak 抛错，该用户每句兜底全失败
+    '$zh=$synth.GetInstalledVoices() | Where-Object { $_.Enabled -and $_.VoiceInfo.Culture.Name -like "zh*" } | Select-Object -First 1',
     'if ($zh) { $null=$synth.SelectVoice($zh.VoiceInfo.Name) }',
     `$synth.Rate=${options.rate}`,
     `$synth.SetOutputToWaveFile('${escapedPath}')`,
@@ -153,13 +190,30 @@ export function encodePowerShellCommand(script: string): string {
 }
 
 /**
- * WAV 产物最小合法性（纯函数）：标准 WAV 头 44 字节起 + RIFF/WAVE 魔数。
- * 防子进程退出码 0 但产物空/截断（磁盘满等）：坏文件交给渲染端会在 WebAudio
- * 解码层炸出难归因的错误，这里当场按合成失败处理。
+ * WAV 产物最小合法性（纯函数）：魔数 + 尺寸字段自洽，防「退出码 0 但产物截断」。
+ * 实测 say 增量写盘、RIFF/data 尺寸字段仅在收尾回填（CoreAudio 布局为
+ * fmt → FLLR(4044) → data）：早杀产物 filesize=4096 且 RIFF 等式碰巧自洽但
+ * dataSize=0；晚杀产物 RIFF size 停留在首块占位值。正常收尾产物两个等式均
+ * 精确成立（实测 say；SAPI/espeak-ng 为标准 data 收尾布局）。坏文件交给渲染端
+ * 会在 WebAudio 解码层炸出难归因的错误，这里当场按合成失败处理。
  */
 export function isPlausibleWav(size: number, header: Buffer): boolean {
   if (!Number.isFinite(size) || size < 44 || header.length < 12) return false
-  return header.toString('ascii', 0, 4) === 'RIFF' && header.toString('ascii', 8, 12) === 'WAVE'
+  if (header.toString('ascii', 0, 4) !== 'RIFF' || header.toString('ascii', 8, 12) !== 'WAVE') return false
+  // 截断检测①：RIFF 声明长度与文件实际长度一致（抓晚杀：size 字段停在占位值）
+  if (header.readUInt32LE(4) + 8 !== size) return false
+  // 截断检测②：走 chunk 链找 data，声明尺寸 >0 且结束位置与文件长度一致
+  // （抓早杀：等式碰巧自洽但 dataSize 仍是 0 占位）。data 为最后一个 chunk 是
+  // 三平台写入器的共同行为；chunk 尺寸奇数时按规范 pad 1 字节对齐。
+  let offset = 12
+  while (offset + 8 <= header.length) {
+    const chunkSize = header.readUInt32LE(offset + 4)
+    if (header.toString('ascii', offset, offset + 4) === 'data') {
+      return chunkSize > 0 && offset + 8 + chunkSize === size
+    }
+    offset += 8 + chunkSize + (chunkSize & 1)
+  }
+  return false
 }
 
 /** 读产物头部做 WAV 校验，不达标抛错（走既有失败清理与上抛路径） */
@@ -167,10 +221,12 @@ async function assertWavOutput(filePath: string): Promise<void> {
   const { size } = await stat(filePath)
   const handle = await open(filePath, 'r')
   try {
-    const header = Buffer.alloc(12) // 读不满时零填充，魔数比对自然失败
+    // 窗口 8192 覆盖 say 的 FLLR 布局（data 头在 offset 4088）；读不满时零填充，
+    // 链解析自然失败。SAPI/espeak-ng 的 data 在头部 ~44 偏移，远在窗口内
+    const header = Buffer.alloc(8192)
     // 注意：fs/promises 无模块级 read（FileHandle.read 才是正确姿势——模块级
     // read 仅存在于回调版 node:fs，命名导入在真实运行时必炸 undefined）
-    await handle.read(header, 0, 12, 0)
+    await handle.read(header, 0, 8192, 0)
     if (!isPlausibleWav(size, header)) {
       throw new Error(`本地合成产物校验失败（非 WAVE 或已截断，size=${size}）`)
     }
@@ -337,6 +393,11 @@ export async function synthesizeSpeechLocally(options: {
   const platform = options.platform ?? process.platform
   const engine = localEngineForPlatform(platform)
   if (options.text.trim().length === 0) throw new Error('本地兜底合成文本为空')
+  // speed 有限性自防御：NaN 会穿透 Math.min/max 映射链产出 "-r NaN" 类 argv
+  // （macOS say 静默容错，但 Windows $synth.Rate=NaN 会稳定失败）。当前唯一调用
+  // 方的 speed 来自协议层 readNumber 归一化（不可能非有限），这里防未来新调用
+  // 方绕过协议层时静默劣化为必败。
+  const speed = Number.isFinite(options.speed) ? options.speed : 1.0
   await mkdir(options.outputDir, { recursive: true })
   const outputPath = join(options.outputDir, `local-${randomUUID()}.wav`)
   const startedAt = Date.now()
@@ -348,7 +409,7 @@ export async function synthesizeSpeechLocally(options: {
       const voice = await detectSayChineseVoice()
       await runChildProcess(
         'say',
-        buildSayArgs({ voice, rateWpm: mapSpeedToSayRateWpm(options.speed), outputPath }),
+        buildSayArgs({ voice, rateWpm: mapSpeedToSayRateWpm(speed), outputPath }),
         options.text,
         LOCAL_TTS_TIMEOUT_MS,
       )
@@ -362,7 +423,7 @@ export async function synthesizeSpeechLocally(options: {
       }
       const script = buildSapiScript({
         text: options.text,
-        rate: mapSpeedToSapiRate(options.speed),
+        rate: mapSpeedToSapiRate(speed),
         outputPath,
       })
       await runChildProcess(
@@ -374,7 +435,7 @@ export async function synthesizeSpeechLocally(options: {
     } else {
       await runChildProcess(
         'espeak-ng',
-        buildEspeakArgs({ rateWpm: mapSpeedToEspeakWpm(options.speed), outputPath }),
+        buildEspeakArgs({ rateWpm: mapSpeedToEspeakWpm(speed), outputPath }),
         options.text,
         LOCAL_TTS_TIMEOUT_MS,
       )

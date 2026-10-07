@@ -1,7 +1,8 @@
 // 语音助手 HUD 浮层样式（v5：上中下三段式竖版卡 + 自由拖拽；配色 A 单色系浓淡 +
 // 方向 1 像素网格 4×4 小号版 + 聆听光晕呼吸）
-// 结构参考用户草图：顶部大留白舞台（图标本体小巧）→ 中部文字 → 底部居中停止胶囊，
-// 宽高比约 5:6。三态用色全部由 --primary 派生（越紧要越浓），描边中性不随状态染色，
+// 结构参考用户草图：顶部大留白舞台（图标本体小巧）→ 中部文字 → 播报设置条 →
+// 底部居中停止胶囊，宽高比约 13:16。三态用色全部由 --primary 派生（越紧要越浓），
+// 描边中性不随状态染色，
 // 状态的彩色信息只由点阵/光晕 + 状态点承担，文字保持中性色。
 // 卡片整体是拖拽把手（位置由 useVoiceHudDrag 持久化），停止钮不参与拖拽。
 
@@ -12,8 +13,8 @@
   z-index: 2200;
   display: flex;
   flex-direction: column;
-  width: 216px;
-  min-height: 272px;
+  width: 260px;
+  min-height: 320px;
   border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
   background: color-mix(in srgb, var(--bg, #fff) 88%, transparent);
@@ -58,7 +59,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 128px;
+  height: 136px;
   margin-top: 6px;
   transition:
     opacity 0.2s ease,
@@ -258,10 +259,11 @@
   }
 }
 
-// 插话队列框：文案区下方内嵌，扁平靠底色分层（无描边）
+// 插话队列框：文案区下方内嵌，扁平靠底色分层（无描边）；max-width 跟随卡片
+// 加宽比例（260/216）同步放大，保持与卡片宽度占比不变
 .voice-hud-queue {
   width: 100%;
-  max-width: 180px;
+  max-width: 224px;
   margin-top: 2px;
   padding: 8px 10px;
   border-radius: 8px;
@@ -639,9 +641,10 @@
 }
 
 .voice-hud-tts-select.ant-select {
-  // flex item 允许收缩到 max-width 内，超长文案（渠道名/音色 ID）走 ellipsis
+  // flex item 允许收缩到 max-width 内，超长文案（渠道名/音色 ID）走 ellipsis；
+  // 卡片加宽后放大 max-width，给超长渠道/音色名多一点显示空间
   min-width: 0;
-  max-width: 72px;
+  max-width: 88px;
   border-radius: 5px;
   transition: background 0.15s ease;
 
@@ -710,4 +713,16 @@
   &.is-active {
     color: var(--primary);
   }
+}
+
+// 保存失败提示行（宿主渲染在设置条之下、footer 之上）：一行 11px 危险色小字，
+// hook 侧已做乐观回滚 + 5s 自动清空，这里仅是展示位；同样不作为拖拽把手。
+.voice-hud-tts-error {
+  flex: none;
+  padding: 0 14px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--danger);
+  word-break: break-all;
+  text-align: center;
 }

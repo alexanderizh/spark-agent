@@ -39,10 +39,44 @@ beforeEach(() => {
 })
 
 /** 标准 WAV 头前 12 字节（RIFF + WAVE 魔数） */
-function makeWavHeader(): Buffer {
-  const header = Buffer.alloc(12)
+/**
+ * 构造完整合法的标准 WAV 头（fmt@12 + data@36，SAPI/espeak-ng 布局）。
+ * RIFF/data 尺寸字段按收尾回填口径写入（与 filesize 自洽）。
+ */
+function makeValidWavHeader(dataSize: number): Buffer {
+  const header = Buffer.alloc(44)
   header.write('RIFF', 0, 'ascii')
+  header.writeUInt32LE(36 + dataSize, 4)
   header.write('WAVE', 8, 'ascii')
+  header.write('fmt ', 12, 'ascii')
+  header.writeUInt32LE(16, 16)
+  header.write('data', 36, 'ascii')
+  header.writeUInt32LE(dataSize, 40)
+  return header
+}
+
+/**
+ * 构造 macOS say 产出的 FLLR 布局头（fmt@12 + FLLR@36 + data@4088，实测
+ * CoreAudio 写盘形态）。riffSize/dataSize 可独立覆盖以复现截断占位值：
+ * 早杀产物两等式碰巧自洽但 dataSize=0；晚杀产物 riffSize 停留首块占位值。
+ */
+function makeSayLayoutHeader(options: {
+  dataSize: number
+  riffSize?: number
+  fillerSize?: number
+}): Buffer {
+  const fillerSize = options.fillerSize ?? 4044
+  const dataAt = 12 + 8 + 16 + 8 + fillerSize // = 4088（默认）
+  const header = Buffer.alloc(dataAt + 8)
+  header.write('RIFF', 0, 'ascii')
+  header.writeUInt32LE(options.riffSize ?? dataAt + 8 + options.dataSize - 8, 4)
+  header.write('WAVE', 8, 'ascii')
+  header.write('fmt ', 12, 'ascii')
+  header.writeUInt32LE(16, 16)
+  header.write('FLLR', 36, 'ascii')
+  header.writeUInt32LE(fillerSize, 40)
+  header.write('data', dataAt, 'ascii')
+  header.writeUInt32LE(options.dataSize, dataAt + 4)
   return header
 }
 
@@ -110,6 +144,26 @@ describe('parseSayChineseVoice（say -v ? 输出解析）', () => {
     expect(parseSayChineseVoice('')).toBe(null)
     expect(parseSayChineseVoice('some random line without locale')).toBe(null)
   })
+
+  it('macOS 13+ 字母序清单：novelty 语音排前也不选中，白名单 Tingting 优先', () => {
+    // 真机 macOS 26 清单形态：Eddy（novelty）字母序在 Tingting 之前
+    const output = [
+      'Eddy (中文（中国大陆）)     zh_CN    # 你好！我叫Eddy。',
+      'Sinji               zh_HK    # 你好！我叫善怡。',
+      'Tingting (中文（中国大陆）) zh_CN    # 你好！我叫婷婷。',
+    ].join('\n')
+    expect(parseSayChineseVoice(output)).toBe('Tingting (中文（中国大陆）)')
+  })
+
+  it('无白名单命中时排除 novelty 取首个标准音色；仅有 novelty 时兜底取首个', () => {
+    const withNovelty = [
+      'Eddy (中文（中国大陆）)     zh_CN    # 你好！',
+      'Yu-shu (Premium)    zh_CN    # 你好',
+    ].join('\n')
+    expect(parseSayChineseVoice(withNovelty)).toBe('Yu-shu (Premium)')
+    const onlyNovelty = ['Flo (中文（中国大陆）)     zh_CN    # 你好！'].join('\n')
+    expect(parseSayChineseVoice(onlyNovelty)).toBe('Flo (中文（中国大陆）)')
+  })
 })
 
 describe('buildSayArgs', () => {
@@ -153,9 +207,12 @@ describe('buildSapiScript', () => {
     expect(script).toContain("'C:/us''er/a.wav'")
   })
 
-  it('优先选择 zh 文化语音（脚本含 SelectVoice 分支）', () => {
+  it('优先选择已启用的 zh 文化语音（过滤禁用语音 + SelectVoice 分支）', () => {
     const script = buildSapiScript({ text: 'hi', rate: 0, outputPath: 'C:/t/a.wav' })
     expect(script).toContain('GetInstalledVoices')
+    // GetInstalledVoices() 含 Enabled=false 的禁用语音（微软文档），选中禁用语音
+    // 会让 SelectVoice/Speak 抛错 → 该用户每句兜底全失败，必须过滤
+    expect(script).toContain('$_.Enabled -and $_.VoiceInfo.Culture.Name -like "zh*"')
     expect(script).toContain('SelectVoice')
   })
 })
@@ -170,31 +227,65 @@ describe('encodePowerShellCommand', () => {
 })
 
 describe('isPlausibleWav', () => {
-  it('RIFF/WAVE 魔数 + ≥44 字节判合法', () => {
-    expect(isPlausibleWav(1024, makeWavHeader())).toBe(true)
-    expect(isPlausibleWav(44, makeWavHeader())).toBe(true) // 恰好最小头
+  it('标准布局（fmt+data）收尾自洽判合法', () => {
+    expect(isPlausibleWav(44 + 1000, makeValidWavHeader(1000))).toBe(true)
+    expect(isPlausibleWav(44 + 1, makeValidWavHeader(1))).toBe(true) // 最小合法体
+  })
+
+  it('say 的 FLLR 布局收尾自洽判合法（data@4088）', () => {
+    // 实测正常 say 产物：filesize=61430、dataSize=57334、data@4088
+    expect(isPlausibleWav(61430, makeSayLayoutHeader({ dataSize: 57334 }))).toBe(true)
+    // 静音产物同样有真实采样数据（实测纯标点 dataSize=6130）
+    expect(isPlausibleWav(4096 + 6130, makeSayLayoutHeader({ dataSize: 6130 }))).toBe(true)
+  })
+
+  it('早杀截断拒绝：RIFF 等式碰巧自洽但 dataSize=0 占位（实测形态 filesize=4096）', () => {
+    const header = makeSayLayoutHeader({ dataSize: 0 })
+    // 实测早杀产物：整个文件就是首个 4096 头块，riffSize=4088 与 filesize 自洽
+    expect(header.readUInt32LE(4) + 8).toBe(4096)
+    expect(isPlausibleWav(4096, header)).toBe(false)
+  })
+
+  it('晚杀截断拒绝：RIFF size 停留首块占位值（实测形态 riffSize=4088 vs 实际 8.8MB）', () => {
+    const header = makeSayLayoutHeader({ dataSize: 0, riffSize: 4088 })
+    expect(isPlausibleWav(8_872_844, header)).toBe(false)
+  })
+
+  it('data 声明尺寸与文件长度不符拒绝（空隙/多余尾部）', () => {
+    expect(isPlausibleWav(44 + 2000, makeValidWavHeader(1000))).toBe(false)
+    expect(isPlausibleWav(44 + 500, makeValidWavHeader(1000))).toBe(false)
+  })
+
+  it('dataSize=0 的标准布局拒绝（无任何采样数据）', () => {
+    expect(isPlausibleWav(44, makeValidWavHeader(0))).toBe(false)
   })
 
   it('尺寸不足 44 字节（空文件/截断）拒绝', () => {
-    expect(isPlausibleWav(0, makeWavHeader())).toBe(false)
-    expect(isPlausibleWav(43, makeWavHeader())).toBe(false)
+    expect(isPlausibleWav(0, makeValidWavHeader(1000))).toBe(false)
+    expect(isPlausibleWav(43, makeValidWavHeader(1000))).toBe(false)
   })
 
   it('魔数错误拒绝（子进程输出非音频/损坏）', () => {
-    const bad = Buffer.alloc(12)
+    const bad = Buffer.alloc(44)
     bad.write('RIFX', 0, 'ascii')
     bad.write('WAVE', 8, 'ascii')
-    expect(isPlausibleWav(1024, bad)).toBe(false)
+    expect(isPlausibleWav(1044, bad)).toBe(false)
 
-    const notWave = Buffer.alloc(12)
+    const notWave = Buffer.alloc(44)
     notWave.write('RIFF', 0, 'ascii')
     notWave.write('fmt ', 8, 'ascii')
-    expect(isPlausibleWav(1024, notWave)).toBe(false)
+    expect(isPlausibleWav(1044, notWave)).toBe(false)
   })
 
   it('头部过短与非数值尺寸拒绝', () => {
-    expect(isPlausibleWav(1024, Buffer.alloc(8))).toBe(false)
-    expect(isPlausibleWav(Number.NaN, makeWavHeader())).toBe(false)
+    expect(isPlausibleWav(1044, Buffer.alloc(8))).toBe(false)
+    expect(isPlausibleWav(Number.NaN, makeValidWavHeader(1000))).toBe(false)
+  })
+
+  it('头部窗口内走不到 data chunk 拒绝（链解析耗尽）', () => {
+    // FLLR 尺寸声明超出头部窗口：链解析走不到 data，按校验失败处理
+    const header = makeSayLayoutHeader({ dataSize: 1000, fillerSize: 9000 })
+    expect(isPlausibleWav(9000 + 8 + 1000, header)).toBe(false)
   })
 })
 
@@ -304,9 +395,9 @@ describe('detectSayChineseVoice 探测编排（注入 runner 替身）', () => {
   })
 
   it('并发首句去重：两路同时探测只跑一次子进程，共享同一结果', async () => {
-    let resolveProbe: (value: { stdout: string; stderr: string }) => void = () => {}
+    let releaseProbe: () => void = () => {}
     const gate = new Promise<void>((resolve) => {
-      resolveProbe = () => resolve(undefined)
+      releaseProbe = () => resolve(undefined)
     })
     const runner = vi.fn(async () => {
       await gate
@@ -314,7 +405,7 @@ describe('detectSayChineseVoice 探测编排（注入 runner 替身）', () => {
     })
     const first = detectSayChineseVoice(runner)
     const second = detectSayChineseVoice(runner)
-    resolveProbe()
+    releaseProbe()
     await expect(first).resolves.toBe('Tingting')
     await expect(second).resolves.toBe('Tingting')
     expect(runner).toHaveBeenCalledOnce()

@@ -71,7 +71,8 @@ function stubSpark(handlers: {
   listModels?: () => Promise<unknown>
   updateSettings?: (request: { settings: VoiceAssistantSettings }) => Promise<unknown>
 } = {}): {
-  updateSettings: ReturnType<typeof vi.fn>
+  // 传入方可能给 vi.fn 也可能给普通函数：按可调用签名窄化，Mock 天然满足
+  updateSettings: (request: { settings: VoiceAssistantSettings }) => Promise<unknown>
 } {
   const updateSettings =
     handlers.updateSettings ??
@@ -103,7 +104,7 @@ let latest: UseVoiceTtsSettingsResult | null = null
 let container: HTMLDivElement | null = null
 let root: Root | null = null
 
-function Probe(): React.ReactElement {
+function Probe(): React.ReactNode {
   latest = useVoiceTtsSettings()
   return null
 }

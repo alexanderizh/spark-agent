@@ -1,13 +1,15 @@
 /**
  * VoiceAssistantHost — 语音助手渲染端宿主（App 根部挂载一次）
  *
- * 四件事：
+ * 五件事：
  * 1. 桥接：把主进程的采集指令路由给 AssistantCaptureController，
  *    播放指令路由给 VoicePlaybackController，状态事件供 HUD 消费。
  * 2. HUD：listening / thinking / speaking 状态浮层（可点击打断）。
  * 3. 全双工元素：迷你麦（thinking/speaking 也在听指示）、插话队列框
  *    （弱态/正态/衔接只读）、立即发送/放弃、ack 弹亮（提交瞬间反馈）。
  * 4. 卸载兜底：释放采集与播放资源。
+ * 5. 播报设置条：HUD 内嵌 TTS 快捷切换（渠道/模型/音色/语速），数据由
+ *    useVoiceTtsSettings 提供，改动经 patch 落库并即时生效到下一句播报。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -21,7 +23,9 @@ import { getVoicePlaybackController } from './VoicePlaybackController'
 import { VoiceHudWaveform, type VoiceHudWaveformState } from './VoiceHudWaveform'
 import { VoiceHudMiniMic } from './VoiceHudMiniMic'
 import { VoiceHudQueueBox } from './VoiceHudQueueBox'
+import { VoiceHudTtsSettings } from './VoiceHudTtsSettings'
 import { useVoiceHudDrag } from './useVoiceHudDrag'
+import { useVoiceTtsSettings } from './useVoiceTtsSettings'
 import './voiceAssistant.less'
 
 const STATE_META: Record<VoiceHudWaveformState, string> = {
@@ -197,6 +201,10 @@ export function VoiceAssistantHost(): React.ReactNode {
   const hudCardRef = useRef<HTMLDivElement | null>(null)
   const { isDragging, dragHandlers } = useVoiceHudDrag(hudCardRef)
 
+  // 播报设置数据（hook 同样必须在 early return 之前调用）：宿主常驻预读，
+  // HUD 出现时渠道/模型候选与设置已就绪，无需等首读往返。
+  const tts = useVoiceTtsSettings()
+
   if (hud == null || !isWaveformState(hud.state)) return null
 
   const handleInterrupt = (): void => {
@@ -258,6 +266,22 @@ export function VoiceAssistantHost(): React.ReactNode {
           />
         ) : null}
       </div>
+      {/* 播报设置条：改动经 patch 乐观更新落库，主进程每次合成实时读当前设置，
+          下一句播报即按新值生效 */}
+      <VoiceHudTtsSettings
+        settings={tts.settings}
+        models={tts.models}
+        onPatch={(patch) => {
+          void tts.patch(patch)
+        }}
+      />
+      {/* 保存失败提示：hook 已做乐观回滚 + 5s 自动清空，这里只做展示位
+          （同样不作为拖拽把手） */}
+      {tts.saveError != null ? (
+        <div className="voice-hud-tts-error" onPointerDown={(event) => event.stopPropagation()}>
+          {tts.saveError}
+        </div>
+      ) : null}
       {/* 底部停止：居中胶囊钮（方形图标与方块动画同语言 + 文字）；卡片是拖拽把手，
           按钮不作为把手（pointerdown 不上冒泡到卡片） */}
       <div className="voice-assistant-hud-footer">
