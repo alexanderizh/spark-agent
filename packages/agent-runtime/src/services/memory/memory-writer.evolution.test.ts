@@ -329,4 +329,111 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
     // 目标未被自动改动（defer 生效：等用户裁决）
     expect(repo.getById(manual.id)!.description).toBe('偏好 A')
   })
+
+  it('【审查修复·P2-A】同 digest 候选已被用户拒绝：第二轮冲突不得自动执行（rejected 裁决不可推翻）', async () => {
+    const candidateRepo = new MemoryCandidateRepository(db)
+    const manual = await makeWriter({ decision: 'NOOP', targetId: null, reason: 'x' }).manualWrite({
+      scope: 'user',
+      type: 'user',
+      name: 'manual-pref-rj',
+      description: '偏好 A',
+      body: '偏好 A 的正文（rejected 保护测试）。',
+      scopeRef: null,
+    })
+    const writer = new MemoryWriterService(
+      repo,
+      store,
+      () => null,
+      async () => '[]',
+      mockEvolution({ decision: 'UPDATE', targetId: manual.id, reason: '用户改为 C' }),
+      undefined,
+      undefined,
+      candidateRepo,
+    )
+    const candidate: MemoryCandidate = {
+      scope: 'user',
+      type: 'user',
+      name: 'pref-correction-rj',
+      description: '改为 C（用户纠正）',
+      body: '新正文：偏好 C。',
+      confidence: 0.8,
+    }
+    const run = (): Promise<void> =>
+      (
+        writer as unknown as {
+          processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void>
+        }
+      ).processCandidate(candidate, null, 'sess')
+
+    // 第一轮征集 pending，用户明确拒绝该 update 提议
+    await run()
+    const first = candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })
+    expect(first).toHaveLength(1)
+    candidateRepo.reject(first[0]!.id)
+
+    // 第二轮同冲突：digest 命中 rejected 行。修复前降级自动执行（inserted:false
+    // 无视 status → return false → 直接改写用户保住的目标）；修复后跳过自动
+    // 写入（与「转候选等确认」同语义），用户裁决维持
+    await run()
+    expect(repo.getById(manual.id)!.description).toBe('偏好 A')
+    expect(candidateRepo.listByStatus('rejected', { scope: 'user', scopeRef: null })).toHaveLength(
+      1,
+    )
+    expect(candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })).toHaveLength(
+      0,
+    )
+  })
+
+  it('【审查修复·P2-A】DELETE 提议被拒后：同 digest 再冲突不得自动失效目标（digest=目标正文天然稳定）', async () => {
+    const candidateRepo = new MemoryCandidateRepository(db)
+    const manual = await makeWriter({ decision: 'NOOP', targetId: null, reason: 'x' }).manualWrite({
+      scope: 'user',
+      type: 'user',
+      name: 'manual-keep',
+      description: '保留我',
+      body: '用户明确要保留的正文（delete rejected 保护测试）。',
+      scopeRef: null,
+    })
+    const writer = new MemoryWriterService(
+      repo,
+      store,
+      () => null,
+      async () => '[]',
+      mockEvolution({ decision: 'DELETE', targetId: manual.id, reason: '已过时' }),
+      undefined,
+      undefined,
+      candidateRepo,
+    )
+    const candidate: MemoryCandidate = {
+      scope: 'user',
+      type: 'user',
+      name: 'evolve-suggest-del',
+      description: '演化建议删除',
+      body: '（DELETE 候选暂存正文取目标自身正文，与演化建议无关）',
+      confidence: 0.7,
+    }
+    const run = (): Promise<void> =>
+      (
+        writer as unknown as {
+          processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void>
+        }
+      ).processCandidate(candidate, null, 'sess')
+
+    // 第一轮征集 pending delete 提议 → 用户拒绝（保住该记忆）
+    await run()
+    const first = candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })
+    expect(first).toHaveLength(1)
+    expect(candidateRepo.parsePayload(first[0]!)?.action).toBe('delete')
+    candidateRepo.reject(first[0]!.id)
+
+    // 第二轮同冲突：delete 候选 digest 由目标 name/description/body 构成，目标
+    // 未变则逐字节相同 → 命中 rejected 行。修复前会静默自动失效用户明确保住
+    // 的记忆；修复后跳过，目标保持有效
+    await run()
+    const kept = repo.getById(manual.id)!
+    expect(kept.invalid_at).toBeNull()
+    expect(candidateRepo.listByStatus('rejected', { scope: 'user', scopeRef: null })).toHaveLength(
+      1,
+    )
+  })
 })
