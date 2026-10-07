@@ -657,7 +657,8 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
     setInput('')
     setNotice('')
     try {
-      await sendTurn({ sessionId, message: text })
+      // 用户聊天输入显式声明来源：auto-router 故障切换重派发仅对 'user' 轮次武装
+      await sendTurn({ sessionId, message: text, turnSource: 'user' })
       bumpSessionMessageCount(sessionId)
       // 发送即最新活动：让该会话立刻浮到列表顶部（#196）
       bumpSessionActivity(sessionId)

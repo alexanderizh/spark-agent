@@ -24,7 +24,7 @@ import type {
   TeamA2AReply,
   WorkflowProgressNode,
 } from '../events/index.js'
-import type { UserMessagePresentation } from '../turn-message-presentation.js'
+import type { TurnSource, UserMessagePresentation } from '../turn-message-presentation.js'
 import type { AutoRouterConfig, AutoRouterExecutorHealthSnapshot } from '../auto-router-config.js'
 import type {
   ImageProcessProgress,
@@ -429,6 +429,12 @@ export interface SessionSendTurnRequest {
    * 服务端只会在当前队列确实因 turn error 暂停时采用该提示，普通发送路径不受影响。
    */
   resumePausedQueue?: boolean
+  /**
+   * 轮次发起来源声明（可选）：用户聊天输入路径传 'user'。auto-router 执行器
+   * 故障切换重派发仅对 'user' 轮次武装——未声明视为非用户直发（画布/看板/子应用
+   * 等编排型轮次静默重跑会注入重复执行，一律不自动重派发）。
+   */
+  turnSource?: TurnSource
 }
 
 export interface SessionSendTurnResponse {

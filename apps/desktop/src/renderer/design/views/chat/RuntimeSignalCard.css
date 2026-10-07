@@ -140,3 +140,43 @@
     max-width: 84px;
   }
 }
+
+/* auto-router 执行器故障切换信号卡：主动保护动作，非错误诊断 */
+.executor-failover-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.executor-failover-card-icon {
+  display: flex;
+  margin-top: 1px;
+  color: var(--info);
+}
+
+.executor-failover-card.is-frozen .executor-failover-card-icon {
+  color: var(--warning);
+}
+
+.executor-failover-card-body {
+  min-width: 0;
+}
+
+.executor-failover-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.executor-failover-card-message {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}

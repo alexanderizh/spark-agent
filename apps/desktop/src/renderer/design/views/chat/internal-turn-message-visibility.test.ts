@@ -174,6 +174,25 @@ describe('projectVisibleChatMessages', () => {
     ])
   })
 
+  it('auto-router redispatch queued turns get a dedicated label instead of the generic one', () => {
+    expect(
+      projectQueuedTurnsForDisplay([
+        {
+          turnId: 'redispatch',
+          message: 'original user prompt',
+          enqueuedAt: '2026-10-07T00:00:00.000Z',
+          turnSource: 'auto_router_redispatch',
+          userMessageVisibility: 'hidden',
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        turnId: 'redispatch',
+        message: '智能路由故障切换重试',
+      }),
+    ])
+  })
+
   it('command follow-up turns render as hidden with a command label, never the built-in prompt', () => {
     const logicalMessages: UIMessage[] = [
       message({

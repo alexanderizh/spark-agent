@@ -2110,6 +2110,8 @@ export function ComposerV2({
             const sendRes = await sendTurn({
               sessionId: commandSessionId,
               message: text,
+              // 用户聊天输入显式声明来源：auto-router 故障切换重派发仅对 'user' 轮次武装
+              turnSource: 'user',
               ...(optimisticSend != null ? { clientMessageId: optimisticSend.clientId } : {}),
               ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
               ...(turnSessionReferences.length > 0
@@ -2216,6 +2218,8 @@ export function ComposerV2({
         const res = await sendTurn({
           sessionId: targetSessionId,
           message: text,
+          // 用户聊天输入显式声明来源：auto-router 故障切换重派发仅对 'user' 轮次武装
+          turnSource: 'user',
           ...(optimisticSend != null ? { clientMessageId: optimisticSend.clientId } : {}),
           ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
           ...(turnSessionReferences.length > 0

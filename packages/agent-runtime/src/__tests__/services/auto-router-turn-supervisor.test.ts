@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { TurnSource } from '@spark/protocol'
 import { autoRouterHealthRegistry } from '../../services/auto-router-health'
 import { AutoRouterTurnSupervisor } from '../../services/auto-router-turn-supervisor'
 
@@ -13,7 +14,12 @@ function makeSupervisor() {
 
 function registerStandardTurn(
   supervisor: AutoRouterTurnSupervisor,
-  overrides?: { turnId?: string; isRedispatch?: boolean },
+  overrides?: {
+    turnId?: string
+    isRedispatch?: boolean
+    /** null = 不标记来源（画布/看板等编排型轮次的真实形态）；缺省 'user' */
+    turnSource?: TurnSource | null
+  },
 ): void {
   supervisor.registerTurn({
     turnId: overrides?.turnId ?? 't1',
@@ -23,6 +29,9 @@ function registerStandardTurn(
     providerId: 'p-exec',
     modelId: 'm-exec',
     isRedispatch: overrides?.isRedispatch ?? false,
+    ...(overrides?.turnSource !== null
+      ? { turnSource: overrides?.turnSource ?? 'user' }
+      : {}),
     seed: { sessionId: 's1', message: '帮我把这个模块重构一下' },
   })
 }
@@ -162,5 +171,95 @@ describe('AutoRouterTurnSupervisor 故障切换判定', () => {
     })
     supervisor.discardFailover('s1')
     expect(supervisor.consumeFailover('s1', 't1')).toBeNull()
+  })
+
+  it('未标记来源的轮次（画布/看板等编排型）→ 冻结但不武装', () => {
+    const supervisor = makeSupervisor()
+    registerStandardTurn(supervisor, { turnSource: null })
+    const outcome = supervisor.onTerminalError({
+      turnId: 't1',
+      errorText: 'HTTP 429: too many requests',
+      hasProducedSideEffects: false,
+    })
+    // 冻结照记（执行器确实失败），但静默重跑编排型轮次会注入重复执行，不武装
+    expect(outcome?.frozen).toBe(true)
+    expect(outcome?.failoverArmed).toBe(false)
+  })
+
+  it('非用户来源（scheduled_task 等）→ 冻结但不武装', () => {
+    const supervisor = makeSupervisor()
+    registerStandardTurn(supervisor, { turnSource: 'scheduled_task' })
+    const outcome = supervisor.onTerminalError({
+      turnId: 't1',
+      errorText: 'HTTP 429: too many requests',
+      hasProducedSideEffects: false,
+    })
+    expect(outcome?.failoverArmed).toBe(false)
+  })
+
+  it('中途瞬时 error 武装后轮次自愈成功 → 作废种子，不重跑已成功轮次', () => {
+    const supervisor = makeSupervisor()
+    registerStandardTurn(supervisor, { turnId: 't1' })
+    supervisor.onTerminalError({
+      turnId: 't1',
+      errorText: 'HTTP 500: internal server error',
+      hasProducedSideEffects: false,
+    })
+    // SDK 自愈续流，轮次最终成功：种子必须被作废，否则收尾会把已成功轮次重跑
+    supervisor.onTurnSuccess('t1')
+    expect(supervisor.consumeFailover('s1', 't1')).toBeNull()
+  })
+
+  it('成功终态只作废本轮种子；其他轮武装的种子不受影响', () => {
+    const supervisor = makeSupervisor()
+    registerStandardTurn(supervisor, { turnId: 't1' })
+    registerStandardTurn(supervisor, { turnId: 't2' })
+    supervisor.onTerminalError({
+      turnId: 't2',
+      errorText: 'HTTP 500: internal server error',
+      hasProducedSideEffects: false,
+    })
+    supervisor.onTurnSuccess('t1')
+    expect(supervisor.consumeFailover('s1', 't2')?.message).toBe('帮我把这个模块重构一下')
+  })
+
+  it('权限等待超时错误码 → environment 不冻结不武装（文本会误判为可重试）', () => {
+    const supervisor = makeSupervisor()
+    registerStandardTurn(supervisor)
+    const outcome = supervisor.onTerminalError({
+      turnId: 't1',
+      errorText: 'permission request timed out after 300s waiting',
+      errorCode: 'PERMISSION_TIMEOUT',
+      hasProducedSideEffects: false,
+    })
+    expect(outcome?.kind).toBe('environment')
+    expect(outcome?.frozen).toBe(false)
+    expect(outcome?.failoverArmed).toBe(false)
+    expect(autoRouterHealthRegistry.isFrozen('p-exec', 'm-exec')).toBe(false)
+  })
+
+  it('forgetTurn 作废该轮自身武装的种子（取消/无执行权收尾防滞留）', () => {
+    const supervisor = makeSupervisor()
+    registerStandardTurn(supervisor)
+    supervisor.onTerminalError({
+      turnId: 't1',
+      errorText: 'HTTP 429: too many requests',
+      hasProducedSideEffects: false,
+    })
+    supervisor.forgetTurn('t1')
+    expect(supervisor.consumeFailover('s1', 't1')).toBeNull()
+  })
+
+  it('forgetTurn 只作废自身轮种子；其他轮武装的种子不受影响', () => {
+    const supervisor = makeSupervisor()
+    registerStandardTurn(supervisor, { turnId: 't1' })
+    registerStandardTurn(supervisor, { turnId: 't2' })
+    supervisor.onTerminalError({
+      turnId: 't2',
+      errorText: 'HTTP 500: internal server error',
+      hasProducedSideEffects: false,
+    })
+    supervisor.forgetTurn('t1')
+    expect(supervisor.consumeFailover('s1', 't2')?.message).toBe('帮我把这个模块重构一下')
   })
 })

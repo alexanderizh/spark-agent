@@ -4,6 +4,7 @@ import type { AutoRouterDecisionEvent } from '@spark/protocol'
 import {
   ROUTER_INTENSITY_COLOR,
   ROUTER_INTENSITY_LABEL,
+  decayedFrozenRemainingMs,
   routerIntensityColor,
 } from '../../utils/auto-router-display'
 import './AutoRouterDecisionNotice.less'
@@ -41,8 +42,12 @@ export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDec
   const frozenSummary = healthAvoided
     ? decision
         .skippedFrozenExecutors!.map((item) => {
-          const minutes = Math.ceil((item.frozenRemainingMs ?? 0) / 60_000)
-          return `${item.modelId}（剩 ${Math.max(1, minutes)} 分钟）`
+          // frozenRemainingMs 是路由时刻的瞬时值：按事件 timestamp 锚点衰减，
+          // 避免历史会话永远显示「剩 N 分钟」；到期展示为已解冻。
+          const remaining = decayedFrozenRemainingMs(decision.timestamp, item.frozenRemainingMs)
+          return remaining == null
+            ? `${item.modelId}（已解冻）`
+            : `${item.modelId}（剩 ${Math.max(1, Math.ceil(remaining / 60_000))} 分钟）`
         })
         .join('、')
     : ''

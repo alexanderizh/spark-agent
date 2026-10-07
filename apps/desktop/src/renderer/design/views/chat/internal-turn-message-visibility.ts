@@ -59,6 +59,8 @@ function getInternalTurnDisplayLabel(turnSource: SessionQueuedTurn['turnSource']
       return '目标模式自动执行'
     case 'command_follow_up':
       return '命令自动执行'
+    case 'auto_router_redispatch':
+      return '智能路由故障切换重试'
     default:
       return '内部任务自动执行'
   }

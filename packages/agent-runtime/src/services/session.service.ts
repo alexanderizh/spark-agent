@@ -3546,6 +3546,9 @@ export class SessionService {
           isRedispatch:
             userMessagePresentation != null &&
             userMessagePresentation.turnSource === 'auto_router_redispatch',
+          // 故障切换白名单：仅用户聊天入口（IPC 层显式标记 turnSource='user'）的
+          // 轮次允许武装重派发；画布/工作流等编排型轮次静默重跑会注入重复执行。
+          turnSource: userMessagePresentation?.turnSource,
           seed: {
             sessionId,
             message,
@@ -5550,6 +5553,11 @@ export class SessionService {
     ) {
       this.updateStatusAfterHostTerminal(args.sessionRepo, args.sessionId, 'completed')
     }
+    if (ownsSession && (terminalStatus == null || terminalStatus === 'completed')) {
+      // executor 正常 resolve 的守恒兜底路径同样视为成功探针：清执行器失败计数，
+      // 并作废本轮已武装的故障切换种子（防瞬时 error 武装后的成功轮被收尾重跑）。
+      this.autoRouterSupervisor.onTurnSuccess(args.turnId)
+    }
   }
 
   /**
@@ -5583,6 +5591,11 @@ export class SessionService {
       (terminalStatus == null || terminalStatus === 'completed' || terminalStatus === 'cancelled')
     ) {
       this.updateStatusAfterHostTerminal(args.sessionRepo, args.sessionId, 'completed')
+    }
+    if (ownsSession && (terminalStatus == null || terminalStatus === 'completed')) {
+      // 成功尾段同样作成功探针（codex 路径先于后处理调用，幂等）：清失败计数并
+      // 作废本轮已武装的故障切换种子，防瞬时 error 武装后的成功轮被收尾重跑。
+      this.autoRouterSupervisor.onTurnSuccess(args.turnId)
     }
   }
 
@@ -10997,6 +11010,7 @@ export class SessionService {
       outcome = this.autoRouterSupervisor.onTerminalError({
         turnId,
         errorText,
+        errorCode: event.code,
         hasProducedSideEffects: eventRepo.hasTurnProducedSideEffects(sessionId, turnId),
       })
     } catch (err) {
@@ -11019,45 +11033,56 @@ export class SessionService {
       seq: 0,
     })
     if (outcome.failoverArmed) {
-      this.emitAndPersist(
-        sessionId,
-        turnId,
-        {
-          ...makeSignalBase(),
-          type: 'runtime_signal',
-          signal: 'executor_failover',
-          level: 'info',
-          title: '自动路由已切换执行模型',
-          message: `${modelLabel}上游失败（${outcome.kind === 'deterministic' ? '鉴权/配额类错误' : '限流/服务异常'}，已冻结 ${freezeMinutes} 分钟），本轮尚未产出任何内容，正在自动改派其他健康执行模型重试。`,
-          details: [
-            { label: '失败归类', value: outcome.kind },
-            { label: '冻结时长', value: `${freezeMinutes} 分钟` },
-          ],
-        },
-        eventRepo,
-      )
+      try {
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...makeSignalBase(),
+            type: 'runtime_signal',
+            signal: 'executor_failover',
+            level: 'info',
+            title: '自动路由已切换执行模型',
+            message: `${modelLabel}上游失败（${outcome.kind === 'deterministic' ? '鉴权/配额类错误' : '限流/服务异常'}，已冻结 ${freezeMinutes} 分钟），本轮尚未产出任何内容，正在自动改派其他健康执行模型重试。`,
+            details: [
+              { label: '失败归类', value: outcome.kind },
+              { label: '冻结时长', value: `${freezeMinutes} 分钟` },
+            ],
+          },
+          eventRepo,
+        )
+      } catch (err) {
+        // 信号是增强信息，落库失败不得把异常抛回事件管线（否则中断后续事件处理）。
+        log.warn('auto-router failover signal persist failed', { sessionId, turnId, error: err })
+      }
       return
     }
     if (outcome.frozen) {
-      this.emitAndPersist(
-        sessionId,
-        turnId,
-        {
-          ...makeSignalBase(),
-          type: 'runtime_signal',
-          signal: 'executor_failover',
-          level: 'warning',
-          title: '自动路由执行模型已短期冻结',
-          message: `${modelLabel}终态失败，已冻结 ${freezeMinutes} 分钟（期间新轮次自动避让；到期自动恢复）。${
-            event.message != null && event.message.length > 0 ? `失败摘要：${event.message.slice(0, 160)}` : ''
-          }`,
-          details: [
-            { label: '失败归类', value: outcome.kind },
-            { label: '冻结时长', value: `${freezeMinutes} 分钟` },
-          ],
-        },
-        eventRepo,
-      )
+      try {
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...makeSignalBase(),
+            type: 'runtime_signal',
+            signal: 'executor_failover',
+            level: 'warning',
+            title: '自动路由执行模型已短期冻结',
+            message: `${modelLabel}终态失败，已冻结 ${freezeMinutes} 分钟（期间新轮次自动避让；到期自动恢复）。${
+              event.message != null && event.message.length > 0
+                ? `失败摘要：${event.message.slice(0, 160)}`
+                : ''
+            }`,
+            details: [
+              { label: '失败归类', value: outcome.kind },
+              { label: '冻结时长', value: `${freezeMinutes} 分钟` },
+            ],
+          },
+          eventRepo,
+        )
+      } catch (err) {
+        log.warn('auto-router failover signal persist failed', { sessionId, turnId, error: err })
+      }
     }
   }
 

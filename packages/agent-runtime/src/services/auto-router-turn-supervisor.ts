@@ -1,9 +1,10 @@
 import { createLogger } from '@spark/shared'
-import type { SessionAttachment, SessionReferenceInput } from '@spark/protocol'
+import type { SessionAttachment, SessionReferenceInput, TurnSource } from '@spark/protocol'
 import {
   autoRouterHealthRegistry,
-  classifyExecutorFailureText,
+  classifyExecutorFailure,
   isFailoverWorthyFailure,
+  type AutoRouterFailureKind,
 } from './auto-router-health'
 
 const log = createLogger('auto-router-health')
@@ -31,14 +32,14 @@ interface AutoRouterTurnContext {
   providerId: string
   modelId: string
   seed: AutoRouterFailoverSeed
-  /** 本轮是否还允许一次故障切换重派发（重派发轮自身为 false，防循环）。 */
+  /** 本轮是否还允许一次故障切换重派发（仅用户聊天轮允许，见 registerTurn）。 */
   failoverArmed: boolean
 }
 
 /** 轮次终态失败经 supervisor 处理后的结论（挂点据此发信号/重派发）。 */
 export interface AutoRouterTerminalErrorOutcome {
   /** 失败归类；environment 类与执行模型上游无关。 */
-  kind: ReturnType<typeof classifyExecutorFailureText>
+  kind: AutoRouterFailureKind
   /** 是否已冻结该执行器。 */
   frozen: boolean
   /** 本轮冻结毫秒（未冻结为 0）。 */
@@ -67,7 +68,14 @@ export class AutoRouterTurnSupervisor {
   /** 已武装待消费的重派发（sessionId 维度至多一个；失败轮收尾时消费）。 */
   private readonly armedFailovers = new Map<string, AutoRouterFailoverSeed & { turnId: string }>()
 
-  /** 路由成功换绑执行器后登记本轮上下文（startTurnExecution 路由消费点调用）。 */
+  /**
+   * 路由成功换绑执行器后登记本轮上下文（startTurnExecution 路由消费点调用）。
+   *
+   * 故障切换白名单：只有 `turnSource === 'user'`（用户聊天入口显式标记）的轮次
+   * 才允许武装重派发。画布/工作流/定时/语音等编排型轮次静默重跑会注入重复执行
+   * （重复计费、重复写文件），一律不武装；未标记来源默认视为非用户聊天（安全兜底：
+   * 未来新增的内部调用方不设 turnSource 就自然排除）。
+   */
   registerTurn(params: {
     turnId: string
     sessionId: string
@@ -77,6 +85,8 @@ export class AutoRouterTurnSupervisor {
     modelId: string
     /** 重派发轮传 true：本轮不允许再次故障切换。 */
     isRedispatch: boolean
+    /** 轮次来源；仅 'user'（用户聊天）允许武装故障切换重派发。 */
+    turnSource?: TurnSource | undefined
     seed: AutoRouterFailoverSeed
   }): void {
     this.turns.set(params.turnId, {
@@ -85,7 +95,7 @@ export class AutoRouterTurnSupervisor {
       routerName: params.routerName,
       providerId: params.providerId,
       modelId: params.modelId,
-      failoverArmed: !params.isRedispatch,
+      failoverArmed: !params.isRedispatch && params.turnSource === 'user',
       seed: {
         ...params.seed,
         ...(params.seed.attachments != null ? { attachments: [...params.seed.attachments] } : {}),
@@ -96,25 +106,43 @@ export class AutoRouterTurnSupervisor {
     })
   }
 
-  /** 轮次成功终态：清零执行器失败计数（半开恢复探针通过）。未登记轮次为 no-op。 */
+  /**
+   * 轮次成功终态：清零执行器失败计数（半开恢复探针通过），并作废本轮已武装的
+   * 故障切换种子——中途瞬时 error 武装种子后 SDK 自愈完成轮次时，若不丢弃，
+   * 收尾消费会把**已成功**的轮次静默重跑一遍。未登记轮次为 no-op。
+   */
   onTurnSuccess(turnId: string): void {
     const ctx = this.turns.get(turnId)
     if (ctx == null) return
     autoRouterHealthRegistry.reportSuccess(ctx.providerId, ctx.modelId)
+    const armed = this.armedFailovers.get(ctx.sessionId)
+    if (armed != null && armed.turnId === turnId) {
+      this.armedFailovers.delete(ctx.sessionId)
+      log.info('armed failover discarded: turn succeeded after transient error', {
+        turnId,
+        sessionId: ctx.sessionId,
+      })
+    }
   }
 
   /**
    * 轮次终态失败（真实落库的 agent_error）：归类 → 冻结 → 判定是否武装重派发。
-   * `hasProducedSideEffects` 由挂点查询事件库给出（assistant/团队消息/工具调用）。
+   * `hasProducedSideEffects` 由挂点查询事件库给出（assistant/团队消息/工具调用）；
+   * `errorCode` 是 agent_error 事件的错误码，优先于文本参与归类（权限等待等本地
+   * 闸门错误靠错误码识别，防文本误判为可重试而误冻结执行器）。
    */
   onTerminalError(params: {
     turnId: string
     errorText: string
+    errorCode?: string
     hasProducedSideEffects: boolean
   }): AutoRouterTerminalErrorOutcome | null {
     const ctx = this.turns.get(params.turnId)
     if (ctx == null) return null
-    const kind = classifyExecutorFailureText(params.errorText)
+    const kind = classifyExecutorFailure({
+      code: params.errorCode,
+      text: params.errorText,
+    })
     if (kind === 'environment') {
       // 环境类失败与执行模型上游无关：不冻结、不重派发（换执行器同样会失败）。
       log.info('executor terminal failure classified as environment; skipped', {
@@ -153,8 +181,9 @@ export class AutoRouterTurnSupervisor {
   }
 
   /**
-   * 轮次收尾时消费待重派发种子：仅当武装轮 == 收尾轮且会话无其他在途/排队
-   * 用户消息时生效（用户已发新消息则尊重用户意图，放弃自动重跑）。
+   * 轮次收尾时消费待重派发种子：仅当武装轮 == 收尾轮时生效。「用户已发新消息/
+   * 错误暂停激活时放弃自动重跑」的闸门在 session.service 的 dispatchAutoRouterFailover
+   * 调用点（queue-error-pause 检查）。
    */
   consumeFailover(sessionId: string, finalizedTurnId: string): AutoRouterFailoverSeed | null {
     const armed = this.armedFailovers.get(sessionId)
@@ -168,8 +197,19 @@ export class AutoRouterTurnSupervisor {
     this.armedFailovers.delete(sessionId)
   }
 
-  /** 轮次终结回收（finally / 启动失败路径）：遗忘上下文，防泄漏。 */
+  /**
+   * 轮次终结回收（finally / 启动失败路径）：遗忘上下文，防泄漏；同时作废该轮
+   * 自身武装的重派发种子——正常失败路径的种子已在收尾消费块先行取走（此处
+   * no-op），被取消/无执行权收尾的轮次其种子不应滞留到同会话后续轮次。
+   */
   forgetTurn(turnId: string): void {
+    const ctx = this.turns.get(turnId)
+    if (ctx != null) {
+      const armed = this.armedFailovers.get(ctx.sessionId)
+      if (armed != null && armed.turnId === turnId) {
+        this.armedFailovers.delete(ctx.sessionId)
+      }
+    }
     this.turns.delete(turnId)
   }
 

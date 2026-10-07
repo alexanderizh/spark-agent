@@ -5297,12 +5297,18 @@ function ChatStream({
                         decisionIndex > 0 ? autoRouterDecisions[decisionIndex - 1] : undefined
                       // 降级状态翻转必须可见：上轮降级、本轮恢复正常（模型恰好相同）时
                       // 也要显示，否则用户以为仍在降级（实测踩坑：连续降级提示后恢复
-                      // 轮静默，用户无从知道分流已正常）。
+                      // 轮静默，用户无从知道分流已正常）。健康避让同理：全冻结
+                      // best-effort 轮与避让恢复轮（模型恰好相同）都必须展示，
+                      // 否则最需要「故障避让」提示的场景反而不渲染。
                       showRouterNotice =
                         prevDecision == null ||
                         prevDecision.resolvedModelId !== nextDecision.resolvedModelId ||
                         prevDecision.fallbackUsed ||
                         nextDecision.fallbackUsed ||
+                        prevDecision.healthFallbackUsed === true ||
+                        nextDecision.healthFallbackUsed === true ||
+                        (prevDecision.skippedFrozenExecutors?.length ?? 0) > 0 ||
+                        (nextDecision.skippedFrozenExecutors?.length ?? 0) > 0 ||
                         nextDecision.adapterMismatch === true
                     }
                     // 轮次 meta 常驻标识（显示点 3）：该轮最后一条消息（assistant）后

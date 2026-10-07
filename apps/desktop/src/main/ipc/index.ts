@@ -5459,6 +5459,9 @@ export function registerAllIpcHandlers(): void {
       {
         sessionId: req.sessionId,
         message: req.message,
+        // 轮次来源透传：用户聊天输入路径显式传 'user'（auto-router 故障切换重派发
+        // 仅对 'user' 轮次武装）；编排型调用方（看板/子应用等）不传，默认不重派发。
+        ...(req.turnSource !== undefined ? { turnSource: req.turnSource } : {}),
         ...(req.providerProfileId !== undefined
           ? { providerProfileId: req.providerProfileId }
           : {}),

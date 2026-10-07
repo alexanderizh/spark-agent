@@ -576,7 +576,8 @@ export function OnboardingView(): React.ReactElement {
         modelId: state.modelId ?? undefined,
       })
       if (!sessionId) throw new Error('没有可用的模型配置，请先完成模型连接。')
-      await sendTurn({ sessionId, message: prompt })
+      // 用户聊天输入显式声明来源：auto-router 故障切换重派发仅对 'user' 轮次武装
+      await sendTurn({ sessionId, message: prompt, turnSource: 'user' })
       toast.success('第一次会话已创建。')
       completeOnboarding()
       goChat()

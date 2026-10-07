@@ -3,6 +3,7 @@ import type { ProviderProfileRow } from '@spark/storage'
 import {
   AutoRouterHealthRegistry,
   autoRouterHealthRegistry,
+  classifyExecutorFailure,
   classifyExecutorFailureText,
   isFailoverWorthyFailure,
 } from '../../services/auto-router-health'
@@ -57,6 +58,38 @@ describe('classifyExecutorFailureText 失败归类', () => {
 })
 
 // ─── 注册表 ───────────────────────────────────────────────────────────────────
+
+describe('classifyExecutorFailure 错误码优先归类', () => {
+  it.each([
+    'PERMISSION_TIMEOUT',
+    'PERMISSION_CANCELLED',
+    'CLAUDE_PERMISSION_DENIED',
+    'MAX_ITERATIONS',
+    'SDK_RESUME_CIRCUIT_OPEN',
+    'CODEX_RUNTIME_NOT_INSTALLED',
+  ])('%s → environment（本地闸门/策略/环境，与执行模型上游无关）', (code) => {
+    expect(classifyExecutorFailure({ code, text: 'whatever text' })).toBe('environment')
+  })
+
+  it('错误码优先于文本：权限超时文本会被误判为可重试，错误码纠正为 environment', () => {
+    // 回归对照：纯文本路径确实把它判成 retryable（这正是需要错误码的原因）
+    expect(classifyExecutorFailureText('permission request timed out after 300s')).toBe(
+      'retryable',
+    )
+    expect(
+      classifyExecutorFailure({ code: 'PERMISSION_TIMEOUT', text: 'permission request timed out' }),
+    ).toBe('environment')
+  })
+
+  it('未命中错误码走文本归类', () => {
+    expect(classifyExecutorFailure({ code: 'CLAUDE_RATE_LIMIT', text: 'rate limited' })).toBe(
+      'retryable',
+    )
+    expect(classifyExecutorFailure({ code: undefined, text: 'HTTP 401 unauthorized' })).toBe(
+      'deterministic',
+    )
+  })
+})
 
 describe('AutoRouterHealthRegistry 递进冻结与半开恢复', () => {
   it('retryable 递进冻结 1min → 5min → 10min 封顶', () => {
@@ -237,7 +270,11 @@ describe('AutoRouterService 选执行器健康避让', () => {
     expect(result.ok).toBe(true)
     expect(result.resolvedProviderId).toBe('p-h1')
     expect(result.healthFallbackUsed).toBe(true)
-    expect(result.skippedFrozenExecutors?.length).toBe(3)
+    // 避让清单排除最终选中的执行器（否则「避让了 A」同时「路由到 A」自相矛盾）
+    expect(result.skippedFrozenExecutors?.length).toBe(2)
+    expect(
+      result.skippedFrozenExecutors?.some((item) => item.providerId === 'p-h1'),
+    ).toBe(false)
   })
 
   it('无冻结 → 行为与既有语义一致（取第一条）', async () => {

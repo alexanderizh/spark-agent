@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent } from 'react'
+import { RefreshCw, Snowflake } from 'lucide-react'
 import { Icons } from '../../Icons'
 import type { UIBlock } from '../../services/event-mapper'
 import { StreamReconnectNotice } from './StreamReconnectNotice'
@@ -93,6 +94,33 @@ function BackgroundTasksCard({ block }: { block: RuntimeSignalBlock }) {
   )
 }
 
+/**
+ * auto-router 执行器故障切换信号：这是 runtime 的主动保护动作而非错误诊断，
+ * 落进通用诊断卡会把正面信号渲染得像出错。info 级 = 正在自动切换重试（进行时），
+ * warning 级 = 执行器已冻结避让（状态提示）。
+ */
+function ExecutorFailoverCard({ block }: { block: RuntimeSignalBlock }) {
+  const switching = block.level !== 'warning'
+  const detailText = (block.details ?? [])
+    .map((detail) => `${detail.label}：${detail.value}`)
+    .join(' · ')
+  return (
+    <section
+      className={`executor-failover-card${switching ? ' is-switching' : ' is-frozen'}`}
+      role="status"
+      title={detailText.length > 0 ? detailText : undefined}
+    >
+      <span className="executor-failover-card-icon" aria-hidden="true">
+        {switching ? <RefreshCw size={14} /> : <Snowflake size={14} />}
+      </span>
+      <div className="executor-failover-card-body">
+        <div className="executor-failover-card-title">{block.title}</div>
+        <div className="executor-failover-card-message">{block.message}</div>
+      </div>
+    </section>
+  )
+}
+
 export function RuntimeSignalCard({
   block,
   onRetry,
@@ -102,6 +130,7 @@ export function RuntimeSignalCard({
 }) {
   if (block.signal === 'background_tasks') return <BackgroundTasksCard block={block} />
   if (block.signal === 'stream_reconnect') return <StreamReconnectNotice block={block} />
+  if (block.signal === 'executor_failover') return <ExecutorFailoverCard block={block} />
 
   return (
     <StreamingErrorCard

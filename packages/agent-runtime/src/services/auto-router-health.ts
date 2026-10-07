@@ -57,6 +57,22 @@ export function classifyExecutorFailureText(
 }
 
 /**
+ * 错误码优先的失败归类：错误码命中环境类直接判 environment——权限等待超时等
+ * 本地闸门错误的消息文本（如 "permission request timed out"）会被文本分类器
+ * 误判为可重试而误冻结执行器，错误码是更可靠的判定信号；未命中再走文本归类。
+ */
+export function classifyExecutorFailure(input: {
+  code?: string | null | undefined
+  text: string
+}): AutoRouterFailureKind {
+  const code = (input.code ?? '').trim()
+  if (code.length > 0 && ENVIRONMENT_FAILURE_CODES.some((pattern) => pattern.test(code))) {
+    return 'environment'
+  }
+  return classifyExecutorFailureText(input.text)
+}
+
+/**
  * 是否值得自动故障切换（重派发一次）：仅限能确认是「执行模型上游」的失败。
  * environment 类失败换执行器同样会失败；未识别文本保守起见不自动重跑
  * （避免对本地 bug 类崩溃反复空跑一轮）。
@@ -83,7 +99,19 @@ const ENVIRONMENT_FAILURE_PATTERNS: readonly RegExp[] = [
   /已到定时禁用时段|定时禁用/i,
   /TURN_START_FAILED/,
   /Reached maximum turns/i,
-  /PLAN_MODE|maintenance/i,
+  /PLAN_MODE/i,
+]
+
+/**
+ * 环境类失败的错误码（优先于文本判定）：错误码是 runtime 自己写下的确定性信号，
+ * 比文本匹配可靠。权限等待超时/取消/拒绝是用户侧闸门，与执行模型上游无关；
+ * 迭代上限与恢复熔断是本地策略；Codex 运行时缺失是本机环境问题。
+ */
+const ENVIRONMENT_FAILURE_CODES: readonly RegExp[] = [
+  /PERMISSION/i,
+  /MAX_ITERATIONS/,
+  /SDK_RESUME_CIRCUIT_OPEN/,
+  /CODEX_RUNTIME_NOT_INSTALLED/,
 ]
 
 /** 确定性失败（重试/等待都不会自愈；冻结 30min）。 */

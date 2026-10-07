@@ -84,3 +84,26 @@ export function resolveAutoRouterWorkerAvatarId(memberAgentId: string): string |
   if (WORKER_AVATAR_IDS.length === 0) return null
   return WORKER_AVATAR_IDS[index % WORKER_AVATAR_IDS.length] ?? null
 }
+
+/**
+ * 按事件时间锚点衰减冻结剩余时长：决策事件持久化的 frozenRemainingMs 是路由
+ * 时刻的瞬时值，直接展示会让历史会话永远显示「剩 N 分钟」。以事件 timestamp
+ * 为锚推算当前剩余；返回 null 表示已到期（解冻）。锚点不可解析时原样返回。
+ */
+export function decayedFrozenRemainingMs(
+  issuedAt: string,
+  frozenRemainingMs: number | null | undefined,
+  now: number = Date.now(),
+): number | null {
+  if (
+    frozenRemainingMs == null ||
+    !Number.isFinite(frozenRemainingMs) ||
+    frozenRemainingMs <= 0
+  ) {
+    return null
+  }
+  const issuedAtMs = Date.parse(issuedAt)
+  if (!Number.isFinite(issuedAtMs)) return frozenRemainingMs
+  const remaining = issuedAtMs + frozenRemainingMs - now
+  return remaining > 0 ? remaining : null
+}

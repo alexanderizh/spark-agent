@@ -49,6 +49,28 @@ export function buildErrorRetryPayload(
     return null
   }
   if (assistant.userMessageVisibility === 'hidden') return null
+  // runtime 已决定自动改派重试（executor_failover info 信号与错误同轮持久化，
+  // 早于重派发轮启动）：手动重试会与自动重跑双执行（重复计费），不生成重试载荷。
+  // 仅 info 级（已武装切换）跳过；warning 级只是冻结提示，无自动重跑，重试保留。
+  if (
+    assistant.blocks.some(
+      (block) =>
+        block.kind === 'runtime_signal' &&
+        block.signal === 'executor_failover' &&
+        block.level === 'info',
+    )
+  ) {
+    return null
+  }
+  // 兜底锚点：重派发轮已启动（隐藏用户消息被投影过滤，但该轮 assistant 消息
+  // 会携带 auto_router_redispatch 来源标记）。
+  if (
+    messages
+      .slice(assistantIndex + 1)
+      .some((message) => message.turnSource === 'auto_router_redispatch')
+  ) {
+    return null
+  }
 
   return buildUserRetryPayload(messages, assistantIndex - 1, assistant.turnId)
 }

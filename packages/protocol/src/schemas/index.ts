@@ -281,10 +281,24 @@ export const SessionCreateRequestSchema = z.object({
   workflowBinding: SessionWorkflowBindingCreateSchema.optional(),
 })
 
+/** Turn 发起来源（与 protocol TurnSource 联合类型保持同步）。 */
+export const TurnSourceSchema = z.enum([
+  'user',
+  'remote_user',
+  'scheduled_task',
+  'goal_contract_draft',
+  'goal_iteration',
+  'command_follow_up',
+  'system_continuity',
+  'voice',
+  'auto_router_redispatch',
+])
+
 export const SessionSendTurnRequestSchema = z.object({
   sessionId: SessionIdSchema,
   message: z.string().min(1).max(100_000),
   clientMessageId: z.string().uuid().optional(),
+  turnSource: TurnSourceSchema.optional(),
   providerProfileId: ProfileIdSchema.optional(),
   modelId: z.string().min(1).max(200).nullable().optional(),
   agentId: z.string().min(1).max(160).optional(),

@@ -395,7 +395,11 @@ export class AutoRouterService {
       }
     }
     const skippedFrozenExecutors = this.collectFrozenSkips(
-      [...sameIntensityPool, ...fallbackPool, ...validExecutors],
+      // 避让清单排除最终选中的执行器：全冻结 best-effort 分支选中的条目自身也
+      // 在候选池里，不过滤会出现「避让了 A」同时「路由到 A」的自相矛盾展示。
+      [...sameIntensityPool, ...fallbackPool, ...validExecutors].filter(
+        (entry) => executor == null || entry !== executor,
+      ),
       now,
     )
     if (skippedFrozenExecutors.length > 0) {
