@@ -13,8 +13,11 @@
   z-index: 2200;
   display: flex;
   flex-direction: column;
-  width: 260px;
-  min-height: 320px;
+  // 280px：胶囊分段式播报设置条需要横向空间（六档分段条 + 胶囊内嵌标签）
+  width: 280px;
+  // 380px：设置条五控件行（27px×4 + 展开钮行）+ 10px 行距下，中部文案区仍需
+  // 呼吸留白；body 是 flex:1 吸收富余高度（真机反馈 320 偏挤，加高）
+  min-height: 380px;
   border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
   background: color-mix(in srgb, var(--bg, #fff) 88%, transparent);
@@ -260,10 +263,10 @@
 }
 
 // 插话队列框：文案区下方内嵌，扁平靠底色分层（无描边）；max-width 跟随卡片
-// 加宽比例（260/216）同步放大，保持与卡片宽度占比不变
+// 加宽比例（280/216）同步放大，保持与卡片宽度占比不变
 .voice-hud-queue {
   width: 100%;
-  max-width: 224px;
+  max-width: 240px;
   margin-top: 2px;
   padding: 8px 10px;
   border-radius: 8px;
@@ -600,81 +603,107 @@
 }
 
 // ============================================================
-// HUD 播报设置条（VoiceHudTtsSettings）——HUD 卡内嵌的 TTS 快捷切换
-// 「真·无边框小选择器」：11px 灰标签 + antd borderless Select（值同正文色，
-// 整器 hover 出轻底色）；HUD 卡自带毛玻璃底，本分区背景透明，仅加一条顶部
-// 细分隔线与左右 padding。卡片是拖拽把手：分区根节点 onPointerDown
-// stopPropagation（同停止钮做法），点选下拉不被拖拽抢走。
+// HUD 播报设置条（VoiceHudTtsSettings）——胶囊分段式（方案 B）
+// 值全部装进 27px 高全圆角胶囊（antd borderless Select 胶囊化，标签经
+// Select prefix 内嵌胶囊左侧，超长值 ellipsis + 根节点 title 全文）；
+// 语速免下拉，六档分段条一点即切；下拉箭头是 11px 细描边雪佛龙（自定义
+// suffixIcon，antd 默认实心箭头小尺寸下糊成一团），展开时旋转 180°。
+// 展开/收起钮单独一行居中，固定在分区末行：收起「音色/语速/钮」三行，
+// 展开「渠道/模型/音色/语速/钮」五行，钮位不随展开跳动。
+// 聚焦态不用 2px outline：主色 10% 底 + 1px 主色描边（box-shadow）更克制。
+// HUD 卡自带毛玻璃底，本分区背景透明，仅顶部细分隔线 + 左右 padding。
+// 卡片是拖拽把手：分区根节点 onPointerDown stopPropagation（同停止钮做法）。
 // ============================================================
 
 .voice-hud-tts {
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px 14px 4px;
+  // 10px 行距：真机反馈 6px 行距控件贴太近（27px 控件高下呼吸感不足）
+  gap: 10px;
+  padding: 10px 14px 8px;
   border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
   background: transparent;
 }
 
 .voice-hud-tts-row {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 2px 10px;
+  gap: 6px;
   min-width: 0;
 }
 
-.voice-hud-tts-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-
-.voice-hud-tts-label {
+// 语速行前置标签：固定 26px 宽（≈胶囊内嵌标签视觉位），分段条左缘对齐胶囊值区
+.voice-hud-tts-row-label {
   flex: none;
+  width: 26px;
   font-size: 11px;
   line-height: 1;
   color: var(--text-muted);
 }
 
-.voice-hud-tts-select.ant-select {
-  // flex item 允许收缩到 max-width 内，超长文案（渠道名/音色 ID）走 ellipsis；
-  // 卡片加宽后放大 max-width，给超长渠道/音色名多一点显示空间
+// 胶囊 Select：27px 高全圆角，扁平靠底色分层；hover 底色加深，
+// 聚焦（focus-within 上提）主色轻底 + 1px 主色描边替代 outline
+.voice-hud-tts-pill.ant-select {
+  flex: 1;
   min-width: 0;
-  max-width: 88px;
-  border-radius: 5px;
-  transition: background 0.15s ease;
+  height: 27px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
 
   &:hover:not(.ant-select-disabled) {
-    background: var(--hover);
+    background: color-mix(in srgb, var(--text) 9%, transparent);
   }
 
-  // 键盘可达：聚焦时容器出 outline（focus 落在内部 input，用 focus-within 上提）
   &:focus-within {
-    outline: 2px solid var(--primary);
-    outline-offset: -1px;
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 60%, transparent);
   }
 
   .ant-select-selector {
-    padding: 0 4px;
+    height: 100%;
+    // 左 11px 与胶囊内边距一致；右侧 26px = 9px 箭头位 + ≥8px 间隙，
+    // 保证超长值省略号不贴箭头
+    padding: 0 26px 0 11px;
     background: transparent;
   }
 
-  // 值同正文色；v6 选中项文案容器 .ant-select-content（v5 selection-item 兜底）
+  // 胶囊内标签与值之间 6px 间距；prefix/content 都是 selector 的 flex 子项
+  .ant-select-selector,
+  .ant-select-selection-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  // 值 12px 同正文色；v6 选中项文案容器 .ant-select-content（v5 selection-item 兜底）
   .ant-select-content,
   .ant-select-selection-item {
+    min-width: 0;
     color: var(--text);
+    font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  // 下拉箭头：组件传入 11px 细描边雪佛龙（HUD_TTS_SELECT_ARROW），
+  // 这里只管配色/定位/展开翻转；antd v6 无内置翻转（v5 行为已移除）
   .ant-select-arrow {
-    font-size: 9px;
+    right: 9px;
     color: var(--text-muted);
+    transition: transform 0.15s ease;
+
+    svg {
+      display: block;
+    }
+  }
+
+  &.ant-select-open .ant-select-arrow {
+    transform: rotate(180deg);
   }
 
   &.ant-select-disabled {
@@ -682,17 +711,32 @@
   }
 }
 
-.voice-hud-tts-toggle {
+// 胶囊内嵌标签（Select prefix 渲染）：11px 弱化色，flex 不收缩不参与 ellipsis
+.voice-hud-tts-pill-label {
   flex: none;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+// 展开/收起钮行：单独一行，钮居中（真机反馈行尾与胶囊挤在一起读不出是分区开关）
+.voice-hud-tts-toggle-row {
+  justify-content: center;
+}
+
+// 展开/收起钮：24×24 圆形图标钮，收起 ▼ / 展开 ▲。静止态带 text 8% 软底
+//（纯透明底只剩裸箭头符号读不出是开关；6% 在深色卡上仍偏弱——两轮视觉评审结论），
+// hover 加深；展开态主色点亮（与 HUD 状态色的主色语言一致）
+.voice-hud-tts-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
-  border-radius: 6px;
-  background: transparent;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
   color: color-mix(in srgb, var(--text) 64%, transparent);
   cursor: pointer;
   transition:
@@ -700,7 +744,7 @@
     background 0.15s ease;
 
   &:hover {
-    background: var(--hover);
+    background: color-mix(in srgb, var(--text) 12%, transparent);
     color: var(--text);
   }
 
@@ -709,9 +753,64 @@
     outline-offset: 1px;
   }
 
-  // 展开态图标高亮（主色），与 HUD 状态色的主色语言一致
   &.is-active {
     color: var(--primary);
+  }
+}
+
+// 语速六档分段条：外圈 27px 全圆角容器（3px 内衬），档位一点即切；
+// 激活档主色 18% 底 + 加粗提亮，非激活 hover 仅提亮文字（底色留给激活档）。
+// border-box 必须显式：全局无统一重置时 height 27 + padding 3 会撑到 33px，
+// 与 27px 胶囊不齐
+.voice-hud-tts-seg {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  box-sizing: border-box;
+  height: 27px;
+  padding: 3px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.voice-hud-tts-seg-item {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+
+  &:hover:not(:disabled):not(.is-active) {
+    color: var(--text);
+  }
+
+  &.is-active {
+    background: color-mix(in srgb, var(--primary) 18%, transparent);
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
   }
 }
 

@@ -4,15 +4,21 @@
  * 候选推导与设置页 VoiceAssistantSettingsCard 完全同口径（voiceAssistantTtsOptions），
  * 但本组件不发起 IPC、不落库：所有改动经 onPatch 上抛给宿主（HUD）持久化。
  *
- * 布局：收起一行「音色 + 语速 + 展开钮」；展开后在上方新增一行「渠道 + 模型」。
+ * 布局（胶囊分段式，方案 B）：值全部装进 27px 高全圆角胶囊控件，标签经
+ * Select prefix 内嵌在胶囊左侧；语速免下拉，六档分段条一点即切。
+ * 下拉箭头用 Icons.ChevronDown 细描边雪佛龙（antd 默认实心箭头在 9px 级别糊成团）。
+ * 展开/收起钮单独一行居中，固定在分区末行：收起态「音色/语速/钮」三行，
+ * 展开时渠道/模型胶囊插到顶部成「渠道/模型/音色/语速/钮」五行，钮位不跳动。
  * HUD 卡片是拖拽把手（useVoiceHudDrag），分区根节点 onPointerDown 阻止冒泡，
  * 避免点选下拉/切换档位时被拖拽把手抢走（同停止钮做法）。
+ * 下拉弹层 portal 到 body，z-index 经局部 ConfigProvider 抬到 2300（HUD 卡根 2200），
+ * 否则被卡片压住不可见（见 HUD_TTS_SELECT_THEME）。
  *
  * 展开/收起态持久化在 localStorage（voice-hud-tts-expanded），与设置数据无关。
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Select } from 'antd'
+import { ConfigProvider, Select } from 'antd'
 import type { CanvasMediaModelSummary, VoiceAssistantSettings } from '@spark/protocol'
 import {
   resolveTtsChannelId,
@@ -21,6 +27,13 @@ import {
   ttsVoiceOptions,
 } from './voiceAssistantTtsOptions'
 import { Icons } from '../Icons'
+
+/**
+ * 下拉箭头：antd v6 默认是实心粗箭头，缩到 9px 级别糊成墨点；换成 12px / 2px
+ * 描边雪佛龙（与展开钮同一图标语言；1.6 描边在 11px 下过细扫视易漏），
+ * 展开态翻转由 less（.ant-select-open）接管。
+ */
+const HUD_TTS_SELECT_ARROW = <Icons.ChevronDown size={12} strokeWidth={2} />
 
 /**
  * 下拉哨兵值：antd Select 对空串值渲染占位符而非选项文案，直接存 null 会显示空白
@@ -35,14 +48,31 @@ const HUD_TTS_DEFAULT_VOICE_VALUE = '__default_voice__'
 /** 展开/收起持久化 key：'1' 展开 / '0' 收起，默认收起。 */
 const HUD_TTS_EXPANDED_KEY = 'voice-hud-tts-expanded'
 
-/** 语速档位（展示层收敛为固定六档）：任意 ttsSpeed 显示最近档，主动选择才落值。 */
+/**
+ * 本组件内的 Select 下拉弹层 z-index。
+ *
+ * 下拉弹层默认 portal 到 body，antd 默认 zIndexPopup = zIndexPopupBase(1000) + 50 = 1050，
+ * 而 HUD 卡片根节点是 position:fixed + z-index:2200（voiceAssistant.less），弹层整体被压在
+ * 卡片后面完全不可见。这里经局部 ConfigProvider 把 Select 的 zIndexPopup 抬到 2300（>2200）。
+ * 只作用于本组件区域：antd v6 局部 theme.components 与父级按组件浅合并，其余 token 全部
+ * 继承全局主题，不影响应用其余弹层层级体系。
+ */
+const HUD_TTS_SELECT_THEME = {
+  components: {
+    Select: {
+      zIndexPopup: 2300,
+    },
+  },
+} as const
+
+/** 语速档位（展示层收敛为固定六档）：任意 ttsSpeed 高亮最近档，主动选择才落值。 */
 const HUD_TTS_SPEED_STEPS: Array<{ label: string; value: number }> = [
-  { label: '0.5×', value: 0.5 },
-  { label: '0.75×', value: 0.75 },
-  { label: '1×', value: 1.0 },
-  { label: '1.25×', value: 1.25 },
-  { label: '1.5×', value: 1.5 },
-  { label: '2×', value: 2.0 },
+  { label: '0.5', value: 0.5 },
+  { label: '0.75', value: 0.75 },
+  { label: '1', value: 1.0 },
+  { label: '1.25', value: 1.25 },
+  { label: '1.5', value: 1.5 },
+  { label: '2', value: 2.0 },
 ]
 
 /** 与 speed 最接近的档位（Math.abs 最小差；中点并列时先出现的档位胜出）。 */
@@ -63,6 +93,11 @@ function readInitialExpanded(): boolean {
   } catch {
     return false
   }
+}
+
+/** 胶囊左侧内嵌标签（Select prefix）：11px 弱化色，与值同处一个胶囊内。 */
+function PillLabel({ text }: { text: string }): React.ReactNode {
+  return <span className="voice-hud-tts-pill-label">{text}</span>
 }
 
 export interface VoiceHudTtsSettingsProps {
@@ -140,7 +175,7 @@ export function VoiceHudTtsSettings({
   const voicePlaceholderMode = voiceCandidates.length === 0 && currentVoice.length === 0
   const voiceOptions = useMemo(() => {
     const base = [
-      { label: '默认', value: HUD_TTS_DEFAULT_VOICE_VALUE },
+      { label: '默认', value: HUD_TTS_DEFAULT_VOICE_VALUE, title: '默认音色' },
       ...voiceCandidates.map((option) => ({
         label: option.label,
         value: option.value,
@@ -154,7 +189,7 @@ export function VoiceHudTtsSettings({
     return [...base, { label: currentVoice, value: currentVoice, title: currentVoice }]
   }, [voiceCandidates, currentVoice])
 
-  // 非档位值（如滑杆调出的 1.12）显示最近档位，不回写
+  // 非档位值（如滑杆调出的 1.12）高亮最近档位，不回写
   const speedValue = nearestSpeedStep(settings?.ttsSpeed ?? 1)
 
   const handleChannelChange = useCallback(
@@ -178,66 +213,101 @@ export function VoiceHudTtsSettings({
     [models, onPatch, settings],
   )
 
-  return (
-    <div
-      className="voice-hud-tts"
-      // HUD 卡片是拖拽把手：设置区不作为把手，点选下拉 / 档位不被拖拽抢走
-      onPointerDown={(event) => event.stopPropagation()}
+  // 展开/收起钮：24×24 圆形图标钮，单独一行居中挂在分区末行（展开时行数变化，
+  // 钮位不动）；图标随态翻转（▼ 展开 / ▲ 收起），展开态主色点亮。
+  const toggleButton = (
+    <button
+      type="button"
+      className={`voice-hud-tts-toggle${expanded ? ' is-active' : ''}`}
+      aria-label={expanded ? '收起渠道与模型' : '展开渠道与模型'}
+      aria-expanded={expanded}
+      title={expanded ? '收起渠道与模型' : '展开渠道与模型'}
+      onClick={() => setExpanded((previous) => !previous)}
     >
-      {/* 展开行（收起行上方）：渠道 + 模型 */}
-      {expanded ? (
-        <div className="voice-hud-tts-row">
-          <div className="voice-hud-tts-field">
-            <span className="voice-hud-tts-label">渠道</span>
-            <Select
-              className="voice-hud-tts-select"
-              size="small"
-              variant="borderless"
-              popupMatchSelectWidth={false}
-              aria-label="播报渠道"
-              value={settings?.ttsProviderProfileId ?? HUD_TTS_AUTO_CHANNEL_VALUE}
-              options={channelOptions}
-              disabled={disabled}
-              onChange={(value) => handleChannelChange(String(value))}
-            />
-          </div>
-          <div className="voice-hud-tts-field">
-            <span className="voice-hud-tts-label">模型</span>
-            <Select
-              className="voice-hud-tts-select"
-              size="small"
-              variant="borderless"
-              popupMatchSelectWidth={false}
-              aria-label="播报模型"
-              value={settings?.ttsModelId ?? HUD_TTS_DEFAULT_MODEL_VALUE}
-              options={modelOptions}
-              disabled={
-                disabled ||
-                settings?.ttsProviderProfileId == null ||
-                effectiveChannelModels.length === 0
-              }
-              onChange={(value) => {
-                const next = String(value)
-                onPatch({ ttsModelId: next === HUD_TTS_DEFAULT_MODEL_VALUE ? null : next })
-              }}
-            />
-          </div>
-        </div>
-      ) : null}
+      {expanded ? <Icons.ChevronUp size={13} /> : <Icons.ChevronDown size={13} />}
+    </button>
+  )
 
-      {/* 收起行（常显）：音色 + 语速 + 展开切换钮 */}
-      <div className="voice-hud-tts-row">
-        <div
-          className="voice-hud-tts-field"
-          title={voicePlaceholderMode ? '该渠道未声明音色候选' : undefined}
-        >
-          <span className="voice-hud-tts-label">音色</span>
+  return (
+    <ConfigProvider theme={HUD_TTS_SELECT_THEME}>
+      <div
+        className="voice-hud-tts"
+        // HUD 卡片是拖拽把手：设置区不作为把手，点选下拉 / 档位不被拖拽抢走
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {/* 展开行（插在顶部）：渠道胶囊 / 模型胶囊 */}
+        {expanded ? (
+          <>
+            <div className="voice-hud-tts-row">
+              <Select
+                className="voice-hud-tts-pill"
+                size="small"
+                variant="borderless"
+                popupMatchSelectWidth={false}
+                suffixIcon={HUD_TTS_SELECT_ARROW}
+                aria-label="播报渠道"
+                prefix={<PillLabel text="渠道" />}
+                title={
+                  channelOptions.find(
+                    (option) =>
+                      option.value ===
+                      (settings?.ttsProviderProfileId ?? HUD_TTS_AUTO_CHANNEL_VALUE),
+                  )?.title ?? '播报渠道'
+                }
+                value={settings?.ttsProviderProfileId ?? HUD_TTS_AUTO_CHANNEL_VALUE}
+                options={channelOptions}
+                disabled={disabled}
+                onChange={(value) => handleChannelChange(String(value))}
+              />
+            </div>
+            <div className="voice-hud-tts-row">
+              <Select
+                className="voice-hud-tts-pill"
+                size="small"
+                variant="borderless"
+                popupMatchSelectWidth={false}
+                suffixIcon={HUD_TTS_SELECT_ARROW}
+                aria-label="播报模型"
+                prefix={<PillLabel text="模型" />}
+                title={
+                  modelOptions.find(
+                    (option) =>
+                      option.value === (settings?.ttsModelId ?? HUD_TTS_DEFAULT_MODEL_VALUE),
+                  )?.title ?? '播报模型'
+                }
+                value={settings?.ttsModelId ?? HUD_TTS_DEFAULT_MODEL_VALUE}
+                options={modelOptions}
+                disabled={
+                  disabled ||
+                  settings?.ttsProviderProfileId == null ||
+                  effectiveChannelModels.length === 0
+                }
+                onChange={(value) => {
+                  const next = String(value)
+                  onPatch({ ttsModelId: next === HUD_TTS_DEFAULT_MODEL_VALUE ? null : next })
+                }}
+              />
+            </div>
+          </>
+        ) : null}
+
+        {/* 常显行：音色胶囊 */}
+        <div className="voice-hud-tts-row">
           <Select
-            className="voice-hud-tts-select"
+            className="voice-hud-tts-pill"
             size="small"
             variant="borderless"
             popupMatchSelectWidth={false}
+            suffixIcon={HUD_TTS_SELECT_ARROW}
             aria-label="播报音色"
+            prefix={<PillLabel text="音色" />}
+            title={
+              voicePlaceholderMode
+                ? '该渠道未声明音色候选'
+                : currentVoice.length > 0
+                  ? currentVoice
+                  : '默认音色'
+            }
             value={
               currentVoice.length > 0
                 ? currentVoice
@@ -254,34 +324,30 @@ export function VoiceHudTtsSettings({
             }}
           />
         </div>
-        <div className="voice-hud-tts-field">
-          <span className="voice-hud-tts-label">语速</span>
-          <Select
-            className="voice-hud-tts-select"
-            size="small"
-            variant="borderless"
-            popupMatchSelectWidth={false}
-            aria-label="播报语速"
-            value={speedValue}
-            options={HUD_TTS_SPEED_STEPS.map((step) => ({
-              label: step.label,
-              value: step.value,
-            }))}
-            disabled={disabled}
-            onChange={(value) => onPatch({ ttsSpeed: Number(value) })}
-          />
+
+        {/* 常显行：语速六档分段条（免下拉一点即切） */}
+        <div className="voice-hud-tts-row">
+          <span className="voice-hud-tts-row-label">语速</span>
+          <div className="voice-hud-tts-seg" role="group" aria-label="播报语速">
+            {HUD_TTS_SPEED_STEPS.map((step) => (
+              <button
+                key={step.value}
+                type="button"
+                className={`voice-hud-tts-seg-item${speedValue === step.value ? ' is-active' : ''}`}
+                aria-pressed={speedValue === step.value}
+                disabled={disabled}
+                title={`语速 ${step.label}×`}
+                onClick={() => onPatch({ ttsSpeed: step.value })}
+              >
+                {step.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <button
-          type="button"
-          className={`voice-hud-tts-toggle${expanded ? ' is-active' : ''}`}
-          aria-label={expanded ? '收起渠道与模型' : '展开渠道与模型'}
-          aria-expanded={expanded}
-          title={expanded ? '收起渠道与模型' : '展开渠道与模型'}
-          onClick={() => setExpanded((previous) => !previous)}
-        >
-          <Icons.Sliders size={12} />
-        </button>
+
+        {/* 展开/收起钮：单独一行居中，固定在分区末行（展开时钮位不跳动） */}
+        <div className="voice-hud-tts-row voice-hud-tts-toggle-row">{toggleButton}</div>
       </div>
-    </div>
+    </ConfigProvider>
   )
 }
