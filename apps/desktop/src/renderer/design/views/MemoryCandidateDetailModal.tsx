@@ -104,7 +104,15 @@ export function MemoryCandidateDetailModal({
           ) : (
             <>
               <div className="mp_candidate_detail_label">完整内容</div>
-              <div className="mp_candidate_detail_body">{candidate.payload.body}</div>
+              {/* 【审查改进】delete 候选正文不可读时明确提示（空正文属读取失败，非目标本无内容；
+                  确认删除按 targetId 指向的目标条目执行，不依赖正文） */}
+              {candidate.payload.action === 'delete' && candidate.payload.targetBodyUnavailable ? (
+                <div className="mp_candidate_detail_unreadable">
+                  目标正文不可读（文件缺失或读取失败）。确认删除按目标条目本身执行，不受影响。
+                </div>
+              ) : (
+                <div className="mp_candidate_detail_body">{candidate.payload.body}</div>
+              )}
               <div className="mp_candidate_detail_label">摘要</div>
               <div className="mp_candidate_detail_text">{candidate.payload.description}</div>
             </>

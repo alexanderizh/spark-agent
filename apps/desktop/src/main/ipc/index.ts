@@ -10317,6 +10317,10 @@ export function registerAllIpcHandlers(): void {
                 // 【P2-A】候选动作透传（缺省 create；exactOptionalPropertyTypes 用条件展开）
                 ...(r.payload.action != null ? { action: r.payload.action } : {}),
                 ...(r.payload.targetId != null ? { targetId: r.payload.targetId } : {}),
+                // 【审查改进】delete 候选正文不可读标注透传（exactOptionalPropertyTypes 条件展开）
+                ...(r.payload.targetBodyUnavailable === true
+                  ? { targetBodyUnavailable: true }
+                  : {}),
               },
       })),
     }

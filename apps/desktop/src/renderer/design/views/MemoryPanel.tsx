@@ -19,7 +19,7 @@ import {
 import { Switch, message, Modal, Segmented, Spin, Checkbox } from 'antd'
 import { Icons } from '../Icons'
 import { MEMORY_PENDING_CHANGED_EVENT } from '../hooks/useMemoryPendingCount'
-import { MemoryCandidateDetailModal } from './MemoryCandidateDetailModal'
+import { MemoryCandidateDetailModal, type MemoryCandidate } from './MemoryCandidateDetailModal'
 import type {
   MemoryEntry,
   MemoryHistoryResponse,
@@ -308,34 +308,18 @@ export function MemoryPanel() {
   const { invoke: listCandidates } = useIpcInvoke('memory:candidate:list')
   const { invoke: confirmCandidate } = useIpcInvoke('memory:candidate:confirm')
   const { invoke: rejectCandidate } = useIpcInvoke('memory:candidate:reject')
-  const [candidates, setCandidates] = useState<
-    Array<{
-      id: number
-      scope: 'user' | 'project' | 'agent'
-      scopeRef: string | null
-      createdAt: number
-      expiresAt: number
-      contentDigest: string
-      payload: {
-        type: 'user' | 'feedback' | 'project' | 'reference'
-        name: string
-        description: string
-        body: string
-        confidence: number
-        sourceIds: string[]
-        /** 【P2-A】缺省 create；update/delete=冲突写入待确认；merge=整合合并待确认 */
-        action?: 'create' | 'update' | 'delete' | 'merge'
-        targetId?: string
-      } | null
-    }>
-  >([])
+  // 【审查改进】候选结构复用协议派生类型（与详情弹窗同源），消除手工复写的字段漂移风险
+  const [candidates, setCandidates] = useState<MemoryCandidate[]>([])
   const [candidateBusy, setCandidateBusy] = useState<number | null>(null)
+  const [candidateLoadError, setCandidateLoadError] = useState(false)
   const refreshCandidates = useCallback(async () => {
     try {
       const res = await listCandidates({})
       setCandidates(res?.candidates ?? [])
+      setCandidateLoadError(false)
     } catch {
-      /* 候选区加载失败不阻断主列表 */
+      // 【审查改进】失败不阻断主列表，但置错误态渲染可见提示（区分「无候选」与「加载失败」）
+      setCandidateLoadError(true)
     }
   }, [listCandidates])
   const onConfirmCandidate = useCallback(
@@ -517,6 +501,15 @@ export function MemoryPanel() {
         />
       </div>
 
+      {/* 【审查改进】加载失败可见：区分「没有候选」与「候选区加载失败」
+          （仅空列表时显示，避免与正常列表叠噪；有候选时刷新失败沿用旧列表） */}
+      {candidates.length === 0 && candidateLoadError && (
+        <div className="mp_candidate_error">
+          <span>候选区加载失败，可能有等待确认的提议</span>
+          <a onClick={() => void refreshCandidates()}>重试</a>
+        </div>
+      )}
+
       {candidates.length > 0 && (
         <section className="mp_candidate_section">
           <div className="mp_candidate_header">
@@ -542,6 +535,10 @@ export function MemoryPanel() {
                     <Tag size="middle" color="red">
                       删除提议
                     </Tag>
+                  )}
+                  {/* 【审查改进】delete 候选目标正文读取失败标注（灰阶中性提示，区别于动作标签） */}
+                  {c.payload?.action === 'delete' && c.payload.targetBodyUnavailable && (
+                    <Tag size="middle">正文不可读</Tag>
                   )}
                   {c.payload?.action === 'merge' && (
                     <Tag size="middle" color="purple">

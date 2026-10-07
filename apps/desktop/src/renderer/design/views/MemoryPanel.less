@@ -351,6 +351,32 @@
   line-height: 1.6;
   color: var(--color-text-secondary, #888);
 }
+// 【审查改进】delete 候选目标正文读取失败的详情提示（与 unparsed 同层级样式）
+.mp_candidate_detail_unreadable {
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary, #888);
+}
+// 【审查改进】候选区加载失败提示条（区分「无候选」与「加载失败」，空列表时显示）
+.mp_candidate_error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #888);
+  background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
+  border-radius: 6px;
+  a {
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+}
 .mp_candidate_detail_meta {
   display: flex;
   flex-direction: column;

@@ -45,6 +45,9 @@ export interface MemoryCandidatePayload {
   action?: 'create' | 'update' | 'delete' | 'merge'
   /** action 为 update/delete 时的目标条目 id（memory_entry.id） */
   targetId?: string
+  /** 【审查改进】delete 候选目标正文不可读时置 true（UI 标注「正文不可读」）。
+   *  纯展示位：不参与 content_digest 计算与确认执行 */
+  targetBodyUnavailable?: boolean
 }
 
 export interface MemoryCandidateRow {
@@ -131,6 +134,9 @@ export class MemoryCandidateRepository extends BaseRepository {
           sourceIds: parsed.sourceIds,
           ...(action != null ? { action } : {}),
           ...(targetId != null ? { targetId } : {}),
+          // 【审查修复】delete 候选「正文不可读」标注位透传（严格 === true 守卫，
+          // 与 IPC 侧同款口径）——不透传则写入落库、读取丢弃，UI 标注整体失效
+          ...(parsed.targetBodyUnavailable === true ? { targetBodyUnavailable: true } : {}),
         }
       }
       return null

@@ -4296,6 +4296,8 @@ export interface MemoryCandidateListResponse {
       action?: 'create' | 'update' | 'delete' | 'merge'
       /** update/delete/merge 的目标条目 ID */
       targetId?: string
+      /** 【审查改进】delete 候选目标正文读取失败标注（仅 UI 展示提示，不影响确认删除执行） */
+      targetBodyUnavailable?: boolean
     } | null
   }>
 }

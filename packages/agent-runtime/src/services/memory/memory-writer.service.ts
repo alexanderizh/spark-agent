@@ -736,10 +736,26 @@ export class MemoryWriterService {
       //（不嵌 History 时间戳），content_digest 去重才对同一冲突稳定 —— 此前
       // 征集即合成 History，时间戳令 digest 每轮必变，同一冲突反复累积候选。
       // History 段改由 confirmUpdate 确认落库时现合成（与自动路径同口径）。
-      const body =
-        action === 'delete'
-          ? await this.storeService.readFile(target.file_path).catch(() => '')
-          : candidate.body
+      // 【审查改进】delete 候选正文读取失败不再静默变空：候选标注「目标正文不可读」
+      //（UI 展示提示），避免用户对着空正文确认删除时误以为目标本就无内容
+      let body = candidate.body
+      let targetBodyUnavailable = false
+      if (action === 'delete') {
+        try {
+          body = await this.storeService.readFile(target.file_path)
+        } catch (err) {
+          // 【审查修复】读失败时 body 维持旧口径空串：name/description 取自
+          // target DB 行（稳定）+ body='' → digest 对同一故障逐字节稳定，
+          // 去重不失效；「正文不可读」的告知职责由 targetBodyUnavailable 标注
+          // 位承担（confirm 按目标条目执行，不看候选正文）
+          body = ''
+          targetBodyUnavailable = true
+          log.warn(
+            `【冲突写入转候选】目标正文读取失败，候选将标注「正文不可读」：` +
+              `target=${target.id} — ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
+      }
       const { inserted, row } = this.candidateRepo.insertPending({
         scope: candidate.scope,
         scopeRef,
@@ -753,6 +769,8 @@ export class MemoryWriterService {
           sourceIds: [],
           action,
           targetId,
+          // exactOptionalPropertyTypes：仅读取失败时携带
+          ...(targetBodyUnavailable ? { targetBodyUnavailable: true } : {}),
         },
       })
       if (!inserted) {
@@ -932,8 +950,6 @@ function filterAndShapeCandidates(parsed: unknown[]): MemoryCandidate[] {
  * 例：description = "用户叫助手"牛马王"" —— 严格 JSON.parse 在第一个内嵌引号处断裂，
  * 这里通过前瞻 ",\n  "body" 或 `}` 找到 description 的真正结束位置，正确还原值。
  */
-const STRING_FIELD_ORDER = ['scope', 'type', 'name', 'description', 'body'] as const
-
 function parseCandidatesLoose(json: string): MemoryCandidate[] {
   // 按对象块分割（顶层 [...] 内的每个 {...}）
   const blocks = json.match(/\{[\s\S]*?\}/g)

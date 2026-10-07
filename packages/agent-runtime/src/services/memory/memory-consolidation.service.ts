@@ -218,11 +218,16 @@ export class MemoryConsolidationService {
     // 真实用户结构化确认（confirm 侧 confirmMerge 经共用 executeMemoryMerge
     // 执行同款语义）。同摘要既有候选（任意状态，含已拒绝）不重复征集
     //（N1/N2：markConsolidated 已占坑，用户不确认也不重复征集，digest 去重
-    // 兜底）。候选区故障（未接线 / insertPending 抛错）不阻断整合 —— 降级
-    // 走下方原自动合并路径。
+    // 兜底）。候选区故障（未接线 / insertPending 抛错）时【审查改进】跳过
+    // 本次合并留待下轮整合——用户已显式要求"合并须确认"，静默自动合并等于
+    // 推翻该设置；宁可本轮不合并也不无确认执行（下轮整合会重新征集）。
     if (this.mergeRequiresConfirm) {
       if (this.candidateRepo == null) {
-        log.warn('consolidation MERGE 候选区未接线（candidateRepo=null），降级自动合并')
+        log.warn(
+          'consolidation MERGE 候选区未接线（candidateRepo=null），跳过本次合并留待下轮' +
+            '（用户已开启合并须确认，不自动执行）',
+        )
+        return
       } else {
         try {
           const { inserted, row } = this.candidateRepo.insertPending({
@@ -255,10 +260,10 @@ export class MemoryConsolidationService {
           return
         } catch (err) {
           log.warn(
-            `consolidation MERGE 候选征集失败，降级自动合并：keep=${keep.id} — ` +
-              `${err instanceof Error ? err.message : String(err)}`,
+            `consolidation MERGE 候选征集失败，跳过本次合并留待下轮（不自动执行）：` +
+              `keep=${keep.id} — ${err instanceof Error ? err.message : String(err)}`,
           )
-          // 落到下方自动合并路径（不 return：不能因候选区故障阻断整合）
+          return
         }
       }
     }
