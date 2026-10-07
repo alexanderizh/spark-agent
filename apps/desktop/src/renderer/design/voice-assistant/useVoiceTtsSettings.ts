@@ -6,9 +6,12 @@
  * update-settings + canvas:media-models:list）。独立成 hook 是因为 HUD 打开时
  * 设置页未必挂载，不能复用它的组件状态。
  *
- * 与设置页 update 的两点差异：
+ * 与设置页 update 的三点差异：
  * - settings 用 null 明确区分「首读中 / 首读失败」，面板据此整体禁用控件，
  *   而不是渲染一份 DEFAULT 假表单误导用户（设置页场景常驻，HUD 场景瞬时）。
+ * - patch 的合并基线在提交前补读主进程最新设置：本 hook 常驻挂载、快照自
+ *   首读后不再刷新（平台没有设置变更广播），直接拿陈旧快照全量合并会把启动
+ *   后在设置页改过的字段（如唤醒快捷键）静默回滚。
  * - patch 失败回滚到提交前快照：HUD 面板没有底部错误常驻位，乐观值若留在
  *   主进程已拒绝的位置，用户关掉面板就再也看不到不一致了。
  */
@@ -27,7 +30,8 @@ export interface UseVoiceTtsSettingsResult {
   /** settings 首读完成。失败也置 true（settings 保持 null），面板据此结束 loading。 */
   ready: boolean
   /**
-   * 把 patch 合并进当前 settings 后全量提交（主进程按全量对象 normalize）。
+   * 把 patch 合并进「提交前补读到的主进程最新设置」后全量提交（主进程按全量
+   * 对象 normalize）。补读防止陈旧快照把其他入口的改动静默回滚。
    * 乐观更新：先本地合并，成功以主进程回显为准回写；失败回滚快照并置 saveError。
    * settings 未就绪（null）时直接返回 false，不发起请求。
    */
@@ -116,10 +120,20 @@ export function useVoiceTtsSettings(): UseVoiceTtsSettingsResult {
       if (settings == null || !mountedRef.current) return false
       // 以提交前的 settings 为回滚快照——乐观值一旦被主进程拒绝要能原路退回。
       const baseline = settings
-      const next = { ...baseline, ...p }
-      setSettings(next)
       dismissSaveError()
       try {
+        // 合并基线补读主进程最新设置：快照自首读后不再刷新，直接合并会把启动后
+        // 在设置页改过的字段静默回滚。补读失败时回落本地快照（与旧行为一致，
+        // update 侧仍有 normalize 兜底），不让单次读取失败卡死提交。
+        let latest = baseline
+        try {
+          const fresh = await window.spark.invoke('voice-assistant:get-settings', {})
+          if (fresh?.settings) latest = fresh.settings
+        } catch {
+          /* 补读失败不阻断提交 */
+        }
+        const next = { ...latest, ...p }
+        setSettings(next)
         const res = await window.spark.invoke('voice-assistant:update-settings', {
           settings: next,
         })

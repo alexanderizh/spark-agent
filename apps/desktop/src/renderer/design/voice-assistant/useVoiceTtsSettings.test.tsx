@@ -10,10 +10,12 @@ import { useVoiceTtsSettings, type UseVoiceTtsSettingsResult } from './useVoiceT
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 /**
- * 覆盖 HUD 播报设置数据 hook 的四条链路：
+ * 覆盖 HUD 播报设置数据 hook 的链路：
  * - 首读成功 ready=true；候选列举失败不阻塞首读
- * - patch 成功：全量合并提交 + 以主进程 normalize 回显回写
- * - patch 失败：回滚提交前快照 + saveError（5s 自动清空，且旧 timer 不清掉新错误）
+ * - patch 成功：提交前补读主进程最新设置（防陈旧快照回滚设置页改动），
+ *   全量合并提交 + 以主进程 normalize 回显回写
+ * - 补读失败回落本地快照合并；patch 失败回滚提交前快照 + saveError
+ *   （5s 自动清空，且旧 timer 不清掉新错误）
  * - 卸载后 invoke 迟到不崩溃；settings 未就绪时 patch 直接拒绝
  */
 
@@ -202,6 +204,79 @@ describe('useVoiceTtsSettings', () => {
     expect(latest?.settings?.ttsSpeed).toBe(1.25)
     // 展示的是主进程回显，不是本地乐观合并值。
     expect(latest?.settings?.ttsVoice).toBe('tongtong#normalized')
+  })
+
+  it('patch 提交前补读主进程最新设置：陈旧快照里的旧值不被写回', async () => {
+    // 场景：启动后用户在设置页把 ttsVoice 从 local 改成 external，HUD 快照仍停留
+    // 在启动时的 local。patch 若直接拿快照全量合并，会把 ttsVoice 静默回滚。
+    let getCalls = 0
+    const updateSettings = vi.fn(async (request: { settings: VoiceAssistantSettings }) => ({
+      settings: request.settings,
+    }))
+    stubSpark({
+      getSettings: async () => {
+        getCalls += 1
+        return getCalls === 1
+          ? {
+              settings: { ...DEFAULT_VOICE_ASSISTANT_SETTINGS, ttsVoice: 'local', ttsSpeed: 1 },
+              sessionAgent: null,
+            }
+          : {
+              settings: { ...DEFAULT_VOICE_ASSISTANT_SETTINGS, ttsVoice: 'external', ttsSpeed: 1.75 },
+              sessionAgent: null,
+            }
+      },
+      updateSettings,
+    })
+    await renderProbe()
+    await flushAsync()
+
+    const patchFn = latest?.patch
+    let ok = false
+    await act(async () => {
+      ok = (await patchFn?.({ ttsSpeed: 2 })) ?? false
+    })
+
+    expect(ok).toBe(true)
+    const submitted = updateSettings.mock.calls[0]?.[0]?.settings
+    // 合并基线是补读到的新值：外部改动没有被陈旧快照回滚。
+    expect(submitted?.ttsVoice).toBe('external')
+    // patch 字段本身生效。
+    expect(submitted?.ttsSpeed).toBe(2)
+  })
+
+  it('补读失败回落本地快照合并，单次读取失败不卡死提交', async () => {
+    let getCalls = 0
+    const updateSettings = vi.fn(async (request: { settings: VoiceAssistantSettings }) => ({
+      settings: request.settings,
+    }))
+    stubSpark({
+      getSettings: async () => {
+        getCalls += 1
+        if (getCalls === 1) {
+          return {
+            settings: { ...DEFAULT_VOICE_ASSISTANT_SETTINGS, ttsVoice: 'local', ttsSpeed: 1 },
+            sessionAgent: null,
+          }
+        }
+        throw new Error('IPC 瞬时失败')
+      },
+      updateSettings,
+    })
+    await renderProbe()
+    await flushAsync()
+
+    const patchFn = latest?.patch
+    let ok = false
+    await act(async () => {
+      ok = (await patchFn?.({ ttsSpeed: 1.5 })) ?? false
+    })
+
+    expect(ok).toBe(true)
+    const submitted = updateSettings.mock.calls[0]?.[0]?.settings
+    // 补读失败时与旧行为一致：回落快照合并，仍能提交。
+    expect(submitted?.ttsSpeed).toBe(1.5)
+    expect(submitted?.ttsVoice).toBe('local')
   })
 
   it('patch 失败：回滚提交前快照并展示 saveError', async () => {
