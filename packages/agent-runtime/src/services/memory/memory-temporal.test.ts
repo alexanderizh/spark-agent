@@ -116,18 +116,30 @@ describe('memory-temporal（S2.6 时效语义）', () => {
     })
 
     it('N5：旧地址有效期到本月底 —— 本月仍适用，到期不再作为当前事实', async () => {
-      // 手工创建：旧部署地址，有效期至 2026-09-30（上海，按日）——相对当前
-      // 时间（2026-09-27）未来 → 仍是当前事实
+      // 手工创建：旧部署地址，有效期至本月底（上海，按日）——相对当前时间
+      // 未来 → 仍是当前事实。日期动态取本月最后一天（00:00 CST = 前一日
+      // 16:00Z），避免硬编码日历日随时间流逝腐烂（曾硬编码 2026-09-30，
+      // 过期后该用例恒挂）。注：仅在 UTC 月末最后 8 小时内跑会踩边界。
+      const now = new Date()
+      const endOfMonthMs = Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth() + 1,
+        0,
+        16,
+        0,
+        0,
+      )
+      const endOfMonthDate = new Date(endOfMonthMs).toISOString().slice(0, 10)
       const r = await writer.manualWrite({
         scope: 'user',
         type: 'reference',
         name: 'deploy-address-old',
-        description: '部署地址：旧机房（9 月底前适用）',
-        body: '部署目标：旧机房 A（2026-09-30 前适用，下月迁新址）',
+        description: '部署地址：旧机房（月底前适用）',
+        body: '部署目标：旧机房 A（月底前适用，下月迁新址）',
         scopeRef: null,
-        validUntil: { validUntil: '2026-09-30', precision: 'date', timezone: 'Asia/Shanghai' },
+        validUntil: { validUntil: endOfMonthDate, precision: 'date', timezone: 'Asia/Shanghai' },
       })
-      expect(r.valid_until).toBe(Date.UTC(2026, 8, 30, 16, 0, 0))
+      expect(r.valid_until).toBe(endOfMonthMs)
       expect(r.valid_until_meta).toContain('"date"')
       // 本月（未到期）：列表可见 + FTS 可检索
       expect(repo.listByScope('user', null).some((e) => e.id === r.id)).toBe(true)

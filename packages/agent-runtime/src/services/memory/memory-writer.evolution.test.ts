@@ -367,15 +367,17 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
 
     // 第一轮征集 pending，用户明确拒绝该 update 提议
     await run()
-    const first = candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })
-    expect(first).toHaveLength(1)
-    candidateRepo.reject(first[0]!.id)
+    const firstRow = candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })[0]
+    expect(firstRow).toBeDefined()
+    if (firstRow == null) throw new Error('unreachable: asserted single pending row')
+    candidateRepo.reject(firstRow.id)
 
     // 第二轮同冲突：digest 命中 rejected 行。修复前降级自动执行（inserted:false
     // 无视 status → return false → 直接改写用户保住的目标）；修复后跳过自动
     // 写入（与「转候选等确认」同语义），用户裁决维持
     await run()
-    expect(repo.getById(manual.id)!.description).toBe('偏好 A')
+    const targetRow = repo.getById(manual.id)
+    expect(targetRow?.description).toBe('偏好 A')
     expect(candidateRepo.listByStatus('rejected', { scope: 'user', scopeRef: null })).toHaveLength(
       1,
     )
@@ -421,17 +423,18 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
 
     // 第一轮征集 pending delete 提议 → 用户拒绝（保住该记忆）
     await run()
-    const first = candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })
-    expect(first).toHaveLength(1)
-    expect(candidateRepo.parsePayload(first[0]!)?.action).toBe('delete')
-    candidateRepo.reject(first[0]!.id)
+    const firstRow = candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })[0]
+    expect(firstRow).toBeDefined()
+    if (firstRow == null) throw new Error('unreachable: asserted single pending row')
+    expect(candidateRepo.parsePayload(firstRow)?.action).toBe('delete')
+    candidateRepo.reject(firstRow.id)
 
     // 第二轮同冲突：delete 候选 digest 由目标 name/description/body 构成，目标
     // 未变则逐字节相同 → 命中 rejected 行。修复前会静默自动失效用户明确保住
     // 的记忆；修复后跳过，目标保持有效
     await run()
-    const kept = repo.getById(manual.id)!
-    expect(kept.invalid_at).toBeNull()
+    const kept = repo.getById(manual.id)
+    expect(kept?.invalid_at).toBeNull()
     expect(candidateRepo.listByStatus('rejected', { scope: 'user', scopeRef: null })).toHaveLength(
       1,
     )
