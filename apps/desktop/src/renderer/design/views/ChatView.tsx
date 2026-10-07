@@ -453,6 +453,7 @@ import type {
   TeamModeConfig,
 } from '@spark/protocol'
 import {
+  AUTO_ROUTER_PROVIDER_TYPE,
   LOCAL_CLI_DEFAULT_MODEL,
   LOCAL_CLI_PROVIDER_ID,
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
@@ -1897,6 +1898,11 @@ export function ChatView({
     snapshots: turnPromptSnapshots,
   })
   const activeDisplayProvider = activeAutoRouterExecutor?.provider ?? activeProvider
+  // 智能路由会话首轮分流完成前（尚无可解析的执行渠道快照），上下文窗口是 router 行的
+  // 兜底值、用量是估算值，展示出来是错值：参数栏计量器与检查器「上下文窗口」区块整体
+  // 隐藏；首轮快照解析出真实执行渠道后自动恢复。非智能路由会话不受影响。
+  const autoRouterPendingFirstDispatch =
+    activeProvider?.providerType === AUTO_ROUTER_PROVIDER_TYPE && activeAutoRouterExecutor == null
   const activeDisplayModelId =
     activeAutoRouterExecutor?.modelId ??
     (activeSession?.modelId != null && activeSession.modelId.trim().length > 0
@@ -3441,6 +3447,7 @@ export function ChatView({
           runtimeContext={runtimeContext}
           providerContextWindow={activeProviderContextWindow}
           providerId={activeDisplayProvider?.provider}
+          hideContextBudget={autoRouterPendingFirstDispatch}
           turnPromptSnapshots={turnPromptSnapshots}
           runningTeamAgentIds={extractRunningTeamMemberIds(
             activeMessages,

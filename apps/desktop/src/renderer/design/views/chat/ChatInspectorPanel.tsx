@@ -826,6 +826,7 @@ export function ChatInspector({
   runtimeContext,
   providerId,
   providerContextWindow,
+  hideContextBudget = false,
   turnPromptSnapshots,
   width,
   onWidthChange,
@@ -850,6 +851,8 @@ export function ChatInspector({
   /** 当前 Provider 的引擎标识（'claude' / 'codex' / 自定义串），决定上下文占用口径 */
   providerId?: string | undefined
   providerContextWindow: number
+  /** 智能路由首轮分流完成前置位：窗口/用量尚为兜底与估算错值，隐藏上下文预算区块 */
+  hideContextBudget?: boolean
   turnPromptSnapshots: TurnPromptSnapshotEvent[]
   width: number
   onWidthChange: (width: number) => void
@@ -1079,8 +1082,9 @@ export function ChatInspector({
           </div>
         )}
 
-        {/* Context Window Section — 仅在已知上下文窗口大小时展示 */}
-        {contextWindow > 0 && (
+        {/* Context Window Section — 仅在已知上下文窗口大小时展示；
+            智能路由首轮分流完成前窗口/用量是兜底错值，随参数栏一起隐藏 */}
+        {contextWindow > 0 && !hideContextBudget && (
           <div className="inspector-section">
             <h4>
               上下文窗口

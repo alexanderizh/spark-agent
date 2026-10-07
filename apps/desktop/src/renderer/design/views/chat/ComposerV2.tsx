@@ -1180,6 +1180,10 @@ export function ComposerV2({
     providers,
     snapshots: turnPromptSnapshots,
   })
+  // 智能路由会话首轮分流完成前（尚无可解析快照），窗口取 router 行兜底、用量走估算，
+  // 上下文计量展示的是错值：整体隐藏，分流解析出真实执行渠道后自动恢复。单模型渠道不受影响。
+  const autoRouterPendingFirstDispatch =
+    selectedProvider?.providerType === AUTO_ROUTER_PROVIDER_TYPE && autoRouterExecutor == null
   const contextDisplayProvider = autoRouterExecutor?.provider ?? selectedProvider
   const configuredContextWindow = resolveModelContextWindowForProvider(
     autoRouterExecutor?.modelId ??
@@ -4870,7 +4874,7 @@ export function ComposerV2({
               pendingMention.agentId !== effectiveHostAgentId
             }
           />
-          {contextWindow > 0 && (
+          {contextWindow > 0 && !autoRouterPendingFirstDispatch && (
             <ContextMeterWithPopup
               contextRatio={contextRatio}
               contextUsedTokens={contextUsedTokens}
