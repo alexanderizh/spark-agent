@@ -341,11 +341,21 @@ export function MemoryPanel() {
   const onConfirmCandidate = useCallback(
     async (id: number, contentDigest: string) => {
       setCandidateBusy(id)
+      // 成功文案按候选动作分化（与确认按钮文案同口径）；列表与详情弹窗共用本回调
+      const action = candidates.find((c) => c.id === id)?.payload?.action
       try {
         const res = await confirmCandidate({ id, contentDigest })
         if (res?.ok) {
           window.dispatchEvent(new CustomEvent(MEMORY_PENDING_CHANGED_EVENT))
-          message.success('已确认并保存为正式记忆')
+          const successText =
+            action === 'update'
+              ? '已确认更新该记忆'
+              : action === 'delete'
+                ? '已确认移除该记忆'
+                : action === 'merge'
+                  ? '已确认合并记忆'
+                  : '已确认并保存为正式记忆'
+          message.success(successText)
         }
         else {
           const reasonText: Record<string, string> = {
@@ -357,6 +367,9 @@ export function MemoryPanel() {
             sensitive_content: '内容含敏感信息（疑似密钥/凭证），已拒绝保存',
             // 【审查修复 F3】同名冲突：候选确认被拒的独立类别（含恢复路径）
             name_collision: '已存在同名记忆且内容不符，未保存候选内容（可改名或拒绝）',
+            // 【审查修复】P2-A/P2-B 失败原因补齐：目标被并发修改可重试
+            version_conflict: '目标记忆刚被其他修改，请重试确认',
+            unsupported_action: '该候选动作暂不支持，请拒绝后等待重新征集',
             commit_failed: '保存失败（详见日志，候选已恢复待确认）',
           }
           message.warning(reasonText[res?.reason ?? ''] ?? '确认失败')
@@ -369,7 +382,7 @@ export function MemoryPanel() {
       void refreshCandidates()
       void refreshFn()
     },
-    [confirmCandidate, refreshCandidates, refreshFn],
+    [confirmCandidate, refreshCandidates, refreshFn, candidates],
   )
   const onRejectCandidate = useCallback(
     async (id: number) => {

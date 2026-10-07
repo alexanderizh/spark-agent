@@ -10193,28 +10193,16 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('memory:unarchive', async (req) => {
     log.info(`memory:unarchive requested, id=${req.id}`)
-    // 恢复归档是 archive 的逆操作，但归档时正文文件未删、无清理屏障需要
-    // 协调 —— 直接走 repository：同一事务清 archived 位 + 重建 FTS 行。
-    // 幂等口径同 archive：目标不存在按成功处理（not_found）。
-    const repo = new MemoryRepository(getDatabase())
-    const existing = repo.getById(req.id)
-    if (existing == null) return { ok: true, status: 'not_found' }
-    // 仅真正处于归档态才需要读正文重建 FTS（幂等重放不产生文件 IO）；
-    // 文件缺失时降级为 name+description 重建，不阻断恢复本身。
-    let body: string | undefined
-    if (existing.archived === 1) {
-      try {
-        body = await getMemoryStore(
-          resolveWorkspaceRootPath(existing.scope, existing.scope_ref),
-        ).readFile(existing.file_path)
-      } catch (err) {
-        log.warn(
-          `memory:unarchive body read failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
-        )
-      }
+    // 【审查修复】恢复改走生命周期协调：repo.unarchive（清 archived 位 +
+    // FTS 重建）之外，补齐 archive 侧的文件与投影副作用（frontmatter
+    // archived:false 写回防旧 CLI 继续视为归档（E1 逆向）+ MEMORY.md 重刷），
+    // 与 archiveEntry 两侧对称。幂等口径同 archive：目标不存在按成功处理。
+    const result = await getMemoryLifecycleService().unarchiveEntry(req.id)
+    return {
+      ok: result.status !== 'blocked_locally',
+      status: result.status === 'not_found' ? 'not_found' : 'complete',
+      ...(result.error != null ? { error: result.error } : {}),
     }
-    repo.unarchive(req.id, body)
-    return { ok: true, status: 'complete' }
   })
 
   typedIpcHandle('memory:delete', async (req) => {

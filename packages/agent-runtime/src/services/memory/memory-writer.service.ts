@@ -26,6 +26,7 @@ import { buildExtractionPrompt, buildDedupPrompt } from './memory-extraction.pro
 import { MemoryEvolutionService } from './memory-evolution.service.js'
 import type { EvolutionVerdict } from './memory-evolution.service.js'
 import { MemoryCommitService } from './memory-commit.service.js'
+import { appendUpdateHistory } from './memory-body-history.js'
 import type { MemoryCandidateRepository, MemoryEntityRepository } from '@spark/storage'
 
 const log = createLogger('memory:writer')
@@ -687,11 +688,12 @@ export class MemoryWriterService {
     let newBody = candidate.body
     try {
       const oldBody = await this.storeService.readFile(target.file_path).catch(() => '')
-      if (oldBody.length > 0) {
-        const stamp = new Date().toISOString()
-        const oldExcerpt = oldBody.slice(0, 500)
-        newBody = `${candidate.body}\n\n## History\n\n### ${stamp}（被 "${candidate.name}" 更新）\n${oldExcerpt}${oldBody.length > 500 ? ' …' : ''}`
-      }
+      newBody = appendUpdateHistory(
+        newBody,
+        oldBody,
+        candidate.name,
+        new Date().toISOString(),
+      )
     } catch (err) {
       log.warn(
         `buildEvolvedBody: failed to read old body, overwriting: ${err instanceof Error ? err.message : String(err)}`,
@@ -730,10 +732,14 @@ export class MemoryWriterService {
     if (target.author_role !== 'manual_user' && target.extraction_kind !== 'manual') return false
 
     try {
+      // 【审查修复】征集时正文保持稳定口径：update 候选暂存演化建议原文
+      //（不嵌 History 时间戳），content_digest 去重才对同一冲突稳定 —— 此前
+      // 征集即合成 History，时间戳令 digest 每轮必变，同一冲突反复累积候选。
+      // History 段改由 confirmUpdate 确认落库时现合成（与自动路径同口径）。
       const body =
         action === 'delete'
           ? await this.storeService.readFile(target.file_path).catch(() => '')
-          : await this.buildEvolvedBody(target, candidate)
+          : candidate.body
       const { inserted, row } = this.candidateRepo.insertPending({
         scope: candidate.scope,
         scopeRef,
@@ -750,9 +756,23 @@ export class MemoryWriterService {
         },
       })
       if (!inserted) {
+        const status = row?.status
+        // 【审查修复】同摘要候选已存在时按状态分流，不得无视裁决直接自动执行：
+        // pending=提案正在队列等用户裁决（自动执行会静默绕过保护，事后确认还会
+        // 撞 not_found/version_conflict）；rejected=用户已明确否决同提议（自动
+        // 执行=推翻用户裁决）。两者返回 true 与「转候选等确认」同语义：本轮
+        // 跳过原写入路径。confirmed/expired 已过裁决期，维持既有降级自动执行
+        //（文档化兜底口径）；status 缺失（理论不可达）保守走原降级。
+        if (status === 'pending' || status === 'rejected') {
+          log.info(
+            `【冲突写入转候选】同摘要候选 #${row?.id ?? '?'} 已存在（status=${status}），` +
+              `本轮跳过自动${action === 'delete' ? '失效' : '更新'}：target=${target.id} ← "${candidate.name}"`,
+          )
+          return true
+        }
         log.warn(
-          `【冲突写入转候选】降级自动执行：同摘要候选已存在（status=${row?.status ?? '?'}）：` +
-            `target=${target.id} ← "${candidate.name}"`,
+          `【冲突写入转候选】降级自动执行：同摘要候选 #${row?.id ?? '?'} 已过裁决期` +
+            `（status=${status ?? '?'}）：target=${target.id} ← "${candidate.name}"`,
         )
         return false
       }

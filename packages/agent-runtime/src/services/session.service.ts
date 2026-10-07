@@ -7228,10 +7228,13 @@ export class SessionService {
       // 放大近期上下文窗口；同时排除当前轮事件——本轮 USER/ASSISTANT 已单独进抽取
       // prompt，默认 1000 token 窗口不应被本轮重复内容挤占，要留给更早的历史。
       const recentSummary = buildMemoryExtractionRecentContext(eventRepo, sessionId, {
-        excludeTurnId: source?.turnId,
-        maxTokens: shouldExpandMemoryExtractionContext(userMessage)
-          ? MEMORY_EXTRACTION_CONTEXT_MAX_TOKENS_EXPANDED
-          : undefined,
+        // exactOptionalPropertyTypes：可选属性不接受显式 undefined，条件展开注入
+        ...(source?.turnId != null && source.turnId.length > 0
+          ? { excludeTurnId: source.turnId }
+          : {}),
+        ...(shouldExpandMemoryExtractionContext(userMessage)
+          ? { maxTokens: MEMORY_EXTRACTION_CONTEXT_MAX_TOKENS_EXPANDED }
+          : {}),
       })
       // 真实 LLM 抽取：走 ModelService.complete()（OpenAI 兼容 /chat/completions 或 anthropic /v1/messages）。
       // 未配置 extraction 模型 / 调用失败 → complete 返回 unavailable，这里降级为 '[]'，

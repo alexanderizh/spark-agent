@@ -155,6 +155,59 @@ export class MemoryLifecycleService {
   }
 
   /**
+   * 【审查修复】恢复一条归档记忆：archive 的逆操作 —— repo.unarchive 在
+   * 同一事务清 archived 位并重建 FTS 行，随后补齐 archive 侧的文件与投影
+   * 副作用，两侧对称：
+   *
+   * - frontmatter 写回 archived:false（E1 逆向：旧 CLI 以文件为唯一信号，
+   *   不写回则恢复后仍被旧端视为归档）；
+   * - MEMORY.md 投影重刷（归档时被移除的条目回到投影，不必等下次写入）。
+   *
+   * 无清理屏障需要协调，不走 memory_operation 状态机；文件不可读时跳过
+   * frontmatter 写回（绝不以空正文覆盖未知内容），投影照刷；frontmatter/
+   * 投影失败不阻断恢复（DB 已生效，重放本方法幂等补齐）。已是非归档态或
+   * 目标不存在均幂等返回。
+   */
+  async unarchiveEntry(entryId: string): Promise<LifecycleResult> {
+    const entry = this.memoryRepo.getById(entryId)
+    if (entry == null) {
+      log.info(`unarchive: entry not found (idempotent ok): ${entryId}`)
+      return { status: 'not_found', operationId: null }
+    }
+    if (entry.archived !== 1) return { status: 'complete', operationId: null }
+
+    // 正文：FTS 重建与 frontmatter 写回共用；读不到时 FTS 降级 name+
+    // description 重建，frontmatter 跳过（防空正文覆盖）
+    let body: string | null = null
+    try {
+      body = await this.storeFor(entry.scope, entry.scope_ref).readFile(entry.file_path)
+    } catch (err) {
+      log.warn(
+        `unarchive: body read failed (non-fatal, FTS 降级 name+description 重建): ` +
+          `${entry.file_path} — ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+    this.memoryRepo.unarchive(entryId, body ?? undefined)
+    try {
+      if (body != null) {
+        await this.writeArchivedStateToFile(entry, false, body)
+      } else {
+        log.warn(
+          `unarchive: 文件不可读，跳过 frontmatter 写回（重放可补齐）: ${entry.file_path}`,
+        )
+      }
+      await this.refreshProjection(entry.scope, entry.scope_ref)
+      log.info(`unarchive complete: ${entryId}（frontmatter 已写回，投影已刷新）`)
+    } catch (err) {
+      log.warn(
+        `unarchive: frontmatter/投影补齐失败 (non-fatal, 重放本方法可补齐): ${entryId} — ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+    return { status: 'complete', operationId: null }
+  }
+
+  /**
    * 【S2.2】显式替代：oldEntry 的当前版本进 revision 历史（successor 指向
    * newEntry）→ 置 invalid_at + superseded_by → 记派生边 → 投影刷新。
    * 与 delete 的区别：条目与正文文件保留（历史可查），仅停止作为当前事实。
@@ -329,17 +382,25 @@ export class MemoryLifecycleService {
   }
 
   /** 归档状态写回文件 frontmatter：读当前正文，meta.archived=true 重写（原子 .tmp→rename） */
-  private async writeArchivedToFile(entry: MemoryEntryRow): Promise<void> {
+  private async writeArchivedStateToFile(
+    entry: MemoryEntryRow,
+    archived: boolean,
+    preloadedBody?: string,
+  ): Promise<void> {
     const store = this.storeFor(entry.scope, entry.scope_ref)
     let body: string
-    try {
-      body = await store.readFile(entry.file_path)
-    } catch {
-      /* 文件缺失：写回无从谈起，但归档屏障已在 DB 生效；投影刷新照做 */
-      log.warn(
-        `archive: file missing, skip frontmatter write-back (DB barrier in effect): ${entry.file_path}`,
-      )
-      return
+    if (preloadedBody != null) {
+      body = preloadedBody
+    } else {
+      try {
+        body = await store.readFile(entry.file_path)
+      } catch {
+        /* 文件缺失：写回无从谈起，但归档屏障已在 DB 生效；投影刷新照做 */
+        log.warn(
+          `archive: file missing, skip frontmatter write-back (DB barrier in effect): ${entry.file_path}`,
+        )
+        return
+      }
     }
     await store.writeFile({
       meta: {
@@ -356,10 +417,15 @@ export class MemoryLifecycleService {
         lastHitAt: entry.last_hit_at,
         sourceSessionId: entry.source_session_id,
         links: [],
-        archived: true,
+        archived,
       },
       body,
     })
+  }
+
+  /** archive 侧的归档写回（archived=true，读文件失败跳过） */
+  private writeArchivedToFile(entry: MemoryEntryRow): Promise<void> {
+    return this.writeArchivedStateToFile(entry, true)
   }
 
   /** MEMORY.md 投影按当前有效条目整体重写（delete/archive 后条目不在列表，自然移除） */

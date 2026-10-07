@@ -82,15 +82,30 @@ export async function executeMemoryMerge(
   // dropIds 失效，指向 keep。【S2.2】每个 drop 的当前版本进 revision 历史
   //（kind='supersede'，successor 指向 keep）+ 记录派生边 drop → keep
   //（来源撤回时可沿边找到派生条目，H2 纠正影响传播）
+  // 【审查修复】update/insertDerivation 的 DB 异常同样收敛为结构化结果
+  //（守住"不抛出"契约）：keep 已提交，返回失败让调用方走重试口径 ——
+  // 候选侧重试时 drops 重读现势（已失效的跳过），consolidation 下轮同过滤，
+  // 两侧均幂等收敛，不会卡死在"keep 已并、drops 半失效"的中间态。
   const now = Date.now()
   for (const drop of drops) {
-    params.memoryRepo.update(drop.id, { invalid_at: now, superseded_by: keep.id }, undefined, {
-      oldBody: dropBodies.get(drop.id) ?? '',
-      kind: 'supersede',
-      successorId: keep.id,
-      note: params.note,
-    })
-    params.revisionRepo?.insertDerivation(drop.id, keep.id, 'merge')
+    try {
+      params.memoryRepo.update(drop.id, { invalid_at: now, superseded_by: keep.id }, undefined, {
+        oldBody: dropBodies.get(drop.id) ?? '',
+        kind: 'supersede',
+        successorId: keep.id,
+        note: params.note,
+      })
+      params.revisionRepo?.insertDerivation(drop.id, keep.id, 'merge')
+    } catch (err) {
+      return {
+        ok: false,
+        reason: 'commit_failed',
+        message:
+          `drop ${drop.id} 失效写入失败：` +
+          `${err instanceof Error ? err.message : String(err)}` +
+          `（keep ${keep.id} 已并入合并正文，未失效的 drops 可经重试收敛）`,
+      }
+    }
   }
   return { ok: true }
 }

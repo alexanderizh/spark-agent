@@ -17,6 +17,9 @@
 import { BaseRepository } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
 import { hashIndexInput } from './memory-index-hash.js'
+import { createLogger } from '@spark/shared'
+
+const log = createLogger('storage:memory-candidate')
 
 /** 候选状态 */
 export type MemoryCandidateStatus = 'pending' | 'confirmed' | 'rejected' | 'expired'
@@ -35,8 +38,9 @@ export interface MemoryCandidatePayload {
   /**
    * 【P2-A 冲突性写入】候选动作：缺省 'create'（既有 ELEVATE 晋级新建）；
    * 'update' / 'delete' 为演化判定对"用户明确表达/手动创建"条目的改写提议，
-   * 确认时对 targetId 指向的既有条目执行而非新建；'merge' 仅预留枚举
-   * （MERGE 预确认由后续任务实现，confirm 侧 unsupported_action 拒绝）。
+   * 确认时对 targetId 指向的既有条目执行而非新建；'merge' 由
+   * MemoryCandidateService.confirmMerge 走 executeMemoryMerge 执行
+   *（P2-B MERGE 预确认已落地）。
    */
   action?: 'create' | 'update' | 'delete' | 'merge'
   /** action 为 update/delete 时的目标条目 id（memory_entry.id） */
@@ -107,8 +111,8 @@ export class MemoryCandidateRepository extends BaseRepository {
         // 【P2-A】action/targetId 透传校验：action 非四值之一按缺省（create）
         // 处理，不 throw（解析健壮性优先）仅 warn 留痕；targetId 非 string 丢弃。
         if (parsed.action != null && !isCandidateAction(parsed.action)) {
-          console.warn(
-            `[memory-candidate] parsePayload: 非法 action ${JSON.stringify(parsed.action)}，` +
+          log.warn(
+            `parsePayload: 非法 action ${JSON.stringify(parsed.action)}，` +
               `按缺省 create 处理（row id=${row.id}）`,
           )
         }

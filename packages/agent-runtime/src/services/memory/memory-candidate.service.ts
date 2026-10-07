@@ -30,6 +30,7 @@ import { hashCandidateContent, normalizeBodyForGuard } from '@spark/storage'
 import { MemoryCommitService } from './memory-commit.service.js'
 import type { CommitWriteResult } from './memory-commit.service.js'
 import { executeMemoryMerge } from './memory-merge-executor.js'
+import { appendUpdateHistory, stripTrailingHistorySection } from './memory-body-history.js'
 import { isMemorySensitive } from './sanitizer.js'
 import type { MemoryStoreService } from './memory-store.service.js'
 
@@ -370,6 +371,19 @@ export class MemoryCandidateService {
         message: `目标记忆不存在或已归档${reverted ? '，候选已恢复为待确认，可直接拒绝' : ''}。`,
       }
     }
+    // 【审查修复】History 段挪到确认落库时合成：候选征集时正文保持无时间戳
+    // 的稳定口径（digest 去重依赖），此处与自动 updateEntry 同口径追加旧正文
+    // 摘录（stamp 取确认时刻 —— 更新实际发生于此）。读不到旧正文时降级为
+    // 候选暂存原文，不阻断确认。
+    const oldBody = await this.storeFor(target.scope, target.scope_ref)
+      .readFile(target.file_path)
+      .catch(() => '')
+    const body = appendUpdateHistory(
+      payload.body,
+      oldBody,
+      payload.name,
+      new Date().toISOString(),
+    )
     const committed = await this.commitServiceFor(target.scope, target.scope_ref).commitWrite({
       entryId: target.id,
       expectedVersion: target.version,
@@ -379,7 +393,7 @@ export class MemoryCandidateService {
       name: target.name,
       description: payload.description,
       confidence: payload.confidence,
-      body: payload.body,
+      body,
       sourceSessionId: SOURCE_TAG,
       authorRole: SOURCE_TAG,
       extractionKind: SOURCE_TAG,
@@ -662,12 +676,25 @@ export class MemoryCandidateService {
     } catch {
       return false
     }
+    // 【审查修复】货币性比对口径按动作分化：create 比对晋级正文（含升华来源
+    // 段）；update/merge 按候选暂存正文原样落库，须用 buildConfirmedBodyForCurrency
+    // （此前误用 buildPromotedBody，确认后必误报"过时"）。name：update/merge
+    // 落库保留目标名（confirmUpdate/confirmMerge 传 keep/target.name），候选
+    // payload.name 是演化建议名、从未落库，且确认时目标名无快照可回溯 ——
+    // name 不参与该类候选的货币性比对（后续任何改写都会更新正文文件，由
+    // body 比对覆盖）。
+    const action = payload.action ?? 'create'
     const expected = hashCandidateContent(
-      payload.name,
+      action === 'create' ? payload.name : entry.name,
       payload.description,
-      normalizeBodyForGuard(buildPromotedBody(payload)),
+      normalizeBodyForGuard(buildConfirmedBodyForCurrency(payload)),
     )
-    const current = hashCandidateContent(entry.name, entry.description, fileBody)
+    // update 确认落库会追加 History 尾段（含确认时刻时间戳，比对侧无法重建）：
+    // 剥掉首个 History 标记之后的内容还原确认口径。后续演化产生的新正文位于
+    // 最前，剥后与暂存正文必不相等，仍能正确判"过时"。
+    const fileBodyForCompare =
+      action === 'update' ? stripTrailingHistorySection(fileBody) : fileBody
+    const current = hashCandidateContent(entry.name, entry.description, fileBodyForCompare)
     return expected === current
   }
 

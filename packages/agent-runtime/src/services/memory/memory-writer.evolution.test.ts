@@ -9,7 +9,12 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { SparkDatabase, MemoryRepository, MemorySearchRepository } from '@spark/storage'
+import {
+  SparkDatabase,
+  MemoryRepository,
+  MemorySearchRepository,
+  MemoryCandidateRepository,
+} from '@spark/storage'
 import type { MemoryEntryInsert } from '@spark/storage'
 import { MemoryStoreService } from './memory-store.service.js'
 import { MemoryWriterService } from './memory-writer.service.js'
@@ -270,5 +275,58 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
         processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void>
       }
     ).processCandidate(candidate, null, 'sess')
+  })
+
+  it('【审查修复·P2-A】同一冲突反复演化只征集一条候选（征集正文不嵌时间戳，digest 稳定）', async () => {
+    const candidateRepo = new MemoryCandidateRepository(db)
+    // 手动记忆（author_role=manual_user）：UPDATE 目标属"用户明确表达"，走 defer 转候选
+    const manual = await makeWriter({ decision: 'NOOP', targetId: null, reason: 'x' }).manualWrite({
+      scope: 'user',
+      type: 'user',
+      name: 'manual-pref',
+      description: '偏好 A',
+      body: '偏好 A 的正文。',
+      scopeRef: null,
+    })
+    const writer = new MemoryWriterService(
+      repo,
+      store,
+      () => null,
+      async () => '[]',
+      mockEvolution({ decision: 'UPDATE', targetId: manual.id, reason: '用户改为 B' }),
+      undefined, // entityRepo 缺省（显式 undefined 走默认参数，下同）
+      undefined, // commitService 缺省：由 repo+store 内部构造真实提交原语
+      candidateRepo,
+    )
+    const candidate: MemoryCandidate = {
+      scope: 'user',
+      type: 'user',
+      name: 'pref-correction',
+      description: '改为 B（用户纠正）',
+      body: '新正文：偏好 B。',
+      confidence: 0.8,
+    }
+    const run = (): Promise<void> =>
+      (
+        writer as unknown as {
+          processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void>
+        }
+      ).processCandidate(candidate, null, 'sess')
+
+    // 同一冲突演化两轮：修复前征集即合成含时间戳的 History → digest 每轮必变
+    // → 候选累积两条（并挤占每 scope 20 条容量）；修复后 digest 稳定仅一条
+    await run()
+    await run()
+    const pending = candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })
+    expect(pending).toHaveLength(1)
+
+    // 征集暂存正文 = 演化建议原文（History 段由 confirmUpdate 确认落库时才合成）
+    const payload = candidateRepo.parsePayload(pending[0]!)
+    expect(payload?.action).toBe('update')
+    expect(payload?.targetId).toBe(manual.id)
+    expect(payload?.body).not.toContain('## History')
+
+    // 目标未被自动改动（defer 生效：等用户裁决）
+    expect(repo.getById(manual.id)!.description).toBe('偏好 A')
   })
 })

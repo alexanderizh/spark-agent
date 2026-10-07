@@ -36,8 +36,11 @@ describe('buildExtractionPrompt', () => {
       recentSummary: 'Earlier: 用户曾短暂要求输出 demo，不代表长期偏好。',
     })
 
-    expect(prompt).toContain('RECENT_CONTEXT 只能用于理解本轮指代')
+    // 文案在指代扩窗改造中调整：RECENT_CONTEXT 与「只能用于理解本轮指代」
+    // 之间插入了范围说明，断言改锚定后半句；同时断言新增的防猜测护栏。
+    expect(prompt).toContain('只能用于理解本轮指代')
     expect(prompt).toContain('不能仅凭 RECENT_CONTEXT 生成新记忆')
+    expect(prompt).toContain('不要凭猜测补全对象')
     expect(prompt).toContain('本轮')
   })
 })
