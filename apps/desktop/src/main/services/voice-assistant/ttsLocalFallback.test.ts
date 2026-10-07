@@ -283,9 +283,12 @@ describe('isPlausibleWav', () => {
   })
 
   it('头部窗口内走不到 data chunk 拒绝（链解析耗尽）', () => {
-    // FLLR 尺寸声明超出头部窗口：链解析走不到 data，按校验失败处理
-    const header = makeSayLayoutHeader({ dataSize: 1000, fillerSize: 9000 })
-    expect(isPlausibleWav(9000 + 8 + 1000, header)).toBe(false)
+    // FLLR 尺寸声明超出头部窗口：链解析走不到 data，按校验失败处理。
+    // riffSize 须与 size 自洽（riffSize 10044 + 8 = 10052）先通过检测①，才真正
+    // 进入链解析；头部截到 assertWavOutput 的 8192 窗口后，FLLR(9000) 一跳跨过
+    // 窗口边界，while 耗尽走到 return false（此前 size 算错，在检测①就早退了）。
+    const header = makeSayLayoutHeader({ dataSize: 1000, fillerSize: 9000 }).subarray(0, 8192)
+    expect(isPlausibleWav(10052, header)).toBe(false)
   })
 })
 
