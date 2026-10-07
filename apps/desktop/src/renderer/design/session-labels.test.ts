@@ -8,7 +8,9 @@ import {
   getSidebarLabelFilterColorClass,
   getSidebarLabelFilterLabelKey,
   isSessionPinnedZone,
+  isSidebarLabelFilterSelection,
   matchesSidebarLabelFilter,
+  matchesSidebarLabelFilters,
   type SidebarLabelsFilter,
 } from './session-labels'
 import type { SessionSummary } from './sidebar-session-sort'
@@ -81,6 +83,51 @@ describe('matchesSidebarLabelFilter', () => {
     expect(matchesSidebarLabelFilter(labeled, 'pending-advance')).toBe(true)
     expect(matchesSidebarLabelFilter(labeled, 'suspended')).toBe(false)
     expect(matchesSidebarLabelFilter(unlabeled, 'pending-advance')).toBe(false)
+  })
+})
+
+describe('matchesSidebarLabelFilters（多选 OR 语义）', () => {
+  const suspended = session({ sessionLabel: 'suspended' })
+  const pendingReview = session({ sessionLabel: 'pending-review' })
+  const unlabeled = session({})
+
+  it('空选择 = 全部（一律保留）', () => {
+    expect(matchesSidebarLabelFilters(suspended, [])).toBe(true)
+    expect(matchesSidebarLabelFilters(unlabeled, [])).toBe(true)
+  })
+
+  it('任一命中即保留（具体标记之间 OR）', () => {
+    expect(matchesSidebarLabelFilters(suspended, ['suspended', 'pending-review'])).toBe(true)
+    expect(matchesSidebarLabelFilters(pendingReview, ['suspended', 'pending-review'])).toBe(true)
+    expect(matchesSidebarLabelFilters(unlabeled, ['suspended', 'pending-review'])).toBe(false)
+  })
+
+  it('「未标记」可与具体标记共存：无标记或命中任一所选标记', () => {
+    const filters = ['unlabeled', 'suspended'] as const
+    expect(matchesSidebarLabelFilters(unlabeled, filters)).toBe(true)
+    expect(matchesSidebarLabelFilters(suspended, filters)).toBe(true)
+    expect(matchesSidebarLabelFilters(pendingReview, filters)).toBe(false)
+  })
+
+  it('「已标记」+ 具体标记等价于「已标记」（前者更宽）', () => {
+    expect(matchesSidebarLabelFilters(pendingReview, ['labeled', 'suspended'])).toBe(true)
+    expect(matchesSidebarLabelFilters(unlabeled, ['labeled', 'suspended'])).toBe(false)
+  })
+})
+
+describe('isSidebarLabelFilterSelection（持久化收敛）', () => {
+  it('接受全部具体值组成的数组', () => {
+    expect(isSidebarLabelFilterSelection(['labeled'])).toBe(true)
+    expect(isSidebarLabelFilterSelection(['unlabeled', 'suspended'])).toBe(true)
+    expect(isSidebarLabelFilterSelection([])).toBe(true)
+  })
+
+  it('拒绝「全部」、未知值与非数组', () => {
+    expect(isSidebarLabelFilterSelection(['all'])).toBe(false)
+    expect(isSidebarLabelFilterSelection(['labeled', 'all'])).toBe(false)
+    expect(isSidebarLabelFilterSelection(['nope'])).toBe(false)
+    expect(isSidebarLabelFilterSelection('labeled')).toBe(false)
+    expect(isSidebarLabelFilterSelection(null)).toBe(false)
   })
 })
 

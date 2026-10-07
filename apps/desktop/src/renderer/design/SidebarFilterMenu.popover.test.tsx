@@ -72,18 +72,38 @@ afterEach(() => {
   container.remove()
 })
 
-function renderMenu(onChange: (next: SidebarFilterState) => void): void {
-  act(() => {
-    root = createRoot(container)
-    root.render(
-      <SidebarFilterMenu
-        state={DEFAULT_SIDEBAR_FILTER}
-        workspaces={[]}
-        onChange={onChange}
-        onClear={() => {}}
-      />,
-    )
-  })
+interface RenderedMenu {
+  getState: () => SidebarFilterState
+  getCalls: () => SidebarFilterState[]
+}
+
+/**
+ * 受控渲染：onChange 返回的新状态会回填到组件，模拟真实筛选器的状态流，
+ * 使连续点选可以验证多选累加 / 取消语义。
+ */
+function renderMenu(onChange?: (next: SidebarFilterState) => void): RenderedMenu {
+  let state = DEFAULT_SIDEBAR_FILTER
+  const calls: SidebarFilterState[] = []
+  const rerender = (): void => {
+    act(() => {
+      if (root == null) root = createRoot(container)
+      root.render(
+        <SidebarFilterMenu
+          state={state}
+          workspaces={[]}
+          onChange={(next) => {
+            state = next
+            calls.push(next)
+            onChange?.(next)
+            rerender()
+          }}
+          onClear={() => {}}
+        />,
+      )
+    })
+  }
+  rerender()
+  return { getState: () => state, getCalls: () => calls }
 }
 
 function findRowByLabel(label: string): HTMLElement {
@@ -93,23 +113,41 @@ function findRowByLabel(label: string): HTMLElement {
   return row
 }
 
+async function openFilterPopup(): Promise<void> {
+  const trigger = document.querySelector<HTMLButtonElement>('.sidebar-filter-btn')
+  act(() => {
+    trigger?.click()
+  })
+}
+
+async function hoverRowAndOpenSubmenu(rowLabel: string): Promise<void> {
+  const row = findRowByLabel(rowLabel)
+  await act(async () => {
+    row.dispatchEvent(
+      new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }),
+    )
+    // rc-trigger 的 hover 展开带 mouseEnterDelay，需要等一个 tick
+    await new Promise((resolve) => setTimeout(resolve, 350))
+  })
+}
+
+function findSubmenuItem(text: string): HTMLElement {
+  const target = Array.from(
+    document.querySelectorAll<HTMLElement>('.sidebar-filter-submenu-item'),
+  ).find((el) => el.textContent?.trim() === text)
+  if (target == null) throw new Error(`submenu item not found: ${text}`)
+  return target
+}
+
 describe('SidebarFilterMenu 展开后的「状态」行', () => {
   it('状态子菜单包含「未读」选项且位于「活跃」之后', async () => {
-    renderMenu(() => {})
-    const trigger = document.querySelector<HTMLButtonElement>('.sidebar-filter-btn')
-    act(() => {
-      trigger?.click()
-    })
+    renderMenu()
+    await openFilterPopup()
 
     const statusRow = findRowByLabel('状态')
     expect(statusRow.textContent).toContain('活跃')
 
-    await act(async () => {
-      statusRow.dispatchEvent(
-        new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }),
-      )
-      await new Promise((resolve) => setTimeout(resolve, 350))
-    })
+    await hoverRowAndOpenSubmenu('状态')
 
     const texts = Array.from(
       document.querySelectorAll<HTMLElement>('.sidebar-filter-submenu-item'),
@@ -117,51 +155,51 @@ describe('SidebarFilterMenu 展开后的「状态」行', () => {
     expect(texts).toEqual(['活跃', '未读', '运行中', '已完成', '中止', '已归档', '全部'])
   })
 
-  it('选择「未读」回调 status: unread', async () => {
-    const calls: SidebarFilterState[] = []
-    renderMenu((next) => calls.push(next))
-    const trigger = document.querySelector<HTMLButtonElement>('.sidebar-filter-btn')
+  it('选择「未读」回调 status: [unread]', async () => {
+    const menu = renderMenu()
+    await openFilterPopup()
+    await hoverRowAndOpenSubmenu('状态')
     act(() => {
-      trigger?.click()
+      findSubmenuItem('未读').click()
     })
-    const statusRow = findRowByLabel('状态')
-    await act(async () => {
-      statusRow.dispatchEvent(
-        new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }),
-      )
-      await new Promise((resolve) => setTimeout(resolve, 350))
-    })
-    const target = Array.from(
-      document.querySelectorAll<HTMLElement>('.sidebar-filter-submenu-item'),
-    ).find((el) => el.textContent?.trim() === '未读')
-    expect(target).toBeDefined()
+    expect(menu.getState().status).toEqual(['unread'])
+  })
+
+  it('连续点选累加、再次点选取消、「全部」清空', async () => {
+    const menu = renderMenu()
+    await openFilterPopup()
+    await hoverRowAndOpenSubmenu('状态')
+
     act(() => {
-      target?.click()
+      findSubmenuItem('未读').click()
     })
-    expect(calls.at(-1)?.status).toBe('unread')
+    act(() => {
+      findSubmenuItem('已完成').click()
+    })
+    expect(menu.getState().status).toEqual(['unread', 'completed'])
+
+    act(() => {
+      findSubmenuItem('未读').click()
+    })
+    expect(menu.getState().status).toEqual(['completed'])
+
+    act(() => {
+      findSubmenuItem('全部').click()
+    })
+    expect(menu.getState().status).toEqual([])
   })
 })
 
 describe('SidebarFilterMenu 展开后的「标记」行', () => {
   it('打开筛选弹层后能看到「标记」行并展开出 8 个选项', async () => {
-    renderMenu(() => {})
-    const trigger = document.querySelector<HTMLButtonElement>('.sidebar-filter-btn')
-    expect(trigger).not.toBeNull()
-    act(() => {
-      trigger?.click()
-    })
+    renderMenu()
+    await openFilterPopup()
 
     const labelRow = findRowByLabel('标记')
     expect(labelRow.className).toContain('sidebar-filter-row')
     expect(labelRow.textContent).toContain('全部')
 
-    await act(async () => {
-      labelRow.dispatchEvent(
-        new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }),
-      )
-      // rc-trigger 的 hover 展开带 mouseEnterDelay，需要等一个 tick
-      await new Promise((resolve) => setTimeout(resolve, 350))
-    })
+    await hoverRowAndOpenSubmenu('标记')
 
     const items = Array.from(
       document.querySelectorAll<HTMLElement>('.sidebar-filter-submenu-item'),
@@ -186,27 +224,27 @@ describe('SidebarFilterMenu 展开后的「标记」行', () => {
     expect(dots.length).toBe(5)
   })
 
-  it('选择「待审查」回调 labels: pending-review', async () => {
-    const calls: SidebarFilterState[] = []
-    renderMenu((next) => calls.push(next))
-    const trigger = document.querySelector<HTMLButtonElement>('.sidebar-filter-btn')
+  it('选择「待审查」回调 labels: [pending-review]', async () => {
+    const menu = renderMenu()
+    await openFilterPopup()
+    await hoverRowAndOpenSubmenu('标记')
     act(() => {
-      trigger?.click()
+      findSubmenuItem('待审查').click()
     })
-    const labelRow = findRowByLabel('标记')
-    await act(async () => {
-      labelRow.dispatchEvent(
-        new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }),
-      )
-      await new Promise((resolve) => setTimeout(resolve, 350))
-    })
-    const target = Array.from(
-      document.querySelectorAll<HTMLElement>('.sidebar-filter-submenu-item'),
-    ).find((el) => el.textContent?.trim() === '待审查')
-    expect(target).toBeDefined()
+    expect(menu.getState().labels).toEqual(['pending-review'])
+  })
+
+  it('未标记与具体标记可共存（OR 语义）', async () => {
+    const menu = renderMenu()
+    await openFilterPopup()
+    await hoverRowAndOpenSubmenu('标记')
+
     act(() => {
-      target?.click()
+      findSubmenuItem('未标记').click()
     })
-    expect(calls.at(-1)?.labels).toBe('pending-review')
+    act(() => {
+      findSubmenuItem('未交付').click()
+    })
+    expect(menu.getState().labels).toEqual(['unlabeled', 'undelivered'])
   })
 })

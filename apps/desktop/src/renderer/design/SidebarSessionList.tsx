@@ -65,7 +65,7 @@ import {
   clearSidebarFilters,
   SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID,
   type SidebarFilterState,
-  type SidebarStatusFilter,
+  type SidebarStatusFilterValue,
   type SidebarLastActivityFilter,
   type SidebarScheduledTasksFilter,
 } from './SidebarFilterMenu'
@@ -78,10 +78,11 @@ import './session-labels.less'
 import {
   getSessionLabelMeta,
   isSessionPinnedZone,
+  isSidebarLabelFilterSelection,
   isSidebarLabelFilterValue,
-  matchesSidebarLabelFilter,
+  matchesSidebarLabelFilters,
   type SessionLabelKey,
-  type SidebarLabelsFilter,
+  type SidebarLabelsFilterValue,
 } from './session-labels'
 import type { SessionScheduleSummaries } from './session-schedule-summary'
 import { isModalOverlayVisible, useSessionDeleteShortcut } from './hooks/useAppDialogKeyboard'
@@ -278,15 +279,18 @@ function readSidebarFilter(): SidebarFilterState {
         ? [parsed.projectId]
         : DEFAULT_SIDEBAR_FILTER.projectIds
     return {
-      status: parsed.status ?? DEFAULT_SIDEBAR_FILTER.status,
+      // 旧版持久化是单值字符串（status: 'unread'），迁移成单元素数组；未知值回退默认
+      status:
+        parsed.status == null
+          ? DEFAULT_SIDEBAR_FILTER.status
+          : readStatusFilterSelection(parsed.status),
       projectIds,
       lastActivity: parsed.lastActivity ?? DEFAULT_SIDEBAR_FILTER.lastActivity,
       scheduledTasks: parsed.scheduledTasks ?? DEFAULT_SIDEBAR_FILTER.scheduledTasks,
       canvasProjects: parsed.canvasProjects ?? DEFAULT_SIDEBAR_FILTER.canvasProjects,
       groupBy: parsed.groupBy ?? DEFAULT_SIDEBAR_FILTER.groupBy,
-      labels: isSidebarLabelFilterValue(parsed.labels)
-        ? parsed.labels
-        : DEFAULT_SIDEBAR_FILTER.labels,
+      // 旧版同样是单值字符串（labels: 'suspended'），非法/未知值回退「全部」
+      labels: readLabelFilterSelection(parsed.labels),
     }
   } catch {
     return { ...DEFAULT_SIDEBAR_FILTER }
@@ -302,28 +306,53 @@ function writeSidebarFilter(state: SidebarFilterState): void {
 }
 
 /* ─── Filter helpers ─── */
+const STATUS_FILTER_VALUES: readonly SidebarStatusFilterValue[] = [
+  'active',
+  'unread',
+  'running',
+  'completed',
+  'cancelled',
+  'archived',
+]
+
+function isStatusFilterValue(value: unknown): value is SidebarStatusFilterValue {
+  return STATUS_FILTER_VALUES.some((item) => item === value)
+}
+
+/**
+ * 解析持久化的状态多选：新格式为数组；旧格式（单值字符串）迁移为单元素数组，
+ * 「all」与未知值按未筛选处理（空数组）。
+ */
+function readStatusFilterSelection(value: unknown): SidebarStatusFilterValue[] {
+  if (Array.isArray(value)) return value.filter(isStatusFilterValue)
+  if (isStatusFilterValue(value)) return [value]
+  return []
+}
+
+/** 标记多选解析：新格式为数组；旧格式（单值字符串，「all」除外）迁移为单元素数组。 */
+function readLabelFilterSelection(value: unknown): SidebarLabelsFilterValue[] {
+  if (isSidebarLabelFilterSelection(value)) return value
+  if (isSidebarLabelFilterValue(value) && value !== 'all') return [value]
+  return []
+}
+
 function filterByStatus(
   sessions: SessionSummary[],
-  status: SidebarStatusFilter,
+  statuses: readonly SidebarStatusFilterValue[],
   unreadSessionIds: ReadonlySet<string>,
 ): SessionSummary[] {
-  if (status === 'all') return sessions
-  if (status === 'archived') return sessions.filter((s) => s.archivedAt != null)
-  if (status === 'unread') {
-    // 未读 = 完成后尚未查看的会话（侧栏蓝点 / Dock 角标来源），只保留未归档
-    return sessions.filter((s) => s.archivedAt == null && unreadSessionIds.has(s.id))
-  }
-  if (status === 'running') {
-    return sessions.filter((s) => s.archivedAt == null && s.status === 'running')
-  }
-  if (status === 'completed') {
-    return sessions.filter((s) => s.archivedAt == null && s.lastRunOutcome === 'completed')
-  }
-  if (status === 'cancelled') {
-    return sessions.filter((s) => s.archivedAt == null && s.lastRunOutcome === 'cancelled')
-  }
-  // active = 未归档的会话（含运行中/已完成/中止）。
-  return sessions.filter((s) => s.archivedAt == null)
+  // 空选择 = 全部状态；多选为 OR 语义，任一命中即保留。
+  // 归档会话只受「已归档」约束；未归档会话按其余状态判定，两侧互不吞并。
+  if (statuses.length === 0) return sessions
+  const selected = new Set(statuses)
+  return sessions.filter((s) => {
+    if (s.archivedAt != null) return selected.has('archived')
+    if (selected.has('active')) return true
+    if (selected.has('unread') && unreadSessionIds.has(s.id)) return true
+    if (selected.has('running') && s.status === 'running') return true
+    if (selected.has('completed') && s.lastRunOutcome === 'completed') return true
+    return selected.has('cancelled') && s.lastRunOutcome === 'cancelled'
+  })
 }
 
 function filterByLastActivity(
@@ -377,10 +406,9 @@ function filterByScheduledTasks(
 
 function filterBySessionLabel(
   sessions: SessionSummary[],
-  filter: SidebarLabelsFilter,
+  filters: readonly SidebarLabelsFilterValue[],
 ): SessionSummary[] {
-  if (filter === 'all') return sessions
-  return sessions.filter((session) => matchesSidebarLabelFilter(session, filter))
+  return sessions.filter((session) => matchesSidebarLabelFilters(session, filters))
 }
 
 export function applySessionFilters(
@@ -405,8 +433,7 @@ export function applySessionFilters(
       scheduleSummaries,
     ),
     filter.lastActivity,
-  )
-}
+  )}
 
 /* ─── Group by helpers ─── */
 type DisplayGroup = {

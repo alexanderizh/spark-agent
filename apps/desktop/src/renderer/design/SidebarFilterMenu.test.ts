@@ -30,7 +30,7 @@ describe('SidebarFilterMenu canvas-project filter', () => {
   it('preserves canvas-project visibility when clearing other filters', () => {
     const state = clearSidebarFilters({
       ...DEFAULT_SIDEBAR_FILTER,
-      status: 'all',
+      status: [],
       projectIds: ['workspace-1'],
       canvasProjects: 'hide',
       groupBy: 'date',
@@ -67,9 +67,11 @@ describe('canReorderSidebarSessions', () => {
     expect(canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, groupBy: 'date' }, false)).toBe(
       false,
     )
-    expect(canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, status: 'all' }, false)).toBe(
-      false,
-    )
+    // 空选择 = 全部状态，偏离默认「仅活跃」，会隐藏分组内会话
+    expect(canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, status: [] }, false)).toBe(false)
+    expect(
+      canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, status: ['active', 'unread'] }, false),
+    ).toBe(false)
     expect(
       canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, lastActivity: '7d' }, false),
     ).toBe(false)
@@ -83,28 +85,41 @@ describe('canReorderSidebarSessions', () => {
 describe('SidebarFilterMenu session-label filter', () => {
   it('treats any non-default label filter as active', () => {
     expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER })).toBe(true)
-    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER, labels: 'labeled' })).toBe(false)
-    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER, labels: 'unlabeled' })).toBe(false)
-    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER, labels: 'suspended' })).toBe(false)
+    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER, labels: ['labeled'] })).toBe(false)
+    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER, labels: ['unlabeled'] })).toBe(false)
+    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER, labels: ['suspended'] })).toBe(false)
   })
 
   it('blocks reordering because the label filter hides sessions', () => {
-    expect(canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, labels: 'labeled' }, false)).toBe(
-      false,
-    )
     expect(
-      canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, labels: 'pending-review' }, false),
+      canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, labels: ['labeled'] }, false),
     ).toBe(false)
-    expect(canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, labels: 'all' }, false)).toBe(
-      true,
-    )
+    expect(
+      canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, labels: ['pending-review'] }, false),
+    ).toBe(false)
+    // 空选择 = 全部标记，不隐藏任何会话，允许拖拽
+    expect(canReorderSidebarSessions({ ...DEFAULT_SIDEBAR_FILTER, labels: [] }, false)).toBe(true)
   })
 
   it('clears the label filter together with the other filters', () => {
     const cleared = clearSidebarFilters({
       ...DEFAULT_SIDEBAR_FILTER,
-      labels: 'undelivered',
+      labels: ['undelivered', 'unlabeled'],
     })
-    expect(cleared.labels).toBe('all')
+    expect(cleared.labels).toEqual([])
+  })
+})
+
+describe('SidebarFilterMenu status multi-select', () => {
+  it('treats the default active-only status as default, any other selection as active', () => {
+    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER })).toBe(true)
+    expect(DEFAULT_SIDEBAR_FILTER.status).toEqual(['active'])
+    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER, status: [] })).toBe(false)
+    expect(isDefaultFilter({ ...DEFAULT_SIDEBAR_FILTER, status: ['active', 'unread'] })).toBe(false)
+  })
+
+  it('clears the status selection together with the other filters', () => {
+    const cleared = clearSidebarFilters({ ...DEFAULT_SIDEBAR_FILTER, status: ['unread'] })
+    expect(cleared.status).toEqual(['active'])
   })
 })

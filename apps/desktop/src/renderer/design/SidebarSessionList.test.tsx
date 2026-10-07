@@ -884,7 +884,7 @@ describe('unread session filtering', () => {
     expect(
       applySessionFilters(
         sessions,
-        { ...DEFAULT_SIDEBAR_FILTER, status: 'unread' },
+        { ...DEFAULT_SIDEBAR_FILTER, status: ['unread'] },
         {},
         [],
         unreadIds,
@@ -896,9 +896,58 @@ describe('unread session filtering', () => {
     expect(
       applySessionFilters(createSessions(2), {
         ...DEFAULT_SIDEBAR_FILTER,
-        status: 'unread',
+        status: ['unread'],
       }),
     ).toEqual([])
+  })
+})
+
+describe('status multi-select session filtering', () => {
+  const buildStatusSessions = (): SessionSummary[] => {
+    const base = createSessions(1)[0]
+    if (base === undefined) throw new Error('Expected a base session fixture')
+    return [
+      base,
+      { ...base, id: 'session-running' as SessionId, status: 'running' },
+      { ...base, id: 'session-done' as SessionId, lastRunOutcome: 'completed' },
+      {
+        ...base,
+        id: 'session-cancelled' as SessionId,
+        lastRunOutcome: 'cancelled',
+      },
+      {
+        ...base,
+        id: 'session-archived' as SessionId,
+        archivedAt: '2026-07-29T09:00:00.000Z',
+      },
+    ] as SessionSummary[]
+  }
+
+  it('keeps sessions matching any selected status (OR)', () => {
+    expect(
+      applySessionFilters(buildStatusSessions(), {
+        ...DEFAULT_SIDEBAR_FILTER,
+        status: ['running', 'cancelled'],
+      }).map((session) => session.id),
+    ).toEqual(['session-running', 'session-cancelled'])
+  })
+
+  it('combines archived with active statuses without dropping either side', () => {
+    expect(
+      applySessionFilters(buildStatusSessions(), {
+        ...DEFAULT_SIDEBAR_FILTER,
+        status: ['completed', 'archived'],
+      }).map((session) => session.id),
+    ).toEqual(['session-done', 'session-archived'])
+  })
+
+  it('treats an empty selection as no status filter', () => {
+    expect(
+      applySessionFilters(buildStatusSessions(), {
+        ...DEFAULT_SIDEBAR_FILTER,
+        status: [],
+      }).map((session) => session.id),
+    ).toEqual(['session-0', 'session-running', 'session-done', 'session-cancelled', 'session-archived'])
   })
 })
 
@@ -1171,7 +1220,7 @@ describe('session label（打标）筛选', () => {
     expect(
       applySessionFilters(labeledSessions(), {
         ...DEFAULT_SIDEBAR_FILTER,
-        labels: 'labeled',
+        labels: ['labeled'],
       }).map((session) => session.id),
     ).toEqual(['session-labeled', 'session-suspended'])
   })
@@ -1180,7 +1229,7 @@ describe('session label（打标）筛选', () => {
     expect(
       applySessionFilters(labeledSessions(), {
         ...DEFAULT_SIDEBAR_FILTER,
-        labels: 'unlabeled',
+        labels: ['unlabeled'],
       }).map((session) => session.id),
     ).toEqual(['session-plain'])
   })
@@ -1189,9 +1238,27 @@ describe('session label（打标）筛选', () => {
     expect(
       applySessionFilters(labeledSessions(), {
         ...DEFAULT_SIDEBAR_FILTER,
-        labels: 'suspended',
+        labels: ['suspended'],
       }).map((session) => session.id),
     ).toEqual(['session-suspended'])
+  })
+
+  it('keeps sessions matching any selected label (OR)', () => {
+    expect(
+      applySessionFilters(labeledSessions(), {
+        ...DEFAULT_SIDEBAR_FILTER,
+        labels: ['suspended', 'pending-review'],
+      }).map((session) => session.id),
+    ).toEqual(['session-labeled', 'session-suspended'])
+  })
+
+  it('combines unlabeled with concrete labels', () => {
+    expect(
+      applySessionFilters(labeledSessions(), {
+        ...DEFAULT_SIDEBAR_FILTER,
+        labels: ['unlabeled', 'suspended'],
+      }).map((session) => session.id),
+    ).toEqual(['session-plain', 'session-suspended'])
   })
 })
 

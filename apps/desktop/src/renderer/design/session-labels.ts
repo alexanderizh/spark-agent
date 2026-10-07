@@ -78,6 +78,9 @@ export function getSessionPinTime(session: SessionLabelCarrier): string | null {
 /** 会话标记筛选值：全部 / 已标记 / 未标记 / 某个具体标记。 */
 export type SidebarLabelsFilter = 'all' | 'labeled' | 'unlabeled' | SessionLabelKey
 
+/** 标记筛选的具体值（不含「全部」）；筛选状态里的空数组 = 全部标记。 */
+export type SidebarLabelsFilterValue = Exclude<SidebarLabelsFilter, 'all'>
+
 export const SIDEBAR_LABEL_FILTER_OPTIONS: ReadonlyArray<{
   value: SidebarLabelsFilter
   labelKey: string
@@ -103,6 +106,16 @@ export function isSidebarLabelFilterValue(value: unknown): value is SidebarLabel
   return SIDEBAR_LABEL_FILTER_OPTIONS.some((option) => option.value === value)
 }
 
+/** 校验一组标记筛选值（剔除「全部」与未知值）；持久化读取时用于收敛脏数据。 */
+export function isSidebarLabelFilterSelection(value: unknown): value is SidebarLabelsFilterValue[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) => isSidebarLabelFilterValue(item) && item !== ('all' satisfies SidebarLabelsFilter),
+    )
+  )
+}
+
 /** 筛选值对应的标记色点 class；「全部 / 已标记 / 未标记」没有色点，返回 undefined。 */
 export function getSidebarLabelFilterColorClass(value: SidebarLabelsFilter): string | undefined {
   return LABEL_BY_KEY.get(value as SessionLabelKey)?.colorClass
@@ -117,4 +130,16 @@ export function matchesSidebarLabelFilter(
   if (filter === 'labeled') return session.sessionLabel != null
   if (filter === 'unlabeled') return session.sessionLabel == null
   return session.sessionLabel === filter
+}
+
+/**
+ * 会话是否命中多选标记筛选：空选择 = 全部；否则任一条件命中即保留（OR 语义）。
+ * 「已标记/未标记」可与具体标记共存，例如「未标记 + 挂起」= 无标记或挂起的会话。
+ */
+export function matchesSidebarLabelFilters(
+  session: SessionLabelCarrier,
+  filters: readonly SidebarLabelsFilterValue[],
+): boolean {
+  if (filters.length === 0) return true
+  return filters.some((filter) => matchesSidebarLabelFilter(session, filter))
 }
