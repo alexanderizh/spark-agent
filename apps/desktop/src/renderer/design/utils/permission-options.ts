@@ -93,3 +93,76 @@ export function getValidPermissionMode(
     ? (value as SessionPermissionMode)
     : (options[0]?.value ?? 'claude-ask')
 }
+
+/** 权限档位（跨引擎语义等价分组，与 runtime permission-mapper 的分组对齐） */
+type PermissionTier = 'manual' | 'plan' | 'autoEdits' | 'autoPolicy' | 'full'
+
+const PERMISSION_TIER_BY_MODE: Record<SessionPermissionMode, PermissionTier> = {
+  'claude-ask': 'manual',
+  'claude-plan': 'plan',
+  'claude-auto-edits': 'autoEdits',
+  'claude-auto': 'autoPolicy',
+  'claude-bypass': 'full',
+  'codex-default': 'manual',
+  'codex-auto-review': 'autoEdits',
+  'codex-full-access': 'full',
+  'spark-default': 'manual',
+  'spark-accept-edits': 'autoEdits',
+  'spark-plan': 'plan',
+  'spark-auto': 'autoEdits',
+  'spark-bypass': 'full',
+}
+
+// 各引擎在每个档位上的等价值；目标引擎没有的档位（如 codex/spark 无计划档、
+// claude 之外无 autoPolicy 档）就近落到语义最接近的档位。
+const TIER_MODE_BY_ADAPTER_FAMILY: Record<
+  'claude' | 'codex' | 'spark',
+  Record<PermissionTier, SessionPermissionMode>
+> = {
+  claude: {
+    manual: 'claude-ask',
+    plan: 'claude-plan',
+    autoEdits: 'claude-auto-edits',
+    autoPolicy: 'claude-auto',
+    full: 'claude-bypass',
+  },
+  codex: {
+    manual: 'codex-default',
+    plan: 'codex-default',
+    autoEdits: 'codex-auto-review',
+    autoPolicy: 'codex-auto-review',
+    full: 'codex-full-access',
+  },
+  spark: {
+    manual: 'spark-default',
+    plan: 'spark-default',
+    autoEdits: 'spark-auto',
+    autoPolicy: 'spark-auto',
+    full: 'spark-bypass',
+  },
+}
+
+function adapterFamily(adapter: SessionAgentAdapter): 'claude' | 'codex' | 'spark' {
+  if (adapter === 'codex') return 'codex'
+  if (adapter === 'spark') return 'spark'
+  return 'claude'
+}
+
+/**
+ * 跨引擎切换模型时保持权限档位语义的等价映射。
+ *
+ * 三套引擎的权限值集互斥；切换模型跨引擎时若保持原值不动，UI 会回退显示
+ * 目标引擎默认档、runtime 却按原值映射执行（如 claude-bypass → bypassPermissions），
+ * 显示与实际执行不一致。因此跨引擎按档位等价映射（用户选的“完全访问”切到
+ * codex 后仍是“完全访问”）；同引擎（含 claude ↔ claude-sdk）返回原值。
+ * 未收录的值兜底走 getValidPermissionMode。
+ */
+export function mapPermissionModeAcrossAdapters(
+  value: SessionPermissionMode | undefined,
+  targetAdapter: SessionAgentAdapter,
+): SessionPermissionMode {
+  if (value == null) return getValidPermissionMode(value, targetAdapter)
+  const tier = PERMISSION_TIER_BY_MODE[value]
+  if (tier == null) return getValidPermissionMode(value, targetAdapter)
+  return TIER_MODE_BY_ADAPTER_FAMILY[adapterFamily(targetAdapter)][tier]
+}

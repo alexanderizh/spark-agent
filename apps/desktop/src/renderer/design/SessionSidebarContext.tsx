@@ -573,20 +573,12 @@ export function SessionSidebarProvider({
       }
     >(),
   )
-  const activeRef = useRef<SessionId | null>(active)
   const workspaceSyncedSessionRef = useRef<SessionId | null>(null)
-  const manualWorkspaceSelectionRef = useRef<{
-    sessionId: SessionId | null
-    workspaceId: string | null
-  } | null>(null)
   // 每个会话最近一次已「浮过顶」的 turnId，供 noteSessionActivityTurn 去重。
   const activityTurnRef = useRef(new Map<string, string>())
   const upsertSessionInList = useCallback((session: SessionSummary) => {
     setSessions((prev) => [session, ...prev.filter((item) => item.id !== session.id)])
   }, [])
-  useEffect(() => {
-    activeRef.current = active
-  }, [active])
   const optionalToast = useOptionalToast()
   const fallbackToast = useMemo<ToastFn>(() => {
     const noop = () => ''
@@ -731,7 +723,10 @@ export function SessionSidebarProvider({
             ?.id ||
           '',
       )
-      setActiveWorkspaceId((prev) => currentRes.workspace?.id ?? prev ?? null)
+      // 主进程 current（最近打开的项目）只做启动初值兜底；渲染端已有选中项目时
+      // 不再用它覆盖——否则每次 refresh 都会把项目选择器拉回旧项目（会话-工作区
+      // 同步 effect 收敛为首次同步后，这层覆盖失去纠错时机，必须从源头去掉）。
+      setActiveWorkspaceId((prev) => prev ?? currentRes.workspace?.id ?? null)
       void refreshTerminalActivity()
     } catch (err) {
       console.error('Failed to refresh session data', err)
@@ -1044,13 +1039,11 @@ export function SessionSidebarProvider({
         const first = found.workspaceIds[0]
         const ws = first != null ? workspaces.find((w) => w.id === first) : undefined
         const nextWorkspaceId = ws?.worktreeMeta?.baseWorkspaceId ?? first ?? null
-        const manualSelection = manualWorkspaceSelectionRef.current
-        const hasManualWorkspaceForActiveSession =
-          manualSelection?.sessionId === active && manualSelection.workspaceId === activeWorkspaceId
+        // 项目选择器只在「切入该会话的首次同步 / 当前无选中项目」时跟随会话所属项目。
+        // 之后 sessions 数组刷新（切换模型、runtime patch、状态更新等）都不再重设，
+        // 避免输入区参数栏的项目被联动改写；用户手动选择（setActiveWorkspace）始终生效。
         const shouldSyncWorkspace =
-          activeWorkspaceId == null ||
-          workspaceSyncedSessionRef.current !== active ||
-          !hasManualWorkspaceForActiveSession
+          activeWorkspaceId == null || workspaceSyncedSessionRef.current !== active
         workspaceSyncedSessionRef.current = active
         if (shouldSyncWorkspace && nextWorkspaceId !== activeWorkspaceId) {
           setActiveWorkspaceId(nextWorkspaceId)
@@ -1061,10 +1054,7 @@ export function SessionSidebarProvider({
   }, [active, activeWorkspaceId, sessions, workspaces])
 
   const setActiveWorkspace = useCallback((workspaceId: string | null) => {
-    manualWorkspaceSelectionRef.current = {
-      sessionId: activeRef.current,
-      workspaceId,
-    }
+    // 会话-工作区同步 effect 只做首次同步（见上方注释），手动选择无需保护标记。
     setActiveWorkspaceId(workspaceId)
   }, [])
 

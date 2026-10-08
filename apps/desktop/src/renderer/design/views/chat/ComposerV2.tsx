@@ -191,6 +191,7 @@ import { appendComposerReferenceBlock, EMPTY_TEXT_FALLBACK } from './composer-re
 import { QuickReplySuggestions } from './QuickReplySuggestions'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { SPARK_PERMISSION_MODE_OPTIONS as SHARED_SPARK_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
+import { mapPermissionModeAcrossAdapters } from '../../utils/permission-options'
 import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
 import { sortByManualOrderWithinPinnedSections } from '../../sidebar-manual-order'
 import {
@@ -1653,10 +1654,8 @@ export function ComposerV2({
     const nextAdapter = getProviderAdapterKind(selectedProvider)
     const nextModel =
       effectiveModelId || getProviderDefaultModel(selectedProvider, selectedProvider.modelIds[0])
-    const nextPermissionMode =
-      session.agentAdapter === nextAdapter
-        ? effectivePermissionMode
-        : (getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask')
+    // 对账场景同样不重置权限档位：同引擎保持原值；跨引擎按档位语义等价映射
+    const nextPermissionMode = mapPermissionModeAcrossAdapters(effectivePermissionMode, nextAdapter)
     const sessionModel = session.modelId?.trim() ?? ''
     const needsProvider = session.providerProfileId !== selectedProvider.id
     const needsModel = nextModel.trim().length > 0 && sessionModel !== nextModel
@@ -3772,10 +3771,9 @@ export function ComposerV2({
     if (isHostCliModel) rememberCliSparkOverride(provider.id, null)
     if (clearCliSparkOverride) setCliSparkOverride(null)
     const nextAdapter = getProviderAdapterKind(provider)
-    const nextPermissionMode =
-      adapter === nextAdapter
-        ? effectivePermissionMode
-        : (getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask')
+    // 切换模型不联动重置权限档位：同引擎保持原值；跨引擎按档位语义等价映射
+    // （避免原值落入目标引擎选项集外时，UI 显示回默认档而 runtime 仍按原档执行）。
+    const nextPermissionMode = mapPermissionModeAcrossAdapters(effectivePermissionMode, nextAdapter)
     const nextModel =
       resolveAvailableProviderModel(modelId, provider) ||
       getProviderDefaultModel(provider, provider.modelIds[0]) ||
@@ -3807,8 +3805,6 @@ export function ComposerV2({
     } else if (clearCliSparkOverride) {
       await persistRuntimePatch({ cliSparkOverride: null })
     }
-    // 切到该模型即应用它的默认推理强度（未配置默认值的模型保持会话现有档位）
-    await applyModelDefaultReasoning(provider, nextModel)
   }
 
   const handleCliSparkModelChange = async (
@@ -3828,10 +3824,8 @@ export function ComposerV2({
       modelId
     const nextOverride: CliSparkOverride = { providerProfileId: provider.id, modelId: nextModel }
     const nextAdapter = getProviderAdapterKind(cliProvider)
-    const nextPermissionMode =
-      adapter === nextAdapter
-        ? effectivePermissionMode
-        : (getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask')
+    // 切换模型不联动重置权限档位：同引擎保持原值；跨引擎按档位语义等价映射
+    const nextPermissionMode = mapPermissionModeAcrossAdapters(effectivePermissionMode, nextAdapter)
     const primaryProviderChanged = selectedProvider?.id !== cliProvider.id
     const previousModel = effectiveModelId.trim()
 
@@ -3862,8 +3856,6 @@ export function ComposerV2({
     ) {
       onModelSwitch?.({ fromModel: previousModel, toModel: hostModelId, afterMessageId })
     }
-    // 实际执行渠道是 spark 子渠道，按它的模型默认推理强度生效
-    await applyModelDefaultReasoning(provider, nextModel)
   }
 
   const handleCliSparkClear = async () => {
@@ -4117,8 +4109,8 @@ export function ComposerV2({
   /**
    * 应用「模型设置」中该模型配置的默认推理强度（未配置则不做任何事）。
    *
-   * 生效时机只有两个（见设计文档 §3.3）：切换到该模型时、保存模型设置后。
-   * 其它时机不自动改写会话档位，避免用户显式选择被静默重置；也刻意不写
+   * 生效时机只剩保存模型设置后（见设计文档 §3.3 的调整）：切换模型不再自动
+   * 改写会话档位，避免用户显式选择的推理强度被静默重置；也刻意不写
    * agent 运行时偏好（那是用户对 Agent 的显式配置，不应被模型默认值覆盖）。
    * runtime 侧另有兜底（headless 链路：定时任务 / 工作流）。
    */
