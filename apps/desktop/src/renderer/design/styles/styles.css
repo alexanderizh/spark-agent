@@ -82,7 +82,7 @@ html[data-theme='light'],
 
   --text: #23231f;
   --text-strong: #11100e;
-  --text-muted: #b2a997;
+  --text-muted: #888888;
   --text-faint: #9b9489;
   --text-weight: #8d8a86;
   --text-inverse: #ffffff;
@@ -501,6 +501,12 @@ summary:focus {
   background: var(--panel-elev);
   transition: background-color 0.2s ease;
 }
+/* 浅色减重：floating 卡片提到与内容区同底的近白，分隔靠既有阴影而非灰底
+   （现为 #fcfcfa）；特异性低于下方 backdrop-blur / content-focused
+   规则，仅接管默认不透明路径。 */
+.sidebar-style-floating.theme-light .floating-sidebar {
+  background: #fcfcfa;
+}
 
 html[data-backdrop-blur='1'] .sidebar-style-floating .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 80%, transparent);
@@ -511,7 +517,7 @@ html[data-backdrop-blur='1'] .sidebar-style-floating .floating-sidebar {
 html[data-theme='light'][data-backdrop-blur='1']
   .sidebar-style-floating.theme-light
   .floating-sidebar {
-  background: color-mix(in srgb, #fff 58%, transparent);
+  background: color-mix(in srgb, #fdfdfb 58%, transparent);
   border-color: rgba(255, 255, 255, 0.72);
 }
 
@@ -564,11 +570,12 @@ html[data-theme='dark'][data-backdrop-blur='1']
   border-radius: 0;
   box-shadow: none;
 }
-/* Flat + light theme: sidebar panel uses a soft off-white tone.
+/* Flat + light theme: bright off-white panel（rgb(245,245,243)，2026-10
+   由 rgb(242,242,242) 提亮减灰；248 嫌过淡、245 嫌过深后定在 246；与内容区保留细微色调差作分隔）.
    Floating keeps its token-based translucent background; flat dark
    theme keeps the elevated panel token. */
 .sidebar-style-flat.theme-light .floating-sidebar {
-  background: rgb(242, 242, 242);
+  background: rgb(246, 246, 244);
 }
 html[data-backdrop-blur='1'] .sidebar-style-flat .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 84%, transparent);
@@ -576,7 +583,7 @@ html[data-backdrop-blur='1'] .sidebar-style-flat .floating-sidebar {
   -webkit-backdrop-filter: var(--backdrop-blur);
 }
 html[data-theme='light'][data-backdrop-blur='1'] .sidebar-style-flat.theme-light .floating-sidebar {
-  background: color-mix(in srgb, #f5f5f5 84%, transparent);
+  background: color-mix(in srgb, #f9f9f7 84%, transparent);
 }
 
 @media (prefers-reduced-transparency: reduce) {

@@ -1357,8 +1357,29 @@ export const Icons = {
   CMD: (p: IconProps) => (
     <IconBase {...p}>
       <rect x="3" y="4" width="18" height="16" rx="2" fill="#0C0C0C" stroke="none" />
-      <path d="M6 8l4 4-4 4" stroke="#C0C0C0" strokeWidth="1.5" fill="none" />
-      <path d="M12 16h6" stroke="#C0C0C0" strokeWidth="1.5" />
+      <path d="M6 8l4 4-4 4" stroke="#C0C0C0" strokeWidth={1.5} fill="none" />
+      <path d="M12 16h6" stroke="#C0C0C0" strokeWidth={1.5} />
+    </IconBase>
+  ),
+
+  /* ---------- 浅色模式视觉精修 · 新增图标 ----------
+     侧栏底部四宫格与会话参数栏的图标换新。单人像（User）与扳手（Wrench）
+     复用上方已有条目；此处只补新增形状，不改动已被其他视图引用的
+     同名图标（Server / Skills / MCP / Workflow / Bug 保持原样）。 */
+  /** 侧栏底部「扩展中心」入口 — 拼图块 */
+  Puzzle: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M9 3v5M15 3v5" />
+      <path d="M4 8h16v5a6 6 0 0 1-16 0z" />
+      <path d="M12 19v3" />
+    </IconBase>
+  ),
+  /** 工作流（简约双节点）— 会话参数栏工作流入口 */
+  WorkflowSimple: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="3" width="6" height="6" rx="1.5" />
+      <rect x="15" y="15" width="6" height="6" rx="1.5" />
+      <path d="M9 6h6a3 3 0 0 1 3 3v6" />
     </IconBase>
   ),
 }

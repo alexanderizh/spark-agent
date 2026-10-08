@@ -292,11 +292,13 @@ const NAV_ITEMS: Array<{
   icon: React.FC<{ size?: number }>
 }> = [
   { id: 'canvas', labelKey: 'nav.canvas', icon: Icons.Canvas },
-  { id: 'agents', labelKey: 'nav.agents', icon: Icons.Assistant },
+  // 底部四宫格（L3 共享资源）图标按浅色模式视觉精修稿换新：机器人头→单人像、
+  // 星→闪电、节点图→拼图；模型服务的堆叠服务器与原设计稿一致，保持不变。
+  { id: 'agents', labelKey: 'nav.agents', icon: Icons.User },
   { id: 'providers', labelKey: 'nav.providers', icon: Icons.Server },
-  { id: 'skill-store', labelKey: 'nav.skills', icon: Icons.Skills },
+  { id: 'skill-store', labelKey: 'nav.skills', icon: Icons.Zap },
   { id: 'team-store', labelKey: 'nav.teamStore', icon: Icons.Package },
-  { id: 'mcp', labelKey: 'nav.extensions', icon: Icons.MCP },
+  { id: 'mcp', labelKey: 'nav.extensions', icon: Icons.Puzzle },
   { id: 'scheduled-tasks', labelKey: 'nav.tasks', icon: Icons.Clock },
   { id: 'workflows', labelKey: 'nav.workflows', icon: Icons.Workflow },
   { id: 'board', labelKey: 'nav.board', icon: Icons.Board },
