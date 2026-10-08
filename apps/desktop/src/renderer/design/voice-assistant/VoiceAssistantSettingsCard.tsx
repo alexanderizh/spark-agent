@@ -481,8 +481,22 @@ export function VoiceAssistantSettingsCard() {
           }
         />
         <SettingsRow
+          title="出字模式"
+          tip="句级精修（推荐）：按人声停顿切句，每句用离线精修模型解码出字，准确率高、自带标点，每说完一句即显示（无逐字预览）。流式实时：边说边逐字出字（逐字过程准确率较低），说完后整段精修替换。仅本地引擎生效；句级所需的精修/人声检测模型缺失时自动回退流式。"
+          right={
+            <Select
+              value={settings.transcriptMode}
+              onChange={(v) => void update({ transcriptMode: v })}
+              options={[
+                { label: '句级精修（推荐）', value: 'sentence' },
+                { label: '流式实时', value: 'streaming' },
+              ]}
+            />
+          }
+        />
+        <SettingsRow
           title="识别精修"
-          tip="说完后用离线模型重识别整段音频并整体替换流式结果（与输入框语音输入同链路），显著减少漏字错字；代价是发送前多等约 1–3 秒。识别率优先建议保持开启。"
+          tip="说完后用离线模型重识别整段音频并整体替换流式结果（与输入框语音输入同链路），显著减少漏字错字；代价是发送前多等约 1–3 秒。仅流式出字模式下生效（句级精修模式每句已是精修结果）；识别率优先建议保持开启。"
           right={
             <Switch
               checked={settings.refineTranscript}

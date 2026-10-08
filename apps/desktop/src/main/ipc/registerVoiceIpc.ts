@@ -10,6 +10,7 @@ import {
 } from '../services/VoiceRecognitionService.js'
 import { requestVoiceMicrophonePermission } from '../services/VoiceCapturePermissionService.js'
 import { routeVoiceAssistantRecognitionEvent } from '../services/voice-assistant/recognitionBridge.js'
+import { getVoiceAssistantService } from './registerVoiceAssistantIpc.js'
 import { VOICE_ASSISTANT_INTERNAL_OWNER_ID } from '@spark/protocol/voice-assistant'
 import { VOICE_AUDIO_CHUNK_CHANNEL, isVoiceAudioChunkPayload } from '@spark/protocol/voice'
 
@@ -59,7 +60,15 @@ export function registerVoiceIpc(): void {
   })
 
   typedIpcHandle('voice:start', async (request, event) => {
-    const handle = startVoiceSession(request, event.sender.id)
+    // 出字模式跟随语音助手 transcriptMode 设置（会话语音输入与语音对话共用）：
+    // 调用方显式传参优先；设置 streaming 时注入，sentence 走识别服务缺省默认
+    // （模型缺失时服务内部自动降级 streaming，渲染端无感知）
+    const transcriptMode = getVoiceAssistantService()?.getTranscriptDecodeMode()
+    const params =
+      request.decodeMode == null && transcriptMode === 'streaming'
+        ? { ...request, decodeMode: 'streaming' as const }
+        : request
+    const handle = startVoiceSession(params, event.sender.id)
     return {
       success: handle.success,
       message: handle.success ? '语音识别已启动' : (handle.error ?? '语音识别启动失败'),

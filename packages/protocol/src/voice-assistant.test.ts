@@ -171,4 +171,25 @@ describe('normalizeVoiceAssistantSettings', () => {
     const normalized = normalizeVoiceAssistantSettings({ browserDenoise: 'yes' })
     expect(normalized.browserDenoise).toBe(false)
   })
+
+  it('出字模式：缺省/旧持久化无字段走默认 sentence（句级精修出字）', () => {
+    expect(normalizeVoiceAssistantSettings({}).transcriptMode).toBe('sentence')
+    // 旧版本持久化（v1/v2 均无该字段）整体送入 normalize：缺字段回落默认
+    const legacy = normalizeVoiceAssistantSettings({
+      enabled: true,
+      wakeShortcut: 'Alt+Space',
+      refineTranscript: true,
+    })
+    expect(legacy.transcriptMode).toBe('sentence')
+  })
+
+  it('出字模式：显式 streaming 透传，非法值收敛为 sentence', () => {
+    expect(normalizeVoiceAssistantSettings({ transcriptMode: 'streaming' }).transcriptMode).toBe(
+      'streaming',
+    )
+    expect(normalizeVoiceAssistantSettings({ transcriptMode: 'hybrid' }).transcriptMode).toBe(
+      'sentence',
+    )
+    expect(normalizeVoiceAssistantSettings({ transcriptMode: 42 }).transcriptMode).toBe('sentence')
+  })
 })

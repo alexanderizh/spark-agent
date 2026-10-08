@@ -192,6 +192,15 @@ export function resetVoiceNoiseGateVad(): void {
 }
 
 /**
+ * silero VAD 是否可用（模型已安装且 native Vad 可加载）——句级精修出字
+ * （transcriptMode='sentence'）的前置条件探针。首次调用会触发 Vad 单例构造
+ * （模型加载），后续调用零成本；不可用时调用方应降级流式模式。
+ */
+export function isSileroVadAvailable(): boolean {
+  return loadVad() != null
+}
+
+/**
  * 清零自愈降档的跨会话粘性窗口。用户主动调整人声聚焦档位时由设置更新链路
  * 调用——环境前提已变，恢复严格阈值重新评估；测试用例间隔离同样依赖它。
  */
@@ -225,7 +234,8 @@ export interface VoiceNoiseGateOptions {
   disableSilero?: boolean
 }
 
-interface SpeechSpan {
+/** silero 确认的人声段（会话内采样偏移区间，左闭右开） */
+export interface SpeechSpan {
   start: number
   end: number
 }
@@ -249,6 +259,13 @@ export class VoiceNoiseGate {
   /** silero 确认的人声段时间轴（会话内采样偏移，升序） */
   private speechSpans: SpeechSpan[] = []
   private lastSpanEnd = 0
+  /**
+   * 新闭合人声段待取队列（句级出字的切句源）：drainSpans 时入队，
+   * VoiceRecognitionService 的 sentence 会话每 chunk takeClosedSpeechSpans()
+   * 取走组装句级解码任务。span 闭合 = 句尾静音 ≥0.5s（silero
+   * minSilenceDuration），天然句边界。
+   */
+  private closedSpansPending: SpeechSpan[] = []
   /** 能量层放行（active）的样本时间段：覆盖率校验的分母只算这些真正喂给 ASR 的样本 */
   private activeSpans: SpeechSpan[] = []
   /** 进行中的 active span 起点（-1 = 当前不在 span 中） */
@@ -277,7 +294,8 @@ export class VoiceNoiseGate {
   process(samples: Int16Array): Int16Array {
     if (this.confirmOnly) {
       // 确认层旁路：不判定能量、不置零、不丢样——识别率不可伤（v1 教训），
-      // 仅 silero 时间轴随音频推进，供 final 接受判定使用
+      // 仅 silero 时间轴随音频推进；能量活动信号照常计算（句级出字模式与
+      // 确认窗口撤销依赖 speech-activity 回调，音频流本身不动）
       if (this.useSilero) {
         const vad = loadVad()
         if (vad != null) {
@@ -289,6 +307,8 @@ export class VoiceNoiseGate {
           }
         }
       }
+      const active = this.trackEnergyActivity(this.computeChunkDb(samples))
+      this.notifyActivity(active)
       this.fedSamples += samples.length
       return samples
     }
@@ -301,7 +321,54 @@ export class VoiceNoiseGate {
     }
     const rms = Math.sqrt(sumSquares / Math.max(1, samples.length))
     const db = 20 * Math.log10(rms + 1e-10)
+    const active = this.trackEnergyActivity(db)
 
+    // 能量层放行段记录（覆盖率校验分母——只统计真正喂给 ASR 的样本）
+    if (active) {
+      if (this.activeStart < 0) this.activeStart = this.fedSamples
+      this.activePendingEnd = this.fedSamples + samples.length
+    } else if (this.activeStart >= 0) {
+      this.activeSpans.push({ start: this.activeStart, end: this.activePendingEnd })
+      this.activeStart = -1
+    }
+    this.notifyActivity(active)
+
+    if (this.useSilero) {
+      const vad = loadVad()
+      if (vad != null) {
+        try {
+          vad.acceptWaveform(float)
+          this.drainSpans(vad)
+        } catch (error) {
+          log.warn(`silero VAD feed error: ${String(error)}`)
+        }
+      }
+    }
+
+    this.fedSamples += samples.length
+
+    if (active) return samples
+    // 门控：置零（保留长度）
+    return new Int16Array(samples.length)
+  }
+
+  /** chunk 能量（dBFS）——confirm-only 活动信号用（完整门控在 process 内联计算避免二次遍历） */
+  private computeChunkDb(samples: Int16Array): number {
+    let sumSquares = 0
+    for (let i = 0; i < samples.length; i += 1) {
+      const v = (samples[i] ?? 0) / 32768
+      sumSquares += v * v
+    }
+    const rms = Math.sqrt(sumSquares / Math.max(1, samples.length))
+    return 20 * Math.log10(rms + 1e-10)
+  }
+
+  /**
+   * 能量层活动判定（预热直通 / 起音迟滞 / hangover / 底噪自适应 / 持续噪音
+   * 重校准），推进 chunk 计数并返回本 chunk 是否活跃。完整门控用其结果置零
+   * 音频；confirm-only 仅作 speech-activity 信号（音频不动）。
+   */
+  private trackEnergyActivity(db: number): boolean {
     const threshold = Math.max(
       (this.baselineDb ?? -60) + ENERGY_GAIN_DB[this.mode],
       ABSOLUTE_FLOOR_DB,
@@ -346,14 +413,11 @@ export class VoiceNoiseGate {
     }
 
     this.chunksSinceStart += 1
-    // 能量层放行段记录（覆盖率校验分母——只统计真正喂给 ASR 的样本）
-    if (active) {
-      if (this.activeStart < 0) this.activeStart = this.fedSamples
-      this.activePendingEnd = this.fedSamples + samples.length
-    } else if (this.activeStart >= 0) {
-      this.activeSpans.push({ start: this.activeStart, end: this.activePendingEnd })
-      this.activeStart = -1
-    }
+    return active
+  }
+
+  /** 活动状态翻转时触发回调（异常不得影响门控主流程） */
+  private notifyActivity(active: boolean): void {
     if (active !== this.speechActive) {
       this.speechActive = active
       try {
@@ -362,24 +426,6 @@ export class VoiceNoiseGate {
         // 回调异常不得影响门控主流程
       }
     }
-
-    if (this.useSilero) {
-      const vad = loadVad()
-      if (vad != null) {
-        try {
-          vad.acceptWaveform(float)
-          this.drainSpans(vad)
-        } catch (error) {
-          log.warn(`silero VAD feed error: ${String(error)}`)
-        }
-      }
-    }
-
-    this.fedSamples += samples.length
-
-    if (active) return samples
-    // 门控：置零（保留长度）
-    return new Int16Array(samples.length)
   }
 
   private drainSpans(vad: SherpaVad): void {
@@ -392,7 +438,9 @@ export class VoiceNoiseGate {
       if (end <= this.lastSpanEnd) continue
       const clampedStart = Math.max(start, this.lastSpanEnd)
       if (clampedStart < end) {
-        this.speechSpans.push({ start: clampedStart, end })
+        const span: SpeechSpan = { start: clampedStart, end }
+        this.speechSpans.push(span)
+        this.closedSpansPending.push(span)
         this.lastSpanEnd = end
       }
     }
@@ -535,6 +583,19 @@ export class VoiceNoiseGate {
     return accept
   }
 
+  /**
+   * 取走自上次调用以来新闭合的人声段并清空队列（句级出字的切句源）。
+   * 返回数组引用归调用方所有；无新闭合段时返回空数组（零分配）。
+   * span 坐标为会话内采样偏移，与 confirm-only 直通音频的 fedSamples
+   * 坐标系一致（音频长度不变），可直接映射到会话 PCM 缓存区间。
+   */
+  takeClosedSpeechSpans(): SpeechSpan[] {
+    if (this.closedSpansPending.length === 0) return []
+    const out = this.closedSpansPending
+    this.closedSpansPending = []
+    return out
+  }
+
   /** 停止收音时逼出 silero 未确认段（stop flush 的 final 校验需要完整时间轴） */
   flushSilero(): void {
     this.closeActiveSpan()
@@ -559,6 +620,7 @@ export class VoiceNoiseGate {
     this.fedSamples = 0
     this.speechSpans = []
     this.lastSpanEnd = 0
+    this.closedSpansPending = []
     this.activeSpans = []
     this.activeStart = -1
     this.activePendingEnd = 0

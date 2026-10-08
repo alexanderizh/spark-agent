@@ -8,10 +8,13 @@
  * 3. silero 确认层（mock Vad）：段 drain 进时间轴 / coverageRatio 区间计算 /
  *    shouldAcceptFinal 档位阈值 / reset 隔离
  * 4. 降级：disableSilero 时 coverage 恒 1（不拦截）
+ * 5. 句级出字支撑：闭合 span 待取队列 / isSileroVadAvailable 探针 /
+ *    confirm-only 的 speech-activity 信号（音频直通）
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  isSileroVadAvailable,
   resetVoiceGateCoverageRelax,
   setVadModuleForTests,
   VoiceNoiseGate,
@@ -366,5 +369,79 @@ describe('silero 确认层', () => {
     gate.reset()
     expect(gate.coverageRatio(0, 16000)).toBe(1)
     expect(gate.shouldAcceptFinal(0, 16000)).toBe(true)
+  })
+})
+
+describe('句级出字支撑（闭合 span 队列 + silero 探针 + confirm-only 信号）', () => {
+  it('闭合 span 入队 + take 取走清空（重复调用返回空数组）', () => {
+    const gate = new VoiceNoiseGate({ mode: 'standard' })
+    gate.reset()
+    const vad = MockVad.instances[MockVad.instances.length - 1]!
+    // 初始无闭合段
+    expect(gate.takeClosedSpeechSpans()).toEqual([])
+    // silero 检出 [0, 16000) 人声段，flush 后 drain 入队
+    vad.emitSegment(0, 16000)
+    gate.flushSilero()
+    expect(gate.takeClosedSpeechSpans()).toEqual([{ start: 0, end: 16000 }])
+    // 取走后清空，不再重复产出
+    expect(gate.takeClosedSpeechSpans()).toEqual([])
+    // 第二段（与上一段首尾相接，验证 lastSpanEnd 推进时的钳制语义）
+    vad.emitSegment(15000, 16000)
+    gate.flushSilero()
+    expect(gate.takeClosedSpeechSpans()).toEqual([{ start: 16000, end: 31000 }])
+  })
+
+  it('process 期间 drain 的段同样入队（不依赖 flushSilero）', () => {
+    const gate = new VoiceNoiseGate({ mode: 'standard' })
+    gate.reset()
+    const vad = MockVad.instances[MockVad.instances.length - 1]!
+    vad.emitSegment(0, 1600)
+    // 下一个 chunk 的 process 触发 drainSpans → 段入队
+    gate.process(silence())
+    expect(gate.takeClosedSpeechSpans()).toEqual([{ start: 0, end: 1600 }])
+  })
+
+  it('reset 清空待取队列（跨会话隔离）', () => {
+    const gate = new VoiceNoiseGate({ mode: 'standard' })
+    gate.reset()
+    const vad = MockVad.instances[MockVad.instances.length - 1]!
+    vad.emitSegment(0, 8000)
+    gate.flushSilero()
+    expect(gate.takeClosedSpeechSpans().length).toBe(1)
+    vad.emitSegment(8000, 8000)
+    gate.flushSilero()
+    gate.reset()
+    expect(gate.takeClosedSpeechSpans()).toEqual([])
+  })
+
+  it('isSileroVadAvailable：mock 注入可用时为 true，构造抛错降级时为 false', () => {
+    // beforeEach 已注入可用 mock
+    expect(isSileroVadAvailable()).toBe(true)
+    // 构造抛错 → loadVad 返回 null（warn 一次并降级）
+    setVadModuleForTests({
+      Vad: (() => {
+        throw new Error('boom')
+      }) as unknown as new (config: unknown, bufferSeconds: number) => MockVad,
+    })
+    expect(isSileroVadAvailable()).toBe(false)
+  })
+
+  it('confirm-only：音频原样直通 + speech-activity 回调照常触发（句级模式信号源）', () => {
+    const activities: boolean[] = []
+    const gate = new VoiceNoiseGate({
+      mode: 'standard',
+      confirmOnly: true,
+      onSpeechActivity: (active) => activities.push(active),
+    })
+    gate.reset()
+    warmUp(gate) // 预热 3 chunk（静音）→ 首个 chunk 即翻转 true
+    const speech = tone(0.5)
+    const out = gate.process(speech)
+    // confirm-only 音频不动：原样返回（非全零、同一内容）
+    expect(out.length).toBe(CHUNK)
+    expect(out).toEqual(speech)
+    // hangover 6 chunk 后静音回落（第 7 个静音 chunk 翻转 false）
+    for (let i = 0; i < 7; i += 1) gate.process(silence())
+    expect(activities).toEqual([true, false])
   })
 })

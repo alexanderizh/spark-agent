@@ -5,9 +5,11 @@ import { createLogger } from '@spark/shared'
 import type { VoiceLanguage, VoiceRecognitionEvent, VoiceStartRequest } from '@spark/protocol'
 import { resolveVoiceModelPaths, resolveVoiceRefinePaths } from './VoiceIntegrityService.js'
 import {
+  isSileroVadAvailable,
   MIN_VOICED_MS_FOR_FINAL,
-  VoiceNoiseGate,
   resetVoiceNoiseGateVad,
+  type SpeechSpan,
+  VoiceNoiseGate,
 } from './voice-assistant/VoiceNoiseGate.js'
 import { VoiceTransientGuard } from './voice-assistant/VoiceTransientGuard.js'
 
@@ -100,19 +102,21 @@ interface VoiceModelDescriptor {
   tokens: string
 }
 
-interface VoiceSession {
+/** 会话公共状态（两种解码模式共享） */
+interface VoiceSessionCommon {
   sessionId: string
   ownerId: number
-  recognizer: SherpaOnlineRecognizer
-  stream: SherpaOnlineStream
   sampleRate: number
-  /** 上一帧 partial 文本，用于判断是否需要推送（整体替换） */
-  lastPartial: string
   /** 语种提示，离线精修时映射到 SenseVoice language 参数 */
   language: VoiceLanguage
-  /** 会话内已锁定的分段 final（endpoint 句 + 停止 flush 句），精修失败时由 UI 保留这些文本 */
+  /** 会话内已锁定的分段 final（streaming: endpoint 句；sentence: 句级解码结果），精修失败时由 UI 保留这些文本 */
   finals: string[]
-  /** 录音期间缓存的原始 PCM chunk（IPC 结构化克隆产物，可安全持有），供停止后整段精修 */
+  /**
+   * 录音期间缓存的 PCM chunk（IPC 结构化克隆产物，可安全持有）。
+   * streaming 会话缓存门控后音频（供停止后整段精修）；sentence 会话缓存
+   * gate 处理前的原始音频（final 质量全靠 SenseVoice，门控置零段落在 span
+   * 内会丢字，门控职责只剩 silero 时间轴）。
+   */
   pcmChunks: Int16Array[]
   /**
    * pcmChunks 已裁剪的头部采样数（全双工长会话按轮 trim 已消费音频后的累计值）。
@@ -122,17 +126,42 @@ interface VoiceSession {
   droppedSamples: number
   totalSamples: number
   /**
-   * 环境噪音门控：standard/strict 会话为完整门控；noiseGate off/缺省会话为
-   * confirm-only 实例（音频流不动，仅 silero 时间轴 + final 接受判定）。
+   * 环境噪音门控：standard/strict 流式会话为完整门控；noiseGate off/缺省的
+   * 流式会话与全部 sentence 会话为 confirm-only 实例（音频流不动，仅 silero
+   * 时间轴 + speech-activity 信号）。
    */
   noiseGate: VoiceNoiseGate | null
-  /** 非人声瞬态旁路守卫（仅 confirm-only 会话创建：silero 不可用时的兜底票） */
-  transientGuard: VoiceTransientGuard | null
   /** 上一个已接受 final 的音频结束偏移（silero 覆盖率校验区间的起点） */
   lastFinalEndSample: number
   /** 被 confirm-only 三票决策拒绝丢弃的 final 计数（日志观测用） */
   droppedTransientFinals: number
+  /** 上一帧 partial 文本（仅 streaming 使用；sentence 恒空串） */
+  lastPartial: string
 }
+
+/**
+ * 流式会话（方案A）：Paraformer 在线解码出 partial/final，停止后可选整段精修。
+ */
+interface StreamingVoiceSession extends VoiceSessionCommon {
+  decodeMode: 'streaming'
+  recognizer: SherpaOnlineRecognizer
+  stream: SherpaOnlineStream
+  /** 非人声瞬态旁路守卫（仅 confirm-only 流式会话创建：silero 不可用时的兜底票） */
+  transientGuard: VoiceTransientGuard | null
+}
+
+/**
+ * 句级会话（方案B）：不创建在线识别器；silero 闭合人声段逐句送 SenseVoice
+ * 解码，final 即精修级质量。切句源 = gate 的闭合 span 队列。
+ */
+interface SentenceVoiceSession extends VoiceSessionCommon {
+  decodeMode: 'sentence'
+  recognizer: null
+  stream: null
+  transientGuard: null
+}
+
+type VoiceSession = StreamingVoiceSession | SentenceVoiceSession
 
 type VoiceEventEmitter = (event: VoiceRecognitionEvent, ownerId: number) => void
 
@@ -255,17 +284,28 @@ function getOrCreateRecognizer(
 }
 
 /**
- * 对话识别器预热（语音助手 standby 期调用）：按真实 start 参数提前构造
- * OnlineRecognizer 命中 cachedRecognizer 缓存，把「唤醒→聆听」切换窗口内的
- * WASM/模型加载阻塞（日志实锤 main-blocked #1，首次可达数秒）挪到用户还没
- * 开口的空闲期。参数必须与后续 startVoiceSession 逐字段一致（缓存键含
- * sampleRate/vadSilenceMs/enableVad），否则预热无效只是多一次构造。
+ * 对话识别器预热（语音助手 standby 期调用）：按真实 start 参数提前构造识别器
+ * 命中缓存，把「唤醒→聆听」切换窗口内的 WASM/模型加载阻塞（日志实锤
+ * main-blocked #1，首次可达数秒）挪到用户还没开口的空闲期。
+ * streaming 模式预热 OnlineRecognizer（缓存键含
+ * sampleRate/vadSilenceMs/enableVad，参数必须与后续 startVoiceSession 逐字段
+ * 一致否则预热无效）；sentence 模式预热 OfflineRecognizer（SenseVoice 精修
+ * 识别器，缓存键含 language——同样要求参数一致），前置条件不满足时预热流式
+ * 识别器（会话将降级 streaming）。
  * 尽力而为：模型未安装/运行时缺失时静默返回 false，绝不抛错——预热失败
  * 只退化为原有行为（start 时同步构造），不是故障。
  */
 export function warmupVoiceRecognizer(params: VoiceStartRequest): boolean {
   try {
     const mod = loadSherpaModule()
+    const decodeMode: 'streaming' | 'sentence' =
+      params.decodeMode === 'streaming' ? 'streaming' : 'sentence'
+    if (decodeMode === 'sentence') {
+      if (resolveVoiceRefinePaths() != null && isSileroVadAvailable()) {
+        return getOrCreateRefineRecognizer(mod, params.language ?? 'auto') != null
+      }
+      // 前置条件缺失：会话将降级 streaming，预热流式识别器
+    }
     getOrCreateRecognizer(mod, params)
     return true
   } catch (err) {
@@ -381,11 +421,136 @@ async function refineTranscript(
   return smartJoinSegments(segments)
 }
 
+// ─── 句级解码队列（方案B：sentence 会话的异步出字引擎）────────────────────────
+//
+// feedVoiceAudio 是 100ms/chunk 的高频同步调用，SenseVoice 单句解码（≤20s 句
+// 约 0.2-1.5s）绝不能在 feed 路径内联执行：闭合 span 只做「区间拷贝 + 任务入队」，
+// 解码经 setImmediate 逐句异步消费，句间让出事件循环消化积压 IPC。
+
+/** 闭合 span 两侧 padding（秒）：补 silero 判定窗（512 样本）的边界抖动，防字头字尾被切 */
+const SENTENCE_PAD_SECONDS = 0.2
+/** 单句解码区间上限（秒）：silero maxSpeechDuration=20 理论兜底，此处防御性截尾 */
+const SENTENCE_MAX_SECONDS = 30
+/** 闭合 span 自身短于该时长不入队（瞬态点击；silero min_speech_duration 可能不被执行） */
+const MIN_SENTENCE_SPAN_SECONDS = 0.1
+
+/** 句级解码任务：PCM 在入队时切片拷贝（与会话后续 trim/stop 解耦，绝不持有会话引用） */
+interface SentenceDecodeTask {
+  sessionId: string
+  ownerId: number
+  pcm: Int16Array
+  sampleRate: number
+  language: VoiceLanguage
+  /** finals 数组引用（会话对象的字段；句级模式仅作日志/调试观测） */
+  finals: string[]
+  /** span 原始时长（ms，性能观测） */
+  spanMs: number
+}
+
+const sentenceDecodeQueue: SentenceDecodeTask[] = []
+let activeSentenceTask: SentenceDecodeTask | null = null
+/** 按 sessionId 订阅队列排空的等待者（stopVoiceSession 收口用） */
+const sentenceTaskWaiters = new Map<string, Set<() => void>>()
+
+function hasPendingSentenceTasks(sessionId: string): boolean {
+  if (activeSentenceTask?.sessionId === sessionId) return true
+  return sentenceDecodeQueue.some((task) => task.sessionId === sessionId)
+}
+
+/**
+ * 等待指定会话的句级解码任务全部完成（无任务时立即 resolve）。
+ * stopVoiceSession 收口与全双工轮次提交用它保证 final 全部落地后再终态。
+ */
+export function waitForVoiceSentenceTasks(sessionId: string): Promise<void> {
+  if (!hasPendingSentenceTasks(sessionId)) return Promise.resolve()
+  return new Promise((res) => {
+    let waiters = sentenceTaskWaiters.get(sessionId)
+    if (waiters == null) {
+      waiters = new Set()
+      sentenceTaskWaiters.set(sessionId, waiters)
+    }
+    waiters.add(res)
+  })
+}
+
+function notifySentenceTasksSettled(): void {
+  for (const [sessionId, waiters] of sentenceTaskWaiters) {
+    if (hasPendingSentenceTasks(sessionId)) continue
+    sentenceTaskWaiters.delete(sessionId)
+    for (const resolve of waiters) resolve()
+  }
+}
+
+/** 闭合 span → padding 区间切片 → 入队（feed/stop 调用，同步轻量） */
+function enqueueSentenceDecode(session: SentenceVoiceSession, span: SpeechSpan): void {
+  const spanSeconds = (span.end - span.start) / session.sampleRate
+  if (spanSeconds < MIN_SENTENCE_SPAN_SECONDS) return
+  const pad = Math.floor(session.sampleRate * SENTENCE_PAD_SECONDS)
+  const from = Math.max(0, span.start - pad)
+  const maxLen = Math.floor(session.sampleRate * SENTENCE_MAX_SECONDS)
+  const to = Math.min(session.totalSamples, Math.min(span.end + pad, from + maxLen))
+  if (to - from <= 0) return
+  const pcm = slicePcmInterval(session, from, to)
+  if (pcm.length === 0) return
+  sentenceDecodeQueue.push({
+    sessionId: session.sessionId,
+    ownerId: session.ownerId,
+    pcm,
+    sampleRate: session.sampleRate,
+    language: session.language,
+    finals: session.finals,
+    spanMs: spanSeconds * 1000,
+  })
+  pumpSentenceQueue()
+}
+
+/** 单句解码：成功 emit final；失败/空结果 log 后丢弃（不 emit error 打断会话） */
+async function decodeSentenceTask(task: SentenceDecodeTask): Promise<void> {
+  const startedAt = Date.now()
+  try {
+    const text = await refineTranscript(task.pcm, task.sampleRate, task.language)
+    const trimmed = (text ?? '').trim()
+    if (trimmed) {
+      task.finals.push(trimmed)
+      emitPending({ type: 'final', sessionId: task.sessionId, text: trimmed }, task.ownerId)
+      log.info(
+        `[voice-recognition] sentence final (${task.sessionId}): span=${task.spanMs.toFixed(0)}ms audio=${(task.pcm.length / task.sampleRate).toFixed(2)}s decode=${Date.now() - startedAt}ms text="${trimmed.slice(0, 40)}"`,
+      )
+    } else {
+      log.info(
+        `[voice-recognition] sentence decode empty (${task.sessionId}): span=${task.spanMs.toFixed(0)}ms`,
+      )
+    }
+  } catch (err) {
+    // 解码失败丢弃该句，保留已出文本，会话继续（模型缺失/加载失败的容错路径）
+    log.warn(
+      `[voice-recognition] sentence decode failed (${task.sessionId}), sentence dropped: ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+}
+
+/** 逐句消费循环：同一时刻至多一个解码在跑，句间 setImmediate 让出事件循环 */
+function pumpSentenceQueue(): void {
+  if (activeSentenceTask != null) return
+  const task = sentenceDecodeQueue.shift()
+  if (task == null) {
+    notifySentenceTasksSettled()
+    return
+  }
+  activeSentenceTask = task
+  setImmediate(() => {
+    void decodeSentenceTask(task).finally(() => {
+      activeSentenceTask = null
+      pumpSentenceQueue()
+    })
+  })
+}
+
 /**
  * endpoint 触发时补一段静音并再解码一轮，把在线模型滞留的尾部 token 逼出来。
  * 必须在 reset 之前调用，否则句尾字丢失。
  */
-function flushTailTokens(session: VoiceSession): string {
+function flushTailTokens(session: StreamingVoiceSession): string {
   try {
     const silence = new Float32Array(
       Math.floor(session.sampleRate * ENDPOINT_FLUSH_SILENCE_SECONDS),
@@ -405,6 +570,9 @@ export interface VoiceSessionHandle {
   success: boolean
   sessionId: string | null
   error: string | null
+  /** 实际生效的解码模式：sentence 请求在精修模型/silero 缺失时降级 streaming，
+   *  调用方（语音助手）据此分流收口策略（精修跳过、确认窗口撤销信号源等） */
+  decodeMode: 'streaming' | 'sentence'
 }
 
 export function startVoiceSession(params: VoiceStartRequest, ownerId: number): VoiceSessionHandle {
@@ -413,63 +581,131 @@ export function startVoiceSession(params: VoiceStartRequest, ownerId: number): V
   }
   const sessionId = `voice-${process.pid}-${++sessionCounter}`
   try {
+    // 模式决策：请求缺省按 sentence（新默认，由 IPC/语音助手层按设置注入）；
+    // 前置检查（SenseVoice 精修模型 + silero VAD）任一不满足 → 降级 streaming，
+    // 行为与旧版完全一致（零风险兼容：未装精修模型的升级用户无感知变化）
+    const requestedMode: 'streaming' | 'sentence' =
+      params.decodeMode === 'streaming' ? 'streaming' : 'sentence'
+    let decodeMode = requestedMode
+    if (decodeMode === 'sentence') {
+      const refineReady = resolveVoiceRefinePaths() != null
+      const sileroReady = isSileroVadAvailable()
+      if (!refineReady || !sileroReady) {
+        decodeMode = 'streaming'
+        log.warn(
+          `Voice session ${sessionId}: sentence mode prerequisites missing (refine=${refineReady ? 'ok' : 'absent'}, silero=${sileroReady ? 'ok' : 'absent'}) — falling back to streaming`,
+        )
+      }
+    }
     const mod = loadSherpaModule()
-    const { recognizer } = getOrCreateRecognizer(mod, params)
-    const stream = recognizer.createStream()
     // 人声聚焦门控：会话启动时创建并复位（silero 单例跨会话复用，reset 隔离状态）
     let noiseGate: VoiceNoiseGate | null = null
     let transientGuard: VoiceTransientGuard | null = null
-    if (params.noiseGate === 'standard' || params.noiseGate === 'strict') {
+    const emitSpeechActivity = (active: boolean): void => {
+      emitPending({ type: 'speech-activity', sessionId, speechActive: active }, ownerId)
+    }
+    let session: VoiceSession
+    if (decodeMode === 'sentence') {
+      // 句级会话：gate 仅承担 silero 时间轴（切句源）+ speech-activity 信号，
+      // 音频原样直通（confirm-only）——final 质量全靠原始音频 + SenseVoice，
+      // 能量置零段落进 span 会丢字。不创建在线识别器与瞬态守卫（span 天然
+      // 来自 silero 人声判定，无需三票校验）。预热精修识别器消除首句加载延迟。
+      getOrCreateRefineRecognizer(mod, params.language ?? 'auto')
       noiseGate = new VoiceNoiseGate({
-        mode: params.noiseGate,
-        onSpeechActivity: (active) => {
-          emitPending({ type: 'speech-activity', sessionId, speechActive: active }, ownerId)
-        },
+        mode: 'standard',
+        confirmOnly: true,
+        onSpeechActivity: emitSpeechActivity,
       })
       noiseGate.reset()
+      session = {
+        sessionId,
+        ownerId,
+        decodeMode: 'sentence',
+        recognizer: null,
+        stream: null,
+        transientGuard: null,
+        sampleRate: params.sampleRate ?? 16000,
+        lastPartial: '',
+        language: params.language ?? 'auto',
+        finals: [],
+        pcmChunks: [],
+        droppedSamples: 0,
+        totalSamples: 0,
+        noiseGate,
+        lastFinalEndSample: 0,
+        droppedTransientFinals: 0,
+      }
     } else {
-      // noiseGate off/缺省（语音输入与默认语音助手会话）：confirm-only 实例——
-      // 音频流零改动（v1 能量置零伤识别率的教训），仅旁路产出 silero 人声
-      // 时间轴供 final 级瞬态过滤；silero 模型缺失时由 VoiceTransientGuard 兜底
-      noiseGate = new VoiceNoiseGate({ mode: 'standard', confirmOnly: true })
-      noiseGate.reset()
-      transientGuard = new VoiceTransientGuard({ sampleRate: params.sampleRate ?? 16000 })
-      transientGuard.reset()
-    }
-    const session: VoiceSession = {
-      sessionId,
-      ownerId,
-      recognizer,
-      stream,
-      sampleRate: params.sampleRate ?? 16000,
-      lastPartial: '',
-      language: params.language ?? 'auto',
-      finals: [],
-      pcmChunks: [],
-      droppedSamples: 0,
-      totalSamples: 0,
-      noiseGate,
-      transientGuard,
-      lastFinalEndSample: 0,
-      droppedTransientFinals: 0,
+      if (params.noiseGate === 'standard' || params.noiseGate === 'strict') {
+        noiseGate = new VoiceNoiseGate({
+          mode: params.noiseGate,
+          onSpeechActivity: emitSpeechActivity,
+        })
+        noiseGate.reset()
+      } else {
+        // noiseGate off/缺省（语音输入与默认语音助手会话）：confirm-only 实例——
+        // 音频流零改动（v1 能量置零伤识别率的教训），仅旁路产出 silero 人声
+        // 时间轴供 final 级瞬态过滤 + speech-activity 信号；silero 模型缺失时
+        // 由 VoiceTransientGuard 兜底
+        noiseGate = new VoiceNoiseGate({
+          mode: 'standard',
+          confirmOnly: true,
+          onSpeechActivity: emitSpeechActivity,
+        })
+        noiseGate.reset()
+        transientGuard = new VoiceTransientGuard({ sampleRate: params.sampleRate ?? 16000 })
+        transientGuard.reset()
+      }
+      const { recognizer } = getOrCreateRecognizer(mod, params)
+      const stream = recognizer.createStream()
+      session = {
+        sessionId,
+        ownerId,
+        decodeMode: 'streaming',
+        recognizer,
+        stream,
+        transientGuard,
+        sampleRate: params.sampleRate ?? 16000,
+        lastPartial: '',
+        language: params.language ?? 'auto',
+        finals: [],
+        pcmChunks: [],
+        droppedSamples: 0,
+        totalSamples: 0,
+        noiseGate,
+        lastFinalEndSample: 0,
+        droppedTransientFinals: 0,
+      }
     }
     sessions.set(sessionId, session)
     emitPending({ type: 'session-started', sessionId, text: '' }, ownerId)
     log.info(
-      `Voice session started: ${sessionId}${transientGuard ? ' (confirm-only transient guard)' : params.noiseGate ? ` (noise-gate ${params.noiseGate})` : ''}`,
+      `Voice session started: ${sessionId} (mode=${decodeMode}${session.transientGuard ? ' confirm-only transient guard' : params.noiseGate === 'standard' || params.noiseGate === 'strict' ? ` noise-gate ${params.noiseGate}` : ''})`,
     )
-    return { success: true, sessionId, error: null }
+    return { success: true, sessionId, error: null, decodeMode }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     log.error(`Failed to start voice session: ${message}`)
     emitPending({ type: 'error', sessionId, message }, ownerId)
-    return { success: false, sessionId: null, error: message }
+    // 启动失败无会话：按 streaming 语义返回（调用方失败路径直接中止，此值仅兜底）
+    return { success: false, sessionId: null, error: message, decodeMode: 'streaming' }
   }
 }
 
 export function feedVoiceAudio(sessionId: string, samples: Int16Array, ownerId: number): void {
   const session = sessions.get(sessionId)
   if (!session || session.ownerId !== ownerId) return
+  if (session.decodeMode === 'sentence') {
+    // 句级会话：gate（confirm-only）推进 silero 时间轴与活动信号，音频原样直通；
+    // pcmChunks 缓存 gate 处理前的原始音频（final 质量全靠 SenseVoice，门控
+    // 置零段落在 span 内会丢字）；闭合 span 切片入队，解码异步出 final
+    session.noiseGate?.process(samples)
+    session.pcmChunks.push(samples)
+    session.totalSamples += samples.length
+    const spans = session.noiseGate?.takeClosedSpeechSpans() ?? []
+    for (const span of spans) enqueueSentenceDecode(session, span)
+    return
+  }
   // 逐 chunk 同步 acceptWaveform+decode 的取舍：Paraformer 流式对 ~100ms chunk 的
   // 特征提取+解码远小于 chunk 间隔（不积压），而合帧（累计 ≥200ms 再喂）会直接
   // 抬高 partial 吐字延迟且无阻塞收益——日志里的 decode 阻塞来自离线精修的长段
@@ -582,6 +818,10 @@ function emitPending(event: VoiceRecognitionEvent, ownerId: number): void {
 /**
  * 停止识别会话。
  *
+ * sentence 会话：flush 逼出尾句入队，解码队列排空后发 session-stopped；
+ *   恒不做整段精修（finals 已是 SenseVoice 结果），返回 false。
+ *
+ * streaming 会话：
  * mode='flush'（默认）：仅流式收尾（补尾部静音锁定最后一句 final）后立即结束。
  * mode='refine'：流式收尾后，若精修条件满足（模型已安装、音频时长合理），
  *   保留音频数据异步离线重识别，事件顺序为 final -> refined -> session-stopped；
@@ -604,6 +844,32 @@ export function stopVoiceSession(
   const session = sessions.get(sessionId)
   if (!session) return false
   if (ownerId != null && session.ownerId !== ownerId) return false
+  if (session.decodeMode === 'sentence') {
+    // 句级收口：flush 逼出最后未闭合 span → 尾句入队 → 解码队列排空后才发
+    // session-stopped（保持 final → … → session-stopped 事件顺序）。不做整段
+    // 精修（finals 已是 SenseVoice 结果，二次精修是重复劳动），refining 恒 false
+    // ——渲染端收到 session-stopped 直接收尾，无需等待 refined。
+    try {
+      session.noiseGate?.flushSilero()
+      const tailSpans = session.noiseGate?.takeClosedSpeechSpans() ?? []
+      for (const span of tailSpans) enqueueSentenceDecode(session, span)
+    } catch (err) {
+      log.warn(
+        `Voice stop sentence flush error (${sessionId}): ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+    // 会话先出表：解码期间允许开启新会话（任务持有切片拷贝，与会话解耦）
+    sessions.delete(sessionId)
+    const { ownerId: sessionOwner } = session
+    // 返回值语义与流式 refine 对齐：尾句尚在队列/解码中 → true（调用方据此
+    // 保持事件订阅等 session-stopped 再收尾，voice:stop IPC 层防尾句丢失）
+    const tailPending = hasPendingSentenceTasks(sessionId)
+    void waitForVoiceSentenceTasks(sessionId).then(() => {
+      emitPending({ type: 'session-stopped', sessionId, text: '' }, sessionOwner)
+      log.info(`Voice session stopped (sentence): ${sessionId}`)
+    })
+    return tailPending
+  }
   try {
     // 尾部 padding + 最终解码，争取最后一段 partial 落地为 final。
     // 覆盖率校验区间只算真实音频（padding 是合成静音，先快照真实结束偏移）

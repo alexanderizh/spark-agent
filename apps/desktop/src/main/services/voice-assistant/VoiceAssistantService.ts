@@ -213,6 +213,9 @@ export class VoiceAssistantService {
   private captureCommandSentAt = 0
   /** 当前活跃 ASR 会话（VoiceRecognitionService 生成） */
   private asrSessionId: string | null = null
+  /** 当前 ASR 会话实际生效的解码模式（transcriptMode=sentence 请求可能因模型
+   *  缺失在识别服务内降级 streaming——精修跳过、确认窗口撤销信号源等据此分流） */
+  private asrDecodeMode: 'streaming' | 'sentence' = 'streaming'
   /** 停止中的 ASR 会话（stopVoiceSession flush 期间仍会吐 final/session-stopped） */
   private closingAsrSessionId: string | null = null
   private captureCounter = 0
@@ -653,6 +656,14 @@ export class VoiceAssistantService {
     }
   }
 
+  /**
+   * 本地引擎出字模式（transcriptMode 设置）：会话语音输入（voice:start IPC）与
+   * 语音助手对话共用该设置——IPC 层据此注入 decodeMode，渲染端无需感知设置存储。
+   */
+  getTranscriptDecodeMode(): 'streaming' | 'sentence' {
+    return this.settings.transcriptMode
+  }
+
   // ─── 会话聚焦（UI 跟随语音会话跳转） ─────────────────────────────────────
 
   /**
@@ -1039,6 +1050,11 @@ export class VoiceAssistantService {
           language: 'auto',
           enableVad: true,
           vadSilenceMs: endpoint.vadSilenceMs,
+          // 句级出字（transcriptMode=sentence）：silero 切句 + SenseVoice 句级解码
+          // 替代 Paraformer 流式；模型缺失时识别服务内部降级 streaming（行为同旧版）
+          ...(this.settings.transcriptMode === 'streaming'
+            ? { decodeMode: 'streaming' as const }
+            : {}),
           // 人声聚焦门控（off 时省略，走识别服务旧行为）
           ...(this.settings.voiceFocus !== 'off' ? { noiseGate: this.settings.voiceFocus } : {}),
         },
@@ -1060,8 +1076,9 @@ export class VoiceAssistantService {
       return
     }
     // 采集/识别管线组合落日志：排查识别率问题时据此确认实际生效的处理链
+    this.asrDecodeMode = handle.decodeMode
     log.info(
-      `[voice-assistant] asr pipeline: denoise=${this.settings.browserDenoise}, focus=${this.settings.voiceFocus}, refine=${this.settings.refineTranscript}, engine=${this.settings.recognitionEngine}, vadSilence=${endpoint.vadSilenceMs}ms, duplex=${this.duplexEnabled}, endpoint=${this.settings.utteranceEndpointProfile}`,
+      `[voice-assistant] asr pipeline: mode=${this.asrDecodeMode}, denoise=${this.settings.browserDenoise}, focus=${this.settings.voiceFocus}, refine=${this.settings.refineTranscript}, engine=${this.settings.recognitionEngine}, vadSilence=${endpoint.vadSilenceMs}ms, duplex=${this.duplexEnabled}, endpoint=${this.settings.utteranceEndpointProfile}`,
     )
     this.asrSessionId = handle.sessionId
     this.closingAsrSessionId = null
@@ -1232,9 +1249,12 @@ export class VoiceAssistantService {
       try {
         // refine：停止后 SenseVoice 离线重识别整段音频（与会话语音输入同链路），
         // refined 事件整体替换流式结果后经 session-stopped 统一收口——识别率
-        // 显著高于纯流式；模型缺失/时长不符时内部自动退化为 flush
+        // 显著高于纯流式；模型缺失/时长不符时内部自动退化为 flush。
+        // 句级模式跳过：finals 已是 SenseVoice 句级结果，二次整段精修是重复劳动
         const mode =
-          this.settings.refineTranscript && this.settings.recognitionEngine === 'local'
+          this.settings.refineTranscript &&
+          this.settings.recognitionEngine === 'local' &&
+          this.asrDecodeMode !== 'sentence'
             ? 'refine'
             : 'flush'
         stopVoiceSession(asrSessionId, VOICE_ASSISTANT_INTERNAL_OWNER_ID, mode)
@@ -1298,6 +1318,7 @@ export class VoiceAssistantService {
     this.collectedFinals = []
     this.handoffPending = false
     this.duplexWindowActive = false
+    this.asrDecodeMode = 'streaming'
     this.inputQueue.cancelDraft()
   }
 
@@ -1371,6 +1392,28 @@ export class VoiceAssistantService {
         // 门控检出人声活动：重置空转兜底计时，给用户完整的说话空间
         if (isActiveSession && this.state === 'listening' && event.speechActive === true) {
           this.armEmptySpeechTimeout()
+          // 句级模式无 partial：确认窗口内继续开口的撤销改由 speech-activity 承担
+          // （流式模式仍由 partial 分支撤销，本分支不介人，行为保持不变）
+          if (this.asrDecodeMode === 'sentence' && this.handoffConfirmTimer != null) {
+            this.cancelHandoffConfirm()
+            this.deps.broadcastState({
+              state: 'listening',
+              previous: 'listening',
+              reason: 'wake',
+              detail: this.collectedFinals.filter(Boolean).join(' '),
+            })
+          }
+          return
+        }
+        // 句级模式插话期同样无 partial：人声活动直接续期插话草稿计时
+        // （与 partial 分支的 extendDraft 同构，防句尾静音期草稿提前出队）
+        if (
+          isActiveSession &&
+          event.speechActive === true &&
+          this.asrDecodeMode === 'sentence' &&
+          this.isDuplexBargeInState()
+        ) {
+          this.inputQueue.extendDraft(this.state === 'speaking' ? 'speaking' : 'thinking')
         }
         return
       }
@@ -1568,7 +1611,10 @@ export class VoiceAssistantService {
     if (
       sessionId != null &&
       this.settings.refineTranscript &&
-      this.settings.recognitionEngine === 'local'
+      this.settings.recognitionEngine === 'local' &&
+      // 句级模式跳过按轮精修：本轮 finals 已是 SenseVoice 句级结果，区间重识别
+      // 是重复劳动且引入二次延迟——直接提交句级拼接
+      this.asrDecodeMode !== 'sentence'
     ) {
       const fromSample = this.duplexTurnStartSample
       const endSample = getVoiceSessionSampleCursor(sessionId) ?? -1

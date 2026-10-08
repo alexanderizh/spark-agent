@@ -71,8 +71,18 @@ export interface VoiceAssistantSettings {
    * 停止后离线精修（SenseVoice 重识别整段音频，延迟 1–3s 换准确率）。
    * 与会话语音输入同链路，默认开——实测纯流式 Paraformer 漏字明显，精修后
    * 整体替换流式结果，识别率显著提升。云引擎下不生效（云转写本就是整段识别）。
+   * 句级出字模式（transcriptMode='sentence'）下收口不再二次精修（finals 已是
+   * SenseVoice 结果），该字段仅对流式模式生效。
    */
   refineTranscript: boolean
+  /**
+   * 本地引擎出字模式（默认 sentence 句级精修出字）：sentence = silero VAD 切句
+   * + SenseVoice 句级解码，final 即精修级质量（带标点/ITN），无 partial 实时预览；
+   * streaming = 流式实时出字（Paraformer partial/final + 收口整段精修，旧行为）。
+   * sentence 依赖 SenseVoice 精修模型与 silero VAD，任一缺失时服务端自动降级
+   * streaming（行为与旧版完全一致）。仅本地识别引擎生效，cloud 引擎忽略。
+   */
+  transcriptMode: 'sentence' | 'streaming'
   /**
    * 云端识别渠道（null = 自动取第一个支持 audio.transcription 的已配置渠道）。
    * 仅 recognitionEngine='cloud' 时生效：云转写把整段 PCM 上传到该渠道转写。
@@ -207,6 +217,7 @@ export const DEFAULT_VOICE_ASSISTANT_SETTINGS: VoiceAssistantSettings = {
   noisePipelineMigrated: false,
   refineTranscriptMigrated: false,
   refineTranscript: true,
+  transcriptMode: 'sentence',
   sessionThinkingEnabled: true,
   sessionThinkingEffort: 'minimal',
   fullDuplex: true,
@@ -338,6 +349,10 @@ export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSet
       source.refineTranscript,
       DEFAULT_VOICE_ASSISTANT_SETTINGS.refineTranscript,
     ),
+    transcriptMode:
+      source.transcriptMode === 'streaming'
+        ? 'streaming'
+        : DEFAULT_VOICE_ASSISTANT_SETTINGS.transcriptMode,
     sttProviderProfileId,
     sttModelId,
     ttsProviderProfileId,

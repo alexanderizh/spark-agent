@@ -1968,6 +1968,7 @@ export const IpcSchemaRegistry = {
     language: z.enum(['auto', 'zh', 'en', 'yue']).optional(),
     enableVad: z.boolean().optional(),
     vadSilenceMs: z.number().int().min(100).max(5000).optional(),
+    decodeMode: z.enum(['streaming', 'sentence']).optional(),
   }),
   'voice:stop': z.object({
     sessionId: z

@@ -7,9 +7,13 @@
  *
  * native 模块与模型文件均通过 MinIO 自建源按需下载到 userData，不打进 asar。
  *
- * 混合识别（方案A）：录音期间流式 partial/final 实时预览，主进程同时缓存整段 PCM；
+ * 混合识别（方案A 流式模式）：录音期间流式 partial/final 实时预览，主进程同时缓存整段 PCM；
  * 停止后若已安装离线精修模型（SenseVoice），对整段音频重新识别并以 refined 事件
  * 推送整段文本，由 UI 替换流式结果，显著提升准确率并补齐标点。
+ *
+ * 句级精修（方案B sentence 模式，默认）：不跑流式解码，silero VAD 闭合语音段
+ * 逐句送 SenseVoice 离线解码，每句以 final 事件出字（质量即精修级，带标点/ITN）。
+ * 前置条件不满足（SenseVoice/silero 缺失）时运行态自动降级回流式模式。
  */
 
 // ─── 完整性 ─────────────────────────────────────────────────────────────────
@@ -122,6 +126,13 @@ export interface VoiceStartRequest {
    * off = 关闭（默认，语音输入保持旧行为）；standard/strict = 门限与覆盖率要求递增。
    */
   noiseGate?: 'off' | 'standard' | 'strict'
+  /**
+   * 出字解码模式（缺省由服务端按语音助手设置 transcriptMode 补齐，渲染端不感知）：
+   * streaming = 方案A 流式出字（Paraformer partial/final + 收口整段精修）；
+   * sentence = 方案B 句级精修出字（silero 切句 + SenseVoice 句级解码，final 即精修质量）。
+   * 服务端对 sentence 做前置检查（SenseVoice/silero 可用），不满足时自动降级 streaming。
+   */
+  decodeMode?: 'streaming' | 'sentence'
 }
 
 export interface VoiceStartResponse {

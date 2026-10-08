@@ -37,6 +37,13 @@ describe('voice audio chunk validation', () => {
     })
     expect(() => IpcSchemaRegistry['voice:start'].parse({ sampleRate: 48000 })).toThrow()
     expect(() => IpcSchemaRegistry['voice:start'].parse({ vadSilenceMs: 60_000 })).toThrow()
+    expect(
+      IpcSchemaRegistry['voice:start'].parse({ sampleRate: 16000, decodeMode: 'sentence' }),
+    ).toEqual({ sampleRate: 16000, decodeMode: 'sentence' })
+    expect(IpcSchemaRegistry['voice:start'].parse({ decodeMode: 'streaming' })).toEqual({
+      decodeMode: 'streaming',
+    })
+    expect(() => IpcSchemaRegistry['voice:start'].parse({ decodeMode: 'hybrid' })).toThrow()
     expect(() => IpcSchemaRegistry['voice:stop'].parse({ sessionId: '../other-window' })).toThrow()
   })
 })
