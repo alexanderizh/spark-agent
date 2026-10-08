@@ -279,7 +279,7 @@ export function SessionWorkflowPicker(props: {
         onClick={toggleMenu}
       >
         <span aria-hidden="true">
-          <Icons.Workflow size={15} strokeWidth={selected ? 2.2 : 1.6} />
+          <Icons.WorkflowSimple size={14} />
         </span>
       </button>
       {menu}

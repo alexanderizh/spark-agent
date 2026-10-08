@@ -9,7 +9,7 @@ export function ModelSwitchNotice({ marker }: { marker: ModelSwitchMarker }) {
     <div className="model-switch-notice" role="status">
       <span className="model-switch-notice-line" />
       <span className="model-switch-notice-content">
-        <Box aria-hidden="true" size={17} strokeWidth={1.8} />
+        <Box aria-hidden="true" size={12} strokeWidth={1.2} />
         <span>
           模型已从 {marker.fromModel} 更改为 {marker.toModel}
         </span>

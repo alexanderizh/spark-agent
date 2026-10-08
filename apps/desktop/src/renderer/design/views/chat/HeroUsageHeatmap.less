@@ -6,8 +6,8 @@
 
 /* 空会话内容区：问候 banner + 使用足迹热力图 垂直堆叠（空会话恒为该组合）。
    经典主题：hero 是 720px 居中构图，stack 同宽居中，热力图随之居中。
-   主题模式：hero 是 880px 左对齐构图（见 ChatEmptyThemes.less），stack 跟随同宽，
-   热力图贴左，与标题/输入框共用同一条左边缘。
+   主题模式：hero 是与输入框同宽的左对齐构图（见 ChatEmptyThemes.less），
+   stack 跟随同宽，热力图贴左，与标题/输入框共用同一条左边缘。
    gap 收紧让 banner 与热力图靠紧。 */
 .chat-empty-hero-stack {
   display: flex;
@@ -15,13 +15,20 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
+  /* 自带 24px gutter（与 .composer-inner 一致）：宽度百分比基准保持整宽，
+     窄窗口下 hero 与输入框左右边缘对齐 */
+  box-sizing: border-box;
+  padding-inline: 24px;
 }
 
-/* 主题模式 hero 列宽 min(880px, 100%)（≤1100px 时 780px，更窄时被 min() 钳为 100%），
-   stack 与其同宽即可保证左边缘与底部 880px 输入框对齐；stretch 让子元素统一贴左。 */
+/* 主题模式 hero 列与 .composer-inner 共用同一限宽变量（.chat-main 上定义），
+   stack 与其同宽、同 24px gutter，即可保证左边缘与底部输入框严格对齐；
+   stretch 让子元素统一贴左。 */
 .chat-main-empty[data-empty-theme] .chat-empty-hero-stack {
-  width: min(880px, 100%);
+  width: min(100%, var(--chat-content-max-width, 900px));
   align-items: stretch;
+  box-sizing: border-box;
+  padding-inline: 24px;
 }
 
 /* 暗色模式下无用量格子还原原透明度：暗底上 72% 已足够可辨，不随浅色加深 */

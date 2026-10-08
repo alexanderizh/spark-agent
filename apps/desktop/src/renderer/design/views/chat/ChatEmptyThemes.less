@@ -93,7 +93,9 @@
 
 .chat-main-empty[data-empty-theme] .single-empty-hero {
   z-index: 1;
-  width: min(880px, 100%);
+  /* 与 .composer-inner 共用同一限宽变量（.chat-main 上定义），左对齐构图下
+     hero 左边缘与输入框容器左边缘严格对齐，两态切换不跳变。 */
+  width: min(100%, var(--chat-content-max-width, 900px));
   align-items: stretch;
   gap: 14px;
   margin-top: 0;
@@ -578,15 +580,12 @@
   .chat-main-empty[data-empty-theme] {
     padding-top: 104px;
   }
-
-  .chat-main-empty[data-empty-theme] .single-empty-hero {
-    width: min(780px, 100%);
-  }
 }
 
 @media (max-width: 720px) {
   .chat-main-empty[data-empty-theme] {
-    padding: 118px 12px 12px;
+    /* 无水平 padding（与 .chat-main-active 同基准）；底部 14px 与有内容态对齐 */
+    padding: 118px 0 14px;
     overflow-y: auto;
   }
 
@@ -619,7 +618,8 @@
 @media (max-height: 760px) and (min-width: 721px) {
   .chat-main-empty[data-empty-theme] {
     padding-top: 82px;
-    padding-bottom: 12px;
+    /* 与 .chat-main-active 的 14px 底距对齐，避免两态切换时输入框垂直跳变 */
+    padding-bottom: 14px;
   }
 
   .chat-main-empty[data-empty-theme] .single-empty-hero {

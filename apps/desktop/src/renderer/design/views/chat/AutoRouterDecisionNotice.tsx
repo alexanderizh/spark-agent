@@ -56,9 +56,9 @@ export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDec
       <span className="model-switch-notice-line" />
       <span className="model-switch-notice-content">
         {degraded || mismatched || healthAvoided ? (
-          <TriangleAlert aria-hidden size={16} strokeWidth={1.8} />
+          <TriangleAlert aria-hidden size={14} strokeWidth={1.4} />
         ) : (
-          <Shuffle aria-hidden size={16} strokeWidth={1.8} />
+          <Shuffle aria-hidden size={14} strokeWidth={1.4} />
         )}
         <span className="auto-router-notice-detail" tabIndex={0} aria-describedby={tooltipId}>
           <span className="auto-router-notice-summary">
@@ -67,7 +67,7 @@ export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDec
               className="auto-router-notice-model"
               style={{ color: INTENSITY_COLOR[decision.intensity] }}
             >
-              ●{INTENSITY_LABEL[decision.intensity]} {modelName}
+                {modelName} {INTENSITY_LABEL[decision.intensity]}
             </span>
             {decision.reason.length > 0 ? (
               <span className="auto-router-notice-reason"> · {decision.reason}</span>

@@ -8670,11 +8670,11 @@ function ToolLogsMasterToggle({
   // 不带绿色对勾（thinking-done-badge）与 spinner，保留 chevron 箭头按展开状态旋转。
   // 自身也挂 thinking-section，故隐藏规则须用 :not(.tool-logs-master) 排除自身。
   const durationSuffix = durationMs != null ? formatTurnDuration(durationMs) : null
-  const label = durationSuffix == null ? '思考和工具日志' : `耗时 ${durationSuffix}`
+  const label = durationSuffix == null ? '思考和工具日志' : `用时 ${durationSuffix}`
   return (
     <div className={`thinking-section tool-logs-master ${open ? 'open' : ''}`}>
       <button className="thinking-toggle" onClick={onToggle} aria-expanded={open}>
-        <ActivityLogSummaryIcon icon={Wrench} className="thinking-icon" />
+        {/* <ActivityLogSummaryIcon icon={Wrench} className="thinking-icon" /> */}
         <span className="thinking-label">{label}</span>
         <Icons.ChevronRight size={13} className={`chev ${open ? 'chev-open' : ''}`} />
       </button>

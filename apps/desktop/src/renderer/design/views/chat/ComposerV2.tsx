@@ -4548,7 +4548,7 @@ export function ComposerV2({
           {effectiveDebugMode && session != null && (
             <div className="composer-debug-quickreplies" aria-label="调试快捷回复">
               <span className="composer-debug-quickreplies-label">
-                <Icons.Bug size={12} /> 调试
+                <Icons.Bug size={12} style={{ marginTop: 2 }} />
               </span>
               <button
                 type="button"
@@ -4845,19 +4845,7 @@ export function ComposerV2({
             onChange={handleReasoningChange}
             onFastModeChange={handleFastModeChange}
           />
-          <button
-            type="button"
-            className={`composer-debug-toggle ${effectiveDebugMode ? 'is-active' : ''}`}
-            title={
-              effectiveDebugMode
-                ? '调试模式已开启：agent 可插桩、收集复现日志并迭代修复。点击关闭'
-                : '开启调试模式：假设驱动 + 人在回路的 bug 排查'
-            }
-            onClick={() => void handleToggleDebugMode()}
-          >
-            <Icons.Bug size={15} style={{ marginTop: 2 }} />
-            {/* <span>调试{effectiveDebugMode ? '中' : ''}</span> */}
-          </button>
+
           <SessionWorkflowPicker
             sessionId={session?.id ?? null}
             draftBinding={draftWorkflowBinding}
@@ -4900,6 +4888,19 @@ export function ComposerV2({
           )}
           <div className="spacer" />
           <div className="composer-param-tail">
+            <button
+              type="button"
+              className={`composer-debug-toggle ${effectiveDebugMode ? 'is-active' : ''}`}
+              title={
+                effectiveDebugMode
+                  ? '调试模式已开启：agent 可插桩、收集复现日志并迭代修复。点击关闭'
+                  : '开启调试模式：假设驱动 + 人在回路的 bug 排查'
+              }
+              onClick={() => void handleToggleDebugMode()}
+            >
+              <Icons.Bug size={16} style={{ marginTop: 2 }} />
+              <span>Debug</span>
+            </button>
             {isNewSessionComposer && (
               <div className="composer-worktree-controls">
                 <label
@@ -5892,9 +5893,10 @@ export function ProviderModelPicker({
   // 健康是进程内易变态，只在目标 router 变化时拉一次；失败静默（卡片退回纯配置展示）。
   const hoveredAutoRouterId = hoveredAutoRouter?.id ?? null
   const { invoke: fetchExecutorHealth } = useIpcInvoke('provider:auto-router:executor-health')
-  const [autoRouterExecutorHealth, setAutoRouterExecutorHealth] = useState<
-    ReadonlyMap<string, AutoRouterExecutorHealthSnapshot> | null
-  >(null)
+  const [autoRouterExecutorHealth, setAutoRouterExecutorHealth] = useState<ReadonlyMap<
+    string,
+    AutoRouterExecutorHealthSnapshot
+  > | null>(null)
   useEffect(() => {
     if (hoveredAutoRouterId == null) return
     let disposed = false

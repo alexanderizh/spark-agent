@@ -2174,7 +2174,9 @@ body.git-review-tree-resizing {
   position: relative;
   z-index: 1;
   display: flex;
-  width: min(720px, 100%);
+  /* 720px 限宽与 24px gutter 均由父级 .chat-empty-hero-stack 统一承担，
+     此处随父级内容盒撑满，避免双重限宽把内容额外收窄 48px */
+  width: 100%;
   flex-direction: column;
   align-items: center;
   gap: 16px;
@@ -2411,8 +2413,11 @@ body.git-review-tree-resizing {
   }
 }
 
-.chat-main-active .chat-stream-inner,
-.chat-main-active .composer-inner {
+/* 内容限宽与左右 gutter 挂在两态共有的 .chat-main 上（空会话 .chat-main-empty 与
+   有内容 .chat-main-active 互斥挂在同一 div），空态与消息态切换时 composer 与
+   消息流的宽度、位置严格一致，不发生跳变。 */
+.chat-main .chat-stream-inner,
+.chat-main .composer-inner {
   width: min(100%, var(--chat-content-max-width, 900px));
   max-width: none;
   min-width: 0;
@@ -2504,12 +2509,16 @@ body.git-review-tree-resizing {
   height: 100%;
 }
 
+/* 会话内容区最大宽度：空会话与有内容会话共用同一变量（两态互斥挂在同一 .chat-main div 上），
+   保证两态切换时输入区/内容区宽度一致不跳变。窄窗口保底 900px；宽窗口按容器 82% 流式放宽
+   （两侧各留约 9% 边距），并设 1600px 可读性上限，避免宽屏下内容区两侧大片留白。
+   git-env-panel-open 的居中补偿（--git-content-max）复用同一变量，保持偏移计算与实际宽度一致。 */
+.chat-main {
+  --chat-content-max-width: max(900px, min(82%, 1600px));
+}
+
 .chat-main-active {
   padding-bottom: 14px;
-  /* 会话内容区最大宽度：窄窗口保底 900px；宽窗口按容器 82% 流式放宽（两侧各留约 9% 边距），
-     并设 1600px 可读性上限，避免宽屏下内容区两侧大片留白。
-     git-env-panel-open 的居中补偿（--git-content-max）复用同一变量，保持偏移计算与实际宽度一致。 */
-  --chat-content-max-width: max(900px, min(82%, 1600px));
 }
 
 /* 内容区与侧边会话区在浅色激活态下改为透明，让 .chat-layout 上的统一光晕透出，
@@ -2982,6 +2991,35 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   .composer-model-manage {
     transition: none;
   }
+}
+
+/* ─── 有内容态输入区表面：对齐空会话星图主题的主色系（ChatEmptyThemes.less） ───
+ * 空会话在 .chat-main-empty[data-empty-theme] 作用域内把输入区 token 换成主色衍生
+ * （--border → 主色 18% 透明、--composer-toolbar-bg → 主色 3% 混白），有内容态原本
+ * 走全局暖灰/中性 token（styles.css 的 --border #f6f3ec / --composer-toolbar-bg
+ * #f8f7f5），观感偏素。这里只在输入区容器 .composer-inner 内重定义这几款 token，
+ * 消息流等其他区域的边框不受影响。
+ * 暗色无需配套：空会话暗色基线本就回落到通用中性 token（见 ChatEmptyThemes.less
+ * 「输入区回到无主题时的通用暗色 token」段），有内容态暗色与其天然一致，不叠主色。
+ */
+.app.theme-light .chat-main-active .composer-inner {
+  --border: color-mix(in srgb, var(--primary) 18%, transparent);
+  --divider: color-mix(in srgb, var(--border) 74%, transparent);
+  --composer-toolbar-bg: color-mix(in srgb, var(--primary) 3%, var(--panel));
+}
+
+/* 输入卡片描边：同空会话卡片边框公式 color-mix(var(--eh-accent) 19%, var(--eh-line))
+ * （--eh-accent ≡ --primary，--eh-line ≡ 上方重定义后的 --border）。有内容态卡片原本
+ * 无 border（views.css .composer 的 border 为注释态），故用等位 shadow 环上色，
+ * 不引入真实 border，卡片几何零变化。团队模式与会话参考拖拽态有各自的专属
+ * box-shadow，排除在外。 */
+.app.theme-light
+  .chat-main-active
+  .composer-inner
+  > .composer.composer-v2:not(.composer-team-mode):not(.is-session-reference-drop-active) {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--primary) 19%, var(--border)),
+    var(--shadow-md);
 }
 
 /* ─── 参数选择栏：宽度不够时由 React 测量并隐藏低优先级控件 ───
@@ -4075,13 +4113,14 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   align-items: center;
   gap: 4px;
   font-size: 13px;
-  padding: 0px 8px;
+  padding: 0 6px;
   border-radius: 6px;
   border: 0;
   background: transparent;
   justify-content: center;
   height: 29px;
-  // width: 79px;
+  /* 与右侧 .session-workflow-trigger 同规：图标钮定宽 29px，按钮盒对齐 */
+  // width: 29px;
   cursor: pointer;
   color: var(--text-secondary, #888);
   user-select: none;
@@ -4201,6 +4240,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   align-items: center;
   gap: 18px;
   width: min(560px, 100%);
+  /* 自带 24px gutter（与 .composer-inner 一致），窄窗口下与输入框左右边缘对齐 */
+  box-sizing: border-box;
+  padding-inline: 24px;
   text-align: center;
 }
 

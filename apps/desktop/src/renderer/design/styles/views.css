@@ -427,7 +427,9 @@ body.sidebar-resizing {
   background: color-mix(in srgb, var(--text) 3%, transparent);
 }
 .chat-item.active {
-  background: color-mix(in srgb, var(--text) 5%, transparent);
+  /* 选中态改用主色 soft 底（--selected = --primary-soft），替换原中性 5% 黑，
+     让当前会话在列表里被主色「点亮」而非只是变灰。 */
+  background: var(--selected);
   border-color: transparent;
   box-shadow: none;
 }
@@ -484,7 +486,8 @@ body.sidebar-resizing {
   color: var(--sidebar-text, var(--text));
 }
 .chat-item-compact.active .chat-item-title-compact {
-  /* color: var(--primary); */
+  /* 选中态标题跟随主色，与主色 soft 底配套 */
+  color: var(--primary);
 }
 .chat-item-compact .chat-item-title-compact.session-title-small {
   font-size: var(--font-sm);
@@ -2989,12 +2992,18 @@ body.sidebar-resizing {
   align-items: center;
   justify-content: flex-start;
   gap: 0;
-  padding: 48px 24px 16px;
+  /* 不设水平 padding：与 .chat-main-active 保持同一可用宽度基准，
+     由 .composer-inner 与 hero-stack 各自的 24px gutter 提供边距，
+     两态切换时输入框宽度、位置一致不跳变。底部 14px 与 .chat-main-active 对齐。 */
+  padding: 48px 0 14px;
 }
 
 /* hero 模式下：把 ChatStream 整个从视觉上移除 —— Migrated to ChatView.less. */
 
-/* 欢迎内容只占用输入区以外的剩余空间。 */
+/* 欢迎内容只占用输入区以外的剩余空间。不在此处设水平 padding：
+   --chat-content-max-width 中的 82% 以包含块宽度解析，hero 若在带 padding 的
+   父级内取 100% 会与 .composer-inner（基准为整宽）错开约 0.82×padding 的宽度，
+   因此左右 gutter 由 hero-stack 自身的 padding-inline 提供。 */
 .chat-empty-content {
   position: relative;
   z-index: 1;
@@ -3022,24 +3031,20 @@ body.sidebar-resizing {
   gap: 8px;
 }
 
-/* hero 模式下：composer 保持居中宽度并贴在内容区底部。 */
-.chat-main-empty .chat-hero-composer,
+/* hero 模式下：composer 贴在内容区底部。不再在此处限宽——宽度约束交给
+   .composer-inner 的统一限宽规则（.chat-main 作用域，与有内容会话共用），
+   保证两态切换时输入框宽度、位置不跳变。 */
 .chat-main-empty .composer-wrap {
   width: 100%;
-  max-width: 880px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-}
-.chat-main-empty .composer-wrap {
   background: transparent;
   min-width: 0;
   flex-shrink: 0;
 }
 .chat-main-empty .composer-inner {
-  padding-inline: 0;
   padding-bottom: 0;
-  max-width: 100%;
 }
 /* .chat-main-empty .composer-inner > .composer.composer-v2 {
   box-shadow:
@@ -3079,10 +3084,6 @@ body.sidebar-resizing {
   .chat-layout {
     --chat-main-min-width: 0px;
     overflow-x: hidden;
-  }
-
-  .chat-main-empty {
-    padding-inline: 8px;
   }
 
   .chat-main-empty .composer-v2 .composer-input-shell {
