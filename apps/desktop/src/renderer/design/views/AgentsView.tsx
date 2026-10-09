@@ -20,6 +20,7 @@ import { AgentHooksSection } from './hooks/AgentHooksSection'
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
+import { RuleCreateModal } from '../components/RuleCreateModal'
 import { getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
 import { DEFAULT_AGENT_AVATAR_ID } from '../builtinAvatars'
 import { TeamsPanel } from './TeamsPanel'
@@ -272,6 +273,7 @@ function AgentsTabContent({
   const [pendingNew, setPendingNew] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showSkillPicker, setShowSkillPicker] = useState(false)
+  const [showRuleCreator, setShowRuleCreator] = useState(false)
   const [filterTab, setFilterTab] = useState<AgentFilterTab>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortKey, setSortKey] = useState<AgentSortKey>('updated-desc')
@@ -320,6 +322,7 @@ function AgentsTabContent({
   const { invoke: listSkills } = useIpcInvoke('skill:list')
   const { invoke: listMcp } = useIpcInvoke('mcp:list')
   const { invoke: listRules } = useIpcInvoke('rules:list')
+  const { invoke: createRule } = useIpcInvoke('rules:create')
   const { invoke: listWorkflows } = useIpcInvoke('workflow:list')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
@@ -328,22 +331,17 @@ function AgentsTabContent({
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const [agentRes, providerRes, skillRes, mcpRes, ruleRes, workflowRes] =
-        await Promise.all([
-          listAgents({ includeDisabled: true }),
-          listProviders({}),
-          listSkills({}),
-          listMcp({}),
-          listRules({}),
-          listWorkflows({ includeArchived: true }),
-        ])
+      const [agentRes, providerRes, skillRes, mcpRes, ruleRes, workflowRes] = await Promise.all([
+        listAgents({ includeDisabled: true }),
+        listProviders({}),
+        listSkills({}),
+        listMcp({}),
+        listRules({}),
+        listWorkflows({ includeArchived: true }),
+      ])
       setAgents(agentRes.agents)
       onAgentsChange?.(agentRes.agents)
-      setProviders(
-        providerRes.profiles.filter(
-          (provider) => !isMediaProviderProfile(provider),
-        ),
-      )
+      setProviders(providerRes.profiles.filter((provider) => !isMediaProviderProfile(provider)))
       setSkills(skillRes.skills)
       setMcpServers(mcpRes.servers)
       setRules(ruleRes.rules)
@@ -370,15 +368,7 @@ function AgentsTabContent({
     } finally {
       setLoading(false)
     }
-  }, [
-    listAgents,
-    listMcp,
-    listProviders,
-    listRules,
-    listSkills,
-    listWorkflows,
-    onAgentsChange,
-  ])
+  }, [listAgents, listMcp, listProviders, listRules, listSkills, listWorkflows, onAgentsChange])
 
   useRefreshable(refresh)
 
@@ -413,10 +403,7 @@ function AgentsTabContent({
   const selectedProvider = providers.find((p) => p.id === draft.providerProfileId)
   const lockedAdapter = getLockedAgentAdapterForProvider(selectedProvider)
   const effectiveAgentAdapter = lockedAdapter ?? draft.agentAdapter
-  const modelOptions = useMemo(
-    () => getAgentModelOptions(selectedProvider),
-    [selectedProvider],
-  )
+  const modelOptions = useMemo(() => getAgentModelOptions(selectedProvider), [selectedProvider])
   const allowModelOverride = shouldAllowAgentModelOverride(selectedProvider)
   const activeWorkflow = workflows.find((w) => w.id === draft.workflowId)
   const quickChatProjects = useMemo(
@@ -441,6 +428,36 @@ function AgentsTabContent({
   const updateDraft = <K extends keyof AgentDraft>(key: K, value: AgentDraft[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }))
   }
+
+  // 就地新建规则：成功后仅刷新规则列表并自动勾选进当前草稿（保存 Agent 后关联生效）。
+  // 注意不能调 refresh()——它会用已保存的 Agent 重置 draft，覆盖用户正在编辑的内容。
+  const handleCreateRule = useCallback(
+    async (input: { name: string; content: string; priority: number }) => {
+      const res = await createRule({
+        scope: 'user',
+        name: input.name,
+        content: input.content,
+        priority: input.priority,
+      })
+      const ruleRes = await listRules({})
+      setRules(ruleRes.rules)
+      setDraft((prev) =>
+        prev.ruleIds.includes(res.rule.id)
+          ? prev
+          : { ...prev, ruleIds: [...prev.ruleIds, res.rule.id] },
+      )
+      toast.success(`规则「${res.rule.name}」已创建并勾选`)
+      setShowRuleCreator(false)
+    },
+    [createRule, listRules, toast],
+  )
+
+  // 深链到 设置 → 规则：先写 settingsSection 再切视图。Agent 编辑为脏时导航守卫
+  // 会先弹「放弃未保存的修改？」确认，由用户决定是否离开。
+  const openRulesSettings = useCallback(() => {
+    setTweak('settingsSection', 'rules')
+    setTweak('view', 'settings')
+  }, [setTweak])
 
   const closeQuickChatPicker = useCallback(() => {
     if (quickChatBusy) return
@@ -1570,6 +1587,25 @@ function AgentsTabContent({
             title="规则"
             count={countExistingRefs(draft.ruleIds, rules)}
             description="约束 Agent 的行为与输出"
+            actions={
+              <button
+                type="button"
+                className="agent-config-action-btn"
+                onClick={() => setShowRuleCreator(true)}
+              >
+                <Icons.Plus size={12} /> 新增规则
+              </button>
+            }
+            footer={
+              <button
+                type="button"
+                className="agent-config-link"
+                onClick={openRulesSettings}
+                title="打开 设置 → 规则（可编辑、启停、删除全部作用域的规则）"
+              >
+                <Icons.ListTodo size={12} /> 管理规则
+              </button>
+            }
           >
             {rules.length > 0 ? (
               <PickList
@@ -1578,7 +1614,9 @@ function AgentsTabContent({
                 onChange={(ids) => updateDraft('ruleIds', ids)}
               />
             ) : (
-              <div className="agent-config-empty">暂无可用规则</div>
+              <div className="agent-config-empty">
+                暂无可用规则，点右上角「新增规则」创建，或前往 设置 → 规则 管理
+              </div>
             )}
           </ConfigSection>
 
@@ -1598,6 +1636,11 @@ function AgentsTabContent({
         onChange={(ids) => updateDraft('skillIds', ids)}
         onConfirm={() => setShowSkillPicker(false)}
         onClose={() => setShowSkillPicker(false)}
+      />
+      <RuleCreateModal
+        visible={showRuleCreator}
+        onClose={() => setShowRuleCreator(false)}
+        onSubmit={handleCreateRule}
       />
     </div>
   )
@@ -1817,7 +1860,11 @@ function AgentCard({
       : agent.modelId?.trim() ||
         provider?.defaultModel ||
         provider?.modelIds[0] ||
-        (agent.agentAdapter === 'codex' ? 'Codex' : agent.agentAdapter === 'spark' ? 'Spark' : 'Claude')
+        (agent.agentAdapter === 'codex'
+          ? 'Codex'
+          : agent.agentAdapter === 'spark'
+            ? 'Spark'
+            : 'Claude')
   const skillCount = countExistingRefs(agent.skillIds, skills)
   const ruleCount = countExistingRefs(agent.ruleIds, rules)
   const hasMetaTags = agent.isDefault || skillCount > 0 || workflow != null || ruleCount > 0
@@ -2134,12 +2181,15 @@ function ConfigSection({
   title,
   count,
   description,
+  actions,
   footer,
   children,
 }: {
   title: string
   count?: number
   description?: string
+  /** 头部右侧动作位（如「新增」入口），与标题同行、靠右对齐 */
+  actions?: ReactNode
   /** 卡片底部链接 / 按钮 */
   footer?: ReactNode
   children?: ReactNode
@@ -2147,8 +2197,11 @@ function ConfigSection({
   return (
     <section className="agent-config-section">
       <div className="agent-config-head">
-        <span className="agent-config-title">{title}</span>
-        {count != null && <span className="agent-config-count">{count}</span>}
+        <div className="agent-config-head-main">
+          <span className="agent-config-title">{title}</span>
+          {count != null && <span className="agent-config-count">{count}</span>}
+        </div>
+        {actions != null && <div className="agent-config-actions">{actions}</div>}
       </div>
       {description != null && <p className="agent-config-desc">{description}</p>}
       {children}

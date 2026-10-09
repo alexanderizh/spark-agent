@@ -949,6 +949,45 @@
   min-height: 20px;
   font-weight: 650;
 }
+.agent-config-head-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.agent-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.agent-config-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  color: var(--primary);
+  background: transparent;
+  border: none;
+  padding: 3px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 0.12s ease;
+  white-space: nowrap;
+}
+.agent-config-action-btn:hover {
+  background: var(--primary-soft);
+}
+.agent-config-action-btn:focus-visible {
+  outline: none;
+  background: var(--primary-soft);
+}
+.agent-config-action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .agent-pick-list {
   display: flex;
   flex-wrap: wrap;

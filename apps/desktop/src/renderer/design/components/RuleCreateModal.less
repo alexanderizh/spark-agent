@@ -1,0 +1,159 @@
+// ============================================================
+//  RuleCreateModal — Agent 编辑面板「新增规则」轻量表单弹窗
+// ============================================================
+
+.rule-create-modal {
+  width: 560px;
+  max-width: calc(100vw - 32px);
+
+  // 去掉默认 header/footer，改用自定义结构
+  .ant-modal-header,
+  .ant-modal-footer {
+    display: none;
+  }
+
+  .ant-modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 48px);
+    overflow: hidden;
+    border-radius: 12px;
+  }
+
+  .ant-modal-body {
+    padding: 0;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+}
+
+// ---------- Header ----------
+.rule-create-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px 20px 12px;
+  flex-shrink: 0;
+}
+
+.rule-create-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+
+  > span:first-of-type {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text-1);
+    line-height: 1.4;
+  }
+}
+
+.rule-create-subtitle {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-3);
+  line-height: 1.4;
+}
+
+.rule-create-close-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-3);
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--color-fill-2);
+    color: var(--color-text-1);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+}
+
+// ---------- Body（表单） ----------
+.rule-create-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 20px 16px;
+}
+
+.rule-create-error {
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--color-error, #e5484d);
+  background: color-mix(in srgb, var(--color-error, #e5484d) 10%, transparent);
+}
+
+.rule-create-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-2);
+
+  > span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    font-weight: 600;
+  }
+}
+
+.rule-create-field-sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-3);
+}
+
+// ---------- Footer ----------
+.rule-create-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--color-border-secondary, rgba(5, 5, 5, 0.06));
+}
+
+.rule-create-footer-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+// 窄屏：提示文字换行、按钮组保持右侧
+@media (max-width: 600px) {
+  .rule-create-footer {
+    flex-wrap: wrap;
+  }
+
+  .rule-create-footer-hint {
+    flex-basis: 100%;
+  }
+}
