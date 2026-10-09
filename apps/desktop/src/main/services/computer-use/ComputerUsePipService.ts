@@ -68,6 +68,8 @@ export class ComputerUsePipService {
     | undefined
   private window: BrowserWindow | null = null
   private disposed = false
+  /** Last user-dragged position, reused so recreations don't snap back. */
+  private lastWindowPosition: { x: number; y: number } | null = null
   /** Terminal sessions linger briefly so the user sees the final status. */
   private readonly retireTimers = new Set<NodeJS.Timeout>()
   /** Newest projection snapshot; also picks the session the preview follows. */
@@ -155,11 +157,26 @@ export class ComputerUsePipService {
     const workArea = screen.getPrimaryDisplay().workArea
     const width = 316
     const height = 208
+    // Reuse the position the user dragged the panel to in a previous
+    // incarnation, clamped into the current work area so it never reopens
+    // off-screen (display change, resolution change, etc.).
+    const start = this.lastWindowPosition ?? {
+      x: workArea.x + workArea.width - width - 16,
+      y: workArea.y + workArea.height - height - 16,
+    }
+    const x = Math.min(
+      Math.max(start.x, workArea.x),
+      workArea.x + Math.max(0, workArea.width - width),
+    )
+    const y = Math.min(
+      Math.max(start.y, workArea.y),
+      workArea.y + Math.max(0, workArea.height - height),
+    )
     const window = new BrowserWindow({
       width,
       height,
-      x: workArea.x + workArea.width - width - 16,
-      y: workArea.y + workArea.height - height - 16,
+      x,
+      y,
       frame: false,
       transparent: true,
       resizable: false,
@@ -196,6 +213,13 @@ export class ComputerUsePipService {
       .catch(() => undefined)
     window.on('closed', () => {
       if (this.window === window) this.window = null
+    })
+    // The panel drags via the -webkit-app-region: drag CSS region; remember
+    // where the user parked it for the next incarnation.
+    window.on('moved', () => {
+      if (window.isDestroyed()) return
+      const bounds = window.getBounds()
+      this.lastWindowPosition = { x: bounds.x, y: bounds.y }
     })
     this.window = window
     return window
@@ -317,9 +341,12 @@ function stringify(error: unknown): string {
  * The panel body: pure inline HTML/CSS/JS, no external assets. Dark card on
  * any desktop; updates arrive via `__sparkPipUpdate(stateArray)` (status) and
  * `__sparkPipFrame(dataUrl)` (preview). Commands leave the page through
- * denied window.open navigations on the spark-pip:// scheme.
+ * denied window.open navigations on the spark-pip:// scheme. The whole card
+ * is a -webkit-app-region drag area so the user can park it anywhere; the
+ * control buttons opt out via no-drag to stay clickable. Exported for the
+ * static CSS assertions in ComputerUsePipService.test.ts.
  */
-const PIP_HTML = `<!doctype html>
+export const PIP_HTML = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -334,6 +361,9 @@ const PIP_HTML = `<!doctype html>
     -webkit-backdrop-filter: blur(14px);
     border: 1px solid rgba(255, 255, 255, 0.12);
     color: #e8e8ec;
+    -webkit-app-region: drag;
+    user-select: none;
+    cursor: default;
   }
   .head { display: flex; align-items: center; gap: 7px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
@@ -358,6 +388,7 @@ const PIP_HTML = `<!doctype html>
     appearance: none; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.07);
     color: rgba(255,255,255,0.85); border-radius: 7px; padding: 4px 9px; font-size: 11px; line-height: 1;
     cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+    -webkit-app-region: no-drag;
   }
   .btn:hover { background: rgba(255,255,255,0.15); }
   .btn:active { background: rgba(255,255,255,0.22); }
