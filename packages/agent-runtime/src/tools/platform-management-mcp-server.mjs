@@ -2579,6 +2579,14 @@ async function handleToolCall(name, args) {
     rpcArgs.sessionId = SESSION_ID
   }
 
+  // Skills tools: attach the session id (from env, never model-provided) so the
+  // bridge can scope skills_list/skills_load to this session's effective skill
+  // face. Stay lenient on a missing id — the bridge falls back to its unscoped
+  // legacy behavior (platform UI calls never carry one).
+  if ((name === 'skills_list' || name === 'skills_load') && SESSION_ID) {
+    rpcArgs.sessionId = SESSION_ID
+  }
+
   try {
     const data = await rpc(method, rpcArgs)
     return {

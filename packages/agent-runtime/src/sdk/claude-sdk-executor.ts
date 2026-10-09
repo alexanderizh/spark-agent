@@ -849,8 +849,9 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
         ...(config.skillPlugins != null && config.skillPlugins.length > 0
           ? { plugins: config.skillPlugins.map((p) => ({ type: 'local' as const, path: p })) }
           : {}),
-        // 技能上下文过滤：有托管插件时放行全部（已在插件目录内按"启用"过滤）；
-        // 否则省略该选项（走 skills_load 工具路径），不要传 [] —— 空数组会关闭全部技能。
+        // 技能上下文过滤：`nativeSkills` 为 'all' 或生效技能名单（白名单模式下由
+        // SessionService 传入，SDK 语义：未列出技能从目录隐藏且被 Skill 工具拒绝）。
+        // 数组为空是合法语义（agent 生效技能为空 = 关闭全部原生技能），勿"修复"掉。
         ...(config.nativeSkills != null ? { skills: config.nativeSkills } : {}),
         toolConfig: {
           askUserQuestion: { previewFormat: 'html' },

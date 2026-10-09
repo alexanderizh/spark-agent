@@ -500,7 +500,9 @@ export function TeamInspectorSection({
                   </div>
                   <div className="team-roster-detail-row">
                     <span className="team-roster-detail-k">MCP</span>
-                    <span className="team-roster-detail-v">自动</span>
+                    <span className="team-roster-detail-v">
+                      {agent.mcpCount && agent.mcpCount > 0 ? `已选 ${agent.mcpCount} 项` : '全部（默认）'}
+                    </span>
                   </div>
                 </div>
               )}

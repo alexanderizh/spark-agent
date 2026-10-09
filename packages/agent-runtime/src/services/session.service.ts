@@ -445,6 +445,12 @@ import {
   formatWorkflowMcpToolResult,
   formatWorkflowPlatformToolResult,
 } from './session-workflow-helpers.js'
+import {
+  agentMcpSelectionSignature,
+  shouldMountBuiltinMcp,
+  splitAgentMcpSelection,
+} from './agent-mcp-policy.js'
+import { buildNativeSkillsFilter } from './native-skill-filter.js'
 import { MediaPresentationCollector } from './media/media-presentation-collector.js'
 export {
   buildWorkflowAtomicInstruction,
@@ -485,7 +491,7 @@ import {
   BROWSER_AUTOMATION_SYSTEM_PROMPT,
   BROWSER_TOOL_NAMES,
 } from './browser-automation-prompt.js'
-import { RuntimeCompositionService } from './runtime-composition.service.js'
+import { RuntimeCompositionService, type RuntimeSkillConfig } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { SessionQuestionGate } from './session-question-gate.js'
@@ -1165,12 +1171,43 @@ export class SessionService {
 
   /**
    * Increments whenever any MCP server is created/updated/deleted/started/stopped/
-   * changes its tool list. Compared against `lastBuiltMcpVersion` at SDK turn build
-   * time so that a change forces the next turn to start a fresh SDK query (i.e.
-   * `continueSession: false`), bypassing the SDK's frozen tool list snapshot.
+   * changes its tool list. Snapshotted per session in `lastBuiltMcpFaces` at SDK
+   * turn build time so that a change forces the next turn to start a fresh SDK
+   * query (i.e. `continueSession: false`), bypassing the SDK's frozen tool list
+   * snapshot.
    */
   private mcpVersion = 0
-  private lastBuiltMcpVersion = -1
+  /**
+   * 每 SDK/Codex 会话最近一次构建时的 MCP 快照面（服务表版本 + 该会话 agent 的
+   * MCP 选择签名，resume 快照保护，见计划 7.8）。必须按 sessionId 存储：
+   * SessionService 是进程级单例，若挂在实例字段上，多个会话交替执行时会互相
+   * 污染签名，导致每轮都误判「选择变化」强制重建、resume 连续性永久失效
+   * （审查 H-1）。LRU 有界防长期泄漏；条目极小，会话终态由淘汰兜底。
+   */
+  private readonly lastBuiltMcpFaces = new Map<
+    string,
+    { mcpVersion: number; agentMcpSignature: string }
+  >()
+
+  /**
+   * resume 快照保护（计划 7.8）：MCP 服务表版本或该会话 agent 的 MCP 选择签名
+   * 相比上次构建发生变化时返回 true（调用方置 `continueSession: false` 强制重建
+   * 会话）。读取即刷新（LRU touch）。
+   */
+  private shouldRebuildSdkSession(sessionId: string, agentMcpSignature: string): boolean {
+    const prev = this.lastBuiltMcpFaces.get(sessionId)
+    const shouldRebuild =
+      prev == null ||
+      prev.mcpVersion !== this.mcpVersion ||
+      prev.agentMcpSignature !== agentMcpSignature
+    if (prev != null) this.lastBuiltMcpFaces.delete(sessionId)
+    this.lastBuiltMcpFaces.set(sessionId, { mcpVersion: this.mcpVersion, agentMcpSignature })
+    if (this.lastBuiltMcpFaces.size > 128) {
+      const oldest = this.lastBuiltMcpFaces.keys().next().value
+      if (oldest != null) this.lastBuiltMcpFaces.delete(oldest)
+    }
+    return shouldRebuild
+  }
 
   private getTeamDispatchService(): TeamDispatchService {
     if (this.teamDispatchService == null) {
@@ -4029,31 +4066,70 @@ export class SessionService {
       },
     )
     runtimeMetrics.markMcpConfigurationStarted()
-    const mediaGenerationContext =
-      await this.getMcpTooling().resolveMediaGenerationContext(workspaceRootPath)
+    // P5 缝隙(b)：注册本 turn 生效技能面（与提示词目录同源），供 bridge 对
+    // skills_list / skills_load 做会话级收敛与越权拒绝；内置平台管理 agent
+    // 豁免（D8：repo 已强制其技能面）。注册失败不影响会话主链路。
+    try {
+      this.getPlatformBridge().registerSessionSkillFace(
+        sessionId,
+        runtimeContext.skillConfig.effectiveSkillIds,
+        { reset: true, exempt: runtimeAgent.builtIn === true },
+      )
+    } catch {
+      // bridge 未启动等场景：回落现状（skills 工具无会话面约束）
+    }
+    // Agent 级 MCP 选择（「空=全量、部分点选=白名单」，见 agent-mcp-policy.ts）：
+    // 共享段一次解析、三路径共用；可选档重型内置在此统一门控（未勾选即不
+    // resolve，省子进程），提示词段与 allowedTools 随实际挂载自动收敛。
+    const agentMcpSelection = splitAgentMcpSelection(runtimeAgent.mcpServerIds)
+    const mediaGenerationContext = shouldMountBuiltinMcp(
+      'spark_media',
+      adapterKind,
+      agentMcpSelection,
+    )
+      ? await this.getMcpTooling().resolveMediaGenerationContext(workspaceRootPath)
+      : null
     const imageGenerationContext =
-      mediaGenerationContext == null
+      mediaGenerationContext == null &&
+      shouldMountBuiltinMcp('spark_image', adapterKind, agentMcpSelection)
         ? await this.getMcpTooling().resolveImageGenerationContext(workspaceRootPath)
         : null
+    // 原生技能插件可用性：claude-sdk 引擎下允许摘除 spark_platform 的前提是原生
+    // Skill 工具兜底可用（D5）；插件目录解析失败时强制保留 spark_platform 维持
+    // skills_list / skills_load 通道，避免「技能目录可见却无任何加载手段」（M-1）。
+    const nativeSkillPlugins = this.resolveNativeSkillPlugins()
     const platformMcpServer =
-      await this.getMcpTooling().resolvePlatformManagementMcpServer(sessionId)
-    const pluginRuntimeMcp = await this.resolvePluginRuntimeMcpServer(
-      turnId,
-      usePersistentCodexAppServer ? codexRuntimeLeaseKey : undefined,
-      {
-        sessionId,
-        turnId,
-        ...(primaryWorkspaceId != null ? { projectId: primaryWorkspaceId } : {}),
-        agentId: runtimeAgent.id,
-        ...(workflow?.id != null ? { workflowId: workflow.id } : {}),
-      },
+      shouldMountBuiltinMcp('spark_platform', adapterKind, agentMcpSelection) ||
+      (adapterKind === 'claude-sdk' && nativeSkillPlugins == null)
+        ? await this.getMcpTooling().resolvePlatformManagementMcpServer(sessionId)
+        : null
+    const pluginRuntimeMcp = shouldMountBuiltinMcp(
+      'spark_plugins',
+      adapterKind,
+      agentMcpSelection,
     )
-    const webSearchMcpServer =
-      await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
-    const subAppMcpServer = await this.getMcpTooling().resolveSubAppMcpServer(
-      sessionId,
-      workspaceRootPath,
+      ? await this.resolvePluginRuntimeMcpServer(
+          turnId,
+          usePersistentCodexAppServer ? codexRuntimeLeaseKey : undefined,
+          {
+            sessionId,
+            turnId,
+            ...(primaryWorkspaceId != null ? { projectId: primaryWorkspaceId } : {}),
+            agentId: runtimeAgent.id,
+            ...(workflow?.id != null ? { workflowId: workflow.id } : {}),
+          },
+        )
+      : null
+    const webSearchMcpServer = shouldMountBuiltinMcp(
+      'spark_search',
+      adapterKind,
+      agentMcpSelection,
     )
+      ? await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
+      : null
+    const subAppMcpServer = shouldMountBuiltinMcp('spark_app', adapterKind, agentMcpSelection)
+      ? await this.getMcpTooling().resolveSubAppMcpServer(sessionId, workspaceRootPath)
+      : null
     // 语音会话应用控制（spark_voice）：仅语音路由绑定会话 resolve 出 server；
     // 同时注入使用引导 prompt（挂载成功的 turn 才有）
     const voiceControlMcpServer = await this.getMcpTooling()
@@ -4070,11 +4146,15 @@ export class SessionService {
       ? await this.getMcpTooling().resolveDebugMcpServer(sessionId, workspaceRootPath)
       : null
     const browserAutomationMcpServer =
-      this.browserAutomationMcpProvider != null
+      this.browserAutomationMcpProvider != null &&
+      shouldMountBuiltinMcp('spark_browser', adapterKind, agentMcpSelection)
         ? await this.browserAutomationMcpProvider(sessionId, workspaceRootPath)
         : null
     let computerUseMcp: Awaited<ReturnType<ComputerUseMcpProvider>> = null
-    if (this.computerUseMcpProvider != null) {
+    if (
+      shouldMountBuiltinMcp('spark_computer', adapterKind, agentMcpSelection) &&
+      this.computerUseMcpProvider != null
+    ) {
       try {
         computerUseMcp = await this.computerUseMcpProvider(sessionId, workspaceRootPath, {
           turnId,
@@ -4751,12 +4831,23 @@ export class SessionService {
           ? { skillSystemPrompt: composedSkillSystemPrompt }
           : {}),
         ...(runtimeContext.customEnv != null ? { customEnv: runtimeContext.customEnv } : {}),
-        ...((): { skillPlugins?: string[]; nativeSkills?: 'all' } => {
+        ...((): { skillPlugins?: string[]; nativeSkills?: string[] | 'all' } => {
           // Claude 原生渐进式披露：以本地插件加载托管技能目录，SDK 注入 name+desc
-          // 并提供原生 Skill 工具自主加载完整指令。失败/无插件时回落 skills_load 工具。
-          const plugins = this.resolveNativeSkillPlugins()
-          return plugins != null ? { skillPlugins: plugins, nativeSkills: 'all' } : {}
+          // 并提供原生 Skill 工具自主加载完整指令。失败/无插件时回落 skills_load 工具
+          // （此时共享段已强制保留 spark_platform，见 M-1 回落）。
+          // 白名单模式下改传生效技能名单（SDK 原生语义：未列出技能从目录隐藏且被
+          // Skill 工具拒绝），与提示词目录同源收敛（native-skill-filter.ts）。
+          return nativeSkillPlugins != null
+            ? {
+                skillPlugins: nativeSkillPlugins,
+                nativeSkills: buildNativeSkillsFilter(runtimeContext.skillConfig),
+              }
+            : {}
         })(),
+        ...(agentMcpSelection.userServerIds != null
+          ? { agentMcpAllowList: agentMcpSelection.userServerIds }
+          : {}),
+        agentMcpSelectionSignature: agentMcpSelectionSignature(runtimeAgent.mcpServerIds),
         ...(imageGenerationContext != null
           ? { imageGenerationMcpServer: imageGenerationContext.mcpServer }
           : {}),
@@ -4988,7 +5079,9 @@ export class SessionService {
         sessionRepo.updateStatus(sessionId, 'error')
         return
       }
-      const sparkCustomMcpServers = await this.getMcpTooling().buildMcpServersForSDK()
+      const sparkCustomMcpServers = await this.getMcpTooling().buildMcpServersForSDK(
+        agentMcpSelection.userServerIds,
+      )
       const sparkMemoryMcpServer = await this.getMcpTooling().resolveSparkMemoryMcpServer(
         sessionId,
         workspaceRootPath,
@@ -5248,6 +5341,10 @@ export class SessionService {
         ? { skillSystemPrompt: composedSkillSystemPrompt }
         : {}),
       ...(runtimeContext.customEnv != null ? { customEnv: runtimeContext.customEnv } : {}),
+      ...(agentMcpSelection.userServerIds != null
+        ? { agentMcpAllowList: agentMcpSelection.userServerIds }
+        : {}),
+      agentMcpSelectionSignature: agentMcpSelectionSignature(runtimeAgent.mcpServerIds),
       ...(imageGenerationContext != null
         ? { imageGenerationMcpServer: imageGenerationContext.mcpServer }
         : {}),
@@ -5835,7 +5932,7 @@ export class SessionService {
 
     // Build MCP server config from our McpService for the SDK
     options.runtimeMetrics?.markMcpConfigurationStarted()
-    let mcpServers = await this.getMcpTooling().buildMcpServersForSDK()
+    let mcpServers = await this.getMcpTooling().buildMcpServersForSDK(config.agentMcpAllowList)
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
@@ -5963,9 +6060,12 @@ export class SessionService {
     // freezes the tool list at query start (ClaudeSDKExecutor passes mcpServers
     // into sdk.query once), so we can't mutate an in-flight session — but we can
     // guarantee the NEXT turn starts cleanly.
-    if (this.mcpVersion !== this.lastBuiltMcpVersion) {
+    // Agent MCP 选择（mcpServerIds）同样参与快照保护：选择变化时强制重建会话，
+    // 防止 resume 会话工具面漂移（计划 7.8）。按会话比对（审查 H-1）。
+    if (
+      this.shouldRebuildSdkSession(sessionId, config.agentMcpSelectionSignature ?? '')
+    ) {
       config.continueSession = false
-      this.lastBuiltMcpVersion = this.mcpVersion
     }
 
     if (this.turnRegistry.isTurnCancelled(turnId)) return
@@ -6505,7 +6605,7 @@ export class SessionService {
     }
 
     options.runtimeMetrics?.markMcpConfigurationStarted()
-    let mcpServers = await this.getMcpTooling().buildMcpServersForSDK()
+    let mcpServers = await this.getMcpTooling().buildMcpServersForSDK(config.agentMcpAllowList)
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
@@ -6657,10 +6757,12 @@ export class SessionService {
     options.runtimeMetrics?.pauseMcpConfiguration()
 
     // MCP hot-reload: same as Claude SDK path — force a fresh session if the MCP
-    // set changed since the last build.
-    if (this.mcpVersion !== this.lastBuiltMcpVersion) {
+    // set changed since the last build. Agent MCP 选择变化同样触发重建（计划 7.8，
+    // 按会话比对，审查 H-1）。
+    if (
+      this.shouldRebuildSdkSession(sessionId, config.agentMcpSelectionSignature ?? '')
+    ) {
       config.continueSession = false
-      this.lastBuiltMcpVersion = this.mcpVersion
     }
 
     const useCodexCli = config.useLocalConfig === true || config.codexCliProvider != null
@@ -8564,7 +8666,12 @@ export class SessionService {
           node,
           configuredMember ?? hostAgent,
           workerId,
-          configuredMember != null || Array.isArray(node.config.mcpServerIds),
+          // D1（已锁定）：仅节点显式配置 mcpServerIds 才走「配置化选择」语义
+          // （显式空集 = 该成员不挂任何用户自定义 MCP；可选档内置不受影响）。
+          // subagent 绑定存量 agent（字段为空）不再误入空集分支——agent 自身
+          // 选择由 executeMemberTurn 的 splitAgentMcpSelection「空=全量」语义
+          // 承接，主/子代理统一。
+          Array.isArray(node.config.mcpServerIds),
         ),
       )
     }
@@ -10070,6 +10177,9 @@ export class SessionService {
     let memberCustomEnv: Record<string, string> | undefined
     let memberEnvPrompt = ''
     let memberSkillSystemPrompt: string | undefined
+    // 成员生效技能配置（nativeSkills 列表过滤同源用，P4；compose 失败时保持
+    // undefined → 回落 'all' 与旧行为一致）。
+    let memberSkillConfig: RuntimeSkillConfig | undefined
     let memberRulesPrompt: string | undefined
     try {
       memberRulesPrompt = buildRuntimeRulesPrompt(
@@ -10105,6 +10215,18 @@ export class SessionService {
       )
       if (memberRuntimeContext.customEnv != null) {
         memberCustomEnv = memberRuntimeContext.customEnv
+      }
+      memberSkillConfig = memberRuntimeContext.skillConfig
+      // P5：member 生效面并集注册（与 host 的面可能不同，并集防误杀并行成员的
+      // 合法加载；host turn 的 reset 注册先于 member 派发发生）。独立保护，
+      // 注册失败不牵连技能提示词注入。
+      try {
+        this.getPlatformBridge().registerSessionSkillFace(
+          sessionId,
+          memberRuntimeContext.skillConfig.effectiveSkillIds,
+        )
+      } catch {
+        // bridge 未启动等场景：回落现状
       }
       if (memberRuntimeContext.envSystemPrompt != null) {
         memberEnvPrompt = memberRuntimeContext.envSystemPrompt
@@ -10237,26 +10359,47 @@ export class SessionService {
         : null
     // 显式 readonly 原子节点从空能力集开始，避免在判断前加载用户自定义（可能写入型）MCP。
     // 普通 Team/Workflow tool/mcp 成员则与 Host 一致加载已启用的应用 MCP。
+    // 节点/工作流显式配置（workflowMcpSelectionConfigured，含「显式空集」语义）原样
+    // 优先；未配置时回落 agent 自身 mcpServerIds 的统一「空=全量、部分=白名单」语义
+    // （R3 与主会话对齐，agent-mcp-policy.ts）。可选档重型内置按同一选择门控。
+    const memberMcpSelection = splitAgentMcpSelection(member.mcpServerIds)
     const workflowMcpSelection =
       member.metadata?.workflowMcpSelectionConfigured === true
         ? new Set(member.mcpServerIds)
-        : undefined
+        : memberMcpSelection.userServerIds
     let memberMcpServers = isReadonlyAtomicMember
       ? {}
       : await this.getMcpTooling().buildMcpServersForSDK(workflowMcpSelection)
     try {
       if (!isReadonlyAtomicMember) {
-        const memberWebSearchServer =
-          await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
+        const memberEngineKind = resolveEngineKind(memberAdapter)
+        const memberWebSearchServer = shouldMountBuiltinMcp(
+          'spark_search',
+          memberEngineKind,
+          memberMcpSelection,
+        )
+          ? await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
+          : null
         if (memberWebSearchServer != null) memberMcpServers.spark_search = memberWebSearchServer
-        const memberMediaContext =
-          await this.getMcpTooling().resolveMediaGenerationContext(workspaceRootPath)
+        const memberMediaContext = shouldMountBuiltinMcp(
+          'spark_media',
+          memberEngineKind,
+          memberMcpSelection,
+        )
+          ? await this.getMcpTooling().resolveMediaGenerationContext(workspaceRootPath)
+          : null
         const memberImageContext =
-          memberMediaContext == null
+          memberMediaContext == null &&
+          shouldMountBuiltinMcp('spark_image', memberEngineKind, memberMcpSelection)
             ? await this.getMcpTooling().resolveImageGenerationContext(workspaceRootPath)
             : null
+        // M-1 回落（成员路径同款）：claude-sdk 成员摘除 spark_platform 的前提是
+        // 原生技能兜底可用；插件目录解析失败时强制保留，维持 skills_load 通道。
         const memberPlatformServer =
-          await this.getMcpTooling().resolvePlatformManagementMcpServer(sessionId)
+          shouldMountBuiltinMcp('spark_platform', memberEngineKind, memberMcpSelection) ||
+          (memberEngineKind === 'claude-sdk' && this.resolveNativeSkillPlugins() == null)
+            ? await this.getMcpTooling().resolvePlatformManagementMcpServer(sessionId)
+            : null
         const memberPresentFilesServer = resolvePresentFilesMcpServer(workspaceRootPath)
         if (memberMediaContext != null) {
           memberMcpServers.spark_media = memberMediaContext.mcpServer
@@ -10272,10 +10415,13 @@ export class SessionService {
         }
         // 浏览器自动化：仅当 desktop 注入了 browserAutomationMcpProvider
         if (this.browserAutomationMcpProvider != null) {
-          const memberBrowserServer = await this.browserAutomationMcpProvider(
-            sessionId,
-            workspaceRootPath,
+          const memberBrowserServer = shouldMountBuiltinMcp(
+            'spark_browser',
+            memberEngineKind,
+            memberMcpSelection,
           )
+            ? await this.browserAutomationMcpProvider(sessionId, workspaceRootPath)
+            : null
           if (memberBrowserServer != null) memberMcpServers.spark_browser = memberBrowserServer
         }
       }
@@ -10437,8 +10583,19 @@ export class SessionService {
         : {}),
       ...(!isCodexMember && !isReadonlyAtomicMember
         ? (() => {
+            // Claude 原生渐进式披露（成员路径，P4）：白名单模式下传生效技能名单，
+            // 与 host 路径同源收敛（native-skill-filter.ts）；compose 失败未拿到
+            // skillConfig 时回落 'all' 保持旧行为。
             const plugins = this.resolveNativeSkillPlugins()
-            return plugins != null ? { skillPlugins: plugins, nativeSkills: 'all' as const } : {}
+            return plugins != null
+              ? {
+                  skillPlugins: plugins,
+                  nativeSkills:
+                    memberSkillConfig != null
+                      ? buildNativeSkillsFilter(memberSkillConfig)
+                      : ('all' as const),
+                }
+              : {}
           })()
         : {}),
       // 三轮联合场景审查修复（Reasoning + Member）：member 继承 agent 配置的

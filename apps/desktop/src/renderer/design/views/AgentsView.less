@@ -1570,3 +1570,136 @@
 .agent-hooks-actions {
   flex-shrink: 0;
 }
+
+// ============================================================
+//  McpServersPickerModal — MCP 选择器分组样式
+// （复用 SkillsPickerModal.less 的 skills-picker-* 骨架，
+//   此处只补分组区/锁定行/作用域标记的增量样式）
+// ============================================================
+
+.mcp-picker-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.mcp-picker-group {
+  border: 1px solid var(--color-border-2);
+  border-radius: 8px;
+  background: var(--color-bg-1);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mcp-picker-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  background: var(--color-fill-1);
+  border-bottom: 1px solid var(--color-border-2);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-2);
+  flex-shrink: 0;
+}
+
+.mcp-picker-group-note {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-4);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-picker-group .mcp-picker-cell--checkbox {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 0 0 12px;
+}
+
+// 锁定行（必需档）：无 hover/指针，弱化展示
+.mcp-picker-row--locked {
+  display: grid;
+  grid-template-columns: 44px 1fr minmax(0, 220px);
+  align-items: center;
+  height: 36px;
+  border-bottom: 1px solid var(--color-border-1);
+  cursor: default;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  .mcp-picker-cell--lock {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding-left: 14px;
+    color: var(--color-text-4);
+  }
+
+  .mcp-picker-cell--name {
+    font-size: 12px;
+    color: var(--color-text-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mcp-picker-cell--status {
+    font-size: 11px;
+    color: var(--color-text-4);
+    text-align: right;
+    padding-right: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.mcp-picker-row.is-locked {
+  cursor: default;
+  opacity: 0.75;
+}
+
+// 可选行说明列（替代 Skills 版的状态列，展示用途说明）
+.mcp-picker-row .mcp-picker-cell--status {
+  font-size: 11px;
+  color: var(--color-text-3);
+  text-align: right;
+  padding-right: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// 自定义 server 的作用域小标
+.mcp-picker-scope {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--color-fill-2);
+  color: var(--color-text-3);
+  font-size: 10px;
+  line-height: 16px;
+  vertical-align: 1px;
+}
+
+// MCP 区块默认态（全部 MCP 服务）的辅助说明
+.agent-config-empty .mcp-default-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--color-text-4);
+}

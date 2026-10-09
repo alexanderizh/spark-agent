@@ -175,6 +175,12 @@ export function applyWorkflowNodeOverrides(
     ...member.metadata,
     workflowNodeId: node.id,
     workflowNodeOverrides: true,
+    // D2：节点显式配置 MCP 选择时补打 flag，让 executeMemberTurn 真正消费
+    // node.config.mcpServerIds（此前值被覆盖但 flag 缺失 → 选择静默不生效；
+    // 与 createWorkflowSubagentMember 的 mcpSelectionConfigured 同语义）。
+    ...(Array.isArray(node.config.mcpServerIds)
+      ? { workflowMcpSelectionConfigured: true }
+      : {}),
   }
   if (Array.isArray(node.config.toolIds)) {
     const toolIds = stringArrayConfig(node.config.toolIds)

@@ -979,6 +979,17 @@ export interface SDKExecutorConfig {
   /** 画布 Agent in-process MCP server（spark_canvas）：仅在 session 已 attach 到画布弹窗时注入 */
   canvasMcpServer?: SDKMcpServerConfig | undefined
   nativeSkills?: string[] | 'all' | undefined
+  /**
+   * Agent 级用户 MCP 白名单（agent-mcp-policy.splitAgentMcpSelection 解析结果）：
+   * undefined = 全量挂载（与历史行为一致）；Set = 仅挂载集合内的用户 server。
+   * 传入 buildMcpServersForSDK 的 allowedServerIds 参数；内置 spark_* 不经此字段。
+   */
+  agentMcpAllowList?: ReadonlySet<string> | undefined
+  /**
+   * Agent MCP 选择签名（agentMcpSelectionSignature）：与上次构建不一致时强制
+   * continueSession=false，防止 SDK resume 会话工具面快照漂移。
+   */
+  agentMcpSelectionSignature?: string | undefined
   /** Disable Codex CLI's host plugin/skill discovery when Spark owns progressive disclosure. */
   disableCodexNativeSkills?: boolean | undefined
   /**

@@ -41,7 +41,9 @@ const Body = () => (
             <code>builtin:*</code>、<code>skill:catalog:*</code> 等）
           </td>
           <td>
-            所有 <code>enabled</code> 的 server 默认挂到所有会话，不按 Agent 过滤
+            按 Agent 配置的 <code>mcpServerIds</code> 决定：未选择（默认）= 全部
+            <code>enabled</code> server 挂载；部分点选 = 仅挂所选（内置重型服务可按 Agent
+            摘除，会话基础能力始终保留）
           </td>
         </tr>
         <tr>

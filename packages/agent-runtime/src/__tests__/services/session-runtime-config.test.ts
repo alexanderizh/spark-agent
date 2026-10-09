@@ -5265,6 +5265,174 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(atomicConfig?.mcpServers).toHaveProperty('spark_memory')
     expect(atomicConfig).not.toHaveProperty('skillPlugins')
     expect(atomicConfig).not.toHaveProperty('nativeSkills')
+  it('scopes main-session user MCP servers to the agent MCP selection (claude-sdk)', async () => {
+    mockState.mcpServers.push(
+      {
+        id: 'mcp-selected',
+        scope: 'user',
+        name: 'selected_mcp',
+        config_json: JSON.stringify({ command: 'node', args: ['selected.mjs'] }),
+        enabled: 1,
+        created_at: '2026-05-28T00:00:00.000Z',
+        updated_at: '2026-05-28T00:00:00.000Z',
+      },
+      {
+        id: 'mcp-unselected',
+        scope: 'user',
+        name: 'unselected_mcp',
+        config_json: JSON.stringify({ command: 'node', args: ['unselected.mjs'] }),
+        enabled: 1,
+        created_at: '2026-05-28T00:00:00.000Z',
+        updated_at: '2026-05-28T00:00:00.000Z',
+      },
+    )
+    mockState.agents.set(
+      'scoped-main-agent',
+      makeAgent({
+        id: 'scoped-main-agent',
+        name: 'Scoped Main Agent',
+        providerProfileId: 'tencent-provider',
+        mcpServerIds: ['mcp-selected'],
+      }),
+    )
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'scoped-main-agent',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Scoped MCP main session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'hello scoped mcp' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const config = mockState.sdkConfigs[0]
+    expect(config?.mcpServers).toHaveProperty('selected_mcp')
+    expect(config?.mcpServers).not.toHaveProperty('unselected_mcp')
+  })
+
+  it('drops unselected optional builtin MCPs for a partially selected agent (claude-sdk)', async () => {
+    mockState.agents.set(
+      'builtin-scoped-agent',
+      makeAgent({
+        id: 'builtin-scoped-agent',
+        name: 'Builtin Scoped Agent',
+        providerProfileId: 'tencent-provider',
+        // 只勾选内置 spark_platform：可选档其余（spark_computer 等）应被摘除
+        mcpServerIds: ['builtin:spark_platform'],
+      }),
+    )
+    const service = new SessionService({} as never, (event) => events.push(event))
+    service.setComputerUseMcpProvider(async (sessionId) => ({
+      server: {
+        type: 'stdio',
+        command: '/app/SparkWork',
+        args: ['/resources/tools/computer-use-mcp-server.mjs'],
+        env: { SPARK_COMPUTER_SESSION_ID: sessionId },
+      },
+      allowedTools: ['mcp__spark_computer__get_capabilities'],
+      systemPrompt: 'GOVERNED COMPUTER USE PROMPT',
+    }))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'builtin-scoped-agent',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-auto-edits',
+      title: 'Builtin scoped session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'control my computer?' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    // 未勾选的可选档内置被摘除：无 spark_computer server、无对应提示词段
+    const config = mockState.sdkConfigs[0]
+    expect(config?.mcpServers).not.toHaveProperty('spark_computer')
+    expect(String(config?.systemPrompt ?? '')).not.toContain('GOVERNED COMPUTER USE PROMPT')
+  })
+
+  it('treats an empty agent MCP selection as a full mount for unconfigured subagent nodes (D1)', async () => {
+    mockState.mcpServers.push({
+      id: 'mcp-write-capable',
+      scope: 'user',
+      name: 'write_capable_custom',
+      config_json: JSON.stringify({ command: 'node', args: ['write-capable.mjs'] }),
+      enabled: 1,
+      created_at: '2026-07-16T00:00:00.000Z',
+      updated_at: '2026-07-16T00:00:00.000Z',
+    })
+    // 绑定的 agent 从未配置 MCP 选择（存量形态）；节点也未显式配置 mcpServerIds。
+    // D1 收窄后：不再进入「配置化空集」分支，回落「空=全量」——与主会话语义统一。
+    mockState.agents.set(
+      'legacy-empty-selection-agent',
+      makeAgent({
+        id: 'legacy-empty-selection-agent',
+        name: 'Legacy Empty Selection',
+        providerProfileId: 'tencent-provider',
+        prompt: 'LEGACY_EMPTY_SELECTION_PROMPT',
+        mcpServerIds: [],
+      }),
+    )
+    mockState.agents.set(
+      'workflow-host-d1',
+      makeAgent({
+        id: 'workflow-host-d1',
+        name: 'Workflow Host D1',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-d1-empty-selection',
+      }),
+    )
+    mockState.workflows.set('workflow-d1-empty-selection', {
+      id: 'workflow-d1-empty-selection',
+      name: 'D1 empty selection workflow',
+      description: 'Verify empty agent selection mounts all MCPs.',
+      graph: {
+        nodes: [
+          {
+            id: 'legacy-worker',
+            kind: 'subagent',
+            title: 'Legacy Worker',
+            config: { agentId: 'legacy-empty-selection-agent', outputKey: 'work' },
+          },
+        ],
+        edges: [],
+      },
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'workflow-host-d1',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'D1 empty selection session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'run the legacy worker' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+    const workflowRun = (
+      mockState.sdkConfigs[0]?.mcpServers as {
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<unknown>
+            }>
+          }
+        }
+      }
+    ).spark_team.instance.tools.find((tool) => tool.name === 'workflow_run')
+    if (workflowRun == null) throw new Error('expected workflow_run tool')
+    await workflowRun.handler({ objective: 'run the legacy worker' })
+
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(2))
+    const memberConfig = mockState.sdkConfigs[1]
+    expect(String(memberConfig?.systemPrompt ?? '')).toContain(
+      'LEGACY_EMPTY_SELECTION_PROMPT',
+    )
+    // 空选择 = 全量：自定义 MCP 正常挂载（旧行为在此场景是空集）
+    expect(memberConfig?.mcpServers).toHaveProperty('write_capable_custom')
+  })
+
   })
 
   it('returns a structured failed workflow_run result when a workflow worker fails', async () => {

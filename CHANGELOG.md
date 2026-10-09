@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **Agent 级 Skill / MCP 按需挂载**：Agent 编辑页「MCP 服务」区块从只读展示升级为可配置选择器——**未选择（默认）= 全部可用**（存量 Agent 行为零变化），**部分点选 = 仅挂所选**。主会话三条引擎路径（claude-sdk / codex / spark）与团队成员路径统一消费 `agent.mcpServerIds`（此前该字段在主会话被完全忽略）；内置 MCP 按四维标准分级：spark_files / spark_tool_results / spark_memory / spark_session 为会话基础能力恒挂载，spark_platform（80+ 工具）/ spark_plugins / spark_app / spark_media / spark_image / spark_browser / spark_computer / spark_search 为可选重型可按 Agent 摘除，其中 spark_platform 在 Spark / Codex 引擎下强制挂载（技能加载依赖）。全选语义归一化为 `[]`（动态全量，新增 server 自动纳入）；SDK resume 会话在 Agent MCP 选择变化时强制重建防工具面漂移。同步修复三处既有缺口：① 工作流 agent 节点配置 `mcpServerIds` 不生效（值被覆盖但缺 flag 标记）；② subagent 绑定空选择存量 Agent 时误入「空能力集」分支（统一为空=全量，D1）；③ claude-sdk 原生技能路径 `nativeSkills:'all'` 绕过 Agent 技能白名单——改传生效技能名单（SDK 原生语义：未列出技能从目录隐藏且被 Skill 工具拒绝），`skills_list` / `skills_load` 增加会话生效面收敛与越权硬校验（内置平台管理 Agent 豁免）。新增 `agent-mcp-policy` / `native-skill-filter` 纯函数模块与聚焦单测、`buildMcpServersForSDK` 白名单零覆盖补齐、三引擎集成用例与 D1 回归用例；官网 docs 三处「全员默认挂载」表述同步更新。
+
 ## [0.14.13] - 2026-10-08
 
 ### 新增

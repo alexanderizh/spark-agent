@@ -61,7 +61,7 @@ export function TeamMemberDrawer({ member, onClose, onEditAgent }: TeamMemberDra
           </div>
           <div className="team-member-drawer-row">
             <dt>MCP</dt>
-            <dd>全部已启用</dd>
+            <dd>{member.mcpCount > 0 ? `已选 ${member.mcpCount} 项` : '全部已启用'}</dd>
           </div>
         </dl>
 

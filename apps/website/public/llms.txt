@@ -20,7 +20,7 @@
 - [联系我们 - Spark Work](https://www.yiqibyte.com/contact): 通过邮箱和 QQ 开发讨论群反馈 Spark Work 的产品问题、使用建议和安全问题。
 - [快速开始 - Spark Work 文档](https://www.yiqibyte.com/docs/quick-start): Spark Work 快速开始指南：下载适合你系统的安装包、完成首次启动、接入模型服务、创建第一个 Agent 并完成第一个任务。
 - [代码开发 - Spark Work 文档](https://www.yiqibyte.com/docs/code-development): 在 Spark Work 中做真实的代码开发：打开项目、选择分支、用 Git Worktree 隔离、在终端跑验证、逐文件审查 AI 改动并生成 Pull Request。
-- [Agent 工作流 - Spark Work 文档](https://www.yiqibyte.com/docs/agents-workflows): Spark Work 中 Agent 的工作机制：默认 Agent、Provider/Model/Skill/Rule 配置、全局已启用 MCP 自动挂载、可真实执行的 Workflow Graph、workflow_run、运行快照与 [Runtime Rules] 段。
+- [Agent 工作流 - Spark Work 文档](https://www.yiqibyte.com/docs/agents-workflows): Spark Work 中 Agent 的工作机制：默认 Agent、Provider/Model/Skill/Rule 配置、Agent 级 MCP 按需挂载（未选=全部、部分点选=白名单）、可真实执行的 Workflow Graph、workflow_run、运行快照与 [Runtime Rules] 段。
 - [团队模式 - Spark Work 文档](https://www.yiqibyte.com/docs/team-mode): Spark Work 团队模式（Team Mode）：Host Agent 把子任务分派给多个 Member Agent，每个 Member 有独立模型/工具/Skills，事件流式展示分派、回复与完成。
 - [无限画布 - Spark Work 文档](https://www.yiqibyte.com/docs/canvas-mvp): Spark Work 无限画布（Infinite Canvas）能力全景：项目管理、节点类型、AI 操作、任务队列、生成结果节点、lineage 边、资产中心、媒体任务路由与持久化。
 - [多媒体 Provider - Spark Work 文档](https://www.yiqibyte.com/docs/media-providers): Spark Work 多媒体 Provider 配置：图片生成 / 编辑、语音合成 / 转写、视频生成 / 图生视频 / 视频编辑的统一能力注册表、平台适配器（APIMart / xAI / 火山 / 百炼 / 可灵 / Hailuo 等）。

@@ -20,6 +20,11 @@ import { AgentHooksSection } from './hooks/AgentHooksSection'
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
+import {
+  McpServersPickerModal,
+  allSelectableMcpIds,
+  resolveMcpSelectionLabel,
+} from '../components/McpServersPickerModal'
 import { RuleCreateModal } from '../components/RuleCreateModal'
 import { getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
 import { DEFAULT_AGENT_AVATAR_ID } from '../builtinAvatars'
@@ -153,6 +158,8 @@ type AgentDraft = {
   reasoningBudgetTokens: string
   prompt: string
   skillIds: string[]
+  /** Agent 级 MCP 选择（「空=全量、部分点选=白名单」；内置用 builtin:spark_* 合成 id） */
+  mcpServerIds: string[]
   ruleIds: string[]
   hookConfig: AgentHookConfig
   workflowId: string
@@ -186,6 +193,7 @@ const EMPTY_DRAFT: AgentDraft = {
     'builtin:platform-manager',
     'builtin:find-skills',
   ],
+  mcpServerIds: [],
   ruleIds: [],
   hookConfig: {
     enabled: false,
@@ -273,6 +281,7 @@ function AgentsTabContent({
   const [pendingNew, setPendingNew] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showSkillPicker, setShowSkillPicker] = useState(false)
+  const [showMcpPicker, setShowMcpPicker] = useState(false)
   const [showRuleCreator, setShowRuleCreator] = useState(false)
   const [filterTab, setFilterTab] = useState<AgentFilterTab>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -1561,24 +1570,42 @@ function AgentsTabContent({
 
           <ConfigSection
             title="MCP 服务"
-            count={mcpServers.filter((server) => server.enabled).length}
-            description="所有已启用的 MCP 对该 Agent 自动可用，无需单独绑定"
+            count={
+              draft.mcpServerIds.length > 0
+                ? draft.mcpServerIds.length
+                : mcpServers.filter((server) => server.enabled).length
+            }
+            description="按需选择该 Agent 可用的 MCP；未选择 = 全部可用（默认）"
+            footer={
+              <button
+                type="button"
+                className="agent-config-link"
+                onClick={() => setShowMcpPicker(true)}
+              >
+                <Icons.Skills size={12} /> 管理 MCP 服务
+              </button>
+            }
           >
             {(() => {
-              const enabledServers = mcpServers.filter((server) => server.enabled)
-              return enabledServers.length > 0 ? (
+              if (draft.mcpServerIds.length === 0) {
+                return (
+                  <div className="agent-config-empty">
+                    全部 MCP 服务（默认）
+                    <span className="mcp-default-hint">含全部已启用服务与内置能力</span>
+                  </div>
+                )
+              }
+              return (
                 <div className="skill-selected-preview">
-                  {enabledServers.slice(0, 6).map((server) => (
-                    <span key={server.id} className="skill-chip">
-                      {server.name}
+                  {draft.mcpServerIds.slice(0, 6).map((id) => (
+                    <span key={id} className="skill-chip">
+                      {resolveMcpSelectionLabel(id, mcpServers)}
                     </span>
                   ))}
-                  {enabledServers.length > 6 && (
-                    <span className="skill-chip more">+{enabledServers.length - 6}</span>
+                  {draft.mcpServerIds.length > 6 && (
+                    <span className="skill-chip more">+{draft.mcpServerIds.length - 6}</span>
                   )}
                 </div>
-              ) : (
-                <div className="agent-config-empty">暂无已启用的 MCP 服务</div>
               )
             })()}
           </ConfigSection>
@@ -1636,6 +1663,25 @@ function AgentsTabContent({
         onChange={(ids) => updateDraft('skillIds', ids)}
         onConfirm={() => setShowSkillPicker(false)}
         onClose={() => setShowSkillPicker(false)}
+      />
+      <McpServersPickerModal
+        visible={showMcpPicker}
+        userServers={mcpServers}
+        selectedIds={draft.mcpServerIds}
+        onChange={(ids) => updateDraft('mcpServerIds', ids)}
+        onConfirm={() => {
+          // D6「全选 = 全部（动态）」：勾满全部可选项时归一化为 []，后续新增
+          // server 自动纳入，语义不漂移；部分选择才落显式清单。
+          const selectable = new Set(allSelectableMcpIds(mcpServers))
+          const coversAll =
+            draft.mcpServerIds.length > 0 && draft.mcpServerIds.every((id) => selectable.has(id))
+          const total = selectable.size
+          if (coversAll && draft.mcpServerIds.length === total) {
+            updateDraft('mcpServerIds', [])
+          }
+          setShowMcpPicker(false)
+        }}
+        onClose={() => setShowMcpPicker(false)}
       />
       <RuleCreateModal
         visible={showRuleCreator}
@@ -2273,6 +2319,7 @@ function agentToDraft(agent: ManagedAgent): AgentDraft {
       normalizeReasoningBudgetTokens(agent.metadata.reasoningBudgetTokens)?.toString() ?? '',
     prompt: agent.prompt,
     skillIds: agent.skillIds,
+    mcpServerIds: agent.mcpServerIds,
     ruleIds: agent.ruleIds,
     hookConfig: normalizeAgentHookConfig(agent.hookConfig),
     workflowId: agent.workflowId ?? '',
@@ -2308,6 +2355,7 @@ function draftToPayload(draft: AgentDraft, provider?: ProviderProfile | null) {
     reasoningEffort: normalizeReasoningEffort(normalized.reasoningEffort),
     prompt: normalized.prompt,
     skillIds: normalized.skillIds,
+    mcpServerIds: normalized.mcpServerIds,
     disabledSkillIds: [] as string[],
     ruleIds: normalized.ruleIds,
     hookConfig: normalized.hookConfig,

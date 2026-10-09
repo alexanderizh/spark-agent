@@ -1125,8 +1125,62 @@ export class PlatformBridgeService {
 
   // ── Skill handlers ──
 
-  private skillList(d: PlatformBridgeDeps, _params: Record<string, unknown>) {
+  /**
+   * 会话生效技能面注册表（P5 缝隙 b：skills_list / skills_load 硬校验）。
+   *
+   * SessionService 在每个 host turn 开始时以该 turn 的 effectiveSkillIds
+   * 重置注册（reset），member turn 并集并入（成员与 host 的白名单可能不同，
+   * 并集保证并行 dispatch 时成员的合法加载不被误杀）。bridge 跨会话长驻，
+   * Map 按访问序 LRU 淘汰、上界 128 条（sessionId 为 uuid 不会复用，残留条目
+   * 只在被淘汰前多放行一个已结束会话的旧面，无跨会话泄漏）。
+   */
+  private readonly sessionSkillFaces = new Map<string, { skillIds: Set<string>; exempt: boolean }>()
+  private static readonly SESSION_SKILL_FACE_LIMIT = 128
+
+  /**
+   * 注册会话生效技能面。exempt = 内置平台管理 agent（D8：repo 已强制其技能面，
+   * 豁免硬校验）。reset = host turn 重置；不传或 false = member turn 并集并入。
+   */
+  registerSessionSkillFace(
+    sessionId: string,
+    skillIds: readonly string[],
+    options: { reset?: boolean; exempt?: boolean } = {},
+  ): void {
+    const key = sessionId.trim()
+    if (!key) return
+    const existing = options.reset === true ? undefined : this.sessionSkillFaces.get(key)
+    if (existing == null) {
+      this.sessionSkillFaces.delete(key)
+      this.sessionSkillFaces.set(key, { skillIds: new Set(skillIds), exempt: options.exempt === true })
+    } else {
+      for (const id of skillIds) existing.skillIds.add(id)
+      if (options.exempt != null) existing.exempt = options.exempt
+    }
+    while (this.sessionSkillFaces.size > PlatformBridgeService.SESSION_SKILL_FACE_LIMIT) {
+      const oldest = this.sessionSkillFaces.keys().next().value
+      if (oldest == null) break
+      this.sessionSkillFaces.delete(oldest)
+    }
+  }
+
+  /** 按 RPC params 解析会话生效面；无会话上下文 / 未注册 / 豁免 → null（走现状行为）。 */
+  private resolveSessionSkillFace(
+    params: Record<string, unknown>,
+  ): { skillIds: Set<string>; exempt: boolean } | null {
+    const sessionId = typeof params.sessionId === 'string' ? params.sessionId.trim() : ''
+    if (!sessionId) return null
+    const face = this.sessionSkillFaces.get(sessionId)
+    if (face == null) return null
+    // LRU touch：访问即挪到最新
+    this.sessionSkillFaces.delete(sessionId)
+    this.sessionSkillFaces.set(sessionId, face)
+    return face.exempt ? null : face
+  }
+
+  private skillList(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     // 内置优先排序 → 按名去重 → 截断描述 → 限量，避免大量宿主技能导致结果超出 token 上限。
+    // 会话生效面收敛（P5）：注册表命中的会话仅返回生效技能，与提示词目录同源。
+    const face = this.resolveSessionSkillFace(params)
     const rows = [...d.skillLoader.listAll()].sort((a, b) => Number(b.builtin) - Number(a.builtin))
     const seen = new Set<string>()
     const skills: Array<Record<string, unknown>> = []
@@ -1136,6 +1190,7 @@ export class PlatformBridgeService {
       const id = db?.id ?? def?.id ?? ''
       const name = db?.name ?? def?.name ?? ''
       if (!id || !name) continue
+      if (face != null && !face.skillIds.has(id)) continue
       const key = name.toLowerCase()
       if (seen.has(key)) continue
       seen.add(key)
@@ -1165,6 +1220,14 @@ export class PlatformBridgeService {
     if (!detail) throw new Error(`Skill not found: ${id}`)
     if (!detail.item.enabled) {
       throw new Error(`Skill "${detail.item.name}" is disabled; enable it before loading.`)
+    }
+    // 生效面硬校验（P5）：注册表命中的会话拒绝加载白名单外技能，与提示词目录、
+    // skills_list 收敛同源（同一 effectiveSkillIds）。
+    const face = this.resolveSessionSkillFace(params)
+    if (face != null && !face.skillIds.has(id)) {
+      throw new Error(
+        `Skill "${detail.item.name}" is not in this session's effective skill list; adjust the agent's skill selection to load it.`,
+      )
     }
 
     const def = detail.definition

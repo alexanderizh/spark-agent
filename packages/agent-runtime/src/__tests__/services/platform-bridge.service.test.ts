@@ -777,6 +777,108 @@ describe('PlatformBridgeService Provider CRUD', () => {
   })
 })
 
+describe('PlatformBridgeService session skill face（P5: skills_list/skills_load 生效面硬校验）', () => {
+  let service: PlatformBridgeService
+  let port = 0
+
+  afterEach(async () => {
+    await service?.stop()
+  })
+
+  function makeSkillDeps(skillIds: string[]): PlatformBridgeDeps {
+    const skillLoader = {
+      listAll: () =>
+        skillIds.map((id) => ({
+          builtin: id.startsWith('builtin:'),
+          definition: { id, name: id, description: `${id} desc`, category: 'test' },
+          dbRecord: { id, name: id, enabled: true },
+        })),
+    }
+    const skillService = {
+      getSkillDetail: (id: string) => ({
+        item: { id, name: id, enabled: true, rootPath: '' },
+        definition: { id, name: id, description: '', systemPrompt: `prompt for ${id}` },
+      }),
+    }
+    return { skillLoader, skillService } as unknown as PlatformBridgeDeps
+  }
+
+  it('注册后 skills_list 仅返回生效集内技能，skills.load 集外被拒、集内放行', async () => {
+    service = new PlatformBridgeService()
+    port = await service.start(makeSkillDeps(['builtin:a', 'user-b', 'user-c']))
+    service.registerSessionSkillFace('session-1', ['builtin:a', 'user-b'], { reset: true })
+
+    const listed = await callBridgeRpc(port, 'skills.list', { sessionId: 'session-1' })
+    expect(listed.ok).toBe(true)
+    const ids = ((listed.data as { skills: Array<{ id: string }> }).skills).map((s) => s.id)
+    expect(ids).toEqual(['builtin:a', 'user-b'])
+
+    const denied = await callBridgeRpc(port, 'skills.load', {
+      sessionId: 'session-1',
+      id: 'user-c',
+    })
+    expect(denied.ok).toBe(false)
+    expect(denied.error).toContain('effective skill list')
+
+    const allowed = await callBridgeRpc(port, 'skills.load', {
+      sessionId: 'session-1',
+      id: 'user-b',
+    })
+    expect(allowed).toMatchObject({ ok: true, data: { id: 'user-b' } })
+  })
+
+  it('未注册会话（无 sessionId / 未知 sessionId）→ 现状全量行为，不校验', async () => {
+    service = new PlatformBridgeService()
+    port = await service.start(makeSkillDeps(['builtin:a', 'user-b']))
+
+    const noSession = await callBridgeRpc(port, 'skills.list', {})
+    expect(noSession.ok).toBe(true)
+    expect((noSession.data as { total: number }).total).toBe(2)
+
+    const unknownSession = await callBridgeRpc(port, 'skills.list', { sessionId: 'ghost' })
+    expect(unknownSession.ok).toBe(true)
+    expect((unknownSession.data as { total: number }).total).toBe(2)
+
+    const unregisteredLoad = await callBridgeRpc(port, 'skills.load', {
+      sessionId: 'ghost',
+      id: 'user-b',
+    })
+    expect(unregisteredLoad).toMatchObject({ ok: true, data: { id: 'user-b' } })
+  })
+
+  it('豁免会话（D8 内置平台管理 agent）→ 全量返回且加载不受限', async () => {
+    service = new PlatformBridgeService()
+    port = await service.start(makeSkillDeps(['builtin:a', 'user-b']))
+    service.registerSessionSkillFace('session-exempt', ['builtin:a'], { reset: true, exempt: true })
+
+    const listed = await callBridgeRpc(port, 'skills.list', { sessionId: 'session-exempt' })
+    expect((listed.data as { total: number }).total).toBe(2)
+
+    const loaded = await callBridgeRpc(port, 'skills.load', {
+      sessionId: 'session-exempt',
+      id: 'user-b',
+    })
+    expect(loaded).toMatchObject({ ok: true, data: { id: 'user-b' } })
+  })
+
+  it('member 并集注册：reset 后 union 并入的技能对 list/load 均可见', async () => {
+    service = new PlatformBridgeService()
+    port = await service.start(makeSkillDeps(['builtin:a', 'user-b', 'user-c']))
+    service.registerSessionSkillFace('session-2', ['builtin:a'], { reset: true })
+    service.registerSessionSkillFace('session-2', ['user-c'])
+
+    const listed = await callBridgeRpc(port, 'skills.list', { sessionId: 'session-2' })
+    const ids = ((listed.data as { skills: Array<{ id: string }> }).skills).map((s) => s.id)
+    expect(ids).toEqual(['builtin:a', 'user-c'])
+
+    const memberSkill = await callBridgeRpc(port, 'skills.load', {
+      sessionId: 'session-2',
+      id: 'user-c',
+    })
+    expect(memberSkill).toMatchObject({ ok: true, data: { id: 'user-c' } })
+  })
+})
+
 async function callBridgeRpc(
   port: number,
   method: string,
