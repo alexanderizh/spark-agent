@@ -665,6 +665,12 @@ export {
   resolveRuntimeToolPath,
   resolveMcpNodeRuntimeExecutable,
 } from './services/session-mcp-tooling-helpers.js'
+// 工具链清单聚合：设置 → 工具链（只读）复用同一纯函数，保证展示口径与后续权限配置使用同一目录。
+export { buildToolchainInventory } from './services/toolchain/toolchain-inventory.js'
+export type {
+  ToolchainInventoryInput,
+  ToolchainMcpServerSnapshot,
+} from './services/toolchain/toolchain-inventory.js'
 // 工作流运行进度组装：主进程「历史运行回看」IPC 复用同一纯函数，保证历史明细与实时进度渲染一致。
 export { buildWorkflowProgressNodes } from './services/session-workflow-helpers.js'
 export type { WorkflowProgressNodeMetaInput } from './services/session-workflow-helpers.js'

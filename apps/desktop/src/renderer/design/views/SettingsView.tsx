@@ -69,6 +69,7 @@ import { RemoteConnectionsSection } from './SettingsRemoteConnections'
 import { SubAppRuntimeSettingsCard } from '../sub-app/SubAppRuntimeSettingsCard'
 import { TeamRegistrySection } from './TeamRegistrySection'
 import { SessionWorkflowSettingsSection } from './SessionWorkflowSettingsSection'
+import { ToolchainSection } from './toolchain/ToolchainSection'
 import { UsageHeatmap } from './UsageHeatmap'
 import { ModelUsageTrendCard } from './ModelUsageTrendCard'
 import { needsSdkInstallAction } from './sdkIntegrityPresentation'
@@ -362,6 +363,12 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           label: '会话工作流',
           keywords: ['工作流', '挂载', '编排', '灰度', '会话工作流'],
         },
+        {
+          id: 'toolchain',
+          icon: <Icons.Puzzle size={13} />,
+          label: '工具链',
+          keywords: ['工具', 'toolchain', 'MCP', '自定义工具', '工具包', '权限', '内置工具'],
+        },
       ],
     },
     {
@@ -472,6 +479,8 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     'custom-commands': CustomCommandsSection,
     permissions: PermissionsSection,
     'session-workflow': SessionWorkflowSettingsSection,
+    // 直接引用模块级组件，不要包箭头函数（同 MemoryPanel 的教训）
+    toolchain: ToolchainSection,
     // MCP 设置暂未完全实现，隐藏
     // 'mcp-settings': McpSection,
     'remote-connections': RemoteConnectionsSection,

@@ -2546,6 +2546,55 @@ export interface WorkflowPlatformToolsResponse {
   }>
 }
 
+// ─── Toolchain Inventory（设置 → 工具链，只读清单） ─────────────────────────
+
+/**
+ * 引擎口径的适配器种类（与 agent-runtime 的 EngineKind 对齐）：
+ * 'claude-sdk' 同时覆盖历史 adapter 值 'claude'（resolveEngineKind 已归并）。
+ */
+export type ToolchainAdapterKind = 'claude-sdk' | 'codex' | 'spark'
+
+export interface ToolchainInventoryTool {
+  /** 会话内真实调用名（SDK 内置为原名；MCP 工具为 mcp__server__tool 全名）。 */
+  name: string
+  /** spark 引擎下的映射名（snake_case，仅 SDK 内置工具组提供；无映射时不带该字段）。 */
+  sparkEngineName?: string
+  description?: string
+  /** 是否处于 spark 引擎免审批白名单（allowedTools，只读工具直通车）。 */
+  autoApproved?: boolean
+}
+
+export type ToolchainGroupKind =
+  | 'sdk-builtin'
+  | 'platform-server'
+  | 'mcp-extension'
+  | 'unified-catalog'
+
+export interface ToolchainInventoryGroup {
+  key: string
+  title: string
+  kind: ToolchainGroupKind
+  /** 该组工具在哪些引擎下可用（引擎差异是清单的核心信息）。 */
+  adapters: ToolchainAdapterKind[]
+  /** 引擎差异/命名差异说明（如 codex 不消费 SDK 工具名）。 */
+  adapterNote?: string
+  /** 条件挂载说明（如仅语音绑定会话、仅画布会话、受设置开关控制）。 */
+  mountNote?: string
+  /** MCP 扩展组的连接状态；非 MCP 组不带该字段。 */
+  serverStatus?: 'connected' | 'not-connected' | 'disabled'
+  /** 统一目录组的来源细分（custom-tool / tool-package / connector）。 */
+  sourceKind?: 'custom-tool' | 'tool-package' | 'connector'
+  toolCount: number
+  tools: ToolchainInventoryTool[]
+}
+
+export interface ToolchainInventoryRequest {}
+
+export interface ToolchainInventoryResponse {
+  groups: ToolchainInventoryGroup[]
+  generatedAt: string
+}
+
 // ─── Workflow Run History（历史运行回看） ────────────────────────────────────
 
 export interface WorkflowRunsRequest {
@@ -7867,6 +7916,9 @@ export interface IpcChannelMap
   'workflow:delete': [WorkflowDeleteRequest, WorkflowDeleteResponse]
   /** 工作流工具节点「平台工具直调」候选清单（已启用的工具包工具 + 自定义工具，含 inputSchema）。 */
   'workflow:platform-tools': [WorkflowPlatformToolsRequest, WorkflowPlatformToolsResponse]
+
+  // Toolchain（设置 → 工具链只读清单：SDK 内置 + 平台服务器 + MCP 扩展 + 统一目录）
+  'toolchain:inventory': [ToolchainInventoryRequest, ToolchainInventoryResponse]
   /** 工作流历史运行列表（按 workflowId 查询，轻量摘要，不含执行明细）。 */
   'workflow:runs': [WorkflowRunsRequest, WorkflowRunsResponse]
   /** 单次历史运行详情：含逐节点状态/错误/输出预览/耗时，从持久化快照还原。 */

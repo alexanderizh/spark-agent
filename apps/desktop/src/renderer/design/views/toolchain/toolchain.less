@@ -1,0 +1,317 @@
+// 工具链（设置 → Agent → 工具链）只读清单样式。
+// 沿用设置页设计语言：settings-section/settings-card 骨架 + 设计 token；
+// tc-* 前缀为本页私有类，避免污染全局。
+
+.toolchain-section {
+  // ─── 工具栏 ──────────────────────────────────────────────────────────────
+  .tc-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .tc-search {
+    width: 240px;
+  }
+
+  .tc-refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: var(--r-sm, 6px);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition:
+      background 0.15s ease,
+      color 0.15s ease;
+
+    &:hover {
+      background: color-mix(in srgb, var(--text) 8%, transparent);
+      color: var(--text);
+    }
+    &:focus-visible {
+      outline: 1px solid var(--accent, #4c6ef5);
+    }
+  }
+
+  // ─── 分组标题（四层工具面） ──────────────────────────────────────────────
+  .tc-kind {
+    margin-top: var(--pad-lg, 16px);
+  }
+
+  .tc-kind-head {
+    margin: 0 0 8px;
+  }
+
+  .tc-kind-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong, var(--text));
+  }
+
+  .tc-kind-desc {
+    margin-top: 2px;
+    font-size: var(--font-xs, 12px);
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  // ─── 分组卡片 ────────────────────────────────────────────────────────────
+  .tc-card {
+    border-radius: var(--r-md, 8px);
+    background: var(--bg-sunken);
+    overflow: hidden;
+
+    & + .tc-card {
+      margin-top: 8px;
+    }
+  }
+
+  .tc-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    color: var(--text);
+    transition: background 0.15s ease;
+
+    &:hover {
+      background: color-mix(in srgb, var(--text) 4%, transparent);
+    }
+    &:focus-visible {
+      outline: 1px solid var(--accent, #4c6ef5);
+      outline-offset: -1px;
+    }
+  }
+
+  .tc-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    transition: transform 0.15s ease;
+
+    &.open {
+      transform: rotate(90deg);
+    }
+  }
+
+  .tc-card-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong, var(--text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tc-count {
+    flex: 0 0 auto;
+    min-width: 20px;
+    padding: 0 6px;
+    height: 18px;
+    line-height: 18px;
+    border-radius: 9px;
+    font-size: 11px;
+    text-align: center;
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+  }
+
+  .tc-status {
+    flex: 0 0 auto;
+    padding: 0 6px;
+    height: 18px;
+    line-height: 18px;
+    border-radius: 4px;
+    font-size: 11px;
+
+    &.ok {
+      color: var(--success, #2f9e44);
+      background: color-mix(in srgb, var(--success, #2f9e44) 12%, transparent);
+    }
+    &.idle {
+      color: var(--text-muted);
+      background: color-mix(in srgb, var(--text) 8%, transparent);
+    }
+    &.off {
+      color: var(--danger, #e03131);
+      background: color-mix(in srgb, var(--danger, #e03131) 10%, transparent);
+    }
+  }
+
+  .tc-adapter-badges {
+    display: inline-flex;
+    gap: 4px;
+    flex: 0 0 auto;
+  }
+
+  .tc-adapter {
+    padding: 0 6px;
+    height: 18px;
+    line-height: 17px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    border: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
+
+    &.on {
+      color: var(--accent, #4c6ef5);
+      border-color: color-mix(in srgb, var(--accent, #4c6ef5) 45%, transparent);
+      background: color-mix(in srgb, var(--accent, #4c6ef5) 8%, transparent);
+    }
+  }
+
+  // ─── 说明区 ──────────────────────────────────────────────────────────────
+  .tc-card-notes {
+    padding: 0 14px 8px 34px;
+  }
+
+  .tc-note {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: var(--font-xs, 12px);
+    line-height: 1.6;
+    color: var(--text-muted);
+
+    & + .tc-note {
+      margin-top: 2px;
+    }
+  }
+
+  .tc-note-tag {
+    flex: 0 0 auto;
+    font-size: 10px;
+    line-height: 1.5;
+    padding: 0 4px;
+    border-radius: 3px;
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+  }
+
+  // ─── 工具行 ──────────────────────────────────────────────────────────────
+  .tc-card-body {
+    border-top: 1px solid color-mix(in srgb, var(--divider) 35%, transparent);
+    padding: 4px 0;
+  }
+
+  .tc-tool {
+    padding: 6px 14px 6px 34px;
+
+    &:hover {
+      background: color-mix(in srgb, var(--text) 4%, transparent);
+    }
+  }
+
+  .tc-tool-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .tc-tool-name {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 12px;
+    color: var(--text);
+    word-break: break-all;
+  }
+
+  .tc-tool-alt {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 11px;
+    color: var(--accent, #4c6ef5);
+    opacity: 0.85;
+    word-break: break-all;
+  }
+
+  .tc-auto-allow {
+    flex: 0 0 auto;
+    padding: 0 5px;
+    height: 16px;
+    line-height: 15px;
+    border-radius: 3px;
+    font-size: 10px;
+    color: var(--success, #2f9e44);
+    background: color-mix(in srgb, var(--success, #2f9e44) 12%, transparent);
+  }
+
+  .tc-tool-desc {
+    margin-top: 2px;
+    font-size: var(--font-xs, 12px);
+    line-height: 1.5;
+    color: var(--text-muted);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .tc-empty-hint {
+    padding: 10px 14px 10px 34px;
+    font-size: var(--font-xs, 12px);
+    color: var(--text-muted);
+  }
+
+  // ─── 页脚与状态 ──────────────────────────────────────────────────────────
+  .tc-state {
+    margin-top: var(--pad-lg, 16px);
+    padding: var(--pad-lg, 16px);
+    border-radius: var(--r-md, 8px);
+    background: var(--bg-sunken);
+    text-align: center;
+    font-size: var(--font-sm, 13px);
+    color: var(--text-muted);
+  }
+
+  .tc-footer {
+    margin-top: var(--pad-md, 12px);
+    text-align: center;
+    font-size: var(--font-xs, 12px);
+    color: var(--text-muted);
+  }
+
+  // ─── 窄屏适配 ────────────────────────────────────────────────────────────
+  @media (max-width: 720px) {
+    .tc-toolbar-actions {
+      width: 100%;
+      margin-left: 0;
+      display: flex;
+      justify-content: flex-start;
+    }
+
+    .tc-search {
+      width: 100%;
+      flex: 1 1 auto;
+    }
+
+    .tc-adapter-badges {
+      display: none;
+    }
+
+    .tc-card-notes {
+      padding-left: 14px;
+    }
+
+    .tc-tool {
+      padding-left: 14px;
+    }
+
+    .tc-empty-hint {
+      padding-left: 14px;
+    }
+  }
+}

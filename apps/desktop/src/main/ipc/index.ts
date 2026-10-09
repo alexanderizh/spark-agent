@@ -364,6 +364,7 @@ import {
 } from './registerOptionalCapabilityIpc.js'
 import { registerSdkIntegrityIpc } from './registerSdkIntegrityIpc.js'
 import { registerCodexRuntimeIpc } from './registerCodexRuntimeIpc.js'
+import { registerToolchainIpc } from './registerToolchainIpc.js'
 import { registerResourceMonitorIpc } from './registerResourceMonitorIpc.js'
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
@@ -5227,6 +5228,13 @@ export function registerAllIpcHandlers(): void {
   registerCodexRuntimeIpc({
     getDiagnostics: () => getSessionService().getCodexRuntimeDiagnostics(),
     restartIdle: () => getSessionService().restartIdleCodexRuntimes(),
+  })
+  // 设置 → 工具链只读清单：SDK 内置 + 平台服务器 + MCP 扩展（未连接不拉起）+ 统一目录。
+  registerToolchainIpc({
+    listUnifiedTools: () => getSessionService().listUnifiedTools(),
+    listMcpServers: () => getMcpService().listServers(),
+    getServerStatus: (serverId) => getMcpService().getServerStatus(serverId),
+    getServerTools: (serverId) => getMcpService().getServerTools(serverId),
   })
   // M1 资源监控：IPC 三通道 + 推流 sink 注入 + 启动采样（性能监控体系）。
   // 先灌注 performance 持久化配置（monitor/governor seed），再注册启动，
