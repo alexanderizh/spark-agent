@@ -70,6 +70,37 @@ describe('WikiCandidateRepository', () => {
     expect(second.row!.id).toBe(first.row!.id)
   })
 
+  it('【AutoDream】同内容不同 action/targetId 是不同提案（不被旧候选吞掉）', () => {
+    const create = repo.insertPending({ scope: 'user', scopeRef: null, payload: payload() })
+    expect(create.inserted).toBe(true)
+    repo.reject(create.row!.id)
+
+    // 梦境轨：同页面的 update/delete 提案与已拒绝的 create 内容相近，
+    // 但语义完全不同——判重摘要必须区分（action/targetId 纳入哈希）。
+    const update = repo.insertPending({
+      scope: 'user',
+      scopeRef: null,
+      payload: payload({ action: 'update', targetId: 'wp-1' }),
+    })
+    expect(update.inserted).toBe(true)
+    expect(update.row!.id).not.toBe(create.row!.id)
+
+    const del = repo.insertPending({
+      scope: 'user',
+      scopeRef: null,
+      payload: payload({ action: 'delete', targetId: 'wp-1' }),
+    })
+    expect(del.inserted).toBe(true)
+
+    // 相同 action+targetId 的重复提案仍被吞（防同结论刷屏）
+    const dup = repo.insertPending({
+      scope: 'user',
+      scopeRef: null,
+      payload: payload({ action: 'update', targetId: 'wp-1' }),
+    })
+    expect(dup.inserted).toBe(false)
+  })
+
   it('不同 scope 的同摘要各自征集', () => {
     const a = repo.insertPending({ scope: 'user', scopeRef: null, payload: payload() })
     const b = repo.insertPending({

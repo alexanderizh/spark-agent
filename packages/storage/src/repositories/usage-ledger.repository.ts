@@ -27,6 +27,8 @@ export interface UsageLedgerRow {
   cost_usd: number
   request_timestamp: string
   created_at: string
+  /** 用量来源维度（migration 117）：'api'=用户会话，'dream'=梦境整理会话 */
+  source: string
 }
 
 /** Parameters for recording a new usage entry */
@@ -41,6 +43,8 @@ export interface RecordUsageParams {
   cacheWriteTokens?: number
   costUsd?: number
   requestTimestamp?: string
+  /** 用量来源（缺省 'api'；梦境整理会话传 'dream'） */
+  source?: string
 }
 
 /** Aggregated usage summary */
@@ -105,8 +109,8 @@ export class UsageLedgerRepository extends BaseRepository {
       INSERT INTO ${this.tableName}
         (id, session_id, provider_id, model_id,
          input_tokens, output_tokens, reasoning_output_tokens, cache_read_tokens, cache_write_tokens,
-         cost_usd, request_timestamp, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         cost_usd, request_timestamp, created_at, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     stmt.run(
       id,
@@ -121,6 +125,7 @@ export class UsageLedgerRepository extends BaseRepository {
       params.costUsd ?? 0,
       params.requestTimestamp ?? now,
       now,
+      params.source ?? 'api',
     )
     return id
   }
@@ -167,8 +172,9 @@ export class UsageLedgerRepository extends BaseRepository {
   /**
    * Get aggregated usage for a date range (inclusive).
    * Dates should be ISO 8601 strings (e.g., '2024-01-01T00:00:00Z').
+   * source: 指定 'api'/'dream' 只统计该维度；'all'/undefined 统计全部。
    */
-  getUsageByDateRange(startDate: string, endDate: string): UsageSummary {
+  getUsageByDateRange(startDate: string, endDate: string, source?: string): UsageSummary {
     const stmt = this.raw.prepare(`
       SELECT
         COALESCE(SUM(input_tokens), 0)       AS totalInputTokens,
@@ -180,14 +186,18 @@ export class UsageLedgerRepository extends BaseRepository {
         COUNT(*)                              AS recordCount
       FROM ${this.tableName}
       WHERE request_timestamp >= ? AND request_timestamp <= ?
+      ${source != null && source !== 'all' ? 'AND source = ?' : ''}
     `)
-    return stmt.get(startDate, endDate) as UsageSummary
+    const args =
+      source != null && source !== 'all' ? [startDate, endDate, source] : [startDate, endDate]
+    return stmt.get(...args) as UsageSummary
   }
 
   /**
    * Get usage grouped by provider and model for a date range.
+   * source 语义同 getUsageByDateRange（缺省全部，与旧行为兼容）。
    */
-  getModelUsageGrouped(startDate: string, endDate: string): ModelUsageGroup[] {
+  getModelUsageGrouped(startDate: string, endDate: string, source?: string): ModelUsageGroup[] {
     const stmt = this.raw.prepare(`
       SELECT
         model_id                              AS modelId,
@@ -199,16 +209,38 @@ export class UsageLedgerRepository extends BaseRepository {
         COUNT(*)                              AS recordCount
       FROM ${this.tableName}
       WHERE request_timestamp >= ? AND request_timestamp <= ?
+      ${source != null && source !== 'all' ? 'AND source = ?' : ''}
       GROUP BY provider_id, model_id
       ORDER BY totalCostUsd DESC
     `)
-    return stmt.all(startDate, endDate) as ModelUsageGroup[]
+    const args =
+      source != null && source !== 'all' ? [startDate, endDate, source] : [startDate, endDate]
+    return stmt.all(...args) as ModelUsageGroup[]
+  }
+
+  /**
+   * 【AutoDream】按来源维度聚合全部历史用量（设置页「累计整理消耗」数据源）。
+   */
+  getUsageBySource(source: string): UsageSummary {
+    const stmt = this.raw.prepare(`
+      SELECT
+        COALESCE(SUM(input_tokens), 0)       AS totalInputTokens,
+        COALESCE(SUM(output_tokens), 0)      AS totalOutputTokens,
+        COALESCE(SUM(reasoning_output_tokens), 0) AS totalReasoningOutputTokens,
+        COALESCE(SUM(cache_read_tokens), 0)  AS totalCacheReadTokens,
+        COALESCE(SUM(cache_write_tokens), 0) AS totalCacheWriteTokens,
+        COALESCE(SUM(cost_usd), 0)           AS totalCostUsd,
+        COUNT(*)                              AS recordCount
+      FROM ${this.tableName}
+      WHERE source = ?
+    `)
+    return stmt.get(source) as UsageSummary
   }
 
   /**
    * Get usage grouped by day for a date range.
    */
-  getDailyUsageGrouped(startDate: string, endDate: string): DailyUsageGroup[] {
+  getDailyUsageGrouped(startDate: string, endDate: string, source?: string): DailyUsageGroup[] {
     const stmt = this.raw.prepare(`
       SELECT
         DATE(request_timestamp)               AS date,
@@ -219,17 +251,25 @@ export class UsageLedgerRepository extends BaseRepository {
         COUNT(*)                              AS recordCount
       FROM ${this.tableName}
       WHERE request_timestamp >= ? AND request_timestamp <= ?
+      ${source != null && source !== 'all' ? 'AND source = ?' : ''}
       GROUP BY DATE(request_timestamp)
       ORDER BY date DESC
     `)
-    return stmt.all(startDate, endDate) as DailyUsageGroup[]
+    const args =
+      source != null && source !== 'all' ? [startDate, endDate, source] : [startDate, endDate]
+    return stmt.all(...args) as DailyUsageGroup[]
   }
 
   /**
    * Get usage grouped by day and model for a date range.
    * Powers per-model daily trend charts (top-N model comparison).
+   * source 语义同 getUsageByDateRange（缺省全部，与旧行为兼容）。
    */
-  getModelDailyUsageGrouped(startDate: string, endDate: string): ModelDailyUsageGroup[] {
+  getModelDailyUsageGrouped(
+    startDate: string,
+    endDate: string,
+    source?: string,
+  ): ModelDailyUsageGroup[] {
     const stmt = this.raw.prepare(`
       SELECT
         DATE(request_timestamp)               AS date,
@@ -242,10 +282,13 @@ export class UsageLedgerRepository extends BaseRepository {
         COUNT(*)                              AS recordCount
       FROM ${this.tableName}
       WHERE request_timestamp >= ? AND request_timestamp <= ?
+      ${source != null && source !== 'all' ? 'AND source = ?' : ''}
       GROUP BY DATE(request_timestamp), provider_id, model_id
       ORDER BY date DESC
     `)
-    return stmt.all(startDate, endDate) as ModelDailyUsageGroup[]
+    const args =
+      source != null && source !== 'all' ? [startDate, endDate, source] : [startDate, endDate]
+    return stmt.all(...args) as ModelDailyUsageGroup[]
   }
 
   /**
@@ -262,8 +305,9 @@ export class UsageLedgerRepository extends BaseRepository {
 
   /**
    * Get overall usage summary (all time).
+   * source 语义同 getUsageByDateRange（缺省全部，与旧行为兼容）。
    */
-  getTotalUsage(): UsageSummary {
+  getTotalUsage(source?: string): UsageSummary {
     const stmt = this.raw.prepare(`
       SELECT
         COALESCE(SUM(input_tokens), 0)       AS totalInputTokens,
@@ -274,14 +318,17 @@ export class UsageLedgerRepository extends BaseRepository {
         COALESCE(SUM(cost_usd), 0)           AS totalCostUsd,
         COUNT(*)                              AS recordCount
       FROM ${this.tableName}
+      ${source != null && source !== 'all' ? 'WHERE source = ?' : ''}
     `)
-    return stmt.get() as UsageSummary
+    const args = source != null && source !== 'all' ? [source] : []
+    return stmt.get(...args) as UsageSummary
   }
 
   /**
    * Get usage summary for the current calendar month.
+   * source 语义同 getUsageByDateRange（缺省全部，与旧行为兼容）。
    */
-  getCurrentMonthUsage(): UsageSummary {
+  getCurrentMonthUsage(source?: string): UsageSummary {
     const now = new Date()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
     const endOfMonth = new Date(
@@ -293,7 +340,7 @@ export class UsageLedgerRepository extends BaseRepository {
       59,
       999,
     ).toISOString()
-    return this.getUsageByDateRange(startOfMonth, endOfMonth)
+    return this.getUsageByDateRange(startOfMonth, endOfMonth, source)
   }
 
   /**
