@@ -1236,15 +1236,30 @@
 
 .arm_executor_row {
   display: grid;
-  /* 强度档位 84px + 推理强度 132px（第七列，2026-09 新增执行器推理强度配置；
-     触发器需完整显示「推理·跟随会话」，下拉选项另由 popupMatchSelectWidth=false 自适应） */
-  grid-template-columns: 56px minmax(110px, 1.2fr) minmax(110px, 1.2fr) 84px 132px auto auto;
+  /* 列序：强度档位 / 渠道 / 模型 / 档位 / 推理强度 / 冻结徽标 / 开关 / 删除。
+     冻结列固定 auto：非冻结时空单元格收缩为 0 宽（仅多一个 gap），冻结行追加
+     「冻结剩 X 分钟」徽标不挤压其他列、整行不换行。
+     推理强度 132px（2026-09 新增执行器推理强度配置；触发器需完整显示
+     「推理·跟随会话」，下拉选项另由 popupMatchSelectWidth=false 自适应） */
+  grid-template-columns: 56px minmax(110px, 1.2fr) minmax(110px, 1.2fr) 84px 132px auto auto auto;
   gap: 8px;
   align-items: center;
   width: 100%;
 }
 
-.arm_executor_row > .badge {
+/* 强度档位徽标独占首列；冻结徽标独立成列（.arm_executor_freeze），
+   每行恒为 8 个 grid 子元素 */
+.arm_executor_lead {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  justify-self: start;
+}
+
+.arm_executor_freeze {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
   justify-self: start;
 }
 

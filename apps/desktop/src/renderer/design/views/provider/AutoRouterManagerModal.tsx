@@ -528,85 +528,91 @@ export function AutoRouterManagerModal({
               )}
               {draft.executors.map((executor) => {
                 const executorHealthEntry =
-                  executorHealth?.get(executorHealthKey(executor.providerProfileId, executor.modelId)) ?? null
+                  executorHealth?.get(
+                    executorHealthKey(executor.providerProfileId, executor.modelId),
+                  ) ?? null
                 const frozenRemainingText =
                   executorHealthEntry?.state === 'frozen'
                     ? formatFrozenRemaining(executorHealthEntry.frozenRemainingMs)
                     : null
                 return (
-                <div key={executor.id} className="arm_executor_row">
-                  <span className={intensityBadgeClass(executor.intensity)}>
-                    {INTENSITY_OPTIONS.find((o) => o.value === executor.intensity)?.label}
-                  </span>
-                  {frozenRemainingText != null && (
-                    <span
-                      className="badge warning"
-                      title={`执行模型上游失败后短期冻结中（${executorHealthEntry?.lastFailureKind === 'deterministic' ? '鉴权/配额类，请检查渠道配置' : '限流/服务异常，到期自动恢复'}）\n最近失败：${executorHealthEntry?.lastErrorDetail ?? '—'}\n冻结期间新轮次自动避让该模型`}
-                    >
-                      冻结剩 {frozenRemainingText}
+                  <div key={executor.id} className="arm_executor_row">
+                    <span className="arm_executor_lead">
+                      <span className={intensityBadgeClass(executor.intensity)}>
+                        {INTENSITY_OPTIONS.find((o) => o.value === executor.intensity)?.label}
+                      </span>
                     </span>
-                  )}
-                  <Select
-                    size="small"
-                    value={executor.providerProfileId || undefined}
-                    placeholder="渠道"
-                    options={providerOptions}
-                    popupMatchSelectWidth={false}
-                    onChange={(value) =>
-                      patchExecutor(executor.id, { providerProfileId: value, modelId: '' })
-                    }
-                  />
-                  <Select
-                    size="small"
-                    value={executor.modelId || undefined}
-                    placeholder="模型"
-                    options={modelsForExecutor(executor)}
-                    popupMatchSelectWidth={false}
-                    onChange={(value) => patchExecutor(executor.id, { modelId: value })}
-                  />
-                  <Select
-                    size="small"
-                    value={executor.intensity}
-                    options={INTENSITY_OPTIONS.map((option) => ({
-                      label: option.label,
-                      value: option.value,
-                    }))}
-                    onChange={(value) =>
-                      patchExecutor(executor.id, { intensity: value as RouterIntensity })
-                    }
-                  />
-                  <Select
-                    size="small"
-                    value={executor.reasoningEffort ?? REASONING_EFFORT_FOLLOW}
-                    title="推理强度（模型思考深度，留空跟随会话配置）"
-                    options={[
-                      { label: '推理·跟随会话', value: REASONING_EFFORT_FOLLOW },
-                      ...REASONING_EFFORT_OPTIONS,
-                    ]}
-                    popupMatchSelectWidth={false}
-                    onChange={(value) =>
-                      patchExecutor(executor.id, {
-                        reasoningEffort:
-                          value === REASONING_EFFORT_FOLLOW
-                            ? null
-                            : (value as SessionReasoningEffort),
-                      })
-                    }
-                  />
-                  <Switch
-                    size="small"
-                    checked={executor.enabled}
-                    onChange={(enabled) => patchExecutor(executor.id, { enabled })}
-                  />
-                  <button
-                    type="button"
-                    className="arm_icon_btn"
-                    title="删除该执行模型"
-                    onClick={() => removeExecutor(executor.id)}
-                  >
-                    <Icons.Trash size={13} />
-                  </button>
-                </div>
+                    <Select
+                      size="small"
+                      value={executor.providerProfileId || undefined}
+                      placeholder="渠道"
+                      options={providerOptions}
+                      popupMatchSelectWidth={false}
+                      onChange={(value) =>
+                        patchExecutor(executor.id, { providerProfileId: value, modelId: '' })
+                      }
+                    />
+                    <Select
+                      size="small"
+                      value={executor.modelId || undefined}
+                      placeholder="模型"
+                      options={modelsForExecutor(executor)}
+                      popupMatchSelectWidth={false}
+                      onChange={(value) => patchExecutor(executor.id, { modelId: value })}
+                    />
+                    <Select
+                      size="small"
+                      value={executor.intensity}
+                      options={INTENSITY_OPTIONS.map((option) => ({
+                        label: option.label,
+                        value: option.value,
+                      }))}
+                      onChange={(value) =>
+                        patchExecutor(executor.id, { intensity: value as RouterIntensity })
+                      }
+                    />
+                    <Select
+                      size="small"
+                      value={executor.reasoningEffort ?? REASONING_EFFORT_FOLLOW}
+                      title="推理强度（模型思考深度，留空跟随会话配置）"
+                      options={[
+                        { label: '推理·跟随会话', value: REASONING_EFFORT_FOLLOW },
+                        ...REASONING_EFFORT_OPTIONS,
+                      ]}
+                      popupMatchSelectWidth={false}
+                      onChange={(value) =>
+                        patchExecutor(executor.id, {
+                          reasoningEffort:
+                            value === REASONING_EFFORT_FOLLOW
+                              ? null
+                              : (value as SessionReasoningEffort),
+                        })
+                      }
+                    />
+                    <span className="arm_executor_freeze">
+                      {frozenRemainingText != null && (
+                        <span
+                          className="badge warning"
+                          title={`执行模型上游失败后短期冻结中（${executorHealthEntry?.lastFailureKind === 'deterministic' ? '鉴权/配额类，请检查渠道配置' : '限流/服务异常，到期自动恢复'}）\n最近失败：${executorHealthEntry?.lastErrorDetail ?? '—'}\n冻结期间新轮次自动避让该模型`}
+                        >
+                          冻结剩 {frozenRemainingText}
+                        </span>
+                      )}
+                    </span>
+                    <Switch
+                      size="small"
+                      checked={executor.enabled}
+                      onChange={(enabled) => patchExecutor(executor.id, { enabled })}
+                    />
+                    <button
+                      type="button"
+                      className="arm_icon_btn"
+                      title="删除该执行模型"
+                      onClick={() => removeExecutor(executor.id)}
+                    >
+                      <Icons.Trash size={13} />
+                    </button>
+                  </div>
                 )
               })}
               <Button size="small" icon={<Icons.Plus size={14} />} onClick={addExecutor}>
