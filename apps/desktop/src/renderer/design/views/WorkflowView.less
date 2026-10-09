@@ -976,6 +976,90 @@
   color: var(--warning, #f0a020);
   background: color-mix(in srgb, var(--warning, #f0a020) 14%, transparent);
 }
+/* 执行者绑定校验面板（WorkflowAgentIssuePanel）：检查器 tab 顶部的内容块。
+   不参与 wf-rail-body > * 的 flex:1 均分（否则与节点检查器对半分高度）——
+   按内容自适应，条目多时内部滚动；错误/提醒色随主题 token 自动适配。 */
+.workflow-builder-v2 .wf-agent-issue-panel {
+  flex: none;
+  margin: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  max-height: 200px;
+  overflow-y: auto;
+}
+.workflow-builder-v2 .wf-agent-issue-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 4px;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+.workflow-builder-v2 .wf-agent-issue-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.workflow-builder-v2 .wf-agent-issue-counts {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.workflow-builder-v2 .wf-agent-issue-counts .is-error {
+  color: var(--danger, #e5484d);
+}
+.workflow-builder-v2 .wf-agent-issue-counts .is-warning {
+  color: var(--warning, #f0a020);
+}
+.workflow-builder-v2 .wf-agent-issue-list {
+  list-style: none;
+  margin: 0;
+  padding: 2px 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.workflow-builder-v2 .wf-agent-issue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: default;
+}
+.workflow-builder-v2 .wf-agent-issue-item > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.workflow-builder-v2 .wf-agent-issue-item.is-error > svg {
+  color: var(--danger, #e5484d);
+}
+.workflow-builder-v2 .wf-agent-issue-item.is-warning > svg {
+  color: var(--warning, #f0a020);
+}
+.workflow-builder-v2 .wf-agent-issue-item.is-locatable {
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.workflow-builder-v2 .wf-agent-issue-item.is-locatable:hover {
+  background: color-mix(in srgb, var(--primary) 9%, transparent);
+}
+.workflow-builder-v2 .wf-agent-issue-item.is-locatable:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--primary) 55%, transparent);
+}
 .spark-wf-node-head {
   display: flex;
   align-items: center;

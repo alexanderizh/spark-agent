@@ -707,6 +707,14 @@ vi.mock('@spark/storage', async (importOriginal) => {
     listAll(): ProviderRow[] {
       return Array.from(mockState.providers.values())
     }
+
+    // 标题借道（session-title-target）会查默认渠道，mock 需镜像真实仓储的该方法。
+    getDefault(): ProviderRow | null {
+      for (const row of mockState.providers.values()) {
+        if (row.is_default === 1) return row
+      }
+      return null
+    }
   }
 
   class MediaModelManifestRepository {
@@ -1814,6 +1822,25 @@ describe('SessionService runtime provider/model resolution', () => {
   it.each(['claude-sdk', 'codex'] as const)(
     'mounts the governed spark_computer server and prompt for every %s session',
     async (agentAdapter) => {
+      // 引擎×协议守卫（0e8f97568）后 Codex 只能配 OpenAI 系渠道：codex 变体
+      // 换用 openai 渠道，本用例考察 spark_computer 挂载，与协议无关。
+      const providerProfileId =
+        agentAdapter === 'codex' ? 'openai-computer-provider' : 'tencent-provider'
+      if (agentAdapter === 'codex') {
+        seedProvider({
+          id: providerProfileId,
+          provider_type: 'openai',
+          name: 'OpenAI Computer',
+          config_json: JSON.stringify({
+            defaultModel: 'gpt-5.2-codex',
+            modelIds: ['gpt-5.2-codex'],
+            apiEndpoint: 'https://api.openai.com/v1',
+            codexApiKind: 'responses',
+          }),
+          keystore_ref: 'key-openai-computer',
+          is_default: 0,
+        })
+      }
       const service = new SessionService({} as never, (event) => events.push(event))
       service.setComputerUseMcpProvider(async (sessionId) => ({
         server: {
@@ -1826,8 +1853,8 @@ describe('SessionService runtime provider/model resolution', () => {
         systemPrompt: 'GOVERNED COMPUTER USE PROMPT',
       }))
       const { sessionId } = await service.createSession({
-        providerProfileId: 'tencent-provider',
-        modelId: 'glm-5',
+        providerProfileId,
+        modelId: agentAdapter === 'codex' ? 'gpt-5.2-codex' : 'glm-5',
         agentAdapter,
         permissionMode: agentAdapter === 'codex' ? 'codex-default' : 'claude-auto-edits',
         title: 'Computer use session',
@@ -2478,6 +2505,7 @@ describe('SessionService runtime provider/model resolution', () => {
         defaultModel: 'agnes-2.0-flash',
         modelIds: ['agnes-2.0-flash'],
         apiEndpoint: 'https://apihub.agnes-ai.com/v1',
+        codexApiKind: 'responses',
         modelType: 'multimodal',
         mediaProvider: 'agnes',
         mediaApiType: 'auto',
@@ -2502,8 +2530,10 @@ describe('SessionService runtime provider/model resolution', () => {
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
       providerProfileId: 'agnes-provider',
-      agentAdapter: 'claude-sdk',
-      permissionMode: 'claude-plan',
+      // 引擎×协议守卫（0e8f97568）后 Agnes(OpenAI 系) 只能配 Codex 引擎；
+      // 本用例考察 spark_media manifest 注入，适配器切换不影响断言面。
+      agentAdapter: 'codex',
+      permissionMode: 'codex-default',
       title: 'Agnes multimodal session',
     })
 
@@ -2517,12 +2547,10 @@ describe('SessionService runtime provider/model resolution', () => {
       spark_media: expect.objectContaining({ type: 'stdio' }),
     })
     expect(config?.mcpServers).not.toHaveProperty('spark_image')
-    expect(config?.allowedTools).toEqual(
-      expect.arrayContaining([
-        'mcp__spark_media__generate_image',
-        'mcp__spark_media__generate_video',
-      ]),
-    )
+    // codex 引擎无 claude-sdk 的 allowedTools 概念：工具面经 skillSystemPrompt 的
+    // 媒体引导暴露（与「injects spark_media into Codex adapter turns」同口径）。
+    expect(String(config?.skillSystemPrompt ?? '')).toContain('mcp__spark_media__generate_image')
+    expect(String(config?.skillSystemPrompt ?? '')).toContain('mcp__spark_media__generate_video')
     const mediaServer = unwrapGovernedMcpServer(
       (config?.mcpServers as Record<string, TestMcpServerConfig>).spark_media,
     )
@@ -5265,6 +5293,8 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(atomicConfig?.mcpServers).toHaveProperty('spark_memory')
     expect(atomicConfig).not.toHaveProperty('skillPlugins')
     expect(atomicConfig).not.toHaveProperty('nativeSkills')
+  })
+
   it('scopes main-session user MCP servers to the agent MCP selection (claude-sdk)', async () => {
     mockState.mcpServers.push(
       {
@@ -5426,13 +5456,9 @@ describe('SessionService runtime provider/model resolution', () => {
 
     await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(2))
     const memberConfig = mockState.sdkConfigs[1]
-    expect(String(memberConfig?.systemPrompt ?? '')).toContain(
-      'LEGACY_EMPTY_SELECTION_PROMPT',
-    )
+    expect(String(memberConfig?.systemPrompt ?? '')).toContain('LEGACY_EMPTY_SELECTION_PROMPT')
     // 空选择 = 全量：自定义 MCP 正常挂载（旧行为在此场景是空集）
     expect(memberConfig?.mcpServers).toHaveProperty('write_capable_custom')
-  })
-
   })
 
   it('returns a structured failed workflow_run result when a workflow worker fails', async () => {

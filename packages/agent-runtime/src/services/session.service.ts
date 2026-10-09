@@ -491,7 +491,10 @@ import {
   BROWSER_AUTOMATION_SYSTEM_PROMPT,
   BROWSER_TOOL_NAMES,
 } from './browser-automation-prompt.js'
-import { RuntimeCompositionService, type RuntimeSkillConfig } from './runtime-composition.service.js'
+import {
+  RuntimeCompositionService,
+  type RuntimeSkillConfig,
+} from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { SessionQuestionGate } from './session-question-gate.js'
@@ -4103,11 +4106,7 @@ export class SessionService {
       (adapterKind === 'claude-sdk' && nativeSkillPlugins == null)
         ? await this.getMcpTooling().resolvePlatformManagementMcpServer(sessionId)
         : null
-    const pluginRuntimeMcp = shouldMountBuiltinMcp(
-      'spark_plugins',
-      adapterKind,
-      agentMcpSelection,
-    )
+    const pluginRuntimeMcp = shouldMountBuiltinMcp('spark_plugins', adapterKind, agentMcpSelection)
       ? await this.resolvePluginRuntimeMcpServer(
           turnId,
           usePersistentCodexAppServer ? codexRuntimeLeaseKey : undefined,
@@ -4120,11 +4119,7 @@ export class SessionService {
           },
         )
       : null
-    const webSearchMcpServer = shouldMountBuiltinMcp(
-      'spark_search',
-      adapterKind,
-      agentMcpSelection,
-    )
+    const webSearchMcpServer = shouldMountBuiltinMcp('spark_search', adapterKind, agentMcpSelection)
       ? await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
       : null
     const subAppMcpServer = shouldMountBuiltinMcp('spark_app', adapterKind, agentMcpSelection)
@@ -6062,9 +6057,7 @@ export class SessionService {
     // guarantee the NEXT turn starts cleanly.
     // Agent MCP 选择（mcpServerIds）同样参与快照保护：选择变化时强制重建会话，
     // 防止 resume 会话工具面漂移（计划 7.8）。按会话比对（审查 H-1）。
-    if (
-      this.shouldRebuildSdkSession(sessionId, config.agentMcpSelectionSignature ?? '')
-    ) {
+    if (this.shouldRebuildSdkSession(sessionId, config.agentMcpSelectionSignature ?? '')) {
       config.continueSession = false
     }
 
@@ -6759,9 +6752,7 @@ export class SessionService {
     // MCP hot-reload: same as Claude SDK path — force a fresh session if the MCP
     // set changed since the last build. Agent MCP 选择变化同样触发重建（计划 7.8，
     // 按会话比对，审查 H-1）。
-    if (
-      this.shouldRebuildSdkSession(sessionId, config.agentMcpSelectionSignature ?? '')
-    ) {
+    if (this.shouldRebuildSdkSession(sessionId, config.agentMcpSelectionSignature ?? '')) {
       config.continueSession = false
     }
 
