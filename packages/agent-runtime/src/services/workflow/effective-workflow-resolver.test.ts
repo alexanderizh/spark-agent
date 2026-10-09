@@ -150,7 +150,7 @@ describe('EffectiveWorkflowResolver', () => {
     })
 
     expect(result.workflowName).toBe(workflow.name)
-    expect(result.executionMode).toBe('codex_guided')
+    expect(result.executionMode).toBe('workflow_run')
     expect(workflowReader.get).not.toHaveBeenCalled()
   })
 
@@ -178,7 +178,7 @@ describe('EffectiveWorkflowResolver', () => {
         source: expectedSource,
         bindingInstanceId: `binding-${mode}`,
         workflowId: expectedWorkflowId,
-        executionMode: 'codex_guided',
+        executionMode: 'workflow_run',
       })
     },
   )
@@ -732,8 +732,8 @@ describe('workflow execution mode capability matrix', () => {
   it.each([
     ['claude', true, true, false, 'workflow_run'],
     ['claude-sdk', true, true, false, 'workflow_run'],
-    ['codex', true, true, false, 'codex_guided'],
-    ['spark', true, true, false, 'codex_guided'],
+    ['codex', true, true, false, 'workflow_run'],
+    ['spark', true, true, false, 'workflow_run'],
     ['claude-sdk', false, true, false, 'guided'],
     ['claude-sdk', true, false, false, 'guided'],
     ['claude-sdk', true, true, true, 'guided'],

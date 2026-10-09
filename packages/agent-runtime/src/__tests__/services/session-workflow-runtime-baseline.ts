@@ -216,7 +216,7 @@ export function registerSessionWorkflowRuntimeBaselineTests(options: RegisterOpt
   })
 
   it.each(['codex', 'spark'] as const)(
-    'selects codex_guided through the real %s Host path while mounting workflow_run',
+    'selects workflow_run through the real %s Host path while mounting the HTTP workflow_run tool',
     async (agentAdapter) => {
       const providerId = `workflow-mode-${agentAdapter}-provider`
       const workflowId = `workflow-mode-${agentAdapter}`
@@ -254,10 +254,10 @@ export function registerSessionWorkflowRuntimeBaselineTests(options: RegisterOpt
       const config = options.state.sdkConfigs[0]
       if (config == null) throw new Error('expected Host runtime config')
       expect(String(config.systemPrompt)).toContain(
-        'This runtime does not expose `workflow_run`. Execute the active workflow phases yourself',
+        'call `mcp__spark_team__workflow_run` exactly once',
       )
       expect(String(config.systemPrompt)).not.toContain(
-        'call `mcp__spark_team__workflow_run` exactly once',
+        'This runtime does not expose `workflow_run`',
       )
       expect((config.mcpServers as Record<string, { type?: string }>).spark_team).toMatchObject({
         type: 'http',

@@ -96,7 +96,7 @@ describe('buildWorkflowSystemPrompt', () => {
       ],
     }
 
-    const prompt = buildWorkflowSystemPrompt(workflow, 'codex_guided')
+    const prompt = buildWorkflowSystemPrompt(workflow, 'guided')
 
     expect(prompt).toContain('Route [kind=plan; outputKey=route]')
     expect(prompt).toContain('[Workflow Edges]')
@@ -137,71 +137,17 @@ describe('managed Agent workflow prompt baseline', () => {
     )
   })
 
-  it('keeps the full managed workflow prompt stable for every execution mode', () => {
-    expect({
+  it('maps the legacy codex_guided mode onto the workflow_run prompt and keeps guided distinct', () => {
+    const prompts = {
       workflow_run: buildManagedAgentSystemPrompt(makeAgent(), makeWorkflow(), 'workflow_run'),
       codex_guided: buildManagedAgentSystemPrompt(makeAgent(), makeWorkflow(), 'codex_guided'),
       guided: buildManagedAgentSystemPrompt(makeAgent(), makeWorkflow(), 'guided'),
-    }).toMatchInlineSnapshot(`
-      {
-        "codex_guided": "[Managed Agent]
-
-      Agent: Host Agent (agent-host)
-
-      Description: Coordinates the current session.
-
-      [Agent Instructions]
-      Keep the response concise.
-
-      [Workflow Execution Plan]
-
-      Workflow: New approval workflow (workflow-new)
-
-      Description: The newly selected workflow.
-
-      This runtime does not expose \`workflow_run\`. Execute the active workflow phases yourself in topological order within this turn. Keep an internal checklist of active nodes, do not skip a node unless an incoming condition is false based on established state, and clearly report the blocking node if the workflow cannot be completed.
-
-      1. New plan step [kind=plan]
-         prompt: Use the new plan.",
-        "guided": "[Managed Agent]
-
-      Agent: Host Agent (agent-host)
-
-      Description: Coordinates the current session.
-
-      [Agent Instructions]
-      Keep the response concise.
-
-      [Workflow Execution Plan]
-
-      Workflow: New approval workflow (workflow-new)
-
-      Description: The newly selected workflow.
-
-      Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, or permission preference, treat it as the preferred configuration for that phase. All enabled MCP servers remain globally available. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.
-
-      1. New plan step [kind=plan]
-         prompt: Use the new plan.",
-        "workflow_run": "[Managed Agent]
-
-      Agent: Host Agent (agent-host)
-
-      Description: Coordinates the current session.
-
-      [Agent Instructions]
-      Keep the response concise.
-
-      [Workflow Execution Plan]
-
-      Workflow: New approval workflow (workflow-new)
-
-      Description: The newly selected workflow.
-
-      When workflow_run is available, call \`mcp__spark_team__workflow_run\` exactly once with the current user objective. The tool executes ready agent nodes in parallel waves, runs atomic nodes serially, and carries outputKey state between nodes.
-
-      1. New plan step [kind=plan]
-         prompt: Use the new plan.",
-      }
-    `)
+    }
+    // 历史值 'codex_guided' 不再由解析层产生，兼容映射为 workflow_run 行为
+    // （三种执行器的 Host 工具面都挂载 workflow_run）。
+    expect(prompts.codex_guided).toBe(prompts.workflow_run)
+    expect(prompts.workflow_run).toContain('call `mcp__spark_team__workflow_run` exactly once')
+    expect(prompts.guided).toContain('Execute the task by following these workflow nodes in order')
+    expect(prompts.guided).not.toContain('workflow_run')
   })
 })

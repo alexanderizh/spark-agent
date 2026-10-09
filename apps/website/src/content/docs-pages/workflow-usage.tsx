@@ -68,10 +68,10 @@ const Body = () => (
       </ul>
     </div>
     <p>
-      Claude SDK 执行路径会通过 <code>workflow_run</code> 真实调度节点、保存运行快照并记录失败节点；
-      Codex / Spark 路径不给这个工具，退化为结构化执行指引，由模型按拓扑顺序推进。
-      要让严格节点级调度、循环次数与失败状态真正落地，请使用支持 <code>workflow_run</code>{' '}
-      的运行路径。
+      三种执行器在有可派发节点时都会通过 <code>workflow_run</code>{' '}
+      真实调度节点、保存运行快照并记录失败节点（claude-sdk 走进程内 SDK server， Codex / Spark 走
+      HTTP MCP 桥）；没有托管执行器时退化为结构化执行指引，由模型按拓扑顺序推进。
+      要让严格节点级调度、循环次数与失败状态真正落地，请确认运行路径支持 <code>workflow_run</code>。
     </p>
 
     <h2 id="mental-model">1. 先理解工作流的运行模型</h2>
@@ -348,10 +348,11 @@ outputKey: research_report
       </strong>
       <ul>
         <li>
-          <code>agent</code> 节点在托管执行里<strong>必须绑定一个已启用的 Agent</strong>：
-          <code>config.agentId</code> 为空、或绑定的 Agent 不存在/已禁用，节点就以
-          <code>missing_agent_id</code> 失败并停止工作流。这是刻意设计——画了 agent
-          节点却静默落到宿主身上， 比明确报错更难排查。
+          <code>agent</code> 节点<strong>建议绑定一个已启用的 Agent</strong>：
+          <code>config.agentId</code> 为空、或绑定的 Agent 不存在/已禁用时，托管执行会 回退使用
+          <strong>会话当前 Agent</strong> 执行该节点（运行进度里如实展示实际执行者，
+          编辑器保存时会给出提醒/错误）。只有无会话上下文的低层调用才会以
+          <code>missing_agent_id</code> 显式失败。
         </li>
         <li>
           <code>subagent</code> 节点不填 <code>agentId</code> 时，会用宿主 Agent 的配置生成一个临时
@@ -948,8 +949,8 @@ breakCondition:
       「任务复杂度路由」配置 <code>full / quick</code> 两个值。<code>full</code> 分支运行并发数为 2
       的子代理调研，
       <code>quick</code> 分支直接进入主 Agent。两个分支最终汇合到「主 Agent 编码实现」。 注意这个
-      agent 节点必须绑定一个已启用的 Agent，否则会以
-      <code>missing_agent_id</code> 失败。
+      agent 节点建议显式绑定一个已启用的 Agent，未绑定时运行会回退使用会话当前 Agent
+      执行（进度里如实展示实际执行者）。
     </p>
 
     <h3 id="example-stage-3">7.3 循环修复</h3>
@@ -1004,8 +1005,8 @@ breakCondition:
       （必须是工作区相对路径，越界会被拒绝）。
     </p>
 
-    <h2 id="execution-modes">8. 谁在驱动这张图：三种执行模式</h2>
-    <p>同一张图在不同执行器上的落地强度不同，界面上的文案如下：</p>
+    <h2 id="execution-modes">8. 谁在驱动这张图：两种执行模式</h2>
+    <p>同一张图在不同条件下的落地强度不同，界面上的文案如下：</p>
     <table>
       <thead>
         <tr>
@@ -1021,21 +1022,10 @@ breakCondition:
             <code>workflow_run</code>
           </td>
           <td>托管执行</td>
-          <td>Claude SDK 执行器 + 图里有可派发节点 + 有托管执行器 + 不是 @ 提及轮</td>
+          <td>图里有可派发节点 + 有托管执行器 + 不是 @ 提及轮（三种执行器通用）</td>
           <td>
             宿主拿到 <code>workflow_run</code> 工具，运行时按依赖波次真实执行节点、落
             <code>workflow_runs</code> 快照并支持断点续跑
-          </td>
-        </tr>
-        <tr>
-          <td>
-            <code>codex_guided</code>
-          </td>
-          <td>引导执行</td>
-          <td>Codex 或 Spark 执行器</td>
-          <td>
-            不暴露 <code>workflow_run</code>
-            ，把图作为执行计划注入提示词，由模型在本轮内按拓扑顺序推进
           </td>
         </tr>
         <tr>
@@ -1315,8 +1305,8 @@ breakCondition:
         </tr>
         <tr>
           <td>以为有 workflow_run 但模型在「自己演」</td>
-          <td>当前执行器是 Codex / Spark，属于引导执行</td>
-          <td>需要节点级调度时切到 Claude SDK 执行器</td>
+          <td>本轮走了引导执行：图里没有可派发节点、托管执行器不可用，或是 @ 提及轮</td>
+          <td>给图加上可派发的 agent/subagent 节点，并避免在 @ 提及轮里期望节点级调度</td>
         </tr>
       </tbody>
     </table>
@@ -1343,7 +1333,7 @@ export const workflowUsage: DocsPageContent = {
     { id: 'example-stage-3', title: '7.3 循环修复', level: 3 },
     { id: 'example-stage-4', title: '7.4 并行审计与门禁', level: 3 },
     { id: 'example-stage-5', title: '7.5 复核与交付', level: 3 },
-    { id: 'execution-modes', title: '8. 三种执行模式', level: 2 },
+    { id: 'execution-modes', title: '8. 两种执行模式', level: 2 },
     { id: 'build-in-app', title: '9. 在应用里配置', level: 2 },
     { id: 'save-validation', title: '10. 保存闸门与错误码', level: 2 },
     { id: 'safe-defaults', title: '11. 安全默认值', level: 2 },
@@ -1404,7 +1394,7 @@ export const workflowUsage: DocsPageContent = {
       key: '状态传递',
       value: '上游必须配置 outputKey；下游只接收直接命中条件的上游输出；{{key}} 可插值',
     },
-    { key: '执行模式', value: 'workflow_run（托管执行）/ codex_guided / guided（引导执行）' },
+    { key: '执行模式', value: 'workflow_run（托管执行，三种执行器通用）/ guided（引导执行）' },
     { key: 'MCP', value: '应用级已启用 MCP 自动挂载，节点不再维护 allow-list' },
     { key: '运行记录', value: 'workflow_runs 保存状态、state、节点执行、失败节点与跳过集合' },
   ],
@@ -1428,9 +1418,9 @@ export const workflowUsage: DocsPageContent = {
   aiSummary:
     'Spark Work 工作流是一张可视化、可执行、可审计的任务图，由节点、依赖边、outputKey 状态和条件边共同驱动，图存在 workflows.graph_json，运行快照存在 workflow_runs。' +
     '节点共 13 种：input、plan、route、agent、subagent、skill、tool、mcp、approval、verify、review、artifact、loop；边条件只有 exists/equals/not_equals/truthy/falsy 五个操作符，比较值按布尔/数值/字符串还原类型后严格比较，条件引用的状态键必须是某个节点声明过的 outputKey 或 loopVar，否则保存被拒。' +
-    'agent/subagent 节点会真实派发：agent 必须绑定已启用的 Agent（否则 missing_agent_id），subagent 未绑定时用宿主配置生成临时 worker 且支持 parallelism 1~8 的并发分支；tool/mcp 节点支持受限代理、内置工具直调、MCP 直调与平台工具直调。' +
+    'agent/subagent 节点会真实派发：agent 建议绑定已启用的 Agent（未绑定或失效绑定时回退会话当前 Agent 执行），subagent 未绑定时用宿主配置生成临时 worker 且支持 parallelism 1~8 的并发分支；tool/mcp 节点支持受限代理、内置工具直调、MCP 直调与平台工具直调。' +
     'loop 是包裹独立 config.body 子图的原子节点，支持 maxIterations（默认 5、上限 50）、loopVar、resultKey、collectAll、breakCondition，v1 不支持嵌套 loop 且循环体 id 不能与外层冲突；verify 在工作区执行 verifyCommands，单条超时 600 秒、缓冲 20MB，非零退出即 verify_failed 停止工作流，因此业务返工应放进 loop。' +
-    '执行模式分 workflow_run（Claude SDK，托管执行，暴露 mcp__spark_team__workflow_run）、codex_guided 与 guided（引导执行）；会话可通过 session_workflow_bindings 覆盖为 inherit/override/disabled，编辑器提供「试跑」与「历史」面板，保存前有形状层与拓扑层双重闸门（含环检测与条件引用检测）。',
+    '执行模式分 workflow_run（托管执行，三种执行器通用，暴露 mcp__spark_team__workflow_run）与 guided（引导执行）；会话可通过 session_workflow_bindings 覆盖为 inherit/override/disabled，编辑器提供「试跑」与「历史」面板，保存前有形状层与拓扑层双重闸门（含环检测与条件引用检测）。',
   Body,
 }
 

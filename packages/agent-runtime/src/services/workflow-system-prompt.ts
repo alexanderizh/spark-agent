@@ -68,11 +68,11 @@ export function buildWorkflowSystemPrompt(
     '[Workflow Execution Plan]',
     `Workflow: ${workflow.name} (${workflow.id})`,
     workflow.description.trim() ? `Description: ${workflow.description.trim()}` : '',
-    workflowExecutionMode === 'workflow_run'
+    // 引擎中立：三种执行器的 Host 工具面都挂载 workflow_run（codex/spark 经 HTTP MCP
+    // 桥）。'codex_guided' 是历史遗留值，不再由解析层产生，这里兼容映射为 workflow_run 行为。
+    workflowExecutionMode === 'workflow_run' || workflowExecutionMode === 'codex_guided'
       ? 'When workflow_run is available, call `mcp__spark_team__workflow_run` exactly once with the current user objective. The tool executes ready agent nodes in parallel waves, runs atomic nodes serially, and carries outputKey state between nodes.'
-      : workflowExecutionMode === 'codex_guided'
-        ? 'This runtime does not expose `workflow_run`. Execute the active workflow phases yourself in topological order within this turn. Keep an internal checklist of active nodes, do not skip a node unless an incoming condition is false based on established state, and clearly report the blocking node if the workflow cannot be completed.'
-        : 'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, or permission preference, treat it as the preferred configuration for that phase. All enabled MCP servers remain globally available. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
+      : 'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, or permission preference, treat it as the preferred configuration for that phase. All enabled MCP servers remain globally available. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
     lines.join('\n'),
     edgeLines.length > 0
       ? [
