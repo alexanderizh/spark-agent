@@ -429,6 +429,7 @@ export type {
   UsageLedgerRow,
 } from './services/usage-ledger.service.js'
 export { ScheduledTaskService } from './services/scheduled-task.service.js'
+export { isValidCronExpression } from './services/scheduled-task.service.js'
 export type {
   ScheduledTaskItem,
   TaskExecutionItem,
@@ -601,6 +602,19 @@ export type {
   ConfirmFailure,
 } from './services/memory/memory-candidate.service.js'
 export { EmbeddingService } from './services/memory/embedding.service.js'
+
+// Dream（AutoDream 梦境整理，todo/2026-10-10）— 桌面端 IPC handler / 装配用
+export { DreamOrchestrationService } from './services/dream/dream-orchestrator.service.js'
+export type {
+  DreamSessionControl,
+  DreamOrchestratorDeps,
+  DreamRunHandle,
+} from './services/dream/dream-orchestrator.service.js'
+export { DreamRunStateStore } from './services/dream/dream-state.js'
+export { DreamMemoryProposalSink } from './services/dream/dream-memory-sink.js'
+export { DreamWikiProposalSink } from './services/dream/dream-wiki-sink.js'
+export { parseDreamProposals } from './services/dream/dream-proposals.js'
+export { buildDreamSystemPrompt, buildDreamUserMessage } from './services/dream/dream-prompt.js'
 
 export { SparkMcpOAuthProvider } from './mcp/oauth/oauth-provider.js'
 export type { McpOAuthStore, SparkOAuthTokens } from './mcp/oauth/oauth-store.js'

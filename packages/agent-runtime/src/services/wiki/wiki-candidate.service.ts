@@ -20,6 +20,7 @@ import type {
   WikiSpaceRepository,
   WikiCandidateRepository,
   WikiCandidateRow,
+  WikiCandidatePayload,
   WikiSourceRepository,
   WikiPageKind,
 } from '@spark/storage'
@@ -103,6 +104,10 @@ export class WikiCandidateService {
    *
    * 顺序很重要：先做一次性状态迁移（confirm），再落页面；页面失败时回滚候选。
    * 这样并发 / 重复确认只有一次能成功，且失败后候选仍可重试或改选空间重试。
+   *
+   * 【AutoDream wiki 轨】payload.action 扩展路由：缺省 create 走既有新建路径；
+   * update / delete / merge 对 targetId 指向的既有页面执行（与 memory 候选
+   * P2-A 同构）。delete 走 archivePage 软删（可恢复），不物理删除。
    */
   async confirm(input: {
     id: number
@@ -117,6 +122,13 @@ export class WikiCandidateService {
     if (payload == null) {
       this.candidateRepo.revertToPendingIfUnattached(input.id)
       return { ok: false, message: '候选内容已损坏，无法晋级' }
+    }
+
+    // ── action 扩展路由（AutoDream）：目标页操作 ──
+    if (payload.action === 'update' || payload.action === 'delete' || payload.action === 'merge') {
+      const result = await this.confirmPageAction(input.id, payload)
+      if (!result.ok) this.candidateRepo.revertToPendingIfUnattached(input.id)
+      return result
     }
 
     const space = await this.resolveTargetSpace(confirmed.candidate, input.spaceId ?? null)
@@ -154,6 +166,86 @@ export class WikiCandidateService {
       pageId: written.row.id,
       title: written.row.title,
       indexReady: written.indexReady,
+    }
+  }
+
+  /**
+   * 【AutoDream】action 扩展路由的执行体：对既有页面执行 update / delete / merge。
+   * delete 走 archivePage 软删（wiki_restore 可恢复，符合计划 D7 宁慢勿错）；
+   * merge = 正文合入保留方（mergeTargetId）+ 归档被并方（targetId）。
+   * 任一步失败回滚候选为 pending（与新建路径同一兜底约定）。
+   */
+  private async confirmPageAction(
+    id: number,
+    payload: WikiCandidatePayload,
+  ): Promise<WikiCandidateConfirmResult> {
+    const targetId = payload.targetId
+    if (targetId == null || targetId.length === 0) {
+      return { ok: false, message: '候选缺少目标页面 id（targetId）' }
+    }
+
+    if (payload.action === 'delete') {
+      const removed = await this.writeService.archivePage(targetId)
+      if (!removed.ok) return { ok: false, message: removed.message }
+      this.candidateRepo.attachPage(id, targetId)
+      log.info(`wiki candidate (page-action) confirmed: id=${id} delete→archived page=${targetId}`)
+      return { ok: true, pageId: targetId, title: payload.title }
+    }
+
+    if (payload.action === 'update') {
+      const written = await this.writeService.commitPage({
+        pageId: targetId,
+        title: payload.title,
+        summary: payload.summary,
+        body: payload.body,
+        tags: payload.tags,
+        authorRole: 'extraction',
+        changeNote: payload.rationale?.slice(0, 200) ?? null,
+        sourceSessionId: payload.sources[0]?.sessionId ?? null,
+      })
+      if (!written.ok) return { ok: false, message: written.message }
+      this.bindSources(targetId, payload.sources)
+      this.candidateRepo.attachPage(id, written.row.id)
+      log.info(`wiki candidate (page-action) confirmed: id=${id} updated page=${targetId}`)
+      return {
+        ok: true,
+        pageId: written.row.id,
+        title: written.row.title,
+        indexReady: written.indexReady,
+      }
+    }
+
+    // merge：payload.body 即合并后的完整正文（梦境模型产出），落保留方 + 归档被并方
+    const mergeTargetId = payload.mergeTargetId
+    if (mergeTargetId == null || mergeTargetId.length === 0) {
+      return { ok: false, message: 'merge 候选缺少保留方页面 id（mergeTargetId）' }
+    }
+    const merged = await this.writeService.commitPage({
+      pageId: mergeTargetId,
+      title: payload.title,
+      summary: payload.summary,
+      body: payload.body,
+      tags: payload.tags,
+      authorRole: 'extraction',
+      changeNote: `自动整编合并自 ${targetId}`,
+      sourceSessionId: payload.sources[0]?.sessionId ?? null,
+    })
+    if (!merged.ok) return { ok: false, message: merged.message }
+    const archived = await this.writeService.archivePage(targetId)
+    if (!archived.ok) {
+      // 正文已合入保留方，归档失败不回滚合并（知识无损），只告警留人处理
+      log.warn(`merge archived source page failed: ${targetId} (${archived.message})`)
+    }
+    this.bindSources(mergeTargetId, payload.sources)
+    this.candidateRepo.attachPage(id, merged.row.id)
+    log.info(
+      `wiki candidate (page-action) confirmed: id=${id} merged ${targetId} → ${mergeTargetId}`,
+    )
+    return {
+      ok: true,
+      pageId: merged.row.id,
+      title: merged.row.title,
+      indexReady: merged.indexReady,
     }
   }
 

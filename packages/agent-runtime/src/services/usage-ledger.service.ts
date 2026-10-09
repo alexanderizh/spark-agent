@@ -47,30 +47,45 @@ export class UsageLedgerService {
 
   /**
    * Get aggregated usage for a date range.
+   * source: 'api'/'dream' 只统计该维度；'all'/undefined 统计全部（旧行为）。
    */
-  getUsageByDateRange(startDate: string, endDate: string): UsageSummary {
-    return this.repo.getUsageByDateRange(startDate, endDate)
+  getUsageByDateRange(startDate: string, endDate: string, source?: string): UsageSummary {
+    return this.repo.getUsageByDateRange(startDate, endDate, source)
   }
 
   /**
    * Get usage grouped by model for a date range.
+   * source 语义同 getUsageByDateRange。
    */
-  getModelUsageGrouped(startDate: string, endDate: string): ModelUsageGroup[] {
-    return this.repo.getModelUsageGrouped(startDate, endDate)
+  getModelUsageGrouped(startDate: string, endDate: string, source?: string): ModelUsageGroup[] {
+    return this.repo.getModelUsageGrouped(startDate, endDate, source)
   }
 
   /**
    * Get usage grouped by day for a date range.
+   * source 语义同 getUsageByDateRange。
    */
-  getDailyUsageGrouped(startDate: string, endDate: string): DailyUsageGroup[] {
-    return this.repo.getDailyUsageGrouped(startDate, endDate)
+  getDailyUsageGrouped(startDate: string, endDate: string, source?: string): DailyUsageGroup[] {
+    return this.repo.getDailyUsageGrouped(startDate, endDate, source)
   }
 
   /**
    * Get usage grouped by day and model for a date range.
+   * source 语义同 getUsageByDateRange。
    */
-  getModelDailyUsageGrouped(startDate: string, endDate: string): ModelDailyUsageGroup[] {
-    return this.repo.getModelDailyUsageGrouped(startDate, endDate)
+  getModelDailyUsageGrouped(
+    startDate: string,
+    endDate: string,
+    source?: string,
+  ): ModelDailyUsageGroup[] {
+    return this.repo.getModelDailyUsageGrouped(startDate, endDate, source)
+  }
+
+  /**
+   * 【AutoDream】按来源维度聚合全部历史用量（设置页「累计整理消耗」）。
+   */
+  getUsageBySource(source: string): UsageSummary {
+    return this.repo.getUsageBySource(source)
   }
 
   /**
@@ -96,8 +111,10 @@ export class UsageLedgerService {
 
   /**
    * Get the full dashboard data: total, current month, model breakdown, recent records.
+   * source 语义同 getUsageByDateRange：'api'/'dream' 只统计该维度；'all'/undefined
+   * 统计全部（旧行为）。缺省 'api' 由 IPC handler 决定，保证与 date-range 口径一致。
    */
-  getDashboard(): {
+  getDashboard(source?: string): {
     total: UsageSummary
     currentMonth: UsageSummary
     topModels: ModelUsageGroup[]
@@ -116,9 +133,9 @@ export class UsageLedgerService {
     ).toISOString()
 
     return {
-      total: this.repo.getTotalUsage(),
-      currentMonth: this.repo.getCurrentMonthUsage(),
-      topModels: this.repo.getModelUsageGrouped(startOfMonth, endOfMonth),
+      total: this.repo.getTotalUsage(source),
+      currentMonth: this.repo.getCurrentMonthUsage(source),
+      topModels: this.repo.getModelUsageGrouped(startOfMonth, endOfMonth, source),
       recentRecords: this.repo.getRecentRecords(20, 0),
     }
   }

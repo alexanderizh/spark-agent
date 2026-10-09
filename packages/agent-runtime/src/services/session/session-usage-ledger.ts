@@ -9,6 +9,7 @@
 import { SessionRepository, UsageLedgerRepository } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type { AgentEvent } from '@spark/protocol'
+import { getAutomationMetadata } from './session-pure-utils.js'
 
 /** 每 turn 的用量累计快照（增量核算基线）。 */
 type UsageSnapshot = {
@@ -100,6 +101,11 @@ export class SessionUsageLedger {
       const session = new SessionRepository(this.db).get(sessionId)
       const providerId = options.providerId ?? session?.provider_profile_id ?? event.provider
       const modelId = options.modelId ?? (event.model || session?.model_id || 'unknown')
+      // 【AutoDream】梦境整理会话（metadata.automation.source='dream'）的用量
+      // 单列 'dream' 维度：统计侧可分账，正常用量不被自动整理消耗污染。
+      // metadata 解析复用 getAutomationMetadata（与编排器判定同源，解析失败按普通会话记账）。
+      const source =
+        getAutomationMetadata(session?.metadata_json).source === 'dream' ? 'dream' : 'api'
       new UsageLedgerRepository(this.db).record({
         sessionId,
         providerId,
@@ -111,6 +117,7 @@ export class SessionUsageLedger {
         cacheWriteTokens,
         costUsd,
         requestTimestamp: event.timestamp,
+        source,
       })
     } catch {
       // Non-fatal: usage dashboard data must not interrupt chat event streaming.

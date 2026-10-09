@@ -201,6 +201,11 @@ export interface CommandDeps {
   checkWorkspaceShell?: (
     cwd?: string | null,
   ) => Promise<{ available: boolean; shell?: string; error?: string }>
+  /**
+   * 触发梦境整理（AutoDream，todo/2026-10-10）：由桌面装配层注入编排器调用；
+   * 缺省（未装配/测试替身）时 /dream 命令提示引擎未接入。
+   */
+  runDream?: (track: 'memory' | 'wiki') => { ok: boolean; message: string; runId?: string }
   getMcpStatusSummary?: () => Array<{
     id: string
     name: string
@@ -910,6 +915,58 @@ function registerSdkCommands(registry: CommandRegistry): void {
     usage: '/review [instructions]',
     handler: async () => forwardToAgent(),
   })
+
+  // ── AutoDream 梦境整理（todo/2026-10-10 §8.3）：无门控手动触发 ──
+  registry.register({
+    id: 'spark:dream',
+    name: 'dream',
+    aliases: [],
+    layer: 'builtin',
+    group: 'utility',
+    description: '立即触发自动整编（记忆/知识库空闲整理）',
+    scope: 'global',
+    // low：本身只改配置不写内容，但会拉起后台整编会话（消耗 token，高置信提案
+    // 会自动落库），风险徽标如实标注，帮助面板与命令面板可见。
+    risk: 'low',
+    usage: '/dream [memory|wiki|all]',
+    handler: async (cmd, _ctx, deps) => {
+      if (deps.runDream == null) {
+        return {
+          success: false,
+          message: '自动整编引擎尚未接入（当前构建未装配编排器）。',
+        }
+      }
+      const arg = (cmd.args[0] ?? 'memory').toLowerCase()
+      let tracks: Array<'memory' | 'wiki'>
+      if (arg === 'all') tracks = ['memory', 'wiki']
+      else if (arg === 'memory' || arg === 'wiki') tracks = [arg]
+      else {
+        return {
+          success: false,
+          message: `未知轨道：${arg}。用法：/dream [memory|wiki|all]`,
+        }
+      }
+      const lines: string[] = []
+      let anyOk = false
+      for (const track of tracks) {
+        const r = deps.runDream(track)
+        anyOk = anyOk || r.ok
+        lines.push(
+          `- ${track === 'memory' ? '记忆' : '知识库'}轨：${r.ok ? `已启动（runId ${r.runId ?? '-'}），后台运行中` : r.message}`,
+        )
+      }
+      return {
+        success: anyOk,
+        message: [
+          '**自动整编**',
+          '',
+          ...lines,
+          '',
+          '进度与结果：设置 → 记忆/知识库 →「自动整编」区块；完成后会有系统通知。',
+        ].join('\n'),
+      }
+    },
+  })
 }
 
 function isAgentForwardedCommand(def: CommandDefinition): boolean {
@@ -1008,7 +1065,10 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
       }
 
       if (action !== 'restore' && action !== 'rollback') {
-        return { success: false, message: '用法: /checkpoint <list|restore> [checkpoint-id] [--force]' }
+        return {
+          success: false,
+          message: '用法: /checkpoint <list|restore> [checkpoint-id] [--force]',
+        }
       }
 
       // `--force` 由解析器归入 flags（布尔风格 'true'），位置参数只取非 -- 前缀防御。

@@ -147,6 +147,19 @@ export type SessionTaskStateReadResult =
 
 export type SessionTaskStateReader = (sessionId: string) => SessionTaskStateReadResult
 
+/**
+ * cron 表达式语法校验（与调度器 parseCronNextRun 同一解析器，口径一致）。
+ * 供 dream 定时对齐等装配侧在落库前拦截非法表达式，避免创建永不触发的任务行。
+ */
+export function isValidCronExpression(expression: string): boolean {
+  try {
+    CronExpressionParser.parse(expression)
+    return true
+  } catch {
+    return false
+  }
+}
+
 // ─── Service ────────────────────────────────────────────────────────────────
 
 export class ScheduledTaskService {

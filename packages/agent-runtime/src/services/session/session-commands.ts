@@ -175,14 +175,27 @@ export interface SessionCommandHost {
   rejectGoalContract(params: { sessionId: string }): Promise<SessionGoalResponse>
 }
 
+/** `/dream` 手动触发回调：由桌面装配层注入编排器（Agent 侧不感知 dream 服务）。 */
+export type DreamRunnerFn = (track: 'memory' | 'wiki') => {
+  ok: boolean
+  message: string
+  runId?: string
+}
+
 /** `/xxx` 命令控制器：注册表自足，会话能力经 host 注入。 */
 export class SessionCommandController {
   private readonly registry = createBuiltinRegistry()
+  private dreamRunner: DreamRunnerFn | null = null
 
   constructor(
     private readonly db: SparkDatabase,
     private readonly host: SessionCommandHost,
   ) {}
+
+  /** 装配层注入梦境整理触发器（/dream 命令用；未注入时命令提示引擎未接入） */
+  setDreamRunner(fn: DreamRunnerFn | null): void {
+    this.dreamRunner = fn
+  }
 
   async executeCommand(params: { sessionId: string; message: string }): Promise<
     | {
@@ -580,6 +593,12 @@ export class SessionCommandController {
       getSessionEventCount: (id) => {
         return eventRepo.countBySession(id)
       },
+      ...(this.dreamRunner != null
+        ? {
+            runDream: (track: 'memory' | 'wiki') =>
+              this.dreamRunner?.(track) ?? { ok: false, message: '梦境引擎未装配' },
+          }
+        : {}),
       getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
       restoreCheckpoint: async (id, checkpointRef, opts) =>

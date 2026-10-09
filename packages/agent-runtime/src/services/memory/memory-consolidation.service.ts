@@ -91,11 +91,20 @@ export class MemoryConsolidationService {
    * 检查并执行到期的 scope（fire-and-forget 入口）。
    * 进程级互斥 + 持久占坑双重防重入；任何异常仅 log。
    *
+   * 【AutoDream 收编（todo/2026-10-10 §12.4）】记忆梦境轨开启时本入口让位：
+   * 同类整合（MERGE/ELEVATE）由梦境编排器按其独立调度统一执行，避免双重触发
+   * 重复烧 token。dream 关闭时行为与收编前完全一致（旧 4 个设置键继续生效，
+   * 已开用户零破坏）。
+   *
    * @param scopes 本次会话相关的 scope 组合（user + 当前 workspace + 当前 agent）
    */
   async maybeConsolidate(scopes: ConsolidationScopeRef[]): Promise<void> {
     if (MemoryConsolidationService.running) return
     if (!this.isEnabled()) return
+    if (this.dreamTrackEnabled()) {
+      log.info('consolidation deferred: memory dream track enabled — 整合入口已收编进梦境编排器')
+      return
+    }
     MemoryConsolidationService.running = true
     try {
       for (const { scope, scopeRef } of scopes) {
@@ -366,6 +375,10 @@ export class MemoryConsolidationService {
   private isEnabled(): boolean {
     const v = this.settingsGet('memory', 'consolidationEnabled')
     return v !== false && v !== 0 // 默认启用
+  }
+  /** 记忆梦境轨总开关（dream 分类前的 memory 键；编排器 readConfig 同源） */
+  private dreamTrackEnabled(): boolean {
+    return this.settingsGet('memory', 'dreamEnabled') === true
   }
   private getThreshold(): number {
     const v = this.settingsGet('memory', 'consolidationThreshold')
