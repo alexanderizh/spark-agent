@@ -8,6 +8,11 @@ import type { SubAppSummary } from '@spark/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import {
   UnifiedSessionSidePanel,
+  defaultUnifiedSidePanelWidth,
+  getUnifiedSidePanelWidth,
+  maxSideChatWidthForViewport,
+  resetUnifiedSidePanelWidthForTest,
+  setUnifiedSidePanelWidth,
   subAppPanelKind,
   type UnifiedSidePanelKind,
 } from './ChatSidePanels'
@@ -171,5 +176,110 @@ describe('UnifiedSessionSidePanel', () => {
       container.remove()
       outside.remove()
     }
+  })
+})
+
+describe('统一侧板默认宽度分档', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function setViewportWidth(vw: number): void {
+    vi.stubGlobal('window', {
+      innerWidth: vw,
+      localStorage: window.localStorage,
+    })
+  }
+
+  it('超宽屏（≥2200）取 980', () => {
+    setViewportWidth(2560)
+    expect(defaultUnifiedSidePanelWidth()).toBe(980)
+  })
+
+  it('大屏（1700–2199）取 860', () => {
+    setViewportWidth(1920)
+    expect(defaultUnifiedSidePanelWidth()).toBe(860)
+  })
+
+  it('常规屏（1280–1699）取 760', () => {
+    setViewportWidth(1440)
+    expect(defaultUnifiedSidePanelWidth()).toBe(760)
+  })
+
+  it('窄屏（<1280）取 680，且各档不超过视口上限', () => {
+    setViewportWidth(1100)
+    expect(defaultUnifiedSidePanelWidth()).toBe(680)
+    // 每个档位边界处的默认宽度都应 ≤ 85vw 上限，不会挤压主聊天区
+    setViewportWidth(1280)
+    expect(defaultUnifiedSidePanelWidth()).toBeLessThanOrEqual(maxSideChatWidthForViewport())
+    setViewportWidth(1700)
+    expect(defaultUnifiedSidePanelWidth()).toBeLessThanOrEqual(maxSideChatWidthForViewport())
+    setViewportWidth(2200)
+    expect(defaultUnifiedSidePanelWidth()).toBeLessThanOrEqual(maxSideChatWidthForViewport())
+  })
+})
+
+describe('统一侧板宽度持久化', () => {
+  const KEY = 'spark-agent:unified-side-panel-width'
+
+  function stubWindow(store: Map<string, string>, vw = 1440): void {
+    vi.stubGlobal('window', {
+      innerWidth: vw,
+      localStorage: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => void store.set(key, value),
+      },
+    })
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('未写入偏好时回退默认分档（1440 → 760）', () => {
+    stubWindow(new Map())
+    resetUnifiedSidePanelWidthForTest()
+    expect(getUnifiedSidePanelWidth()).toBe(760)
+  })
+
+  it('设置后写入 localStorage，重启后恢复', () => {
+    const store = new Map<string, string>()
+    stubWindow(store)
+    resetUnifiedSidePanelWidthForTest()
+    setUnifiedSidePanelWidth(900)
+    expect(store.get(KEY)).toBe('900')
+    expect(getUnifiedSidePanelWidth()).toBe(900)
+  })
+
+  it('写入与读取均 clamp 到 [MIN, 视口上限]', () => {
+    // 视口 1440 → 上限 floor(1440 * 0.85) = 1224
+    stubWindow(new Map(), 1440)
+    resetUnifiedSidePanelWidthForTest()
+    setUnifiedSidePanelWidth(300)
+    expect(getUnifiedSidePanelWidth()).toBe(360)
+    setUnifiedSidePanelWidth(9999)
+    expect(getUnifiedSidePanelWidth()).toBe(1224)
+
+    // 存储里手改的越界值在读取时同样被 clamp
+    stubWindow(new Map([[KEY, '9999']]), 1440)
+    resetUnifiedSidePanelWidthForTest()
+    expect(getUnifiedSidePanelWidth()).toBe(1224)
+  })
+
+  it('localStorage 不可用时退回内存状态', () => {
+    vi.stubGlobal('window', {
+      innerWidth: 1440,
+      localStorage: {
+        getItem: () => {
+          throw new Error('blocked')
+        },
+        setItem: () => {
+          throw new Error('blocked')
+        },
+      },
+    })
+    resetUnifiedSidePanelWidthForTest()
+    setUnifiedSidePanelWidth(900)
+    expect(getUnifiedSidePanelWidth()).toBe(900)
   })
 })

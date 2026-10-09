@@ -188,10 +188,11 @@ import {
 export { MarkdownText } from './chat/ChatMarkdown'
 import {
   appIdOfSubAppPanelKind,
-  defaultUnifiedSidePanelWidth,
   filePathOfPreviewPanelKind,
   filePreviewPanelKind,
+  getUnifiedSidePanelWidth,
   maxSideChatWidthForViewport,
+  setUnifiedSidePanelWidth,
   SideChatPanel,
   type SideChatSessionOption,
   subAppPanelKind,
@@ -578,8 +579,14 @@ export function ChatView({
   const [sessionScheduleEnabledCount, setSessionScheduleEnabledCount] = useState(0)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
-  // 侧边聊天面板宽度：可拖拽伸缩，默认值按窗口宽度分档（见 defaultUnifiedSidePanelWidth）
-  const [sideChatWidth, setSideChatWidth] = useState(defaultUnifiedSidePanelWidth)
+  // 侧边聊天面板宽度：可拖拽伸缩，初始值取持久化宽度（上次拖拽结果，clamp 到合法区间），
+  // 见 getUnifiedSidePanelWidth；写入时经 handleSideChatWidthChange 同步持久化，重启后保留。
+  const [sideChatWidth, setSideChatWidth] = useState(getUnifiedSidePanelWidth)
+  // 统一侧板宽度写入：本地 state 驱动渲染，同时写入持久化 store（setUnifiedSidePanelWidth 内部 clamp）
+  const handleSideChatWidthChange = useCallback((width: number) => {
+    setSideChatWidth(width)
+    setUnifiedSidePanelWidth(width)
+  }, [])
   // 内置终端面板：会话级 dock，按钮在 ChatTabbar 右上。
   // 仅在有活跃会话且绑定 workspace 时启用；切会话会保留各自的 terminals（后端负责）。
   const [showTerminalPanel, setShowTerminalPanel] = useState(false)
@@ -2189,7 +2196,11 @@ export function ChatView({
   const handleOpenGitReview = useCallback(() => {
     openUnifiedSidePanel('review')
     // review 内容较宽，保底 520；但极窄窗下要受视口上限约束，避免 state 与渲染不一致
-    setSideChatWidth((width) => Math.max(width, Math.min(520, maxSideChatWidthForViewport())))
+    setSideChatWidth((width) => {
+      const next = Math.max(width, Math.min(520, maxSideChatWidthForViewport()))
+      setUnifiedSidePanelWidth(next)
+      return next
+    })
     setShowInspector(false)
   }, [openUnifiedSidePanel])
 
@@ -3545,7 +3556,7 @@ export function ChatView({
             }
             width={sideChatWidth}
             panelApps={panelApps}
-            onWidthChange={setSideChatWidth}
+            onWidthChange={handleSideChatWidthChange}
             onSelect={setActiveUnifiedSideTab}
             onOpen={openUnifiedSidePanel}
             onCloseTab={closeUnifiedSidePanel}
@@ -3603,7 +3614,7 @@ export function ChatView({
                 workspaceRootPath={gitWorkspace?.rootPath ?? null}
                 status={gitStatus}
                 width={sideChatWidth}
-                onWidthChange={setSideChatWidth}
+                onWidthChange={handleSideChatWidthChange}
                 onRefresh={refreshGitStatus}
                 onClose={() => closeUnifiedSidePanel('review')}
                 onOpenInEditor={(path) => {
@@ -3650,7 +3661,7 @@ export function ChatView({
                 agentStatus={sideChatAgentStatus}
                 creating={sideChatCreating}
                 width={sideChatWidth}
-                onWidthChange={setSideChatWidth}
+                onWidthChange={handleSideChatWidthChange}
                 onClose={() => closeUnifiedSidePanel('side-chat')}
                 onNew={() => {
                   void openSideChatPanel({ replace: true })

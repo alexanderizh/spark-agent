@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { Dropdown } from 'antd'
 import type { SubAppSummary } from '@spark/protocol'
@@ -187,14 +187,79 @@ export function maxSideChatWidthForViewport(): number {
 }
 
 // 默认宽度按窗口宽度分档：大屏更宽（侧栏里要同时容纳文件树 + 编辑器，留足内容区）。
-// 仅作为 lazy initial state 在挂载时取一次，用户手动拖过后保留，不会被 resize 冲掉。
+// 仅作为 lazy initial state 在挂载时取一次；用户手动拖过后由持久化值接管（见下方 store）。
 export function defaultUnifiedSidePanelWidth(): number {
-  if (typeof window === 'undefined') return 640
+  if (typeof window === 'undefined') return 680
   const vw = window.innerWidth
-  if (vw >= 2200) return 760
-  if (vw >= 1700) return 680
-  if (vw >= 1280) return 620
-  return 540
+  if (vw >= 2200) return 980
+  if (vw >= 1700) return 860
+  if (vw >= 1280) return 760
+  return 680
+}
+
+// 统一侧板宽度持久化（localStorage + useSyncExternalStore，模式同 codeViewerZoom）。
+// 所有侧板 tab 共用一个宽度：用户拖拽后跨会话 / 跨重启保留，不再每次展开都回默认值。
+const UNIFIED_SIDE_PANEL_WIDTH_KEY = 'spark-agent:unified-side-panel-width'
+
+function readUnifiedSidePanelWidth(): number {
+  if (typeof window === 'undefined') return defaultUnifiedSidePanelWidth()
+  try {
+    const raw = window.localStorage.getItem(UNIFIED_SIDE_PANEL_WIDTH_KEY)
+    if (raw != null) {
+      const parsed = Number(raw)
+      if (Number.isFinite(parsed)) {
+        // 读取时同样 clamp，防止旧值/手改值超出当前视口上限
+        return clampPanelWidth(parsed, MIN_SIDE_CHAT_WIDTH, maxSideChatWidthForViewport())
+      }
+    }
+  } catch {
+    /* localStorage 不可用时退回默认分档 */
+  }
+  return defaultUnifiedSidePanelWidth()
+}
+
+const sidePanelWidthListeners = new Set<() => void>()
+
+function emitSidePanelWidth(): void {
+  for (const listener of sidePanelWidthListeners) listener()
+}
+
+function subscribeSidePanelWidth(listener: () => void): () => void {
+  sidePanelWidthListeners.add(listener)
+  return () => {
+    sidePanelWidthListeners.delete(listener)
+  }
+}
+
+let unifiedSidePanelWidth = readUnifiedSidePanelWidth()
+
+export function getUnifiedSidePanelWidth(): number {
+  return unifiedSidePanelWidth
+}
+
+/** 设置统一侧板宽度（自动 clamp 并持久化，重启后恢复） */
+export function setUnifiedSidePanelWidth(next: number): void {
+  const clamped = clampPanelWidth(next, MIN_SIDE_CHAT_WIDTH, maxSideChatWidthForViewport())
+  if (unifiedSidePanelWidth === clamped) return
+  unifiedSidePanelWidth = clamped
+  try {
+    window.localStorage.setItem(UNIFIED_SIDE_PANEL_WIDTH_KEY, String(clamped))
+  } catch {
+    /* 受限渲染上下文仍可使用内存状态 */
+  }
+  emitSidePanelWidth()
+}
+
+export function useUnifiedSidePanelWidth(): number {
+  return useSyncExternalStore(subscribeSidePanelWidth, getUnifiedSidePanelWidth, () =>
+    defaultUnifiedSidePanelWidth(),
+  )
+}
+
+/** 测试辅助：重置为 localStorage 中的值并广播 */
+export function resetUnifiedSidePanelWidthForTest(): void {
+  unifiedSidePanelWidth = readUnifiedSidePanelWidth()
+  emitSidePanelWidth()
 }
 
 export function UnifiedSessionSidePanel({
