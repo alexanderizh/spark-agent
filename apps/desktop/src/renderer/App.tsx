@@ -76,6 +76,7 @@ import { resolveSidebarNavVisibility } from './sidebarNavVisibility'
 import { resolveSidebarActiveWorkspaceId } from './design/sidebar-session-routing'
 import { PressureNoticeHost } from './design/settings-performance/PressureNoticeHost'
 import { ComputerKillSwitchNoticeHost } from './design/components/ComputerKillSwitchNoticeHost'
+import { DreamNoticeHost } from './design/components/DreamNoticeHost'
 import { VoiceAssistantHost } from './design/voice-assistant/VoiceAssistantHost'
 import sparkLogo from './assets/spark-logo.png'
 import {
@@ -2312,6 +2313,7 @@ function Shell() {
           {t.view !== 'onboarding' && <OptionalCapabilityCenter />}
           <PressureNoticeHost />
           <ComputerKillSwitchNoticeHost />
+          <DreamNoticeHost />
           <ToastContainer />
         </div>
       </SubAppSurfaceProvider>

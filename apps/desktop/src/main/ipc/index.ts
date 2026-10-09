@@ -199,6 +199,12 @@ import {
   MemoryCommitService,
   isMemorySensitive,
   EmbeddingService,
+  DreamOrchestrationService,
+  type DreamRunHandle,
+  DreamRunStateStore,
+  DreamMemoryProposalSink,
+  DreamWikiProposalSink,
+  createWikiServiceStack,
   ensureSessionWorkspaceRootPath,
   NO_PROJECT_WORKSPACE_NAME,
   SCHEDULED_TASK_SESSION_TITLE_PREFIX,
@@ -211,7 +217,7 @@ import type {
   SDKInvocationSnapshot,
 } from '@spark/agent-runtime'
 import * as keystore from '@spark/shared/keystore'
-import { ScheduledTaskService } from '@spark/agent-runtime'
+import { ScheduledTaskService, isValidCronExpression } from '@spark/agent-runtime'
 import { AutoRouterService, autoRouterHealthRegistry } from '@spark/agent-runtime'
 import { DEFAULT_DISPATCH_GOVERNANCE_CONFIG } from '@spark/agent-runtime'
 import type { TaskExecutorFn } from '@spark/agent-runtime'
@@ -2202,8 +2208,97 @@ async function resolveScheduledTaskRuntime(params: {
   }
 }
 
+/**
+ * 【AutoDream S3（todo/2026-10-10 D3）】dream 定时任务的 prompt 约定与解析：
+ * dream 轨任务由 ensureDreamSchedules 以固定 id 落库（tags=['dream','dream:<track>']，
+ * prompt_template='[dream:track=<track>]'），触发时不走「拉起会话」路径，
+ * 直接分发进梦境编排器。约定集中在此，executor 分支与 ensure 共用。
+ */
+const DREAM_TASK_TAG = 'dream'
+function dreamTaskTrackTag(track: 'memory' | 'wiki'): string {
+  return `dream:${track}`
+}
+/** 梦境会话的保守权限档：按默认 Agent（platform-manager-agent，与
+ * SessionService.resolveAgent 缺省同源）档位的引擎前缀映射到最保守档，防止
+ * 无人值守梦境继承 bypass / auto-edits 类免批准档位（写入只走提案通道）。 */
+function dreamSafePermissionMode(): SessionPermissionMode {
+  const agent = getAgentRepository().get('platform-manager-agent')
+  const mode = agent?.permissionMode ?? 'claude-ask'
+  if (mode.startsWith('claude')) return 'claude-ask'
+  if (mode.startsWith('codex')) return 'codex-default'
+  if (mode.startsWith('spark')) return 'spark-default'
+  return mode.length > 0 ? (mode as SessionPermissionMode) : 'claude-ask'
+}
+
+/** dream 调度相关键（触发定时对齐的唯一键集）：与调度无关的 dream 键
+ * （阈值/批量/模型等）变更不应触发对齐——updateTask 会重算 next_run_at。 */
+function isDreamScheduleSettingKey(category: string, key: string): boolean {
+  if (category === 'memory') {
+    return (
+      key === 'dreamEnabled' ||
+      key === 'dreamScheduleTrigger' ||
+      key === 'dreamScheduleIntervalMinutes' ||
+      key === 'dreamScheduleCron'
+    )
+  }
+  if (category === 'wiki') {
+    return (
+      key === 'dream/enabled' ||
+      key === 'dream/scheduleTrigger' ||
+      key === 'dream/scheduleIntervalMinutes' ||
+      key === 'dream/scheduleCron'
+    )
+  }
+  return false
+}
+
+function dreamTaskPrompt(track: 'memory' | 'wiki'): string {
+  return `[dream:track=${track}]`
+}
+function parseDreamTrackFromTaskPrompt(
+  promptTemplate: string,
+  rawUserMessage?: string,
+): 'memory' | 'wiki' | null {
+  // ScheduledTaskService.executeTask 传入的 promptTemplate 是 buildExecutionPrompt
+  // 包装后的文本（以 "[Scheduled Task Context]" 开头），裸模板在 userMessageDisplayContent；
+  // 依次解析两者：主用裸模板，promptTemplate 兜底兼容直接调用 executor 的场景。
+  for (const text of [rawUserMessage, promptTemplate]) {
+    if (text == null) continue
+    const m = /^\[dream:track=(memory|wiki)\]/.exec(text.trim())
+    if (m != null) return m[1] as 'memory' | 'wiki'
+  }
+  return null
+}
+
+/**
+ * 【AutoDream S3】dream 定时触发的模块级桥：编排器装配（含候选服务/会话控制
+ * 依赖）在 registerAllIpcHandlers 内完成，模块级 executor 通过此桥转发。
+ */
+const dreamScheduledRunnerBridge: {
+  fn: ((track: 'memory' | 'wiki') => DreamRunHandle) | null
+} = { fn: null }
+
 /** Executor function injected into ScheduledTaskService for running tasks */
 const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
+  // Dream 任务分发：不创建会话，直接进梦境编排器（轨级互斥在编排器内）
+  const dreamTrack = parseDreamTrackFromTaskPrompt(
+    params.promptTemplate,
+    params.userMessageDisplayContent,
+  )
+  if (dreamTrack != null) {
+    const runner = dreamScheduledRunnerBridge.fn
+    if (runner == null) {
+      log.warn(`dream scheduled trigger skipped (track=${dreamTrack}): dream engine not ready`)
+      return { error: `dream ${dreamTrack} skipped: dream engine not ready` }
+    }
+    const r = runner(dreamTrack)
+    if (!r.ok) {
+      log.warn(`dream scheduled trigger rejected (track=${dreamTrack}): ${r.message}`)
+      return { error: `dream ${dreamTrack} rejected: ${r.message}` }
+    }
+    return { output: `dream ${dreamTrack} run ${r.runId} started` }
+  }
+
   const sessionService = getSessionService()
   const sessionRepo = new SessionRepository(getDatabase())
 
@@ -5079,6 +5174,23 @@ async function handleRemoteInboundMessage(
       })
   })
   return undefined
+}
+
+/**
+ * 【AutoDream S3】dream 定时任务对齐的模块级桥：registerAllIpcHandlers 装配后
+ * 由 main 启动序列 / dream 设置变更触发（见 ensureDreamSchedulesAsync）。
+ */
+const ensureDreamSchedulesBridge: { fn: (() => void) | null } = { fn: null }
+
+/** 应用启动 / dream 设置变更时对齐两轨定时任务（幂等） */
+export function ensureDreamSchedulesAsync(): void {
+  if (ensureDreamSchedulesBridge.fn == null) {
+    // 正常时序下 main 启动序列晚于装配，不应命中；命中说明调用序被打乱
+    // （早于 registerAllIpcHandlers），显式告警避免静默丢失一次对齐。
+    log.warn('ensureDreamSchedulesAsync skipped: dream assembly bridge not ready')
+    return
+  }
+  ensureDreamSchedulesBridge.fn()
 }
 
 export function registerAllIpcHandlers(): void {
@@ -9990,6 +10102,267 @@ export function registerAllIpcHandlers(): void {
     return undefined
   }
 
+  // ─── Dream（AutoDream 梦境整理，todo/2026-10-10）──────────────────────────
+  // 编排器单例：会话控制适配 SessionService；提案执行复用记忆候选管线单例。
+  let _dreamOrchestrationService: DreamOrchestrationService | null = null
+  const getDreamOrchestrationService = (): DreamOrchestrationService => {
+    if (_dreamOrchestrationService == null) {
+      const sessionService = getSessionService()
+      const memoryRepo = new MemoryRepository(getDatabase())
+      const settings = getSettingsService()
+      const stateStore = new DreamRunStateStore({
+        settingsGet: (category, key) => settings.get(category, key),
+        settingsSet: (category, key, value) => {
+          settings.set(category, key, value)
+        },
+      })
+      const memorySink = new DreamMemoryProposalSink({
+        candidateRepo: new MemoryCandidateRepository(getDatabase()),
+        candidateService: getMemoryCandidateService(),
+        memoryRepo,
+      })
+      // wiki 轨提案执行器：复用 wiki 服务栈工厂（与 wiki IPC 同一装配保证写入原语一致）
+      const wikiStack = createWikiServiceStack({
+        db: getDatabase(),
+        settingsGet: (category, key) => settings.get(category, key),
+      })
+      const wikiSink = new DreamWikiProposalSink({
+        candidateService: wikiStack.candidateService,
+        candidateRepo: wikiStack.candidateRepo,
+        spaceRepo: wikiStack.spaceRepo,
+        pageRepo: wikiStack.pageRepo,
+      })
+      _dreamOrchestrationService = new DreamOrchestrationService({
+        stateStore,
+        settingsGet: (category, key) => settings.get(category, key),
+        resolveDefaultRuntime: async () => {
+          const runtime = await resolveScheduledTaskRuntime({ agentId: null, modelId: null })
+          return {
+            providerProfileId: runtime.providerProfileId,
+            ...(runtime.modelId != null ? { modelId: runtime.modelId } : {}),
+          }
+        },
+        memorySink,
+        wikiSink,
+        sessionControl: {
+          // 【安全纵深】梦境会话无人值守：写入只应走提案通道（最终消息 JSON 块），
+          // 会话本身不该有免批准的写工具。createSession 缺省回落默认 Agent 的权限
+          // 档——若用户默认 Agent 配了 bypass/auto-edits 类档位，梦境将带着完整
+          // 工具面免批准跑 20 分钟；这里强制降级到所属引擎的最保守档。
+          createSession: async (p) => {
+            const r = await sessionService.createSession({
+              ...p,
+              permissionMode: dreamSafePermissionMode(),
+            })
+            return { sessionId: r.sessionId }
+          },
+          submitTurn: (p) =>
+            sessionService.submitTurn({
+              sessionId: p.sessionId,
+              message: p.message,
+              ...(p.providerProfileId != null ? { providerProfileId: p.providerProfileId } : {}),
+              ...(p.modelId != null ? { modelId: p.modelId } : {}),
+            }),
+          patchSessionMetadata: (sessionId, metadata) => {
+            new SessionRepository(getDatabase()).patchMetadata(sessionId, metadata)
+          },
+          getHistory: (p) => sessionService.getHistory(p),
+          cancelTurn: (sessionId) => sessionService.cancelTurn(sessionId),
+          deleteSession: (sessionId) => sessionService.deleteSession(sessionId),
+        },
+      })
+      // 状态变化 → 渲染端广播（设置页状态条 / dreaming 指示刷新）
+      _dreamOrchestrationService.onChange((state) => {
+        pushStreamEvent('stream:dream:changed', state)
+      })
+      // /dream 斜杠命令接线（无门控手动触发，计划 §8.3）
+      sessionService.setCommandDreamRunner((track) => {
+        const r = _dreamOrchestrationService?.runDream(track, 'manual')
+        if (r == null) return { ok: false, message: '梦境引擎未就绪' }
+        return r.ok
+          ? { ok: true, message: '已启动', runId: r.runId }
+          : { ok: false, message: r.message }
+      })
+    }
+    return _dreamOrchestrationService
+  }
+
+  typedIpcHandle('dream:run', async (req) => {
+    const service = getDreamOrchestrationService()
+    const r = service.runDream(req.track, req.trigger ?? 'manual')
+    return r.ok
+      ? { ok: true, runId: r.runId, message: '梦境整理已启动' }
+      : { ok: false, message: r.message }
+  })
+
+  typedIpcHandle('dream:get-state', async (req) => {
+    const service = getDreamOrchestrationService()
+    return {
+      state: service.getState(req.track),
+      report: service.getReport(req.track),
+    }
+  })
+
+  typedIpcHandle('dream:cancel', async (req) => {
+    const service = getDreamOrchestrationService()
+    return service.cancel(req.track)
+  })
+
+  /**
+   * 【AutoDream S3】两轨定时任务对齐（幂等）：读各轨 dream 配置，与固定 id 的
+   * ScheduledTask 行比对后建/改/删。调用时机：应用启动（定时调度器启动后）与
+   * dream 设置键变更（settings:set 分支）。任务行在 ScheduledTasksView 可见，
+   * 用户在任务页的改删会在下一次对齐时被配置收敛回来（配置页是唯一事实源）。
+   */
+  function readDreamScheduleConfig(track: 'memory' | 'wiki'): {
+    active: boolean
+    triggerType: 'interval' | 'cron'
+    intervalSeconds: number | null
+    cronExpression: string | null
+  } {
+    const settings = getSettingsService()
+    const category = track === 'memory' ? 'memory' : 'wiki'
+    const get = (key: string): unknown => settings.get(category, key)
+    const triggerRaw =
+      track === 'memory' ? get('dreamScheduleTrigger') : get('dream/scheduleTrigger')
+    const enabled =
+      track === 'memory' ? get('dreamEnabled') === true : get('dream/enabled') === true
+    const trigger =
+      triggerRaw === 'interval' || triggerRaw === 'cron' ? triggerRaw : ('off' as const)
+    if (!enabled || trigger === 'off') {
+      return { active: false, triggerType: 'interval', intervalSeconds: null, cronExpression: null }
+    }
+    if (trigger === 'cron') {
+      // 两轨统一 null 兜底：未设置时 String(undefined) 会产出字面量 'undefined'，
+      // 被非空判定误认为合法 cron 表达式并创建非法任务行。
+      const cronRaw = track === 'memory' ? get('dreamScheduleCron') : get('dream/scheduleCron')
+      const cron = (cronRaw == null ? '' : String(cronRaw)).trim()
+      if (cron.length === 0) {
+        return { active: false, triggerType: 'cron', intervalSeconds: null, cronExpression: null }
+      }
+      // 非法表达式不落库为永不触发的任务行（UI 校验为主，此处兜底旧数据/直改库）：
+      // 回落默认 24h 间隔保持整理活着，而非静默停摆。
+      if (!isValidCronExpression(cron)) {
+        log.warn(
+          `dream schedule (track=${track}): invalid cron expression "${cron}", falling back to 1440min interval`,
+        )
+        return {
+          active: true,
+          triggerType: 'interval',
+          intervalSeconds: 1440 * 60,
+          cronExpression: null,
+        }
+      }
+      return {
+        active: true,
+        triggerType: 'cron',
+        intervalSeconds: null,
+        cronExpression: cron,
+      }
+    }
+    const minutesRaw =
+      track === 'memory'
+        ? get('dreamScheduleIntervalMinutes')
+        : get('dream/scheduleIntervalMinutes')
+    const minutes = typeof minutesRaw === 'number' && minutesRaw > 0 ? Math.floor(minutesRaw) : 1440
+    return {
+      active: true,
+      triggerType: 'interval',
+      intervalSeconds: minutes * 60,
+      cronExpression: null,
+    }
+  }
+
+  function ensureDreamSchedules(): void {
+    try {
+      const taskService = getScheduledTaskService()
+      for (const track of ['memory', 'wiki'] as const) {
+        const taskId = `dream-schedule-${track}`
+        const cfg = readDreamScheduleConfig(track)
+        const existing = taskService.getTask(taskId)
+        if (!cfg.active) {
+          if (existing != null) taskService.deleteTask(taskId)
+          continue
+        }
+        const desired = {
+          trigger_type: cfg.triggerType,
+          interval_seconds: cfg.intervalSeconds,
+          cron_expression: cfg.cronExpression,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          // enabled 纳入收敛：任务页手动禁用的 dream 行在对齐时恢复（配置页是
+          // 唯一事实源——删除会重建、禁用同理，否则调度静默停摆且 UI 无感知）
+          enabled: 1,
+        } as Record<string, unknown>
+        if (existing == null) {
+          taskService.createTask({
+            id: taskId,
+            name: `梦境整理 · ${track === 'memory' ? '记忆轨' : '知识库轨'}`,
+            description:
+              'AutoDream 自动整理任务（由梦境整理配置驱动；配置入口：设置 → 记忆/知识库 → 梦境整理）',
+            enabled: 1,
+            paused_by_archive: 0,
+            scope: 'global',
+            session_id: null,
+            skip_if_session_running: 0,
+            continue_on_error: 1,
+            trigger_type: cfg.triggerType,
+            interval_seconds: cfg.intervalSeconds,
+            cron_expression: cfg.cronExpression,
+            run_at: null,
+            timezone: desired.timezone as string,
+            start_at: null,
+            end_at: null,
+            max_executions: 0,
+            agent_id: null,
+            team_id: null,
+            model_id: null,
+            workspace_id: null,
+            prompt_template: dreamTaskPrompt(track),
+            permission_mode: 'auto',
+            permission_profile_id: null,
+            timeout_seconds: 60 * 25,
+            max_retries: 0,
+            retry_delay_seconds: 60,
+            retry_backoff: 'fixed',
+            notifications: '[]',
+            concurrency_policy: 'skip',
+            tags: JSON.stringify([DREAM_TASK_TAG, dreamTaskTrackTag(track)]),
+            history_retention_days: 14,
+          })
+          log.info(`dream schedule created: ${track} (${cfg.triggerType})`)
+        } else {
+          // 调度四字段 + enabled 全部一致时跳过 updateTask：updateTask 携带
+          // trigger 字段会重算 next_run_at（interval = now + 整周期），任意 dream
+          // 设置键变更都触发对齐——不比对就会把倒计时反复推满一个周期
+          // （记忆轨 Slider 逐档持久化会放大为几十次写库 + 调度推后）。
+          const unchanged =
+            existing.triggerType === cfg.triggerType &&
+            existing.intervalSeconds === cfg.intervalSeconds &&
+            (existing.cronExpression ?? null) === cfg.cronExpression &&
+            existing.enabled === true
+          if (!unchanged) {
+            taskService.updateTask(taskId, desired)
+          }
+        }
+      }
+    } catch (err) {
+      log.warn(
+        `ensureDreamSchedules failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  // 模块级桥（ensureDreamSchedulesAsync）：registerAllIpcHandlers 执行到此装配
+  ensureDreamSchedulesBridge.fn = () => {
+    // 先触发编排器装配（内含 /dream 命令接线），再对齐任务行
+    void getDreamOrchestrationService()
+    ensureDreamSchedules()
+  }
+
+  // 模块级桥（scheduledTaskExecutor 的 dream 分发）：定时触发转发进编排器
+  dreamScheduledRunnerBridge.fn = (track) =>
+    getDreamOrchestrationService().runDream(track, 'schedule')
+
   typedIpcHandle('memory:list', async (req) => {
     const repo = new MemoryRepository(getDatabase())
     const scope: MemoryScope = req.scope ?? 'user'
@@ -10440,6 +10813,11 @@ export function registerAllIpcHandlers(): void {
         throw new Error(check.message ?? `知识库设置项取值无效：${req.key}`)
       }
       getSettingsService().set(req.category, req.key, check.value)
+      // 【AutoDream S3】wiki 轨 dream 定时/开关类键在本分支提前 return，须在此
+      // 触发对齐，否则改配置需重启应用才生效（与底部 memory 轨钩子同语义）。
+      if (isDreamScheduleSettingKey(req.category, req.key)) {
+        ensureDreamSchedulesAsync()
+      }
       return { ok: true }
     }
     // value === null 视为"清除该 key"：调 repo.delete() 而非写入字面量 null。
@@ -10451,6 +10829,11 @@ export function registerAllIpcHandlers(): void {
     }
     if (req.category === 'telemetry' && req.key === 'data') {
       applyTelemetrySettings(req.value)
+    }
+    // 【AutoDream S3】dream 定时/开关类设置变更后对齐两轨 ScheduledTask 行
+    // （异步执行，不阻塞设置保存；对齐幂等，见 ensureDreamSchedules）
+    if (isDreamScheduleSettingKey(req.category, req.key)) {
+      ensureDreamSchedulesAsync()
     }
     // 性能监控体系热更新（performance 组 → monitor/governor/workflow 治理）。
     // value === null（清除）时 no-op：monitor 沿用当前配置直至下次完整写入。
@@ -11196,17 +11579,31 @@ export function registerAllIpcHandlers(): void {
     return { summary }
   })
 
-  typedIpcHandle('usage:get-dashboard', async (_req) => {
-    return getUsageLedgerService().getDashboard()
+  typedIpcHandle('usage:get-dashboard', async (req) => {
+    // 【AutoDream §12-2】source 分账口径与 usage:get-by-date-range 保持一致：
+    // 缺省 'api'（排除梦境整理消耗），避免同一统计页数字对不上账。
+    return getUsageLedgerService().getDashboard(req.source ?? 'api')
   })
 
   typedIpcHandle('usage:get-by-date-range', async (req) => {
-    const summary = getUsageLedgerService().getUsageByDateRange(req.startDate, req.endDate)
-    const modelGroups = getUsageLedgerService().getModelUsageGrouped(req.startDate, req.endDate)
-    const dailyGroups = getUsageLedgerService().getDailyUsageGrouped(req.startDate, req.endDate)
+    // 【AutoDream §12-2】source 分账：缺省 'api'（排除梦境整理消耗，统计不被
+    // 自动整理污染）；'dream' 单查整理成本；'all' 保持旧的全量语义。
+    const source = req.source ?? 'api'
+    const summary = getUsageLedgerService().getUsageByDateRange(req.startDate, req.endDate, source)
+    const modelGroups = getUsageLedgerService().getModelUsageGrouped(
+      req.startDate,
+      req.endDate,
+      source,
+    )
+    const dailyGroups = getUsageLedgerService().getDailyUsageGrouped(
+      req.startDate,
+      req.endDate,
+      source,
+    )
     const modelDailyGroups = getUsageLedgerService().getModelDailyUsageGrouped(
       req.startDate,
       req.endDate,
+      source,
     )
     return { summary, modelGroups, dailyGroups, modelDailyGroups }
   })

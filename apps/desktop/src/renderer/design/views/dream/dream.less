@@ -1,0 +1,231 @@
+/**
+ * DreamSettingsSection — 梦境整理配置区块样式
+ *
+ * 视觉范式与 wiki_set / 设置页模块卡同款：扁平灰底（--bg-sunken）+ 圆角，
+ * 标题条在卡内用 --bg-soft 提一档，行分隔用低对比分隔线；
+ * 全部取全局 design token，深浅色模式各自适配，不依赖其他模块私有变量。
+ */
+
+.dream_set_group {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+}
+
+.dream_set_head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+  background: var(--bg-soft);
+}
+
+.dream_set_title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+/* 总开关开启后的小徽标：弱化主色，不与危险项混淆 */
+.dream_set_badge {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.dream_set_rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.dream_set_row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.dream_set_label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+/* 标题旁 ⓘ 悬浮说明：默认弱化、悬浮提亮（与 wiki_set_help 同款交互） */
+.dream_set_help {
+  flex: none;
+  color: color-mix(in srgb, var(--text) 45%, transparent);
+  cursor: help;
+  transition: color 0.15s ease;
+
+  &:hover {
+    color: var(--text);
+  }
+}
+
+.dream_set_control {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.dream_set_control_wide {
+  max-width: 55%;
+  justify-content: flex-end;
+}
+
+/* 滑块行：滑块 + 数值并排（用户偏好滑块交互，见项目记忆） */
+.dream_set_control_slider {
+  min-width: 200px;
+  justify-content: flex-end;
+}
+
+.dream_set_unit {
+  flex: none;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+  font-size: 12px;
+}
+
+/* 累计整理消耗行：文本 + ⓘ 悬浮说明（说明收进 tooltip，不占版面） */
+.dream_set_usage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 运行状态条（R7）：转圈 + 阶段说明 + 取消按钮 */
+.dream_set_runbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.dream_set_runspin {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  border-top-color: var(--primary);
+  animation: dream-spin 0.9s linear infinite;
+}
+
+@keyframes dream-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dream_set_runtext {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+/* 上次整理报告摘要（失败态红字） */
+.dream_set_report {
+  padding: 9px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+  color: color-mix(in srgb, var(--text) 65%, transparent);
+  font-size: 12px;
+
+  &.is-error {
+    color: var(--danger, #d4603d);
+  }
+}
+
+/* 手动触发按钮行（触发说明收进行内 ⓘ tooltip） */
+.dream_set_actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+/* 灰底上的 InputNumber：设置页全局把 .ant-input-number 强制为透明边框 + 灰底，
+   与本卡同色会隐形；恢复白底 + 可见边框（与 wiki_set 同款方案） */
+.dream_set_group .ant-input-number,
+.dream_set_group .ant-input-number:hover {
+  border-color: color-mix(in srgb, var(--text) 18%, transparent) !important;
+  background: var(--panel) !important;
+  box-shadow: none !important;
+}
+
+.dream_set_group .ant-input-number:hover {
+  border-color: color-mix(in srgb, var(--text) 32%, transparent) !important;
+}
+
+.dream_set_group .ant-input-number-focused,
+.dream_set_group .ant-input-number:focus-within {
+  border-color: var(--primary) !important;
+}
+
+/* 记忆配置弹窗宿主变体（--bordered）：与 mp_settings_section 同款——
+   透明底 + 1px 描边 + 圆角 8px + 12px 内边距，去灰底头带与全宽分隔带 */
+.dream_set_group--bordered {
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: transparent;
+
+  > .dream_set_head {
+    padding: 0;
+    border-bottom: none;
+    background: transparent;
+
+    .dream_set_title {
+      font-size: 13px;
+    }
+  }
+
+  > .dream_set_rows .dream_set_row {
+    padding: 7px 0;
+    border-bottom: none;
+  }
+
+  > .dream_set_runbar,
+  > .dream_set_actions {
+    padding: 8px 0 0;
+    border-top: none;
+  }
+
+  > .dream_set_report {
+    padding: 2px 0 0;
+    border-top: none;
+  }
+}
+
+/* cron 表达式输入行内错误提示（P2 打磨：渲染端结构校验反馈） */
+.dream_set_cron_error {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--spark-text-danger, #e5484d);
+}

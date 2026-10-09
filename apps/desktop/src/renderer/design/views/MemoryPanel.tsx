@@ -31,6 +31,7 @@ import type {
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useSessionSidebar } from '../SessionSidebarContext'
+import { DreamSettingsSection } from './dream/DreamSettingsSection'
 import './MemoryPanel.less'
 
 type ScopeFilter = 'user' | 'project' | 'agent'
@@ -340,8 +341,7 @@ export function MemoryPanel() {
                   ? '已确认合并记忆'
                   : '已确认并保存为正式记忆'
           message.success(successText)
-        }
-        else {
+        } else {
           const reasonText: Record<string, string> = {
             digest_mismatch: '内容已变化，请重新查看后确认',
             not_pending: '该候选已处理过',
@@ -376,8 +376,7 @@ export function MemoryPanel() {
         if (res?.ok) {
           window.dispatchEvent(new CustomEvent(MEMORY_PENDING_CHANGED_EVENT))
           message.success('已忽略该提议')
-        }
-        else message.warning('该候选不在待确认状态')
+        } else message.warning('该候选不在待确认状态')
       } catch {
         message.error('操作失败（IPC 异常）')
       } finally {
@@ -478,7 +477,13 @@ export function MemoryPanel() {
           allowClear
         />
         <Segmented
-          value={viewMode === 'archived' ? 'archived-only' : viewMode === 'withInvalid' ? 'with-invalid' : 'active-only'}
+          value={
+            viewMode === 'archived'
+              ? 'archived-only'
+              : viewMode === 'withInvalid'
+                ? 'with-invalid'
+                : 'active-only'
+          }
           onChange={(v) =>
             setViewMode(
               v === 'archived-only' ? 'archived' : v === 'with-invalid' ? 'withInvalid' : 'active',
@@ -758,7 +763,8 @@ function MemoryRow({
     }
   }
   // 【P0.1】legacy 回退：旧数据无 authorRole，沿用 sourceSessionId==='consolidation' 识别整合
-  const authorRole = e.authorRole ?? (e.sourceSessionId === 'consolidation' ? 'consolidation' : null)
+  const authorRole =
+    e.authorRole ?? (e.sourceSessionId === 'consolidation' ? 'consolidation' : null)
   const evidenceState = memoryEvidenceState({
     archived: e.archived,
     invalidAt: e.invalidAt,
@@ -885,7 +891,9 @@ function MemoryDetail({
         {loadError != null ? (
           <>
             <div>详情加载失败：{loadError}</div>
-            <div style={{ marginTop: 8, opacity: 0.7 }}>该记忆可能已被删除或网络异常，请关闭后重试。</div>
+            <div style={{ marginTop: 8, opacity: 0.7 }}>
+              该记忆可能已被删除或网络异常，请关闭后重试。
+            </div>
           </>
         ) : (
           <Spin />
@@ -1234,7 +1242,11 @@ function MemoryHistorySection({
         <>
           {ordered.length === 0 ? (
             <div className="mp_history_coverage">
-              暂无历史版本（{data?.coverage?.complete === false ? '此条目的变更记录早于历史功能上线，早期轨迹不可追溯' : '尚未发生过修改'}）
+              暂无历史版本（
+              {data?.coverage?.complete === false
+                ? '此条目的变更记录早于历史功能上线，早期轨迹不可追溯'
+                : '尚未发生过修改'}
+              ）
             </div>
           ) : (
             <div className="mp_history_list">
@@ -1712,6 +1724,9 @@ function MemorySettings() {
           />
         </div>
       </section>
+      {/* AutoDream 记忆轨：自动整编配置（定时/渠道模型/置信度分流/回看窗口）；
+          bordered 变体与本弹窗 mp_settings_section 模块卡同款视觉 */}
+      <DreamSettingsSection track="memory" variant="bordered" />
       <section className="mp_settings_section">
         <h4>检索调参（高级）</h4>
         <div className="mp_field">

@@ -27,6 +27,7 @@ import {
 import type { WikiSettingDefinition } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useToast } from '../../components/Toast'
+import { DreamSettingsSection } from '../dream/DreamSettingsSection'
 import './wiki.less'
 
 type SettingValue = boolean | number | string
@@ -164,6 +165,11 @@ export function WikiSettingsPanel() {
     <div className="wiki_set_root settings-section">
       {groups.map(({ group, defs }) => {
         if (defs.length === 0) return null
+        // dream 分组含渠道/模型联动下拉与阈值滑块，超出通用控件类型，
+        // 由双轨共用的专用区块渲染（键定义仍在本文件单一事实源内做校验）
+        if (group.id === 'dream') {
+          return <DreamSettingsSection key={group.id} track="wiki" />
+        }
         // 分组级待生效标记：与逐项 def.phase 同源（当前分片之后的分组才标注）
         const pending = !isWikiSettingActive(
           { phase: group.phase } as WikiSettingDefinition,

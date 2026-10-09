@@ -1452,6 +1452,16 @@ async function initializeApp(): Promise<void> {
     log.warn(`Failed to start scheduled task scheduler: ${String(err)}`)
   }
 
+  // 2.11 【AutoDream】调度器启动后对齐两轨 dream 定时任务（幂等）：
+  // 应用启动时按当前 dream 设置创建/更新/删除固定 id 的 ScheduledTask 行；
+  // 后续 dream 设置变更由 settings:set 分支再次触发（见 ipc/index.ts）。
+  try {
+    const { ensureDreamSchedulesAsync } = await import('./ipc/index.js')
+    ensureDreamSchedulesAsync()
+  } catch (err) {
+    log.warn(`Dream schedule alignment failed: ${String(err)}`)
+  }
+
   // 2.5 确保无项目会话目录已初始化（避免首次启动时目录不存在导致错误）
   await ensureNoProjectDirectoryExists()
 
