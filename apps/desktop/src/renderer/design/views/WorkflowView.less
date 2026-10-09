@@ -897,6 +897,9 @@
 .wf-field-help.wf-field-warn {
   color: var(--warning);
 }
+.wf-field-help.wf-field-error {
+  color: var(--danger, #e5484d);
+}
 /* 工具节点确定性调用：参数表单的每个字段块（字段名 + 说明 + 控件） */
 .wf-tool-arg-field {
   display: flex;
@@ -947,6 +950,31 @@
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--node-accent, var(--primary)) 22%, transparent),
     var(--shadow-md);
+}
+/* Agent 绑定诊断（agent-binding-validation）：错误=引用已删除的 Agent（阻断保存），
+   警告=未配置执行者（运行时回退会话当前 Agent，不阻断）。双色随主题 token 自动适配。 */
+.spark-wf-node.is-issue-error {
+  border-color: color-mix(in srgb, var(--danger, #e5484d) 55%, transparent);
+  border-left-color: var(--danger, #e5484d);
+}
+.spark-wf-node.is-issue-warning {
+  border-left-color: var(--warning, #f0a020);
+}
+.spark-wf-node-issue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.spark-wf-node-issue.is-error {
+  color: var(--danger, #e5484d);
+  background: color-mix(in srgb, var(--danger, #e5484d) 12%, transparent);
+}
+.spark-wf-node-issue.is-warning {
+  color: var(--warning, #f0a020);
+  background: color-mix(in srgb, var(--warning, #f0a020) 14%, transparent);
 }
 .spark-wf-node-head {
   display: flex;

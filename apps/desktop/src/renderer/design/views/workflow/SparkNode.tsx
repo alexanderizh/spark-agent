@@ -1,4 +1,5 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { Icons } from '../../Icons'
 import { getNodeKindMeta } from './node-kinds'
 import type { SparkFlowNode } from './graph-adapter'
 
@@ -13,8 +14,8 @@ export function SparkNode({ data, selected }: NodeProps<SparkFlowNode>) {
     typeof config.modelId === 'string' && config.modelId
       ? config.modelId
       : typeof config.role === 'string' && config.role
-      ? config.role
-      : meta.hint
+        ? config.role
+        : meta.hint
 
   const promptPreview =
     typeof config.prompt === 'string' && config.prompt.trim().length > 0
@@ -23,13 +24,28 @@ export function SparkNode({ data, selected }: NodeProps<SparkFlowNode>) {
 
   return (
     <div
-      className={`spark-wf-node ${selected ? 'selected' : ''}`}
+      className={`spark-wf-node ${selected ? 'selected' : ''}${
+        data.issue != null ? ` is-issue-${data.issue.level}` : ''
+      }`}
       style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
     >
       <Handle type="target" position={targetPosition} className="spark-wf-handle" />
       <div className="spark-wf-node-head">
         <div className="spark-wf-node-icon">{meta.icon}</div>
         <div className="spark-wf-node-title">{data.title}</div>
+        {data.issue != null && (
+          <span
+            className={`spark-wf-node-issue is-${data.issue.level}`}
+            title={data.issue.message}
+            aria-label={data.issue.message}
+          >
+            {data.issue.level === 'error' ? (
+              <Icons.XCircle size={12} />
+            ) : (
+              <Icons.AlertTriangle size={12} />
+            )}
+          </span>
+        )}
         <span className="spark-wf-node-badge">{meta.label}</span>
       </div>
       <div className="spark-wf-node-sub">{subline}</div>

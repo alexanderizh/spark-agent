@@ -8,12 +8,20 @@ import type {
   WorkflowOrientation,
 } from '@spark/protocol'
 
+/** 画布节点诊断标记：error = 阻断保存的配置问题，warning = 有运行时兜底的配置提醒。 */
+export type SparkNodeIssue = {
+  level: 'error' | 'warning'
+  message: string
+}
+
 export type SparkNodeData = {
   kind: WorkflowNodeKind
   title: string
   config: WorkflowNode['config']
   /** 节点所属编排方向，用于决定 handle 朝向（横向 = 左右、纵向 = 上下）。 */
   orientation: WorkflowOrientation
+  /** 当前节点绑定的校验诊断（如执行者绑定问题），由编辑器派生注入，不落库。 */
+  issue?: SparkNodeIssue
 }
 
 export type SparkFlowNode = Node<SparkNodeData, 'spark'>
@@ -45,9 +53,12 @@ export function formatEdgeConditionLabel(condition: WorkflowEdgeCondition): stri
  * 注意返回值不含 label/className 键时代表"无条件"——调用方更新已有边时要先剥掉旧键
  * （exactOptionalPropertyTypes 下不能用显式 undefined 覆盖）。
  */
-export function buildEdgeConditionProps(
-  condition: WorkflowEdgeCondition | undefined,
-): { data: SparkEdgeData; animated: boolean; label?: string; className?: string } {
+export function buildEdgeConditionProps(condition: WorkflowEdgeCondition | undefined): {
+  data: SparkEdgeData
+  animated: boolean
+  label?: string
+  className?: string
+} {
   if (condition == null) {
     return { data: {}, animated: true }
   }

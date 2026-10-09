@@ -70,6 +70,11 @@ import {
   type WorkflowEditorScope,
 } from './workflow/loop-body-editor'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
+import {
+  collectAgentBindingIssues,
+  type AgentBindingIssue,
+} from './workflow/agent-binding-validation'
+import { WorkflowAgentIssuePanel } from './workflow/WorkflowAgentIssuePanel'
 import { InspectorField, TagPicker, asStringArray } from './workflow/inspector-fields'
 import { WorkflowToolConfigPanel } from './workflow/WorkflowToolConfigPanel'
 import { WorkflowNodeRuntimeFields } from './workflow/WorkflowNodeRuntimeFields'
@@ -391,6 +396,35 @@ function WorkflowViewInner() {
     [completeRootGraph, draft, savedSnapshot],
   )
 
+  // 执行节点（agent）绑定诊断：未绑定=提醒（回退兜底）、引用不存在=错误（阻断保存）。
+  const knownAgentIds = useMemo(() => new Set(agents.map((agent) => agent.id)), [agents])
+  const agentBindingIssues = useMemo(
+    () => collectAgentBindingIssues(completeRootGraph, knownAgentIds),
+    [completeRootGraph, knownAgentIds],
+  )
+  const issueByNode = useMemo(
+    () => new Map(agentBindingIssues.map((issue) => [issue.nodeId, issue])),
+    [agentBindingIssues],
+  )
+  // 诊断以派生方式注入节点 data（不写回 nodes state，避免与图派生 memo 成环）；
+  // exactOptionalPropertyTypes 下用条件展开增删 issue 键，不能用显式 undefined 覆盖。
+  const flowNodes = useMemo(
+    () =>
+      nodes.map((node) => {
+        const issue = issueByNode.get(node.id)
+        if (issue == null && node.data.issue == null) return node
+        const { issue: _staleIssue, ...restData } = node.data
+        return {
+          ...node,
+          data: {
+            ...restData,
+            ...(issue != null ? { issue: { level: issue.level, message: issue.message } } : {}),
+          },
+        }
+      }),
+    [nodes, issueByNode],
+  )
+
   useEffect(() => {
     dirtyRef.current = dirty
     setHasUnsavedChanges(dirty)
@@ -594,6 +628,17 @@ function WorkflowViewInner() {
     if (loopBodyErrors.length > 0) {
       toast.error(loopBodyErrors[0]?.message ?? '循环体配置无效。')
       return
+    }
+    // 执行者绑定闸门：引用已不存在的 Agent 阻断保存（与循环体校验同一入口、同一 toast 样式）；
+    // 未绑定仅提醒，不阻断——运行时会回退使用会话当前 Agent。
+    const bindingErrors = agentBindingIssues.filter((issue) => issue.level === 'error')
+    if (bindingErrors.length > 0) {
+      toast.error(bindingErrors[0]?.message ?? '存在引用失效的执行节点，请修正后再保存。')
+      return
+    }
+    const unboundCount = agentBindingIssues.length - bindingErrors.length
+    if (unboundCount > 0) {
+      toast.warning(`${unboundCount} 个执行节点未显式指定执行者，运行时将回退使用会话当前 Agent。`)
     }
     const graph = completeRootGraph
     let saved: WorkflowItem
@@ -901,6 +946,15 @@ function WorkflowViewInner() {
       return
     }
     setSelectedEdgeId(null)
+  }, [])
+
+  // 校验面板条目的定位交互：选中节点并展开检查器（与 onSelectionChange 的落点一致）。
+  const canvasNodeIds = useMemo(() => new Set(nodes.map((node) => node.id)), [nodes])
+  const locateIssueNode = useCallback((nodeId: string) => {
+    setSelectedNodeId(nodeId)
+    setSelectedEdgeId(null)
+    setRailCollapsed(false)
+    setRailTab('inspector')
   }, [])
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
@@ -1260,7 +1314,7 @@ function WorkflowViewInner() {
 
           <div className="wf-flow" ref={flowWrapRef}>
             <ReactFlow
-              nodes={nodes}
+              nodes={flowNodes}
               edges={edges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
@@ -1430,6 +1484,13 @@ function WorkflowViewInner() {
             </button>
           </div>
           <div className="wf-rail-body">
+            {railTab === 'inspector' && (
+              <WorkflowAgentIssuePanel
+                issues={agentBindingIssues}
+                locatableIds={canvasNodeIds}
+                onLocate={locateIssueNode}
+              />
+            )}
             {railTab === 'inspector' &&
               (selectedEdge != null ? (
                 <WorkflowEdgeInspector
@@ -1783,6 +1844,10 @@ function WorkflowInspector(props: InspectorProps) {
   const loopBody = isLoop && isWorkflowGraph(config.body) ? config.body : defaultLoopBodyGraph()
   const loopBodySummary = summarizeLoopBodyGraph(loopBody)
   const selectableAgents = agents.filter((agent) => agent.workflowId !== currentWorkflowId)
+  // 执行 Agent 引用态：留空 = 回退兜底（合法但提醒）；指向已删除的 Agent = 阻断保存的错误。
+  const boundAgentId = typeof config.agentId === 'string' ? config.agentId.trim() : ''
+  const agentBindingMissing =
+    isAgent && boundAgentId.length > 0 && !agents.some((agent) => agent.id === boundAgentId)
   const handleKindChange = (value: unknown) => {
     const kind = value as WorkflowNodeKind
     if (editingLoopBody && kind === 'loop') return
@@ -2142,6 +2207,15 @@ function WorkflowInspector(props: InspectorProps) {
                 ...selectableAgents.map((agent) => ({ label: agent.name, value: agent.id })),
               ]}
             />
+            {agentBindingMissing ? (
+              <div className="wf-field-help wf-field-error">
+                引用的 Agent 已不存在，保存将被阻止，请重新选择执行者。
+              </div>
+            ) : (
+              <div className="wf-field-help">
+                未选择时运行时回退使用会话当前 Agent；需要固定执行者请显式指定。
+              </div>
+            )}
           </InspectorField>
         )}
         {isSubagent && (
