@@ -6,15 +6,33 @@
 
 ## [Unreleased]
 
+## [0.14.14] - 2026-10-09
+
 ### 新增
 
-- **Agent 级 Skill / MCP 按需挂载**：Agent 编辑页「MCP 服务」区块从只读展示升级为可配置选择器——**未选择（默认）= 全部可用**（存量 Agent 行为零变化），**部分点选 = 仅挂所选**。主会话三条引擎路径（claude-sdk / codex / spark）与团队成员路径统一消费 `agent.mcpServerIds`（此前该字段在主会话被完全忽略）；内置 MCP 按四维标准分级：spark_files / spark_tool_results / spark_memory / spark_session 为会话基础能力恒挂载，spark_platform（80+ 工具）/ spark_plugins / spark_app / spark_media / spark_image / spark_browser / spark_computer / spark_search 为可选重型可按 Agent 摘除，其中 spark_platform 在 Spark / Codex 引擎下强制挂载（技能加载依赖）。全选语义归一化为 `[]`（动态全量，新增 server 自动纳入）；SDK resume 会话在 Agent MCP 选择变化时强制重建防工具面漂移。同步修复三处既有缺口：① 工作流 agent 节点配置 `mcpServerIds` 不生效（值被覆盖但缺 flag 标记）；② subagent 绑定空选择存量 Agent 时误入「空能力集」分支（统一为空=全量，D1）；③ claude-sdk 原生技能路径 `nativeSkills:'all'` 绕过 Agent 技能白名单——改传生效技能名单（SDK 原生语义：未列出技能从目录隐藏且被 Skill 工具拒绝），`skills_list` / `skills_load` 增加会话生效面收敛与越权硬校验（内置平台管理 Agent 豁免）。新增 `agent-mcp-policy` / `native-skill-filter` 纯函数模块与聚焦单测、`buildMcpServersForSDK` 白名单零覆盖补齐、三引擎集成用例与 D1 回归用例；官网 docs 三处「全员默认挂载」表述同步更新。
+- **Agent 级 Skill / MCP 按需挂载**：Agent 编辑页可按需勾选 Skill 与 MCP——未选择（默认）= 全部可用，部分点选 = 仅挂所选；主会话三引擎与团队成员路径统一生效，SDK resume 在选择变化时重建会话防工具面漂移，含失效选择治理与既有语义缺口修复。
+- **Agent「自动整编」双轨编排**：新增自动整编双轨契约、usage source 分账存储与编排内核，桌面端完成装配与设置区块。
+- **工作流 agent 节点编排增强**：编辑器补齐节点绑定校验（问题面板、角标与保存闸门）；执行模式引擎中立化，codex/spark 与 claude-sdk 统一走 workflow_run 工具链；会话输入框托管改为运行时强制接管，未绑定节点回退会话宿主。
+- **工作流原子节点紧凑展示**：会话内原子节点紧凑渲染，JSON 代码块正常高亮。
+- **会话工作流绑定代次终态守卫**：代次守卫与只读工具策略加固（agent-runtime）。
+- **知识库目录树层级结构**：目录树支持文件夹层级展示与交互优化。
+- **只读「工具链」设置页**：全量展示 agent 可用工具清单。
+- **Agent 规则卡片就地新增**：规则卡片支持就地新增，并提供设置页管理入口。
 
 ### 修复
 
-- **Agent 部分点选 MCP 时未勾选的内置服务仍全量挂载**：`agent.mcpServerIds` 仅含用户自定义 server id（未勾选任何内置服务）时，可选档内置（spark_platform / spark_search 等）此前保持全量挂载，与选择器「未勾选即不挂载」的界面承诺及文档「部分点选 → 仅挂所选」表述矛盾。现统一为单一语义：部分点选即仅挂所选（内置清单为空 = 可选档内置全不挂；必需档与 spark/codex 引擎下的 spark_platform 强制归位不受影响）。存量说明：非空且仅含用户 id 的旧数据只出现于 2026-07-08～07-16 的 UI 写入窗口，该字段此后在主会话从未生效，暴露面趋零。同步修复 `session-runtime-config.test.ts` 中三个新增用例被误嵌套进上一个 `it` 块导致宿主用例报错的结构问题（该嵌套此前使新用例从未真正运行，三引擎变体与语义翻转断言已补齐）。
-- **SDK resume 快照保护补齐技能面维度与成员路径**（审查 D-2/D-3）：生效技能面签名（与 nativeSkills 名单同源）并入 claude-sdk / codex 两条 resume 路径的重建比对——会话中途修改 Agent 技能选择后不再出现「技能目录可见却被 Skill 工具拒绝」的过滤面漂移；团队成员讨论续会话（stable id 复用）补上同构保护，成员 MCP 选择 / 技能面 / 全局 MCP 版本变化时强制重建。另将 skills_list / skills_load 硬校验的内置豁免从 `builtIn` 布尔收敛到平台管理 Agent 本身（此前画布助手等其他内置 Agent 宿主的整个会话含成员均被豁免，审查 D-5）；Agent MCP 选择器的「已失效选择」治理：已删除 server 的残留 id 在弹窗中独立分组展示并可单独移除，保存时自动清理、全选归一化不再被其阻断。
-- **既有行为变化提示**：工作流 subagent 节点绑定「MCP 选择为空」的存量 Agent 时，其用户自定义 MCP 挂载面由旧实现的零个修复为全量（空=全量统一语义）；如需该节点保持空能力集，请在节点上显式配置 MCP 选择。
+- **切换项目后发送新建会话时工作流挂载跟随**。
+- **快捷录入弹窗粘贴图片被其他会话输出清空**。
+- **问答面板超长内容改为限高内滚**，选项与按钮不再被撑出可视区。
+- **工作流终审收口**：校验面板样式补齐与存量用例修复。
+
+### 改进
+
+- **会话侧板宽度拖拽结果持久化**。
+- **自动路由执行器行冻结徽标独立成列**。
+- **git 面板目录行 hover 批量暂存/取消暂存/丢弃**。
+- **画中画窗口位置跨重建记忆**（computer use）。
+- **README 补充工作流编排与扩展生态展示章节**。
 
 ## [0.14.13] - 2026-10-08
 
@@ -37,7 +55,7 @@
 
 ### 新增
 
-- **智能路由执行器健康治理（健康冻结 / 一次性故障切换重派发 / 健康可视化 / 重试入口闭环）**：此前执行器上游终态失败后没有任何进程内健康记忆——下一轮仍会被路由到刚失败的渠道，轮次失败只能靠用户整轮手动重试。新增 auto-router-health 执行器健康注册表：providerId:modelId 粒度记录上游终态失败（429/5xx/超时/鉴权）并短期冻结，选执行器自动避让（同强度按声明顺序取健康条目），到期半开恢复（首笔成功清零、失败递进升级冻结时长），全冻结时 best-effort 选最快解冻条目而非直接报错，鉴权/配额类归类 deterministic 不自愈、重启即清零。配套 turn 监督一次性故障切换：agent_error 终态且未产出用户可见输出时由 runtime 冻结故障执行器并以同参数自动重派发一次（每条用户消息仅一次），`EventRepository.hasTurnProducedSideEffects` 判定本轮已有消息/工具副作用则不静默重跑，避免重复写文件与重复计费；故障切换白名单收敛为 turnSource='user'（协议 submit-turn 新增可选 turnSource 字段），画布/看板/子应用等编排型轮次默认排除，杜绝重复执行注入；失败归类错误码优先（PERMISSION_* / MAX_ITERATIONS / SDK_RESUME_CIRCUIT_OPEN / CODEX_RUNTIME_NOT_INSTALLED 归 environment），权限超时不再被误冻结、environment 类失败不冻结不重派发；避让清单排除最终选中执行器，全冻结兜底不再「避让 A 同时路由 A」。健康可视化：悬浮卡 hover router 行拉取一次健康快照，故障避让条目与解冻倒计时上卡；路由决策条新增「故障避让路由」态与摘要行，提示条门控纳入健康避让字段（全冻结轮与避让恢复轮必展示）；executor_failover 改为专属正向信号卡不再落错误诊断卡，重派发轮专属队列标签；冻结剩余时长按事件时间锚点衰减，历史会话不再永远「剩 N 分钟」；管理弹窗同步展示执行器冻结状态与健康说明。重试入口闭环：executor_failover info 信号从错误时刻预发改为过队列暂停闸门后发——此前 info 会抑制原错误卡死手动重试按钮，闸门拦截重派发后承诺落空、用户失去一切重试入口，被拦截时改发 warning 补偿（不抑制手动重试）；重派发轮自身终态失败后解除原轮抑制（手动重试按 auto_router_redispatch 来源标记向前回溯原用户消息），不再被隐藏消息挡死。观测与资源收敛：executorHealthKey 统一追踪键收敛健康注册表/主进程过滤/管理弹窗/悬浮卡共 8 处手拼 providerId::modelId，防两侧漂移致健康展示静默消失；副作用查询惰性化（非 router 会话监督早退不再白跑一次 DB 查询），会话删除级联清理待重派发种子，onTurnSuccess 双调用点 exactly-once 去重；健康判定异常只降级日志，不改变错误呈现。
+- **智能路由执行器健康治理（健康冻结 / 一次性故障切换重派发 / 健康可视化 / 重试入口闭环）**：此前执行器上游终态失败后没有任何进程内健康记忆——下一轮仍会被路由到刚失败的渠道，轮次失败只能靠用户整轮手动重试。新增 auto-router-health 执行器健康注册表：providerId:modelId 粒度记录上游终态失败（429/5xx/超时/鉴权）并短期冻结，选执行器自动避让（同强度按声明顺序取健康条目），到期半开恢复（首笔成功清零、失败递进升级冻结时长），全冻结时 best-effort 选最快解冻条目而非直接报错，鉴权/配额类归类 deterministic 不自愈、重启即清零。配套 turn 监督一次性故障切换：agent*error 终态且未产出用户可见输出时由 runtime 冻结故障执行器并以同参数自动重派发一次（每条用户消息仅一次），`EventRepository.hasTurnProducedSideEffects` 判定本轮已有消息/工具副作用则不静默重跑，避免重复写文件与重复计费；故障切换白名单收敛为 turnSource='user'（协议 submit-turn 新增可选 turnSource 字段），画布/看板/子应用等编排型轮次默认排除，杜绝重复执行注入；失败归类错误码优先（PERMISSION*\* / MAX_ITERATIONS / SDK_RESUME_CIRCUIT_OPEN / CODEX_RUNTIME_NOT_INSTALLED 归 environment），权限超时不再被误冻结、environment 类失败不冻结不重派发；避让清单排除最终选中执行器，全冻结兜底不再「避让 A 同时路由 A」。健康可视化：悬浮卡 hover router 行拉取一次健康快照，故障避让条目与解冻倒计时上卡；路由决策条新增「故障避让路由」态与摘要行，提示条门控纳入健康避让字段（全冻结轮与避让恢复轮必展示）；executor_failover 改为专属正向信号卡不再落错误诊断卡，重派发轮专属队列标签；冻结剩余时长按事件时间锚点衰减，历史会话不再永远「剩 N 分钟」；管理弹窗同步展示执行器冻结状态与健康说明。重试入口闭环：executor_failover info 信号从错误时刻预发改为过队列暂停闸门后发——此前 info 会抑制原错误卡死手动重试按钮，闸门拦截重派发后承诺落空、用户失去一切重试入口，被拦截时改发 warning 补偿（不抑制手动重试）；重派发轮自身终态失败后解除原轮抑制（手动重试按 auto_router_redispatch 来源标记向前回溯原用户消息），不再被隐藏消息挡死。观测与资源收敛：executorHealthKey 统一追踪键收敛健康注册表/主进程过滤/管理弹窗/悬浮卡共 8 处手拼 providerId::modelId，防两侧漂移致健康展示静默消失；副作用查询惰性化（非 router 会话监督早退不再白跑一次 DB 查询），会话删除级联清理待重派发种子，onTurnSuccess 双调用点 exactly-once 去重；健康判定异常只降级日志，不改变错误呈现。
 - **记忆管理 P2 系列（冲突写入候选化 / 归档恢复 / 候选确认体验 / 合并执行器抽取）**：冲突写入守卫——演化判定 UPDATE/DELETE 且目标为手动创建或用户明确表达的记忆时不再全自动执行，转候选区等用户确认；候选 payload 透传 action/targetId，详情弹窗与面板按动作分化展示（delete 为 danger 态）；已被用户拒绝的同 digest 冲突再次出现时不得自动改写/失效目标，pending 提案在队期间同样跳过自动路径；演化征集正文不再内嵌时间戳合成 History（defer 暂存原文、确认落库时才合成），同一冲突反复演化 digest 稳定、候选去重恢复生效，确认货币性比对剥离 History 段后比对、确认窗口不被合成段误判失效。归档恢复——恢复归档补 frontmatter archived:false 写回与 MEMORY.md 投影重刷，与归档两侧对称；新增 `memory:unarchive` IPC 与 migration 107 来源归因明细字段（sourceEventId/sourceTurnId/authorAgentId/extractionKind/extractionModel）；面板支持「仅有效 / 含失效 / 已归档」三态视图切换，批量归档带二次确认（对齐删除先例）、批量恢复一键回滚。候选确认体验——侧栏设置按钮与设置页「记忆」导航项新增待确认候选未读角标（danger 色系、随视图/分区切换刷新）；新增候选详情弹窗（候选内容、来源、置信与确认/丢弃操作），替代此前只能在列表内查看的局限；候选列表加载失败不再静默（空列表时提示条与重试入口），MERGE 需确认开启但候选区不可用时跳过本次合并留待下轮、不再静默自动合并；delete 候选目标正文不可读时全链标注（列表行级 Tag 与详情弹窗提示）。结构与性能——memory-merge-executor 独立模块承载 MERGE 执行段，consolidation 自动合并与候选确认合并共用，消除 candidate↔consolidation 循环依赖；演化服务复用会话级 MemorySearchRepo 与 embedding 服务，不再每 turn 重复加载 vec0 扩展、绕开 provider 宕机负缓存；候选类型协议派生、候选加载失败可见与正文不可读标注等遗留改进项同步落地。
 - **语音助手：HUD 就绪门防丢首字 / 人声门控自愈 / 恢复默认设置 / TTS 本地兜底**：丢首字修复——唤醒提示音此前在 ASR 同步启动后立即触发，而渲染端 getUserMedia 实测还要 0.5~1.1s，提示音喊「请讲」时麦克风并未开门，用户开口的前几个字物理上丢失（pre-roll 仅 KWS 常驻流有货）。提示音改由 capture-started 就绪信号门控（1.5s 超时兜底防永无声音），HUD 就绪前显示「正在准备麦克风…」并降调舞台，就绪瞬间波形给一次「可以说了」弹跳；协议 `VoiceAssistantStatus` 新增可选 captureReady（缺省按已就绪，向后兼容）；唤醒词命中不再预播提示音（cue 统一由就绪门发令）消除双响，capture-started 丢失时超时兜底同步解锁 HUD（此前只播提示音不解锁、两路信号自相矛盾）。说话不触发发送自愈——安静人声/低增益麦克风下能量层放行音频的 silero 人声覆盖率仅 14~29%，低于 30% 一刀切阈值时每个 final 被整句丢弃且连续丢弃无逃生通道，整场锁死；现连续 3 个 final 被覆盖率拦截即判定真话被饿死，本会话阈值减半放行并打醒目告警，降档升级为模块级 10 分钟粘性窗口（半双工每轮重建 ASR 实例下仍生效），用户调人声聚焦档位时主动重置，噪音硬解覆盖率≈0 仍拦得住。设置页底部新增「恢复默认设置」按钮（对齐性能设置页先例：图标+文字、无确认弹窗），默认值取协议层 DEFAULT_VOICE_ASSISTANT_SETTINGS 单一权威来源，保存期间禁用防重复点击、失败行内提示不双报。TTS 本地兜底——云端 TTS 渠道不可用（未配置/网络/鉴权/限流）时自动回落操作系统语音合成（macOS say / Windows SAPI / Linux espeak-ng）复用既有播放链路，兜底产物不入磁盘缓存、渠道恢复自动回云端，协议新增 ttsLocalFallback 开关（缺省开），设置页与 HUD 播报设置条均可控制；兜底产物校验同步加固：isPlausibleWav 从魔数校验升级为尺寸自洽校验（完整链式解析 chunk 定位 data、校验 RIFF/data 声明长度与文件实际长度），拦截 say 早杀/晚杀截断产物与空数据文件；macOS 13+ 字母序清单下 novelty 语音不再被误选（白名单优先、无命中排除 novelty 取标准音色）；Windows SAPI 脚本过滤 Enabled=false 的禁用语音（选中会让 SelectVoice/Speak 抛错致该用户每句兜底全失败）。
 - **侧边栏状态与标记筛选升级为多选**：SidebarFilterMenu 状态/标记筛选由单选 all|值 改为多选数组（空数组=全部），行标签支持多值摘要展示；session-labels 增补多选筛选值一致性与格式化工具，会话列表适配多选筛选态与角标口径。
