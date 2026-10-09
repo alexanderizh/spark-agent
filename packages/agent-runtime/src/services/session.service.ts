@@ -172,6 +172,7 @@ import { readSessionWorkflowFeatureFlags } from './workflow/session-workflow-fea
 import { WorkflowRunCoordinator } from './workflow/workflow-run-coordinator.js'
 import {
   buildForcedWorkflowTakeoverResultPrompt,
+  buildWorkflowRecentRunPrompt,
   runForcedWorkflowTakeover,
   shouldForceWorkflowTakeover,
   type ForcedWorkflowTakeoverHolder,
@@ -2071,10 +2072,13 @@ export class SessionService {
     sessionId: string
     spaceId: string
     title: string
-    body: string
+    /** kind='folder' 时省略（文件夹无正文） */
+    body?: string
     kind?: string
     summary?: string
     tags?: string[]
+    /** 父节点 id（页面或文件夹均可）；缺省挂根层 */
+    parentId?: string
   }): Promise<WikiBridgeWriteReceipt> {
     const root = await this.resolveWorkspaceRootForSession(params.sessionId)
     const wiki = this.buildWikiServices(params.sessionId, root)
@@ -2082,13 +2086,17 @@ export class SessionService {
       log.warn(`wiki write 拒绝越权空间：session=${params.sessionId} space=${params.spaceId}`)
       return { ok: false, error: '目标空间不在本会话可见范围内' }
     }
+    if (params.kind !== 'folder' && (params.body == null || params.body.length === 0)) {
+      return { ok: false, error: '新建页面必须提供正文（kind=folder 除外）' }
+    }
     const result = await wiki.writeService.commitPage({
       spaceId: params.spaceId,
       title: params.title,
-      body: params.body,
+      ...(params.body != null ? { body: params.body } : {}),
       ...(params.kind != null ? { kind: params.kind as never } : {}),
       ...(params.summary != null ? { summary: params.summary } : {}),
       ...(params.tags != null ? { tags: params.tags } : {}),
+      ...(params.parentId != null ? { parentId: params.parentId } : {}),
       authorRole: 'agent',
     })
     if (!result.ok) return { ok: false, error: result.message }
@@ -2110,6 +2118,8 @@ export class SessionService {
     body?: string
     summary?: string
     tags?: string[]
+    /** 移动节点到该父节点下（页面 / 文件夹均可）；防环由写入服务统一守卫 */
+    parentId?: string
   }): Promise<WikiBridgeWriteReceipt> {
     const root = await this.resolveWorkspaceRootForSession(params.sessionId)
     const wiki = this.buildWikiServices(params.sessionId, root)
@@ -2123,6 +2133,7 @@ export class SessionService {
       ...(params.body != null ? { body: params.body } : {}),
       ...(params.summary != null ? { summary: params.summary } : {}),
       ...(params.tags != null ? { tags: params.tags } : {}),
+      ...(params.parentId != null ? { parentId: params.parentId } : {}),
       authorRole: 'agent',
     })
     if (!result.ok) return { ok: false, error: result.message }
@@ -4203,6 +4214,33 @@ export class SessionService {
     // 为 objective 跑完工作流（在下方 createTeamMcpServer 内、与模型调用共用同一
     // 条 workflow_run 执行链），终态后宿主只做收尾综合；失败回退现行「工具+引导
     // 提示词」路径，由 agent 自主决策完成本轮。agent 身上挂载（legacy-agent）不强制。
+    // 终态守卫（实测修复）：绑定代次下已有 completed/canceled run 时不再自动重跑
+    // 整图（用户追问总结/继续对话不该触发第二遍完整执行），改为注入最近运行状态
+    // （buildWorkflowRecentRunPrompt）由宿主基于结果对话；failed 保持续跑重试语义。
+    let recentTerminalWorkflowRun: import('@spark/storage').WorkflowRunRow | null = null
+    if (
+      workflowCanUseManagedExecutor &&
+      workflow?.id != null &&
+      effectiveWorkflowContext?.source === 'session-override'
+    ) {
+      try {
+        const runRepo = new WorkflowRunRepository(this.db)
+        recentTerminalWorkflowRun =
+          effectiveWorkflowContext.bindingInstanceId != null
+            ? runRepo.findLatestTerminalByBinding(
+                sessionId,
+                effectiveWorkflowContext.bindingInstanceId,
+                workflow.id,
+              )
+            : runRepo.findLatestTerminal(sessionId, workflow.id)
+      } catch (error) {
+        log.warn('forced workflow takeover: terminal run lookup failed', {
+          sessionId,
+          workflowId: workflow.id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
     const forcedWorkflowTakeoverHolder: ForcedWorkflowTakeoverHolder = {}
     const forceWorkflowTakeover = shouldForceWorkflowTakeover({
       isMentionTurn,
@@ -4210,6 +4248,7 @@ export class SessionService {
       ...(effectiveWorkflowContext?.source != null
         ? { bindingSource: effectiveWorkflowContext.source }
         : {}),
+      hasTerminalRun: recentTerminalWorkflowRun != null,
     })
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
@@ -4519,6 +4558,14 @@ export class SessionService {
     ]
     const trailingSystemPromptSections = [
       workflow != null ? buildWorkflowBindingAuthorityPrompt(workflow) : undefined,
+      // 终态守卫生效（已有 completed/canceled run、本轮不强制接管）时注入最近运行
+      // 状态：宿主基于结果对话/汇报进度，用户明确要求才重跑 workflow_run。
+      !forceWorkflowTakeover && recentTerminalWorkflowRun != null && workflow != null
+        ? buildWorkflowRecentRunPrompt({
+            run: recentTerminalWorkflowRun,
+            workflowName: workflow.name,
+          })
+        : undefined,
       // 强制接管结果作为最尾部权威段：成功时覆盖前面的 workflow_run 引导词（本轮
       // 工具已摘除、宿主只做收尾综合）；失败时说明回退，交由 agent 自主决策。
       forcedWorkflowTakeoverHolder.outcome != null
@@ -7923,8 +7970,11 @@ export class SessionService {
           schema: {
             space_id: z.string().min(1).max(64),
             title: z.string().min(1).max(200),
-            body: z.string().min(1),
-            kind: z.enum(['knowledge', 'experience', 'pattern', 'reference', 'note']).optional(),
+            body: z.string().max(2_000_000).optional(),
+            kind: z
+              .enum(['knowledge', 'experience', 'pattern', 'reference', 'note', 'folder'])
+              .optional(),
+            parent_id: z.string().min(1).max(64).optional(),
             summary: z.string().max(600).optional(),
             tags: z.array(z.string().min(1).max(40)).max(20).optional(),
           },
@@ -7935,8 +7985,9 @@ export class SessionService {
                 sessionId,
                 spaceId: typeof args.space_id === 'string' ? args.space_id : '',
                 title: typeof args.title === 'string' ? args.title : '',
-                body: typeof args.body === 'string' ? args.body : '',
+                ...(typeof args.body === 'string' ? { body: args.body } : {}),
                 ...(typeof args.kind === 'string' ? { kind: args.kind } : {}),
+                ...(typeof args.parent_id === 'string' ? { parentId: args.parent_id } : {}),
                 ...(typeof args.summary === 'string' ? { summary: args.summary } : {}),
                 ...(Array.isArray(args.tags)
                   ? { tags: args.tags.filter((t): t is string => typeof t === 'string') }
@@ -7951,6 +8002,7 @@ export class SessionService {
             expected_version: z.number().int().min(1),
             title: z.string().min(1).max(200).optional(),
             body: z.string().optional(),
+            parent_id: z.string().min(1).max(64).optional(),
             summary: z.string().max(600).optional(),
             tags: z.array(z.string().min(1).max(40)).max(20).optional(),
           },
@@ -7964,6 +8016,7 @@ export class SessionService {
                   typeof args.expected_version === 'number' ? args.expected_version : 0,
                 ...(typeof args.title === 'string' ? { title: args.title } : {}),
                 ...(typeof args.body === 'string' ? { body: args.body } : {}),
+                ...(typeof args.parent_id === 'string' ? { parentId: args.parent_id } : {}),
                 ...(typeof args.summary === 'string' ? { summary: args.summary } : {}),
                 ...(Array.isArray(args.tags)
                   ? { tags: args.tags.filter((t): t is string => typeof t === 'string') }
@@ -9503,7 +9556,8 @@ export class SessionService {
       hooks: {
         emitAndPersist: (sessionId, turnId, event, eventRepo) =>
           this.emitAndPersist(sessionId, turnId, event, eventRepo),
-        executeApprovalNode: (request) => this.runWorkflowApprovalNode(ctx.sessionId, request),
+        executeApprovalNode: (request) =>
+          this.runWorkflowApprovalNode(ctx.sessionId, request, ctx.turnId),
         executeToolInvocationNode: (request, spec, dispatch, invocationContext) =>
           this.runWorkflowToolInvocationNode(request, spec, dispatch, invocationContext),
         finalizeArtifactContent: (request, content) =>
@@ -9649,6 +9703,7 @@ export class SessionService {
   private async runWorkflowApprovalNode(
     sessionId: string,
     request: { title: string; objective: string; config: Record<string, unknown> },
+    ctxTurnId?: string,
   ): Promise<import('./workflow-executor.js').WorkflowAtomicNodeExecutionReply> {
     const content = getDefaultWorkflowAtomicContent(request)
     // 无人值守 / 无问询通道时：不阻塞自动化，默认放行并记审计。
@@ -9679,7 +9734,15 @@ export class SessionService {
       allowSkip: true,
     }
     try {
-      const answers = await this.onQuestion(sessionId, [decisionQuestion, commentQuestion], {})
+      // 等待开始即记审计（实测排查经验：审批节点曾出现 11 分钟等待却无任何决策
+      // 日志的悬案，此行保证「问询已发出」这一事实始终可从日志追溯）。
+      log.info('workflow approval: waiting for user decision', {
+        sessionId,
+        node: request.title,
+      })
+      const answers = await this.onQuestion(sessionId, [decisionQuestion, commentQuestion], {
+        ...(ctxTurnId != null ? { turnId: ctxTurnId } : {}),
+      })
       if (isWorkflowApprovalCancelledImpl(answers)) {
         log.info('workflow approval: canceled by session interruption', {
           sessionId,
@@ -9700,8 +9763,11 @@ export class SessionService {
       const approved = this.isWorkflowApprovalApproved(answers, decisionQuestion, 0)
       if (!approved) {
         log.warn('workflow approval: rejected by user', { sessionId, node: request.title })
+        // 拒绝=用户主动终止意图，run 终态标 canceled 而非 failed：
+        // failed 会被按代次续跑语义自动重试（下一轮再弹一次审批），canceled 则被
+        // 终态守卫（findLatestTerminal）拦住——后续消息只注入运行状态，不再自动跑。
         return {
-          state: 'failed',
+          state: 'canceled',
           content,
           error: { code: 'denied', message: `用户拒绝了审批节点「${request.title}」。` },
         }

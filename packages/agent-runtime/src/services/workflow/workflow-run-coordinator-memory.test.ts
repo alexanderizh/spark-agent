@@ -161,6 +161,9 @@ describe('WorkflowRunCoordinator M4 内存治理（默认阈值）', () => {
     expect(text.length).toBeLessThan(10_000)
     const structured = reply.structuredContent
     expect(Array.isArray(structured.stateSummary)).toBe(true)
+    // 实测修复：超限摘要分支必须保留 completedNodeIds——强制接管失败回退的
+    // 进度汇报（progressSummary 提取）依赖它，缺失会误报「No nodes completed」。
+    expect(structured.completedNodeIds).toEqual(['n0', 'n1'])
     const artifactRef = structured.artifact as { artifactId: string } | undefined
     expect(artifactRef?.artifactId).toMatch(/^[a-f0-9]{64}$/)
     // 全量结果归档读回（spark_tool_results 同一读回链，单页 40K 分页读全）：state 值完整未截断

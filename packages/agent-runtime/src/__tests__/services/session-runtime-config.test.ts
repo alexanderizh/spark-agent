@@ -1291,6 +1291,33 @@ vi.mock('@spark/storage', async (importOriginal) => {
       )
     }
 
+    findLatestTerminal(sessionId: string, workflowId: string) {
+      return (
+        [...mockState.workflowRuns.values()]
+          .filter(
+            (row) =>
+              row.session_id === sessionId &&
+              row.workflow_id === workflowId &&
+              (row.status === 'completed' || row.status === 'canceled'),
+          )
+          .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null
+      )
+    }
+
+    findLatestTerminalByBinding(sessionId: string, bindingInstanceId: string, workflowId?: string) {
+      return (
+        [...mockState.workflowRuns.values()]
+          .filter(
+            (row) =>
+              row.session_id === sessionId &&
+              row.workflow_binding_instance_id === bindingInstanceId &&
+              (workflowId == null || row.workflow_id === workflowId) &&
+              (row.status === 'completed' || row.status === 'canceled'),
+          )
+          .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null
+      )
+    }
+
     updateSnapshot(
       id: string,
       params: {
@@ -4668,6 +4695,108 @@ describe('SessionService runtime provider/model resolution', () => {
           (candidate as { name?: unknown }).name === 'workflow_run',
       ),
     ).toBeFalsy()
+  })
+
+  it('does not re-run the workflow after a terminal run and injects the recent-run state instead', async () => {
+    // 实测修复：override 绑定的工作流 completed 后，用户再发消息（追问总结/继续
+    // 对话）不应触发第二遍完整执行——改为注入最近运行状态由宿主基于结果对话，
+    // workflow_run 工具保留（用户明确要求重跑时宿主可自行调用）。
+    const hostId = 'terminal-gate-host'
+    const workerId = 'terminal-gate-worker'
+    const workflowId = 'terminal-gate-workflow'
+    const bindingInstanceId = 'terminal-gate-binding'
+
+    mockState.settings.set('sessionWorkflowBinding:runtimeEnabled', true)
+    mockState.agents.set(
+      hostId,
+      makeAgent({
+        id: hostId,
+        name: 'Terminal Gate Host',
+        providerProfileId: 'tencent-provider',
+        workflowId,
+      }),
+    )
+    mockState.agents.set(
+      workerId,
+      makeAgent({
+        id: workerId,
+        name: 'Terminal Gate Worker',
+        providerProfileId: 'tencent-provider',
+      }),
+    )
+    mockState.workflows.set(workflowId, {
+      id: workflowId,
+      name: 'Terminal Gate Workflow',
+      version: '1.0.0',
+      status: 'active',
+      enabled: true,
+      description: '',
+      graph: {
+        nodes: [
+          {
+            id: 'gate-node',
+            kind: 'agent',
+            title: 'Gate node',
+            config: { agentId: workerId, outputKey: 'gate' },
+          },
+        ],
+        edges: [],
+      },
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: hostId,
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Terminal gate session',
+    })
+    mockState.workflowBindings.set(sessionId, {
+      sessionId,
+      bindingInstanceId,
+      mode: 'override',
+      workflowId,
+      createdAt: '2026-10-10T00:00:00.000Z',
+      updatedAt: '2026-10-10T00:00:00.000Z',
+    })
+
+    await service.sendTurn({ sessionId, message: 'run it' })
+    await vi.waitFor(() => expect(mockState.workflowRuns.size).toBe(1))
+    const firstRun = [...mockState.workflowRuns.values()][0]
+    if (firstRun == null) throw new Error('expected first workflow run')
+    await vi.waitFor(() => expect(firstRun.status).toBe('completed'))
+
+    await service.sendTurn({ sessionId, message: '总结一下结果' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs.length).toBeGreaterThanOrEqual(2))
+    // 终态守卫：completed run 之后不再自动接管——不新建 Run。
+    await vi.waitFor(() => {
+      expect(mockState.workflowRuns.size).toBe(1)
+    })
+    // 宿主拿到最近运行状态段，基于结果对话而不是重跑。
+    const followUpConfig = [...mockState.sdkConfigs]
+      .reverse()
+      .find((config) =>
+        String(config.systemPrompt ?? '').includes('[Bound Workflow — Recent Run State]'),
+      )
+    if (followUpConfig == null) throw new Error('expected recent-run prompt injection')
+    const followUpPrompt = String(followUpConfig.systemPrompt ?? '')
+    expect(followUpPrompt).toContain('already has a completed run')
+    expect(followUpPrompt).toContain('does NOT auto-execute the workflow again')
+    // 工具保留：用户明确要求重跑时宿主可调用。
+    const followUpServer = (
+      followUpConfig.mcpServers as Record<string, { instance?: { tools?: unknown[] } }> | undefined
+    )?.spark_team
+    expect(
+      followUpServer?.instance?.tools?.some(
+        (candidate) =>
+          typeof candidate === 'object' &&
+          candidate != null &&
+          (candidate as { name?: unknown }).name === 'workflow_run',
+      ),
+    ).toBeTruthy()
+    // 接管段不再出现（本轮没有接管发生）。
+    expect(followUpPrompt).not.toContain('[Forced Workflow Run — Authoritative]')
+    expect(followUpPrompt).not.toContain('[Forced Workflow Run — Fallback]')
   })
 
   it('records the launcher entry as the binding_source of workflow runs (stage 6)', async () => {

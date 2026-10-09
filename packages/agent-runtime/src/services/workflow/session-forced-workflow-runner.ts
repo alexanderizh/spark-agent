@@ -37,6 +37,11 @@ export interface ForcedWorkflowTakeoverFailed {
   reason: string
   /** run 终态失败时的节点 id（structuredContent.failedNode.nodeId，如有）。 */
   failedNodeId?: string
+  /**
+   * 运行进度摘要（已完成节点 + 失败节点 + 终态），供回退提示词如实向用户汇报。
+   * invoke 失败（图没跑起来）时缺省——无进度可汇报。
+   */
+  progressSummary?: string
 }
 
 export type ForcedWorkflowTakeoverOutcome =
@@ -50,7 +55,13 @@ export interface ForcedWorkflowTakeoverHolder {
 
 /**
  * 强制接管条件：非 mention 回合 + 图可执行（沿用 managedExecutorAvailable 判定）+
- * 生效绑定来源为 session-override（输入框选择）。agent 身上挂载（legacy-agent）与
+ * 生效绑定来源为 session-override（输入框选择）+ 该绑定下没有不可续跑的终态 run。
+ *
+ * 终态守卫（实测修复）：override 绑定的语义是「首条消息必跑」，不是「每条消息都重跑
+ * 一遍整图」。completed/canceled 之后用户再发消息（追问总结、继续对话）不得自动重跑
+ * ——改为注入最近运行状态（buildWorkflowRecentRunPrompt）由宿主基于结果对话，用户
+ * 明确要求重跑时宿主自行调用 workflow_run。failed 不算终态（coordinator 按代次续跑
+ * 重试，与 findLatestResumable 语义一致）。agent 身上挂载（legacy-agent）与
  * inherit 绑定保持「宿主自主判断是否调用」的既有语义，不强制。
  */
 export function shouldForceWorkflowTakeover(input: {
@@ -58,11 +69,14 @@ export function shouldForceWorkflowTakeover(input: {
   workflowCanUseManagedExecutor: boolean
   /** 生效绑定来源（effectiveWorkflowContext.source）；仅 session-override 强制。 */
   bindingSource?: string
+  /** 当前绑定下最近一条 completed/canceled run 是否存在（findLatestTerminal*）。 */
+  hasTerminalRun?: boolean
 }): boolean {
   return (
     !input.isMentionTurn &&
     input.workflowCanUseManagedExecutor &&
-    input.bindingSource === 'session-override'
+    input.bindingSource === 'session-override' &&
+    input.hasTerminalRun !== true
   )
 }
 
@@ -70,6 +84,8 @@ export function shouldForceWorkflowTakeover(input: {
 interface WorkflowRunToolStructuredResult {
   status?: unknown
   failedNode?: { nodeId?: unknown; error?: { message?: unknown } | null } | null
+  completedNodeIds?: unknown
+  stateSummary?: unknown
 }
 
 function readString(value: unknown): string {
@@ -113,6 +129,7 @@ export async function runForcedWorkflowTakeover(input: {
       stage: 'run',
       reason,
       ...(failedNode?.nodeId != null ? { failedNodeId: readString(failedNode.nodeId) } : {}),
+      progressSummary: buildTakeoverProgressSummary(structured),
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
@@ -125,6 +142,33 @@ export async function runForcedWorkflowTakeover(input: {
   }
 }
 
+/** 从 workflow_run structuredContent 提取可读进度摘要（节点完成/失败 + 状态键）。 */
+function buildTakeoverProgressSummary(structured: WorkflowRunToolStructuredResult): string {
+  const lines: string[] = []
+  const completed = Array.isArray(structured.completedNodeIds)
+    ? structured.completedNodeIds.filter((id): id is string => typeof id === 'string')
+    : []
+  if (completed.length > 0) {
+    lines.push(`Completed nodes (${completed.length}): ${completed.join(', ')}`)
+  } else {
+    lines.push('No nodes completed before the failure.')
+  }
+  const failedNodeId = readString(structured.failedNode?.nodeId)
+  const failedMessage = readString(structured.failedNode?.error?.message)
+  if (failedNodeId.length > 0) {
+    lines.push(
+      `Failed at node ${failedNodeId}${failedMessage.length > 0 ? ` — ${failedMessage}` : ''}`,
+    )
+  }
+  const stateSummary = Array.isArray(structured.stateSummary)
+    ? structured.stateSummary.filter((line): line is string => typeof line === 'string')
+    : []
+  if (stateSummary.length > 0) {
+    lines.push('State keys:', ...stateSummary.map((line) => `  - ${line}`))
+  }
+  return lines.join('\n')
+}
+
 function truncateSummary(text: string): string {
   if (text.length <= FORCED_TAKEOVER_SUMMARY_MAX_CHARS) return text
   return `${text.slice(0, FORCED_TAKEOVER_SUMMARY_MAX_CHARS)}\n[Workflow result summary truncated at ${FORCED_TAKEOVER_SUMMARY_MAX_CHARS} chars; the full state is persisted in workflow_runs and the run history panel.]`
@@ -134,7 +178,9 @@ function truncateSummary(text: string): string {
  * 接管结果注入宿主系统提示词的尾部权威段（排在 [Current Workflow Binding —
  * Authoritative] 之后，覆盖其与 workflow_run 引导词的执行指令）：
  * - completed：宿主只做收尾综合，本轮不再暴露 workflow_run 工具；
- * - failed：回退说明 + 保留 agent 自主决策（工具仍在，可自行调用或直接作答）。
+ * - failed：如实汇报运行进度与失败原因并给出修复建议；run 失败（非启动失败）时
+ *   默认不自动重跑（用户刚经历了失败的长任务，未经确认重跑会重复消耗），用户明确
+ *   要求重跑或示意重试时再调用 workflow_run；invoke 失败（图没跑起来）时保留自主决策。
  */
 export function buildForcedWorkflowTakeoverResultPrompt(
   outcome: ForcedWorkflowTakeoverOutcome,
@@ -152,9 +198,82 @@ export function buildForcedWorkflowTakeoverResultPrompt(
     outcome.stage === 'invoke'
       ? 'failed to start'
       : `failed${outcome.failedNodeId != null ? ` at node ${outcome.failedNodeId}` : ''}`
-  return [
+  const sections = [
     '[Forced Workflow Run — Fallback]',
-    `The runtime attempted to execute the bound workflow before this turn but it ${where}: ${outcome.reason}`,
-    'Decide autonomously how to complete the user objective: you may call workflow_run yourself (the tool remains available this turn), execute the workflow phases yourself, or answer directly.',
-  ].join('\n')
+    `The runtime attempted to execute the bound workflow before this turn but it ${where}: ${truncateSummary(outcome.reason)}`,
+  ]
+  if (outcome.progressSummary != null && outcome.progressSummary.length > 0) {
+    sections.push('Workflow progress before failure:', outcome.progressSummary)
+  }
+  if (outcome.stage === 'invoke') {
+    sections.push(
+      'The workflow never started, so decide autonomously how to complete the user objective: you may call workflow_run yourself (the tool remains available this turn), execute the workflow phases yourself, or answer directly.',
+    )
+  } else {
+    sections.push(
+      'This section supersedes any earlier instruction to call workflow_run. First report honestly to the user: what the workflow completed, where and why it failed, and a concrete fix suggestion. Do NOT automatically re-run the workflow this turn — the run above already consumed real work; only call workflow_run when the user explicitly asks to retry or clearly wants the workflow re-executed.',
+    )
+  }
+  return sections.join('\n')
+}
+
+/** buildWorkflowRecentRunPrompt 读取的 run 行子集（WorkflowRunRow 的最小读取面）。 */
+export interface WorkflowRecentRunLike {
+  status: string
+  ended_at: string | null
+  completed_node_ids_json: string
+  failed_node_json: string | null
+}
+
+function parseNodeIdList(raw: string): string[] {
+  try {
+    const ids = JSON.parse(raw) as unknown
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function readFailedNodeMessage(raw: string | null): string {
+  if (raw == null) return ''
+  try {
+    const failed = JSON.parse(raw) as { error?: { message?: unknown } }
+    return typeof failed.error?.message === 'string' ? failed.error.message : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 终态守卫生效时（completed/canceled run 已存在、本轮不强制接管）注入的最近运行状态段。
+ * 让宿主知道绑定的工作流已经跑过、结果如何——用户追问总结/进度时如实汇报，
+ * 而不是当作「还没跑过」重新叙述。用户明确要求重跑时宿主自行调用 workflow_run。
+ */
+export function buildWorkflowRecentRunPrompt(input: {
+  run: WorkflowRecentRunLike
+  workflowName: string
+}): string {
+  const { run } = input
+  const completed = parseNodeIdList(run.completed_node_ids_json)
+  const failedMessage = readFailedNodeMessage(run.failed_node_json)
+  const lines = [
+    '[Bound Workflow — Recent Run State]',
+    `The bound workflow "${input.workflowName}" already has a ${run.status} run (ended ${run.ended_at ?? 'unknown time'}). This turn does NOT auto-execute the workflow again.`,
+    completed.length > 0
+      ? `Completed nodes (${completed.length}): ${completed.join(', ')}`
+      : 'No nodes were completed in that run.',
+  ]
+  // 终态守卫的数据源（findLatestTerminal）只返回 completed/canceled；canceled 的两种
+  // 来源——用户手动终止、审批节点被拒绝（run 标 canceled，failed_node 带 denied
+  // 信息）——都可能在 failed_node_json 里留下原因，有就如实展示给宿主转述。
+  if (failedMessage.length > 0) {
+    lines.push(`Failure: ${failedMessage}`)
+  }
+  if (run.status === 'canceled') {
+    lines.push('The run was canceled — either stopped by the user or rejected at an approval node.')
+  }
+  lines.push(
+    'Answer the user based on this state and the conversation: report progress or results when asked, and only call workflow_run if the user explicitly asks to re-run the workflow.',
+  )
+  return lines.join('\n')
 }

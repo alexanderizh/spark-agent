@@ -911,6 +911,66 @@ describe('executeWorkflowAgentPlan', () => {
     expect(result.status).toBe('failed')
   })
 
+  it('propagates a canceled atomic reply (approval rejection) as a canceled run', async () => {
+    // 实测修复：审批拒绝的 run 终态必须是 canceled 而非 failed——failed 会被按代次
+    // 续跑语义自动重试（下一轮再弹一次审批），canceled 则被终态守卫拦住不再自动跑。
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'approval',
+          kind: 'approval',
+          title: 'Confirm deploy',
+          config: { outputKey: 'approval', retryCount: 3 },
+        },
+      ],
+      edges: [],
+    })
+    let attempts = 0
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Deploy to prod',
+      dispatch: async () => ({ content: 'unused' }),
+      executeAtomicNode: async () => {
+        attempts += 1
+        return {
+          state: 'canceled',
+          content: '',
+          error: { code: 'denied', message: '用户拒绝了审批节点「Confirm deploy」。' },
+        }
+      },
+    })
+    expect(attempts).toBe(1)
+    expect(result.status).toBe('canceled')
+    expect(result.failedNode?.nodeId).toBe('approval')
+  })
+
+  it('does not retry a canceled agent dispatch even with retryCount configured', async () => {
+    // 会话中断取消（dispatch 返回 canceled）是用户意志：重试结果只会再次 canceled，
+    // 空转浪费派发调用——立即以 canceled 终止，不消耗剩余重试次数。
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'worker',
+          kind: 'agent',
+          title: 'Worker',
+          config: { agentId: 'dev', outputKey: 'out', retryCount: 3 },
+        },
+      ],
+      edges: [],
+    })
+    let attempts = 0
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Do work',
+      dispatch: async () => {
+        attempts += 1
+        return { state: 'canceled', content: '', error: { message: 'turn canceled' } }
+      },
+    })
+    expect(attempts).toBe(1)
+    expect(result.status).toBe('canceled')
+  })
+
   it('forwards attachments to dispatched agent/subagent nodes', async () => {
     const graph = normalizeWorkflowGraph({
       nodes: [{ id: 'A', kind: 'agent', title: 'Review', config: { agentId: 'reviewer' } }],

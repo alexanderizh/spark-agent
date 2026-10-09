@@ -85,6 +85,8 @@ export type WorkflowAgentPlanResult = {
   state: WorkflowState
   executions: WorkflowAgentExecutionRecord[]
   atomicExecutions: WorkflowAtomicNodeExecutionRecord[]
+  /** 到达该终态时已成功完成的节点 id 集（与快照 completedNodeIds 同源）。 */
+  completedNodeIds: string[]
   skippedNodeIds: string[]
   failedNode?: {
     nodeId: string
@@ -795,6 +797,7 @@ export async function executeWorkflowAgentPlan(input: {
         state,
         executions,
         atomicExecutions,
+        completedNodeIds: [...completedNodeIds],
         skippedNodeIds: [...skippedNodeIds],
         failedNode,
       }
@@ -840,6 +843,7 @@ export async function executeWorkflowAgentPlan(input: {
           state,
           executions,
           atomicExecutions,
+          completedNodeIds: [...completedNodeIds],
           skippedNodeIds: [...skippedNodeIds],
           failedNode: result.failedNode,
         }
@@ -904,6 +908,7 @@ export async function executeWorkflowAgentPlan(input: {
         state,
         executions,
         atomicExecutions,
+        completedNodeIds: [...completedNodeIds],
         skippedNodeIds: [...skippedNodeIds],
         failedNode: failedResult.failedNode,
       }
@@ -916,6 +921,7 @@ export async function executeWorkflowAgentPlan(input: {
     state,
     executions,
     atomicExecutions,
+    completedNodeIds: [...completedNodeIds],
     skippedNodeIds: [...skippedNodeIds],
   }
 }
@@ -999,7 +1005,8 @@ async function executeWorkflowAtomicNode(input: {
         : input.executeAtomicNode != null
           ? await input.executeAtomicNode(request)
           : { content: getDefaultAtomicNodeContent(input.node, input.objective) }
-    if ((reply.state ?? 'completed') === 'completed' || attempt === maxAttempts) break
+    // canceled（用户拒绝/会话中断）是用户意志，不是技术性故障——不重试。
+    if ((reply.state ?? 'completed') !== 'failed' || attempt === maxAttempts) break
   }
   const endedAt = new Date().toISOString()
   const replyState = reply.state ?? 'completed'
@@ -1403,7 +1410,9 @@ async function executeWorkflowAgentNode(input: {
       }
     }
     // 任一分支失败 → 本次 attempt 视为失败；若还有重试次数，下一 attempt 再次 fan-out。
-    if (attempt === maxAttempts) {
+    // canceled（会话中断/用户终止）例外：重试结果只会再次 canceled，空转浪费派发
+    // 调用，且违背用户意志——立即以 canceled 终止，不再消耗剩余重试次数。
+    if (attempt === maxAttempts || firstFailed.replyState === 'canceled') {
       return {
         status: firstFailed.replyState,
         nodeId: node.id,

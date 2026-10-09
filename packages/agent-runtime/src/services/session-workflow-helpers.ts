@@ -602,6 +602,11 @@ export const WORKFLOW_READONLY_DISALLOWED_TOOLS: string[] = [
   'MultiEdit',
   'NotebookEdit',
   'Bash',
+  // 只读流水线 worker（input/route/plan/review/artifact）不得反问用户：实测中
+  // route worker 曾用 AskUserQuestion 自行发起「审批确认」，用户拒绝后拒绝意图
+  // 无法传导为「终止 run」，反而触发路由校验失败重试并再次弹窗问询（灾难体验）。
+  // 人工审批职责专属 approval 节点（onQuestion 通道，拒绝即终止工作流）。
+  'AskUserQuestion',
 ]
 
 /** 供只读原子节点用的 toolIds 白名单（= 全量可限制工具 - 写/执行类）。 */

@@ -199,6 +199,53 @@ export class WorkflowRunRepository extends BaseRepository {
   }
 
   /**
+   * 查最近一条「不可续跑终态」run（completed / canceled）。
+   *
+   * 与 findLatestResumable 相对：failed 视为可续跑重试（自动恢复语义），
+   * completed/canceled 之后用户再发消息不应自动重跑整张图——强制接管判定
+   * 用本方法识别「已有终态结果，改为注入最近运行状态供宿主总结/对话」。
+   */
+  findLatestTerminal(sessionId: string, workflowId: string): WorkflowRunRow | null {
+    const row = this.raw
+      .prepare(
+        `SELECT *
+         FROM workflow_runs
+         WHERE session_id = ?
+           AND workflow_id = ?
+           AND status IN ('completed','canceled')
+         ORDER BY updated_at DESC, started_at DESC, rowid DESC
+         LIMIT 1`,
+      )
+      .get(sessionId, workflowId) as WorkflowRunRow | undefined
+    return row ?? null
+  }
+
+  /** findLatestTerminal 的 binding 代次版本（优先当前绑定代次，缺省回落 workflow 维度）。 */
+  findLatestTerminalByBinding(
+    sessionId: string,
+    bindingInstanceId: string,
+    workflowId?: string,
+  ): WorkflowRunRow | null {
+    const conditions = [
+      'session_id = ?',
+      'workflow_binding_instance_id = ?',
+      "status IN ('completed','canceled')",
+    ]
+    const values: unknown[] = [sessionId, bindingInstanceId]
+    if (workflowId !== undefined) {
+      conditions.push('workflow_id = ?')
+      values.push(workflowId)
+    }
+    const row = this.raw
+      .prepare(
+        `SELECT * FROM workflow_runs WHERE ${conditions.join(' AND ')}
+         ORDER BY updated_at DESC, started_at DESC, rowid DESC LIMIT 1`,
+      )
+      .get(...values) as WorkflowRunRow | undefined
+    return row ?? null
+  }
+
+  /**
    * 按工作流查历史运行（工作流编辑器「运行历史」入口）。
    *
    * 只取轻量列：graph/state/executions/atomic_executions 四个大 JSON 不进列表查询，

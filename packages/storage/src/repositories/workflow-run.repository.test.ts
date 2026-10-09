@@ -137,6 +137,117 @@ describe('WorkflowRunRepository', () => {
     })
   })
 
+  it('finds the latest terminal run (completed/canceled) for forced-takeover gating', () => {
+    // 先一条 completed，后一条 canceled：按 updated_at 倒序取 canceled。
+    repo.create({
+      id: 'run-done',
+      sessionId: 'sess-1',
+      turnId: 'turn-done',
+      workflowId: 'workflow-1',
+      objective: 'finished work',
+      graph: { nodes: [], edges: [] },
+    })
+    repo.updateSnapshot('run-done', {
+      status: 'completed',
+      state: { out: 'ok' },
+      executions: [],
+      atomicExecutions: [],
+      completedNodeIds: ['n1'],
+      endedAt: '2026-10-10T02:56:55.000Z',
+    })
+    repo.create({
+      id: 'run-canceled',
+      sessionId: 'sess-1',
+      turnId: 'turn-canceled',
+      workflowId: 'workflow-1',
+      objective: 'stopped work',
+      graph: { nodes: [], edges: [] },
+    })
+    repo.updateSnapshot('run-canceled', {
+      status: 'canceled',
+      state: {},
+      executions: [],
+      atomicExecutions: [],
+      completedNodeIds: ['n1'],
+      failedNode: {
+        nodeId: 'n4',
+        agentId: 'worker',
+        attempt: 1,
+        error: { code: 'denied', message: 'Dispatch was canceled' },
+      },
+      endedAt: '2026-10-10T02:59:38.000Z',
+    })
+
+    expect(repo.findLatestTerminal('sess-1', 'workflow-1')).toMatchObject({
+      id: 'run-canceled',
+      status: 'canceled',
+    })
+    // failed 不是终态（续跑重试语义），working 也不是。
+    repo.create({
+      id: 'run-failed',
+      sessionId: 'sess-1',
+      turnId: 'turn-failed',
+      workflowId: 'workflow-1',
+      objective: 'flaky',
+      graph: { nodes: [], edges: [] },
+    })
+    repo.updateSnapshot('run-failed', {
+      status: 'failed',
+      state: {},
+      executions: [],
+      atomicExecutions: [],
+      completedNodeIds: [],
+      endedAt: '2026-10-10T03:10:00.000Z',
+    })
+    expect(repo.findLatestTerminal('sess-1', 'workflow-1')?.id).toBe('run-canceled')
+    expect(repo.findLatestTerminal('sess-1', 'workflow-other')).toBeNull()
+  })
+
+  it('scopes terminal-run lookup to the binding generation when provided', () => {
+    repo.create({
+      id: 'run-binding-old',
+      sessionId: 'sess-1',
+      turnId: 'turn-1',
+      workflowId: 'workflow-1',
+      objective: 'old generation',
+      graph: { nodes: [], edges: [] },
+      workflowBindingInstanceId: 'binding-1',
+    })
+    repo.updateSnapshot('run-binding-old', {
+      status: 'completed',
+      state: {},
+      executions: [],
+      atomicExecutions: [],
+      completedNodeIds: [],
+      endedAt: '2026-10-10T01:00:00.000Z',
+    })
+    repo.create({
+      id: 'run-binding-new',
+      sessionId: 'sess-1',
+      turnId: 'turn-2',
+      workflowId: 'workflow-1',
+      objective: 'new generation',
+      graph: { nodes: [], edges: [] },
+      workflowBindingInstanceId: 'binding-2',
+    })
+    repo.updateSnapshot('run-binding-new', {
+      status: 'canceled',
+      state: {},
+      executions: [],
+      atomicExecutions: [],
+      completedNodeIds: [],
+      endedAt: '2026-10-10T02:00:00.000Z',
+    })
+
+    expect(repo.findLatestTerminalByBinding('sess-1', 'binding-2', 'workflow-1')?.id).toBe(
+      'run-binding-new',
+    )
+    expect(repo.findLatestTerminalByBinding('sess-1', 'binding-1', 'workflow-1')?.id).toBe(
+      'run-binding-old',
+    )
+    expect(repo.findLatestTerminalByBinding('sess-1', 'binding-3', 'workflow-1')).toBeNull()
+  })
+
   it('lists run summaries by workflow, newest first, without heavy JSON columns', () => {
     for (const id of ['run-old', 'run-new', 'run-other-workflow']) {
       const workflowId = id === 'run-other-workflow' ? 'workflow-2' : 'workflow-1'

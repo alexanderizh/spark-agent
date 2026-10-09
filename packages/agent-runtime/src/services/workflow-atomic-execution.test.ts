@@ -781,7 +781,8 @@ describe('审批节点 content 组装（任务 4 端到端契约）', () => {
     }
     const approved = isWorkflowApprovalApprovedImpl(answers, decisionQuestion, 0)
     expect(approved).toBe(false)
-    // 拒绝时 content 不重要，state=failed——runWorkflowApprovalNode 直接返回 failed。
+    // 拒绝时判定 false；runWorkflowApprovalNode 据此返回 state:'canceled'（code:'denied'，
+    // 用户主动终止意图——run 终态 canceled 会被终态守卫拦住不自动重跑）。
   })
 })
 

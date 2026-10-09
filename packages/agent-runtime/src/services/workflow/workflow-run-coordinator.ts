@@ -578,6 +578,9 @@ export class WorkflowRunCoordinator {
           }
         }
         const summaryLines = summarizeWorkflowStateKeys(result.state)
+        // M4 摘要分支保留 completedNodeIds：节点 id 数组本身很小，却是失败回退
+        // 进度汇报（session-forced-workflow-runner 的 progressSummary 提取）的关键
+        // 数据——常规路径全量 result 里有，超限摘要漏掉会造成「No nodes completed」误报。
         let envelope: ReturnType<typeof archiveToolResultAsEnvelope>
         try {
           envelope = archiveToolResultAsEnvelope(result, {
@@ -609,6 +612,7 @@ export class WorkflowRunCoordinator {
               status: result.status,
               executions: result.executions.length,
               atomicExecutions: result.atomicExecutions.length,
+              completedNodeIds: result.completedNodeIds,
               skippedNodeIds: result.skippedNodeIds,
               ...(result.failedNode != null ? { failedNode: result.failedNode } : {}),
               stateSummary: summaryLines,
@@ -647,6 +651,7 @@ export class WorkflowRunCoordinator {
             status: result.status,
             executions: result.executions.length,
             atomicExecutions: result.atomicExecutions.length,
+            completedNodeIds: result.completedNodeIds,
             skippedNodeIds: result.skippedNodeIds,
             ...(result.failedNode != null ? { failedNode: result.failedNode } : {}),
             stateSummary: summaryLines,
