@@ -354,6 +354,13 @@ import { FilePreviewPanel } from '../components/FilePreviewPanel'
 import { FileTypeIcon, getFileTypeBadge, getPreviewFileType } from '../components/FileDisplay'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
 import { TeamMemberBubble } from '../components/TeamMemberBubble'
+import {
+  WorkflowAtomicDispatchView,
+  WorkflowAtomicNodeMetaProvider,
+  isWorkflowAtomicMemberId,
+  useWorkflowAtomicNodeMeta,
+  wrapWorkflowAtomicJsonContent,
+} from './chat/workflow/WorkflowAtomicViews'
 import { TeamInspectorSection } from '../components/TeamInspectorSection'
 import { TeamMemberDrawer } from '../components/TeamMemberDrawer'
 import { WorktreePanel } from '../components/WorktreePanel'
@@ -6176,6 +6183,11 @@ function resolveTeamMemberDisplayIdentity(args: {
 
 function TeamDispatchBlockView({ block }: { block: Extract<UIBlock, { kind: 'team_dispatch' }> }) {
   const { agents } = useSessionSidebar()
+  // 工作流原子节点的临时 worker（id 前缀 workflow-atomic:）：改走紧凑卡，
+  // 不套用团队派发卡的「运行态强制展开完整指令」。钩子须先无条件调用再分流。
+  if (isWorkflowAtomicMemberId(block.memberAgentId)) {
+    return <WorkflowAtomicDispatchView block={block} />
+  }
   const member = agents.find((a) => a.id === block.memberAgentId)
   const identity = resolveTeamMemberDisplayIdentity({ member, memberAgentId: block.memberAgentId })
   const memberName = identity.name
@@ -6360,15 +6372,22 @@ function TeamMemberMessageBlockView({
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerAgentId, setDrawerAgentId] = useState<string | null>(null)
   const member = agents.find((a) => a.id === block.memberAgentId)
+  const atomicMeta = useWorkflowAtomicNodeMeta(block.memberAgentId)
   const identity = resolveTeamMemberDisplayIdentity({
     member,
     memberAgentId: block.memberAgentId,
     workerName: block.autoRouter?.workerName,
   })
-  const memberName = identity.name
+  const memberName = atomicMeta?.displayName ?? identity.name
   const avatar = identity.avatar
   const running = block.isStreaming
   const empty = block.content.trim().length === 0
+  // 原子节点输出：终态时合法 JSON 包 ```json 围栏，复用现成代码块渲染；
+  // 流式期保持原样（半截 JSON 会被误判，且围栏开合会闪）。落库内容不变。
+  const displayContent =
+    atomicMeta != null && !block.isStreaming
+      ? wrapWorkflowAtomicJsonContent(block.content)
+      : block.content
 
   // 空内容且不再流式（被终止/未产出文本）：整条气泡（含外壳与 drawer）一律不渲染，
   // 避免 A1 修复之前残留的「永久空气泡」。
@@ -6394,7 +6413,7 @@ function TeamMemberMessageBlockView({
           </div>
         ) : (
           <MarkdownText
-            content={block.content}
+            content={displayContent}
             isStreaming={block.isStreaming}
             agents={agents.map((a) => ({ id: a.id, name: a.name }))}
             onMentionClick={(agentId) => {
@@ -6585,12 +6604,13 @@ function TeamMemberActivityBlockView({
     return undefined
   }, [blocks])
 
+  const atomicMeta = useWorkflowAtomicNodeMeta(memberAgentId)
   const identity = resolveTeamMemberDisplayIdentity({
     member,
     memberAgentId,
     workerName: routerMeta?.workerName,
   })
-  const memberName = identity.name
+  const memberName = atomicMeta?.displayName ?? identity.name
   const avatar = identity.avatar
 
   if (!hasVisibleTeamMemberActivityBlocks(blocks, showActivityLogs)) return null
@@ -6624,6 +6644,11 @@ function TeamMemberActivityBlockView({
           blocks,
           onFilePreview != null ? { sessionId, onFilePreview } : { sessionId },
           showActivityLogs,
+          // 原子节点输出：终态合法 JSON 包 ```json 围栏；流式期原样。落库内容不变。
+          atomicMeta != null
+            ? (content, isStreaming) =>
+                isStreaming ? content : wrapWorkflowAtomicJsonContent(content)
+            : undefined,
         )}
       </TeamMemberBubble>
       {drawerOpen && (
@@ -6652,11 +6677,15 @@ function renderTeamMemberActivityBlocks(
     onFilePreview?: FileOpenHandler
   },
   showActivityLogs: boolean,
+  /** 原子节点成员的消息内容变换（JSON 围栏包装）；普通成员不传，内容原样。 */
+  transformMemberContent?: ((content: string, isStreaming: boolean) => string) | undefined,
 ): ReactNode {
   // 默认保持结果优先；用户在团队检查器显式打开后，再复用标准活动日志组件。
   const resultBlocks = showActivityLogs
     ? blocks
     : blocks.filter((block) => !isTeamMemberLogBlock(block))
+  const memberContent = (content: string, isStreaming: boolean): string =>
+    transformMemberContent != null ? transformMemberContent(content, isStreaming) : content
 
   if (showActivityLogs) {
     const nodes: ReactNode[] = []
@@ -6680,7 +6709,7 @@ function renderTeamMemberActivityBlocks(
       nodes.push(
         <div key={`member-message-${index}`} className="md-surface">
           <MarkdownText
-            content={block.content}
+            content={memberContent(block.content, block.isStreaming)}
             isStreaming={block.isStreaming}
             {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
           />
@@ -6699,7 +6728,7 @@ function renderTeamMemberActivityBlocks(
           return (
             <div key={index} className="md-surface">
               <MarkdownText
-                content={block.content}
+                content={memberContent(block.content, block.isStreaming)}
                 isStreaming={block.isStreaming}
                 {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
               />
@@ -8044,140 +8073,145 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   }, -1)
 
   return (
-    <>
-      {turnCollapse.canCollapse && (
-        <div
-          className={`assistant-turn-collapse-control${showIdentity ? '' : ' without-avatar'}`}
-          data-assistant-turn-collapse={turnCollapse.expanded ? 'expanded' : 'collapsed'}
-        >
-          <ToolLogsMasterToggle
-            open={turnCollapse.expanded}
-            onToggle={turnCollapse.toggleExpanded}
-            {...(turnDurationMs != null ? { durationMs: turnDurationMs } : {})}
-          />
-        </div>
-      )}
-      {segments.map((segment, index) => {
-        const segmentIsLatest = isLatest === true && index === lastRenderableSegmentIndex
-        if (segment.kind === 'team') {
+    // 原子节点元信息（nodeId → 标题/类型）：从整条消息的 workflow_progress 块建立，
+    // 供其下派发卡与成员气泡显示「节点标题」而不是 workflow-atomic:<nodeId> 原始 id。
+    <WorkflowAtomicNodeMetaProvider blocks={blocks}>
+      <>
+        {turnCollapse.canCollapse && (
+          <div
+            className={`assistant-turn-collapse-control${showIdentity ? '' : ' without-avatar'}`}
+            data-assistant-turn-collapse={turnCollapse.expanded ? 'expanded' : 'collapsed'}
+          >
+            <ToolLogsMasterToggle
+              open={turnCollapse.expanded}
+              onToggle={turnCollapse.toggleExpanded}
+              {...(turnDurationMs != null ? { durationMs: turnDurationMs } : {})}
+            />
+          </div>
+        )}
+        {segments.map((segment, index) => {
+          const segmentIsLatest = isLatest === true && index === lastRenderableSegmentIndex
+          if (segment.kind === 'team') {
+            return (
+              <div key={`team-${index}`} className="team-timeline-segment">
+                {renderBlocks(
+                  segment.blocks,
+                  onFilePreview != null
+                    ? { sessionId, workspaceRootPath, onFilePreview }
+                    : { sessionId, workspaceRootPath },
+                )}
+              </div>
+            )
+          }
+          if (segment.kind === 'team_member_activity') {
+            if (!hasVisibleTeamMemberActivityBlocks(segment.blocks, showTeamActivityLogs))
+              return null
+            return (
+              <div
+                key={`team-member-activity-${index}`}
+                className="team-timeline-segment"
+                data-running-agent-id={segment.memberContext.memberAgentId}
+                data-running={segment.running ? 'true' : 'false'}
+              >
+                <TeamMemberActivityBlockView
+                  memberAgentId={segment.memberContext.memberAgentId}
+                  blocks={segment.blocks}
+                  running={segment.running}
+                  sessionId={sessionId}
+                  {...(onFilePreview != null ? { onFilePreview } : {})}
+                  {...(onReplyToMember != null
+                    ? {
+                        onReplyToMember: (memberArgs: {
+                          memberAgentId: string
+                          memberName: string
+                          content: string
+                          selectedText?: string
+                        }) => onReplyToMember({ ...memberArgs, messageId }),
+                      }
+                    : {})}
+                  {...(onDeleteMemberMessage != null
+                    ? {
+                        onDeleteMemberMessage: (eventIds: string[]) =>
+                          onDeleteMemberMessage(messageId, eventIds),
+                      }
+                    : {})}
+                />
+              </div>
+            )
+          }
+          if (segment.kind === 'team_peer') {
+            return (
+              <div key={`team-peer-${index}`} className="team-timeline-segment">
+                <TeamPeerMessageBlockView block={segment.block} />
+              </div>
+            )
+          }
+          if (segment.kind === 'team_round_divider') {
+            return <TeamRoundDividerBlockView key={`team-round-${index}`} block={segment.block} />
+          }
+          if (segment.kind === 'team_discussion_status') {
+            return (
+              <TeamDiscussionStatusBlockView key={`team-status-${index}`} block={segment.block} />
+            )
+          }
+          const segmentBlocks =
+            sessionTaskEntry == null
+              ? segment.blocks
+              : projectSessionTaskTimelineBlocks(segment.blocks, sessionTaskEntry.anchorToolCallId)
+          if (segmentBlocks.length === 0) return null
+          const segmentStreaming = segmentIsLatest && status === 'running'
+          const segmentTaskEntry =
+            sessionTaskEntry != null &&
+            segmentBlocks.some(
+              (block) =>
+                isSessionProgressToolBlock(block) &&
+                block.toolCallId === sessionTaskEntry.anchorToolCallId,
+            )
+              ? sessionTaskEntry
+              : undefined
+          // 团队模式关闭过程日志时，host 的纯过程段（只有思考/工具调用等，会被 CSS 整体隐藏）
+          // 不再渲染；流式段保留，让「执行任务中」运行标识可见。有正文/错误/结果卡片的段不受影响。
+          if (
+            hideTeamHostProcessLogs &&
+            segmentTaskEntry == null &&
+            !segmentStreaming &&
+            !hasVisibleAgentBlocks(segmentBlocks)
+          )
+            return null
           return (
-            <div key={`team-${index}`} className="team-timeline-segment">
-              {renderBlocks(
-                segment.blocks,
-                onFilePreview != null
-                  ? { sessionId, workspaceRootPath, onFilePreview }
-                  : { sessionId, workspaceRootPath },
-              )}
-            </div>
+            <AgentMsg
+              key={`agent-${index}`}
+              sessionId={sessionId}
+              workspaceRootPath={workspaceRootPath}
+              blocks={segmentBlocks}
+              {...(segmentTaskEntry != null ? { sessionTaskEntry: segmentTaskEntry } : {})}
+              messageId={messageId}
+              isLatest={segmentIsLatest}
+              {...(sessionRunning !== undefined ? { sessionRunning } : {})}
+              assistantId={assistantId}
+              assistantName={assistantName}
+              assistantAvatarSrc={assistantAvatarSrc}
+              showIdentity={showIdentity}
+              running={segmentStreaming}
+              {...(onFilePreview != null ? { onFilePreview } : {})}
+              {...(segmentStreaming ? { status: 'running' as const } : {})}
+              {...(messageStatus != null ? { messageStatus } : {})}
+              {...(timestamp != null ? { timestamp } : {})}
+              {...(turnDurationMs != null ? { turnDurationMs } : {})}
+              turnCollapseManaged={turnCollapse.canCollapse}
+              {...(onDelete != null ? { onDelete } : {})}
+              {...(onFork != null && index === lastAgentSegmentIndex ? { onFork } : {})}
+              {...(onReply != null ? { onReply } : {})}
+              {...(selectionMode !== undefined ? { selectionMode } : {})}
+              {...(selected !== undefined ? { selected } : {})}
+              {...(onToggleSelected != null ? { onToggleSelected } : {})}
+              {...(onStartMultiSelect != null ? { onStartMultiSelect } : {})}
+              {...(onRetry != null ? { onRetry } : {})}
+            />
           )
-        }
-        if (segment.kind === 'team_member_activity') {
-          if (!hasVisibleTeamMemberActivityBlocks(segment.blocks, showTeamActivityLogs)) return null
-          return (
-            <div
-              key={`team-member-activity-${index}`}
-              className="team-timeline-segment"
-              data-running-agent-id={segment.memberContext.memberAgentId}
-              data-running={segment.running ? 'true' : 'false'}
-            >
-              <TeamMemberActivityBlockView
-                memberAgentId={segment.memberContext.memberAgentId}
-                blocks={segment.blocks}
-                running={segment.running}
-                sessionId={sessionId}
-                {...(onFilePreview != null ? { onFilePreview } : {})}
-                {...(onReplyToMember != null
-                  ? {
-                      onReplyToMember: (memberArgs: {
-                        memberAgentId: string
-                        memberName: string
-                        content: string
-                        selectedText?: string
-                      }) => onReplyToMember({ ...memberArgs, messageId }),
-                    }
-                  : {})}
-                {...(onDeleteMemberMessage != null
-                  ? {
-                      onDeleteMemberMessage: (eventIds: string[]) =>
-                        onDeleteMemberMessage(messageId, eventIds),
-                    }
-                  : {})}
-              />
-            </div>
-          )
-        }
-        if (segment.kind === 'team_peer') {
-          return (
-            <div key={`team-peer-${index}`} className="team-timeline-segment">
-              <TeamPeerMessageBlockView block={segment.block} />
-            </div>
-          )
-        }
-        if (segment.kind === 'team_round_divider') {
-          return <TeamRoundDividerBlockView key={`team-round-${index}`} block={segment.block} />
-        }
-        if (segment.kind === 'team_discussion_status') {
-          return (
-            <TeamDiscussionStatusBlockView key={`team-status-${index}`} block={segment.block} />
-          )
-        }
-        const segmentBlocks =
-          sessionTaskEntry == null
-            ? segment.blocks
-            : projectSessionTaskTimelineBlocks(segment.blocks, sessionTaskEntry.anchorToolCallId)
-        if (segmentBlocks.length === 0) return null
-        const segmentStreaming = segmentIsLatest && status === 'running'
-        const segmentTaskEntry =
-          sessionTaskEntry != null &&
-          segmentBlocks.some(
-            (block) =>
-              isSessionProgressToolBlock(block) &&
-              block.toolCallId === sessionTaskEntry.anchorToolCallId,
-          )
-            ? sessionTaskEntry
-            : undefined
-        // 团队模式关闭过程日志时，host 的纯过程段（只有思考/工具调用等，会被 CSS 整体隐藏）
-        // 不再渲染；流式段保留，让「执行任务中」运行标识可见。有正文/错误/结果卡片的段不受影响。
-        if (
-          hideTeamHostProcessLogs &&
-          segmentTaskEntry == null &&
-          !segmentStreaming &&
-          !hasVisibleAgentBlocks(segmentBlocks)
-        )
-          return null
-        return (
-          <AgentMsg
-            key={`agent-${index}`}
-            sessionId={sessionId}
-            workspaceRootPath={workspaceRootPath}
-            blocks={segmentBlocks}
-            {...(segmentTaskEntry != null ? { sessionTaskEntry: segmentTaskEntry } : {})}
-            messageId={messageId}
-            isLatest={segmentIsLatest}
-            {...(sessionRunning !== undefined ? { sessionRunning } : {})}
-            assistantId={assistantId}
-            assistantName={assistantName}
-            assistantAvatarSrc={assistantAvatarSrc}
-            showIdentity={showIdentity}
-            running={segmentStreaming}
-            {...(onFilePreview != null ? { onFilePreview } : {})}
-            {...(segmentStreaming ? { status: 'running' as const } : {})}
-            {...(messageStatus != null ? { messageStatus } : {})}
-            {...(timestamp != null ? { timestamp } : {})}
-            {...(turnDurationMs != null ? { turnDurationMs } : {})}
-            turnCollapseManaged={turnCollapse.canCollapse}
-            {...(onDelete != null ? { onDelete } : {})}
-            {...(onFork != null && index === lastAgentSegmentIndex ? { onFork } : {})}
-            {...(onReply != null ? { onReply } : {})}
-            {...(selectionMode !== undefined ? { selectionMode } : {})}
-            {...(selected !== undefined ? { selected } : {})}
-            {...(onToggleSelected != null ? { onToggleSelected } : {})}
-            {...(onStartMultiSelect != null ? { onStartMultiSelect } : {})}
-            {...(onRetry != null ? { onRetry } : {})}
-          />
-        )
-      })}
-    </>
+        })}
+      </>
+    </WorkflowAtomicNodeMetaProvider>
   )
 }, assistantRowsPropsAreEqual)
 

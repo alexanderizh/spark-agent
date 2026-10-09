@@ -1,0 +1,128 @@
+// 工作流原子节点的紧凑派发卡：一行「图标 · 节点标题 · 类型 · 状态 · 摘要」，
+// 默认收起（运行中也收起），点击展开完整节点指令。视觉对齐 workflow-progress-item。
+.workflow-atomic-dispatch {
+  margin: 6px 12px 4px 46px;
+  max-width: min(760px, calc(100% - 56px));
+  min-width: 0;
+}
+
+.workflow-atomic-dispatch-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 26px;
+  padding: 2px 6px;
+  margin: 0 -2px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+    outline: none;
+  }
+}
+
+.workflow-atomic-dispatch-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.workflow-atomic-dispatch-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workflow-atomic-dispatch-kind {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.workflow-atomic-dispatch-spinner {
+  flex: 0 0 auto;
+  color: var(--primary);
+  animation: spin 1s linear infinite;
+}
+
+.workflow-atomic-dispatch-state {
+  flex: 0 0 auto;
+
+  &.is-done {
+    color: var(--c-ok, #22c55e);
+  }
+
+  &.is-failed {
+    color: var(--c-err, #ef4444);
+  }
+}
+
+// 折叠时的一行摘要（节点 prompt 首行 / 成员回复首行），超出省略
+.workflow-atomic-dispatch-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workflow-atomic-dispatch-chevron {
+  flex: 0 0 auto;
+  margin-left: 2px;
+  color: var(--text-faint);
+}
+
+// 展开后的完整节点指令（保留调试能力）
+.workflow-atomic-dispatch-detail {
+  margin: 6px 0 2px 26px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+}
+
+.workflow-atomic-dispatch-detail-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.workflow-atomic-dispatch-instruction {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  line-height: 1.58;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 76ch;
+}
+
+.workflow-atomic-dispatch-error {
+  margin-top: 6px;
+  font-size: var(--font-xs);
+  color: var(--c-err, #ef4444);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
