@@ -18,7 +18,7 @@
 
 export const WIKI_SETTINGS_CATEGORY = 'wiki'
 
-export type WikiSettingGroup = 'budget' | 'extract' | 'space' | 'repo' | 'ui'
+export type WikiSettingGroup = 'budget' | 'extract' | 'dream' | 'space' | 'repo' | 'ui'
 
 /** 设置分组的展示元数据（渲染端按此顺序渲染分区） */
 export const WIKI_SETTING_GROUPS: ReadonlyArray<{
@@ -48,6 +48,14 @@ export const WIKI_SETTING_GROUPS: ReadonlyArray<{
     description: '把对话沉淀为知识候选的策略。默认只保留"显式沉淀"与"里程碑收尾"两条人审路径。',
     phase: 'S2',
     keyPrefixes: ['extract/', 'candidate/'],
+  },
+  {
+    id: 'dream',
+    label: '梦境整理',
+    description:
+      '空闲/定时自动整理知识库：回顾近期会话提取新知识、合并重复页面、修剪过期内容。整理产生的写入按置信度分流，删除默认需人工确认。',
+    phase: 'S4',
+    keyPrefixes: ['dream/'],
   },
   {
     id: 'space',
@@ -351,6 +359,132 @@ export const WIKI_SETTING_DEFINITIONS: ReadonlyArray<WikiSettingDefinition> = [
     type: 'boolean',
     default: true,
     phase: 'S1',
+  },
+
+  // ── B2. 梦境整理（AutoDream 知识库轨，开发计划 todo/2026-10-10 §5.1）──
+  {
+    key: 'dream/enabled',
+    group: 'dream',
+    label: '梦境整理总开关',
+    description:
+      '开启后按定时配置拉起梦境 Agent 整理知识库：提取新知识、合并重复、修剪过期。置信度达标自动落库，删除默认人审。',
+    type: 'boolean',
+    default: false,
+    phase: 'S4',
+  },
+  {
+    key: 'dream/scheduleTrigger',
+    group: 'dream',
+    label: '定时触发方式',
+    description:
+      '关闭 = 仅手动触发；固定间隔 = 按周期自动整理；Cron = 按五段表达式自动整理（时区跟随系统）。',
+    type: 'select',
+    default: 'off',
+    options: [
+      { value: 'off', label: '关闭（仅手动）' },
+      { value: 'interval', label: '固定间隔' },
+      { value: 'cron', label: 'Cron 表达式' },
+    ],
+    phase: 'S4',
+  },
+  {
+    key: 'dream/scheduleIntervalMinutes',
+    group: 'dream',
+    label: '整理间隔',
+    description: '固定间隔模式的自动整理周期，默认 1440 分钟（24 小时）。',
+    type: 'number',
+    default: 1440,
+    min: 30,
+    max: 10080,
+    hardMin: 10,
+    hardMax: 20160,
+    unit: '分钟',
+    phase: 'S4',
+  },
+  {
+    key: 'dream/scheduleCron',
+    group: 'dream',
+    label: 'Cron 表达式',
+    description:
+      "五段式 cron（分 时 日 月 周），如 '0 3 * * *' 表示每天凌晨 3 点整理。仅 Cron 触发方式生效。",
+    type: 'text',
+    default: '',
+    phase: 'S4',
+  },
+  {
+    key: 'dream/providerProfile',
+    group: 'dream',
+    label: '梦境渠道',
+    description:
+      '梦境整理使用的渠道 id（Provider Profile）。留空时依次回落：抽取模型档位（extract/modelProfile）→ 会话默认渠道。',
+    type: 'text',
+    default: '',
+    phase: 'S4',
+  },
+  {
+    key: 'dream/model',
+    group: 'dream',
+    label: '梦境模型',
+    description:
+      '梦境整理使用的模型 id。留空跟随所选渠道的默认模型。梦境需处理大上下文，建议选长上下文档位。',
+    type: 'text',
+    default: '',
+    phase: 'S4',
+  },
+  {
+    key: 'dream/autoApplyThreshold',
+    group: 'dream',
+    label: '自动落库阈值',
+    description:
+      '提案置信度达到该百分数时自动落库，低于则进入人审候选。默认 85；误落库偏多时上调收紧。',
+    type: 'number',
+    default: 85,
+    // min/hardMin 至少 1：阈值 0 会连 confidence 缺失（clamp 归 0）的垃圾提案
+    // 都自动落库，等于整体关掉人审安全网。
+    min: 1,
+    max: 100,
+    hardMin: 1,
+    hardMax: 100,
+    unit: '%',
+    phase: 'S4',
+  },
+  {
+    key: 'dream/autoDeleteEnabled',
+    group: 'dream',
+    label: '允许高置信自动删除',
+    description:
+      '危险项：开启后删除类提案在高置信时自动执行（知识库走版本快照可回滚）。默认关闭 = 删除一律人审。',
+    type: 'boolean',
+    default: false,
+    phase: 'S4',
+  },
+  {
+    key: 'dream/scanSessionsDays',
+    group: 'dream',
+    label: '会话回看窗口',
+    description: 'Gather 采集阶段回看最近多少天的会话存档，窗口越小越省 token。',
+    type: 'number',
+    default: 7,
+    min: 1,
+    max: 90,
+    hardMin: 1,
+    hardMax: 365,
+    unit: '天',
+    phase: 'S4',
+  },
+  {
+    key: 'dream/batchLimit',
+    group: 'dream',
+    label: '单次提案上限',
+    description: '单次梦境最多处理的提案数量，超过部分丢弃并记入运行报告，防止长梦失控烧 token。',
+    type: 'number',
+    default: 50,
+    min: 1,
+    max: 200,
+    hardMin: 1,
+    hardMax: 500,
+    unit: '条',
+    phase: 'S4',
   },
 
   // ── C. 空间与存储 ────────────────────────────────────────────────────

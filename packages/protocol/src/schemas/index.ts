@@ -1851,13 +1851,31 @@ export const IpcSchemaRegistry = {
   'usage:get-session': z.object({
     sessionId: z.string().min(1),
   }),
-  'usage:get-dashboard': z.object({}),
+  'usage:get-dashboard': z.object({
+    // 【AutoDream §12-2】source 分账维度；缺省按 'api' 处理（zod 会剥离未声明键，
+    // 声明缺失会让显式 'dream' 查询静默退化为全量 api，别删）
+    source: z.enum(['api', 'dream', 'all']).optional(),
+  }),
   'usage:get-by-date-range': z.object({
     startDate: z.string().min(1),
     endDate: z.string().min(1),
+    // 【AutoDream §12-2】同 dashboard：声明缺失会被 zod 剥离，'dream' 查询退化为全量
+    source: z.enum(['api', 'dream', 'all']).optional(),
   }),
   'usage:purge': z.object({
     olderThanDays: z.number().int().min(1),
+  }),
+
+  // AutoDream（todo/2026-10-10）：dream 通道注册前无 schema 直接透传；补上入参约束
+  'dream:run': z.object({
+    track: z.enum(['memory', 'wiki']),
+    trigger: z.enum(['schedule', 'manual']).optional(),
+  }),
+  'dream:get-state': z.object({
+    track: z.enum(['memory', 'wiki']),
+  }),
+  'dream:cancel': z.object({
+    track: z.enum(['memory', 'wiki']),
   }),
 
   // Turn Performance

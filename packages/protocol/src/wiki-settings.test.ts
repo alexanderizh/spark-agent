@@ -124,6 +124,36 @@ describe('知识库设置契约', () => {
     expect(WIKI_SETTING_BY_KEY.get('budget/helpDisclosure')?.default).toBe(false)
   })
 
+  it('梦境整理（dream）键契约：默认关、阈值 85 百分数、危险项默认关、枚举合法', () => {
+    // 总开关与危险项默认关（计划 §5.1 / §12.1：不制造自动执行的默认行为）
+    expect(WIKI_SETTING_BY_KEY.get('dream/enabled')?.default).toBe(false)
+    expect(WIKI_SETTING_BY_KEY.get('dream/autoDeleteEnabled')?.default).toBe(false)
+    // 自动落库阈值默认 85（用户已确认，计划 §12.1），存储为百分数整数
+    expect(WIKI_SETTING_BY_KEY.get('dream/autoApplyThreshold')?.default).toBe(85)
+    expect(validateWikiSettingValue('dream/autoApplyThreshold', 85)).toEqual({
+      ok: true,
+      value: 85,
+    })
+    expect(validateWikiSettingValue('dream/autoApplyThreshold', 101).ok).toBe(false)
+    // 阈值 0 被硬下限拒绝：否则连 confidence 缺失（clamp 归 0）的垃圾提案都会自动落库
+    expect(validateWikiSettingValue('dream/autoApplyThreshold', 0).ok).toBe(false)
+    expect(validateWikiSettingValue('dream/autoApplyThreshold', 1)).toEqual({ ok: true, value: 1 })
+    // 触发方式枚举：off / interval / cron
+    expect(validateWikiSettingValue('dream/scheduleTrigger', 'cron')).toEqual({
+      ok: true,
+      value: 'cron',
+    })
+    expect(validateWikiSettingValue('dream/scheduleTrigger', 'hourly').ok).toBe(false)
+    // 间隔分钟硬上下限（防误设过短导致烧 token）
+    expect(validateWikiSettingValue('dream/scheduleIntervalMinutes', 1440).ok).toBe(true)
+    expect(validateWikiSettingValue('dream/scheduleIntervalMinutes', 5).ok).toBe(false)
+    // 渠道/模型留空合法（回落链：dream → extract/modelProfile → 会话默认）
+    expect(validateWikiSettingValue('dream/providerProfile', '')).toEqual({
+      ok: true,
+      value: '',
+    })
+  })
+
   it('分片生效判定：S2 / S4 分组在 S1 标注为未生效', () => {
     const extract = WIKI_SETTING_BY_KEY.get('extract/enabled')!
     expect(isWikiSettingActive(extract, 'S1')).toBe(false)

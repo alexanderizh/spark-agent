@@ -26,6 +26,7 @@ import type {
 } from '../events/index.js'
 import type { TurnSource, UserMessagePresentation } from '../turn-message-presentation.js'
 import type { AutoRouterConfig, AutoRouterExecutorHealthSnapshot } from '../auto-router-config.js'
+import type { DreamRunReport, DreamRunState } from '../dream.js'
 import type {
   ImageProcessProgress,
   ImageProcessRequest,
@@ -4779,7 +4780,14 @@ export interface PerfGetModelAggregatesResponse {
   }>
 }
 
-export interface UsageGetDashboardRequest {}
+export interface UsageGetDashboardRequest {
+  /**
+   * 用量来源维度（AutoDream §12-2）：'api'=用户会话（默认，排除梦境整理消耗），
+   * 'dream'=仅梦境整理消耗，'all'=全部。缺省按 'api' 处理，与 usage:get-by-date-range
+   * 口径一致，避免同一统计页 dashboard 与热力图/排行数字对不上账。
+   */
+  source?: 'api' | 'dream' | 'all'
+}
 export interface UsageGetDashboardResponse {
   total: {
     totalInputTokens: number
@@ -4819,6 +4827,8 @@ export interface UsageGetDashboardResponse {
     cache_read_tokens: number
     cache_write_tokens: number
     cost_usd: number
+    /** 用量来源（migration 117）：'api'=用户会话 / 'dream'=梦境整理 */
+    source: string
     request_timestamp: string
     created_at: string
   }>
@@ -4827,6 +4837,11 @@ export interface UsageGetDashboardResponse {
 export interface UsageGetByDateRangeRequest {
   startDate: string
   endDate: string
+  /**
+   * 用量来源维度（AutoDream §12-2）：'api'=用户会话（默认，排除梦境整理消耗），
+   * 'dream'=仅梦境整理消耗，'all'=全部。缺省按 'api' 处理以避免自动整理污染统计。
+   */
+  source?: 'api' | 'dream' | 'all'
 }
 
 export interface UsageGetByDateRangeResponse {
@@ -8033,6 +8048,11 @@ export interface IpcChannelMap
   'settings:get-category': [SettingsGetCategoryRequest, SettingsGetCategoryResponse]
   'settings:get-all': [SettingsGetAllRequest, SettingsGetAllResponse]
 
+  // Dream（AutoDream 梦境整理）
+  'dream:run': [DreamRunRequest, DreamRunResponse]
+  'dream:get-state': [DreamGetStateRequest, DreamGetStateResponse]
+  'dream:cancel': [DreamCancelRequest, DreamCancelResponse]
+
   // dev 实例继承安装版数据库（快照导入 + 重启生效）
   'data:get-inherit-info': [DataGetInheritInfoRequest, DataGetInheritInfoResponse]
   'data:inherit-production-db': [DataInheritProductionDbRequest, DataInheritProductionDbResponse]
@@ -8621,6 +8641,33 @@ export interface WorkflowValidateResponse {
   diagnostics: WorkflowGraphDiagnosticPayload[]
 }
 
+// ─── Dream（AutoDream 梦境整理，todo/2026-10-10）────────────────────────────
+
+export interface DreamRunRequest {
+  track: 'memory' | 'wiki'
+  /** 缺省 manual（无门控）；schedule 仅供调度器内部使用 */
+  trigger?: 'schedule' | 'manual'
+}
+export interface DreamRunResponse {
+  ok: boolean
+  runId?: string
+  message: string
+}
+export interface DreamGetStateRequest {
+  track: 'memory' | 'wiki'
+}
+export interface DreamGetStateResponse {
+  state: DreamRunState | null
+  report: DreamRunReport | null
+}
+export interface DreamCancelRequest {
+  track: 'memory' | 'wiki'
+}
+export interface DreamCancelResponse {
+  ok: boolean
+  message: string
+}
+
 /** 所有 IPC Channel 名称的联合类型 */
 export type IpcChannel = keyof IpcChannelMap
 
@@ -8640,6 +8687,8 @@ export type IpcResponse<C extends IpcChannel> = IpcChannelMap[C][1]
 export interface IpcStreamChannelMap {
   /** Agent 事件流（主进程推送，渲染进程监听驱动 Timeline UI）*/
   'stream:session:agent-event': AgentEvent
+  /** 梦境整理状态变化（设置页状态条 / 全局 dreaming 指示刷新） */
+  'stream:dream:changed': DreamRunState
   /** 执行连续性 Run 状态变化（恢复中心刷新；payload 为最新启动扫描/状态摘要） */
   'stream:execution:runs-changed': {
     runId: string | null
