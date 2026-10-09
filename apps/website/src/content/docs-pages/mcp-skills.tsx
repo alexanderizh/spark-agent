@@ -646,21 +646,21 @@ tags: [sql, explain, performance]
     <h2 id="mcp-mount">7. MCP 与会话 / Agent 的挂载关系</h2>
     <ul>
       <li>
-        <strong>默认全挂</strong>：构建会话的 MCP 配置时，代码取的是 <code>listServers()</code>{' '}
-        里所有 <code>enabled</code> 的 server，逐个解析传输并注入， 不区分 <code>scope</code>
-        ，也不看当前 Agent 是谁。所以「加好 MCP，所有会话都能用」是成立的。
+        <strong>默认全量挂载</strong>：Agent 未在编辑页「MCP 服务」区块做任何点选时，构建会话 MCP
+        配置取的是 <code>listServers()</code> 里所有 <code>enabled</code> 的 server，逐个解析
+        传输并注入，不区分 <code>scope</code>。所以「加好 MCP，所有会话都能用」对默认 Agent
+        依然成立，后续新增 server 也会自动纳入。
       </li>
       <li>
-        <strong>
-          Agent 的 <code>mcpServerIds</code> 是兼容字段
-        </strong>
-        ：Agent 配置里虽然还有这个字段， 但运行时不再据此过滤
-        MCP（平台工具文档里直接标注「兼容字段，运行时忽略」）。 历史数据不会报错，只是不起作用。
+        <strong>按 Agent 按需挂载</strong>：Agent 的 <code>mcpServerIds</code> 是按需挂载的载体
+        ——部分点选后该 Agent 的会话、团队成员与工作流节点只挂载所选 MCP（自定义 server 按 DB 行
+        id、内置服务按 <code>builtin:spark_*</code> 合成 id 存储）；会话基础能力 （文件交付 /
+        结果回读 / 记忆检索 / 会话服务）始终保留，平台管理等重型内置在 Spark / Codex
+        引擎下强制挂载（技能加载依赖）。
       </li>
       <li>
-        <strong>两个例外</strong>：工作流里的「工具 / MCP 节点」成员如果显式配置过 MCP 选择，
-        会按它自己的 <code>mcpServerIds</code> 白名单加载（这就是「只给这个节点挂某个
-        MCP」的用法）； 只读原子成员则从空能力集开始，不加载用户自定义 MCP。
+        <strong>只读原子成员例外</strong>：工作流里的只读原子成员（输入 / 路由 / 计划 / 复核 /
+        产物节点）从空能力集开始，不加载任何用户自定义 MCP。
       </li>
       <li>
         <strong>被静默跳过的情形</strong>：配置解析不出有效传输、OAuth server 未授权（拿不到
@@ -1027,7 +1027,7 @@ export const mcpSkills: DocsPageContent = {
     {
       question: '为什么我新建的 MCP 在别的会话里也生效了？',
       answer:
-        '因为会话默认加载所有 enabled 的 server，不按作用域或 Agent 过滤（Agent 的 mcpServerIds 已是运行时忽略的兼容字段）。想限制范围只有一条路：在工作流的工具 / MCP 节点成员上显式配置 MCP 白名单。',
+        '因为未做点选的 Agent 默认全量挂载所有 enabled 的 server，不按作用域过滤，后续新增 server 也会自动纳入。想收窄某个 Agent 的范围：在「Agent」页编辑它，于「MCP 服务」区块点「管理 MCP 服务」按需勾选——保存后该 Agent 的会话只挂所选 MCP（内置重型服务同样可摘，会话基础能力保留）。',
     },
   ],
   quickReference: [

@@ -65,8 +65,9 @@ export interface AgentMcpSelection {
   readonly userServerIds: ReadonlySet<string> | undefined
   /**
    * 可选档内置 MCP 的显式勾选集（合成 id 去前缀后的内置名）。
-   * 空集 = 未显式收敛内置（保持全挂，兼容仅选择用户 server 的存量数据）；
-   * 非空 = 仅勾选的可选档内置挂载。
+   * 部分点选模式下：空集 = 可选档内置全不挂（与 UI「未勾选即不挂载」承诺
+   * 及文档「部分点选 → 仅挂所选」一致）；非空 = 仅勾选的挂载。
+   * 全量模式下（partial=false）该集合无意义，可选档保持全挂。
    */
   readonly builtinNames: ReadonlySet<string>
   /** 是否处于「部分点选」模式（mcpServerIds 非空）。 */
@@ -126,9 +127,12 @@ export function resolveAgentMcpAllowList(
  * 3. D5 引擎强制归位：spark_platform 承载 skills_load / skills_list，spark / codex
  *    引擎的技能加载完全依赖它 → 非 claude-sdk 引擎强制挂载（claude-sdk 有原生
  *    Skill 工具兜底，才允许摘除）；
- * 4. 未处于部分点选模式（builtinNames 为空）→ 可选档保持全挂（兼容仅存用户
- *    server id 的存量数据与「全选提交 []」语义）；
- * 5. 部分点选模式下，仅勾选的可选档内置挂载。
+ * 4. 未处于部分点选模式（mcpServerIds 为空 / 全选提交 []）→ 可选档保持全挂；
+ * 5. 部分点选模式下，仅勾选的可选档内置挂载——builtinNames 为空（只勾了用户
+ *    server）同样全不挂，与 UI「未勾选即不挂载」、文档「部分点选 → 仅挂所选」
+ *    单一语义对齐（存量说明：mcpServerIds 非空且仅含用户 id 的老数据只出现于
+ *    2026-07-08～07-16 的 UI 写入窗口，该字段此后三个月在主会话从未生效，
+ *    53f2a02cf 的 CHANGELOG 亦已声明其失效，暴露面趋零）。
  */
 export function shouldMountBuiltinMcp(
   builtinName: string,
@@ -138,7 +142,7 @@ export function shouldMountBuiltinMcp(
   if (REQUIRED_BUILTIN_MCP_NAME_SET.has(builtinName)) return true
   if (!OPTIONAL_HEAVY_BUILTIN_MCP_NAME_SET.has(builtinName)) return true
   if (builtinName === 'spark_platform' && engine !== 'claude-sdk') return true
-  if (!selection.partial || selection.builtinNames.size === 0) return true
+  if (!selection.partial) return true
   return selection.builtinNames.has(builtinName)
 }
 

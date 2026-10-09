@@ -1703,3 +1703,58 @@
   font-size: 11px;
   color: var(--color-text-4);
 }
+
+// 失效选择行（server 已删除）：置灰展示 + 单独移除按钮
+.mcp-picker-row--stale {
+  display: grid;
+  grid-template-columns: 44px 1fr minmax(0, 220px) 44px;
+  align-items: center;
+  height: 36px;
+  border-bottom: 1px solid var(--color-border-1);
+  cursor: default;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  .mcp-picker-cell--name {
+    font-size: 12px;
+    color: var(--color-text-4);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mcp-picker-cell--remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+// 失效选择移除按钮：仅 hover 显色，弱化但可达
+.mcp-picker-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-4);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    background: var(--color-fill-2);
+    color: var(--color-text-1);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary-5);
+    outline-offset: 1px;
+  }
+}

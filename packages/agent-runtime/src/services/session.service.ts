@@ -450,7 +450,7 @@ import {
   shouldMountBuiltinMcp,
   splitAgentMcpSelection,
 } from './agent-mcp-policy.js'
-import { buildNativeSkillsFilter } from './native-skill-filter.js'
+import { buildNativeSkillsFilter, buildSkillFaceSignature } from './native-skill-filter.js'
 import { MediaPresentationCollector } from './media/media-presentation-collector.js'
 export {
   buildWorkflowAtomicInstruction,
@@ -1189,22 +1189,41 @@ export class SessionService {
    */
   private readonly lastBuiltMcpFaces = new Map<
     string,
-    { mcpVersion: number; agentMcpSignature: string }
+    { mcpVersion: number; agentMcpSignature: string; skillFaceSignature: string }
   >()
 
   /**
-   * resume 快照保护（计划 7.8）：MCP 服务表版本或该会话 agent 的 MCP 选择签名
-   * 相比上次构建发生变化时返回 true（调用方置 `continueSession: false` 强制重建
-   * 会话）。读取即刷新（LRU touch）。
+   * resume 快照保护（计划 7.8 + 审查 D-2）：MCP 服务表版本、该会话 agent 的 MCP
+   * 选择签名或生效技能面签名相比上次构建发生变化时返回 true（调用方置
+   * `continueSession: false` 强制重建会话）。技能面签名与 nativeSkills 名单同源
+   * （effectiveSkillIds）——SDK resume 会话的工具面在 query 起点冻结，技能选择
+   * 中途变化若不重建，会出现「目录可见却被 Skill 工具拒绝」的过滤面漂移。
+   * 读取即刷新（LRU touch）。
+   *
+   * firstSeen 语义按调用方分野：host 首轮传 true 无害（本无可续会话，保守正确，
+   * 默认值）；成员讨论续会话首见须传 'continue'——成员首轮依赖「continueSession:
+   * true + stable id 由 SDK 容错新建」的既有语义，只有「已见过且面变化」才重建
+   * （审查 D-3）。
    */
-  private shouldRebuildSdkSession(sessionId: string, agentMcpSignature: string): boolean {
+  private shouldRebuildSdkSession(
+    sessionId: string,
+    agentMcpSignature: string,
+    skillFaceSignature: string,
+    firstSeen: 'rebuild' | 'continue' = 'rebuild',
+  ): boolean {
     const prev = this.lastBuiltMcpFaces.get(sessionId)
     const shouldRebuild =
-      prev == null ||
-      prev.mcpVersion !== this.mcpVersion ||
-      prev.agentMcpSignature !== agentMcpSignature
+      (prev == null && firstSeen === 'rebuild') ||
+      (prev != null &&
+        (prev.mcpVersion !== this.mcpVersion ||
+          prev.agentMcpSignature !== agentMcpSignature ||
+          prev.skillFaceSignature !== skillFaceSignature))
     if (prev != null) this.lastBuiltMcpFaces.delete(sessionId)
-    this.lastBuiltMcpFaces.set(sessionId, { mcpVersion: this.mcpVersion, agentMcpSignature })
+    this.lastBuiltMcpFaces.set(sessionId, {
+      mcpVersion: this.mcpVersion,
+      agentMcpSignature,
+      skillFaceSignature,
+    })
     if (this.lastBuiltMcpFaces.size > 128) {
       const oldest = this.lastBuiltMcpFaces.keys().next().value
       if (oldest != null) this.lastBuiltMcpFaces.delete(oldest)
@@ -2755,6 +2774,11 @@ export class SessionService {
     return { sessionId: row.id as SessionId, createdAt: row.created_at, session }
   }
 
+  /** 装配层注入梦境整理触发器（/dream 命令；透传给命令控制器，见其说明） */
+  setCommandDreamRunner(fn: import('./session/session-commands.js').DreamRunnerFn | null): void {
+    this.commandController.setDreamRunner(fn)
+  }
+
   async executeCommand(params: { sessionId: string; message: string }): Promise<
     | {
         isCommand: true
@@ -4076,7 +4100,10 @@ export class SessionService {
       this.getPlatformBridge().registerSessionSkillFace(
         sessionId,
         runtimeContext.skillConfig.effectiveSkillIds,
-        { reset: true, exempt: runtimeAgent.builtIn === true },
+        // D8 豁免收敛到平台管理 agent 本身（审查 D-5）：builtIn 布尔会把画布助手等
+        // 其他内置 agent 的宿主会话（含其全体成员）整体豁免技能硬校验——豁免的
+        // 依据是「repo 已强制其技能面」，只有 platform-manager-agent 满足。
+        { reset: true, exempt: runtimeAgent.id === 'platform-manager-agent' },
       )
     } catch {
       // bridge 未启动等场景：回落现状（skills 工具无会话面约束）
@@ -4843,6 +4870,7 @@ export class SessionService {
           ? { agentMcpAllowList: agentMcpSelection.userServerIds }
           : {}),
         agentMcpSelectionSignature: agentMcpSelectionSignature(runtimeAgent.mcpServerIds),
+        agentSkillFaceSignature: buildSkillFaceSignature(runtimeContext.skillConfig),
         ...(imageGenerationContext != null
           ? { imageGenerationMcpServer: imageGenerationContext.mcpServer }
           : {}),
@@ -5340,6 +5368,7 @@ export class SessionService {
         ? { agentMcpAllowList: agentMcpSelection.userServerIds }
         : {}),
       agentMcpSelectionSignature: agentMcpSelectionSignature(runtimeAgent.mcpServerIds),
+      agentSkillFaceSignature: buildSkillFaceSignature(runtimeContext.skillConfig),
       ...(imageGenerationContext != null
         ? { imageGenerationMcpServer: imageGenerationContext.mcpServer }
         : {}),
@@ -6057,7 +6086,13 @@ export class SessionService {
     // guarantee the NEXT turn starts cleanly.
     // Agent MCP 选择（mcpServerIds）同样参与快照保护：选择变化时强制重建会话，
     // 防止 resume 会话工具面漂移（计划 7.8）。按会话比对（审查 H-1）。
-    if (this.shouldRebuildSdkSession(sessionId, config.agentMcpSelectionSignature ?? '')) {
+    if (
+      this.shouldRebuildSdkSession(
+        sessionId,
+        config.agentMcpSelectionSignature ?? '',
+        config.agentSkillFaceSignature ?? '',
+      )
+    ) {
       config.continueSession = false
     }
 
@@ -6752,7 +6787,13 @@ export class SessionService {
     // MCP hot-reload: same as Claude SDK path — force a fresh session if the MCP
     // set changed since the last build. Agent MCP 选择变化同样触发重建（计划 7.8，
     // 按会话比对，审查 H-1）。
-    if (this.shouldRebuildSdkSession(sessionId, config.agentMcpSelectionSignature ?? '')) {
+    if (
+      this.shouldRebuildSdkSession(
+        sessionId,
+        config.agentMcpSelectionSignature ?? '',
+        config.agentSkillFaceSignature ?? '',
+      )
+    ) {
       config.continueSession = false
     }
 
@@ -10188,7 +10229,15 @@ export class SessionService {
       // 自己的 skillIds 对应的 skill system prompt，否则 member 看不到自己 agent 配置内
       // 启用的 skills（如 web-search / canvas-studio 等），无法主动调用。
       // 之前只调 getEnvConfig（env），完全忽略 skill 链路。
-      const memberWorkspaceIds = sessionRepo.getWorkspaceIdsFromRow(session)
+      // workspaceIds 读取容错（审查修复）：旧库 / 精简仓储无该 helper 时按无
+      // project scope 处理——此前该调用抛错会让整个成员 env + skill 注入链路
+      // 被外层 catch 吞掉（成员技能面/提示词/签名全丢），与下方同款容错对齐。
+      let memberWorkspaceIds: Array<string | null> = []
+      try {
+        memberWorkspaceIds = sessionRepo.getWorkspaceIdsFromRow(session)
+      } catch {
+        // 旧库/精简测试仓储无该 helper 时按无 project scope 处理。
+      }
       const memberRuntimeContext = new RuntimeCompositionService(
         new SkillRepository(this.db),
         new SettingsRepository(this.db),
@@ -10640,7 +10689,17 @@ export class SessionService {
       ),
       enableCheckpoints: false,
       sdkSessionId: memberSdkSessionId,
-      continueSession: canContinueDiscussionSession,
+      // 成员续会话工具面保护（审查 D-3，与 host 的 shouldRebuildSdkSession 同构）：
+      // 成员 MCP 选择 / 生效技能面 / 全局 MCP 版本任一变化时强制重建，防止讨论
+      // 连续性复用 stable id 续上陈旧工具面（提示词按新面拼装、SDK 冻结旧面）。
+      continueSession:
+        canContinueDiscussionSession &&
+        !this.shouldRebuildSdkSession(
+          `member:${memberSdkSessionId}`,
+          agentMcpSelectionSignature(member.mcpServerIds),
+          memberSkillConfig != null ? buildSkillFaceSignature(memberSkillConfig) : '',
+          'continue',
+        ),
       ...(memberCodexRuntimeLeaseKey != null && stableMemberSessionId != null
         ? buildPersistentCodexAppServerConfig({
             runtimeLeaseKey: memberCodexRuntimeLeaseKey,

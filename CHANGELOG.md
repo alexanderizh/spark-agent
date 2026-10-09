@@ -10,6 +10,12 @@
 
 - **Agent 级 Skill / MCP 按需挂载**：Agent 编辑页「MCP 服务」区块从只读展示升级为可配置选择器——**未选择（默认）= 全部可用**（存量 Agent 行为零变化），**部分点选 = 仅挂所选**。主会话三条引擎路径（claude-sdk / codex / spark）与团队成员路径统一消费 `agent.mcpServerIds`（此前该字段在主会话被完全忽略）；内置 MCP 按四维标准分级：spark_files / spark_tool_results / spark_memory / spark_session 为会话基础能力恒挂载，spark_platform（80+ 工具）/ spark_plugins / spark_app / spark_media / spark_image / spark_browser / spark_computer / spark_search 为可选重型可按 Agent 摘除，其中 spark_platform 在 Spark / Codex 引擎下强制挂载（技能加载依赖）。全选语义归一化为 `[]`（动态全量，新增 server 自动纳入）；SDK resume 会话在 Agent MCP 选择变化时强制重建防工具面漂移。同步修复三处既有缺口：① 工作流 agent 节点配置 `mcpServerIds` 不生效（值被覆盖但缺 flag 标记）；② subagent 绑定空选择存量 Agent 时误入「空能力集」分支（统一为空=全量，D1）；③ claude-sdk 原生技能路径 `nativeSkills:'all'` 绕过 Agent 技能白名单——改传生效技能名单（SDK 原生语义：未列出技能从目录隐藏且被 Skill 工具拒绝），`skills_list` / `skills_load` 增加会话生效面收敛与越权硬校验（内置平台管理 Agent 豁免）。新增 `agent-mcp-policy` / `native-skill-filter` 纯函数模块与聚焦单测、`buildMcpServersForSDK` 白名单零覆盖补齐、三引擎集成用例与 D1 回归用例；官网 docs 三处「全员默认挂载」表述同步更新。
 
+### 修复
+
+- **Agent 部分点选 MCP 时未勾选的内置服务仍全量挂载**：`agent.mcpServerIds` 仅含用户自定义 server id（未勾选任何内置服务）时，可选档内置（spark_platform / spark_search 等）此前保持全量挂载，与选择器「未勾选即不挂载」的界面承诺及文档「部分点选 → 仅挂所选」表述矛盾。现统一为单一语义：部分点选即仅挂所选（内置清单为空 = 可选档内置全不挂；必需档与 spark/codex 引擎下的 spark_platform 强制归位不受影响）。存量说明：非空且仅含用户 id 的旧数据只出现于 2026-07-08～07-16 的 UI 写入窗口，该字段此后在主会话从未生效，暴露面趋零。同步修复 `session-runtime-config.test.ts` 中三个新增用例被误嵌套进上一个 `it` 块导致宿主用例报错的结构问题（该嵌套此前使新用例从未真正运行，三引擎变体与语义翻转断言已补齐）。
+- **SDK resume 快照保护补齐技能面维度与成员路径**（审查 D-2/D-3）：生效技能面签名（与 nativeSkills 名单同源）并入 claude-sdk / codex 两条 resume 路径的重建比对——会话中途修改 Agent 技能选择后不再出现「技能目录可见却被 Skill 工具拒绝」的过滤面漂移；团队成员讨论续会话（stable id 复用）补上同构保护，成员 MCP 选择 / 技能面 / 全局 MCP 版本变化时强制重建。另将 skills_list / skills_load 硬校验的内置豁免从 `builtIn` 布尔收敛到平台管理 Agent 本身（此前画布助手等其他内置 Agent 宿主的整个会话含成员均被豁免，审查 D-5）；Agent MCP 选择器的「已失效选择」治理：已删除 server 的残留 id 在弹窗中独立分组展示并可单独移除，保存时自动清理、全选归一化不再被其阻断。
+- **既有行为变化提示**：工作流 subagent 节点绑定「MCP 选择为空」的存量 Agent 时，其用户自定义 MCP 挂载面由旧实现的零个修复为全量（空=全量统一语义）；如需该节点保持空能力集，请在节点上显式配置 MCP 选择。
+
 ## [0.14.13] - 2026-10-08
 
 ### 新增

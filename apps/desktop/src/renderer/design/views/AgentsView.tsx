@@ -24,6 +24,7 @@ import {
   McpServersPickerModal,
   allSelectableMcpIds,
   resolveMcpSelectionLabel,
+  staleMcpSelectionIds,
 } from '../components/McpServersPickerModal'
 import { RuleCreateModal } from '../components/RuleCreateModal'
 import { getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
@@ -1671,13 +1672,17 @@ function AgentsTabContent({
         onChange={(ids) => updateDraft('mcpServerIds', ids)}
         onConfirm={() => {
           // D6「全选 = 全部（动态）」：勾满全部可选项时归一化为 []，后续新增
-          // server 自动纳入，语义不漂移；部分选择才落显式清单。
+          // server 自动纳入，语义不漂移；部分选择才落显式清单。已删除 server 的
+          // 失效 id 不参与判等并在保存时自动清理（停用 server 的选择保留，重新
+          // 启用后自动恢复意义）。
+          const stale = new Set(staleMcpSelectionIds(draft.mcpServerIds, mcpServers))
+          const effective = draft.mcpServerIds.filter((id) => !stale.has(id))
           const selectable = new Set(allSelectableMcpIds(mcpServers))
-          const coversAll =
-            draft.mcpServerIds.length > 0 && draft.mcpServerIds.every((id) => selectable.has(id))
-          const total = selectable.size
-          if (coversAll && draft.mcpServerIds.length === total) {
+          const coversAll = effective.length > 0 && effective.every((id) => selectable.has(id))
+          if (coversAll && effective.length === selectable.size) {
             updateDraft('mcpServerIds', [])
+          } else if (stale.size > 0) {
+            updateDraft('mcpServerIds', effective)
           }
           setShowMcpPicker(false)
         }}

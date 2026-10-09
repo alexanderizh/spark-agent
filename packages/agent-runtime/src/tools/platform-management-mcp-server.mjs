@@ -1323,7 +1323,8 @@ function toolDefinitions() {
           mcpServerIds: {
             type: 'array',
             items: { type: 'string' },
-            description: '兼容字段，运行时忽略；所有已启用 MCP 会自动对 Agent 可用',
+            description:
+              'Agent 的 MCP 按需挂载选择：空数组或不传 = 全量挂载（默认）；传部分 id = 仅挂所选。自定义 server 传 DB 行 id，内置服务传 builtin:spark_* 合成 id（如 builtin:spark_platform）。会话基础能力（文件交付/结果回读/记忆检索/会话服务）始终保留',
           },
           workflowId: {
             type: 'string',
@@ -1377,7 +1378,8 @@ function toolDefinitions() {
           mcpServerIds: {
             type: 'array',
             items: { type: 'string' },
-            description: '兼容字段，运行时忽略；所有已启用 MCP 会自动对 Agent 可用',
+            description:
+              'Agent 的 MCP 按需挂载选择：空数组或不传 = 全量挂载（默认）；传部分 id = 仅挂所选。自定义 server 传 DB 行 id，内置服务传 builtin:spark_* 合成 id（如 builtin:spark_platform）。会话基础能力（文件交付/结果回读/记忆检索/会话服务）始终保留',
           },
           workflowId: { type: 'string', description: '关联的 Workflow ID，设为 null 可解绑' },
           providerProfileId: { type: 'string', description: '关联的 Provider Profile ID' },

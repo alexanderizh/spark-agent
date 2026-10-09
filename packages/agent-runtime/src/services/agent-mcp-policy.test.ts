@@ -21,7 +21,7 @@ describe('splitAgentMcpSelection', () => {
     }
   })
 
-  it('仅用户 server id → 白名单模式，内置不收敛', () => {
+  it('仅用户 server id → 白名单模式，builtinNames 为空集', () => {
     const selection = splitAgentMcpSelection(['srv-a', 'srv-b'])
     expect(selection.partial).toBe(true)
     expect(selection.userServerIds).toEqual(new Set(['srv-a', 'srv-b']))
@@ -86,10 +86,16 @@ describe('shouldMountBuiltinMcp（D4 分级 + D5 引擎归位）', () => {
     }
   })
 
-  it('仅选择用户 server（builtinNames 空）→ 可选档保持全挂（兼容仅存用户 id 的存量数据）', () => {
+  it('仅选择用户 server（builtinNames 空）→ 可选档全不挂（与 UI「未勾选即不挂载」单一语义）', () => {
     const selection = splitAgentMcpSelection(['srv-a'])
-    expect(shouldMountBuiltinMcp('spark_platform', 'claude-sdk', selection)).toBe(true)
-    expect(shouldMountBuiltinMcp('spark_browser', 'claude-sdk', selection)).toBe(true)
+    expect(shouldMountBuiltinMcp('spark_platform', 'claude-sdk', selection)).toBe(false)
+    expect(shouldMountBuiltinMcp('spark_browser', 'claude-sdk', selection)).toBe(false)
+    expect(shouldMountBuiltinMcp('spark_search', 'codex', selection)).toBe(false)
+    // D5 引擎归位不受影响：spark_platform 在 spark / codex 引擎仍强制挂载
+    expect(shouldMountBuiltinMcp('spark_platform', 'spark', selection)).toBe(true)
+    // 必需档与不进分级的内置不受影响
+    expect(shouldMountBuiltinMcp('spark_files', 'claude-sdk', selection)).toBe(true)
+    expect(shouldMountBuiltinMcp('spark_ui', 'claude-sdk', selection)).toBe(true)
   })
 
   it('部分点选内置 → 未勾选的可选档被摘除，勾选的保留', () => {

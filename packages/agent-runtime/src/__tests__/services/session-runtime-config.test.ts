@@ -150,6 +150,15 @@ const mockState = vi.hoisted(() => ({
     defaults_json: string
   }>,
   events: [] as EventRow[],
+  // 技能行（SkillRepository.list() 数据源；默认空——需要技能面的用例按需 seed）
+  skills: [] as Array<{
+    id: string
+    name: string
+    enabled: number
+    manifest_json: string
+    created_at: string
+    updated_at: string
+  }>,
   rules: [] as Array<{
     id: string
     scope: string
@@ -1118,7 +1127,7 @@ vi.mock('@spark/storage', async (importOriginal) => {
   }
   class SkillRepository {
     list(): unknown[] {
-      return []
+      return mockState.skills
     }
     get(): null {
       return null
@@ -1722,6 +1731,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.mediaManifests.clear()
     mockState.providerMediaModels.length = 0
     mockState.events.length = 0
+    mockState.skills.length = 0
     mockState.rules.length = 0
     mockState.mcpServers.length = 0
     mockState.sdkConfigs.length = 0
@@ -5295,51 +5305,206 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(atomicConfig).not.toHaveProperty('nativeSkills')
   })
 
-  it('scopes main-session user MCP servers to the agent MCP selection (claude-sdk)', async () => {
-    mockState.mcpServers.push(
+  // 三引擎变体：白名单过滤在 claude-sdk / codex / spark 三条装配路径的 config.mcpServers
+  // 断言口径一致（spark 路径经 buildSparkEngineMcpRuntime 后同样以 server name 为 key
+  // 写 config.mcpServers）。codex 只能配 OpenAI 系渠道（引擎×协议守卫）。
+  it.each(['claude-sdk', 'codex', 'spark'] as const)(
+    'scopes main-session user MCP servers to the agent MCP selection (%s)',
+    async (agentAdapter) => {
+      mockState.mcpServers.push(
+        {
+          id: 'mcp-selected',
+          scope: 'user',
+          name: 'selected_mcp',
+          config_json: JSON.stringify({ command: 'node', args: ['selected.mjs'] }),
+          enabled: 1,
+          created_at: '2026-05-28T00:00:00.000Z',
+          updated_at: '2026-05-28T00:00:00.000Z',
+        },
+        {
+          id: 'mcp-unselected',
+          scope: 'user',
+          name: 'unselected_mcp',
+          config_json: JSON.stringify({ command: 'node', args: ['unselected.mjs'] }),
+          enabled: 1,
+          created_at: '2026-05-28T00:00:00.000Z',
+          updated_at: '2026-05-28T00:00:00.000Z',
+        },
+      )
+      const providerProfileId =
+        agentAdapter === 'codex' ? 'scoped-codex-provider' : 'tencent-provider'
+      if (agentAdapter === 'codex') {
+        seedProvider({
+          id: providerProfileId,
+          provider_type: 'openai',
+          name: 'Scoped Codex Provider',
+          config_json: JSON.stringify({
+            defaultModel: 'gpt-5.2-codex',
+            modelIds: ['gpt-5.2-codex'],
+            apiEndpoint: 'https://api.openai.com/v1',
+            codexApiKind: 'responses',
+          }),
+          keystore_ref: 'key-scoped-codex',
+          is_default: 0,
+        })
+      }
+      mockState.agents.set(
+        'scoped-main-agent',
+        makeAgent({
+          id: 'scoped-main-agent',
+          name: 'Scoped Main Agent',
+          providerProfileId,
+          mcpServerIds: ['mcp-selected'],
+        }),
+      )
+      const service = new SessionService({} as never, (event) => events.push(event))
+      const { sessionId } = await service.createSession({
+        providerProfileId,
+        agentId: 'scoped-main-agent',
+        agentAdapter,
+        permissionMode: agentAdapter === 'codex' ? 'codex-default' : 'claude-plan',
+        title: 'Scoped MCP main session',
+      })
+
+      await service.sendTurn({ sessionId, message: 'hello scoped mcp' })
+      await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+      const config = mockState.sdkConfigs[0]
+      expect(config?.mcpServers).toHaveProperty('selected_mcp')
+      expect(config?.mcpServers).not.toHaveProperty('unselected_mcp')
+      // 语义翻转回归：仅勾用户 server（builtinNames 空）→ 可选档内置全不挂
+      //（spark_platform 在 spark 引擎下 D5 强制归位，属例外）。
+      if (agentAdapter === 'claude-sdk') {
+        expect(config?.mcpServers).not.toHaveProperty('spark_search')
+      }
+    },
+  )
+
+  it('forces a member discussion resume rebuild when the member skill face changes (D-2/D-3)', async () => {
+    // effectiveSkillIds 与 repo 启用技能取交集（runtime-composition getSkillConfig），
+    // 必须先 seed 技能行，否则签名恒空、任何技能选择变化都无法被感知。
+    mockState.skills.push(
       {
-        id: 'mcp-selected',
-        scope: 'user',
-        name: 'selected_mcp',
-        config_json: JSON.stringify({ command: 'node', args: ['selected.mjs'] }),
+        id: 'skill-a',
+        name: 'Skill A',
         enabled: 1,
+        manifest_json: JSON.stringify({ name: 'Skill A', description: 'probe skill a' }),
         created_at: '2026-05-28T00:00:00.000Z',
         updated_at: '2026-05-28T00:00:00.000Z',
       },
       {
-        id: 'mcp-unselected',
-        scope: 'user',
-        name: 'unselected_mcp',
-        config_json: JSON.stringify({ command: 'node', args: ['unselected.mjs'] }),
+        id: 'skill-b',
+        name: 'Skill B',
         enabled: 1,
+        manifest_json: JSON.stringify({ name: 'Skill B', description: 'probe skill b' }),
         created_at: '2026-05-28T00:00:00.000Z',
         updated_at: '2026-05-28T00:00:00.000Z',
       },
     )
     mockState.agents.set(
-      'scoped-main-agent',
+      'skill-face-host',
       makeAgent({
-        id: 'scoped-main-agent',
-        name: 'Scoped Main Agent',
-        providerProfileId: 'tencent-provider',
-        mcpServerIds: ['mcp-selected'],
+        id: 'skill-face-host',
+        name: 'Skill Face Host',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
+    mockState.agents.set(
+      'skill-face-worker',
+      makeAgent({
+        id: 'skill-face-worker',
+        name: 'Skill Face Worker',
+        providerProfileId: 'anthropic-provider',
+        skillIds: ['skill-a'],
       }),
     )
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
-      providerProfileId: 'tencent-provider',
-      agentId: 'scoped-main-agent',
+      providerProfileId: 'anthropic-provider',
       agentAdapter: 'claude-sdk',
       permissionMode: 'claude-plan',
-      title: 'Scoped MCP main session',
+      title: 'Skill face member session',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      team: {
+        enabled: true,
+        hostAgentId: 'skill-face-host',
+        memberAgentIds: ['skill-face-worker'],
+        maxDiscussionRounds: 4,
+      },
     })
 
-    await service.sendTurn({ sessionId, message: 'hello scoped mcp' })
+    await service.sendTurn({
+      sessionId,
+      message: 'coordinate this task',
+      agentId: 'skill-face-host',
+    })
     await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+    const teamServer = (
+      mockState.sdkConfigs[0]?.mcpServers as {
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<unknown>
+            }>
+          }
+        }
+      }
+    ).spark_team
+    const dispatchTool = teamServer.instance.tools.find((tool) => tool.name === 'agent_dispatch')
+    if (dispatchTool == null) throw new Error('expected agent_dispatch tool')
 
-    const config = mockState.sdkConfigs[0]
-    expect(config?.mcpServers).toHaveProperty('selected_mcp')
-    expect(config?.mcpServers).not.toHaveProperty('unselected_mcp')
+    // 两次 dispatch（面未变）：成员续会话连续（continueSession=true 且 sdkSessionId 稳定）
+    await dispatchTool.handler({ targetAgentId: 'skill-face-worker', instruction: 'first pass' })
+    await dispatchTool.handler({ targetAgentId: 'skill-face-worker', instruction: 'second pass' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(3))
+    expect(mockState.sdkConfigs[1]?.continueSession).toBe(true)
+    expect(mockState.sdkConfigs[2]?.continueSession).toBe(true)
+    expect(mockState.sdkConfigs[2]?.sdkSessionId).toBe(mockState.sdkConfigs[1]?.sdkSessionId)
+
+    // 修改成员 agent 的技能选择后开新一轮 host turn（resolveTeamMembers 在 turn
+    // 启动时取快照，同 turn 内 dispatch 不重读）→ 生效技能面签名漂移 → 强制重建
+    //（防 resume 会话沿用陈旧 skills 过滤器造成目录与 Skill 工具拒绝面不一致）
+    mockState.agents.set(
+      'skill-face-worker',
+      makeAgent({
+        id: 'skill-face-worker',
+        name: 'Skill Face Worker',
+        providerProfileId: 'anthropic-provider',
+        skillIds: ['skill-a', 'skill-b'],
+      }),
+    )
+    await service.sendTurn({
+      sessionId,
+      message: 'rotate with updated skills',
+      agentId: 'skill-face-host',
+    })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(4))
+    const teamServer2 = (
+      mockState.sdkConfigs[3]?.mcpServers as {
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<unknown>
+            }>
+          }
+        }
+      }
+    ).spark_team
+    const dispatchTool2 = teamServer2.instance.tools.find((tool) => tool.name === 'agent_dispatch')
+    if (dispatchTool2 == null) throw new Error('expected agent_dispatch tool on second host turn')
+    await dispatchTool2.handler({
+      targetAgentId: 'skill-face-worker',
+      instruction: 'third pass',
+    })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(5))
+    expect(mockState.sdkConfigs[4]?.continueSession).toBe(false)
+    // 讨论连续性键不变（同一 discussion），只是本 turn 强制重建
+    expect(mockState.sdkConfigs[4]?.sdkSessionId).toBe(mockState.sdkConfigs[2]?.sdkSessionId)
   })
 
   it('drops unselected optional builtin MCPs for a partially selected agent (claude-sdk)', async () => {

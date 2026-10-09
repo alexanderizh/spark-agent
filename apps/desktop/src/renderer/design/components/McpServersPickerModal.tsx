@@ -54,11 +54,11 @@ export const MCP_OPTIONAL_BUILTIN_LABELS: ReadonlyMap<string, string> = new Map(
   OPTIONAL_BUILTIN_MCPS.map((m) => [builtinMcpId(m.name), m.label] as const),
 )
 
-/** 解析 MCP 选择 id 的展示名（内置合成 id 或用户 server 名）。 */
+/** 解析 MCP 选择 id 的展示名（内置合成 id 或用户 server 名；失效 id 标记为已删除）。 */
 export function resolveMcpSelectionLabel(id: string, userServers: McpServerItem[]): string {
   const builtin = MCP_OPTIONAL_BUILTIN_LABELS.get(id)
   if (builtin != null) return builtin
-  return userServers.find((s) => s.id === id)?.name ?? id
+  return userServers.find((s) => s.id === id)?.name ?? `已删除（${id.slice(0, 8)}…）`
 }
 
 /** 全部可选项 id（enabled 用户 server + 可选内置）——「勾满 → 提交 []」归一化用。 */
@@ -67,6 +67,21 @@ export function allSelectableMcpIds(userServers: McpServerItem[]): string[] {
     ...OPTIONAL_BUILTIN_MCPS.map((m) => builtinMcpId(m.name)),
     ...userServers.filter((s) => s.enabled).map((s) => s.id),
   ]
+}
+
+/**
+ * 选择集中已失效的 id（server 已被删除：既不在内置清单、也不在现存 server——含停用——
+ * 的 id 集合里）。停用 server 不算失效：它仍在列表中锁定展示，重新启用后选择自动恢复。
+ */
+export function staleMcpSelectionIds(
+  selectedIds: readonly string[],
+  userServers: McpServerItem[],
+): string[] {
+  const known = new Set<string>([
+    ...OPTIONAL_BUILTIN_MCPS.map((m) => builtinMcpId(m.name)),
+    ...userServers.map((s) => s.id),
+  ])
+  return selectedIds.filter((id) => !known.has(id))
 }
 
 function builtinMcpId(name: string): string {
@@ -174,6 +189,12 @@ export function McpServersPickerModal({
       (m) => m.label.toLowerCase().includes(lower) || m.desc.toLowerCase().includes(lower),
     )
   }, [searchText])
+
+  // 已失效选择（server 已删除）：始终可见（不参与页签过滤），可单独移除
+  const staleIds = useMemo(
+    () => staleMcpSelectionIds(selectedIds, userServers),
+    [selectedIds, userServers],
+  )
 
   return (
     <Modal
@@ -328,6 +349,49 @@ export function McpServersPickerModal({
             )}
           </div>
         </div>
+
+        {staleIds.length > 0 && (
+          <div className="mcp-picker-group">
+            <div className="mcp-picker-group-head">
+              已失效选择
+              <span className="mcp-picker-group-note">
+                对应 MCP 服务器已删除，不影响当前挂载；可单独移除
+              </span>
+            </div>
+            {staleIds.map((id) => (
+              <div key={id} className="skills-picker-row mcp-picker-row mcp-picker-row--stale">
+                <div className="skills-picker-cell skills-picker-cell--checkbox">
+                  <Checkbox checked disabled onChange={() => {}} />
+                </div>
+                <div className="skills-picker-cell skills-picker-cell--name">
+                  <Tooltip title={id}>
+                    <span className="skills-picker-name-text">
+                      {id.slice(0, 12)}
+                      {id.length > 12 ? '…' : ''}
+                    </span>
+                  </Tooltip>
+                </div>
+                <div className="mcp-picker-cell mcp-picker-cell--status">
+                  <span className="skills-picker-status skills-picker-status--disabled">
+                    <span className="skills-picker-dot skills-picker-dot--gray" />
+                    已删除
+                  </span>
+                </div>
+                <div className="mcp-picker-cell mcp-picker-cell--remove">
+                  <button
+                    type="button"
+                    className="mcp-picker-remove-btn"
+                    aria-label="移除失效选择"
+                    title="从该 Agent 的 MCP 选择中移除"
+                    onClick={() => onChange(selectedIds.filter((sid) => sid !== id))}
+                  >
+                    <Icons.X size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="skills-picker-footer">

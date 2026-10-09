@@ -990,6 +990,13 @@ export interface SDKExecutorConfig {
    * continueSession=false，防止 SDK resume 会话工具面快照漂移。
    */
   agentMcpSelectionSignature?: string | undefined
+  /**
+   * Agent 生效技能面签名（effectiveSkillIds 排序连接）：与 nativeSkills 名单同源。
+   * 与上次构建不一致时同样强制 continueSession=false——SDK resume 会话的 skills
+   * 过滤器在 query 起点冻结，技能选择中途变化若不重建会出现目录与 Skill 工具
+   * 拒绝面漂移（审查 D-2）。
+   */
+  agentSkillFaceSignature?: string | undefined
   /** Disable Codex CLI's host plugin/skill discovery when Spark owns progressive disclosure. */
   disableCodexNativeSkills?: boolean | undefined
   /**

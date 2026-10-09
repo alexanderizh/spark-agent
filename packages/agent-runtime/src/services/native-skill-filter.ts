@@ -46,6 +46,15 @@ function sanitizeManagedSkillDirName(name: string): string {
  * 提示词目录（buildAvailableSkillsPrompt）与本名单同源于同一 effectiveSkillIds，
  * 保证「目录可见」与「工具可加载」一致。
  */
+/**
+ * 生效技能面的稳定签名（排序连接）：resume 快照保护用（审查 D-2）——与
+ * buildNativeSkillsFilter 同源（effectiveSkillIds），签名变化即强制重建 SDK 会话，
+ * 防止 resume 会话沿用陈旧 skills 过滤器造成「目录可见却被 Skill 工具拒绝」。
+ */
+export function buildSkillFaceSignature(skillConfig: RuntimeSkillConfig): string {
+  return [...skillConfig.effectiveSkillIds].sort().join(',')
+}
+
 export function buildNativeSkillsFilter(skillConfig: RuntimeSkillConfig): string[] | 'all' {
   // 白名单模式 = agent 显式配置了技能（agentSkillIds 非空；repo 对所有 agent
   // 强制并入 builtin:platform-manager，UI 创建的 agent 恒非空），或显式替换后
