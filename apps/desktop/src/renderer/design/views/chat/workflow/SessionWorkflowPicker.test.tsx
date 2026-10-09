@@ -172,6 +172,37 @@ describe('SessionWorkflowPicker', () => {
     )
   })
 
+  // 发送将被路由到新建会话（项目切换 / 勾选工作树）且已挂载 override 工作流时，
+  // 菜单内要提示「工作流会跟随」；正常发送（复用当前会话）不提示。
+  it('notices the mounted workflow will follow when send reroutes to a new session', async () => {
+    harness.state = makeState({
+      writeEnabled: true,
+      runtimeRequested: true,
+      runtimeEnabled: true,
+    })
+
+    const openMenu = async (): Promise<void> => {
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('.session-workflow-trigger')?.click(),
+      )
+    }
+    const hasFollowNotice = (): boolean =>
+      [...document.querySelectorAll('.session-workflow-notice')].some((node) =>
+        node.textContent?.includes('跟随到新会话'),
+      )
+
+    await act(async () =>
+      root.render(<SessionWorkflowPicker sessionId="session-a" sendRoutesToNewSession />),
+    )
+    await openMenu()
+    expect(hasFollowNotice()).toBe(true)
+
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    await act(async () => root.render(<SessionWorkflowPicker sessionId="session-a" />))
+    await openMenu()
+    expect(hasFollowNotice()).toBe(false)
+  })
+
   it('clears a pending draft selection when workflow writes are turned off', async () => {
     harness.state = null
     harness.features = {

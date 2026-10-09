@@ -17,6 +17,8 @@ export function SessionWorkflowPicker(props: {
   onDraftBindingChange?: (binding: SessionWorkflowBindingCreate | null) => void
   disabled?: boolean
   mentionActive?: boolean
+  /** 会话模式下：发送将被路由到新建会话（所选项目与会话不一致 / 勾选 worktree）。 */
+  sendRoutesToNewSession?: boolean
 }): React.JSX.Element | null {
   const { sessionId, draftBinding, onDraftBindingChange } = props
   const {
@@ -190,6 +192,13 @@ export function SessionWorkflowPicker(props: {
               本条 @成员消息不应用会话工作流，按成员自身配置执行。
             </div>
           )}
+          {!draftMode &&
+            props.sendRoutesToNewSession === true &&
+            selectedBinding?.mode === 'override' && (
+              <div className="session-workflow-notice">
+                发送将新建会话（项目切换或勾选工作树），已挂载的工作流会跟随到新会话生效。
+              </div>
+            )}
           {state?.resumableRun?.status === 'failed' && (
             <div className="session-workflow-notice is-warning">
               <div>上次运行失败，下一条 Host 消息将继续此运行。</div>

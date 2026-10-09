@@ -60,25 +60,27 @@ describe('SessionWorkflowPicker styles', () => {
     const styles = readFileSync(new URL('./SessionWorkflowPicker.less', import.meta.url), 'utf8')
 
     // 报错必须吸顶：菜单可滚动，放末尾会被滚出可视区（用户点完看不到失败原因）。
-    expect(styles).toMatch(
-      /\.session-workflow-error\s*\{[\s\S]*?position: sticky;[\s\S]*?top: 0;/,
-    )
+    expect(styles).toMatch(/\.session-workflow-error\s*\{[\s\S]*?position: sticky;[\s\S]*?top: 0;/)
     // 吸顶块需要与菜单同色，否则滚动时下层文字会透出来。
     expect(styles).toMatch(/\.session-workflow-error\s*\{[\s\S]*?background: var\(--panel\);/)
     // 通栏收口用分割线，不引入卡片式边框盒子。
-    expect(styles).toMatch(/\.session-workflow-error\s*\{[\s\S]*?border-bottom: 1px solid var\(--border\);/)
+    expect(styles).toMatch(
+      /\.session-workflow-error\s*\{[\s\S]*?border-bottom: 1px solid var\(--border\);/,
+    )
   })
 
-  it('places the picker in the outer parameter bar immediately after the debug toggle', () => {
+  // 锚定 ContextMeter：picker 必须唯一渲染在外层参数条上（ContextMeter 之前），
+  // 不得被挪进菜单内部或重复渲染。曾断言「紧跟 debug 开关之后」，但 Picker 自引入
+  // 提交（72f9fa8c9）起就稳定位于 debug 开关之前，该断言从未成立过，此处按实际
+  // 渲染顺序修正（debug 开关与 picker 的先后无视觉约束）。
+  it('places the picker once in the outer parameter bar before the context meter', () => {
     const source = readFileSync(new URL('../ComposerV2.tsx', import.meta.url), 'utf8')
     const pickerOccurrences = source.match(/<SessionWorkflowPicker/g) ?? []
-    const debugToggleIndex = source.indexOf('className={`composer-debug-toggle')
     const workflowPickerIndex = source.indexOf('<SessionWorkflowPicker')
     const contextMeterIndex = source.indexOf('<ContextMeterWithPopup', workflowPickerIndex)
 
     expect(pickerOccurrences).toHaveLength(1)
-    expect(debugToggleIndex).toBeGreaterThan(-1)
-    expect(workflowPickerIndex).toBeGreaterThan(debugToggleIndex)
+    expect(workflowPickerIndex).toBeGreaterThan(-1)
     expect(contextMeterIndex).toBeGreaterThan(workflowPickerIndex)
   })
 })

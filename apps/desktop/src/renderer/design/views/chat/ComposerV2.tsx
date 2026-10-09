@@ -1033,6 +1033,7 @@ export function ComposerV2({
   const { invoke: sendQueuedTurnNow } = useIpcInvoke('session:send-queued-turn-now')
   const { invoke: getSetting } = useIpcInvoke('settings:get')
   const { invoke: writeClipboardText } = useIpcInvoke('clipboard:write-text')
+  const { invoke: getWorkflowBinding } = useIpcInvoke('session:get-workflow-binding')
   const [runtimePatchCoordinator] = useState(
     () => new RuntimePatchCoordinator<SessionRuntimePatch>(),
   )
@@ -1210,6 +1211,33 @@ export function ComposerV2({
     activeWorkspaceId,
     preferSelectedWorkspace,
   })
+  /**
+   * 发送路由到「新建会话」时的工作流挂载跟随：
+   * 空会话 hero + 所选项目与会话不一致（或勾选 worktree）时，消息会进新会话执行；
+   * 原会话上的 override 挂载若不跟随，会出现「图标高亮但消息未触发工作流」的静默错位。
+   * 仅跟随 override（明确的挂载意图）；inherit/disabled 是会话局部语义，不跨会话传播。
+   * 查询失败不阻断发送（退回现状：不跟随），仅留 console 线索便于排查。
+   */
+  const resolveFollowWorkflowBinding =
+    useCallback(async (): Promise<SessionWorkflowBindingCreate | null> => {
+      const currentSessionId = session?.id
+      if (currentSessionId == null) return null
+      if (!createWorktree && canReuseCurrentSession) return null
+      try {
+        const result = await getWorkflowBinding({ sessionId: currentSessionId })
+        const binding = result.binding
+        if (
+          binding?.mode === 'override' &&
+          binding.workflowId != null &&
+          binding.workflowId.length > 0
+        ) {
+          return { mode: 'override', workflowId: binding.workflowId }
+        }
+      } catch (cause) {
+        console.warn('[ComposerV2] 读取会话工作流挂载失败，本次发送将不跟随工作流', cause)
+      }
+      return null
+    }, [canReuseCurrentSession, createWorktree, getWorkflowBinding, session?.id])
   const draftState = drafts[draftBucketKey] ?? EMPTY_COMPOSER_DRAFT
   const value = draftState.value
   const attachments = draftState.attachments
@@ -2049,6 +2077,10 @@ export function ComposerV2({
               restoreSentDraft(draftBucketKey)
               return
             }
+            // 新会话将承载本条命令：无草稿挂载（已有会话场景草稿恒为 null）时，
+            // 读取原会话的 override 挂载随创建请求原子写入新会话。
+            const followWorkflowBinding =
+              draftWorkflowBinding ?? (await resolveFollowWorkflowBinding())
             commandSessionId = await onCreateSession({
               ...(selectedProvider?.id !== undefined
                 ? { providerProfileId: selectedProvider.id }
@@ -2059,7 +2091,7 @@ export function ComposerV2({
               permissionMode: effectivePermissionMode,
               debugMode: effectiveDebugMode,
               ...(cliSparkOverride != null ? { cliSparkOverride } : {}),
-              ...(draftWorkflowBinding != null ? { workflowBinding: draftWorkflowBinding } : {}),
+              ...(followWorkflowBinding != null ? { workflowBinding: followWorkflowBinding } : {}),
               ...(teamConfig.enabled ? { teamConfig } : {}),
               ...(createWorktree
                 ? {
@@ -2176,6 +2208,11 @@ export function ComposerV2({
       try {
         // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
         if (targetSessionId == null) {
+          // 消息将落入新会话（项目切换路由 / worktree）：无草稿挂载（已有会话场景
+          // 草稿恒为 null）时，读取原会话的 override 挂载随创建请求原子写入新会话，
+          // 避免工作流图标高亮但消息实际未触发工作流的静默错位。
+          const followWorkflowBinding =
+            draftWorkflowBinding ?? (await resolveFollowWorkflowBinding())
           targetSessionId = await onCreateSession({
             ...(selectedProvider?.id !== undefined
               ? { providerProfileId: selectedProvider.id }
@@ -2189,7 +2226,7 @@ export function ComposerV2({
             fastMode: effectiveFastMode,
             debugMode: effectiveDebugMode,
             ...(cliSparkOverride != null ? { cliSparkOverride } : {}),
-            ...(draftWorkflowBinding != null ? { workflowBinding: draftWorkflowBinding } : {}),
+            ...(followWorkflowBinding != null ? { workflowBinding: followWorkflowBinding } : {}),
             ...(teamConfig.enabled ? { teamConfig } : {}),
             ...(createWorktree
               ? {
@@ -4857,6 +4894,7 @@ export function ComposerV2({
               value.includes(`@${pendingMention.name}`) &&
               pendingMention.agentId !== effectiveHostAgentId
             }
+            sendRoutesToNewSession={session != null && (createWorktree || !canReuseCurrentSession)}
           />
           {contextWindow > 0 && !autoRouterPendingFirstDispatch && (
             <ContextMeterWithPopup
