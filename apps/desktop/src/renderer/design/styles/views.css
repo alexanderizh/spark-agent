@@ -7290,6 +7290,12 @@ body.inspector-resizing {
   margin-bottom: 8px;
   color: var(--text-strong);
   font-weight: 600;
+  /* 超长问题正文内部滚动，避免撑爆问答面板、把选项与输入框推出可视区 */
+  max-height: min(32vh, 240px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  word-break: break-word;
+  padding-right: 2px;
 }
 
 .question-meta {
@@ -7442,7 +7448,9 @@ body.inspector-resizing {
   bottom: -22px;
   z-index: 2;
   flex-wrap: nowrap;
-  background: linear-gradient(180deg, transparent, var(--panel) 28%, var(--panel));
+  /* 实色背景 + 分隔线：滚动内容不得穿透按钮显示 */
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: var(--panel);
 }
 
 .user-question-pagination {

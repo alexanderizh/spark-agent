@@ -1084,6 +1084,13 @@
   gap: 8px;
 }
 
+/* 已回答的逐题摘要条数可能很多，同样做超长滚动约束 */
+.chat-panel-question-summary-list {
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .chat-panel-question-section,
 .chat-panel-question-summary-header {
   font-size: 11px;
@@ -1095,6 +1102,11 @@
   font-size: 13.5px;
   line-height: 1.5;
   color: var(--text-strong);
+  /* 超长问题正文内部滚动，避免撑长消息卡片、把选项推出视野 */
+  max-height: min(32vh, 240px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  word-break: break-word;
 }
 
 .chat-panel-question-meta {
