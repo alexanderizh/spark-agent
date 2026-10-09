@@ -70,6 +70,8 @@ const userServers: McpServerItem[] = [
     name: 'enabled_mcp',
     configJson: '{}',
     enabled: true,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    updatedAt: '2026-10-01T00:00:00.000Z',
   },
   {
     id: 'srv-disabled',
@@ -77,6 +79,8 @@ const userServers: McpServerItem[] = [
     name: 'disabled_mcp',
     configJson: '{}',
     enabled: false,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    updatedAt: '2026-10-01T00:00:00.000Z',
   },
 ]
 
