@@ -4,6 +4,7 @@ import {
   buildGitPanelChangeTree,
   buildGitPanelFileLabels,
   buildGitPanelLogRefreshKey,
+  collectGitPanelDirFilePaths,
   computeGitCommitPopoverPosition,
   formatGitCommitAbsoluteTime,
   formatGitCommitMessageText,
@@ -214,6 +215,34 @@ describe('buildGitPanelChangeTree', () => {
 
   it('空数组返回空树', () => {
     expect(buildGitPanelChangeTree([])).toEqual([])
+  })
+})
+
+describe('collectGitPanelDirFilePaths', () => {
+  it('递归收集目录下所有文件路径（含子目录）', () => {
+    const tree = buildGitPanelChangeTree([
+      change({ path: 'src/renderer/app.ts' }),
+      change({ path: 'src/util.ts' }),
+      change({ path: 'readme.md' }),
+    ])
+    const src = tree[0]
+    if (src?.type !== 'dir') throw new Error('预期第一个节点为目录')
+    // 树遍历序：子目录先于本级文件（深度优先）
+    expect(collectGitPanelDirFilePaths(src)).toEqual(['src/renderer/app.ts', 'src/util.ts'])
+  })
+
+  it('深层嵌套目录也能收集全量路径，顺序为树遍历序', () => {
+    const tree = buildGitPanelChangeTree([
+      change({ path: 'a/b/c/1.ts' }),
+      change({ path: 'a/b/2.ts' }),
+      change({ path: 'a/3.ts' }),
+    ])
+    const a = tree[0]
+    if (a?.type !== 'dir') throw new Error('预期第一个节点为目录')
+    const b = a.children[0]
+    if (b?.type !== 'dir') throw new Error('预期子节点为目录')
+    expect(collectGitPanelDirFilePaths(a)).toEqual(['a/b/c/1.ts', 'a/b/2.ts', 'a/3.ts'])
+    expect(collectGitPanelDirFilePaths(b)).toEqual(['a/b/c/1.ts', 'a/b/2.ts'])
   })
 })
 

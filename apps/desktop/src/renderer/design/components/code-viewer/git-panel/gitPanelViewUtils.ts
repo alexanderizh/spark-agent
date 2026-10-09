@@ -148,6 +148,22 @@ export function buildGitPanelChangeTree(files: WorkspaceGitFileChange[]): GitPan
   ] satisfies GitPanelTreeEntry[]
 }
 
+/**
+ * 递归收集目录节点下所有文件路径（含子目录），供目录行 hover 批量操作
+ * （暂存 / 取消暂存 / 丢弃）一次性传全量路径使用。
+ */
+export function collectGitPanelDirFilePaths(dir: GitPanelTreeDir): string[] {
+  const paths: string[] = []
+  const walk = (entries: readonly GitPanelTreeEntry[]): void => {
+    for (const entry of entries) {
+      if (entry.type === 'dir') walk(entry.children)
+      else paths.push(entry.change.path)
+    }
+  }
+  walk(dir.children)
+  return paths
+}
+
 /** 提交记录 / stash 的相对时间；nowMs 供测试注入。 */
 export function formatGitRelativeTime(iso: string | null | undefined, nowMs?: number): string {
   if (!iso) return ''

@@ -3,7 +3,8 @@
  *
  * 平铺模式（默认）：文件行 = 文件类型图标 + 状态徽章 + 文件名（同名才带短目录消歧）
  *                   + ±行数（hover 时替换为操作按钮：暂存 / 取消暂存 / 打开 / 丢弃）。
- * 树形模式：按目录嵌套展示（目录行可折叠、默认展开），文件行不再需要消歧目录。
+ * 树形模式：按目录嵌套展示（目录行可折叠、默认展开），文件行不再需要消歧目录；
+ *           目录行 hover 时文件数让位给批量操作按钮（暂存 / 取消暂存 / 丢弃，作用于整个目录）。
  * 组头带批量操作：全部暂存 / 全部取消暂存 / 贮藏 / 全部丢弃（丢弃走二次确认）。
  * 文件行支持右键菜单（通用 ContextMenu）：打开 / 添加到对话 / 复制路径 / 在 Finder（资源管理
  * 器）中显示 + 暂存（或取消暂存）/ 丢弃更改；两组各持一个菜单实例。
@@ -29,6 +30,7 @@ import {
 } from '../../../views/chat/ChatGitUtils'
 import {
   buildGitPanelChangeTree,
+  collectGitPanelDirFilePaths,
   joinGitWorkspacePath,
   type GitPanelFileLabel,
   type GitPanelTreeDir,
@@ -251,33 +253,83 @@ export function buildGitFileMenuEntries(input: {
   return entries
 }
 
-/** 树形模式的目录行：可折叠（默认展开），右侧 pill 显示递归文件数。 */
+/**
+ * 树形模式的目录行：可折叠（默认展开），右侧 pill 显示递归文件数。
+ * hover 时文件数让位给批量操作按钮（staged 组「取消暂存」，changes 组「暂存 + 丢弃」，
+ * 与文件行同款样式与语义，一次调用传入目录下全部文件路径）；「打开 diff」对目录无意义，不提供。
+ */
 function GitTreeDirRow({
   dir,
   depth,
   open,
+  group,
+  disabled,
+  filePaths,
   onToggle,
+  onStage,
+  onUnstage,
+  onDiscardRequest,
 }: {
   dir: GitPanelTreeDir
   depth: number
   open: boolean
+  /** 所在组：staged 组提供「取消暂存」，changes 组提供「暂存 + 丢弃」 */
+  group: 'staged' | 'changes'
+  /** git 写操作进行中（批量操作禁用） */
+  disabled: boolean
+  /** 目录下全部文件路径（含子目录递归），批量操作一次调用传全部 */
+  filePaths: string[]
   onToggle: (path: string) => void
+  onStage: (paths: string[]) => void
+  onUnstage: (paths: string[]) => void
+  onDiscardRequest: (paths: string[], label: string) => void
 }) {
   return (
-    <button
-      type="button"
-      className="gp-tree-dir"
-      style={{ paddingLeft: 4 + depth * 13 }}
-      onClick={() => onToggle(dir.path)}
-      title={dir.path}
-    >
-      <Icons.ChevronRight size={13} className={`gp-tree-chevron${open ? ' open' : ''}`} />
-      <span className="gp-file-type-icon">
-        <VscodeFileIcon name={dir.name} kind="folder" open={open} size={15} />
-      </span>
-      <span className="gp-tree-dir-name">{dir.name}</span>
+    <div className="gp-tree-dir" style={{ paddingLeft: 4 + depth * 13 }} title={dir.path}>
+      <button type="button" className="gp-tree-dir-main" onClick={() => onToggle(dir.path)}>
+        <Icons.ChevronRight size={13} className={`gp-tree-chevron${open ? ' open' : ''}`} />
+        <span className="gp-file-type-icon">
+          <VscodeFileIcon name={dir.name} kind="folder" open={open} size={15} />
+        </span>
+        <span className="gp-tree-dir-name">{dir.name}</span>
+      </button>
       <span className="gp-group-count">{dir.fileCount}</span>
-    </button>
+      <span className="gp-tree-dir-actions">
+        {group === 'changes' && (
+          <button
+            type="button"
+            className="gp-icon-btn"
+            title="暂存"
+            disabled={disabled}
+            onClick={() => onStage(filePaths)}
+          >
+            <Icons.Plus size={13} />
+          </button>
+        )}
+        {group === 'staged' && (
+          <button
+            type="button"
+            className="gp-icon-btn"
+            title="取消暂存"
+            disabled={disabled}
+            onClick={() => onUnstage(filePaths)}
+          >
+            <Icons.Minus size={13} />
+          </button>
+        )}
+        {group === 'changes' && (
+          <button
+            type="button"
+            className="gp-icon-btn danger"
+            title="丢弃更改"
+            disabled={disabled}
+            onClick={() => onDiscardRequest(filePaths, dir.name)}
+          >
+            <Icons.X size={13} />
+          </button>
+        )}
+      </span>
+    </div>
   )
 }
 
@@ -332,8 +384,11 @@ export function GitGroupSection({
     })
   }
   // 文件行右键菜单：两组各持一个实例，互不串扰
-  const { menu: fileMenu, open: openFileMenu, close: closeFileMenu } =
-    useContextMenu<GitFileMenuTarget>()
+  const {
+    menu: fileMenu,
+    open: openFileMenu,
+    close: closeFileMenu,
+  } = useContextMenu<GitFileMenuTarget>()
 
   const handleCopyPath = useCallback(
     async (relativePath: string): Promise<void> => {
@@ -396,7 +451,13 @@ export function GitGroupSection({
             dir={entry}
             depth={depth}
             open={!collapsedDirs.has(entry.path)}
+            group={group}
+            disabled={disabled}
+            filePaths={collectGitPanelDirFilePaths(entry)}
             onToggle={toggleDir}
+            onStage={(paths) => onStage(paths)}
+            onUnstage={(paths) => onUnstage(paths)}
+            onDiscardRequest={onDiscardRequest}
           />
           {!collapsedDirs.has(entry.path) && renderTreeRows(entry.children, depth + 1)}
         </div>

@@ -362,7 +362,7 @@
 /* ---------- 树形视图目录行 ---------- */
 
 .gp-tree-dir {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 5px;
   width: 100%;
@@ -380,12 +380,45 @@
     background: var(--cv-bg-3);
   }
 
+  /* 折叠切换与目录名的主点击区（批量按钮在行内，避免 button 嵌套 button） */
+  .gp-tree-dir-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
   .gp-tree-dir-name {
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* hover 时文件数让位给批量操作按钮（与文件行 stats / actions 同节奏） */
+  .gp-tree-dir-actions {
+    display: none;
+    flex: none;
+    align-items: center;
+    gap: 2px;
+  }
+
+  &:hover .gp-group-count {
+    display: none;
+  }
+
+  &:hover .gp-tree-dir-actions {
+    display: inline-flex;
   }
 }
 
