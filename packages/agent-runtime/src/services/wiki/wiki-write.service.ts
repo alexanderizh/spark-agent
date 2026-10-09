@@ -44,6 +44,7 @@ import {
 import type { WikiRevisionChangeKind } from '@spark/storage'
 import { WikiStoreService } from './wiki-store.service.js'
 import { WikiLinkService } from './wiki-link.service.js'
+import { validateWikiMoveTarget } from './wiki-tree-guard.js'
 
 const log = createLogger('wiki:write')
 
@@ -245,6 +246,8 @@ export class WikiWriteService {
   }
 
   private async createPage(input: WikiPageWriteInput): Promise<WikiWriteResult> {
+    // folder 分支先行：容器节点无正文，不走敏感闸门 / 文件落盘 / FTS / 双链。
+    if (input.kind === 'folder') return this.createFolderNode(input)
     const title = input.title?.trim() ?? ''
     if (title.length === 0) {
       return { ok: false, reason: 'validation', message: '页面标题不能为空' }
@@ -266,6 +269,16 @@ export class WikiWriteService {
         ok: false,
         reason: 'quota_exceeded',
         message: `空间页面数已达上限 ${WIKI_PAGE_QUOTA_PER_SPACE}，请先归档或删除不再需要的页面`,
+      }
+    }
+    // 父节点合法性：存在 / 同空间 / 只能挂在文件夹下（树语义与 move 同一口径）
+    if (input.parentId != null) {
+      const parent = this.pageRepo.getById(input.parentId)
+      if (parent == null || parent.space_id !== space.id) {
+        return { ok: false, reason: 'validation', message: '目标父节点不存在或不属于该空间' }
+      }
+      if (parent.kind !== 'folder') {
+        return { ok: false, reason: 'validation', message: '只能在文件夹下新建页面' }
       }
     }
     let slug = slugifyTitle(input.slug?.trim() || title)
@@ -337,11 +350,156 @@ export class WikiWriteService {
     return { ok: true, row, created: true, indexReady, linksReady }
   }
 
+  /**
+   * 新建文件夹节点（kind='folder' 的纯结构容器）。
+   *
+   * 与页面新建的差异：无正文（file_path 存 ''）、不写正文文件、不进 FTS、
+   * 不同步双链、不写版本记录（v1 无可替代正文）；slug 仍占空间内唯一槽位，
+   * 拖拽移动 / 归档 / 子节点挂载复用页面的既有机制。
+   */
+  private async createFolderNode(input: WikiPageWriteInput): Promise<WikiWriteResult> {
+    const title = input.title?.trim() ?? ''
+    if (title.length === 0) {
+      return { ok: false, reason: 'validation', message: '文件夹名称不能为空' }
+    }
+    if (input.spaceId == null || input.spaceId.length === 0) {
+      return { ok: false, reason: 'validation', message: '新建文件夹必须提供目标空间' }
+    }
+    const space = this.spaceRepo.getById(input.spaceId)
+    if (space == null || space.archived === 1) {
+      return { ok: false, reason: 'not_found', message: '目标空间不存在或已归档' }
+    }
+    if (this.pageRepo.countActive(space.id) >= WIKI_PAGE_QUOTA_PER_SPACE) {
+      return {
+        ok: false,
+        reason: 'quota_exceeded',
+        message: `空间节点数已达上限 ${WIKI_PAGE_QUOTA_PER_SPACE}，请先归档或删除不再需要的节点`,
+      }
+    }
+    if (input.parentId != null) {
+      const parent = this.pageRepo.getById(input.parentId)
+      if (parent == null || parent.space_id !== space.id) {
+        return { ok: false, reason: 'validation', message: '目标父节点不存在或不属于该空间' }
+      }
+      if (parent.kind !== 'folder') {
+        return { ok: false, reason: 'validation', message: '只能在文件夹下新建文件夹' }
+      }
+    }
+    let slug = slugifyTitle(input.slug?.trim() || title)
+    if (slug.length === 0) slug = generateId('wp').slice(3)
+    if (this.pageRepo.getBySlug(input.spaceId, slug) != null) {
+      return { ok: false, reason: 'slug_conflict', message: `空间内已存在同名 slug：${slug}` }
+    }
+    const pageId = generateId('wp')
+    let row: WikiPageRow
+    try {
+      row = this.pageRepo.insert(
+        {
+          id: pageId,
+          space_id: space.id,
+          parent_id: input.parentId ?? null,
+          kind: 'folder',
+          title,
+          slug,
+          summary: '',
+          file_path: '',
+          tags_json: '[]',
+          status: 'published',
+          confidence: 1.0,
+          sort_order: 0,
+          source_type: 'manual',
+          source_session_id: null,
+          author_role: input.authorRole ?? 'manual_user',
+          hit_count: 0,
+          last_hit_at: null,
+          valid_from: null,
+          invalid_at: null,
+        },
+        '',
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('uniq_wiki_page_slug') || msg.includes('UNIQUE')) {
+        log.warn(`wiki folder create 并发同名被唯一索引拒绝：space=${space.id} slug=${slug}`)
+        return { ok: false, reason: 'slug_conflict', message: `空间内已存在同名 slug：${slug}` }
+      }
+      log.warn(`wiki folder create DB 提交失败：${msg}`)
+      return { ok: false, reason: 'io_failed', message: `DB 提交失败：${msg}` }
+    }
+    log.info(`wiki folder created: id=${row.id} space=${row.space_id} title=${title}`)
+    return { ok: true, row, created: true, indexReady: this.isIndexReady(), linksReady: true }
+  }
+
+  /**
+   * 文件夹更新：只支持 title（改名）/ parentId（移动）/ sortOrder。
+   * body/summary/tags/kind 对文件夹无意义，显式传入 body 时拒绝（不静默吞掉）。
+   * 不写版本快照、不重建 FTS / 双链（文件夹从未进索引与图谱）。
+   */
+  private async updateFolderNode(
+    pageId: string,
+    existing: WikiPageRow,
+    input: WikiPageWriteInput,
+  ): Promise<WikiWriteResult> {
+    if (existing.status === 'archived') {
+      return { ok: false, reason: 'validation', message: '文件夹已归档，先还原再编辑' }
+    }
+    const space = this.spaceRepo.getById(existing.space_id)
+    if (space == null) {
+      return { ok: false, reason: 'not_found', message: '文件夹所属空间不存在' }
+    }
+    if (input.body != null) {
+      return { ok: false, reason: 'validation', message: '文件夹没有正文，不能写入 body' }
+    }
+    // 防环 + 父节点合法性：与页面移动共用同一守卫（Agent 桥 / IPC / move 三路一致）
+    if (input.parentId !== undefined && input.parentId !== existing.parent_id) {
+      const problem = validateWikiMoveTarget({
+        repo: this.pageRepo,
+        pageId,
+        spaceId: existing.space_id,
+        parentId: input.parentId,
+      })
+      if (problem != null) return { ok: false, reason: 'validation', message: problem }
+    }
+    const title = input.title?.trim() ?? existing.title
+    if (title.length === 0) {
+      return { ok: false, reason: 'validation', message: '文件夹名称不能为空' }
+    }
+    const patch: Parameters<WikiPageRepository['compareAndSwap']>[2] = {
+      ...(title !== existing.title ? { title } : {}),
+      ...(input.parentId !== undefined ? { parent_id: input.parentId } : {}),
+      ...(input.sortOrder != null ? { sort_order: input.sortOrder } : {}),
+    }
+    if (Object.keys(patch).length === 0) {
+      return { ok: true, row: existing, created: false, indexReady: true, linksReady: true }
+    }
+    const next = this.pageRepo.compareAndSwap(
+      pageId,
+      input.expectedVersion ?? existing.version,
+      patch,
+    )
+    if (next == null) {
+      const current = this.pageRepo.getById(pageId)
+      log.info(
+        `wiki folder CAS miss: id=${pageId} expected=${input.expectedVersion ?? existing.version}`,
+      )
+      return {
+        ok: false,
+        reason: 'version_conflict',
+        message: '文件夹已被并发修改，请基于最新版本重试',
+        ...(current?.version != null ? { currentVersion: current.version } : {}),
+      }
+    }
+    log.info(`wiki folder updated: id=${pageId} version=${next.version}`)
+    return { ok: true, row: next, created: false, indexReady: true, linksReady: true }
+  }
+
   private async updatePage(pageId: string, input: WikiPageWriteInput): Promise<WikiWriteResult> {
     const existing = this.pageRepo.getById(pageId)
     if (existing == null) {
       return { ok: false, reason: 'not_found', message: '页面不存在' }
     }
+    // folder 分支先行：改名不带正文、不动 FTS / 双链 / 版本快照。
+    if (existing.kind === 'folder') return this.updateFolderNode(pageId, existing, input)
     if (existing.status === 'archived') {
       return { ok: false, reason: 'validation', message: '页面已归档，先还原再编辑' }
     }
@@ -354,6 +512,17 @@ export class WikiWriteService {
     if (body != null) {
       const sensitive = this.gateSensitive(body, input.authorRole)
       if (sensitive != null) return sensitive
+    }
+    // 防环 + 父节点合法性：parentId 变更（含 wiki_update / move / Agent 桥）统一在此守卫，
+    // 目标父节点不能是自己的后代（否则该子树从树上脱落）。
+    if (input.parentId !== undefined && input.parentId !== existing.parent_id) {
+      const problem = validateWikiMoveTarget({
+        repo: this.pageRepo,
+        pageId,
+        spaceId: existing.space_id,
+        parentId: input.parentId,
+      })
+      if (problem != null) return { ok: false, reason: 'validation', message: problem }
     }
     const title = input.title?.trim() ?? existing.title
     const summary = input.summary ?? existing.summary
@@ -520,6 +689,21 @@ export class WikiWriteService {
       return { ok: false, reason: 'not_found', message: '页面不存在（可能已被删除）' }
     }
     try {
+      if (existing.kind === 'folder') {
+        // 文件夹删除：直接子节点先上移一级（各自子树保持完整），再删容器行。
+        // 不走双链/FTS 清理（文件夹从未进图谱与索引），也没有版本快照。
+        const moved = this.pageRepo.reparentChildren(existing.space_id, pageId, existing.parent_id)
+        log.info(`wiki folder delete 子节点上移：id=${pageId} moved=${moved}`)
+        this.pageRepo.delete(pageId)
+        log.info(`wiki folder deleted（删除屏障）: id=${pageId}`)
+        return {
+          ok: true,
+          id: pageId,
+          title: existing.title,
+          fileCleaned: true,
+          revisionsCleaned: true,
+        }
+      }
       this.linkService?.onPageDeleted(pageId)
       this.pageRepo.delete(pageId)
       this.revisionRepo.deleteByPage(pageId)
@@ -578,6 +762,19 @@ export class WikiWriteService {
     const space = this.spaceRepo.getById(existing.space_id)
     if (space == null) {
       return { ok: false, reason: 'not_found', message: '页面所属空间不存在' }
+    }
+    // folder 无正文：还原只翻转状态，不做正文存在性检查，也不重建双链。
+    if (existing.kind === 'folder') {
+      let folderRow: WikiPageRow
+      try {
+        folderRow = this.pageRepo.update(pageId, { status: 'published' })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        log.warn(`wiki 取消归档失败（folder）：id=${pageId} — ${msg}`)
+        return { ok: false, reason: 'io_failed', message: `还原失败：${msg}` }
+      }
+      log.info(`wiki folder restored from archive: id=${pageId} version=${folderRow.version}`)
+      return { ok: true, row: folderRow, created: false, indexReady: true, linksReady: true }
     }
     const body = await this.store.readBody(existing.file_path).catch(() => null)
     if (body == null) {

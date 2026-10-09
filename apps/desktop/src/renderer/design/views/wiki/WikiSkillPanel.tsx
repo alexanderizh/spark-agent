@@ -225,6 +225,7 @@ export function WikiSkillPanel({ onDecided }: WikiSkillPanelProps) {
       )}
 
       <Modal
+        className="wiki_modal"
         title={`拒绝技能提议：${rejecting?.name ?? ''}`}
         open={rejecting != null}
         onCancel={() => setRejecting(null)}

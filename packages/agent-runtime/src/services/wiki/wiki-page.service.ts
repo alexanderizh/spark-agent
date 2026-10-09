@@ -60,6 +60,14 @@ export class WikiPageService {
     if (page == null || page.status === 'archived') {
       return { ok: false, error: 'not_found', message: '页面不存在或已归档' }
     }
+    // folder 是纯结构容器（无正文）：给出可操作的改道路径，而不是笼统的「文件缺失」
+    if (page.kind === 'folder') {
+      return {
+        ok: false,
+        error: 'not_found',
+        message: '该 id 是文件夹（无正文），请用 wiki_list 传 parent_id=该id 浏览其子节点',
+      }
+    }
 
     const body = await this.store.readBody(page.file_path).catch(() => null)
     if (body == null) {

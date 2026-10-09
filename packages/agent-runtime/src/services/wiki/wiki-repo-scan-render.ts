@@ -22,14 +22,22 @@ export const WIKI_REPO_PAGE_SLUGS = {
   structure: 'repo-structure',
   stack: 'repo-stack',
   module: (dir: string): string => `repo-module-${slugifySegment(dir)}`,
+  /** 顶层目录的容器节点（kind='folder'，无正文） */
+  dir: (dir: string): string => `repo-dir-${slugifySegment(dir)}`,
 } as const
 
 export interface WikiRepoPageDraft {
   slug: string
   title: string
-  kind: 'reference'
+  kind: 'reference' | 'folder'
   summary: string
   body: string
+  /**
+   * 父节点 slug（folder 容器先于页面提交，扫描循环按 slug 解析成 id 挂载）。
+   * 仅在**创建**时生效：rebuild 不回写已存在页面的 parent_id，人工整理过的
+   * 层级结构不会被扫描冲掉。
+   */
+  parentSlug?: string
 }
 
 function slugifySegment(name: string): string {
@@ -52,7 +60,7 @@ function readManifest(repoRoot: string, relPath: string, maxChars = 4000): strin
   }
 }
 
-/** 渲染全部 Repo Wiki 页面草稿（顺序稳定，调用方按序写入）。 */
+/** 渲染全部 Repo Wiki 节点草稿（顺序稳定，调用方按序写入；顶层目录先 folder 后模块页）。 */
 export function renderRepoPages(
   repoName: string,
   repoRev: string | null,
@@ -64,9 +72,21 @@ export function renderRepoPages(
     renderStack(repoName, tree),
   ]
   for (const dir of tree.topDirs) {
+    pages.push(renderDirFolder(dir))
     pages.push(renderModule(repoName, dir, tree))
   }
   return pages
+}
+
+/** 顶层目录的文件夹容器草稿（无正文；目录树里的结构节点）。 */
+function renderDirFolder(dir: string): WikiRepoPageDraft {
+  return {
+    slug: WIKI_REPO_PAGE_SLUGS.dir(dir),
+    title: dir,
+    kind: 'folder',
+    summary: '',
+    body: '',
+  }
 }
 
 function renderOverview(
@@ -253,5 +273,6 @@ function renderModule(repoName: string, dir: string, tree: WikiRepoScanTree): Wi
     kind: 'reference',
     summary: entry == null ? '模块扫描结果不可用' : `模块结构（${entry.totalFiles} 个文件）`,
     body: lines.join('\n'),
+    parentSlug: WIKI_REPO_PAGE_SLUGS.dir(dir),
   }
 }

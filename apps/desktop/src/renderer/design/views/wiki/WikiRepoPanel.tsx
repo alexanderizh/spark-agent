@@ -24,6 +24,7 @@ import type {
   WikiRepoDriftStatus,
   WikiRepoPageOwnership,
   WikiSpaceSummary,
+  WorkspaceInfo,
 } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useToast } from '../../components/Toast'
@@ -371,37 +372,16 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
           </button>
         </div>
 
-        <Modal
-          title="为仓库生成 Wiki"
+        <WikiScanModal
           open={scanOpen}
+          scanning={scanning}
+          repoPath={repoPath}
+          ignoreText={ignoreText}
+          onRepoPath={setRepoPath}
+          onIgnoreText={setIgnoreText}
           onCancel={() => setScanOpen(false)}
-          onOk={() => void handleScan()}
-          okText="开始扫描"
-          cancelText="取消"
-          confirmLoading={scanning}
-        >
-          <div className="wiki_repo_form">
-            <label className="wiki_repo_field">
-              <span className="wiki_repo_label">仓库路径</span>
-              <input
-                value={repoPath}
-                placeholder="例如 /Users/me/projects/my-repo"
-                onChange={(e) => setRepoPath(e.target.value)}
-              />
-            </label>
-            <label className="wiki_repo_field">
-              <span className="wiki_repo_label">忽略路径（每行一条）</span>
-              <textarea
-                value={ignoreText}
-                rows={5}
-                onChange={(e) => setIgnoreText(e.target.value)}
-              />
-            </label>
-            <div className="wiki_repo_tip">
-              扫描只读文件名、大小与清单内容，不读取业务源码正文；文件数超上限时会截断并如实告知。
-            </div>
-          </div>
-        </Modal>
+          onScan={() => void handleScan()}
+        />
       </div>
     )
   }
@@ -560,33 +540,16 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
         )}
       </div>
 
-      <Modal
-        title="为仓库生成 Wiki"
+      <WikiScanModal
         open={scanOpen}
+        scanning={scanning}
+        repoPath={repoPath}
+        ignoreText={ignoreText}
+        onRepoPath={setRepoPath}
+        onIgnoreText={setIgnoreText}
         onCancel={() => setScanOpen(false)}
-        onOk={() => void handleScan()}
-        okText="开始扫描"
-        cancelText="取消"
-        confirmLoading={scanning}
-      >
-        <div className="wiki_repo_form">
-          <label className="wiki_repo_field">
-            <span className="wiki_repo_label">仓库路径</span>
-            <input
-              value={repoPath}
-              placeholder="例如 /Users/me/projects/my-repo"
-              onChange={(e) => setRepoPath(e.target.value)}
-            />
-          </label>
-          <label className="wiki_repo_field">
-            <span className="wiki_repo_label">忽略路径（每行一条）</span>
-            <textarea value={ignoreText} rows={5} onChange={(e) => setIgnoreText(e.target.value)} />
-          </label>
-          <div className="wiki_repo_tip">
-            扫描只读文件名、大小与清单内容，不读取业务源码正文；文件数超上限时会截断并如实告知。
-          </div>
-        </div>
-      </Modal>
+        onScan={() => void handleScan()}
+      />
     </div>
   )
 }
@@ -594,6 +557,167 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
 /** 只读树的占位回调：Repo Wiki 页面不提供结构性操作。 */
 const noopPage = (_page: WikiPageMeta): void => {
   /*  intentionally empty */
+}
+
+/**
+ * 「为仓库生成 Wiki」弹窗（空态与顶栏入口共用，消除两份重复 JSX）。
+ *
+ * 三种来源统一落到 repoPath → wiki:repo:scan：
+ *   - 选择文件夹：系统目录选择器（dialog:open-directory），git 与否都可扫；
+ *   - 应用内项目：workspace:list 的项目（取 rootPath）；
+ *   - 手动输入路径：兜底文本框。
+ * 非 git 目录正常扫描，仅漂移检测自动降级（repoRev=null 已有兜底）。
+ */
+function WikiScanModal(props: {
+  open: boolean
+  scanning: boolean
+  repoPath: string
+  ignoreText: string
+  onRepoPath: (v: string) => void
+  onIgnoreText: (v: string) => void
+  onCancel: () => void
+  onScan: () => void
+}) {
+  const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
+  const { invoke: listWorkspaces } = useIpcInvoke('workspace:list')
+  const [source, setSource] = useState<'folder' | 'project' | 'manual'>('folder')
+  const [projects, setProjects] = useState<WorkspaceInfo[]>([])
+  const [projectsLoading, setProjectsLoading] = useState(false)
+  const [browsing, setBrowsing] = useState(false)
+
+  // 每次打开弹窗拉一次项目列表（项目可能在会话间增减，不做跨开合缓存）
+  useEffect(() => {
+    if (!props.open) return
+    let cancelled = false
+    setProjectsLoading(true)
+    void (async () => {
+      try {
+        const res = await listWorkspaces({})
+        if (!cancelled) setProjects(res.workspaces)
+      } catch {
+        // 项目列表取不到不阻塞：手动路径仍可用
+      } finally {
+        if (!cancelled) setProjectsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [props.open, listWorkspaces])
+
+  const browse = async (): Promise<void> => {
+    setBrowsing(true)
+    try {
+      const res = await openDirectory({ title: '选择要生成 Wiki 的文件夹' })
+      if (!res.canceled && res.filePath != null && res.filePath.length > 0) {
+        props.onRepoPath(res.filePath)
+      }
+    } catch {
+      // 目录选择器失败时回退手动输入路径
+    } finally {
+      setBrowsing(false)
+    }
+  }
+
+  const tabs: Array<{ key: typeof source; label: string }> = [
+    { key: 'folder', label: '选择文件夹' },
+    { key: 'project', label: '应用内项目' },
+    { key: 'manual', label: '手动输入路径' },
+  ]
+
+  return (
+    <Modal
+      className="wiki_modal"
+      title="为仓库生成 Wiki"
+      open={props.open}
+      onCancel={props.onCancel}
+      onOk={props.onScan}
+      okText="开始扫描"
+      cancelText="取消"
+      confirmLoading={props.scanning}
+    >
+      <div className="wiki_repo_form">
+        <div className="wiki_repo_tabs" role="tablist" aria-label="选择扫描来源">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={source === t.key}
+              className={`wiki_repo_tab${source === t.key ? ' is-active' : ''}`}
+              onClick={() => setSource(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {source === 'folder' && (
+          <div className="wiki_repo_field">
+            <span className="wiki_repo_label">本地文件夹</span>
+            <div className="wiki_repo_pick">
+              <input value={props.repoPath} placeholder="点击「浏览…」选择文件夹" readOnly />
+              <button
+                type="button"
+                className="wiki_btn_ghost"
+                disabled={browsing}
+                onClick={() => void browse()}
+              >
+                {browsing ? '打开中…' : '浏览…'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {source === 'project' && (
+          <div className="wiki_repo_field">
+            <span className="wiki_repo_label">应用内项目</span>
+            <select
+              className="wiki_repo_select"
+              aria-label="选择应用内项目"
+              value={projects.some((p) => p.rootPath === props.repoPath) ? props.repoPath : ''}
+              onChange={(e) => props.onRepoPath(e.target.value)}
+            >
+              <option value="">{projectsLoading ? '加载项目…' : '选择项目…'}</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.rootPath}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {props.repoPath.length > 0 && (
+              <div className="wiki_repo_tip" style={{ marginTop: 4 }}>
+                将扫描：{props.repoPath}
+              </div>
+            )}
+          </div>
+        )}
+
+        {source === 'manual' && (
+          <label className="wiki_repo_field">
+            <span className="wiki_repo_label">仓库路径</span>
+            <input
+              value={props.repoPath}
+              placeholder="例如 /Users/me/projects/my-repo"
+              onChange={(e) => props.onRepoPath(e.target.value)}
+            />
+          </label>
+        )}
+
+        <label className="wiki_repo_field">
+          <span className="wiki_repo_label">忽略路径（每行一条）</span>
+          <textarea
+            value={props.ignoreText}
+            rows={5}
+            onChange={(e) => props.onIgnoreText(e.target.value)}
+          />
+        </label>
+        <div className="wiki_repo_tip">
+          扫描只读文件名、大小与清单内容，不读取业务源码正文；文件数超上限时会截断并如实告知。
+        </div>
+      </div>
+    </Modal>
+  )
 }
 
 /** source_type → 所有权（与后端 WIKI_REPO_SOURCE_TYPE_* 常量同口径）。 */

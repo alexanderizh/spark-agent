@@ -109,6 +109,7 @@ export function WikiVersionHistory({
 
   return (
     <Modal
+      className="wiki_modal"
       open={open}
       onCancel={onClose}
       title="版本历史"

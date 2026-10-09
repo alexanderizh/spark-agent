@@ -512,10 +512,12 @@ export interface PlatformBridgeDeps {
       sessionId: string
       spaceId: string
       title: string
-      body: string
+      /** kind='folder' 时省略（文件夹无正文） */
+      body?: string
       kind?: string
       summary?: string
       tags?: string[]
+      parentId?: string
     }): Promise<unknown>
     bridgeWikiUpdate(params: {
       sessionId: string
@@ -525,6 +527,7 @@ export interface PlatformBridgeDeps {
       body?: string
       summary?: string
       tags?: string[]
+      parentId?: string
     }): Promise<unknown>
     bridgeWikiArchive(params: { sessionId: string; pageId: string }): Promise<unknown>
     bridgeWikiRestore(params: { sessionId: string; pageId: string }): Promise<unknown>
@@ -1151,7 +1154,10 @@ export class PlatformBridgeService {
     const existing = options.reset === true ? undefined : this.sessionSkillFaces.get(key)
     if (existing == null) {
       this.sessionSkillFaces.delete(key)
-      this.sessionSkillFaces.set(key, { skillIds: new Set(skillIds), exempt: options.exempt === true })
+      this.sessionSkillFaces.set(key, {
+        skillIds: new Set(skillIds),
+        exempt: options.exempt === true,
+      })
     } else {
       for (const id of skillIds) existing.skillIds.add(id)
       if (options.exempt != null) existing.exempt = options.exempt
@@ -2256,20 +2262,23 @@ export class PlatformBridgeService {
     if (!sessionId) throw new Error('Missing parameter: sessionId')
     if (!spaceId) throw new Error('Missing parameter: spaceId')
     if (!title) throw new Error('Missing parameter: title')
-    if (!body) throw new Error('Missing parameter: body')
+    // body 仅 kind='folder' 时可省（文件夹无正文）；内容页缺 body 由写入服务拒绝
     const kind = typeof params.kind === 'string' ? params.kind : undefined
+    if (kind !== 'folder' && !body) throw new Error('Missing parameter: body')
     const summary = typeof params.summary === 'string' ? params.summary : undefined
     const tags = Array.isArray(params.tags)
       ? params.tags.filter((t): t is string => typeof t === 'string')
       : undefined
+    const parentId = typeof params.parentId === 'string' ? params.parentId : undefined
     return d.sessionService.bridgeWikiWrite({
       sessionId,
       spaceId,
       title,
-      body,
+      ...(body !== '' ? { body } : {}),
       ...(kind != null ? { kind } : {}),
       ...(summary != null ? { summary } : {}),
       ...(tags != null ? { tags } : {}),
+      ...(parentId != null ? { parentId } : {}),
     })
   }
 
@@ -2289,6 +2298,7 @@ export class PlatformBridgeService {
     const tags = Array.isArray(params.tags)
       ? params.tags.filter((t): t is string => typeof t === 'string')
       : undefined
+    const parentId = typeof params.parentId === 'string' ? params.parentId : undefined
     return d.sessionService.bridgeWikiUpdate({
       sessionId,
       pageId,
@@ -2297,6 +2307,7 @@ export class PlatformBridgeService {
       ...(body != null ? { body } : {}),
       ...(summary != null ? { summary } : {}),
       ...(tags != null ? { tags } : {}),
+      ...(parentId != null ? { parentId } : {}),
     })
   }
 

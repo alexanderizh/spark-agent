@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { WikiPageMeta } from '@spark/protocol'
-import { buildWikiTree, sortWikiNodes } from './WikiPageTree'
+import { buildWikiTree, collectDescendantIds, resolveDropZone, sortWikiNodes } from './WikiPageTree'
 
 let seq = 0
 
@@ -91,5 +91,48 @@ describe('sortWikiNodes（目录树同级排序）', () => {
     expect(first?.page.title).toBe('父')
     expect(rest).toHaveLength(0)
     expect((first?.children ?? []).map((c) => c.page.title)).toEqual(['子B', '子A'])
+  })
+})
+
+describe('resolveDropZone（拖拽落点解析）', () => {
+  it('文件夹 + 手动排序：上 28% 前插 / 下 28% 后插 / 中部移入', () => {
+    const folder = meta({ kind: 'folder', title: '文件夹' })
+    expect(resolveDropZone(folder, 0.1, true)).toBe('before')
+    expect(resolveDropZone(folder, 0.5, true)).toBe('into')
+    expect(resolveDropZone(folder, 0.9, true)).toBe('after')
+  })
+
+  it('文件夹 + 非手动排序：整行只响应移入（顺序由规则决定）', () => {
+    const folder = meta({ kind: 'folder', title: '文件夹' })
+    expect(resolveDropZone(folder, 0.1, false)).toBe('into')
+    expect(resolveDropZone(folder, 0.9, false)).toBe('into')
+  })
+
+  it('页面 + 手动排序：按中线分为前插/后插，绝不接受移入（页面下不挂子节点）', () => {
+    const page = meta({ kind: 'knowledge', title: '页面' })
+    expect(resolveDropZone(page, 0.1, true)).toBe('before')
+    expect(resolveDropZone(page, 0.49, true)).toBe('before')
+    expect(resolveDropZone(page, 0.51, true)).toBe('after')
+    expect(resolveDropZone(page, 0.5, true)).toBe('after')
+  })
+
+  it('页面 + 非手动排序：整行无落区（drop 显示禁止光标）', () => {
+    const page = meta({ kind: 'knowledge', title: '页面' })
+    expect(resolveDropZone(page, 0.3, false)).toBeNull()
+    expect(resolveDropZone(page, 0.7, false)).toBeNull()
+  })
+})
+
+describe('collectDescendantIds（拖拽防环前置）', () => {
+  it('收集起点子树全部后代，兄弟与自身不在集合内', () => {
+    const a = meta({ title: 'A' })
+    const b = meta({ title: 'B', parentId: a.id })
+    const c = meta({ title: 'C', parentId: b.id })
+    const d = meta({ title: 'D', parentId: a.id })
+    const e = meta({ title: 'E' })
+    const tree = buildWikiTree([a, b, c, d, e])
+    expect(collectDescendantIds(tree, a.id)).toEqual(new Set([b.id, c.id, d.id]))
+    expect(collectDescendantIds(tree, b.id)).toEqual(new Set([c.id]))
+    expect(collectDescendantIds(tree, e.id)).toEqual(new Set())
   })
 })

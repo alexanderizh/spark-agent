@@ -33,6 +33,7 @@ const KIND_LABEL: Record<WikiPageKind, string> = {
   pattern: '模式',
   reference: '参考',
   note: '随笔',
+  folder: '文件夹',
 }
 
 const STATUS_LABEL: Record<WikiPageDetail['status'], string> = {

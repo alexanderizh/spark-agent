@@ -151,7 +151,7 @@ export class WikiSpaceRepository extends BaseRepository {
       .run(Date.now(), id)
   }
 
-  /** 每个空间的活跃页面计数（列表视图 kind 统计用，一次查询取全）。 */
+  /** 每个空间的活跃页面计数（列表视图统计列用；folder 是容器不计入页面数）。 */
   countActivePagesBySpace(spaceIds: readonly string[]): Map<string, number> {
     const result = new Map<string, number>()
     if (spaceIds.length === 0) return result
@@ -159,7 +159,7 @@ export class WikiSpaceRepository extends BaseRepository {
     const rows = this.raw
       .prepare(
         `SELECT space_id, COUNT(*) as count FROM wiki_page
-         WHERE space_id IN (${placeholders}) AND status != 'archived'
+         WHERE space_id IN (${placeholders}) AND status != 'archived' AND kind != 'folder'
          GROUP BY space_id`,
       )
       .all(...spaceIds) as Array<{ space_id: string; count: number }>

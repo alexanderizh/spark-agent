@@ -134,7 +134,13 @@ export class WikiRepoScanService {
     let pagesUpdated = 0
     let pagesSkipped = 0
 
+    /** folder 容器 slug → 节点 id（draft 顺序保证 folder 先于其子页面出现）。 */
+    const folderIdBySlug = new Map<string, string>()
+
     for (const draft of drafts) {
+      // 父挂载点：只解析、不强制（父 folder 缺失时页面回根层，不让整页失败）
+      const parentId =
+        draft.parentSlug != null ? (folderIdBySlug.get(draft.parentSlug) ?? null) : null
       const existing = this.pageRepo.getBySlug(space.id, draft.slug)
       if (existing == null) {
         const written = await this.writeService.commitPage({
@@ -143,13 +149,24 @@ export class WikiRepoScanService {
           kind: draft.kind,
           title: draft.title,
           summary: draft.summary,
-          body: draft.body,
+          // folder 无正文；内容页正文必填
+          ...(draft.kind === 'folder' ? {} : { body: draft.body }),
+          ...(parentId != null ? { parentId } : {}),
           status: 'published',
           authorRole: 'import',
           sourceType: WIKI_REPO_SOURCE_TYPE,
         })
-        if (written.ok) pagesCreated += 1
-        else log.warn(`repo page create failed: slug=${draft.slug} reason=${written.message}`)
+        if (written.ok) {
+          pagesCreated += 1
+          if (draft.kind === 'folder') folderIdBySlug.set(draft.slug, written.row.id)
+        } else {
+          log.warn(`repo page create failed: slug=${draft.slug} reason=${written.message}`)
+        }
+        continue
+      }
+      if (draft.kind === 'folder') {
+        // 容器已存在即复用：不覆写标题（用户改过名保留），只登记挂载点
+        folderIdBySlug.set(draft.slug, existing.id)
         continue
       }
       // 只覆写"仍是生成态"的页面：人工接管 / 已忽略的一律跳过
@@ -172,6 +189,7 @@ export class WikiRepoScanService {
         body: draft.body,
         authorRole: 'import',
         sourceType: WIKI_REPO_SOURCE_TYPE,
+        // 不传 parentId：rebuild 只覆写内容，人工整理过的层级结构保留
       })
       if (written.ok) pagesUpdated += 1
       else log.warn(`repo page update failed: slug=${draft.slug} reason=${written.message}`)

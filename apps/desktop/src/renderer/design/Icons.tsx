@@ -8,6 +8,8 @@ type IconProps = {
   size?: number
   className?: string
   strokeWidth?: number
+  /** 描边色；彩色填充类图标传 'none' 关闭描边。 */
+  stroke?: string
   style?: CSSProperties
   title?: string
 }
@@ -17,6 +19,7 @@ const IconBase = ({
   size = 16,
   className = '',
   strokeWidth = 1.6,
+  stroke = 'currentColor',
   ...rest
 }: IconProps & { children: ReactNode }) => (
   <svg
@@ -25,7 +28,7 @@ const IconBase = ({
     height={size}
     viewBox="0 0 24 24"
     fill="none"
-    stroke="currentColor"
+    stroke={stroke}
     strokeWidth={strokeWidth}
     strokeLinecap="round"
     strokeLinejoin="round"
@@ -95,6 +98,29 @@ export const Icons = {
     <IconBase {...p}>
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
       <path d="M9.5 9.5l5 5M14.5 9.5l-5 5" />
+    </IconBase>
+  ),
+  /** 彩色文件夹（Fluent 双色风）— 闭合态：深黄基底 + 亮黄前板。 */
+  FolderColorful: (p: IconProps) => (
+    <IconBase {...p} stroke="none">
+      <path
+        d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
+        fill="#ed9e2b"
+      />
+      <path d="M3 10.5h18V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6.5z" fill="#ffc94d" />
+    </IconBase>
+  ),
+  /** 彩色文件夹（Fluent 双色风）— 展开态：掀开的后板 + 斜盖前板。 */
+  FolderColorfulOpen: (p: IconProps) => (
+    <IconBase {...p} stroke="none">
+      <path
+        d="M3 8a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H7.6a2 2 0 0 0-1.8 1.1L3 18.5V8z"
+        fill="#ed9e2b"
+      />
+      <path
+        d="M3 18.5 5.8 12a2 2 0 0 1 1.8-1h13a1.4 1.4 0 0 1 1.3 1.9l-2 5A2 2 0 0 1 18 19H4.1a1.2 1.2 0 0 1-1.1-.5z"
+        fill="#ffc94d"
+      />
     </IconBase>
   ),
   ProjectFolder: (p: IconProps) => (

@@ -299,6 +299,7 @@ export function WikiCandidatePanel({
       )}
 
       <Modal
+        className="wiki_modal"
         title="从对话沉淀"
         open={distillOpen}
         onCancel={() => setDistillOpen(false)}

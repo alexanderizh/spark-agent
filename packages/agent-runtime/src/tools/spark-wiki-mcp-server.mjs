@@ -124,13 +124,17 @@ const IMPL = {
     const spaceId = str(args.space_id)
     const title = str(args.title)
     const body = str(args.body)
-    if (!spaceId || !title || !body) throw new Error('space_id / title / body are required')
+    const kind = optionalStr(args.kind)
+    if (!spaceId || !title) throw new Error('space_id / title are required')
+    // body 仅 kind=folder 时可省（文件夹无正文）；内容页缺 body 由桥接层拒绝
+    if (kind !== 'folder' && !body) throw new Error('body is required for non-folder pages')
     return rpc('wiki.write', {
       sessionId: SID,
       spaceId,
       title,
-      body,
-      ...(optionalStr(args.kind) != null ? { kind: args.kind } : {}),
+      ...(body.length > 0 ? { body } : {}),
+      ...(kind != null ? { kind } : {}),
+      ...(optionalStr(args.parent_id) != null ? { parent_id: args.parent_id } : {}),
       ...(optionalStr(args.summary) != null ? { summary: args.summary } : {}),
       ...(Array.isArray(args.tags) ? { tags: args.tags.filter((t) => typeof t === 'string') } : {}),
     })
@@ -145,6 +149,7 @@ const IMPL = {
       expectedVersion,
       ...(optionalStr(args.title) != null ? { title: args.title } : {}),
       ...(optionalStr(args.body) != null ? { body: args.body } : {}),
+      ...(optionalStr(args.parent_id) != null ? { parent_id: args.parent_id } : {}),
       ...(optionalStr(args.summary) != null ? { summary: args.summary } : {}),
       ...(Array.isArray(args.tags) ? { tags: args.tags.filter((t) => typeof t === 'string') } : {}),
     })
@@ -220,7 +225,7 @@ const TOOLS = [
   {
     name: 'wiki_read',
     description:
-      '读取一个知识页面的正文（默认单页 ≤3000 token）。超长页返回 truncated + nextOffset，传 offset 续读。',
+      '读取一个知识页面的正文（默认单页 ≤3000 token）。超长页返回 truncated + nextOffset，传 offset 续读。读到文件夹 id 时会提示改用 wiki_list 浏览。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -233,12 +238,15 @@ const TOOLS = [
   {
     name: 'wiki_list',
     description:
-      '列出一个空间内的页面目录树（每节点 id+标题+类型+有无子节点，无正文摘要）。浏览结构时用。',
+      "列出一个空间内的目录树（每节点 id+标题+类型+有无子节点，无正文摘要）。kind='folder' 是文件夹容器；传 parent_id 逐层下钻，浏览结构时用。",
     inputSchema: {
       type: 'object',
       properties: {
         space_id: { type: 'string', description: '空间 id。' },
-        parent_id: { type: 'string', description: '父节点 id（缺省根层）。' },
+        parent_id: {
+          type: 'string',
+          description: '父节点 id（缺省根层；传文件夹 id 可下钻一层）。',
+        },
       },
       required: ['space_id'],
     },
@@ -254,34 +262,44 @@ const TOOLS = [
   },
   {
     name: 'wiki_write',
-    description: '在知识库新建页面。回执只含 id/title/version，不回显正文。',
+    description:
+      '在知识库新建页面或文件夹（回执只含 id/title/version，不回显正文）。kind=folder 是纯结构容器，只需 space_id+title；内容页必须带 body，可用 parent_id 挂进层级。',
     inputSchema: {
       type: 'object',
       properties: {
         space_id: { type: 'string', description: '目标空间 id。' },
-        title: { type: 'string', description: '页面标题。' },
-        body: { type: 'string', description: 'Markdown 正文。' },
+        title: { type: 'string', description: '页面 / 文件夹标题。' },
+        body: { type: 'string', description: 'Markdown 正文；kind=folder 时省略，其余必填。' },
         kind: {
           type: 'string',
-          enum: ['knowledge', 'experience', 'pattern', 'reference', 'note'],
-          description: '默认 knowledge。',
+          enum: ['knowledge', 'experience', 'pattern', 'reference', 'note', 'folder'],
+          description: '默认 knowledge；folder=文件夹容器（无正文）。',
         },
-        summary: { type: 'string', description: '摘要。' },
-        tags: { type: 'array', items: { type: 'string' }, description: '标签。' },
+        parent_id: {
+          type: 'string',
+          description: '父节点 id（只能是文件夹；页面下不挂子节点）；缺省挂根层。',
+        },
+        summary: { type: 'string', description: '摘要（folder 忽略）。' },
+        tags: { type: 'array', items: { type: 'string' }, description: '标签（folder 忽略）。' },
       },
-      required: ['space_id', 'title', 'body'],
+      required: ['space_id', 'title'],
     },
   },
   {
     name: 'wiki_update',
-    description: '更新页面（CAS：带 expectedVersion，失配拒绝并回传当前版本）。回执不含正文。',
+    description:
+      '更新页面（CAS：带 expected_version，失配拒绝并回传当前版本）。改标题须带 body；parent_id 可移动节点（父节点只能是文件夹，页面/文件夹同口径，防环与父合法性由服务层守卫）；folder 改名不需 body。回执不含正文。',
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: '页面 id。' },
+        id: { type: 'string', description: '页面 / 文件夹 id。' },
         expected_version: { type: 'number', description: 'CAS 期望版本。' },
-        title: { type: 'string', description: '新标题（须带 body）。' },
+        title: { type: 'string', description: '新标题（内容页须带 body；folder 可单改）。' },
         body: { type: 'string', description: '新正文。' },
+        parent_id: {
+          type: 'string',
+          description: '移动到该父节点下（只能是文件夹）；传 null 移回根层。',
+        },
         summary: { type: 'string', description: '新摘要（须带 body）。' },
         tags: { type: 'array', items: { type: 'string' }, description: '新标签。' },
       },

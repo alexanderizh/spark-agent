@@ -195,6 +195,11 @@ export function registerWikiIpc(): void {
   typedIpcHandle('wiki:page:get', async (request) => {
     const s = stackForPage(request.pageId)
     if (s == null) throw new Error('页面不存在')
+    const row = s.pageRepo.getById(request.pageId)
+    if (row?.kind === 'folder') {
+      // 文件夹无正文：给出可操作的指引而不是笼统的「文件缺失」
+      throw new Error('该节点是文件夹（无正文），请在目录树中浏览其子页面')
+    }
     const r = await s.pageService.readFull(request.pageId)
     if (!r.ok) throw new Error(r.message)
     return {
@@ -220,7 +225,8 @@ export function registerWikiIpc(): void {
       ...(request.kind != null ? { kind: request.kind } : {}),
       title: request.title,
       ...(request.summary != null ? { summary: request.summary } : {}),
-      body: request.body,
+      // body 可选（kind='folder' 无正文）；内容页缺正文由写入服务强校验拒绝
+      ...(request.body != null ? { body: request.body } : {}),
       ...(request.tags != null ? { tags: request.tags } : {}),
       ...(request.status != null ? { status: request.status } : {}),
       authorRole: 'manual_user',
@@ -280,21 +286,12 @@ export function registerWikiIpc(): void {
    * 注意走的是统一写入原语，因此与普通编辑一样会推进 version 并留一条历史版本
    * （change_kind='edit'，快照内容即移动前的正文）——移动不是「无痕」操作，
    * 版本历史里能看到这次结构调整，CAS 也能挡住并发拖拽互相覆盖。
+   * 目标父节点合法性（存在 / 同空间 / 防环）由 WikiWriteService 内的
+   * validateWikiMoveTarget 统一守卫，页面与文件夹同一口径。
    */
   typedIpcHandle('wiki:page:move', async (request) => {
     const s = stackForPage(request.pageId)
     if (s == null) throw new Error('页面不存在')
-    const existing = s.pageRepo.getById(request.pageId)!
-    if (request.parentId === request.pageId) throw new Error('不能把页面移动到自己下面')
-    if (request.parentId != null) {
-      const parent = s.pageRepo.getById(request.parentId)
-      if (parent == null) throw new Error('目标父页面不存在')
-      if (parent.space_id !== existing.space_id) throw new Error('不能跨空间移动页面')
-      // 防环：目标父节点不能是自己的后代（否则该子树从树上脱落）
-      if (isDescendant(s, existing.space_id, request.parentId, existing.id)) {
-        throw new Error('不能把页面移动到它自己的子页面下')
-      }
-    }
     const result = await s.writeService.commitPage({
       pageId: request.pageId,
       expectedVersion: request.expectedVersion,
@@ -560,27 +557,6 @@ export function registerWikiIpc(): void {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-
-/**
- * 目标节点是否位于 candidate 子树内（move 防环）。
- * 逐层向上回溯父链，深度上限兜底防脏数据死循环。
- */
-function isDescendant(
-  s: { pageRepo: { getById(id: string): { parent_id: string | null; space_id: string } | null } },
-  spaceId: string,
-  candidateId: string,
-  ancestorId: string,
-): boolean {
-  let cursor = candidateId
-  for (let depth = 0; depth < 64; depth += 1) {
-    const row = s.pageRepo.getById(cursor)
-    if (row == null || row.space_id !== spaceId) return false
-    if (row.parent_id == null) return false
-    if (row.parent_id === ancestorId) return true
-    cursor = row.parent_id
-  }
-  return false
-}
 
 /** 全部 project scope（scope_ref 任意）—— 渲染端"全部"视图用。 */
 function listAllProjectScopes(db: SparkDatabase): Array<{ scope: WikiScope; scopeRef: string }> {

@@ -26,8 +26,12 @@ export type WikiScope = 'user' | 'project' | 'agent' | 'team'
 /** 空间类型（知识从哪来，决定 UI 归属 Tab）。manual=知识库；repo=Repo Wiki（可重建）。 */
 export type WikiSpaceType = 'manual' | 'repo'
 
-/** 条目类型（是什么知识）。 */
-export type WikiPageKind = 'knowledge' | 'experience' | 'pattern' | 'reference' | 'note'
+/**
+ * 条目类型（是什么知识）。
+ * folder 是无正文、不进 FTS / 双链的纯结构容器（空间 → 文件夹 → 页面，层级不限）；
+ * 其余五类是知识内容页。folder 只经专用入口创建，抽取 / 候选管道永不产出。
+ */
+export type WikiPageKind = 'knowledge' | 'experience' | 'pattern' | 'reference' | 'note' | 'folder'
 
 export type WikiPageStatus = 'draft' | 'published' | 'archived'
 
@@ -322,7 +326,8 @@ export interface WikiIpcChannelMap {
       kind?: WikiPageKind
       title: string
       summary?: string
-      body: string
+      /** 正文；kind='folder' 时省略（文件夹无正文），内容页服务层仍强校验必填 */
+      body?: string
       tags?: string[]
       status?: 'draft' | 'published'
     },
@@ -426,7 +431,14 @@ export interface WikiIpcChannelMap {
 
 const WikiScopeSchema = z.enum(['user', 'project', 'agent', 'team'])
 const WikiSpaceTypeSchema = z.enum(['manual', 'repo'])
-const WikiPageKindSchema = z.enum(['knowledge', 'experience', 'pattern', 'reference', 'note'])
+const WikiPageKindSchema = z.enum([
+  'knowledge',
+  'experience',
+  'pattern',
+  'reference',
+  'note',
+  'folder',
+])
 const WikiPageStatusSchema = z.enum(['draft', 'published', 'archived'])
 
 export const WikiIpcSchemaRegistry = {
@@ -469,7 +481,8 @@ export const WikiIpcSchemaRegistry = {
     kind: WikiPageKindSchema.optional(),
     title: z.string().min(1).max(200),
     summary: z.string().max(600).optional(),
-    body: z.string().max(2_000_000),
+    // folder 无正文；内容页的「正文必填」由 WikiWriteService 强校验（fail-loud）
+    body: z.string().max(2_000_000).optional(),
     tags: z.array(z.string().min(1).max(40)).max(20).optional(),
     status: z.enum(['draft', 'published']).optional(),
   }),

@@ -23,7 +23,11 @@ import { upsertWikiFtsRow, deleteWikiFtsRow, wikiFtsTableExists } from './wiki-s
 
 const log = createLogger('storage:wiki')
 
-export type WikiPageKind = 'knowledge' | 'experience' | 'pattern' | 'reference' | 'note'
+/**
+ * 页面类型。folder 是无正文、不进 FTS、不同步双链的纯结构容器节点
+ * （migration 118 放宽 CHECK 后入库），目录树 / 拖拽 / 归档等机制与页面共用。
+ */
+export type WikiPageKind = 'knowledge' | 'experience' | 'pattern' | 'reference' | 'note' | 'folder'
 export type WikiPageStatus = 'draft' | 'published' | 'archived'
 
 export interface WikiPageRow {
@@ -115,14 +119,21 @@ export class WikiPageRepository extends BaseRepository {
           now,
           now,
         )
-      this.maintainFts('upsert', row.id, {
-        title: row.title,
-        summary: row.summary,
-        body,
-      })
+      if (row.kind !== 'folder') {
+        this.maintainFts('upsert', row.id, {
+          title: row.title,
+          summary: row.summary,
+          body,
+        })
+      }
     })
     tx()
     return this.findById<WikiPageRow>(row.id)!
+  }
+
+  /** folder 节点无正文：不进 FTS（upsert/delete 一律跳过，防 contentless 空行噪声）。 */
+  private static isFolder(row: { kind: string } | null | undefined): boolean {
+    return row?.kind === 'folder'
   }
 
   /**
@@ -179,6 +190,9 @@ export class WikiPageRepository extends BaseRepository {
 
     const tx = this.raw.transaction(() => {
       this.raw.prepare(`UPDATE wiki_page SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+      // folder 无正文、从未进 FTS：文本变更不走 fail-loud 闸门也不维护索引
+      // （重命名文件夹不该被「必须带完整正文」拦住）。
+      if (WikiPageRepository.isFolder(existing)) return
       if (becomesArchived) {
         this.maintainFts('delete', id)
       } else if (textChanged) {
@@ -332,6 +346,21 @@ export class WikiPageRepository extends BaseRepository {
     return row.count
   }
 
+  /**
+   * 把某父节点的全部直接子节点上移一级（文件夹删除专用）。
+   * 包含已归档子节点（归档态的行同样需要正确的父指针）；
+   * 纯结构元数据批量修正，不逐个推进 version / 写历史版本。
+   * @returns 上移的子节点数量
+   */
+  reparentChildren(spaceId: string, fromParentId: string, toParentId: string | null): number {
+    const info = this.raw
+      .prepare(
+        `UPDATE wiki_page SET parent_id = ?, updated_at = ? WHERE space_id = ? AND parent_id = ?`,
+      )
+      .run(toParentId, Date.now(), spaceId, fromParentId)
+    return Number(info.changes)
+  }
+
   /** 命中统计：刻意不刷新 updated_at（避免检索热度抬升时间衰减权重，同 memory） */
   bumpHit(id: string): void {
     this.raw
@@ -339,24 +368,26 @@ export class WikiPageRepository extends BaseRepository {
       .run(Date.now(), id)
   }
 
-  /** 归档（软删除）：同事务移除 FTS 行，释放 slug 槽位。 */
+  /** 归档（软删除）：同事务移除 FTS 行，释放 slug 槽位（folder 无 FTS 行，跳过）。 */
   archive(id: string): void {
+    const existing = this.findById<WikiPageRow>(id)
     const tx = this.raw.transaction(() => {
       this.raw
         .prepare(`UPDATE wiki_page SET status = 'archived', updated_at = ? WHERE id = ?`)
         .run(Date.now(), id)
-      this.maintainFts('delete', id)
+      if (!WikiPageRepository.isFolder(existing)) this.maintainFts('delete', id)
     })
     tx()
   }
 
   /**
    * 物理删除（删除屏障终态，仅 WikiWriteService 可调用）。
-   * 顺序：先清 FTS 索引（依赖主行 rowid），再删主行。
+   * 顺序：先清 FTS 索引（依赖主行 rowid），再删主行（folder 无 FTS 行，跳过）。
    */
   delete(id: string): void {
+    const existing = this.findById<WikiPageRow>(id)
     const tx = this.raw.transaction(() => {
-      this.maintainFts('delete', id)
+      if (!WikiPageRepository.isFolder(existing)) this.maintainFts('delete', id)
       this.raw.prepare(`DELETE FROM wiki_page WHERE id = ?`).run(id)
     })
     tx()

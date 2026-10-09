@@ -75,7 +75,12 @@ function loadTreeSort(): WikiTreeSort {
 }
 
 type PageDialogState =
-  | { mode: 'create'; parentId: string | null; title: string; kind: WikiPageKind }
+  | {
+      mode: 'create' | 'createFolder'
+      parentId: string | null
+      title: string
+      kind: WikiPageKind
+    }
   | { mode: 'rename'; pageId: string; title: string; kind: WikiPageKind }
   | null
 
@@ -189,6 +194,22 @@ export function WikiView() {
   const activeSpace = useMemo(
     () => spaces.find((s) => s.id === activeSpaceId) ?? null,
     [spaces, activeSpaceId],
+  )
+
+  /** 当前选中节点（含 folder）：主区按类型分流——folder 显示容器视图，不拉正文。 */
+  const activeNode = useMemo(
+    () => pages.find((p) => p.id === activePageId) ?? null,
+    [pages, activePageId],
+  )
+  const activeIsFolder = activeNode?.kind === 'folder'
+
+  /** 选中文件夹的直接子项数（非归档；容器视图统计用）。 */
+  const folderChildCount = useMemo(
+    () =>
+      activeNode == null
+        ? 0
+        : pages.filter((p) => p.parentId === activeNode.id && p.status !== 'archived').length,
+    [pages, activeNode],
   )
 
   /** 空间加载：空库时按设置 space/autoCreate 自动建「我的知识库」。 */
@@ -368,8 +389,13 @@ export function WikiView() {
       setPage(null)
       return
     }
+    // folder 无正文：不调 wiki:page:get（服务端会拒绝），主区走文件夹容器视图
+    if (pages.find((p) => p.id === activePageId)?.kind === 'folder') {
+      setPage(null)
+      return
+    }
     void loadPage(activePageId)
-  }, [activePageId, loadPage])
+  }, [activePageId, loadPage, pages])
 
   // 选中深层页时自动展开其祖先路径（首次进入也能看到所在位置）
   const prevPageRef = useRef<string | null>(null)
@@ -481,26 +507,11 @@ export function WikiView() {
     if (dialog == null) return
     const title = dialog.title.trim()
     if (title.length === 0) {
-      toast.error('标题不能为空')
+      toast.error(dialog.mode === 'createFolder' ? '文件夹名称不能为空' : '标题不能为空')
       return
     }
     try {
-      if (dialog.mode === 'create') {
-        if (activeSpaceId == null) return
-        const res = await createPage({
-          spaceId: activeSpaceId,
-          title,
-          kind: dialog.kind,
-          body: NEW_PAGE_BODY_SEED,
-          ...(dialog.parentId != null ? { parentId: dialog.parentId } : {}),
-        })
-        await refreshPages(activeSpaceId)
-        setActivePageId(res.id)
-        if (dialog.parentId != null) {
-          setExpandedIds((prev) => new Set(prev).add(dialog.parentId!))
-        }
-        toast.success('已创建页面')
-      } else {
+      if (dialog.mode === 'rename') {
         setSaving(true)
         await updatePage({
           pageId: dialog.pageId,
@@ -510,10 +521,28 @@ export function WikiView() {
         if (activeSpaceId != null) await refreshPages(activeSpaceId)
         if (activePageId === dialog.pageId) await loadPage(dialog.pageId)
         toast.success('已重命名')
+      } else {
+        if (activeSpaceId == null) return
+        const res = await createPage({
+          spaceId: activeSpaceId,
+          title,
+          kind: dialog.kind,
+          // 文件夹无正文；页面给非空种子（写入服务拒绝空正文，见 NEW_PAGE_BODY_SEED）
+          ...(dialog.mode === 'create' ? { body: NEW_PAGE_BODY_SEED } : {}),
+          ...(dialog.parentId != null ? { parentId: dialog.parentId } : {}),
+        })
+        await refreshPages(activeSpaceId)
+        setActivePageId(res.id)
+        if (dialog.parentId != null) {
+          setExpandedIds((prev) => new Set(prev).add(dialog.parentId!))
+        }
+        toast.success(dialog.mode === 'createFolder' ? '已创建文件夹' : '已创建页面')
       }
       setDialog(null)
     } catch (err) {
-      toast.error(`${dialog.mode === 'create' ? '创建' : '重命名'}失败：${errorText(err)}`)
+      toast.error(
+        `${dialog.mode === 'rename' ? '重命名' : dialog.mode === 'createFolder' ? '创建文件夹' : '创建'}失败：${errorText(err)}`,
+      )
     } finally {
       setSaving(false)
     }
@@ -593,9 +622,13 @@ export function WikiView() {
 
   const handleDelete = useCallback(
     (target: WikiPageMeta) => {
+      const childCount = pages.filter((p) => p.parentId === target.id).length
       Modal.confirm({
         title: `永久删除「${target.title}」？`,
-        content: '删除会同时清理正文文件与全部历史版本快照，不可恢复。若只是暂时不用，请改用归档。',
+        content:
+          target.kind === 'folder'
+            ? `这是文件夹：其中 ${childCount} 个直接子项将上移一级（各自子树保持完整），不会连带删除；此操作不可恢复。`
+            : '删除会同时清理正文文件与全部历史版本快照，不可恢复。若只是暂时不用，请改用归档。',
         okText: '永久删除',
         okButtonProps: { danger: true },
         cancelText: '取消',
@@ -623,7 +656,7 @@ export function WikiView() {
         },
       })
     },
-    [deletePage, refreshPages, activeSpaceId, activePageId, toast],
+    [deletePage, refreshPages, activeSpaceId, activePageId, pages, toast],
   )
 
   /** 同级分组的展示序（与树渲染同一把尺：置顶段在前 + 当前排序方式）。 */
@@ -658,6 +691,12 @@ export function WikiView() {
         const target = byId.get(hint.pageId)
         if (target == null || target.status === 'archived') return
         if (hint.kind === 'into') {
+          // 树语义：只有文件夹可以作为父节点（前端 UI 已只对文件夹出 into 落区，
+          // 这里再拦一道做双保险，后端 move 通道还有第三道）。
+          if (target.kind !== 'folder') {
+            toast.warning('页面下面不能再挂子节点，只能移动到文件夹下')
+            return
+          }
           parentId = hint.pageId
           index = Number.MAX_SAFE_INTEGER
         } else {
@@ -959,6 +998,28 @@ export function WikiView() {
     [spaces, activeSpaceId],
   )
 
+  /** 顶层「＋新建」菜单：页面 / 文件夹两个入口（挂在目录树标签行右端）。 */
+  const createMenu = useMemo<MenuProps>(
+    () => ({
+      items: [
+        { key: 'page', label: '新建页面' },
+        { key: 'folder', label: '新建文件夹' },
+      ],
+      onClick: ({ key }) => {
+        if (activeSpaceId == null) {
+          toast.error('先创建一个知识库空间')
+          return
+        }
+        setDialog(
+          key === 'folder'
+            ? { mode: 'createFolder', parentId: null, title: '', kind: 'folder' }
+            : { mode: 'create', parentId: null, title: '', kind: 'knowledge' },
+        )
+      },
+    }),
+    [activeSpaceId, toast],
+  )
+
   /** 页面级「更多」菜单：编辑入口 / 归档·还原 / 复制链接 / 删除。 */
   const pageMenu = useMemo<MenuProps | null>(() => {
     if (page == null) return null
@@ -1094,8 +1155,21 @@ export function WikiView() {
               <>
                 <div className="wiki_rail_label">
                   <span>
-                    {archivedOnly ? '归档' : '页面'} · {pages.length}
+                    {archivedOnly ? '归档' : '页面'} ·{' '}
+                    {pages.filter((p) => p.kind !== 'folder').length}
                   </span>
+                  {!archivedOnly && (
+                    <Dropdown menu={createMenu} trigger={['click']} placement="bottomRight">
+                      <button
+                        type="button"
+                        className="wiki_rail_sort"
+                        title="新建页面 / 文件夹"
+                        aria-label="新建页面或文件夹"
+                      >
+                        <Icons.Plus size={12} />
+                      </button>
+                    </Dropdown>
+                  )}
                   <Dropdown menu={sortMenu} trigger={['click']} placement="bottomLeft">
                     <button type="button" className="wiki_rail_sort" title="排序方式">
                       {TREE_SORT_OPTIONS.find((o) => o.value === treeSort)?.label ?? '手动排序'}
@@ -1140,6 +1214,14 @@ export function WikiView() {
                         parentId: target.id,
                         title: '',
                         kind: 'knowledge',
+                      })
+                    }
+                    onCreateChildFolder={(target) =>
+                      setDialog({
+                        mode: 'createFolder',
+                        parentId: target.id,
+                        title: '',
+                        kind: 'folder',
                       })
                     }
                     onRename={(target) =>
@@ -1431,6 +1513,44 @@ export function WikiView() {
                   </div>
                 </div>
               </div>
+            ) : activeIsFolder && activeNode != null ? (
+              <div className="wiki_body">
+                <div className="wiki_empty">
+                  <div className="wiki_empty_graph">
+                    <Icons.FolderColorfulOpen size={56} />
+                  </div>
+                  <div className="wiki_empty_title">{activeNode.title}</div>
+                  <div className="wiki_empty_desc">
+                    文件夹 · {folderChildCount} 个子项。层级只影响组织方式，检索仍是全空间全文。
+                  </div>
+                  <div className="wiki_empty_cta">
+                    <button
+                      type="button"
+                      className="wiki_btn_primary"
+                      onClick={() => startCreate(activeNode.id)}
+                    >
+                      <Icons.Plus size={14} />
+                      新建页面
+                    </button>
+                    <button
+                      type="button"
+                      className="wiki_btn_ghost"
+                      style={{ marginLeft: 8 }}
+                      onClick={() =>
+                        setDialog({
+                          mode: 'createFolder',
+                          parentId: activeNode.id,
+                          title: '',
+                          kind: 'folder',
+                        })
+                      }
+                    >
+                      <Icons.FolderPlus size={14} />
+                      新建子文件夹
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : pageLoading && page == null ? (
               <div className="wiki_body">
                 <div className="wiki_empty" style={{ minHeight: 200 }}>
@@ -1500,6 +1620,7 @@ export function WikiView() {
       />
 
       <Modal
+        className="wiki_modal"
         open={spaceDialogOpen}
         title="新建知识库空间"
         okText="创建"
@@ -1521,6 +1642,7 @@ export function WikiView() {
       </Modal>
 
       <Modal
+        className="wiki_modal"
         open={tagDialog != null}
         title="编辑标签"
         okText="保存"
@@ -1545,8 +1667,17 @@ export function WikiView() {
       </Modal>
 
       <Modal
+        className="wiki_modal"
         open={dialog != null}
-        title={dialog?.mode === 'rename' ? '重命名页面' : '新建页面'}
+        title={
+          dialog?.mode === 'rename'
+            ? dialog.kind === 'folder'
+              ? '重命名文件夹'
+              : '重命名页面'
+            : dialog?.mode === 'createFolder'
+              ? '新建文件夹'
+              : '新建页面'
+        }
         okText={dialog?.mode === 'rename' ? '保存' : '创建'}
         cancelText="取消"
         confirmLoading={saving}
@@ -1558,8 +1689,8 @@ export function WikiView() {
             className="wiki_editor_input"
             style={{ width: '100%' }}
             value={dialog?.title ?? ''}
-            placeholder="页面标题"
-            aria-label="页面标题"
+            placeholder={dialog?.mode === 'createFolder' ? '文件夹名称' : '页面标题'}
+            aria-label={dialog?.mode === 'createFolder' ? '文件夹名称' : '页面标题'}
             onChange={(e) =>
               setDialog((prev) => (prev == null ? prev : { ...prev, title: e.target.value }))
             }

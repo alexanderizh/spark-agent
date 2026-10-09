@@ -5,15 +5,18 @@
  * （纯函数，便于单测）；数据的读写与状态（展开集合、选中页）由 WikiView 持有。
  *
  * 交互对齐重设计稿 v3：子层级用 1px 竖向引导线（.wiki_tree_kids）而非纯缩进；
- * hover 才出现「新建子页 / 更多」；右键与「更多」共用同一菜单
- * （新建子页面 / 重命名 / 编辑标签 / 复制链接 / 置顶 / 归档·还原 / 删除）。
+ * hover 才出现「新建子页 / 更多」；右键与「更多」共用同一菜单。
  * 归档页在树上以弱化样式呈现，且只提供「取消归档 / 删除」两条破坏性操作。
+ * 树语义 = 只有文件夹可以作为父节点（对齐文件树心智）：文件夹行点击 = 折叠/
+ * 展开；「新建子页面 / 新建子文件夹」入口只出现在文件夹上；页面不可被移入。
  *
  * 拖拽（HTML5 DnD，对齐文件树心智模型）：
- *   - 拖到目标行上 1/4 → 插到它前面；下 1/4 → 插到它后面；中部 → 移入为其子页；
- *   - 非手动排序模式下前后插无意义（顺序由排序规则决定），整行只响应「移入」；
+ *   - 文件夹行：上 1/4 → 插到它前面；下 1/4 → 插到它后面；中部 → 移入；
+ *   - 页面行：手动排序下按中线分为前插/后插两段；非手动排序整行不可 drop；
+ *   - 非手动排序模式下前后插无意义（顺序由排序规则决定），文件夹整行只响应「移入」；
  *   - 归档视图 / 过滤命中态下禁用拖拽（对看不见全集的列表做重排容易误操作）；
- *   - 落点防环（移到自己子页下）由 WikiView 预检 + 主进程 move 通道双保险。
+ *   - 拖到自己子树内整行禁 drop（防环前置，落库前主进程 move 通道还有一道）；
+ *   - 容器空白区（含深层级缩进空白）= 移到根级末尾。
  */
 
 import React, { useMemo, useState } from 'react'
@@ -36,6 +39,49 @@ export type WikiMoveHint =
   | { kind: 'before'; pageId: string }
   | { kind: 'after'; pageId: string }
   | { kind: 'root-end' }
+
+/**
+ * 解析行内落点（纯函数，便于单测）。树语义对齐文件树心智：
+ *   - 文件夹：中部 = 移入为其子级；手动排序下上/下 28% = 同级前插/后插；
+ *   - 页面：**不接受移入**（页面下不挂子节点），手动排序下整行按中线
+ *     分为前插/后插两个落区；非手动排序下整行无落区（顺序由规则决定）。
+ * 返回 null = 该位置不接受 drop（浏览器显示禁止光标）。
+ */
+export function resolveDropZone(
+  page: WikiPageMeta,
+  rel: number,
+  reorderEnabled: boolean,
+): DropZone | null {
+  if (page.kind === 'folder') {
+    if (!reorderEnabled) return 'into'
+    if (rel < 0.28) return 'before'
+    if (rel > 0.72) return 'after'
+    return 'into'
+  }
+  return reorderEnabled ? (rel < 0.5 ? 'before' : 'after') : null
+}
+
+/** 拖拽起点在树中的全部后代 id（拖到自己子树里 = 防环，整段禁止 drop）。 */
+export function collectDescendantIds(
+  nodes: readonly WikiTreeNode[],
+  rootId: string,
+  out: Set<string> = new Set(),
+): Set<string> {
+  for (const node of nodes) {
+    if (node.page.id === rootId) {
+      const walk = (list: readonly WikiTreeNode[]): void => {
+        for (const child of list) {
+          out.add(child.page.id)
+          walk(child.children)
+        }
+      }
+      walk(node.children)
+      continue
+    }
+    collectDescendantIds(node.children, rootId, out)
+  }
+  return out
+}
 
 /** 扁平页面列表 → 目录树（父节点缺失时视为根，避免脏数据丢页）。 */
 export function buildWikiTree(pages: readonly WikiPageMeta[]): WikiTreeNode[] {
@@ -125,6 +171,7 @@ const KIND_LABEL: Record<WikiPageKind, string> = {
   pattern: '模式',
   reference: '参考',
   note: '随笔',
+  folder: '文件夹',
 }
 
 /** 命中片段高亮（大小写不敏感，只高亮首处）。 */
@@ -155,6 +202,8 @@ export interface WikiPageTreeProps {
   onToggle: (id: string) => void
   onSelect: (page: WikiPageMeta) => void
   onCreateChild: (page: WikiPageMeta) => void
+  /** 未提供时右键菜单不出现「新建子文件夹」（Repo Wiki 树走此降级）。 */
+  onCreateChildFolder?: (page: WikiPageMeta) => void
   onRename: (page: WikiPageMeta) => void
   /** 未提供时右键菜单不出现「编辑标签…」（Repo Wiki 树走此降级）。 */
   onEditTags?: (page: WikiPageMeta) => void
@@ -181,6 +230,7 @@ export function WikiPageTree({
   onToggle,
   onSelect,
   onCreateChild,
+  onCreateChildFolder,
   onRename,
   onEditTags,
   onArchive,
@@ -192,6 +242,12 @@ export function WikiPageTree({
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropAt, setDropAt] = useState<{ id: string; zone: DropZone } | null>(null)
 
+  /** 拖拽起点的后代集合：拖到自己子树里直接禁 drop（比落库前 toast 早一步拦住）。 */
+  const draggingDescendants = useMemo(
+    () => (dragId != null ? collectDescendantIds(nodes, dragId) : new Set<string>()),
+    [dragId, nodes],
+  )
+
   const statusHint = (page: WikiPageMeta) =>
     page.status === 'draft' ? '草稿' : page.status === 'archived' ? '已归档' : null
 
@@ -199,7 +255,13 @@ export function WikiPageTree({
     const archived = page.status === 'archived'
     return {
       items: [
-        { key: 'child', label: '新建子页面', disabled: archived },
+        // 树语义：只有文件夹能作为父节点，页面不再提供「新建子页面」入口
+        ...(page.kind === 'folder'
+          ? [{ key: 'child', label: '新建子页面', disabled: archived }]
+          : []),
+        ...(page.kind === 'folder' && onCreateChildFolder != null
+          ? [{ key: 'childFolder', label: '新建子文件夹', disabled: archived }]
+          : []),
         { key: 'rename', label: '重命名', disabled: archived },
         ...(onEditTags != null ? [{ key: 'tags', label: '编辑标签…', disabled: archived }] : []),
         ...(onTogglePin != null
@@ -214,6 +276,7 @@ export function WikiPageTree({
       onClick: ({ key, domEvent }) => {
         domEvent.stopPropagation()
         if (key === 'child') onCreateChild(page)
+        else if (key === 'childFolder') onCreateChildFolder?.(page)
         else if (key === 'rename') onRename(page)
         else if (key === 'tags') onEditTags?.(page)
         else if (key === 'pin') onTogglePin?.(page)
@@ -244,18 +307,20 @@ export function WikiPageTree({
             {page.pinned ? <Icons.PinFill size={15} /> : <Icons.Pin size={15} />}
           </button>
         )}
-        <button
-          type="button"
-          className="wiki_tree_act"
-          title="新建子页面"
-          aria-label="新建子页面"
-          onClick={(e) => {
-            e.stopPropagation()
-            onCreateChild(page)
-          }}
-        >
-          <Icons.Plus size={15} />
-        </button>
+        {page.kind === 'folder' && (
+          <button
+            type="button"
+            className="wiki_tree_act"
+            title="新建子页面"
+            aria-label="新建子页面"
+            onClick={(e) => {
+              e.stopPropagation()
+              onCreateChild(page)
+            }}
+          >
+            <Icons.Plus size={15} />
+          </button>
+        )}
         <Dropdown menu={menuFor(page)} trigger={['click']}>
           <button
             type="button"
@@ -275,6 +340,7 @@ export function WikiPageTree({
     list.map((node) => {
       const { page, children } = node
       const hasChildren = children.length > 0
+      const isFolder = page.kind === 'folder'
       const open = hasChildren && (expandedIds.has(page.id) || matchedIds.has(page.id))
       const isActive = page.id === activeId
       const archived = page.status === 'archived'
@@ -289,6 +355,19 @@ export function WikiPageTree({
             : ' is-drop-after'
           : ''
       const intoClass = isDropTarget && dropZone === 'into' ? ' is-drop-into' : ''
+      // 文件夹行点击 = 折叠/展开（文件树心智）；页面行点击 = 打开正文。
+      const activate = (): void => {
+        if (isFolder) onToggle(page.id)
+        else onSelect(page)
+      }
+      const acceptDrop = (e: React.DragEvent<HTMLDivElement>): DropZone | null => {
+        if (onMove == null || dragId == null || dragId === page.id || archived) return null
+        // 防环前置：目标在自己子树内 → 整行禁 drop（浏览器显示禁止光标）
+        if (draggingDescendants.has(page.id)) return null
+        const rect = e.currentTarget.getBoundingClientRect()
+        const rel = (e.clientY - rect.top) / Math.max(rect.height, 1)
+        return resolveDropZone(page, rel, reorderEnabled)
+      }
       return (
         <React.Fragment key={page.id}>
           <Dropdown menu={menuFor(page)} trigger={['contextMenu']}>
@@ -296,7 +375,7 @@ export function WikiPageTree({
               className={`wiki_tree_node${isActive ? ' is-active' : ''}${archived ? ' is-archived' : ''}${
                 dragId === page.id ? ' is-dragging' : ''
               }${zoneClass}${intoClass}`}
-              onClick={() => onSelect(page)}
+              onClick={activate}
               role="treeitem"
               aria-selected={isActive}
               aria-level={depth + 1}
@@ -314,19 +393,10 @@ export function WikiPageTree({
                 setDropAt(null)
               }}
               onDragOver={(e) => {
-                if (onMove == null || dragId == null || dragId === page.id || archived) return
+                const zone = acceptDrop(e)
+                if (zone == null) return
                 e.preventDefault()
                 e.stopPropagation()
-                const rect = e.currentTarget.getBoundingClientRect()
-                const rel = (e.clientY - rect.top) / rect.height
-                // 非手动排序：前后插会被排序规则覆盖，整行只做「移入」。
-                const zone: DropZone = reorderEnabled
-                  ? rel < 0.28
-                    ? 'before'
-                    : rel > 0.72
-                      ? 'after'
-                      : 'into'
-                  : 'into'
                 setDropAt((prev) => {
                   const next = { id: page.id, zone }
                   if (prev != null && prev.id === next.id && prev.zone === next.zone) return prev
@@ -334,28 +404,22 @@ export function WikiPageTree({
                 })
               }}
               onDrop={(e) => {
-                if (onMove == null || dragId == null || dragId === page.id || archived) return
+                const zone = acceptDrop(e)
+                if (zone == null || onMove == null) return
                 e.preventDefault()
                 e.stopPropagation()
-                const rect = e.currentTarget.getBoundingClientRect()
-                const rel = (e.clientY - rect.top) / rect.height
-                const zone: DropZone = reorderEnabled
-                  ? rel < 0.28
-                    ? 'before'
-                    : rel > 0.72
-                      ? 'after'
-                      : 'into'
-                  : 'into'
+                const moved = dragId
                 setDragId(null)
                 setDropAt(null)
-                if (zone === 'into') onMove(dragId, { kind: 'into', pageId: page.id })
-                else if (zone === 'before') onMove(dragId, { kind: 'before', pageId: page.id })
-                else onMove(dragId, { kind: 'after', pageId: page.id })
+                if (moved == null) return
+                if (zone === 'into') onMove(moved, { kind: 'into', pageId: page.id })
+                else if (zone === 'before') onMove(moved, { kind: 'before', pageId: page.id })
+                else if (zone === 'after') onMove(moved, { kind: 'after', pageId: page.id })
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
-                  onSelect(page)
+                  activate()
                 }
               }}
             >
@@ -371,13 +435,23 @@ export function WikiPageTree({
                   onToggle(page.id)
                 }}
               >
-                <Icons.ChevronRight size={12} />
+                <Icons.ChevronRight size={14} />
               </button>
-              <span
-                className={`wiki_tree_dot k-${page.kind}`}
-                title={KIND_LABEL[page.kind]}
-                aria-hidden
-              />
+              {page.kind === 'folder' ? (
+                <span className="wiki_tree_folder_icon" title={KIND_LABEL[page.kind]} aria-hidden>
+                  {open ? (
+                    <Icons.FolderColorfulOpen size={15} />
+                  ) : (
+                    <Icons.FolderColorful size={15} />
+                  )}
+                </span>
+              ) : (
+                <span
+                  className={`wiki_tree_dot k-${page.kind}`}
+                  title={KIND_LABEL[page.kind]}
+                  aria-hidden
+                />
+              )}
               <span className="wiki_tree_label" title={page.title}>
                 {highlight(page.title, query)}
                 {statusHint(page) != null && (
@@ -385,7 +459,13 @@ export function WikiPageTree({
                 )}
               </span>
               {page.pinned && (
-                <span className="wiki_tree_pin" title="已置顶" aria-label="已置顶">
+                <span
+                  className={`wiki_tree_pin${
+                    onTogglePin != null && page.status !== 'archived' ? ' is-hot' : ''
+                  }`}
+                  title="已置顶"
+                  aria-label="已置顶"
+                >
                   <Icons.PinFill size={10} />
                 </span>
               )}
@@ -398,9 +478,10 @@ export function WikiPageTree({
       )
     })
 
-  // 根级落区：树容器自身的空白处 = 「移到根级末尾」。行级 handler 已
-  // stopPropagation，落到容器上的事件必然来自空白区。onDragOver 必须
-  // preventDefault，否则浏览器不会给容器派发 drop。
+  // 根级落区：树容器内任何非行区域（含深层级的缩进空白）= 「移到根级末尾」。
+  // 行级 handler 已 stopPropagation，落到容器上的事件必然来自空白区；
+  // target 用 closest 排除行内元素（此前只认容器本身，深层级 kids 空白拖不进来）。
+  // onDragOver 必须 preventDefault，否则浏览器不会给容器派发 drop。
   const rootDropping = dropAt?.zone === 'root-end' && dragId != null
 
   const content = useMemo(
@@ -413,25 +494,28 @@ export function WikiPageTree({
       query,
       dragId,
       dropAt,
+      draggingDescendants,
       reorderEnabled,
       onMove,
       onEditTags,
       onTogglePin,
     ],
   )
+  const isTreeBlank = (e: React.DragEvent<HTMLDivElement>): boolean =>
+    !((e.target as Element).closest?.('.wiki_tree_node') != null)
   return (
     <div
       className={`wiki_tree${rootDropping ? ' is-drop-root' : ''}`}
       role="tree"
       onDragOver={(e) => {
-        if (onMove == null || dragId == null || e.target !== e.currentTarget) return
+        if (onMove == null || dragId == null || !isTreeBlank(e)) return
         e.preventDefault()
         setDropAt((prev) =>
           prev?.zone === 'root-end' ? prev : { id: '__root__', zone: 'root-end' },
         )
       }}
       onDrop={(e) => {
-        if (onMove == null || dragId == null || e.target !== e.currentTarget) return
+        if (onMove == null || dragId == null || !isTreeBlank(e)) return
         e.preventDefault()
         const moved = dragId
         setDragId(null)
