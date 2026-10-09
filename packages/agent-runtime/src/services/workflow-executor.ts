@@ -42,6 +42,12 @@ export type WorkflowAgentDispatchOptions = {
 
 export type WorkflowWorkerResolutionOptions = {
   fallbackAgentId?: string
+  /**
+   * 会话 agent 上下文（托管 workflow_run 传入宿主 Agent id）：agent 节点未绑定
+   * 或绑定失效时的运行级回退执行者。优先级低于 fallbackAgentId（显式兼容语义）；
+   * 未传入（低层调用/无会话上下文）时保持 missing_agent_id 显式失败语义。
+   */
+  sessionAgentId?: string
   availableWorkerIds?: ReadonlySet<string>
 }
 
@@ -665,6 +671,12 @@ export async function executeWorkflowAgentPlan(input: {
   attachments?: WorkflowDispatchAttachment[]
   /** agent 节点未绑定或绑定 worker 不可用时，回退派发给宿主 Agent。 */
   fallbackAgentId?: string
+  /**
+   * 会话 agent 上下文（托管 workflow_run 传入宿主 Agent id）：agent 节点未绑定或
+   * 绑定失效时的运行级回退执行者。优先级低于 fallbackAgentId；未传入时保持
+   * missing_agent_id 显式失败语义（低层调用/无会话上下文）。
+   */
+  sessionAgentId?: string
   /** 本次 workflow_run 实际注册进花名册、允许派发的 worker ids。 */
   availableWorkerIds?: ReadonlySet<string>
   initialState?: WorkflowState
@@ -804,6 +816,7 @@ export async function executeWorkflowAgentPlan(input: {
           skippedNodeIds,
           dispatch,
           ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
+          ...(input.sessionAgentId != null ? { sessionAgentId: input.sessionAgentId } : {}),
           ...(input.availableWorkerIds != null
             ? { availableWorkerIds: input.availableWorkerIds }
             : {}),
@@ -863,6 +876,7 @@ export async function executeWorkflowAgentPlan(input: {
             dispatch,
             parallel: waveNodes.length > 1,
             ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
+            ...(input.sessionAgentId != null ? { sessionAgentId: input.sessionAgentId } : {}),
             ...(input.availableWorkerIds != null
               ? { availableWorkerIds: input.availableWorkerIds }
               : {}),
@@ -954,6 +968,7 @@ async function executeWorkflowAtomicNode(input: {
     options?: WorkflowAgentDispatchOptions,
   ) => Promise<WorkflowAgentDispatchReply>
   fallbackAgentId?: string
+  sessionAgentId?: string
   availableWorkerIds?: ReadonlySet<string>
   executeAtomicNode?: (
     request: WorkflowAtomicNodeExecutionRequest,
@@ -1066,6 +1081,7 @@ async function executeWorkflowLoopNode(input: {
     options?: WorkflowAgentDispatchOptions,
   ) => Promise<WorkflowAgentDispatchReply>
   fallbackAgentId?: string
+  sessionAgentId?: string
   availableWorkerIds?: ReadonlySet<string>
   executeAtomicNode?: (
     request: WorkflowAtomicNodeExecutionRequest,
@@ -1132,6 +1148,7 @@ async function executeWorkflowLoopNode(input: {
         ? { attachments: input.attachments }
         : {}),
       ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
+      ...(input.sessionAgentId != null ? { sessionAgentId: input.sessionAgentId } : {}),
       ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
       initialState: iterationState,
       dispatch: input.dispatch,
@@ -1250,6 +1267,7 @@ async function executeWorkflowAgentNode(input: {
   ) => Promise<WorkflowAgentDispatchReply>
   parallel: boolean
   fallbackAgentId?: string
+  sessionAgentId?: string
   availableWorkerIds?: ReadonlySet<string>
   /** M0：subagent 扇出钳制上限（缺省不钳制）。 */
   fanoutClamp?: number
@@ -1258,13 +1276,16 @@ async function executeWorkflowAgentNode(input: {
   const agentId =
     getWorkflowNodeEffectiveWorkerId(node, {
       ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
+      ...(input.sessionAgentId != null ? { sessionAgentId: input.sessionAgentId } : {}),
       ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
     }) ?? ''
   const outputKey = typeof node.config.outputKey === 'string' ? node.config.outputKey.trim() : ''
   const executions: WorkflowAgentExecutionRecord[] = []
 
   // 没有有效运行身份时保持显式失败，避免空绑定或失效绑定被静默跳过。
-  // fallbackAgentId 仅供显式选择兼容语义的低层调用；托管 workflow_run 不使用宿主回退。
+  // fallbackAgentId 仅供显式选择兼容语义的低层调用；托管 workflow_run 改用
+  // sessionAgentId 运行级回退（配置失效时回退会话宿主执行），仅在无会话上下文
+  // （低层调用未传两者）时才收敛为 missing_agent_id。
   if (agentId === '') {
     const configuredAgentId =
       typeof node.config.agentId === 'string' ? node.config.agentId.trim() : ''
@@ -1543,6 +1564,12 @@ export function getWorkflowNodeEffectiveWorkerId(
   }
   const fallback = typeof options.fallbackAgentId === 'string' ? options.fallbackAgentId.trim() : ''
   if (node.kind === 'agent' && fallback.length > 0) return fallback
+  // 节点级会话回退：agent 节点未绑定（config.agentId 为空）或绑定失效时，运行带
+  // 会话 agent 上下文（托管 workflow_run 的宿主）则回退由它执行，进度元数据如实
+  // 展示实际执行者。无会话上下文才在下方收敛为 missing_agent_id。
+  const sessionAgent =
+    typeof options.sessionAgentId === 'string' ? options.sessionAgentId.trim() : ''
+  if (node.kind === 'agent' && sessionAgent.length > 0) return sessionAgent
   // Session workflow_run 会传 availableWorkerIds。显式绑定已删除/禁用时，不把一个
   // 未注册 id 继续交给 TeamDispatchService 产生 member_disabled，而是在执行器稳定
   // 收敛为 missing_agent_id。低层调用没传花名册时仍兼容直接使用配置 id。

@@ -968,18 +968,26 @@ export interface WorkflowProgressNodeMetaInput {
 /**
  * 解析 workflow_progress 使用的静态节点身份。
  *
- * 托管 workflow_run 不允许空绑定或失效绑定回落到宿主 Agent；这里必须与执行器使用
- * 相同的 availableWorkerIds 语义，否则进度面板会把最终以 missing_agent_id 失败的节点
- * 错误展示成由宿主 Agent 执行。
+ * 必须与执行器使用相同的 availableWorkerIds / sessionAgentId 语义（含节点级
+ * 会话回退：agent 节点未绑定或绑定失效时回退会话宿主执行），否则进度面板
+ * 展示的执行者会与实际派发目标不一致。无会话上下文（低层调用不传
+ * sessionAgentId）时，空绑定/失效绑定节点保持无执行者展示，与执行器最终以
+ * missing_agent_id 失败一致。
  */
 export function buildWorkflowProgressNodeMetas(
   nodes: Iterable<NormalizedWorkflowNode>,
   members: Iterable<Pick<AgentItem, 'id' | 'name' | 'modelId'>>,
+  options: { sessionAgentId?: string } = {},
 ): WorkflowProgressNodeMetaInput[] {
   const membersById = new Map([...members].map((member) => [member.id, member]))
   const availableWorkerIds = new Set(membersById.keys())
+  const sessionAgentId =
+    typeof options.sessionAgentId === 'string' ? options.sessionAgentId.trim() : ''
   return [...nodes].map((node) => {
-    const agentId = getWorkflowNodeEffectiveWorkerId(node, { availableWorkerIds })
+    const agentId = getWorkflowNodeEffectiveWorkerId(node, {
+      ...(sessionAgentId.length > 0 ? { sessionAgentId } : {}),
+      availableWorkerIds,
+    })
     const member = agentId != null ? membersById.get(agentId) : undefined
     const modelId =
       typeof node.config.modelId === 'string' && node.config.modelId.trim().length > 0

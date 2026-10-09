@@ -30,7 +30,9 @@ describe('detectWorkflowUnsupportedNodeKinds', () => {
     expect(detectWorkflowUnsupportedNodeKinds(graph)).toEqual([
       { scope: '主图', nodeId: 'release-output', title: '发布结果', kind: 'output' },
     ])
-    const message = formatWorkflowUnsupportedNodeKindError(detectWorkflowUnsupportedNodeKinds(graph))
+    const message = formatWorkflowUnsupportedNodeKindError(
+      detectWorkflowUnsupportedNodeKinds(graph),
+    )
     expect(message).toContain('节点「发布结果」使用了不支持的节点类型「output」')
     expect(message).toContain('「artifact」')
   })
@@ -1296,6 +1298,68 @@ describe('executeWorkflowAgentPlan', () => {
     expect(result.state).toEqual({
       a: 'host-agent:unbound',
       b: 'host-agent:stale',
+    })
+  })
+
+  it('falls back to the session agent for unbound or stale agent nodes when sessionAgentId is provided', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'unbound',
+          kind: 'agent',
+          title: 'Unbound Agent',
+          config: { outputKey: 'a' },
+        },
+        {
+          id: 'stale',
+          kind: 'agent',
+          title: 'Stale Agent',
+          config: { agentId: 'deleted-worker', outputKey: 'b' },
+        },
+      ],
+      edges: [{ id: 'a-b', from: 'unbound', to: 'stale' }],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Use session fallback',
+      sessionAgentId: 'session-host',
+      availableWorkerIds: new Set(['session-host']),
+      dispatch: async (request) => ({ content: `${request.agentId}:${request.nodeId}` }),
+    })
+
+    expect(result.status).toBe('completed')
+    expect(result.executions.map((item) => item.agentId)).toEqual(['session-host', 'session-host'])
+    expect(result.state).toEqual({
+      a: 'session-host:unbound',
+      b: 'session-host:stale',
+    })
+  })
+
+  it('still fails with missing_agent_id for unbound agent nodes when no session context exists', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'unbound',
+          kind: 'agent',
+          title: 'Unbound Agent',
+          config: { outputKey: 'out' },
+        },
+      ],
+      edges: [],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'No session context',
+      availableWorkerIds: new Set(),
+      dispatch: async () => ({ content: 'should not be called' }),
+    })
+
+    expect(result.status).toBe('failed')
+    expect(result.failedNode?.error).toEqual({
+      code: 'missing_agent_id',
+      message: 'agent 节点「Unbound Agent」未绑定 Agent（config.agentId 为空），无法派发。',
     })
   })
 

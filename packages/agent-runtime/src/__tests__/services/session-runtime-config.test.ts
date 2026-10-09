@@ -4543,23 +4543,12 @@ describe('SessionService runtime provider/model resolution', () => {
     })
 
     await service.sendTurn({ sessionId, message: 'start the frozen workflow' })
-    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
-    const firstConfig = mockState.sdkConfigs[0]
-    if (firstConfig == null) throw new Error('expected first runtime config')
-    const firstServer = (
-      firstConfig.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>
-    ).spark_team
-    const firstTool = firstServer?.instance?.tools?.find(
-      (candidate) =>
-        typeof candidate === 'object' &&
-        candidate != null &&
-        (candidate as { name?: unknown }).name === 'workflow_run',
-    ) as { handler: (args: unknown) => Promise<unknown> } | undefined
-    if (firstTool == null) throw new Error('expected first workflow_run tool')
-    await firstTool.handler({ objective: 'resume the same run' })
-
+    // override 绑定 → 运行时强制接管：turn 起跑前自动跑图（成员配置先于宿主产生，
+    // 宿主配置不再暴露 workflow_run），Run 由接管直接建档并携带 Binding 元数据。
+    await vi.waitFor(() => expect(mockState.workflowRuns.size).toBeGreaterThanOrEqual(1))
     const firstRun = [...mockState.workflowRuns.values()][0]
     if (firstRun == null) throw new Error('expected first workflow run')
+    await vi.waitFor(() => expect(firstRun.status).toBe('completed'))
     expect(firstRun).toMatchObject({
       workflow_id: workflowId,
       workflow_binding_instance_id: bindingInstanceId,
@@ -4605,35 +4594,23 @@ describe('SessionService runtime provider/model resolution', () => {
     })
 
     await service.sendTurn({ sessionId, message: 'continue the failed workflow' })
-    await vi.waitFor(() => expect(mockState.sdkConfigs.length).toBeGreaterThan(1))
-    const secondConfig = [...mockState.sdkConfigs].reverse().find((config) => {
-      const server = (config.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>)
-        ?.spark_team
-      return server?.instance?.tools?.some(
-        (candidate) =>
-          typeof candidate === 'object' &&
-          candidate != null &&
-          (candidate as { name?: unknown }).name === 'workflow_run',
-      )
+    // 同代次接管续跑：复用 failed Run 的冻结图（frozen-node 重跑、edited-node 不出现），
+    // 不新建 Run；接管成功后宿主本轮只做收尾综合。
+    await vi.waitFor(() => {
+      const run = [...mockState.workflowRuns.values()][0]
+      expect([...mockState.workflowRuns.values()]).toHaveLength(1)
+      expect(run?.status).toBe('completed')
+      expect(run?.completed_node_ids_json).toContain(`"${frozenNodeId}"`)
     })
+    expect([...mockState.workflowRuns.values()][0]?.completed_node_ids_json).not.toContain(
+      `"${editedNodeId}"`,
+    )
+    const secondConfig = [...mockState.sdkConfigs]
+      .reverse()
+      .find((config) =>
+        String(config.systemPrompt ?? '').includes('[Forced Workflow Run — Authoritative]'),
+      )
     if (secondConfig == null) throw new Error('expected second runtime config')
-    const secondServer = (
-      secondConfig.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>
-    ).spark_team
-    const secondTool = secondServer?.instance?.tools?.find(
-      (candidate) =>
-        typeof candidate === 'object' &&
-        candidate != null &&
-        (candidate as { name?: unknown }).name === 'workflow_run',
-    ) as { handler: (args: unknown) => Promise<unknown> } | undefined
-    if (secondTool == null) throw new Error('expected second workflow_run tool')
-    const secondResult = (await secondTool.handler({ objective: 'resume the same run' })) as {
-      structuredContent?: { executions?: Array<{ nodeId: string }> }
-    }
-    const resumedNodeIds = secondResult.structuredContent?.executions?.map((item) => item.nodeId)
-    expect(resumedNodeIds).toContain(frozenNodeId)
-    expect(resumedNodeIds).not.toContain(editedNodeId)
-    expect([...mockState.workflowRuns.values()]).toHaveLength(1)
 
     // 系统 Prompt 必须与执行器描述同一张冻结图：含冻结步骤/名称，不含编辑后的。
     const secondPrompt = String(secondConfig.systemPrompt ?? '')
@@ -4641,6 +4618,18 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(secondPrompt).not.toContain('Edited node')
     expect(secondPrompt).toContain('Stage 4 Workflow')
     expect(secondPrompt).not.toContain('Edited Workflow')
+    // 接管成功后 workflow_run 工具不再暴露给宿主（防重复执行）。
+    const secondServer = (
+      secondConfig.mcpServers as Record<string, { instance?: { tools?: unknown[] } }> | undefined
+    )?.spark_team
+    expect(
+      secondServer?.instance?.tools?.some(
+        (candidate) =>
+          typeof candidate === 'object' &&
+          candidate != null &&
+          (candidate as { name?: unknown }).name === 'workflow_run',
+      ),
+    ).toBeFalsy()
   })
 
   it('records the launcher entry as the binding_source of workflow runs (stage 6)', async () => {
@@ -4700,20 +4689,9 @@ describe('SessionService runtime provider/model resolution', () => {
     })
 
     await service.sendTurn({ sessionId, message: 'run the launcher workflow' })
-    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
-    const config = mockState.sdkConfigs[0]
-    if (config == null) throw new Error('expected launcher runtime config')
-    const tool = (
-      (config.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>)?.spark_team
-        ?.instance?.tools ?? []
-    ).find(
-      (candidate) =>
-        typeof candidate === 'object' &&
-        candidate != null &&
-        (candidate as { name?: unknown }).name === 'workflow_run',
-    ) as { handler: (args: unknown) => Promise<unknown> } | undefined
-    if (tool == null) throw new Error('expected workflow_run tool')
-    await tool.handler({ objective: 'launcher objective' })
+    // override 绑定（含启动器来源）→ 运行时强制接管：Run 在宿主起跑前直接建档，
+    // binding_source 记录启动器入口（editor-test）而非泛化的 session-override。
+    await vi.waitFor(() => expect(mockState.workflowRuns.size).toBeGreaterThanOrEqual(1))
 
     const run = [...mockState.workflowRuns.values()][0]
     expect(run).toMatchObject({
@@ -4778,22 +4756,11 @@ describe('SessionService runtime provider/model resolution', () => {
     })
 
     await service.sendTurn({ sessionId, message: 'start generation one' })
-    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
-    const firstConfig = mockState.sdkConfigs[0]
-    if (firstConfig == null) throw new Error('expected first runtime config')
-    const firstServer = (
-      firstConfig.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>
-    ).spark_team
-    const firstTool = firstServer?.instance?.tools?.find(
-      (candidate) =>
-        typeof candidate === 'object' &&
-        candidate != null &&
-        (candidate as { name?: unknown }).name === 'workflow_run',
-    ) as { handler: (args: unknown) => Promise<unknown> } | undefined
-    if (firstTool == null) throw new Error('expected first workflow_run tool')
-    await firstTool.handler({ objective: 'leave a failed run behind' })
+    // override 绑定 → 强制接管自动建档 generation-one 的 Run，等待终态后再标失败。
+    await vi.waitFor(() => expect(mockState.workflowRuns.size).toBeGreaterThanOrEqual(1))
     const firstRun = [...mockState.workflowRuns.values()][0]
     if (firstRun == null) throw new Error('expected first workflow run')
+    await vi.waitFor(() => expect(firstRun.status).toBe('completed'))
     firstRun.status = 'failed'
     firstRun.ended_at = '2026-09-12T00:01:00.000Z'
     firstRun.updated_at = '2026-09-12T00:01:00.000Z'
@@ -4807,29 +4774,8 @@ describe('SessionService runtime provider/model resolution', () => {
       updatedAt: '2026-09-12T00:02:00.000Z',
     })
     await service.sendTurn({ sessionId, message: 'start generation two' })
-    await vi.waitFor(() => expect(mockState.sdkConfigs.length).toBeGreaterThan(1))
-    const secondConfig = [...mockState.sdkConfigs].reverse().find((config) => {
-      const server = (config.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>)
-        ?.spark_team
-      return server?.instance?.tools?.some(
-        (candidate) =>
-          typeof candidate === 'object' &&
-          candidate != null &&
-          (candidate as { name?: unknown }).name === 'workflow_run',
-      )
-    })
-    if (secondConfig == null) throw new Error('expected second runtime config')
-    const secondServer = (
-      secondConfig.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>
-    ).spark_team
-    const secondTool = secondServer?.instance?.tools?.find(
-      (candidate) =>
-        typeof candidate === 'object' &&
-        candidate != null &&
-        (candidate as { name?: unknown }).name === 'workflow_run',
-    ) as { handler: (args: unknown) => Promise<unknown> } | undefined
-    if (secondTool == null) throw new Error('expected second workflow_run tool')
-    await secondTool.handler({ objective: 'start a fresh generation' })
+    // 换代后接管不复用旧代 Run：为新代次（generation-two）新建 Run。
+    await vi.waitFor(() => expect(mockState.workflowRuns.size).toBeGreaterThanOrEqual(2))
 
     expect([...mockState.workflowRuns.values()]).toHaveLength(2)
     const runs = [...mockState.workflowRuns.values()]
@@ -4983,7 +4929,7 @@ describe('SessionService runtime provider/model resolution', () => {
     )
   })
 
-  it('fails explicitly instead of falling back to the host for an unbound workflow agent node', async () => {
+  it('falls back to the session host agent for unbound or stale-bound workflow agent nodes', async () => {
     mockState.agents.set(
       'workflow-host',
       makeAgent({
@@ -5047,18 +4993,17 @@ describe('SessionService runtime provider/model resolution', () => {
 
     const response = await tool.handler({ objective: 'exercise host fallback' })
 
+    // 新语义：未绑定（plan）与失效绑定（implement→deleted-worker）的 agent 节点都
+    // 回退由会话宿主（workflow-host）执行，运行以 completed 终态完成而非
+    // missing_agent_id 显式失败；两次回退派发各产生一条成员 SDK config。
     expect(response.structuredContent).toMatchObject({
-      status: 'failed',
+      status: 'completed',
       executions: [
-        {
-          nodeId: 'plan',
-          agentId: '',
-          state: 'failed',
-          error: { code: 'missing_agent_id' },
-        },
+        { nodeId: 'plan', agentId: 'workflow-host', state: 'completed' },
+        { nodeId: 'implement', agentId: 'workflow-host', state: 'completed' },
       ],
     })
-    expect(mockState.sdkConfigs).toHaveLength(1)
+    expect(mockState.sdkConfigs).toHaveLength(3)
   })
 
   it('runs a bound subagent with its Agent rules and scoped MCP selection', async () => {
@@ -5725,7 +5670,7 @@ describe('SessionService runtime provider/model resolution', () => {
     )
   })
 
-  it('exposes workflow_run so invalid Agent bindings can return an explicit runtime error', async () => {
+  it('exposes workflow_run for a workflow whose agent bindings resolve through the session host fallback', async () => {
     mockState.agents.set(
       'workflow-host',
       makeAgent({

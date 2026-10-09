@@ -170,6 +170,12 @@ import {
 import { resolveWorkflowExecutionModeCapability } from './workflow/workflow-execution-mode.js'
 import { readSessionWorkflowFeatureFlags } from './workflow/session-workflow-feature-flags.js'
 import { WorkflowRunCoordinator } from './workflow/workflow-run-coordinator.js'
+import {
+  buildForcedWorkflowTakeoverResultPrompt,
+  runForcedWorkflowTakeover,
+  shouldForceWorkflowTakeover,
+  type ForcedWorkflowTakeoverHolder,
+} from './workflow/session-forced-workflow-runner.js'
 import { readWorkflowLaunchSource } from './workflow/workflow-session-launcher.js'
 import { WorkflowBindingService } from './workflow/workflow-binding.service.js'
 import {
@@ -4091,6 +4097,19 @@ export class SessionService {
       workflowExecutionMode,
     )
 
+    // 会话输入框托管（override 绑定）→ 运行时强制接管：turn 起跑前直接以用户消息
+    // 为 objective 跑完工作流（在下方 createTeamMcpServer 内、与模型调用共用同一
+    // 条 workflow_run 执行链），终态后宿主只做收尾综合；失败回退现行「工具+引导
+    // 提示词」路径，由 agent 自主决策完成本轮。agent 身上挂载（legacy-agent）不强制。
+    const forcedWorkflowTakeoverHolder: ForcedWorkflowTakeoverHolder = {}
+    const forceWorkflowTakeover = shouldForceWorkflowTakeover({
+      isMentionTurn,
+      workflowCanUseManagedExecutor,
+      ...(effectiveWorkflowContext?.source != null
+        ? { bindingSource: effectiveWorkflowContext.source }
+        : {}),
+    })
+
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
     // Mention 路由：被 @ 的 Member 直接响应，不注入 spark_team（不允许它再 dispatch，符合"互调暂缓"原则）。
     const teamConfig = sessionTeamConfig
@@ -4225,6 +4244,14 @@ export class SessionService {
                     : {}),
                   ...(attachments != null && attachments.length > 0
                     ? { workflowAttachments: mapSessionAttachmentsToDispatch(attachments) }
+                    : {}),
+                  ...(forceWorkflowTakeover
+                    ? {
+                        forceWorkflowTakeover: {
+                          objective: message,
+                          holder: forcedWorkflowTakeoverHolder,
+                        },
+                      }
                     : {}),
                 }
               : {}),
@@ -4390,6 +4417,11 @@ export class SessionService {
     ]
     const trailingSystemPromptSections = [
       workflow != null ? buildWorkflowBindingAuthorityPrompt(workflow) : undefined,
+      // 强制接管结果作为最尾部权威段：成功时覆盖前面的 workflow_run 引导词（本轮
+      // 工具已摘除、宿主只做收尾综合）；失败时说明回退，交由 agent 自主决策。
+      forcedWorkflowTakeoverHolder.outcome != null
+        ? buildForcedWorkflowTakeoverResultPrompt(forcedWorkflowTakeoverHolder.outcome)
+        : undefined,
     ]
     const composedSystemPrompt = joinDistinctPromptSections(
       ...systemPromptSections,
@@ -8491,13 +8523,28 @@ export class SessionService {
     const repo = new AgentRepository(this.db)
     const membersById = new Map<string, AgentItem>()
     const nodes = getWorkflowNodesDeep(graph.nodes)
+    // 先注册显式绑定成员（含节点覆盖），再按需补会话回退成员（宿主）：
+    // 未绑定节点先注册原始宿主会覆盖掉「显式绑定宿主的节点」的覆盖配置。
+    let needsSessionFallbackMember = false
     for (const node of nodes) {
       if (node.kind !== 'agent') continue
       const workerId = getWorkflowNodeWorkerId(node)
       const configuredMember = workerId != null ? repo.get(workerId) : null
-      if (configuredMember == null || !configuredMember.enabled) continue
+      if (configuredMember == null || !configuredMember.enabled) {
+        // agent 节点未绑定或绑定失效：标记需要会话回退成员（执行器 sessionAgentId
+        // 运行级回退的派发目标），与进度元数据 / hasWorkflowExecutableNodes 的
+        // fallback 参数同一语义。subagent 显式绑定失效不回退（保持既有的
+        // missing_agent_id 显式失败语义），仅 agent 节点适用本回退。
+        needsSessionFallbackMember = true
+        continue
+      }
       if (membersById.has(configuredMember.id)) continue
       membersById.set(configuredMember.id, applyWorkflowNodeOverrides(configuredMember, node))
+    }
+    if (needsSessionFallbackMember && !membersById.has(hostAgent.id)) {
+      // 回退成员使用宿主原始配置（不套用节点覆盖），多个回退节点共享同一条记录；
+      // 注册进花名册后 allowedWorkerIds 放行宿主 id，执行器回退派发才能到达。
+      membersById.set(hostAgent.id, hostAgent)
     }
     for (const node of nodes) {
       if (node.kind !== 'subagent') continue
@@ -8563,6 +8610,15 @@ export class SessionService {
     workflowVersionSnapshot?: string
     /** Source of the workflow selection used by a newly-created run. */
     workflowBindingSource?: WorkflowRunBindingSource
+    /**
+     * 会话 override 绑定的运行时强制接管：构建 workflow_run 工具后就地以 objective
+     * 执行并回写 holder.outcome；成功则本轮不暴露 workflow_run（防重复执行），
+     * 失败则保留工具走 agent 自主回退。仅 session-override 绑定轮次传入。
+     */
+    forceWorkflowTakeover?: {
+      objective: string
+      holder: ForcedWorkflowTakeoverHolder
+    }
     /** 真实团队讨论上下文（workflow-only 合成 teamConfig 路径为空）。 */
     discussionId?: string
     discussionRoundIndex?: number
@@ -9342,6 +9398,34 @@ export class SessionService {
       },
     }).buildToolDefinition()
 
+    // 强制接管（session-override 绑定）：与模型调用共用同一条 handler 执行链，在
+    // 宿主 turn 起跑前跑到终态；成功则本轮不再暴露 workflow_run（防重复执行），
+    // 失败则保留工具回退 agent 自主决策。结果经 holder 回写 startTurn 做收尾注入。
+    let effectiveWorkflowDef = workflowDef
+    if (ctx.forceWorkflowTakeover != null && workflowDef != null) {
+      const outcome = await runForcedWorkflowTakeover({
+        tool: workflowDef,
+        objective: ctx.forceWorkflowTakeover.objective,
+        sessionId: ctx.sessionId,
+        turnId: ctx.turnId,
+      })
+      ctx.forceWorkflowTakeover.holder.outcome = outcome
+      if (outcome.kind === 'completed') {
+        log.info('forced workflow takeover: completed', {
+          sessionId: ctx.sessionId,
+          turnId: ctx.turnId,
+        })
+        effectiveWorkflowDef = null
+      } else {
+        log.warn('forced workflow takeover: failed, fallback to agent-driven path', {
+          sessionId: ctx.sessionId,
+          turnId: ctx.turnId,
+          stage: outcome.stage,
+          ...(outcome.failedNodeId != null ? { failedNodeId: outcome.failedNodeId } : {}),
+        })
+      }
+    }
+
     const defs: TeamToolDefinition[] = [
       ...(ctx.exposeTeamDispatchTools ? [dispatchDef, dispatchBatchDef] : []),
       ...(ledgerAdapter != null
@@ -9359,7 +9443,7 @@ export class SessionService {
       ...(roundAdvanceDef != null ? [roundAdvanceDef] : []),
       ...(concludeDef != null ? [concludeDef] : []),
       ...(threadReadDef != null ? [threadReadDef] : []),
-      ...(workflowDef != null ? [workflowDef] : []),
+      ...(effectiveWorkflowDef != null ? [effectiveWorkflowDef] : []),
     ]
     if (defs.length === 0) return null
 

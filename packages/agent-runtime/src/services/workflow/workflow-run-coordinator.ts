@@ -120,7 +120,11 @@ export interface WorkflowRunCoordinatorHooks {
     }): void
     /** 当前 workflow 定义的 graph digest（定义已删除时 null）；供漂移检测。 */
     currentWorkflowGraphDigest(workflowId: string): string | null
-    noteWorkflowGraphDrift(workflowRunId: string, frozenDigest: string, currentDigest: string | null): void
+    noteWorkflowGraphDrift(
+      workflowRunId: string,
+      frozenDigest: string,
+      currentDigest: string | null,
+    ): void
     onWorkflowNodeCommitted(workflowRunId: string, nodeId: string): void
     onWorkflowTerminal(
       workflowRunId: string,
@@ -170,10 +174,13 @@ export class WorkflowRunCoordinator {
         const graphNodeIds = new Set(ctx.workflowGraph!.nodes.map((n) => n.id))
         // 每个节点实际会用到的派发目标 + 生效模型（节点自己的 config.modelId 优先，
         // 否则回落到该 agentId 在花名册里的默认值）——供下面的 workflow_progress 事件。
-        // 空绑定或失效绑定不回落宿主，须与执行器的 missing_agent_id 语义保持一致。
+        // 必须与执行器使用相同的回退链（含节点级会话回退）：托管运行带会话 agent
+        // 上下文（宿主），agent 节点空绑定/失效绑定时回退由宿主执行，进度元数据
+        // 如实展示实际执行者。
         const progressNodeMetas = buildWorkflowProgressNodeMetas(
           ctx.workflowGraph!.nodes,
           ctx.members,
+          { sessionAgentId: ctx.hostAgent.id },
         )
         const emitWorkflowProgress = (snap: WorkflowRunSnapshot): void => {
           const nodes = buildWorkflowProgressNodes({
@@ -371,6 +378,10 @@ export class WorkflowRunCoordinator {
               ? { attachments: ctx.workflowAttachments }
               : {}),
             availableWorkerIds: new Set(ctx.members.map((member) => member.id)),
+            // 会话回退执行者：agent 节点未绑定/绑定失效时回退由宿主（会话 Agent）
+            // 执行，与 buildWorkflowProgressNodeMetas 的进度元数据同一语义（花名册
+            // 已同步注册宿主为回退成员，派发可通过 allowedWorkerIds）。
+            sessionAgentId: ctx.hostAgent.id,
             ...(initialState != null ? { initialState } : {}),
             ...(initialCompletedNodeIds != null ? { initialCompletedNodeIds } : {}),
             ...(initialSkippedNodeIds != null ? { initialSkippedNodeIds } : {}),
