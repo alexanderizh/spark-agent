@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isSensitiveKey, redactValue, scrubCredentials } from './hook-redaction.js'
+import {
+  FULL_CONTENT_BOUNDS,
+  isSensitiveKey,
+  redactValue,
+  scrubCredentials,
+} from './hook-redaction.js'
 
 /** 内容级凭据掩码（审查 S1：键控掩码只对对象键生效，字符串正文曾原样保留）。 */
 describe('scrubCredentials', () => {
@@ -58,5 +63,46 @@ describe('redactValue string branch applies content scrubbing', () => {
     expect(typeof redacted).toBe('string')
     expect(redacted as string).toContain('…[truncated]')
     expect(redacted as string).not.toContain('sk-abcdef0123456789abcdef')
+  })
+})
+
+/** FULL_CONTENT_BOUNDS（审计载荷路径）：正文完整保留，凭据掩码窗口放宽到全文。 */
+describe('redactValue bounds', () => {
+  it('FULL_CONTENT_BOUNDS keeps long strings intact and scrubs credentials in full', () => {
+    const filler = 'x'.repeat(2000)
+    const long = `${filler} tail sk-abcdef0123456789abcdef`
+    const redacted = redactValue(long, 0, FULL_CONTENT_BOUNDS)
+    expect(typeof redacted).toBe('string')
+    expect(redacted as string).not.toContain('…[truncated]')
+    expect((redacted as string).endsWith('tail ***')).toBe(true)
+    // 长度 = 原文 − 凭据 + 掩码（全文保留的直接证据）
+    expect((redacted as string).length).toBe(long.length - 25 + 3)
+  })
+
+  it('FULL_CONTENT_BOUNDS keeps wide/deep structures intact', () => {
+    const big = {
+      items: Array.from({ length: 100 }, (_, i) => ({ idx: i, note: 'n'.repeat(600) })),
+    }
+    const redacted = redactValue(big, 0, FULL_CONTENT_BOUNDS) as typeof big
+    expect(redacted.items).toHaveLength(100)
+    expect(redacted.items[0]?.note).toHaveLength(600)
+    expect('[truncated]' in (redacted as Record<string, unknown>)).toBe(false)
+  })
+
+  it('summary defaults stay bounded (hooks 摘要路径不受载荷放宽影响)', () => {
+    // 数组超限：静默切片到 64（与既有契约一致，无数组级标记）
+    const wide = { items: Array.from({ length: 100 }, (_, i) => i) }
+    const sliced = redactValue(wide) as { items: number[] }
+    expect(sliced.items).toHaveLength(64)
+    // 对象键超限：置 [truncated] 标记
+    const manyKeys: Record<string, number> = {}
+    for (let i = 0; i < 70; i += 1) manyKeys[`k${i}`] = i
+    const marked = redactValue(manyKeys) as Record<string, unknown>
+    expect(Object.keys(marked)).toHaveLength(65) // 64 条目 + [truncated] 标记键
+    expect(marked['[truncated]']).toBe(true)
+    // 同结构在 FULL_CONTENT_BOUNDS 下完整保留
+    const full = redactValue(manyKeys, 0, FULL_CONTENT_BOUNDS) as Record<string, unknown>
+    expect(Object.keys(full)).toHaveLength(70)
+    expect('[truncated]' in full).toBe(false)
   })
 })

@@ -1,19 +1,21 @@
 /**
  * 工具审计载荷管道（设计方案 §4.3）：
  *   采集点捕获 input/output → redactToolPayload（复用 hook-redaction：敏感键掩码
- *   + 字符串内容级凭据掩码 + 深度/条目/字符边界）→ canonical-json 规范化 →
- *   SHA-256 → 超内联阈值时内容寻址写入 `.spark-agent/audit/tool-payloads/{sha256}.json`。
+ *   + 字符串内容级凭据掩码；FULL_CONTENT_BOUNDS 不裁剪正文，凭据掩码扫描全文）→
+ *   canonical-json 规范化 → SHA-256 → 超内联阈值时内容寻址写入
+ *   `.spark-agent/audit/tool-payloads/{sha256}.json`。
  *
  * 脱敏口径（诚实声明）：归档的是脱敏表示，哈希作用于同一表示，链校验可稳定复算；
  * 掩码为「敏感键 → ***」+「字符串内常见凭据模式 → ***」两层，非敏感键下的普通
- * 文本（含工具输出正文）按 512 字符/串截断后原文保留——这是键控+模式匹配模型的
- * 固有边界，不承诺任意内容级机密识别。与 storage 侧 canonicalJson
+ * 文本（含工具输出正文）完整保留——正文普遍超 512 字符，摘要级截断会让「结果
+ * 查看」名存实亡（真机实测发现的缺陷），故载荷路径放宽为全文。这是键控+模式
+ * 匹配模型的固有边界，不承诺任意内容级机密识别。与 storage 侧 canonicalJson
  * （tool-invocation.repository）算法保持一致——稳定键序 + null/标量/数组/纯对象，
  * undefined 键剔除。
  */
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { redactValue } from '../hooks/hook-redaction.js'
+import { FULL_CONTENT_BOUNDS, redactValue } from '../hooks/hook-redaction.js'
 import {
   writeContentAddressedWorkspaceFile,
   resolveContentAddressedWorkspaceFile,
@@ -54,9 +56,9 @@ export function canonicalJsonStringify(value: unknown): string {
   return JSON.stringify(String(value))
 }
 
-/** 采集点入口：脱敏（有界）→ 规范化哈希。同步、无 IO，可在工具执行路径上直接调用。 */
+/** 采集点入口：脱敏（载荷完整边界，正文不截断）→ 规范化哈希。同步、无 IO，可在工具执行路径上直接调用。 */
 export function redactToolPayload(value: unknown): unknown {
-  return redactValue(value)
+  return redactValue(value, 0, FULL_CONTENT_BOUNDS)
 }
 
 function sha256Hex(input: string): string {
