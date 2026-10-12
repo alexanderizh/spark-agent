@@ -41,8 +41,18 @@ function normalizeReplies(input) {
   return { replies }
 }
 
-function normalizeHtmlHeight(value) {
-  if (typeof value === 'undefined') return DEFAULT_HTML_HEIGHT
+// title / height 都是纯展示元数据：模型给出超长、畸形或越界值时钳制回落即可，
+// 不能让合法内容因展示参数不合规而整体渲染失败。
+// title 截断语义与渲染端 parseRenderHtmlResult（render-html.ts）保持一致。
+function normalizeBoundedTitle(value, maxLength, fallback) {
+  if (typeof value !== 'string') return fallback
+  const trimmed = value.trim()
+  if (!trimmed) return fallback
+  return trimmed.slice(0, maxLength)
+}
+
+function normalizeBoundedHeight(value, fallback, min, max) {
+  if (typeof value === 'undefined') return fallback
 
   const numericValue =
     typeof value === 'number'
@@ -51,8 +61,12 @@ function normalizeHtmlHeight(value) {
         ? Number.parseFloat(value)
         : Number.NaN
 
-  if (!Number.isFinite(numericValue)) return DEFAULT_HTML_HEIGHT
-  return Math.min(MAX_HTML_HEIGHT, Math.max(MIN_HTML_HEIGHT, Math.round(numericValue)))
+  if (!Number.isFinite(numericValue)) return fallback
+  return Math.min(max, Math.max(min, Math.round(numericValue)))
+}
+
+function normalizeHtmlHeight(value) {
+  return normalizeBoundedHeight(value, DEFAULT_HTML_HEIGHT, MIN_HTML_HEIGHT, MAX_HTML_HEIGHT)
 }
 
 const tool = {
@@ -150,22 +164,11 @@ function normalizeHtml(input) {
   if (html.length > MAX_HTML_LENGTH) {
     return { accepted: false, reason: `HTML content must not exceed ${MAX_HTML_LENGTH} characters` }
   }
-  if (
-    typeof input.title !== 'undefined' &&
-    (typeof input.title !== 'string' || input.title.length > MAX_HTML_TITLE_LENGTH)
-  ) {
-    return {
-      accepted: false,
-      reason: `HTML title must not exceed ${MAX_HTML_TITLE_LENGTH} characters`,
-    }
-  }
   const warnings = []
   return {
     accepted: true,
     html,
-    title: typeof input.title === 'string' && input.title.trim() ? input.title.trim() : 'HTML 内容',
-    // height 只是会话内预览的展示提示，不能让合法 HTML 因模型生成了小数、
-    // CSS px 字符串或越界值而整体渲染失败。
+    title: normalizeBoundedTitle(input.title, MAX_HTML_TITLE_LENGTH, 'HTML 内容'),
     height: normalizeHtmlHeight(input.height),
     warnings,
   }
@@ -205,43 +208,26 @@ function normalizeDiagram(input) {
       reason: `source must not exceed ${MAX_DIAGRAM_SOURCE_LENGTH} characters`,
     }
   }
-  if (
-    typeof input.title !== 'undefined' &&
-    (typeof input.title !== 'string' || input.title.length > MAX_DIAGRAM_TITLE_LENGTH)
-  ) {
-    return {
-      accepted: false,
-      reason: `Diagram title must not exceed ${MAX_DIAGRAM_TITLE_LENGTH} characters`,
-    }
-  }
-  if (
-    typeof input.height !== 'undefined' &&
-    (!Number.isInteger(input.height) ||
-      input.height < MIN_DIAGRAM_HEIGHT ||
-      input.height > MAX_DIAGRAM_HEIGHT)
-  ) {
-    return {
-      accepted: false,
-      reason: `Diagram height must be an integer between ${MIN_DIAGRAM_HEIGHT} and ${MAX_DIAGRAM_HEIGHT}`,
-    }
-  }
   // Mermaid DSL / Markdown outline 理论上不应包含这些标签；保险起见拦截。
   const forbidden = source.match(/<(iframe|form|object|embed|base)\b/i)
   if (forbidden != null) {
     return { accepted: false, reason: `source cannot contain ${forbidden[1]} tags` }
   }
-  const title =
-    typeof input.title === 'string' && input.title.trim()
-      ? input.title.trim()
-      : diagramType === 'markmap'
-        ? '思维导图'
-        : '图表'
   return {
     accepted: true,
     type: diagramType,
     source,
-    title,
-    height: input.height ?? DEFAULT_DIAGRAM_HEIGHT,
+    title: normalizeBoundedTitle(
+      input.title,
+      MAX_DIAGRAM_TITLE_LENGTH,
+      diagramType === 'markmap' ? '思维导图' : '图表',
+    ),
+    height: normalizeBoundedHeight(
+      input.height,
+      DEFAULT_DIAGRAM_HEIGHT,
+      MIN_DIAGRAM_HEIGHT,
+      MAX_DIAGRAM_HEIGHT,
+    ),
     warnings: [],
   }
 }

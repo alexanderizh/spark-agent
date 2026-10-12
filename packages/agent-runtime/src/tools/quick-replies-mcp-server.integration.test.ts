@@ -173,6 +173,53 @@ describe('quick-replies MCP server', () => {
     }
   })
 
+  it('normalizes oversized or non-string HTML title without rejecting otherwise valid content', async () => {
+    const oversized = await rpc.call('tools/call', {
+      name: 'render_html',
+      arguments: { html: '<main>长标题内容</main>', title: '超'.repeat(100) },
+    })
+    expect(JSON.parse(oversized.content[0].text)).toMatchObject({
+      accepted: true,
+      title: '超'.repeat(60),
+    })
+
+    const nonString = await rpc.call('tools/call', {
+      name: 'render_html',
+      arguments: { html: '<main>畸形标题内容</main>', title: 12345 },
+    })
+    expect(JSON.parse(nonString.content[0].text)).toMatchObject({
+      accepted: true,
+      title: 'HTML 内容',
+    })
+  })
+
+  it('normalizes diagram title and height without rejecting otherwise valid content', async () => {
+    const response = await rpc.call('tools/call', {
+      name: 'render_diagram',
+      arguments: {
+        type: 'markmap',
+        source: '# 主题',
+        title: '图'.repeat(100),
+        height: 300.5,
+      },
+    })
+    expect(JSON.parse(response.content[0].text)).toMatchObject({
+      accepted: true,
+      title: '图'.repeat(60),
+      height: 301,
+    })
+
+    const bounded = await rpc.call('tools/call', {
+      name: 'render_diagram',
+      arguments: { type: 'mermaid', source: 'flowchart TD\n  A --> B', height: '5000px' },
+    })
+    expect(JSON.parse(bounded.content[0].text)).toMatchObject({
+      accepted: true,
+      title: '图表',
+      height: 800,
+    })
+  })
+
   it('exposes a diagram renderer for markmap and mermaid with bounded source', async () => {
     const response = await rpc.call('tools/list')
 

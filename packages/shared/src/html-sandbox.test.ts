@@ -69,4 +69,19 @@ describe('HTML sandbox helpers', () => {
       payload: { title: 'HTML 内容', theme: 'light' },
     })
   })
+
+  it('clamps oversized title and ignores malformed height instead of rejecting', () => {
+    expect(
+      validateHtmlViewerPayload({ html: '<main>safe</main>', title: '超'.repeat(100) }),
+    ).toMatchObject({
+      ok: true,
+      payload: { title: '超'.repeat(60), theme: 'light' },
+    })
+    expect(
+      validateHtmlViewerPayload({ html: '<main>safe</main>', title: 12345, height: 'auto' }),
+    ).toMatchObject({
+      ok: true,
+      payload: { title: 'HTML 内容', theme: 'light' },
+    })
+  })
 })

@@ -45,35 +45,17 @@ export function validateHtmlViewerPayload(
       reason: `HTML content must not exceed ${MAX_HTML_RENDER_LENGTH} characters`,
     }
   }
-  const title = input.title
-  if (
-    title !== undefined &&
-    (typeof title !== 'string' || title.length > MAX_HTML_RENDER_TITLE_LENGTH)
-  ) {
-    return {
-      ok: false,
-      reason: `HTML title must not exceed ${MAX_HTML_RENDER_TITLE_LENGTH} characters`,
-    }
-  }
-  const height = input.height
-  if (
-    height !== undefined &&
-    (typeof height !== 'number' ||
-      !Number.isInteger(height) ||
-      height < MIN_HTML_RENDER_HEIGHT ||
-      height > MAX_HTML_RENDER_HEIGHT)
-  ) {
-    return {
-      ok: false,
-      reason: `HTML height must be an integer between ${MIN_HTML_RENDER_HEIGHT} and ${MAX_HTML_RENDER_HEIGHT}`,
-    }
-  }
+  // title / height 属纯展示元数据：超长、畸形或越界值钳制/忽略即可，不让合法
+  // 内容因展示参数不合规而整体失败（与渲染端 parseRenderHtmlInput、MCP 服务端
+  // normalizeHtml 的宽容语义一致）。height 本就不进入 viewer payload，无需校验。
+  const title =
+    typeof input.title === 'string' ? input.title.trim().slice(0, MAX_HTML_RENDER_TITLE_LENGTH) : ''
   const theme = input.theme === 'dark' ? 'dark' : 'light'
   return {
     ok: true,
     payload: {
       html,
-      title: typeof title === 'string' && title.trim().length > 0 ? title.trim() : 'HTML 内容',
+      title: title || 'HTML 内容',
       theme,
     },
   }
