@@ -9,7 +9,9 @@
  *   - **漂移可感知**：空间记录生成时的 repo_rev，与当前 HEAD 比较，
  *     落后提交数超过设置阈值即提示重建；
  *   - `repo/mode='auto'` 时，打开本面板若检测到漂移会自动重建
- *     （不挂后台调度器：自动触发发生在用户可见的时刻，成本与预期都明确）。
+ *     （不挂后台调度器：自动触发发生在用户可见的时刻，成本与预期都明确）；
+ *   - 模块页（repo-module-*）展示「AI 导读」块（WikiRepoEnrich）：扫描/重建后
+ *     自动增强（总闸 repo/enrich/enabled），或经入口行 / ↻ 单页生成（不受闸限制）。
  *
  * 写入纪律：扫描 / 重建 / 所有权切换全部走 wiki:repo:* IPC，渲染端不直接
  * 拼装扫描参数或绕过服务栈。
@@ -22,6 +24,9 @@ import type {
   WikiPageDetail,
   WikiPageMeta,
   WikiRepoDriftStatus,
+  WikiRepoEnrichmentProgress,
+  WikiRepoEnrichmentRunReceipt,
+  WikiRepoEnrichmentSection,
   WikiRepoPageOwnership,
   WikiSpaceSummary,
   WorkspaceInfo,
@@ -30,6 +35,7 @@ import { Icons } from '../../Icons'
 import { useToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { MarkdownText } from '../chat/ChatMarkdown'
+import { WikiRepoEnrichBlock, WikiRepoEnrichPill } from './WikiRepoEnrich'
 import { WikiPageTree, buildWikiTree, filterWikiTree, findAncestorIds } from './WikiPageTree'
 
 const OWNERSHIP_LABEL: Record<WikiRepoPageOwnership, string> = {
@@ -54,6 +60,9 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
   const { invoke: rebuildRepo } = useIpcInvoke('wiki:repo:rebuild')
   const { invoke: repoStatus } = useIpcInvoke('wiki:repo:status')
   const { invoke: setOwnership } = useIpcInvoke('wiki:repo:page:ownership')
+  const { invoke: getEnrichment } = useIpcInvoke('wiki:repo:enrichment:get')
+  const { invoke: runEnrichment } = useIpcInvoke('wiki:repo:enrichment:run')
+  const { invoke: enrichStatus } = useIpcInvoke('wiki:repo:enrichment:status')
 
   const [spaces, setSpaces] = useState<WikiSpaceSummary[]>([])
   const [spacesLoading, setSpacesLoading] = useState(true)
@@ -67,6 +76,15 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
   const [drift, setDrift] = useState<WikiRepoDriftStatus | null>(null)
   const [ownership, setOwnershipState] = useState<WikiRepoPageOwnership>('generated')
   const [scanning, setScanning] = useState(false)
+  /** 当前页 AI 导读：undefined=查询中（不渲染）/ null=无导读 / 对象=有导读 */
+  const [enrichSection, setEnrichSection] = useState<WikiRepoEnrichmentSection | null | undefined>(
+    undefined,
+  )
+  /** 用户主动触发的单页生成进行中（run 回执即完成，骨架窗口 = await 期间） */
+  const [pageEnriching, setPageEnriching] = useState(false)
+  /** 空间级自动增强进度（扫描/重建后 hook 触发；轮询维护，pill 数据源） */
+  const [enrichProgress, setEnrichProgress] = useState<WikiRepoEnrichmentProgress | null>(null)
+  const [enrichPolling, setEnrichPolling] = useState(false)
   const [spaceMenuOpen, setSpaceMenuOpen] = useState(false)
   /** 「为仓库生成 Wiki」弹窗 */
   const [scanOpen, setScanOpen] = useState(false)
@@ -221,6 +239,137 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
     })()
   }, [activePageId, getPage, pages, toast])
 
+  // ── AI 导读（S0–S2 后端收尾）：页面级读取 / 空间级轮询 / 单页触发 ──
+
+  /** 当前页在目录列表中的元数据（slug / sourceType 判定基础）。 */
+  const activePageMeta = useMemo(
+    () => pages.find((p) => p.id === activePageId) ?? null,
+    [pages, activePageId],
+  )
+
+  const refreshEnrichSection = useCallback(async () => {
+    if (activePageId == null) return
+    try {
+      const res = await getEnrichment({ pageId: activePageId })
+      setEnrichSection(res.section)
+    } catch {
+      // 导读是辅助信息：取不到静默当无，不打扰页面主体
+      setEnrichSection(null)
+    }
+  }, [activePageId, getEnrichment])
+
+  // 打开页面：与 getPage 并行拉导读（后端已过滤无效态，null = 无块）
+  useEffect(() => {
+    if (activePageId == null) {
+      setEnrichSection(undefined)
+      return
+    }
+    setEnrichSection(undefined)
+    void refreshEnrichSection()
+  }, [activePageId, refreshEnrichSection])
+
+  // 切换空间：清页面级导读 + 感知空间级增强是否在跑（在跑则接管轮询）
+  useEffect(() => {
+    setEnrichProgress(null)
+    if (activeSpaceId == null) {
+      setEnrichPolling(false)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const p = await enrichStatus({ spaceId: activeSpaceId })
+        if (cancelled) return
+        setEnrichProgress(p)
+        setEnrichPolling(p.running)
+      } catch {
+        // 进度取不到不影响浏览
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeSpaceId, enrichStatus])
+
+  // 空间级轮询：2s 间隔 → running=false 停轮询，收尾刷新当前页 + 完成 toast
+  useEffect(() => {
+    if (activeSpaceId == null || !enrichPolling) return
+    let stopped = false
+    let timer: ReturnType<typeof setInterval> | null = null
+    const poll = async (): Promise<void> => {
+      try {
+        const p = await enrichStatus({ spaceId: activeSpaceId })
+        if (stopped) return
+        setEnrichProgress(p)
+        if (!p.running) {
+          setEnrichPolling(false)
+          const done = p.ready + p.failed
+          if (done > 0) {
+            toast.success(
+              `AI 导读已生成（${p.ready} 页${p.failed > 0 ? ` / 失败 ${p.failed}` : ''}）`,
+            )
+          }
+          // 当前页若为无导读的模块页：S3 骨架 → S1 正文 / 回 S2 入口
+          await refreshEnrichSection()
+        }
+      } catch {
+        // 单次失败不中断轮询（下轮重试）
+      }
+    }
+    void poll()
+    timer = setInterval(() => void poll(), 2000)
+    return () => {
+      stopped = true
+      if (timer != null) clearInterval(timer)
+    }
+  }, [activeSpaceId, enrichPolling, enrichStatus, refreshEnrichSection, toast])
+
+  /** 扫描 / 重建成功后感知自动增强（总闸开时 enrichHook 已 fire-and-forget 启动）。 */
+  const checkEnrichAfterScan = useCallback(
+    async (spaceId?: string) => {
+      const target = spaceId ?? activeSpaceId
+      if (target == null) return
+      try {
+        const p = await enrichStatus({ spaceId: target })
+        setEnrichProgress(p)
+        if (p.running) {
+          setEnrichPolling(true)
+          toast.info('AI 导读生成中…')
+        }
+      } catch {
+        // 感知失败不阻塞扫描主流程
+      }
+    },
+    [activeSpaceId, enrichStatus, toast],
+  )
+
+  /** 单页强制重跑（入口行 / ↻；不受总闸限制，回执即完成）。 */
+  const handleEnrichRun = useCallback(async () => {
+    if (activeSpaceId == null || activePageMeta == null) return
+    setPageEnriching(true)
+    try {
+      const receipt = await runEnrichment({ spaceId: activeSpaceId, slug: activePageMeta.slug })
+      if (!receipt.ok) {
+        toast.error(`AI 导读生成失败：${enrichRunErrorText(receipt)}`)
+      } else if (receipt.failed > 0) {
+        toast.error('AI 导读生成失败，请稍后重试')
+      }
+      await refreshEnrichSection()
+    } catch (err) {
+      toast.error(`AI 导读生成失败：${errText(err)}`)
+    } finally {
+      setPageEnriching(false)
+    }
+  }, [activeSpaceId, activePageMeta, refreshEnrichSection, runEnrichment, toast])
+
+  /** 导读槽可见：模块页 + 生成态（manual/ignored 页后端必返 null，前端先判少一次 IPC）。 */
+  const enrichSlotVisible =
+    activePageMeta != null &&
+    activePageMeta.slug.startsWith('repo-module-') &&
+    ownership === 'generated'
+  /** S3/S4 骨架态：用户单页触发中，或空间级增强进行中且本页尚无导读。 */
+  const enrichRunning = pageEnriching || (enrichProgress?.running === true && enrichSection == null)
+
   const treeNodes = useMemo(() => buildWikiTree(pages), [pages])
   // filterWikiTree 返回 { nodes, matchedIds }：命中过滤 + 命中集合一次算出
   const { nodes: visibleNodes, matchedIds } = useMemo(
@@ -270,12 +419,14 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
       } else {
         onChanged()
       }
+      // 总闸开时 enrichHook 已随扫描启动：感知并接管进度（含新扫空间）
+      await checkEnrichAfterScan(result.spaceId ?? undefined)
     } catch (err) {
       toast.error(`扫描失败：${errText(err)}`)
     } finally {
       setScanning(false)
     }
-  }, [ignoreText, onChanged, refreshSpaces, repoPath, scanRepo, toast])
+  }, [checkEnrichAfterScan, ignoreText, onChanged, refreshSpaces, repoPath, scanRepo, toast])
 
   const handleRebuild = useCallback(async () => {
     if (activeSpaceId == null) return
@@ -290,12 +441,22 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
       await refreshPages(activeSpaceId)
       await refreshDrift(activeSpaceId)
       onChanged()
+      // 重建同样触发 enrichHook：感知并接管进度
+      await checkEnrichAfterScan()
     } catch (err) {
       toast.error(`重建失败：${errText(err)}`)
     } finally {
       setScanning(false)
     }
-  }, [activeSpaceId, onChanged, rebuildRepo, refreshDrift, refreshPages, toast])
+  }, [
+    activeSpaceId,
+    checkEnrichAfterScan,
+    onChanged,
+    rebuildRepo,
+    refreshDrift,
+    refreshPages,
+    toast,
+  ])
 
   const handleOwnership = useCallback(
     async (next: WikiRepoPageOwnership) => {
@@ -477,6 +638,7 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
             )}
           </div>
           <span className="wiki_rail_spacer" />
+          {enrichProgress?.running === true && <WikiRepoEnrichPill progress={enrichProgress} />}
           {drift != null && drift.commitsBehind != null && drift.commitsBehind > 0 && (
             <span
               className={`wiki_repo_drift${drift.stale ? ' is-stale' : ''}`}
@@ -529,6 +691,13 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
             <div className="wiki_repo_page">
               <h1 className="wiki_repo_title">{page.title}</h1>
               {page.summary.length > 0 && <div className="wiki_repo_summary">{page.summary}</div>}
+              {enrichSlotVisible && (
+                <WikiRepoEnrichBlock
+                  section={enrichSection}
+                  running={enrichRunning}
+                  onRun={() => void handleEnrichRun()}
+                />
+              )}
               <MarkdownText content={page.body} />
             </div>
             {ownership === 'generated' && (
@@ -729,6 +898,26 @@ function ownershipFromSourceType(sourceType: string | null): WikiRepoPageOwnersh
       return 'ignored'
     default:
       return 'generated'
+  }
+}
+
+/** 导读 run 回执失败原因 → 用户可读文案（单页 run 不受总闸限制，无 disabled 分支）。 */
+function enrichRunErrorText(receipt: WikiRepoEnrichmentRunReceipt): string {
+  switch (receipt.reason) {
+    case 'busy':
+      return '该空间的导读正在生成中，请稍候'
+    case 'no_provider':
+      return '没有可用的导读模型渠道，请先在设置中配置模型'
+    case 'no_rev':
+      return '空间未记录代码版本，请先完成一次扫描'
+    case 'not_repo_space':
+      return '空间不存在或不是 Repo Wiki 空间'
+    case 'no_repo_path':
+      return '空间未关联仓库路径'
+    case 'no_pages':
+      return '没有可增强的模块页'
+    default:
+      return receipt.message ?? '未知错误'
   }
 }
 
