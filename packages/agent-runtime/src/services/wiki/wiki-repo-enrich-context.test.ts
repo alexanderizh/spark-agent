@@ -18,6 +18,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import {
   buildModuleEnrichContext,
+  buildOverviewEnrichContext,
   readRepoDependencyNames,
 } from './wiki-repo-enrich-context.js'
 import { scanRepoTree } from './wiki-repo-scan-tree.js'
@@ -28,7 +29,10 @@ describe('Repo Wiki 导读上下文装配', () => {
   let repo: string
 
   beforeEach(() => {
-    root = join(tmpdir(), `spark-wiki-enrich-ctx-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    root = join(
+      tmpdir(),
+      `spark-wiki-enrich-ctx-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    )
     repo = join(root, 'demo-repo')
     mkdirSync(join(repo, 'src'), { recursive: true })
     mkdirSync(join(repo, 'lib'), { recursive: true })
@@ -118,5 +122,58 @@ describe('Repo Wiki 导读上下文装配', () => {
     expect(ctx.material).toContain('# 模块：`ghost/`')
     expect(ctx.material).toContain('扫描时该目录不可读')
     expect(ctx.slug).toBe(WIKI_REPO_PAGE_SLUGS.module('ghost'))
+  })
+})
+
+describe('Repo Wiki 综述页材料装配（S3）', () => {
+  let root: string
+  let repo: string
+
+  beforeEach(() => {
+    root = join(
+      tmpdir(),
+      `spark-wiki-enrich-ovw-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    )
+    repo = join(root, 'demo-repo')
+    mkdirSync(join(repo, 'src'), { recursive: true })
+    mkdirSync(join(repo, 'lib'), { recursive: true })
+    writeFileSync(
+      join(repo, 'package.json'),
+      JSON.stringify({ name: 'demo', dependencies: { alpha: '^1', zeta: '^2' } }),
+    )
+    writeFileSync(join(repo, 'README.md'), '# demo repo\n\n演示说明。\n')
+    writeFileSync(join(repo, 'src', 'index.ts'), 'export const a = 1\n')
+    writeFileSync(join(repo, 'lib', 'helper.ts'), 'export const helper = 1\n')
+  })
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('同一棵树两次装配逐字符相等，四层材料齐全（确定性 = rev 缓存地基）', () => {
+    const tree = scanRepoTree(repo)
+    const dependencyNames = readRepoDependencyNames(tree)
+    const first = buildOverviewEnrichContext({ tree, dependencyNames })
+    const second = buildOverviewEnrichContext({ tree, dependencyNames })
+    expect(second.material).toBe(first.material)
+    expect(first.slug).toBe(WIKI_REPO_PAGE_SLUGS.overview)
+    expect(first.material).toContain('# 仓库总览材料：`demo-repo/`')
+    expect(first.material).toContain('## 结构数据')
+    expect(first.material).toContain('## 顶层目录清单')
+    expect(first.material).toContain('| `src/` |')
+    expect(first.material).toContain('| `lib/` |')
+    expect(first.material).toContain('## README 摘录')
+    expect(first.material).toContain('# demo repo')
+    expect(first.material).toContain('alpha、zeta')
+  })
+
+  it('无 README：材料如实标注未发现，不抛异常', () => {
+    rmSync(join(repo, 'README.md'))
+    const tree = scanRepoTree(repo)
+    const ctx = buildOverviewEnrichContext({
+      tree,
+      dependencyNames: readRepoDependencyNames(tree),
+    })
+    expect(ctx.material).toContain('仓库根目录未发现 README 文件')
   })
 })

@@ -573,7 +573,7 @@ export const WIKI_SETTING_DEFINITIONS: ReadonlyArray<WikiSettingDefinition> = [
     group: 'repo',
     label: 'AI 导读增强',
     description:
-      '开启后扫描完成自动为模块页生成「AI 导读」段（模块职责 / 关键入口 / 依赖关系），按代码版本缓存，版本不变不重复生成。默认关闭；开启后每次版本更新约消耗 12 万输入 + 2 万输出 token（20 页规模）。手动单页重跑不受此总闸限制。',
+      '开启后扫描完成自动为综述页与模块页生成「AI 导读」段（综述：项目定位 / 架构组成 / 阅读指引；模块：模块职责 / 关键入口 / 依赖关系），按代码版本缓存，版本不变不重复生成。默认关闭；开启后每次版本更新约消耗 12 万输入 + 2 万输出 token（20 页规模）。手动单页重跑不受此总闸限制。',
     type: 'boolean',
     default: false,
     phase: 'S4',

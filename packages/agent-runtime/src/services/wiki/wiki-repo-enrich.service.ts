@@ -15,8 +15,12 @@
  * 只管**自动触发**（扫描后异步增强）；手动重跑（用户显式点击）不受总闸限制——
  * 点击行为本身即成本授权。
  *
- * 所有权保护（C5）双重过滤：生成侧差集只纳入 source_type='repo-scan' 的模块页；
- * 展示侧 getSection 返回前重查页面当前 source_type（竞态窗口兜底）。
+ * 所有权保护（C5）双重过滤：生成侧差集只纳入 source_type='repo-scan' 的目标页
+ * （综述页 + 模块页）；展示侧 getSection 返回前重查页面当前 source_type
+ * （竞态窗口兜底）。
+ *
+ * S3 综述：repo-overview 页纳入增强计划（排首位，不占 maxPages 模块配额——
+ * 设置口径即「模块页数」），材料/提示词/校验小节按页变体分派。
  */
 
 import { createLogger } from '@spark/shared'
@@ -44,10 +48,18 @@ import {
 } from './wiki-repo-scan-tree.js'
 import { callWikiExtractionModel } from './wiki-extraction-model.js'
 import type { WikiExtractionModelCall } from './wiki-extraction.service.js'
-import { buildModuleEnrichContext, readRepoDependencyNames } from './wiki-repo-enrich-context.js'
 import {
+  buildModuleEnrichContext,
+  buildOverviewEnrichContext,
+  readRepoDependencyNames,
+} from './wiki-repo-enrich-context.js'
+import {
+  WIKI_REPO_ENRICH_REQUIRED_SECTIONS,
   WIKI_REPO_ENRICH_SYSTEM_PROMPT,
+  WIKI_REPO_OVERVIEW_REQUIRED_SECTIONS,
+  WIKI_REPO_OVERVIEW_SYSTEM_PROMPT,
   buildModuleEnrichPrompt,
+  buildOverviewEnrichPrompt,
   validateEnrichSection,
 } from './wiki-repo-enrich-prompt.js'
 
@@ -88,6 +100,14 @@ export interface WikiRepoEnrichScanHookParams {
 
 const MODULE_SLUG_PREFIX = 'repo-module-'
 
+/**
+ * 单个增强目标：综述页（repo-overview，S3）或模块页（repo-module-*）。
+ * 材料、提示词与校验小节按 kind 分派；slug 是缓存/差集/GC 的统一身份。
+ */
+type WikiRepoEnrichPlanTarget =
+  | { kind: 'overview'; slug: string }
+  | { kind: 'module'; dir: string; slug: string }
+
 export class WikiRepoEnrichService {
   private readonly db: SparkDatabase
   private readonly settingsGet: (category: string, key: string) => unknown
@@ -124,7 +144,9 @@ export class WikiRepoEnrichService {
    * 扫描后自动增强（scan hook 调用；受 repo/enrich/enabled 总闸）。
    * 绝不向调用方抛异常（触发层隔离），内部已兜 try/catch。
    */
-  async enrichAfterScan(params: WikiRepoEnrichScanHookParams): Promise<WikiRepoEnrichmentRunReceipt> {
+  async enrichAfterScan(
+    params: WikiRepoEnrichScanHookParams,
+  ): Promise<WikiRepoEnrichmentRunReceipt> {
     try {
       if (!this.booleanSetting('repo/enrich/enabled', false)) {
         return { ...emptyReceipt(), ok: false, reason: 'disabled' }
@@ -139,7 +161,7 @@ export class WikiRepoEnrichService {
   /**
    * 手动重跑 / 补跑（IPC 调用；不受总闸限制——点击即成本授权）。
    * 从 space.repo_path + space.repo_rev 重新走 scanRepoTree（低频用户显式操作）。
-   * 指定 slug = 单页强制重跑（跳过 ready 缓存差集，仍受所有权过滤）。
+   * 指定 slug = 单页强制重跑（综述页或模块页；跳过 ready 缓存差集，仍受所有权过滤）。
    */
   async runManually(params: {
     spaceId: string
@@ -148,23 +170,43 @@ export class WikiRepoEnrichService {
     try {
       const space = this.spaceRepo.getById(params.spaceId)
       if (space == null || space.space_type !== 'repo') {
-        return { ...emptyReceipt(), ok: false, reason: 'not_repo_space', message: '空间不存在或不是 Repo Wiki 空间' }
+        return {
+          ...emptyReceipt(),
+          ok: false,
+          reason: 'not_repo_space',
+          message: '空间不存在或不是 Repo Wiki 空间',
+        }
       }
       if (space.repo_path == null) {
-        return { ...emptyReceipt(), ok: false, reason: 'no_repo_path', message: '空间未关联仓库路径' }
+        return {
+          ...emptyReceipt(),
+          ok: false,
+          reason: 'no_repo_path',
+          message: '空间未关联仓库路径',
+        }
       }
       if (space.repo_rev == null) {
-        return { ...emptyReceipt(), ok: false, reason: 'no_rev', message: '空间未记录代码版本，先完成一次扫描' }
+        return {
+          ...emptyReceipt(),
+          ok: false,
+          reason: 'no_rev',
+          message: '空间未记录代码版本，先完成一次扫描',
+        }
       }
-      let forcedDir: string | null = null
+      let forced: WikiRepoEnrichPlanTarget | null = null
       if (params.slug != null) {
-        forcedDir = this.resolveDirForSlug(params.slug, space.repo_path, space.id)
-        if (forcedDir == null) {
-          return { ...emptyReceipt(), ok: false, reason: 'no_pages', message: `未找到可增强的模块页：${params.slug}` }
+        forced = this.resolveForcedTarget(params.slug, space.repo_path, space.id)
+        if (forced == null) {
+          return {
+            ...emptyReceipt(),
+            ok: false,
+            reason: 'no_pages',
+            message: `未找到可增强的页面：${params.slug}`,
+          }
         }
       }
       const tree = scanRepoTree(space.repo_path, { ignoreGlobs: WIKI_REPO_DEFAULT_IGNORE })
-      return await this.launch(space.id, space.repo_rev, space.repo_path, tree, forcedDir)
+      return await this.launch(space.id, space.repo_rev, space.repo_path, tree, forced)
     } catch (err) {
       log.error(`repo enrich run crashed: space=${params.spaceId} — ${errorMessage(err)}`)
       return { ...emptyReceipt(), ok: false, reason: 'no_provider', message: errorMessage(err) }
@@ -222,7 +264,7 @@ export class WikiRepoEnrichService {
     const rows = repoRev != null ? this.enrichRepo.getBySpace(spaceId, repoRev) : []
     const ready = rows.filter((r) => r.status === 'ready').length
     const failed = rows.filter((r) => r.status === 'failed').length
-    const eligible = this.countEligibleModulePages(spaceId)
+    const eligible = this.countEligiblePages(spaceId)
     return {
       running: this.runningSpaces.has(spaceId),
       repoRev,
@@ -240,7 +282,7 @@ export class WikiRepoEnrichService {
     rev: string | null,
     repoRoot: string,
     tree: WikiRepoScanTree,
-    forcedDir: string | null,
+    forced: WikiRepoEnrichPlanTarget | null,
   ): Promise<WikiRepoEnrichmentRunReceipt> {
     if (this.runningSpaces.has(spaceId)) {
       return Promise.resolve({
@@ -251,7 +293,7 @@ export class WikiRepoEnrichService {
       })
     }
     this.runningSpaces.add(spaceId)
-    const promise = this.executeRun({ spaceId, rev, repoRoot, tree, forcedDir }).finally(() => {
+    const promise = this.executeRun({ spaceId, rev, repoRoot, tree, forced }).finally(() => {
       this.runningSpaces.delete(spaceId)
       this.runs.delete(spaceId)
     })
@@ -264,7 +306,7 @@ export class WikiRepoEnrichService {
     rev: string | null
     repoRoot: string
     tree: WikiRepoScanTree
-    forcedDir: string | null
+    forced: WikiRepoEnrichPlanTarget | null
   }): Promise<WikiRepoEnrichmentRunReceipt> {
     const { spaceId, rev, tree } = params
     const startedAt = Date.now()
@@ -278,12 +320,22 @@ export class WikiRepoEnrichService {
     const resolved = await this.resolveTarget(profileId.length > 0 ? profileId : null)
     if (!resolved.ok) {
       log.info(`repo enrich skipped: space=${spaceId} reason=no_provider code=${resolved.code}`)
-      return { ...emptyReceipt(), ok: false, reason: 'no_provider', message: '没有可用的导读模型渠道' }
+      return {
+        ...emptyReceipt(),
+        ok: false,
+        reason: 'no_provider',
+        message: '没有可用的导读模型渠道',
+      }
     }
     const { providerType, apiKey, apiEndpoint, apiEndpointFullUrl, model } = resolved.target
 
-    // 差集计划 = 该 rev 下 slug 存在、页面仍是 repo-scan、无 ready 缓存的模块页
-    const targetDirs = this.planTargetDirs(spaceId, tree)
+    // 计划全集 = 综述页（排首位）+ 模块页；资格口径一致（存在、repo-scan、未归档）
+    const overviewTarget = this.planOverviewTarget(spaceId)
+    const plannedAll: WikiRepoEnrichPlanTarget[] = [
+      ...(overviewTarget != null ? [overviewTarget] : []),
+      ...this.planModuleTargets(spaceId, tree),
+    ]
+    // 差集计划 = 该 rev 下无 ready 缓存的目标页（slug 统一身份）
     const cachedSlugs = new Set(
       this.enrichRepo
         .getBySpace(spaceId, rev)
@@ -291,14 +343,14 @@ export class WikiRepoEnrichService {
         .map((row) => row.slug),
     )
     let cached = 0
-    let plannedDirs: string[]
-    if (params.forcedDir != null) {
-      // 单页强制重跑：跳过 ready 缓存差集（所有权过滤已在 planTargetDirs 生效）
-      plannedDirs = targetDirs.filter((dir) => dir === params.forcedDir)
+    let planned: WikiRepoEnrichPlanTarget[]
+    if (params.forced != null) {
+      // 单页强制重跑：跳过 ready 缓存差集（所有权过滤已在计划阶段生效）
+      const forcedSlug = params.forced.slug
+      planned = plannedAll.filter((t) => t.slug === forcedSlug)
     } else {
-      plannedDirs = targetDirs.filter((dir) => {
-        const slug = WIKI_REPO_PAGE_SLUGS.module(dir)
-        if (cachedSlugs.has(slug)) {
+      planned = plannedAll.filter((t) => {
+        if (cachedSlugs.has(t.slug)) {
           cached += 1
           return false
         }
@@ -306,25 +358,35 @@ export class WikiRepoEnrichService {
       })
     }
 
+    // maxPages 只约束模块目标（设置口径即「模块页数」）；综述页单页固定成本，
+    // 排计划首位且不占配额——maxPages=1 时仍保证综述 + 1 个模块页
     const maxPages = this.clampedNumberSetting('repo/enrich/maxPages', 20, 1, 50)
-    const droppedByLimit = Math.max(0, plannedDirs.length - maxPages)
-    const finalDirs = params.forcedDir != null ? plannedDirs : plannedDirs.slice(0, maxPages)
+    let finalTargets: WikiRepoEnrichPlanTarget[]
+    let droppedByLimit = 0
+    if (params.forced != null) {
+      finalTargets = planned
+    } else {
+      const plannedOverview = planned.filter((t) => t.kind === 'overview')
+      const plannedModules = planned.filter((t) => t.kind === 'module')
+      droppedByLimit = Math.max(0, plannedModules.length - maxPages)
+      finalTargets = [...plannedOverview, ...plannedModules.slice(0, maxPages)]
+    }
 
     log.info(
-      `repo enrich planned: space=${spaceId} rev=${rev} target=${finalDirs.length} ` +
+      `repo enrich planned: space=${spaceId} rev=${rev} target=${finalTargets.length} ` +
         `cached=${cached} droppedByLimit=${droppedByLimit}`,
     )
 
     let ready = 0
     let failed = 0
-    if (finalDirs.length > 0) {
+    if (finalTargets.length > 0) {
       const dependencyNames = readRepoDependencyNames(tree)
       const concurrency = this.clampedNumberSetting('repo/enrich/concurrency', 2, 1, 4)
-      await runWithConcurrency(finalDirs, concurrency, async (dir) => {
+      await runWithConcurrency(finalTargets, concurrency, async (plan) => {
         const outcome = await this.enrichOne({
           spaceId,
           rev,
-          dir,
+          plan,
           tree,
           dependencyNames,
           target: { providerType, apiKey, apiEndpoint, apiEndpointFullUrl, model },
@@ -337,7 +399,8 @@ export class WikiRepoEnrichService {
     // 成功跑完一个新 rev 后回收旧 rev 行（缓存体积上限 = 单空间单 rev 页面数）
     if (ready > 0) {
       const removed = this.enrichRepo.deleteStaleRevs(spaceId, rev)
-      if (removed > 0) log.info(`repo enrich stale revs cleaned: space=${spaceId} removed=${removed}`)
+      if (removed > 0)
+        log.info(`repo enrich stale revs cleaned: space=${spaceId} removed=${removed}`)
     }
 
     const elapsedMs = Date.now() - startedAt
@@ -346,7 +409,7 @@ export class WikiRepoEnrichService {
     )
     return {
       ok: true,
-      target: finalDirs.length,
+      target: finalTargets.length,
       cached,
       droppedByLimit,
       ready,
@@ -358,7 +421,7 @@ export class WikiRepoEnrichService {
   private async enrichOne(params: {
     spaceId: string
     rev: string
-    dir: string
+    plan: WikiRepoEnrichPlanTarget
     tree: WikiRepoScanTree
     dependencyNames: string[]
     target: {
@@ -369,12 +432,26 @@ export class WikiRepoEnrichService {
       model: string
     }
   }): Promise<boolean> {
-    const { spaceId, rev, dir, tree, dependencyNames, target } = params
-    const ctx = buildModuleEnrichContext({ dir, tree, dependencyNames })
+    const { spaceId, rev, plan, tree, dependencyNames, target } = params
+    // 变体分派：材料 / 系统提示 / 校验小节按页 kind 切换，其余链路同构
+    const material =
+      plan.kind === 'overview'
+        ? buildOverviewEnrichContext({ tree, dependencyNames }).material
+        : buildModuleEnrichContext({ dir: plan.dir, tree, dependencyNames }).material
+    const system =
+      plan.kind === 'overview' ? WIKI_REPO_OVERVIEW_SYSTEM_PROMPT : WIKI_REPO_ENRICH_SYSTEM_PROMPT
+    const prompt =
+      plan.kind === 'overview'
+        ? buildOverviewEnrichPrompt(material)
+        : buildModuleEnrichPrompt(material)
+    const requiredSections =
+      plan.kind === 'overview'
+        ? WIKI_REPO_OVERVIEW_REQUIRED_SECTIONS
+        : WIKI_REPO_ENRICH_REQUIRED_SECTIONS
     const writeFailure = (reason: WikiRepoEnrichFailureReason): void => {
       this.enrichRepo.upsert({
         spaceId,
-        slug: ctx.slug,
+        slug: plan.slug,
         repoRev: rev,
         section: '',
         status: 'failed',
@@ -382,7 +459,7 @@ export class WikiRepoEnrichService {
         model: target.model,
         provider: target.providerType,
       })
-      log.warn(`repo enrich page failed: slug=${ctx.slug} reason=${reason}`)
+      log.warn(`repo enrich page failed: slug=${plan.slug} reason=${reason}`)
     }
     try {
       const raw = await this.callModel({
@@ -391,21 +468,21 @@ export class WikiRepoEnrichService {
         ...(target.apiEndpoint != null ? { apiEndpoint: target.apiEndpoint } : {}),
         ...(target.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
         model: target.model,
-        system: WIKI_REPO_ENRICH_SYSTEM_PROMPT,
-        prompt: buildModuleEnrichPrompt(ctx.material),
+        system,
+        prompt,
       })
       if (raw == null) {
         writeFailure('model_failed')
         return false
       }
-      const validated = validateEnrichSection(raw)
+      const validated = validateEnrichSection(raw, requiredSections)
       if (!validated.ok) {
         writeFailure('invalid_output')
         return false
       }
       this.enrichRepo.upsert({
         spaceId,
-        slug: ctx.slug,
+        slug: plan.slug,
         repoRev: rev,
         section: validated.section,
         status: 'ready',
@@ -413,45 +490,68 @@ export class WikiRepoEnrichService {
         provider: target.providerType,
       })
       log.info(
-        `repo enrich section saved: slug=${ctx.slug} rev=${rev} model=${target.model} chars=${validated.section.length}`,
+        `repo enrich section saved: slug=${plan.slug} rev=${rev} model=${target.model} chars=${validated.section.length}`,
       )
       return true
     } catch (err) {
       writeFailure('io_failed')
-      log.warn(`repo enrich page failed: slug=${ctx.slug} reason=io_failed detail=${errorMessage(err)}`)
+      log.warn(
+        `repo enrich page failed: slug=${plan.slug} reason=io_failed detail=${errorMessage(err)}`,
+      )
       return false
     }
   }
 
+  /** 综述页目标（资格与模块页同口径：存在、非 folder、repo-scan、未归档）。 */
+  private planOverviewTarget(spaceId: string): WikiRepoEnrichPlanTarget | null {
+    const page = this.pageRepo.getBySlug(spaceId, WIKI_REPO_PAGE_SLUGS.overview)
+    if (
+      page == null ||
+      page.kind === 'folder' ||
+      page.source_type !== WIKI_REPO_SOURCE_TYPE ||
+      page.status === 'archived'
+    ) {
+      return null
+    }
+    return { kind: 'overview', slug: page.slug }
+  }
+
   /**
-   * 差集计划的目标目录（生成侧所有权过滤，C5）：
+   * 差集计划的模块目标（生成侧所有权过滤，C5）：
    * 树的顶层目录中，slug 对应页面存在、仍是 repo-scan 生成态、未归档的。
    */
-  private planTargetDirs(spaceId: string, tree: WikiRepoScanTree): string[] {
-    return tree.topDirs.filter((dir) => {
-      const page = this.pageRepo.getBySlug(spaceId, WIKI_REPO_PAGE_SLUGS.module(dir))
-      return (
-        page != null &&
-        page.kind !== 'folder' &&
-        page.source_type === WIKI_REPO_SOURCE_TYPE &&
-        page.status !== 'archived'
-      )
-    })
+  private planModuleTargets(spaceId: string, tree: WikiRepoScanTree): WikiRepoEnrichPlanTarget[] {
+    return tree.topDirs
+      .filter((dir) => {
+        const page = this.pageRepo.getBySlug(spaceId, WIKI_REPO_PAGE_SLUGS.module(dir))
+        return (
+          page != null &&
+          page.kind !== 'folder' &&
+          page.source_type === WIKI_REPO_SOURCE_TYPE &&
+          page.status !== 'archived'
+        )
+      })
+      .map((dir) => ({ kind: 'module' as const, dir, slug: WIKI_REPO_PAGE_SLUGS.module(dir) }))
   }
 
-  /** slug → 顶层目录（单页重跑定位；复用差集计划的所有权过滤，manual/ignored 页拒绝）。 */
-  private resolveDirForSlug(slug: string, repoPath: string, spaceId: string): string | null {
+  /**
+   * slug → 强制重跑目标（单页重跑定位；综述页免重扫树，模块页复用
+   * 计划阶段的所有权过滤，manual/ignored 页拒绝）。
+   */
+  private resolveForcedTarget(
+    slug: string,
+    repoPath: string,
+    spaceId: string,
+  ): WikiRepoEnrichPlanTarget | null {
+    const overview = this.planOverviewTarget(spaceId)
+    if (overview != null && overview.slug === slug) return overview
     const tree = scanRepoTree(repoPath, { ignoreGlobs: WIKI_REPO_DEFAULT_IGNORE })
-    return (
-      this.planTargetDirs(spaceId, tree).find(
-        (dir) => WIKI_REPO_PAGE_SLUGS.module(dir) === slug,
-      ) ?? null
-    )
+    return this.planModuleTargets(spaceId, tree).find((t) => t.slug === slug) ?? null
   }
 
-  /** 该空间可增强模块页计数（进度用；页面侧口径，与差集计划一致）。 */
-  private countEligibleModulePages(spaceId: string): number {
-    return this.pageRepo
+  /** 该空间可增强页计数（进度用；综述页 + 模块页，与计划阶段口径一致）。 */
+  private countEligiblePages(spaceId: string): number {
+    const modulePages = this.pageRepo
       .listBySpace(spaceId)
       .filter(
         (page) =>
@@ -459,6 +559,7 @@ export class WikiRepoEnrichService {
           page.source_type === WIKI_REPO_SOURCE_TYPE &&
           page.status !== 'archived',
       ).length
+    return modulePages + (this.planOverviewTarget(spaceId) != null ? 1 : 0)
   }
 
   private booleanSetting(key: string, fallback: boolean): boolean {
@@ -472,7 +573,12 @@ export class WikiRepoEnrichService {
   }
 
   /** 数字设置读取 + 硬上下限钳制（设置层已拒绝越界写入，此处防绕过 UI 的值）。 */
-  private clampedNumberSetting(key: string, fallback: number, hardMin: number, hardMax: number): number {
+  private clampedNumberSetting(
+    key: string,
+    fallback: number,
+    hardMin: number,
+    hardMax: number,
+  ): number {
     const raw = this.settingsGet('wiki', key)
     const value = typeof raw === 'number' && Number.isFinite(raw) ? Math.floor(raw) : fallback
     return Math.min(hardMax, Math.max(hardMin, value))
