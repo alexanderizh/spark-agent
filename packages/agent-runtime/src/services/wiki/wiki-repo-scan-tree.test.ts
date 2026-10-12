@@ -183,4 +183,18 @@ describe('wiki-repo-scan-tree', () => {
       expect.arrayContaining(['node_modules', 'dist', 'build', 'out', '.git']),
     )
   })
+
+  it('默认忽略集合覆盖包管理器缓存与工具链产物（真机教训：重缓存目录会吃光 maxFiles 上限）', () => {
+    expect(WIKI_REPO_DEFAULT_IGNORE).toEqual(
+      expect.arrayContaining(['.pnpm-store', '.worktrees', '.gitnexus', 'coverage', '.venv']),
+    )
+  })
+
+  it('默认规则下缓存目录在任意层级均被整枝忽略', () => {
+    write('apps/desktop/src/main/index.ts')
+    write('.pnpm-store/v3/files/xx/index.js')
+    write('packages/a/.venv/lib/py.py')
+    const tree = scanRepoTree(dir)
+    expect(tree.files.map((f) => f.relPath)).toEqual(['apps/desktop/src/main/index.ts'])
+  })
 })

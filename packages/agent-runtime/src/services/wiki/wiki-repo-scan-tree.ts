@@ -16,8 +16,44 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-/** 默认忽略项（方案 §12 D 组 `wiki/repo/ignoreGlobs` 缺省值） */
-export const WIKI_REPO_DEFAULT_IGNORE = ['node_modules', 'dist', 'build', 'out', '.git']
+/**
+ * 默认忽略项（方案 §12 D 组 `wiki/repo/ignoreGlobs` 缺省值）。
+ *
+ * 真机实测教训：只挡 node_modules/dist 等经典目录时，包管理器缓存与
+ * monorepo 工具链目录（如 .pnpm-store 单目录上万文件）会先按遍历序吃光
+ * maxFiles 上限，导致真实源码目录被截断为 0 文件、骨架与 AI 导读失真。
+ * 因此缺省清单需覆盖四类重目录：构建产物、包管理器/monorepo 缓存、
+ * agent/测试工具链产物、语言运行时缓存。裸名规则任意层级命中。
+ */
+export const WIKI_REPO_DEFAULT_IGNORE = [
+  'node_modules',
+  'dist',
+  'build',
+  'out',
+  '.git',
+  // 包管理器缓存 / monorepo 工具链
+  '.pnpm-store',
+  '.turbo',
+  '.cache',
+  '.worktrees',
+  '.gradle',
+  // agent / 测试工具链产物
+  '.gitnexus',
+  '.spark-artifacts',
+  '.playwright-cli',
+  '.playwright-mcp',
+  'coverage',
+  // Web 框架构建产物
+  '.next',
+  '.nuxt',
+  '.svelte-kit',
+  '.output',
+  // 语言运行时缓存
+  '__pycache__',
+  '.venv',
+  'venv',
+  'target',
+]
 
 /** 单次扫描文件数缺省上限 */
 export const WIKI_REPO_DEFAULT_MAX_FILES = 20_000
