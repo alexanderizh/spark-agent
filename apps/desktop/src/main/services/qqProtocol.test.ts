@@ -67,16 +67,16 @@ describe('parseQqDispatchEvent', () => {
     const now = Math.floor(Date.now() / 1000)
     // 回归：QQ 事件时间戳是 RFC3339 字符串，旧的 parseInt 实现会解析成 "2026"
     // 这样的年份，导致网关重放过滤把所有消息当旧事件丢弃。
+    // 用 60 秒前的动态时间戳，避免固定日期随时间流逝腐烂成「真正的旧事件」。
+    const recentRfc3339 = new Date(Date.now() - 60_000).toISOString()
     const event = parseQqDispatchEvent('C2C_MESSAGE_CREATE', {
       id: 'msgid-4',
       content: '/bind 123456',
       author: { id: 'auth4', user_openid: 'USER2' },
-      timestamp: '2026-09-12T17:39:00+08:00',
+      timestamp: recentRfc3339,
     })
     expect(event).not.toBeNull()
-    expect(event?.timestamp).toBeGreaterThanOrEqual(
-      Math.floor(Date.parse('2026-09-12T17:39:00+08:00') / 1000) - 1,
-    )
+    expect(event?.timestamp).toBeGreaterThanOrEqual(Math.floor(Date.parse(recentRfc3339) / 1000) - 1)
     // 现在时刻的消息绝不能被判定为 60 秒前的旧事件（网关重放过滤的判定条件）。
     expect(event && event.timestamp * 1000 >= Date.now() - 86_400_000).toBe(true)
     expect(now).toBeGreaterThan(0)

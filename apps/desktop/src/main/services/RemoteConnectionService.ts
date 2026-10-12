@@ -26,13 +26,19 @@ import { RemoteWeixinChannel } from './remoteWeixinChannel.js'
 import { getAuthService } from './Auth/AuthService.js'
 import {
   downloadTelegramInboundImage,
+  downloadTelegramInboundVoice,
   extractTelegramInboundImages,
+  extractTelegramInboundVoice,
   type TelegramInboundImageDescriptor,
+  type TelegramInboundVoiceDescriptor,
 } from './telegramInboundMedia.js'
+import type { RemoteVoiceTranscriber } from './remoteVoiceTranscription.js'
 import {
   extractTelegramOutboundMedia,
   mergeTelegramOutboundImages,
   sendTelegramOutboundImage,
+  sendTelegramOutboundVoice,
+  type TelegramOutboundVoice,
 } from './telegramOutboundMedia.js'
 import { formatTelegramMarkdown, isTelegramFormattingError } from './telegramTextFormatting.js'
 import {
@@ -41,7 +47,19 @@ import {
   uploadFeishuImage,
   type FeishuInboundImage,
 } from './feishuImageMedia.js'
+import {
+  downloadFeishuVoice,
+  extractFeishuInboundVoice,
+  uploadFeishuAudio,
+  type FeishuInboundVoice,
+} from './feishuVoiceMedia.js'
 import { downloadQqImage, uploadQqImage, type QqInboundImage } from './qqImageMedia.js'
+import {
+  downloadQqVoice,
+  prepareQqOutboundSilk,
+  uploadQqVoice,
+  type QqInboundVoice,
+} from './qqVoiceMedia.js'
 import { readOutboundImage } from './remoteImageMedia.js'
 import {
   canBindRemoteRouteSession,
@@ -104,6 +122,8 @@ type RemoteOutboundMessage = {
   text: string
   actions?: RemoteMessageAction[]
   images?: Array<{ source: string; alt: string }>
+  /** 出站语音/音频文件（本地路径或 file:// URL），由各渠道按平台格式投递 */
+  voices?: TelegramOutboundVoice[]
   editMessageId?: number
 }
 
@@ -116,6 +136,9 @@ function buildRemoteRuntimeErrorMessage(error: unknown, commandPrefix = '/'): st
 function formatRemoteOutboundText(message: RemoteOutboundMessage): string {
   return message.title != null ? `${message.title}\n${message.text}` : message.text
 }
+
+/** 出站语音识别：附件里哪些扩展名算音频，交给各渠道的语音投递链路。 */
+const OUTBOUND_AUDIO_EXTENSION_REGEX = /\.(?:mp3|wav|ogg|oga|opus|m4a|aac|flac|amr|slk|silk)$/iu
 
 export type RemoteConnectionChangeEvent = {
   reason: 'connection-saved' | 'connection-deleted' | 'pairing-updated' | 'runtime-updated'
@@ -669,8 +692,11 @@ export function parseWebhookBody(
       messageId?: string
       editMessageId?: number
       inboundImages?: TelegramInboundImageDescriptor[]
+      inboundVoice?: TelegramInboundVoiceDescriptor
       feishuImage?: FeishuInboundImage
+      feishuVoice?: FeishuInboundVoice
       qqImages?: QqInboundImage[]
+      qqVoice?: QqInboundVoice
     }
   | { kind: 'challenge'; responseBody: unknown }
   | { kind: 'ignore' } {
@@ -707,8 +733,17 @@ export function parseWebhookBody(
     const from = isRecord(message?.from) ? message.from : undefined
     const externalId = chat != null ? String(chat.id ?? '') : ''
     const inboundImages = message != null ? extractTelegramInboundImages(message) : []
+    const inboundVoice = message != null ? extractTelegramInboundVoice(message) : null
     const text = readString(message?.text) ?? readString(message?.caption)
-    if (!externalId || (text == null && inboundImages.length === 0)) return { kind: 'ignore' }
+    if (!externalId || (text == null && inboundImages.length === 0 && inboundVoice == null)) {
+      // 吃掉消息不留痕是排障大忌：语音/贴纸等不支持的消息被静默 ignore 时必须留日志
+      if (message != null) {
+        log.warn(
+          `Telegram 消息被忽略：不含可处理的文本/图片/语音 (chat=${externalId || 'unknown'})`,
+        )
+      }
+      return { kind: 'ignore' }
+    }
     const username = readString(from?.username)
     const firstName = readString(from?.first_name)
     return {
@@ -718,8 +753,12 @@ export function parseWebhookBody(
         username != null
           ? `${firstName ?? username}(@${username})`
           : (firstName ?? 'Telegram 用户'),
-      text: normalizeInboundText(channel, text ?? '请识别并说明这张图片。'),
+      text: normalizeInboundText(
+        channel,
+        text ?? (inboundVoice != null ? '请转写并处理这条语音消息。' : '请识别并说明这张图片。'),
+      ),
       ...(inboundImages.length > 0 ? { inboundImages } : {}),
+      ...(inboundVoice != null ? { inboundVoice } : {}),
       ...(message?.message_id != null
         ? { messageId: `telegram:${String(message.message_id)}` }
         : {}),
@@ -738,16 +777,33 @@ export function parseWebhookBody(
       message_type: readString(message.message_type),
       content: readString(message.content),
     })
+    const feishuVoice = extractFeishuInboundVoice({
+      message_id: readString(message.message_id),
+      message_type: readString(message.message_type),
+      content: readString(message.content),
+    })
     const text = parseJsonContent(message.content) ?? readString(message.text)
-    if (!externalId || (!text && feishuImage == null)) return { kind: 'ignore' }
+    if (!externalId || (!text && feishuImage == null && feishuVoice == null)) {
+      if (message != null && externalId.length > 0) {
+        log.warn(
+          `飞书消息被忽略：不含可处理的文本/图片/语音 (chat=${externalId}, msg_type=${readString(message.message_type) ?? 'unknown'})`,
+        )
+      }
+      return { kind: 'ignore' }
+    }
     const sender = isRecord(event.sender) ? event.sender : undefined
     const senderId = isRecord(sender?.sender_id) ? sender.sender_id : undefined
     return {
       kind: 'message',
       externalId,
       senderName: readString(senderId?.open_id) ?? readString(senderId?.user_id) ?? '飞书用户',
-      text: normalizeInboundText(channel, text ?? '请识别并说明这张图片。'),
+      text: normalizeInboundText(
+        channel,
+        text ??
+          (feishuVoice != null ? '请转写并处理这条语音消息。' : '请识别并说明这张图片。'),
+      ),
       ...(feishuImage != null ? { feishuImage } : {}),
+      ...(feishuVoice != null ? { feishuVoice } : {}),
       ...(readString(message.message_id)
         ? { messageId: `feishu:${String(message.message_id)}` }
         : {}),
@@ -759,7 +815,12 @@ export function parseWebhookBody(
       isRecord(body) ? readString(body.t) : undefined,
       isRecord(body) && isRecord(body.d) ? body.d : body,
     )
-    if (event == null || (event.text.length === 0 && (event.images?.length ?? 0) === 0))
+    if (
+      event == null ||
+      (event.text.length === 0 &&
+        (event.images?.length ?? 0) === 0 &&
+        (event.voices?.length ?? 0) === 0)
+    )
       return { kind: 'ignore' }
     return {
       kind: 'message',
@@ -767,6 +828,7 @@ export function parseWebhookBody(
       senderName: event.senderName,
       text: event.text,
       ...(event.images != null ? { qqImages: event.images } : {}),
+      ...(event.voices != null && event.voices.length > 0 ? { qqVoice: event.voices[0] } : {}),
       ...(event.msgId != null ? { messageId: `qq:${event.msgId}` } : {}),
     }
   }
@@ -996,6 +1058,7 @@ export class RemoteConnectionService {
   constructor(
     private readonly settingsService: SettingsService,
     private readonly telegramAttachmentRoot?: string,
+    private readonly voiceTranscriber?: RemoteVoiceTranscriber,
   ) {
     this.weixinChannel = new RemoteWeixinChannel(
       this.settingsService,
@@ -1433,15 +1496,21 @@ export class RemoteConnectionService {
   ): Promise<void> {
     const connection = this.readStore().connections.find((item) => item.id === connectionId)
     if (connection == null) throw new Error('Remote connection not found')
+    const images = (attachments ?? [])
+      .filter((attachment) => attachment.type === 'image')
+      .map((attachment) => ({ source: attachment.path, alt: '' }))
+    // 音频附件（如 TTS 生成的 MP3）走语音链路：Telegram 语音条/音频卡片、
+    // 飞书 opus 音频消息、QQ SILK 语音——不再只留在桌面会话里。
+    const voices = (attachments ?? [])
+      .filter(
+        (attachment) =>
+          attachment.type === 'file' && OUTBOUND_AUDIO_EXTENSION_REGEX.test(attachment.path),
+      )
+      .map((attachment) => ({ source: attachment.path }))
     await this.sendDirectMessageWithRetry(connection, externalId, {
       text,
-      ...(attachments != null && attachments.length > 0
-        ? {
-            images: attachments
-              .filter((attachment) => attachment.type === 'image')
-              .map((attachment) => ({ source: attachment.path, alt: '' })),
-          }
-        : {}),
+      ...(images.length > 0 ? { images } : {}),
+      ...(voices.length > 0 ? { voices } : {}),
     })
   }
 
@@ -1809,8 +1878,11 @@ export class RemoteConnectionService {
       messageId?: string
       editMessageId?: number
       inboundImages?: TelegramInboundImageDescriptor[]
+      inboundVoice?: TelegramInboundVoiceDescriptor
       feishuImage?: FeishuInboundImage
+      feishuVoice?: FeishuInboundVoice
       qqImages?: QqInboundImage[]
+      qqVoice?: QqInboundVoice
     },
   ): Promise<void> {
     if (message.messageId != null) {
@@ -1931,12 +2003,37 @@ export class RemoteConnectionService {
       return
     }
 
+    // ── 入站语音（Telegram/飞书/QQ）：下载 → 本地优先转写 → 云端兜底 → 文本进会话 ──
+    let finalText = text
+    if (message.inboundVoice != null && latest.channel === 'telegram') {
+      const transcribed = await this.transcribeInboundVoice(latest, message.externalId, {
+        channel: 'telegram',
+        telegram: message.inboundVoice,
+      })
+      if (transcribed == null) return // 失败原因已回传远程端
+      finalText = transcribed
+    } else if (message.feishuVoice != null && latest.channel === 'feishu') {
+      const transcribed = await this.transcribeInboundVoice(latest, message.externalId, {
+        channel: 'feishu',
+        feishu: message.feishuVoice,
+      })
+      if (transcribed == null) return
+      finalText = transcribed
+    } else if (message.qqVoice != null && latest.channel === 'qq') {
+      const transcribed = await this.transcribeInboundVoice(latest, message.externalId, {
+        channel: 'qq',
+        qq: message.qqVoice,
+      })
+      if (transcribed == null) return
+      finalText = transcribed
+    }
+
     try {
       const response = await this.inboundHandler({
         connection: latest,
         externalId: message.externalId,
         senderName: message.senderName,
-        text,
+        text: finalText,
         ...(message.messageId != null ? { messageId: message.messageId } : {}),
         ...(message.editMessageId != null ? { editMessageId: message.editMessageId } : {}),
         ...(attachments != null ? { attachments } : {}),
@@ -1956,6 +2053,93 @@ export class RemoteConnectionService {
         message.externalId,
         buildRemoteRuntimeErrorMessage(err, latest.commandPrefix),
       )
+    }
+  }
+
+  /**
+   * 入站语音转写（渠道无关）：下载语音文件（各渠道格式归一为本地音频）→
+   * 转写（本地 SenseVoice 优先，云端 audio.transcription 兜底）。成功返回带
+   * [语音] 标记的转写文本；失败返回 null，此时原因与配置指引已回传远程端
+   * （绝不静默吞掉语音消息）。
+   */
+  private async transcribeInboundVoice(
+    connection: RemoteConnectionConfig,
+    externalId: string,
+    request:
+      | { channel: 'telegram'; telegram: TelegramInboundVoiceDescriptor }
+      | { channel: 'feishu'; feishu: FeishuInboundVoice }
+      | { channel: 'qq'; qq: QqInboundVoice },
+  ): Promise<string | null> {
+    const reply = (text: string) => this.sendDirectMessageWithRetry(connection, externalId, text)
+
+    if (!connection.capabilities.transferFiles) {
+      await reply(
+        '该连接未启用“传输文件”能力，无法接收语音。请在 SparkWork 的远程连接设置中开启后重试。',
+      )
+      return null
+    }
+    const attachmentRoot = this.telegramAttachmentRoot
+    if (attachmentRoot == null) {
+      await reply('语音接收运行时尚未就绪，请稍后重试。')
+      return null
+    }
+    const transcriber = this.voiceTranscriber
+    if (transcriber == null) {
+      await reply('语音转写运行时尚未装配，请稍后重试。')
+      return null
+    }
+
+    try {
+      let voice: { path: string; mimeType: string }
+      if (request.channel === 'telegram') {
+        const token = readString(connection.credentials.botToken)
+        if (token == null) throw new Error('Telegram bot token 未配置')
+        voice = await downloadTelegramInboundVoice({
+          token,
+          descriptor: request.telegram,
+          attachmentRoot,
+        })
+      } else if (request.channel === 'feishu') {
+        const appId = readString(connection.credentials.appId)
+        const appSecret = readString(connection.credentials.appSecret)
+        if (appId == null || appSecret == null) throw new Error('飞书凭据未配置')
+        const token = await this.getFeishuToken(connection.id, appId, appSecret)
+        voice = await downloadFeishuVoice({
+          token,
+          voice: request.feishu,
+          attachmentRoot: path.join(path.dirname(attachmentRoot), 'feishu', 'voice'),
+        })
+      } else {
+        voice = await downloadQqVoice({
+          voice: request.qq,
+          attachmentRoot: path.join(path.dirname(attachmentRoot), 'qq', 'voice'),
+        })
+      }
+      const outcome = await transcriber.transcribe({
+        audioPath: voice.path,
+        mimeType: voice.mimeType,
+      })
+      if (outcome.kind !== 'ok') {
+        log.warn(`远程语音转写失败 (connection=${connection.id}): ${outcome.message.split('\n')[0] ?? ''}`)
+        await reply(`语音转写失败，原因与指引如下：\n\n${outcome.message}`)
+        return null
+      }
+      const transcript = outcome.text.trim()
+      if (transcript.length === 0) {
+        await reply('语音转写结果为空：这条语音可能没有可识别的语音内容。')
+        return null
+      }
+      log.info(
+        `远程语音转写成功 (connection=${connection.id}, channel=${request.channel}, engine=${outcome.engine}, ${transcript.length} 字)`,
+      )
+      return `[语音] ${transcript}`
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      log.warn(
+        `远程语音消息处理失败 (connection=${connection.id}, channel=${request.channel}): ${detail}`,
+      )
+      await reply(`语音消息处理失败：${detail}`)
+      return null
     }
   }
 
@@ -2579,7 +2763,13 @@ export class RemoteConnectionService {
           ? (message.title ?? '请选择操作')
           : ''
     const chunks = messageText.length > 0 ? splitText(messageText, 3900) : []
-    if (message.editMessageId != null && chunks.length === 1 && media.images.length === 0) {
+    const voices = connection.capabilities.transferFiles ? (message.voices ?? []) : []
+    if (
+      message.editMessageId != null &&
+      chunks.length === 1 &&
+      media.images.length === 0 &&
+      voices.length === 0
+    ) {
       const actions = message.actions ?? []
       try {
         await this.postTelegramFormattedText(
@@ -2653,6 +2843,34 @@ export class RemoteConnectionService {
             chat_id: externalId,
             text: `图片发送失败：${image.alt || '未命名图片'}${/^https?:\/\//iu.test(image.source) ? `\n${image.source}` : ''}`,
             disable_web_page_preview: false,
+          },
+        )
+      }
+    }
+    for (const voice of voices) {
+      try {
+        const via = await sendTelegramOutboundVoice(
+          { token, chatId: externalId, voice },
+          {
+            uploadTemporaryFile: async ({ filePath, fileName, mimeType }) => {
+              const uploaded = await getAuthService().uploadFile({
+                filePath,
+                fileName,
+                mimeType,
+                purpose: 'media-transfer',
+              })
+              return uploaded.aiUrl
+            },
+          },
+        )
+        log.info(`Telegram 语音发送完成 (via=${via}): ${path.basename(voice.source)}`)
+      } catch (error) {
+        log.warn(`Telegram 语音发送失败: ${error instanceof Error ? error.message : String(error)}`)
+        await this.postJson(
+          `https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`,
+          {
+            chat_id: externalId,
+            text: `语音发送失败：${voice.name ?? path.basename(voice.source)}`,
           },
         )
       }
@@ -2792,6 +3010,37 @@ export class RemoteConnectionService {
         )
       }
     }
+    const voices = connection.capabilities.transferFiles ? (message.voices ?? []) : []
+    for (const voice of voices) {
+      try {
+        const fileKey = await uploadFeishuAudio({ token, source: voice.source })
+        const result = await this.postJson(
+          `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`,
+          {
+            receive_id: externalId,
+            msg_type: 'audio',
+            content: JSON.stringify({ file_key: fileKey }),
+          },
+          { Authorization: `Bearer ${token}` },
+        )
+        if (isRecord(result) && typeof result.code === 'number' && result.code !== 0) {
+          throw new Error(`飞书语音消息发送失败：${String(result.msg ?? result.code)}`)
+        }
+      } catch (error) {
+        log.warn(`飞书语音发送失败: ${error instanceof Error ? error.message : String(error)}`)
+        await this.postJson(
+          `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`,
+          {
+            receive_id: externalId,
+            msg_type: 'text',
+            content: JSON.stringify({
+              text: `语音发送失败：${voice.name ?? path.basename(voice.source)}\n原因：${error instanceof Error ? error.message : String(error)}`,
+            }),
+          },
+          { Authorization: `Bearer ${token}` },
+        )
+      }
+    }
   }
 
   private async sendProcessingFeedback(
@@ -2863,9 +3112,16 @@ export class RemoteConnectionService {
     const imageTransferBlocked =
       !connection.capabilities.transferFiles && requestedImages.length > 0
     const images = imageTransferBlocked ? [] : requestedImages
+    const requestedVoices = message.voices ?? []
+    const voices = connection.capabilities.transferFiles ? requestedVoices : []
+    // 图片被拦时沿用既有语义：原文（如「图片已发送」）不再投递，只提示开启能力；
+    // 仅语音被拦时保留原文并附加提示。
+    const voiceTransferBlocked = !connection.capabilities.transferFiles && requestedVoices.length > 0
     const outboundText = imageTransferBlocked
       ? '图片未发送：当前 QQ 连接未启用“传输文件”能力。请在 SparkWork 的远程连接设置中开启后重试。'
-      : extracted.text
+      : voiceTransferBlocked
+        ? `${extracted.text}\n语音未发送：当前 QQ 连接未启用“传输文件”能力。请在 SparkWork 的远程连接设置中开启后重试。`
+        : extracted.text
     // 群聊/单聊文本按 UTF-8 字节计上限（1024 字节，留余量）；频道文本上限更宽松。
     const maxBytes = target.scene === 'channel' ? 1900 : 1000
     const chunks = outboundText.length > 0 ? splitQqContent(plainText(outboundText), maxBytes) : []
@@ -2956,6 +3212,53 @@ export class RemoteConnectionService {
         log.warn(`QQ 图片发送失败: ${error instanceof Error ? error.message : String(error)}`)
         await this.sendQqMessage(connection, externalId, {
           text: `图片发送失败：${image.alt || '未命名图片'}`,
+        })
+      }
+    }
+    for (const voice of voices) {
+      try {
+        if (target.scene === 'channel') {
+          // 频道场景无富媒体 file_info 通道，SILK 以 multipart file_audio 直传
+          const silk = await prepareQqOutboundSilk(voice.source)
+          const form = new FormData()
+          form.append(
+            'file_audio',
+            new Blob([silk.bytes], { type: 'audio/silk' }),
+            silk.fileName,
+          )
+          const reply = this.takeQqReply(connection.id, externalId)
+          if (reply != null) form.append('msg_id', reply.msgId)
+          const response = await fetch(
+            `https://api.sgroup.qq.com/channels/${encodeURIComponent(target.targetId)}/messages`,
+            {
+              method: 'POST',
+              headers: { Authorization: `QQBot ${token}` },
+              body: form,
+              signal: AbortSignal.timeout(30_000),
+            },
+          )
+          if (!response.ok) throw new Error(`QQ 频道语音发送失败：HTTP ${response.status}`)
+          continue
+        }
+        const endpointBase =
+          target.scene === 'group'
+            ? `https://api.sgroup.qq.com/v2/groups/${encodeURIComponent(target.targetId)}`
+            : `https://api.sgroup.qq.com/v2/users/${encodeURIComponent(target.targetId)}`
+        const fileInfo = await uploadQqVoice({ token, endpointBase, source: voice.source })
+        const reply = this.takeQqReply(connection.id, externalId)
+        await this.postJson(
+          `${endpointBase}/messages`,
+          {
+            msg_type: 7,
+            media: { file_info: fileInfo },
+            ...(reply != null ? { msg_id: reply.msgId, msg_seq: reply.msgSeq } : {}),
+          },
+          { Authorization: `QQBot ${token}` },
+        )
+      } catch (error) {
+        log.warn(`QQ 语音发送失败: ${error instanceof Error ? error.message : String(error)}`)
+        await this.sendQqMessage(connection, externalId, {
+          text: `语音发送失败：${voice.name ?? path.basename(voice.source)}\n原因：${error instanceof Error ? error.message : String(error)}`,
         })
       }
     }

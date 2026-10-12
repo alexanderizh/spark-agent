@@ -1,4 +1,5 @@
 import { extractQqInboundImages, type QqInboundImage } from './qqImageMedia.js'
+import { extractQqInboundVoices, type QqInboundVoice } from './qqVoiceMedia.js'
 
 /**
  * QQ 官方机器人协议的纯函数部分：事件解析、目标编码与内容分片。
@@ -17,6 +18,7 @@ export type QqInboundMessage = {
   senderName: string
   text: string
   images?: QqInboundImage[]
+  voices?: QqInboundVoice[]
   /** 被动回复引用的 msg_id（群聊/单聊必带；频道回复不需要） */
   msgId?: string
   /** 事件时间戳（秒），用于过滤重连重放的旧事件 */
@@ -100,12 +102,20 @@ export function parseQqDispatchEvent(t: string | undefined, d: unknown): QqInbou
   const author = isRecord(d.author) ? d.author : undefined
   const content = readString(d.content)
   const images = extractQqInboundImages(d)
+  const voices = extractQqInboundVoices(d)
   const normalized = normalizeQqText(content ?? '')
-  const text = normalized || (images.length > 0 ? '请识别并说明这张图片。' : '')
+  const text =
+    normalized ||
+    (images.length > 0
+      ? '请识别并说明这张图片。'
+      : voices.length > 0
+        ? '请转写并处理这条语音消息。'
+        : '')
   const msgId = readString(d.id)
   const timestamp = parseQqEventTimestamp(d.timestamp)
 
-  if (content == null && images.length === 0) return null
+  if (content == null && images.length === 0 && voices.length === 0) return null
+  if (text.length === 0) return null
 
   if (t === 'GROUP_AT_MESSAGE_CREATE') {
     const groupOpenid = readString(d.group_openid)
@@ -116,6 +126,7 @@ export function parseQqDispatchEvent(t: string | undefined, d: unknown): QqInbou
       senderName: readString(author?.member_openid) ?? readString(author?.id) ?? 'QQ 用户',
       text,
       ...(images.length > 0 ? { images } : {}),
+      ...(voices.length > 0 ? { voices } : {}),
       ...(msgId != null ? { msgId } : {}),
       timestamp,
     }
@@ -130,6 +141,7 @@ export function parseQqDispatchEvent(t: string | undefined, d: unknown): QqInbou
       senderName: readString(author?.user_openid) ?? readString(author?.id) ?? 'QQ 用户',
       text,
       ...(images.length > 0 ? { images } : {}),
+      ...(voices.length > 0 ? { voices } : {}),
       ...(msgId != null ? { msgId } : {}),
       timestamp,
     }
@@ -144,6 +156,7 @@ export function parseQqDispatchEvent(t: string | undefined, d: unknown): QqInbou
       senderName: readString(author?.username) ?? readString(author?.id) ?? 'QQ 用户',
       text,
       ...(images.length > 0 ? { images } : {}),
+      ...(voices.length > 0 ? { voices } : {}),
       ...(msgId != null ? { msgId } : {}),
       timestamp,
     }

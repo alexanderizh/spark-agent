@@ -7,6 +7,11 @@ export type TelegramOutboundImage = {
   alt: string
 }
 
+export type TelegramOutboundVoice = {
+  source: string
+  name?: string
+}
+
 export type TelegramOutboundMedia = {
   text: string
   images: TelegramOutboundImage[]
@@ -77,6 +82,26 @@ function mimeTypeFromPath(filePath: string): string {
   }
 }
 
+function audioMimeTypeFromPath(filePath: string): string {
+  switch (path.extname(filePath).toLowerCase()) {
+    case '.ogg':
+    case '.oga':
+    case '.opus':
+      return 'audio/ogg'
+    case '.m4a':
+      return 'audio/mp4'
+    case '.wav':
+      return 'audio/wav'
+    case '.flac':
+      return 'audio/flac'
+    case '.aac':
+      return 'audio/aac'
+    case '.mp3':
+    default:
+      return 'audio/mpeg'
+  }
+}
+
 function localPathFromSource(source: string): string | null {
   if (/^file:\/\//iu.test(source)) {
     try {
@@ -98,17 +123,24 @@ async function ensureTelegramResponse(response: Response): Promise<void> {
   } catch {
     if (response.ok) return
   }
-  throw new Error(`Telegram 图片发送失败：${response.status} ${description}`.trim())
+  throw new Error(`Telegram 媒体发送失败：${response.status} ${description}`.trim())
 }
 
-type TelegramMediaMethod = 'sendPhoto' | 'sendDocument'
+type TelegramMediaMethod = 'sendPhoto' | 'sendVoice' | 'sendAudio' | 'sendDocument'
+
+const TELEGRAM_MEDIA_FIELD: Record<TelegramMediaMethod, string> = {
+  sendPhoto: 'photo',
+  sendVoice: 'voice',
+  sendAudio: 'audio',
+  sendDocument: 'document',
+}
 
 async function sendRemoteMedia(
   fetchImpl: typeof fetch,
   input: { token: string; chatId: string; source: string; caption: string },
   method: TelegramMediaMethod,
 ): Promise<void> {
-  const field = method === 'sendPhoto' ? 'photo' : 'document'
+  const field = TELEGRAM_MEDIA_FIELD[method]
   const response = await fetchImpl(
     `https://api.telegram.org/bot${encodeURIComponent(input.token)}/${method}`,
     {
@@ -136,7 +168,7 @@ async function sendLocalMedia(
   },
   method: TelegramMediaMethod,
 ): Promise<void> {
-  const field = method === 'sendPhoto' ? 'photo' : 'document'
+  const field = TELEGRAM_MEDIA_FIELD[method]
   const form = new FormData()
   form.append('chat_id', input.chatId)
   form.append(field, new Blob([input.bytes], { type: input.mimeType }), input.fileName)
@@ -251,5 +283,86 @@ export async function sendTelegramOutboundImage(
       `Telegram 直传失败：${directError instanceof Error ? directError.message : String(directError)}；Spark 临时中转也失败：${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
       { cause: fallbackError },
     )
+  }
+}
+
+/**
+ * 发送语音/音频文件到 Telegram：
+ *   OGG/Opus → sendVoice（语音条样式，可直接播放）
+ *   MP3/M4A/FLAC/WAV/AAC → sendAudio（音频卡片样式）
+ *   其余/失败回退 → sendDocument（文件样式，保证送达）
+ */
+export async function sendTelegramOutboundVoice(
+  input: {
+    token: string
+    chatId: string
+    voice: TelegramOutboundVoice
+  },
+  dependencies: {
+    fetch?: typeof fetch
+    uploadTemporaryFile: (input: {
+      filePath: string
+      fileName: string
+      mimeType: string
+    }) => Promise<string>
+  },
+): Promise<
+  'telegram-voice' | 'telegram-audio' | 'telegram-document' | 'telegram-audio-url' | 'telegram-document-url'
+> {
+  const fetchImpl = dependencies.fetch ?? fetch
+  const name = input.voice.name?.trim() || path.basename(input.voice.source)
+  const localPath = localPathFromSource(input.voice.source)
+
+  // 远端 URL：按 URL 直接投递（音频卡片 → 文件回退）
+  if (localPath == null) {
+    try {
+      await sendRemoteMedia(
+        fetchImpl,
+        { token: input.token, chatId: input.chatId, source: input.voice.source, caption: name },
+        'sendAudio',
+      )
+      return 'telegram-audio-url'
+    } catch {
+      await sendRemoteMedia(
+        fetchImpl,
+        { token: input.token, chatId: input.chatId, source: input.voice.source, caption: name },
+        'sendDocument',
+      )
+      return 'telegram-document-url'
+    }
+  }
+
+  const realPath = await fs.realpath(localPath)
+  const stat = await fs.stat(realPath)
+  if (!stat.isFile()) throw new Error('语音文件路径不是文件')
+  if (stat.size > TELEGRAM_DOCUMENT_LIMIT_BYTES) {
+    throw new Error('语音文件超过 50 MB 发送限制')
+  }
+  const bytes = await fs.readFile(realPath)
+  const mimeType = audioMimeTypeFromPath(realPath)
+  const localMedia = {
+    token: input.token,
+    chatId: input.chatId,
+    bytes,
+    fileName: path.basename(realPath),
+    mimeType,
+    caption: name,
+  }
+
+  const extension = path.extname(realPath).toLowerCase()
+  if (extension === '.ogg' || extension === '.oga' || extension === '.opus') {
+    try {
+      await sendLocalMedia(fetchImpl, localMedia, 'sendVoice')
+      return 'telegram-voice'
+    } catch {
+      // fall through 到 sendAudio / sendDocument 回退
+    }
+  }
+  try {
+    await sendLocalMedia(fetchImpl, localMedia, 'sendAudio')
+    return 'telegram-audio'
+  } catch {
+    await sendLocalMedia(fetchImpl, localMedia, 'sendDocument')
+    return 'telegram-document'
   }
 }

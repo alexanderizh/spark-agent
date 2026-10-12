@@ -875,6 +875,483 @@ describe('unauthorized inbound handling', () => {
   })
 })
 
+describe('telegram inbound voice', () => {
+  const OGG_BYTES = Buffer.concat([Buffer.from('OggS'), Buffer.alloc(32)])
+
+  function buildVoiceFetchMock(): ReturnType<typeof vi.fn> {
+    return vi.fn<typeof fetch>(async (url) => {
+      const target = String(url)
+      if (target.includes('/getFile')) {
+        return new Response('{"ok":true,"result":{"file_path":"voice/file_0.oga"}}')
+      }
+      if (target.includes('/file/bot')) return new Response(OGG_BYTES)
+      return new Response('{"ok":true,"result":{"message_id":1}}')
+    })
+  }
+
+  async function createVoiceService(options?: {
+    transcriber?: {
+      transcribe: (input: { audioPath: string; mimeType?: string }) => Promise<
+        | { kind: 'ok'; text: string; engine: 'local' | 'cloud' }
+        | { kind: 'failed'; message: string }
+      >
+    }
+    transferFiles?: boolean
+    inboundHandler?: (message: { text: string }) => Promise<void>
+  }) {
+    const fs = await import('node:fs/promises')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    const attachmentRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-voice-inbound-'))
+    let stored: unknown = null
+    const settings = {
+      get: () => stored,
+      set: (_c: string, _k: string, v: unknown) => {
+        stored = v
+      },
+    }
+    const fetchMock = buildVoiceFetchMock()
+    vi.stubGlobal('fetch', fetchMock)
+    const service = new RemoteConnectionService(
+      settings as never,
+      attachmentRoot,
+      options?.transcriber,
+    )
+    const connection = service.createBotDraft('telegram').connection
+    service.save({
+      ...connection,
+      enabled: true,
+      allowedChatIds: ['chat-1'],
+      credentials: { botToken: 'test-token' },
+      capabilities: { ...connection.capabilities, transferFiles: options?.transferFiles ?? true },
+    })
+    if (options?.inboundHandler != null) {
+      ;(
+        service as unknown as {
+          inboundHandler: (message: { text: string }) => Promise<void>
+        }
+      ).inboundHandler = options.inboundHandler
+    }
+    return { service, connection, fetchMock }
+  }
+
+  const callHandleInbound = async (
+    service: RemoteConnectionService,
+    connection: RemoteConnectionConfig,
+    message: Record<string, unknown>,
+  ) =>
+    (
+      service as unknown as {
+        handleInboundMessage: (
+          this: RemoteConnectionService,
+          connection: RemoteConnectionConfig,
+          message: Record<string, unknown>,
+        ) => Promise<void>
+      }
+    ).handleInboundMessage.call(service, connection, message)
+
+  it('parseWebhookBody 把语音消息解析为带 inboundVoice 的 message', () => {
+    const parsed = parseWebhookBody('telegram', {
+      message: {
+        message_id: 7,
+        chat: { id: 1001 },
+        from: { username: 'alice' },
+        voice: { file_id: 'vf1', file_unique_id: 'vu1', duration: 8, file_size: 4096 },
+      },
+    })
+    expect(parsed).toMatchObject({
+      kind: 'message',
+      externalId: '1001',
+      text: '请转写并处理这条语音消息。',
+      inboundVoice: { fileId: 'vf1', fileUniqueId: 'vu1', durationSec: 8 },
+    })
+  })
+
+  it('转写成功后以 [语音] 前缀进入会话', async () => {
+    const received: string[] = []
+    const { service, connection } = await createVoiceService({
+      transcriber: {
+        transcribe: async () => ({ kind: 'ok', text: '今天天气不错', engine: 'local' }),
+      },
+      inboundHandler: async (message) => {
+        received.push(message.text)
+      },
+    })
+
+    await callHandleInbound(service, connection, {
+      externalId: 'chat-1',
+      senderName: 'alice',
+      text: '请转写并处理这条语音消息。',
+      inboundVoice: { fileId: 'vf1', fileUniqueId: 'vu1', durationSec: 8 },
+    })
+
+    expect(received).toEqual(['[语音] 今天天气不错'])
+  })
+
+  it('本地与云端均不可用时把原因与配置指引回传远程端，不进入会话', async () => {
+    const received: string[] = []
+    const { service, connection, fetchMock } = await createVoiceService({
+      transcriber: {
+        transcribe: async () => ({
+          kind: 'failed',
+          message:
+            '本地转写：离线识别模型（SenseVoice）未安装\n云端转写：未配置任何多媒体渠道\n\n配置指引：\n· 本地（推荐）：…\n· 云端兜底：…',
+        }),
+      },
+      inboundHandler: async (message) => {
+        received.push(message.text)
+      },
+    })
+
+    await callHandleInbound(service, connection, {
+      externalId: 'chat-1',
+      senderName: 'alice',
+      text: '请转写并处理这条语音消息。',
+      inboundVoice: { fileId: 'vf1', fileUniqueId: 'vu1' },
+    })
+
+    expect(received).toEqual([])
+    const sentBodies = fetchMock.mock.calls
+      .filter(([url]) => String(url).endsWith('/sendMessage'))
+      .map(([, init]) => String(init?.body))
+    expect(
+      sentBodies.some((body) => body.includes('离线识别模型') && body.includes('配置指引')),
+    ).toBe(true)
+  })
+
+  it('未启用传输文件能力时提示开启，不进入会话', async () => {
+    const received: string[] = []
+    const { service, connection, fetchMock } = await createVoiceService({
+      transferFiles: false,
+      inboundHandler: async (message) => {
+        received.push(message.text)
+      },
+    })
+
+    await callHandleInbound(service, connection, {
+      externalId: 'chat-1',
+      senderName: 'alice',
+      text: '请转写并处理这条语音消息。',
+      inboundVoice: { fileId: 'vf1' },
+    })
+
+    expect(received).toEqual([])
+    const sentBodies = fetchMock.mock.calls
+      .filter(([url]) => String(url).endsWith('/sendMessage'))
+      .map(([, init]) => String(init?.body))
+    expect(sentBodies.some((body) => body.includes('传输文件'))).toBe(true)
+  })
+})
+
+describe('outbound voice delivery', () => {
+  it('Telegram: 音频附件走 sendAudio 投递而非留在桌面会话', async () => {
+    const fs = await import('node:fs/promises')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-tg-out-voice-'))
+    const file = path.join(root, '静夜思-朗诵.mp3')
+    await fs.writeFile(file, Buffer.from('mp3'))
+    let stored: unknown = null
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{"ok":true,"result":{}}'))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const service = new RemoteConnectionService({
+        get: () => stored,
+        set: (_c: string, _k: string, v: unknown) => {
+          stored = v
+        },
+      } as never)
+      const connection = service.createBotDraft('telegram').connection
+      service.save({
+        ...connection,
+        credentials: { botToken: 'test-token' },
+        capabilities: { ...connection.capabilities, transferFiles: true },
+      })
+      await service.sendReply(connection.id, '42', '语音已生成。', [
+        { type: 'file', path: file },
+      ])
+      const urls = fetchMock.mock.calls.map(([url]) => String(url))
+      expect(urls.some((url) => url.includes('/sendAudio'))).toBe(true)
+      expect(urls.some((url) => url.includes('/sendMessage'))).toBe(true)
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('QQ: SILK 语音走 file_type=3 富媒体上传并 msg_type=7 发送', async () => {
+    const fs = await import('node:fs/promises')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    const { encode } = await import('silk-wasm')
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-qq-out-voice-'))
+    const silk = Buffer.from((await encode(new Int16Array(480), 24_000)).data)
+    const file = path.join(root, 'voice.slk')
+    await fs.writeFile(file, silk)
+    let stored: unknown = null
+    const fetchMock = vi.fn<typeof fetch>(async (url) => {
+      const target = String(url)
+      if (target.includes('getAppAccessToken'))
+        return new Response('{"access_token":"token","expires_in":3600}')
+      if (target.endsWith('/files')) return new Response('{"file_info":"voice-info"}')
+      return new Response('{}')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const service = new RemoteConnectionService({
+        get: () => stored,
+        set: (_c: string, _k: string, v: unknown) => {
+          stored = v
+        },
+      } as never)
+      const connection = service.createBotDraft('qq').connection
+      service.save({
+        ...connection,
+        credentials: { qqBotAppId: 'app', qqBotSecret: 'secret' },
+        capabilities: { ...connection.capabilities, transferFiles: true },
+      })
+      await service.sendReply(connection.id, 'qq-user:openid', '语音已生成。', [
+        { type: 'file', path: file },
+      ])
+      const calls = fetchMock.mock.calls.map(([url, init]) => ({
+        url: String(url),
+        body: String(init?.body),
+      }))
+      const upload = calls.find((call) => call.url.endsWith('/files'))
+      expect(upload).toBeDefined()
+      expect(JSON.parse(upload?.body ?? '{}').file_type).toBe(3)
+      // 文本（msg_type 0）与语音（msg_type 7）都会命中 /messages，须挑出语音那条
+      const voiceSend = calls.find(
+        (call) => call.url.endsWith('/messages') && /"msg_type":7/.test(call.body),
+      )
+      expect(voiceSend).toBeDefined()
+      expect(JSON.parse(voiceSend?.body ?? '{}')).toMatchObject({
+        msg_type: 7,
+        media: { file_info: 'voice-info' },
+      })
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('QQ: 未启用传输文件时语音被拦截并返回提示', async () => {
+    const fs = await import('node:fs/promises')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-qq-voice-blocked-'))
+    const file = path.join(root, 'voice.mp3')
+    await fs.writeFile(file, Buffer.from('mp3'))
+    let stored: unknown = null
+    const fetchMock = vi.fn<typeof fetch>(async (url) => {
+      const target = String(url)
+      if (target.includes('getAppAccessToken'))
+        return new Response('{"access_token":"token","expires_in":3600}')
+      return new Response('{}')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const service = new RemoteConnectionService({
+        get: () => stored,
+        set: (_c: string, _k: string, v: unknown) => {
+          stored = v
+        },
+      } as never)
+      const connection = service.createBotDraft('qq').connection
+      service.save({
+        ...connection,
+        credentials: { qqBotAppId: 'app', qqBotSecret: 'secret' },
+        capabilities: { ...connection.capabilities, transferFiles: false },
+      })
+      await service.sendReply(connection.id, 'qq-user:openid', '语音已生成。', [
+        { type: 'file', path: file },
+      ])
+      const calls = fetchMock.mock.calls.map(([url, init]) => ({
+        url: String(url),
+        body: String(init?.body),
+      }))
+      expect(calls.some((call) => call.url.endsWith('/files'))).toBe(false)
+      const sent = calls.find((call) => call.url.endsWith('/messages'))
+      expect(JSON.parse(sent?.body ?? '{}').content).toContain('语音未发送')
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('feishu inbound voice', () => {
+  it('parseWebhookBody 把 audio 消息解析为带 feishuVoice 的 message', () => {
+    const parsed = parseWebhookBody('feishu', {
+      event: {
+        message: {
+          chat_id: 'oc_1',
+          message_id: 'om_1',
+          message_type: 'audio',
+          content: '{"file_key":"file_v2_1"}',
+        },
+        sender: { sender_id: { open_id: 'ou_1' } },
+      },
+    })
+    expect(parsed).toMatchObject({
+      kind: 'message',
+      externalId: 'oc_1',
+      text: '请转写并处理这条语音消息。',
+      feishuVoice: { messageId: 'om_1', fileKey: 'file_v2_1' },
+    })
+  })
+
+  it('SILK 无关：飞书 OGG 语音下载转写后以 [语音] 前缀进入会话', async () => {
+    const fs = await import('node:fs/promises')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    const attachmentRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-feishu-in-voice-'))
+    const OGG_BYTES = Buffer.concat([Buffer.from('OggS'), Buffer.alloc(32)])
+    let stored: unknown = null
+    const fetchMock = vi.fn<typeof fetch>(async (url) => {
+      const target = String(url)
+      if (target.includes('tenant_access_token/internal'))
+        return new Response('{"tenant_access_token":"t-1","expire":3600}')
+      if (target.includes('/resources/')) return new Response(OGG_BYTES)
+      return new Response('{"code":0}')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const received: string[] = []
+    const service = new RemoteConnectionService(
+      {
+        get: () => stored,
+        set: (_c: string, _k: string, v: unknown) => {
+          stored = v
+        },
+      } as never,
+      attachmentRoot,
+      {
+        transcribe: async () => ({ kind: 'ok', text: '飞书语音内容', engine: 'local' }),
+      },
+    )
+    const connection = service.createBotDraft('feishu').connection
+    service.save({
+      ...connection,
+      enabled: true,
+      allowedChatIds: ['oc_1'],
+      credentials: { appId: 'app', appSecret: 'secret' },
+      capabilities: { ...connection.capabilities, transferFiles: true },
+    })
+    ;(
+      service as unknown as {
+        inboundHandler: (message: { text: string }) => Promise<void>
+      }
+    ).inboundHandler = async (message) => {
+      received.push(message.text)
+    }
+
+    await (
+      service as unknown as {
+        handleInboundMessage: (
+          this: RemoteConnectionService,
+          connection: RemoteConnectionConfig,
+          message: Record<string, unknown>,
+        ) => Promise<void>
+      }
+    ).handleInboundMessage.call(service, connection, {
+      externalId: 'oc_1',
+      senderName: 'ou_1',
+      text: '请转写并处理这条语音消息。',
+      feishuVoice: { messageId: 'om_1', fileKey: 'file_v2_1' },
+    })
+
+    expect(received).toEqual(['[语音] 飞书语音内容'])
+    await fs.rm(attachmentRoot, { recursive: true, force: true })
+  })
+})
+
+describe('qq inbound voice', () => {
+  it('parseWebhookBody 把群语音事件解析为带 qqVoice 的 message', () => {
+    const parsed = parseWebhookBody('qq', {
+      t: 'GROUP_AT_MESSAGE_CREATE',
+      d: {
+        id: 'msg-1',
+        group_openid: 'g1',
+        author: { member_openid: 'm1' },
+        content: '',
+        attachments: [
+          {
+            url: 'https://groupteam.cdn.qq.com/v1/slkd',
+            content_type: 'audio',
+            filename: 'voice.slk',
+            size: 2048,
+          },
+        ],
+      },
+    })
+    expect(parsed).toMatchObject({
+      kind: 'message',
+      externalId: 'qq-group:g1',
+      text: '请转写并处理这条语音消息。',
+      qqVoice: { url: 'https://groupteam.cdn.qq.com/v1/slkd', filename: 'voice.slk' },
+    })
+  })
+
+  it('SILK 语音解码转写后以 [语音] 前缀进入会话', async () => {
+    const fs = await import('node:fs/promises')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    const { encode } = await import('silk-wasm')
+    const attachmentRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-qq-in-voice-'))
+    // QQ 变体：0x02 前缀 + #!SILK
+    const silk = Buffer.concat([
+      Buffer.from([0x02]),
+      Buffer.from((await encode(new Int16Array(480), 24_000)).data),
+    ])
+    let stored: unknown = null
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(silk))
+    vi.stubGlobal('fetch', fetchMock)
+    const received: string[] = []
+    const service = new RemoteConnectionService(
+      {
+        get: () => stored,
+        set: (_c: string, _k: string, v: unknown) => {
+          stored = v
+        },
+      } as never,
+      attachmentRoot,
+      {
+        transcribe: async () => ({ kind: 'ok', text: 'QQ 语音内容', engine: 'local' }),
+      },
+    )
+    const connection = service.createBotDraft('qq').connection
+    service.save({
+      ...connection,
+      enabled: true,
+      allowedChatIds: ['qq-group:g1'],
+      credentials: { qqBotAppId: 'app', qqBotSecret: 'secret' },
+      capabilities: { ...connection.capabilities, transferFiles: true },
+    })
+    ;(
+      service as unknown as {
+        inboundHandler: (message: { text: string }) => Promise<void>
+      }
+    ).inboundHandler = async (message) => {
+      received.push(message.text)
+    }
+
+    await (
+      service as unknown as {
+        handleInboundMessage: (
+          this: RemoteConnectionService,
+          connection: RemoteConnectionConfig,
+          message: Record<string, unknown>,
+        ) => Promise<void>
+      }
+    ).handleInboundMessage.call(service, connection, {
+      externalId: 'qq-group:g1',
+      senderName: 'm1',
+      text: '请转写并处理这条语音消息。',
+      qqVoice: { url: 'https://groupteam.cdn.qq.com/v1/slkd', filename: 'voice.slk' },
+    })
+
+    expect(received).toEqual(['[语音] QQ 语音内容'])
+    await fs.rm(attachmentRoot, { recursive: true, force: true })
+  })
+})
+
 describe('turn feedback draft', () => {
   it('getTurnFeedbackDraft 返回流式积累的草稿，未开始或空草稿返回 null', async () => {
     vi.useFakeTimers()

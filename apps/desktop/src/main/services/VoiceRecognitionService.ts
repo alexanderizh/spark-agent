@@ -434,6 +434,23 @@ async function refineTranscript(
   return smartJoinSegments(segments)
 }
 
+/**
+ * 整段 PCM16 离线转写（公开 API）：供非麦克风来源（如远程渠道语音消息）复用
+ * SenseVoice 离线识别器。samples 为 s16le 小端采样；默认 16k 单声道。
+ *
+ * 返回值语义与 refineTranscript 一致：null 表示本地识别不可用（native 包过旧 /
+ * 离线模型未安装），调用方应回退云端转写；识别器就绪但解码出错时透抛异常，
+ * 由调用方决定错误面（远程端需要拿到具体原因与指引）。
+ */
+export function transcribePcm16k(
+  samples: Int16Array,
+  options: { language?: VoiceLanguage; segmentSeconds?: number } = {},
+): Promise<string | null> {
+  return refineTranscript(samples, 16000, options.language ?? 'auto', {
+    ...(options.segmentSeconds != null ? { segmentSeconds: options.segmentSeconds } : {}),
+  })
+}
+
 // ─── 句级解码队列（方案B：sentence 会话的异步出字引擎）────────────────────────
 //
 // feedVoiceAudio 是 100ms/chunk 的高频同步调用，SenseVoice 单句解码（≤20s 句

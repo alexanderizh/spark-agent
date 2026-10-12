@@ -450,6 +450,7 @@ import { registerImageProcessIpc } from './registerImageProcessIpc.js'
 import { resolveBrowserAutomationMcpServerPath } from '../services/BrowserAutomationMcpRuntime.js'
 import { resolveStandaloneNodeRuntimePath } from '../services/StandaloneNodeRuntime.js'
 import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
+import { createRemoteVoiceTranscriber } from '../services/remoteVoiceTranscription.js'
 import { formatRemoteConnectionCapabilityStatus } from '../services/remoteConnectionStatus.js'
 import { deliverRemoteTurnReply } from '../services/remoteTurnReply.js'
 import {
@@ -1981,6 +1982,12 @@ function getRemoteConnectionService(): RemoteConnectionService {
     _remoteConnectionService = new RemoteConnectionService(
       getSettingsService(),
       path.join(app.getPath('userData'), 'attachments', 'remote', 'telegram'),
+      // 入站语音转写：本地 SenseVoice 优先，云端 audio.transcription 兜底
+      createRemoteVoiceTranscriber({
+        resolveMediaProviders: resolveCanvasMediaProviders,
+        mediaRouter: getMediaRouterService(),
+        workDir: path.join(app.getPath('userData'), 'attachments', 'remote', 'voice-transcribe'),
+      }),
     )
   }
   if (!_remoteConnectionChangeHookRegistered) {
@@ -2819,9 +2826,14 @@ function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void 
   if (target == null) return
   if (event.type === 'presented_files') {
     for (const file of event.files) {
-      if (!/\.(?:png|jpe?g|webp|gif)$/iu.test(file.path)) continue
       if (!target.attachments.some((attachment) => attachment.path === file.path)) {
-        target.attachments.push({ type: 'image', path: file.path })
+        // 图片走既有图片链路；音频（如 TTS 生成的 MP3）作为文件附件收集，
+        // 由 sendReply 映射到各渠道的语音投递（Telegram 语音条/飞书 opus/QQ SILK）
+        if (/\.(?:png|jpe?g|webp|gif)$/iu.test(file.path)) {
+          target.attachments.push({ type: 'image', path: file.path })
+        } else if (/\.(?:mp3|wav|ogg|oga|opus|m4a|aac|flac|amr|slk|silk)$/iu.test(file.path)) {
+          target.attachments.push({ type: 'file', path: file.path })
+        }
       }
     }
   } else if (event.type === 'assistant_message' && !event.isFinal) {

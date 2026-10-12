@@ -63,6 +63,7 @@
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "sharp": "0.35.3",
+    "silk-wasm": "^3.7.1",
     "sqlite-vec": "0.1.9",
     "zod": "^4.4.3"
   },

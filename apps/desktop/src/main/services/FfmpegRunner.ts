@@ -1324,6 +1324,79 @@ export async function extractAudio(
   }
 }
 
+/**
+ * 把任意音频/视频文件解码为 16k 单声道 s16le 裸 PCM 文件（供本地语音识别消费）。
+ * 不探测时长（decode 按输入自然结束），超时默认 60s。
+ */
+export async function decodeAudioToPcm16kMono(
+  input: string,
+  outputPath: string,
+  opts: {
+    timeoutMs?: number | undefined
+    signal?: AbortSignal | undefined
+    /** 输出采样率（Hz），默认 16000；QQ SILK 编解码链路使用 24000。 */
+    sampleRate?: number | undefined
+  } = {},
+): Promise<void> {
+  ensureOutputDirectory(outputPath)
+  const result = await runFfmpeg(
+    [
+      '-i',
+      input,
+      '-vn',
+      '-map',
+      '0:a:0',
+      '-ar',
+      String(opts.sampleRate ?? 16_000),
+      '-ac',
+      '1',
+      '-f',
+      's16le',
+      '-y',
+      outputPath,
+    ],
+    { timeoutMs: opts.timeoutMs ?? 60_000, ...(opts.signal ? { signal: opts.signal } : {}) },
+  )
+  if (result.code !== 0) {
+    throw new Error(`音频解码失败: ${result.stderr.slice(-300)}`)
+  }
+}
+
+/**
+ * 任意音频 → OGG/Opus（48k 单声道）。飞书语音消息（msg_type=audio）只接受
+ * file_type=opus 的上传产物，TTS 生成的 MP3 等需先经此转码。
+ */
+export async function encodeAudioToOggOpus(
+  input: string,
+  outputPath: string,
+  opts: { timeoutMs?: number | undefined; signal?: AbortSignal | undefined } = {},
+): Promise<void> {
+  ensureOutputDirectory(outputPath)
+  const result = await runFfmpeg(
+    [
+      '-i',
+      input,
+      '-vn',
+      '-map',
+      '0:a:0',
+      '-c:a',
+      'libopus',
+      '-b:a',
+      '48k',
+      '-ar',
+      '48000',
+      '-ac',
+      '1',
+      '-y',
+      outputPath,
+    ],
+    { timeoutMs: opts.timeoutMs ?? 120_000, ...(opts.signal ? { signal: opts.signal } : {}) },
+  )
+  if (result.code !== 0) {
+    throw new Error(`音频转码为 OGG/Opus 失败: ${result.stderr.slice(-300)}`)
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 6. 画面处理
 // ═══════════════════════════════════════════════════════════════════════════
