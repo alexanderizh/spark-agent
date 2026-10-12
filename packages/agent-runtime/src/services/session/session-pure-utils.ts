@@ -1904,12 +1904,14 @@ export function isGoalControlCommand(message: string): boolean {
  *     `last`，也必须通过独立 runtime_context_snapshot 证明来源，避免载具切换后误用。
  *   - codex-openai：虽然当前实现是每请求 prompt_tokens，但历史 usage_update 没有可靠
  *     载具来源标记，同样不由这个通用选择器读取，避免与 SDK 累计事件混淆。
- *   - claude：轮内 per-call 变体（assistant 消息，无 estimatedCostUsd）与单次请求
- *     一一对应；result 变体带 estimatedCostUsd（total_cost_usd），是本轮主循环所有
- *     模型调用的**合计**（实测一轮 input 132K + cacheRead 5.3M，远超任何单窗口），
- *     必须跳过，否则反推会把历史段顶到窗口上限。实测重工具轮只剩零值占位与
- *     result 合计，全部不可用时返回 undefined（宁缺毋假；claude 渲染端本就
- *     真实 usage 优先，不受此值影响）。
+ *   - claude：轮内 per-call 变体（assistant 消息与 message_start/message_delta
+ *     流式快照，均无 estimatedCostUsd）与单次请求一一对应；result 变体带
+ *     estimatedCostUsd（total_cost_usd），是本轮主循环所有模型调用的**合计**
+ *     （实测一轮 input 132K + cacheRead 5.3M，远超任何单窗口），必须跳过，否则
+ *     反推会把历史段顶到窗口上限。message_delta 事件补齐前，重工具轮流式期间
+ *     只剩零值占位与 result 合计（全部不可用返回 undefined，宁缺毋假）；
+ *     补齐后轮内每次请求结束即有真实 per-call 快照可取。claude 渲染端本就
+ *     真实 usage 优先，不受此值影响。
  */
 export function getLastRealPromptTokens(
   eventRepo: EventRepository,
