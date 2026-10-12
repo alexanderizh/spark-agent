@@ -529,6 +529,7 @@ export const TEAM_DISPATCH_TOOL_DESCRIPTION = [
   'Delegate ONE focused subtask to a teammate agent (serial).',
   'When to use: the next step depends on the previous member reply, or only one member needs to act.',
   'When NOT to use: you can answer the user directly, or the user asks several members in parallel (use agent_dispatch_batch instead).',
+  'Timeout: each dispatch defaults to 10 minutes. Omit timeoutMs for quick subtasks; pass a larger value (up to 1800000 ms = 30 min) for long-running work such as large refactors, full test suite runs, or deep multi-file research.',
   'Returns a structured reply with the member content. You decide whether to call again or synthesize the final answer.',
 ].join('\n')
 
@@ -537,6 +538,7 @@ export const TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION = [
   'When to use: the user explicitly asks several members (e.g. "ask all agents", "have docs and qa each draft X"), or you have multiple unrelated tasks that can run concurrently.',
   'When NOT to use: tasks depend on each other (use agent_dispatch one at a time), or the user only mentioned one member.',
   'Each item is one independent dispatch; tasks may target the same or different members.',
+  'Timeout: each item defaults to 10 minutes. Omit timeoutMs for quick subtasks; pass a larger value (up to 1800000 ms = 30 min) per item for long-running work.',
   'Returns an array of structured replies in the same order as the input. A failure in one item does not abort the others.',
 ].join('\n')
 

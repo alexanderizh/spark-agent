@@ -148,7 +148,12 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
 // 默认 10 分钟：member 一次 turn 常含多轮工具调用（读写文件、跑命令），
 // 旧的 2 分钟对真实编码任务远远不够，会在中途被砍断。
 const DEFAULT_DISPATCH_TIMEOUT_MS = 600_000
-const MAX_DISPATCH_TIMEOUT_MS = 1_800_000
+/**
+ * 单次派发超时的运行时硬护栏（钳制在 run() 内生效）。
+ * agent_dispatch / agent_dispatch_batch 工具 schema 的 timeoutMs 上限与此对齐
+ * （session.service.ts 引用本常量），避免「工具层上限 < 运行时上限」的错位。
+ */
+export const MAX_DISPATCH_TIMEOUT_MS = 1_800_000
 // 单 turn dispatch 预算。Host 用 agent_dispatch_batch 一次提交多个并行任务时
 // 计数仍按"每个 task 一次"累加（保护循环），所以上限要能覆盖典型 batch（≤10）。
 const DEFAULT_MAX_DISPATCHES_PER_TURN = 10

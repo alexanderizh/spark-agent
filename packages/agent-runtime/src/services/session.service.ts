@@ -113,7 +113,7 @@ import {
   type RouterIntensity,
 } from '@spark/protocol'
 import { normalizeReasoningBudgetTokens, SparkError } from '@spark/shared'
-import { TeamDispatchService } from './team-dispatch.service.js'
+import { TeamDispatchService, MAX_DISPATCH_TIMEOUT_MS } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
 import {
   AutoRouterTurnSupervisor,
@@ -9196,7 +9196,15 @@ export class SessionService {
           .max(10)
           .optional(),
         expectedOutput: z.enum(['text', 'json', 'code', 'mixed']).optional(),
-        timeoutMs: z.number().int().min(5000).max(600_000).optional(),
+        timeoutMs: z
+          .number()
+          .int()
+          .min(5000)
+          .max(MAX_DISPATCH_TIMEOUT_MS)
+          .optional()
+          .describe(
+            'Per-dispatch timeout in milliseconds. Defaults to 10 minutes. Omit it for quick subtasks; pass a larger value (up to 1800000 = 30 minutes) only for long-running work such as large refactors, full test suite runs, or deep multi-file research.',
+          ),
       },
       handler: async (args: Record<string, unknown>) => {
         const since = new Date().toISOString()
@@ -9227,7 +9235,15 @@ export class SessionService {
                 .max(10)
                 .optional(),
               expectedOutput: z.enum(['text', 'json', 'code', 'mixed']).optional(),
-              timeoutMs: z.number().int().min(5000).max(600_000).optional(),
+              timeoutMs: z
+                .number()
+                .int()
+                .min(5000)
+                .max(MAX_DISPATCH_TIMEOUT_MS)
+                .optional()
+                .describe(
+                  'Per-item timeout in milliseconds. Defaults to 10 minutes. Omit it for quick subtasks; pass a larger value (up to 1800000 = 30 minutes) only for long-running work.',
+                ),
             }),
           )
           .min(1)
