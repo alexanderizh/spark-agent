@@ -97,6 +97,8 @@ export interface WikiRepoScanResult {
   pagesUpdated: number
   /** 被跳过（人工接管 / 已忽略）的页面数 */
   pagesSkipped: number
+  /** 归档的陈旧生成页数（源文件已从仓库消失；接管/忽略页与有存活子节点的目录豁免） */
+  archivedStale: number
   filesScanned: number
   truncated: boolean
   message?: string
@@ -232,11 +234,29 @@ export class WikiRepoScanService {
       else log.warn(`repo page update failed: slug=${draft.slug} reason=${written.message}`)
     }
 
+    // —— 陈旧页清理（rebuild 镜像语义的收尾）：消失于本 rev 的生成页不再残留 ——
+    // 截断守卫：树被 maxFiles 截断时 draft 集不完整，「没扫到」≠「已消失」，
+    // 此时清理会把真实存在但未扫到的页误归档——宁漏勿误，直接跳过。
+    let archivedStale = 0
+    if (!tree.truncated) {
+      const draftSlugs = new Set(drafts.map((d) => d.slug))
+      try {
+        archivedStale = this.archiveStaleRepoPages(space.id, draftSlugs)
+      } catch (error) {
+        // 清理失败不拖垮扫描：残留页留在原状，下次 rebuild 会再尝试
+        log.warn(
+          `repo stale page cleanup failed: space=${space.id} — ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        )
+      }
+    }
+
     // 记录生成版本（漂移检测的基线）
     this.spaceRepo.update(space.id, { repo_rev: rev })
     log.info(
       `repo wiki scanned: space=${space.id} rev=${rev ?? 'unknown'} files=${tree.files.length} ` +
-        `created=${pagesCreated} updated=${pagesUpdated} skipped=${pagesSkipped}`,
+        `created=${pagesCreated} updated=${pagesUpdated} skipped=${pagesSkipped} staleArchived=${archivedStale}`,
     )
 
     // 扫描后自动增强（C4 触发层隔离：void + catch，扫描回执绝不被增强拖垮；
@@ -256,6 +276,7 @@ export class WikiRepoScanService {
       pagesCreated,
       pagesUpdated,
       pagesSkipped,
+      archivedStale,
       filesScanned: tree.files.length,
       truncated: tree.truncated,
     }
@@ -337,6 +358,49 @@ export class WikiRepoScanService {
     return repoOwnershipFromSourceType(page.source_type) ?? 'generated'
   }
 
+  /**
+   * 归档消失于当前 rev 的生成态页面（rebuild 镜像语义的收尾）。
+   *
+   * - 只动 source_type='repo-scan'：manual（接管）/ ignored（忽略）是用户的显式
+   *   表达，源文件删了页面也保留——所有权体系就是清理的天然豁免通道。
+   * - 归档而非删除：软操作可恢复、保留版本历史、释放 slug 槽位（源文件回来时
+   *   rebuild 按新页重建，与「归档释放槽位」的既有语义一致）。
+   * - 目录页仅在其下已无任何存活节点时归档（防孤儿挂载点）：被改名过的目录页
+   *   不在本 rev slug 集但子页仍在，必须保留挂载点。
+   */
+  private archiveStaleRepoPages(spaceId: string, draftSlugs: ReadonlySet<string>): number {
+    const active = this.pageRepo.listAllActiveMinimal(spaceId)
+    const isStaleGenerated = (row: { slug: string; sourceType: string | null }): boolean =>
+      row.sourceType === WIKI_REPO_SOURCE_TYPE && !draftSlugs.has(row.slug)
+
+    let archived = 0
+    const removed = new Set<string>()
+    // 第一遍：内容页先行归档，目录的「存活子节点」判定才准确
+    for (const row of active) {
+      if (row.kind !== 'folder' && isStaleGenerated(row)) {
+        this.pageRepo.archive(row.id)
+        removed.add(row.id)
+        archived += 1
+      }
+    }
+    // 第二遍：目录页按不动点收敛——子目录归档后，父目录才可能失去全部存活子节点
+    const pending = active.filter((row) => row.kind === 'folder' && isStaleGenerated(row))
+    let progressed = true
+    while (progressed) {
+      progressed = false
+      for (const dir of pending) {
+        if (removed.has(dir.id)) continue
+        const hasLiveChild = active.some((row) => row.parentId === dir.id && !removed.has(row.id))
+        if (hasLiveChild) continue
+        this.pageRepo.archive(dir.id)
+        removed.add(dir.id)
+        archived += 1
+        progressed = true
+      }
+    }
+    return archived
+  }
+
   /** 定位或新建 repo 空间（同 repo_path 复用，避免重复空间堆积）。 */
   private async resolveSpace(
     repoRoot: string,
@@ -413,5 +477,12 @@ export class WikiRepoScanService {
 }
 
 function emptyResult(): Omit<WikiRepoScanResult, 'ok' | 'message'> {
-  return { pagesCreated: 0, pagesUpdated: 0, pagesSkipped: 0, filesScanned: 0, truncated: false }
+  return {
+    pagesCreated: 0,
+    pagesUpdated: 0,
+    pagesSkipped: 0,
+    archivedStale: 0,
+    filesScanned: 0,
+    truncated: false,
+  }
 }

@@ -267,6 +267,8 @@ export interface WikiRepoScanReceipt {
   pagesUpdated: number
   /** 被跳过（人工接管 / 已忽略）的页面数 */
   pagesSkipped: number
+  /** 归档的陈旧生成页数（源文件已从仓库消失；接管/忽略页不受影响） */
+  archivedStale: number
   filesScanned: number
   /** 是否因文件数上限截断 */
   truncated: boolean

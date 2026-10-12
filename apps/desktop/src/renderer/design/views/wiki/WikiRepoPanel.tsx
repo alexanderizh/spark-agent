@@ -413,6 +413,7 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
       toast.success(
         `已生成 Repo Wiki：新增 ${result.pagesCreated} 页` +
           `${result.pagesUpdated > 0 ? ` / 更新 ${result.pagesUpdated} 页` : ''}` +
+          `${result.archivedStale > 0 ? ` / 归档陈旧 ${result.archivedStale} 页` : ''}` +
           `${result.truncated ? '（受文件数上限约束，已截断）' : ''}`,
       )
       setScanOpen(false)

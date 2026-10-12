@@ -511,6 +511,13 @@ function summarize(name, data) {
         `- [${p.id}] ${p.title} (${p.kind}${p.hasChildren ? ', 含子页面' : ''}${ownershipTag(p.repoOwnership)})`,
     )
     let text = lines.join('\n')
+    // 所有权徽章词表：仅当本层确实出现标记时输出一次（与 session.service 的
+    // summarizeWikiList 同义；固定成本不随节点数放大，不占工具描述预算）。
+    if (items.some((p) => p.repoOwnership != null)) {
+      text =
+        '（标记：repo生成=重建会覆写改动，repo人工=用户接管·重建不覆写，repo忽略=重建跳过）\n' +
+        text
+    }
     if (data.truncated) text += `\n（该层共 ${data.total} 个节点，仅显示前 ${items.length} 个）`
     return text
   }
@@ -607,6 +614,7 @@ function summarize(name, data) {
       `repo 扫描完成 ${data.spaceId ?? '未知'}：rev=${data.repoRev ?? '未知'}，` +
       `新建 ${data.pagesCreated}，更新 ${data.pagesUpdated}，` +
       `跳过 ${data.pagesSkipped}，文件 ${data.filesScanned}`
+    if (data.archivedStale > 0) text += `，归档陈旧页 ${data.archivedStale}`
     if (data.truncated) text += '（文件数达上限已截断）'
     return text
   }

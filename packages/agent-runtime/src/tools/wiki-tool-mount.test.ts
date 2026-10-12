@@ -516,13 +516,54 @@ describe('Wiki 工具面（S1）', () => {
     try {
       const text = await callBridgeTool(port, 'wiki_list', { space_id: 'sp_1' })
       const lines = text.split('\n')
-      expect(lines).toHaveLength(4)
-      expect(lines[0]).toBe('- [wp_g] 生成页 (knowledge, repo生成)')
-      expect(lines[1]).toBe('- [wp_m] 接管页 (knowledge, repo人工)')
-      expect(lines[2]).toBe('- [wp_i] 忽略页 (knowledge, 含子页面, repo忽略)')
+      expect(lines).toHaveLength(5)
+      // 词表头行：仅当本层出现标记时输出一次（徽章语义在出现处自解释，不占描述预算）
+      expect(lines[0]).toBe(
+        '（标记：repo生成=重建会覆写改动，repo人工=用户接管·重建不覆写，repo忽略=重建跳过）',
+      )
+      expect(lines[1]).toBe('- [wp_g] 生成页 (knowledge, repo生成)')
+      expect(lines[2]).toBe('- [wp_m] 接管页 (knowledge, repo人工)')
+      expect(lines[3]).toBe('- [wp_i] 忽略页 (knowledge, 含子页面, repo忽略)')
       // 无所有权标记的节点保持原样（零开销）
-      expect(lines[3]).toBe('- [wp_n] 普通页 (knowledge)')
+      expect(lines[4]).toBe('- [wp_n] 普通页 (knowledge)')
       expect(received[0]!.method).toBe('wiki.list')
+    } finally {
+      server.close()
+    }
+  })
+
+  it('wiki_list 无所有权标记时不输出词表头（普通空间零噪音）', async () => {
+    const { server, port } = await startFakeBridge({
+      items: [{ id: 'wp_n', title: '普通页', kind: 'knowledge', hasChildren: false, tokens: 10 }],
+      total: 1,
+      truncated: false,
+    })
+    try {
+      const text = await callBridgeTool(port, 'wiki_list', { space_id: 'sp_plain' })
+      expect(text).not.toContain('标记：repo生成')
+      expect(text.startsWith('- [wp_n]')).toBe(true)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('wiki_repo_scan 回执渲染归档陈旧页计数（有归档才追加）', async () => {
+    const { server, port } = await startFakeBridge({
+      ok: true,
+      spaceId: 'sp_repo',
+      repoRev: 'abcdef12345',
+      pagesCreated: 1,
+      pagesUpdated: 3,
+      pagesSkipped: 0,
+      archivedStale: 2,
+      filesScanned: 120,
+      truncated: false,
+    })
+    try {
+      const text = await callBridgeTool(port, 'wiki_repo_scan', { space_id: 'sp_repo' })
+      expect(text).toContain('新建 1，更新 3')
+      expect(text).toContain('归档陈旧页 2')
+      expect(text).toContain('文件 120')
     } finally {
       server.close()
     }

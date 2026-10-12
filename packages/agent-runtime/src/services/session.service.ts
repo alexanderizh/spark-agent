@@ -685,6 +685,8 @@ export interface WikiBridgeRepoScanReceipt {
   pagesCreated: number
   pagesUpdated: number
   pagesSkipped: number
+  /** 归档的陈旧生成页数（源文件已从仓库消失；接管/忽略页不受影响） */
+  archivedStale: number
   filesScanned: number
   truncated: boolean
   error?: string
@@ -2394,6 +2396,7 @@ export class SessionService {
         pagesCreated: 0,
         pagesUpdated: 0,
         pagesSkipped: 0,
+        archivedStale: 0,
         filesScanned: 0,
         truncated: false,
         error: '目标空间不在本会话可见范围内',
@@ -2406,6 +2409,7 @@ export class SessionService {
         pagesCreated: result.pagesCreated,
         pagesUpdated: result.pagesUpdated,
         pagesSkipped: result.pagesSkipped,
+        archivedStale: result.archivedStale,
         filesScanned: result.filesScanned,
         truncated: result.truncated,
         ...(result.message != null ? { error: result.message } : {}),
@@ -2418,6 +2422,7 @@ export class SessionService {
       pagesCreated: result.pagesCreated,
       pagesUpdated: result.pagesUpdated,
       pagesSkipped: result.pagesSkipped,
+      archivedStale: result.archivedStale,
       filesScanned: result.filesScanned,
       truncated: result.truncated,
     }
@@ -8600,6 +8605,14 @@ export class SessionService {
         `- [${p.id}] ${p.title} (${p.kind}${p.hasChildren ? ', 含子页面' : ''}${repoOwnershipTag(p.repoOwnership)})`,
     )
     let text = lines.join('\n')
+    // 所有权徽章词表：仅当本层确实出现标记时输出一次（每次调用固定成本，不随
+    // 节点数放大；不写进工具描述——slim 档预算 798/800 无余量，词表放在用到
+    // 它的回执里，语义恰在出现处自解释）。
+    if (data.items.some((p) => p.repoOwnership != null)) {
+      text =
+        '（标记：repo生成=重建会覆写改动，repo人工=用户接管·重建不覆写，repo忽略=重建跳过）\n' +
+        text
+    }
     if (data.truncated)
       text += `\n（该层共 ${data.total} 个节点，仅显示前 ${data.items.length} 个）`
     return text
@@ -8645,6 +8658,7 @@ export class SessionService {
       `repo 扫描完成 ${receipt.spaceId ?? '未知'}：rev=${receipt.repoRev ?? '未知'}，` +
       `新建 ${receipt.pagesCreated}，更新 ${receipt.pagesUpdated}，` +
       `跳过 ${receipt.pagesSkipped}，文件 ${receipt.filesScanned}`
+    if (receipt.archivedStale > 0) text += `，归档陈旧页 ${receipt.archivedStale}`
     if (receipt.truncated) text += '（文件数达上限已截断）'
     return text
   }

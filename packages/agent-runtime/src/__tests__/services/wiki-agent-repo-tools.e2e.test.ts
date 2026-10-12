@@ -218,4 +218,77 @@ describe('Agent repo 编排工具（wiki_repo_scan / wiki_repo_status）e2e', ()
     expect(del.ok).toBe(false)
     expect(del.error).toContain('wiki_set_ownership')
   })
+
+  it('陈旧清理：消失目录的生成页归档不删除；接管页与有存活子节点的目录豁免', async () => {
+    const pageRepo = new WikiPageRepository(db)
+    // gonea：纯生成目录（删除后双页归档）；goneb：模块页先被接管（删除后全豁免）
+    mkdirSync(path.join(repo, 'gonea'), { recursive: true })
+    writeFileSync(path.join(repo, 'gonea', 'note.md'), '# gonea\n')
+    mkdirSync(path.join(repo, 'goneb'), { recursive: true })
+    writeFileSync(path.join(repo, 'goneb', 'keep.md'), '# goneb\n')
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-q', '-m', 'add doomed dirs'])
+    const seeded = await service.bridgeWikiRepoScan({ sessionId, spaceId: repoSpaceId })
+    expect(seeded.ok).toBe(true)
+    expect(seeded.archivedStale).toBe(0)
+
+    const moduleB = pageRepo.getBySlug(repoSpaceId, 'repo-module-goneb')
+    expect(moduleB).not.toBeNull()
+    const take = await service.bridgeWikiSetOwnership({
+      sessionId,
+      pageId: moduleB!.id,
+      ownership: 'manual',
+    })
+    expect(take.ok).toBe(true)
+
+    rmSync(path.join(repo, 'gonea'), { recursive: true })
+    rmSync(path.join(repo, 'goneb'), { recursive: true })
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-q', '-m', 'remove dirs'])
+    const rebuilt = await service.bridgeWikiRepoScan({ sessionId, spaceId: repoSpaceId })
+    expect(rebuilt.ok).toBe(true)
+    // gonea：模块页 + 目录页 = 2 页归档；goneb：接管页存活 → 其目录因存活子节点豁免
+    expect(rebuilt.archivedStale).toBe(2)
+
+    // 归档而非删除：行还在（status=archived）；接管页与其目录页仍存活
+    const rows = pageRepo.listBySpace(repoSpaceId, { includeArchived: true })
+    const bySlug = new Map(rows.map((r) => [r.slug, r]))
+    expect(bySlug.get('repo-module-gonea')?.status).toBe('archived')
+    expect(bySlug.get('repo-dir-gonea')?.status).toBe('archived')
+    expect(bySlug.get('repo-module-goneb')?.status).toBe('published')
+    expect(bySlug.get('repo-module-goneb')?.source_type).toBe('repo-scan-manual')
+    expect(bySlug.get('repo-dir-goneb')?.status).toBe('published')
+  })
+
+  it('陈旧清理后源文件回归：slug 槽位已释放，rebuild 按新页重建', async () => {
+    const pageRepo = new WikiPageRepository(db)
+    mkdirSync(path.join(repo, 'temp'), { recursive: true })
+    writeFileSync(path.join(repo, 'temp', 'x.md'), '# x\n')
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-q', '-m', 'add temp'])
+    expect((await service.bridgeWikiRepoScan({ sessionId, spaceId: repoSpaceId })).ok).toBe(true)
+    const oldModule = pageRepo.getBySlug(repoSpaceId, 'repo-module-temp')
+    expect(oldModule).not.toBeNull()
+
+    rmSync(path.join(repo, 'temp'), { recursive: true })
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-q', '-m', 'drop temp'])
+    const drop = await service.bridgeWikiRepoScan({ sessionId, spaceId: repoSpaceId })
+    expect(drop.ok).toBe(true)
+    expect(drop.archivedStale).toBe(2)
+    // getBySlug 过滤归档行 → slug 槽位已释放
+    expect(pageRepo.getBySlug(repoSpaceId, 'repo-module-temp')).toBeNull()
+
+    mkdirSync(path.join(repo, 'temp'), { recursive: true })
+    writeFileSync(path.join(repo, 'temp', 'x.md'), '# x reborn\n')
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-q', '-m', 'temp returns'])
+    const back = await service.bridgeWikiRepoScan({ sessionId, spaceId: repoSpaceId })
+    expect(back.ok).toBe(true)
+    expect(back.archivedStale).toBe(0)
+    const reborn = pageRepo.getBySlug(repoSpaceId, 'repo-module-temp')
+    expect(reborn).not.toBeNull()
+    expect(reborn!.id).not.toBe(oldModule!.id)
+    expect(reborn!.version).toBe(1)
+  })
 })

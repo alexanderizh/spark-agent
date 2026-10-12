@@ -336,6 +336,33 @@ export class WikiPageRepository extends BaseRepository {
     return result
   }
 
+  /**
+   * 空间内全部存活页的最小字段集（无上限）。
+   * 陈旧页清理等「全量比对」场景用：listBySpace 有 2000 上限钳制，
+   * 大空间的清理比对不能被分页截断（截断会把未取到的页误判为陈旧）。
+   */
+  listAllActiveMinimal(spaceId: string): Array<{
+    id: string
+    slug: string
+    kind: WikiPageKind
+    parentId: string | null
+    sourceType: string | null
+  }> {
+    return this.raw
+      .prepare(
+        `SELECT id, slug, kind, parent_id AS parentId, source_type AS sourceType
+         FROM wiki_page WHERE space_id = ? AND status != 'archived'
+         ORDER BY sort_order ASC, created_at ASC`,
+      )
+      .all(spaceId) as Array<{
+      id: string
+      slug: string
+      kind: WikiPageKind
+      parentId: string | null
+      sourceType: string | null
+    }>
+  }
+
   /** 活跃页面计数（配额闸门用） */
   countActive(spaceId: string): number {
     const row = this.raw
