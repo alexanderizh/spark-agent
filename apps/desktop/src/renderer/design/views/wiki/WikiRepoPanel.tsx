@@ -10,7 +10,7 @@
  *     落后提交数超过设置阈值即提示重建；
  *   - `repo/mode='auto'` 时，打开本面板若检测到漂移会自动重建
  *     （不挂后台调度器：自动触发发生在用户可见的时刻，成本与预期都明确）；
- *   - 模块页（repo-module-*）展示「AI 导读」块（WikiRepoEnrich）：扫描/重建后
+ *   - 模块页（repo-module-*）与综述页（repo-overview）展示「AI 导读」块（WikiRepoEnrich）：扫描/重建后
  *     自动增强（总闸 repo/enrich/enabled），或经入口行 / ↻ 单页生成（不受闸限制）。
  *
  * 写入纪律：扫描 / 重建 / 所有权切换全部走 wiki:repo:* IPC，渲染端不直接
@@ -362,11 +362,16 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
     }
   }, [activeSpaceId, activePageMeta, refreshEnrichSection, runEnrichment, toast])
 
-  /** 导读槽可见：模块页 + 生成态（manual/ignored 页后端必返 null，前端先判少一次 IPC）。 */
-  const enrichSlotVisible =
-    activePageMeta != null &&
-    activePageMeta.slug.startsWith('repo-module-') &&
-    ownership === 'generated'
+  /** 导读槽可见：模块页/综述页 + 生成态（manual/ignored 页后端必返 null，前端先判少一次 IPC）。 */
+  const enrichPageKind: 'module' | 'overview' | null =
+    activePageMeta != null && ownership === 'generated'
+      ? activePageMeta.slug.startsWith('repo-module-')
+        ? 'module'
+        : activePageMeta.slug === 'repo-overview'
+          ? 'overview'
+          : null
+      : null
+  const enrichSlotVisible = enrichPageKind != null
   /** S3/S4 骨架态：用户单页触发中，或空间级增强进行中且本页尚无导读。 */
   const enrichRunning = pageEnriching || (enrichProgress?.running === true && enrichSection == null)
 
@@ -696,6 +701,7 @@ export function WikiRepoPanel({ onChanged }: WikiRepoPanelProps) {
                   section={enrichSection}
                   running={enrichRunning}
                   onRun={() => void handleEnrichRun()}
+                  kind={enrichPageKind}
                 />
               )}
               <MarkdownText content={page.body} />
@@ -915,7 +921,7 @@ function enrichRunErrorText(receipt: WikiRepoEnrichmentRunReceipt): string {
     case 'no_repo_path':
       return '空间未关联仓库路径'
     case 'no_pages':
-      return '没有可增强的模块页'
+      return '没有可增强的页面'
     default:
       return receipt.message ?? '未知错误'
   }

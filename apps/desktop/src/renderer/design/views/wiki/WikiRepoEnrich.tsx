@@ -41,9 +41,16 @@ export interface WikiRepoEnrichBlockProps {
   running: boolean
   /** 入口行 / ↻ 共用触发：单页强制重跑（不受总闸限制） */
   onRun: () => void
+  /** 页面变体：模块页（默认）或综述页——只影响入口提示与说明兜底文案 */
+  kind?: 'module' | 'overview'
 }
 
-export function WikiRepoEnrichBlock({ section, running, onRun }: WikiRepoEnrichBlockProps) {
+export function WikiRepoEnrichBlock({
+  section,
+  running,
+  onRun,
+  kind = 'module',
+}: WikiRepoEnrichBlockProps) {
   if (section === undefined) return null
 
   // S2：无导读且不在生成 → 虚线入口行（总闸默认关时单页体验的唯一可发现性入口）
@@ -51,20 +58,30 @@ export function WikiRepoEnrichBlock({ section, running, onRun }: WikiRepoEnrichB
     return (
       <button type="button" className="wiki_repo_enrich_entry" onClick={onRun}>
         <Icons.Sparkles size={13} />
-        <span className="wiki_repo_enrich_entry_text">生成 AI 导读</span>
-        <span className="wiki_repo_enrich_entry_hint">模块职责 / 关键入口 / 依赖关系</span>
+        <span className="wiki_repo_enrich_entry_text">
+          {kind === 'overview' ? '生成 AI 综述' : '生成 AI 导读'}
+        </span>
+        <span className="wiki_repo_enrich_entry_hint">
+          {kind === 'overview'
+            ? '项目定位 / 架构组成 / 阅读指引'
+            : '模块职责 / 关键入口 / 依赖关系'}
+        </span>
       </button>
     )
   }
 
   const rev = section?.repoRev ?? null
   const tag = rev != null ? revTag(rev) : null
+  const originFallback =
+    kind === 'overview'
+      ? 'AI 综述基于仓库结构与 README 生成，完成后自动展示'
+      : 'AI 导读基于模块结构生成，完成后自动展示'
   const origin =
     section != null
       ? `基于代码版本 \`${section.repoRev}\` · ${section.model ?? '默认渠道'} · ${formatEnrichTime(
           section.updatedAt,
         )} 生成；代码版本前进后自动重新生成`
-      : 'AI 导读基于模块结构生成，完成后自动展示'
+      : originFallback
 
   return (
     <div className="wiki_repo_enrich">
