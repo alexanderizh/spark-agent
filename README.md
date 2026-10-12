@@ -23,7 +23,7 @@ SparkWork（仓库名 Spark Agent）是一个运行在 macOS、Windows 和 Linux
 
 ## 📷 界面预览
 
-![SparkWork 工作台：项目、会话与使用足迹集中在同一界面](apps/website/public/showcase/workbench-home.png)
+![SparkWork 工作台：项目、会话与使用足迹集中在同一界面](assets/showcase/workbench-home.png)
 
 ## 能力图解
 
@@ -127,7 +127,7 @@ SparkWork（仓库名 Spark Agent）是一个运行在 macOS、Windows 和 Linux
 - 🗂 **看板任务面板**：待办、执行中、修复、完成与验收状态集中管理
 - ⏱ **全局定时任务**：跨会话的计划任务调度
 
-![SparkWork 可视化工作流编排](apps/website/public/showcase/workflow-orchestration.png)
+![SparkWork 可视化工作流编排](assets/showcase/workflow-orchestration.png)
 
 ### 🧩 扩展生态与模型接入
 
@@ -139,7 +139,7 @@ SparkWork（仓库名 Spark Agent）是一个运行在 macOS、Windows 和 Linux
 - ☁️ **多 Provider 管理**：OpenAI 兼容 / Anthropic 协议、自定义渠道与多媒体模型渠道统一管理
 - 🧭 **自动路由**：配置「分流器 + 三档执行模型」后，逐轮判定任务强度并分派到对应档位；带强度粘性避免相邻轮横跳，分流失败走规则兜底而不是中断本轮
 
-![SparkWork 模型渠道管理](apps/website/public/showcase/providers.png)
+![SparkWork 模型渠道管理](assets/showcase/providers.png)
 
 ### ⚙️ 性能与资源保护
 
@@ -183,7 +183,7 @@ SparkWork（仓库名 Spark Agent）是一个运行在 macOS、Windows 和 Linux
 - 🧩 **子应用**：面板型自定义应用自动入驻侧边面板
 - 📊 **会话检查器**：随时展开的运行白盒——Token 用量与缓存命中率、TTFT / 中位吞吐 / 生成时间占比与慢轮标记、逐轮 Token 图表、上下文窗口软硬双水位、子 Agent 状态、Worktree 信息、项目上下文预算、两级环境变量与提示词快照
 
-![对话与代码面板并排的 SparkWork 工作区](apps/website/public/showcase/dev-workspace.png)
+![对话与代码面板并排的 SparkWork 工作区](assets/showcase/dev-workspace.png)
 
 ### 🗂 会话与任务管理
 
@@ -200,7 +200,7 @@ SparkWork（仓库名 Spark Agent）是一个运行在 macOS、Windows 和 Linux
 - 🖱️ **Computer Use**：按单次任务治理地操作本机应用，支持查看状态、接管与停止
 - 🔧 **环境变量**：项目级与会话级配置，支持 JSON 一键导入导出
 
-![SparkWork 代码开发与 Git 审查面板](apps/website/public/showcase/code-review.png)
+![SparkWork 代码开发与 Git 审查面板](assets/showcase/code-review.png)
 
 ### 🎨 无限画布与多媒体创作
 
@@ -212,7 +212,7 @@ SparkWork（仓库名 Spark Agent）是一个运行在 macOS、Windows 和 Linux
 - 🎞 **影视工具链**：分镜、关键帧、视频工作台、3D 导演台与 360° 全景
 - 📄 **文档与演示生成**：课件、调研报告、数据分析报告，输出 HTML / PPTX / DOCX / Markdown
 
-![SparkWork 无限画布与画布 Agent](apps/website/public/showcase/infinite-canvas.png)
+![SparkWork 无限画布与画布 Agent](assets/showcase/infinite-canvas.png)
 
 ### 🔒 本地优先与安全
 
@@ -320,8 +320,9 @@ pnpm --filter @spark/desktop build:linux  # Linux 打包
 ```text
 spark-agent/
 ├── apps/
-│   ├── desktop/        # Electron 桌面应用（主进程 + React 渲染端）
-│   └── website/        # 旧官网（已停更，见 apps/website/DEPRECATED.md）与 README 截图素材
+│   └── desktop/        # Electron 桌面应用（主进程 + React 渲染端）
+├── assets/
+│   └── showcase/       # README 界面截图素材
 ├── packages/
 │   ├── agent-runtime/  # 会话运行时与服务编排
 │   ├── protocol/       # 跨进程 IPC 协议与类型

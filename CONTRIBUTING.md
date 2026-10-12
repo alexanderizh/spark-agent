@@ -27,11 +27,7 @@ pnpm test
 pnpm dev
 ```
 
-官网开发：
-
-```bash
-pnpm --dir apps/website dev
-```
+官网与产品文档已迁移至独立仓库维护，不在本仓库内开发。
 
 ## 提交变更
 

@@ -57,7 +57,6 @@ export default tseslint.config(
       'packages/agent-runtime/src/tools/**/*.mjs',
       'packages/agent-runtime/src/__tests__/tools/fixtures/**/*.mjs',
       'packages/agent-runtime/src/__tests__/sdk/fixtures/**/*.mjs',
-      'apps/website/scripts/**/*.mjs',
       'scripts/**/*.mjs',
     ],
     languageOptions: {

@@ -86,11 +86,6 @@ jobs:
             package: '@spark/plugin-sdk'
           - label: desktop
             package: '@spark/desktop'
-          - label: website
-            package: '@spark/website'
-            test-blocking: false
-            skip-lint: true
-            skip-tests: true
     steps:
       - uses: actions/checkout@v4
 
