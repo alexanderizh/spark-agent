@@ -31,6 +31,8 @@ describe('Agent wiki 桥（repo 空间可见 / CAS 版本链）', () => {
   let service: SessionService
   let repoSpaceId: string
   let foreignSpaceId: string
+  /** user 空间 id（列表所有权标记的普通空间对照） */
+  let userSpaceId: string
   let pageId: string
   /** repo 空间内 source_type='repo-scan' 的生成态内容页（守卫/感知主用例） */
   let generatedPageId: string
@@ -134,6 +136,7 @@ describe('Agent wiki 桥（repo 空间可见 / CAS 版本链）', () => {
     })
     expect(userSpace.ok).toBe(true)
     if (!userSpace.ok) throw new Error(`user space create failed: ${userSpace.message}`)
+    userSpaceId = userSpace.row.id
     const userPage = await seed.writeService.commitPage({
       spaceId: userSpace.row.id,
       title: '个人笔记',
@@ -479,5 +482,166 @@ describe('Agent wiki 桥（repo 空间可见 / CAS 版本链）', () => {
       pageId: userSpacePageId,
     })
     expect(restore.ok).toBe(true)
+  })
+
+  // ── P1 感知补全：列表节点级所有权标记 + read 附带 AI 导读 ────────────────
+
+  it('wiki_list 节点级所有权标记：repo 三态有标记，普通页与普通空间零标记', async () => {
+    const list = await service.bridgeWikiList({
+      sessionId: workspaceSessionId,
+      spaceId: repoSpaceId,
+    })
+    const byId = new Map(list.items.map((i) => [i.id, i]))
+    expect(byId.get(generatedPageId)?.repoOwnership).toBe('generated')
+    expect(byId.get(ignoredPageId)?.repoOwnership).toBe('ignored')
+    // folder 容器同样带标记（导航层即可辨哪些目录会被重建）
+    expect(byId.get(generatedFolderId)?.repoOwnership).toBe('generated')
+    // repo 空间内无扫描标记的手工页：零标记
+    expect(byId.get(pageId)?.repoOwnership).toBeUndefined()
+
+    // 普通空间全树零标记（repoOwnershipFromSourceType 对非 repo 源返回 null）
+    const userList = await service.bridgeWikiList({
+      sessionId: workspaceSessionId,
+      spaceId: userSpaceId,
+    })
+    expect(userList.items.length).toBeGreaterThan(0)
+    expect(userList.items.every((i) => i.repoOwnership === undefined)).toBe(true)
+
+    // 计量诚实：所有权字段纳入载荷后，节点成本仍受 listNode 目标约束
+    expect(list.items.every((i) => i.tokens <= 38)).toBe(true)
+  })
+
+  it('wiki_list 长标题 repo 页按 listNode 目标截断（所有权字段不挤爆节点预算）', async () => {
+    const seed = createWikiServiceStack({ db })
+    const long = await seed.writeService.commitPage({
+      spaceId: repoSpaceId,
+      title: '超长标题模块页'.repeat(12),
+      body: 'x',
+      authorRole: 'import',
+      sourceType: 'repo-scan',
+    })
+    expect(long.ok).toBe(true)
+
+    const list = await service.bridgeWikiList({
+      sessionId: workspaceSessionId,
+      spaceId: repoSpaceId,
+    })
+    const item = list.items.find((i) => i.id === (long.ok ? long.row.id : ''))
+    expect(item).toBeDefined()
+    if (item != null) {
+      expect(item.tokens).toBeLessThanOrEqual(38)
+      expect(item.title.endsWith('…')).toBe(true)
+      expect(item.repoOwnership).toBe('generated')
+    }
+  })
+
+  it('wiki_read 首页附带 AI 导读：生成态 + rev 命中 + ready 段 + 预算内', async () => {
+    const seed = createWikiServiceStack({ db })
+    seed.spaceRepo.update(repoSpaceId, { repo_rev: 'rev-abc123' })
+    const slug = seed.pageRepo.getById(generatedPageId)?.slug
+    expect(slug).toBeDefined()
+    seed.repoEnrichRepo.upsert({
+      spaceId: repoSpaceId,
+      slug: slug as string,
+      repoRev: 'rev-abc123',
+      section: '## 模块职责\n该模块负责会话与消息管理。\n## 关键入口\n- createSession',
+      status: 'ready',
+      model: 'test-model',
+      provider: 'test',
+    })
+
+    const read = await service.bridgeWikiRead({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+    })
+    expect('error' in read && read.error != null).toBe(false)
+    if (!('error' in read)) {
+      expect(read.repoEnrich).toBeDefined()
+      expect(read.repoEnrich?.repoRev).toBe('rev-abc123')
+      expect(read.repoEnrich?.section).toContain('模块职责')
+      // 导读是附加而非替换：正文骨架原样在场
+      expect(read.body).toContain('扫描生成的骨架内容')
+    }
+  })
+
+  it('wiki_read 导读五重闸门：任一不满足即零痕迹', async () => {
+    const seed = createWikiServiceStack({ db })
+    seed.spaceRepo.update(repoSpaceId, { repo_rev: 'rev-now' })
+    const slug = seed.pageRepo.getById(generatedPageId)?.slug as string
+
+    // 闸门①：续读（offset>0）不重复附——先放好命中的段再带 offset 读
+    seed.repoEnrichRepo.upsert({
+      spaceId: repoSpaceId,
+      slug,
+      repoRev: 'rev-now',
+      section: '## 模块职责\n首屏导读。',
+      status: 'ready',
+    })
+    const continuation = await service.bridgeWikiRead({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+      offset: 1,
+    })
+    expect('error' in continuation && continuation.error != null).toBe(false)
+    if (!('error' in continuation)) {
+      expect(continuation.repoEnrich).toBeUndefined()
+    }
+
+    // 闸门②：人工接管页不附（与渲染端「人工维护页零痕迹」镜像）
+    await service.bridgeWikiSetOwnership({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+      ownership: 'manual',
+    })
+    const manualRead = await service.bridgeWikiRead({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+    })
+    if (!('error' in manualRead)) {
+      expect(manualRead.repoEnrich).toBeUndefined()
+    }
+    // 还原生成态，继续验证其余闸门
+    await service.bridgeWikiSetOwnership({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+      ownership: 'generated',
+    })
+
+    // 闸门③：rev 失配（缓存停在旧 rev，空间已前进）不附
+    seed.spaceRepo.update(repoSpaceId, { repo_rev: 'rev-newer' })
+    const revMiss = await service.bridgeWikiRead({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+    })
+    if (!('error' in revMiss)) expect(revMiss.repoEnrich).toBeUndefined()
+
+    // 闸门④：status='failed' 的行不附（当前 rev 命中但段为空）
+    seed.repoEnrichRepo.upsert({
+      spaceId: repoSpaceId,
+      slug,
+      repoRev: 'rev-newer',
+      section: '',
+      status: 'failed',
+      error: 'no_provider',
+    })
+    const failedRead = await service.bridgeWikiRead({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+    })
+    if (!('error' in failedRead)) expect(failedRead.repoEnrich).toBeUndefined()
+
+    // 闸门⑤：异常肥段（> 800 token）不附——宁可没有也不能撑爆读取预算
+    seed.repoEnrichRepo.upsert({
+      spaceId: repoSpaceId,
+      slug,
+      repoRev: 'rev-newer',
+      section: '长'.repeat(2400),
+      status: 'ready',
+    })
+    const fatRead = await service.bridgeWikiRead({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+    })
+    if (!('error' in fatRead)) expect(fatRead.repoEnrich).toBeUndefined()
   })
 })

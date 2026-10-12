@@ -23,7 +23,10 @@ import {
   type WikiBudgetProfile,
 } from './wiki-context-budget.js'
 import type { WikiPageVersionEntry, WikiRevisionDetail } from '@spark/protocol'
-import { repoOwnershipFromSourceType, type WikiRepoPageOwnership } from './wiki-repo-scan.service.js'
+import {
+  repoOwnershipFromSourceType,
+  type WikiRepoPageOwnership,
+} from './wiki-repo-scan.service.js'
 
 const log = createLogger('wiki:page')
 
@@ -135,19 +138,27 @@ export class WikiPageService {
   }
 
   /**
-   * Agent 目录树读取（L1）：每节点 ≤ 20 token（id + title + kind + hasChildren），
-   * **不返回正文与摘要**——层级导航必须便宜，内容要靠 wiki_search / wiki_read 取。
+   * Agent 目录树读取（L1）：每节点 ≤ 38 token（id + title + kind + hasChildren，
+   * repo 页另附所有权标记），**不返回正文与摘要**——层级导航必须便宜，
+   * 内容要靠 wiki_search / wiki_read 取。
    *
    * 分页语义：按父节点逐层展开（parentId 缺省 = 根层），单次最多 maxNodes 个节点，
    * 超出回传 truncated + nextCursor（父节点 id），Agent 据此决定是否继续下钻。
    */
   listForAgent(input: { spaceId: string; parentId?: string | null; maxNodes?: number }): {
-    items: Array<{ id: string; title: string; kind: string; hasChildren: boolean; tokens: number }>
+    items: Array<{
+      id: string
+      title: string
+      kind: string
+      hasChildren: boolean
+      tokens: number
+      repoOwnership?: WikiRepoPageOwnership
+    }>
     total: number
     truncated: boolean
     tokens: number
   } {
-    // 每节点 ≤30 token，默认 40 节点 ⇒ 单次上限约 1200 token（§8 L1 体量）
+    // 每节点 ≤38 token，默认 40 节点 ⇒ 单次上限约 1500 token（§8 L1 体量）
     const maxNodes = Math.min(Math.max(input.maxNodes ?? 40, 1), 120)
     const parentId = input.parentId === undefined ? null : input.parentId
     const siblings = this.pageRepo.listBySpace(input.spaceId, { parentId })
@@ -159,9 +170,18 @@ export class WikiPageService {
     const items = sliced.map((row) => {
       // 每节点 ≤ listNode 目标（服务端强制）：标题是唯一可变长字段，超预算按
       // token 截断并加省略号；id + kind + 布尔标记构成约 18 token 的地板。
+      // repo 页附带所有权标记（导航层即知哪些页会被重建覆写）；标记纳入计量
+      // 载荷——固定成本不可压缩，但必须诚实计价（见 listNode 注释的 38 校准）。
       const hasChildren = (childCounts.get(row.id) ?? 0) > 0
+      const repoOwnership = repoOwnershipFromSourceType(row.source_type)
       const fitted = fitTitleToItemBudget(
-        { id: row.id, title: row.title, kind: row.kind as string, hasChildren },
+        {
+          id: row.id,
+          title: row.title,
+          kind: row.kind as string,
+          hasChildren,
+          ...(repoOwnership != null ? { repoOwnership } : {}),
+        },
         WIKI_ITEM_TOKEN_TARGETS.listNode,
       )
       return {
@@ -170,6 +190,7 @@ export class WikiPageService {
         kind: row.kind as string,
         hasChildren,
         tokens: fitted.tokens,
+        ...(repoOwnership != null ? { repoOwnership } : {}),
       }
     })
     return {

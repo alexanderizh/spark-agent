@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SparkDatabase } from '@spark/storage'
 import { createWikiServiceStack, type WikiServiceStack } from './wiki-service-stack.js'
 import { scanSensitiveContent, WIKI_PAGE_QUOTA_PER_SPACE } from './wiki-write.service.js'
+import { WIKI_ITEM_TOKEN_TARGETS } from './wiki-context-budget.js'
 import { parseWikiLinks } from './wiki-link.service.js'
 import { join } from 'path'
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'fs'
@@ -358,8 +359,8 @@ describe('Wiki S1 e2e（写入闭环 / 双链 / 删除屏障 / 版本还原）',
     expect(roots.items[0]!.title).toBe('父夹')
     expect(roots.items[0]!.hasChildren).toBe(true)
     expect(JSON.stringify(roots)).not.toContain('SECRET_PARENT')
-    // 每节点受服务端目标约束（30 token = 结构地板 22 + 标题余量）
-    expect(roots.items[0]!.tokens).toBeLessThanOrEqual(30)
+    // 每节点受服务端目标约束（listNode 目标 = 结构地板 + 标题余量）
+    expect(roots.items[0]!.tokens).toBeLessThanOrEqual(WIKI_ITEM_TOKEN_TARGETS.listNode)
     // 短标题绝不被裁空（宁可多花 1~2 token 也要可导航）
     expect(roots.items[0]!.title).toBe('父夹')
 
@@ -373,7 +374,7 @@ describe('Wiki S1 e2e（写入闭环 / 双链 / 删除屏障 / 版本还原）',
     const longTitle = `${'标'.repeat(200)}`
     await makePage(spaceId, longTitle, 'body')
     const roots = stack.pageService.listForAgent({ spaceId })
-    expect(roots.items[0]!.tokens).toBeLessThanOrEqual(30)
+    expect(roots.items[0]!.tokens).toBeLessThanOrEqual(WIKI_ITEM_TOKEN_TARGETS.listNode)
     expect(roots.items[0]!.title.length).toBeLessThan(longTitle.length)
     expect(roots.items[0]!.title.endsWith('…')).toBe(true)
   })

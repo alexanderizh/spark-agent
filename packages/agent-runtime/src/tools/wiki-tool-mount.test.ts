@@ -479,6 +479,81 @@ describe('Wiki 工具面（S1）', () => {
     }
   })
 
+  // ─── P1 感知补全：列表所有权标记 + read 附带 AI 导读（文本层）────────────
+
+  it('wiki_list 列表行渲染所有权紧凑标记（导航层即知哪些页会被重建覆写）', async () => {
+    const { server, received, port } = await startFakeBridge({
+      items: [
+        {
+          id: 'wp_g',
+          title: '生成页',
+          kind: 'knowledge',
+          hasChildren: false,
+          tokens: 30,
+          repoOwnership: 'generated',
+        },
+        {
+          id: 'wp_m',
+          title: '接管页',
+          kind: 'knowledge',
+          hasChildren: false,
+          tokens: 30,
+          repoOwnership: 'manual',
+        },
+        {
+          id: 'wp_i',
+          title: '忽略页',
+          kind: 'knowledge',
+          hasChildren: true,
+          tokens: 30,
+          repoOwnership: 'ignored',
+        },
+        { id: 'wp_n', title: '普通页', kind: 'knowledge', hasChildren: false, tokens: 30 },
+      ],
+      total: 4,
+      truncated: false,
+    })
+    try {
+      const text = await callBridgeTool(port, 'wiki_list', { space_id: 'sp_1' })
+      const lines = text.split('\n')
+      expect(lines).toHaveLength(4)
+      expect(lines[0]).toBe('- [wp_g] 生成页 (knowledge, repo生成)')
+      expect(lines[1]).toBe('- [wp_m] 接管页 (knowledge, repo人工)')
+      expect(lines[2]).toBe('- [wp_i] 忽略页 (knowledge, 含子页面, repo忽略)')
+      // 无所有权标记的节点保持原样（零开销）
+      expect(lines[3]).toBe('- [wp_n] 普通页 (knowledge)')
+      expect(received[0]!.method).toBe('wiki.list')
+    } finally {
+      server.close()
+    }
+  })
+
+  it('wiki_read 回执渲染 AI 导读块（头行与正文之间，标注 AI 出处）', async () => {
+    const { server, port } = await startFakeBridge({
+      id: 'wp_15',
+      title: '会话模块页',
+      version: 2,
+      repoOwnership: 'generated',
+      repoEnrich: { section: '## 模块职责\n负责会话生命周期。', repoRev: 'rev-x' },
+      body: '骨架正文。',
+      truncated: false,
+      nextOffset: null,
+      tokens: 4,
+    })
+    try {
+      const text = await callBridgeTool(port, 'wiki_read', { id: 'wp_15' })
+      const lines = text.split('\n')
+      expect(lines[0]).toBe('[wp_15] 会话模块页（v2，repo生成页·重建会覆写）')
+      expect(lines[1]).toBe('【AI 导读】')
+      expect(lines[2]).toBe('## 模块职责')
+      expect(lines[3]).toBe('负责会话生命周期。')
+      expect(lines[4]).toBe('---')
+      expect(lines[5]).toBe('骨架正文。')
+    } finally {
+      server.close()
+    }
+  })
+
   // ─── repo 编排工具：契约与瘦桥 mjs 的两处副本同步（文本层）────────────────
   // 上面的子进程断言已覆盖运行时一致性；这里再从源文本层锁一遍，副本漂移
   // （改了契约忘了同步 mjs）在文本层就能暴露，不必起子进程。

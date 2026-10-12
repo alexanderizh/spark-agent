@@ -467,6 +467,20 @@ function ownershipNote(ownership) {
   }
 }
 
+/** repo 页所有权 → 列表行紧凑标记（同词表压缩形态，与 session.service 同义）。 */
+function ownershipTag(ownership) {
+  switch (ownership) {
+    case 'generated':
+      return ', repo生成'
+    case 'manual':
+      return ', repo人工'
+    case 'ignored':
+      return ', repo忽略'
+    default:
+      return ''
+  }
+}
+
 function summarize(name, data) {
   if (name === 'wiki_list_spaces') {
     const items = Array.isArray(data.items) ? data.items : []
@@ -493,7 +507,8 @@ function summarize(name, data) {
     const items = Array.isArray(data.items) ? data.items : []
     if (items.length === 0) return '该层级下没有页面。'
     const lines = items.map(
-      (p) => `- [${p.id}] ${p.title} (${p.kind}${p.hasChildren ? ', 含子页面' : ''})`,
+      (p) =>
+        `- [${p.id}] ${p.title} (${p.kind}${p.hasChildren ? ', 含子页面' : ''}${ownershipTag(p.repoOwnership)})`,
     )
     let text = lines.join('\n')
     if (data.truncated) text += `\n（该层共 ${data.total} 个节点，仅显示前 ${items.length} 个）`
@@ -504,6 +519,10 @@ function summarize(name, data) {
     // 头行透出 id/标题/版本（wiki_update 的 CAS 需要 expected_version）；
     // repo 页附带所有权标记（generated 态改动会被重建覆写，Agent 须先接管）
     let text = `[${data.id}] ${data.title}（v${data.version}${ownershipNote(data.repoOwnership)}）`
+    // AI 导读插在头行与正文之间（与 SDK 路径 summarize 同语义）
+    if (data.repoEnrich != null) {
+      text += `\n【AI 导读】\n${data.repoEnrich.section}\n---`
+    }
     text += data.body && data.body.length > 0 ? `\n${data.body}` : '\n(空正文)'
     if (data.truncated) {
       text += `\n\n[truncated] 正文超单页上限，已返回前 ${data.tokens} token；续读请传 offset=${data.nextOffset}`

@@ -130,15 +130,20 @@ export function resolveWikiBudget(raw: {
  */
 export const WIKI_ITEM_TOKEN_TARGETS = {
   /**
-   * L1 目录树节点：id + title + kind + hasChildren。
+   * L1 目录树节点：id + title + kind + hasChildren（repo 页另附所有权标记）。
    *
    * 方案 §7.2 起草时写的是 20，但实测**结构地板**（空标题时的 id + kind +
    * 布尔字段，JSON 形态）已是 22 token，20 在该字段集下不可达；而把标题压到
    * 空或只剩省略号会让目录树失去导航价值。故取 30：地板 22 + 约 8 token 的
    * 标题余量（≈4~8 个中日韩字符）。这是"先给足、再按观测收紧"原则下的实测取值，
    * 不是放宽约束——超长标题仍被服务端强制截断（见下方 fitTitleToItemBudget）。
+   *
+   * 后追加 repo 页节点级所有权标记（"repoOwnership":"generated" 计量形态约
+   * +8 token）后，repo 页地板升至约 30——沿用 30 会把标题压到只剩 1~2 字。
+   * 故校准到 38：repo 页地板 30 + 约 8 token 标题余量（与非 repo 页同水位）；
+   * 非 repo 页字段缺省、仍按实际成本计，不受影响。
    */
-  listNode: 30,
+  listNode: 38,
   /** L4 反向链接边：id + title + kind + linkType（地板同 L1，取 30 同理） */
   backlinkEdge: 30,
   /** L2 检索命中：id + title + kind + summary + tags */

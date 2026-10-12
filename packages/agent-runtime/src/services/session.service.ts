@@ -546,7 +546,11 @@ import {
   WikiRevisionRepository,
 } from '@spark/storage'
 import type { WikiSpaceScopeFilter } from './wiki/wiki-space.service.js'
-import { createWikiServiceStack, resolveWikiBudgetFromSettings } from './wiki/wiki-service-stack.js'
+import {
+  createWikiServiceStack,
+  resolveWikiBudgetFromSettings,
+  type WikiServiceStack,
+} from './wiki/wiki-service-stack.js'
 import { resetTurnWikiBudget } from './wiki/wiki-context-budget.js'
 import {
   repoOwnershipFromSourceType,
@@ -607,6 +611,11 @@ export interface WikiBridgeReadResult {
   version?: number
   /** Repo Wiki 页面所有权（仅 repo 页有值；generated 态改动会被重建覆写） */
   repoOwnership?: WikiRepoPageOwnership
+  /**
+   * Repo Wiki 页面命中的 AI 导读段（仅首页读取附带；rev 与空间当前 rev 一致、
+   * 生成态、且段体量在预算闸门内才出现——与渲染端 WikiRepoEnrich 的过滤语义镜像）
+   */
+  repoEnrich?: { section: string; repoRev: string }
   body?: string
   truncated?: boolean
   nextOffset?: number | null
@@ -621,6 +630,8 @@ export interface WikiBridgeListItem {
   kind: string
   hasChildren: boolean
   tokens: number
+  /** Repo Wiki 页面所有权（仅 repo 页有值；导航层即知哪些页会被重建覆写） */
+  repoOwnership?: WikiRepoPageOwnership
 }
 
 /** wiki bridge 反向链接结果项（L4） */
@@ -689,6 +700,13 @@ export interface WikiBridgeRepoStatusReceipt {
   error?: string
 }
 
+/**
+ * 读取路径附带 AI 导读的体量闸门（token）：正常段 ≤1500 字符（提示词硬约束）
+ * ≈ 600~800 token，闸门只拦异常肥段——超限直接不附，而不是撑爆单页读取预算
+ * 或把导读截得残缺（截断的导读比没有更误导）。
+ */
+const WIKI_READ_ENRICH_MAX_TOKENS = 800
+
 /** repo 页所有权 → read 头行标记（与 spark-wiki-mcp-server.mjs 的渲染同义）。 */
 function repoOwnershipNote(ownership: WikiRepoPageOwnership | undefined): string {
   switch (ownership) {
@@ -698,6 +716,23 @@ function repoOwnershipNote(ownership: WikiRepoPageOwnership | undefined): string
       return '，repo页·人工接管'
     case 'ignored':
       return '，repo页·已忽略'
+    default:
+      return ''
+  }
+}
+
+/**
+ * repo 页所有权 → 列表行紧凑标记（与 repoOwnershipNote 同词表、压缩形态；
+ * 目录树每节点预算有限，标记必须比 read 头行短）。
+ */
+function repoOwnershipTag(ownership: WikiRepoPageOwnership | undefined): string {
+  switch (ownership) {
+    case 'generated':
+      return ', repo生成'
+    case 'manual':
+      return ', repo人工'
+    case 'ignored':
+      return ', repo忽略'
     default:
       return ''
   }
@@ -2102,8 +2137,34 @@ export class SessionService {
       pageId: params.pageId,
       ...(params.offset != null ? { offset: params.offset } : {}),
     })
-    if (r.ok) return { ...r.page }
-    return { error: r.message }
+    if (!r.ok) return { error: r.message }
+    // 首页读取附带 AI 导读（若命中）：续读不重复，任何一步不满足都零痕迹。
+    const repoEnrich = this.resolveRepoEnrichForRead(wiki, params, r.page.repoOwnership)
+    return repoEnrich != null ? { ...r.page, repoEnrich } : { ...r.page }
+  }
+
+  /**
+   * 读取路径的 AI 导读附加（S3）：五重闸门全过才返回段——
+   * ① 首页（offset=0/缺省，续读不重复附）；② repo 页且生成态（人工接管页
+   * 不再展示，与渲染端 WikiRepoEnrich 过滤语义镜像）；③ 空间有当前 rev；
+   * ④ 缓存命中且 status='ready'（失败/未生成零痕迹）；⑤ 段体量 ≤ 闸门
+   * （正常段 ≤1500 字符，异常肥段直接丢弃而不是撑爆读取预算）。
+   */
+  private resolveRepoEnrichForRead(
+    wiki: WikiServiceStack,
+    params: { pageId: string; offset?: number },
+    ownership: WikiRepoPageOwnership | undefined,
+  ): { section: string; repoRev: string } | null {
+    if (params.offset != null && params.offset > 0) return null
+    if (ownership !== 'generated') return null
+    const page = wiki.pageRepo.getById(params.pageId)
+    if (page == null) return null
+    const space = wiki.spaceRepo.getById(page.space_id)
+    if (space == null || space.space_type !== 'repo' || space.repo_rev == null) return null
+    const row = wiki.repoEnrichRepo.get(page.space_id, page.slug, space.repo_rev)
+    if (row == null || row.status !== 'ready' || row.section.length === 0) return null
+    if (estimateTokens(row.section) > WIKI_READ_ENRICH_MAX_TOKENS) return null
+    return { section: row.section, repoRev: row.repo_rev }
   }
 
   /**
@@ -8487,6 +8548,10 @@ export class SessionService {
     // 头行透出 id/标题/版本：wiki_update 的 CAS 需要 expected_version，
     // 没有 version 的正文对 Agent 是"只能读不能改"的死数据
     let text = `[${data.id}] ${data.title}（v${data.version}${repoOwnershipNote(data.repoOwnership)}）`
+    // AI 导读插在头行与正文之间（信任标注：【AI 导读】标明出处，正文骨架在后）
+    if (data.repoEnrich != null) {
+      text += `\n【AI 导读】\n${data.repoEnrich.section}\n---`
+    }
     text += data.body && data.body.length > 0 ? `\n${data.body}` : '\n(空正文)'
     if (data.truncated && data.nextOffset != null) {
       text += `\n\n[truncated] 正文超单页上限，已返回前 ${data.tokens} token；续读请传 offset=${data.nextOffset}`
@@ -8501,7 +8566,8 @@ export class SessionService {
   }): string {
     if (data.items.length === 0) return '该层级下没有页面。'
     const lines = data.items.map(
-      (p) => `- [${p.id}] ${p.title} (${p.kind}${p.hasChildren ? ', 含子页面' : ''})`,
+      (p) =>
+        `- [${p.id}] ${p.title} (${p.kind}${p.hasChildren ? ', 含子页面' : ''}${repoOwnershipTag(p.repoOwnership)})`,
     )
     let text = lines.join('\n')
     if (data.truncated)
