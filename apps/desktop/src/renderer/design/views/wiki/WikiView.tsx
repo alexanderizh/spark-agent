@@ -169,6 +169,8 @@ export function WikiView() {
   // 顶层 Tab：知识库（manual 空间）| Repo Wiki（space_type='repo'，S4）
   const [repoEnabled, setRepoEnabled] = useState(true)
   const [mainTab, setMainTab] = useState<'wiki' | 'repo'>('wiki')
+  /** repo 空间是否存在：知识库空态的「参考页在 Repo Wiki」引导只在真实存在时出现。 */
+  const [repoSpaceExists, setRepoSpaceExists] = useState(false)
   // 知识库 Tab 内的三种互斥视图：页面 / 候选区（S2）/ 技能提议区（S3）
   const [candidateView, setCandidateView] = useState(false)
   const [skillView, setSkillView] = useState(false)
@@ -347,6 +349,27 @@ export function WikiView() {
       cancelled = true
     }
   }, [])
+
+  /**
+   * 感知 repo 空间是否存在：复用既有 wiki:space:list（spaceType 过滤），不新增 IPC。
+   * 引导是辅助信息：加载失败就不显示，不影响主流程。切 Tab 回知识库时重查一次，
+   * 覆盖「期间在 Repo Wiki 侧产生了首个仓库空间」的情况。
+   */
+  useEffect(() => {
+    if (mainTab !== 'wiki') return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await listSpaces({ spaceType: 'repo' })
+        if (!cancelled) setRepoSpaceExists(res.spaces.length > 0)
+      } catch {
+        if (!cancelled) setRepoSpaceExists(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [mainTab, listSpaces])
 
   /** 会话列表（「从对话沉淀」选择器用；按需加载，不进常驻路径）。 */
   const loadSessions = useCallback(async () => {
@@ -1496,6 +1519,17 @@ export function WikiView() {
                       新建第一页
                     </button>
                   </div>
+                  {repoEnabled && repoSpaceExists && (
+                    <button
+                      type="button"
+                      className="wiki_empty_hint_row"
+                      title="切换到 Repo Wiki"
+                      onClick={() => setMainTab('repo')}
+                    >
+                      <Icons.Branch size={13} />
+                      仓库扫描生成的参考页在『Repo Wiki』标签页查看
+                    </button>
+                  )}
                   <div className="wiki_empty_hr" />
                   <div className="wiki_feats">
                     <span className="wiki_feat">

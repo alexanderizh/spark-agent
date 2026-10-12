@@ -774,6 +774,30 @@ html[data-theme='dark'] .wiki_modal,
   flex: 0 0 auto;
 }
 
+/* 空态引导行（知识库空间 0 页时指向 Repo Wiki 标签页）；只加规则不动上面既有样式 */
+.wiki_empty_hint_row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 18px;
+  padding: 5px 13px;
+  border: 1px solid var(--wiki-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--wiki-t2);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 120ms,
+    color 120ms;
+}
+
+.wiki_empty_hint_row:hover {
+  background: var(--wiki-hover);
+  color: var(--text);
+}
+
 /* ── 阅读态 ───────────────────────────────────────────────────────── */
 
 .wiki_article {
