@@ -30,8 +30,8 @@ const DEP_NAME_MAX_CHARS = 80
 const MAX_ROOT_FILE_LINES = 40
 /** 综述材料的语言分布展示条数 */
 const MAX_LANGUAGE_LINES = 8
-/** README 候选匹配（根目录受控摘录；树序取首个，保证确定性） */
-const README_CANDIDATE_RE = /^readme(\.[^.]+)?$/i
+/** README 候选匹配（根目录受控摘录；树序取首个，保证确定性；兼容 readme.zh-CN.md 等多段后缀） */
+const README_CANDIDATE_RE = /^readme(\.[^.]+)*$/i
 
 /**
  * 入口候选正则 —— 与 wiki-repo-scan-render.ts renderModule 内联正则保持一致。
@@ -193,11 +193,17 @@ export function buildOverviewEnrichContext(params: {
   for (const file of tree.files) {
     byLanguage.set(file.language, (byLanguage.get(file.language) ?? 0) + 1)
   }
-  const languages = [...byLanguage.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, MAX_LANGUAGE_LINES)
-    .map(([language, count]) => `${language} ${count}`)
-    .join('、')
+  const sortedLanguages = [...byLanguage.entries()].sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  )
+  const languages =
+    sortedLanguages
+      .slice(0, MAX_LANGUAGE_LINES)
+      .map(([language, count]) => `${language} ${count}`)
+      .join('、') +
+    (sortedLanguages.length > MAX_LANGUAGE_LINES
+      ? `（前 ${MAX_LANGUAGE_LINES} 种，共 ${sortedLanguages.length} 种）`
+      : '')
   lines.push(
     '',
     '## 结构数据',
@@ -282,9 +288,16 @@ export function buildOverviewEnrichContext(params: {
 function readEntryFile(repoRoot: string, relPath: string): string | null {
   try {
     const raw = fs.readFileSync(join(repoRoot, relPath), 'utf-8')
-    return raw.length > ENTRY_FILE_MAX_CHARS
-      ? `${raw.slice(0, ENTRY_FILE_MAX_CHARS)}\n…（已截断）`
-      : raw
+    if (raw.length <= ENTRY_FILE_MAX_CHARS) {
+      return raw
+    }
+    let cut = raw.slice(0, ENTRY_FILE_MAX_CHARS)
+    // 切点若劈开代理对（末位是高位代理），回退一位避免材料携带孤立代理
+    const last = cut.charCodeAt(cut.length - 1)
+    if (last >= 0xd800 && last <= 0xdbff) {
+      cut = cut.slice(0, -1)
+    }
+    return `${cut}\n…（已截断）`
   } catch {
     return null
   }

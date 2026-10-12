@@ -176,4 +176,35 @@ describe('Repo Wiki 综述页材料装配（S3）', () => {
     })
     expect(ctx.material).toContain('仓库根目录未发现 README 文件')
   })
+
+  it('README 多段后缀（readme.zh-CN.md）：识别为候选并摘录', () => {
+    rmSync(join(repo, 'README.md'))
+    writeFileSync(join(repo, 'readme.zh-CN.md'), '# 中文说明\n\n多段后缀候选。\n')
+    const tree = scanRepoTree(repo)
+    const ctx = buildOverviewEnrichContext({
+      tree,
+      dependencyNames: readRepoDependencyNames(tree),
+    })
+    expect(ctx.material).toContain('### `readme.zh-CN.md`')
+    expect(ctx.material).toContain('# 中文说明')
+    expect(ctx.material).not.toContain('未发现 README')
+  })
+
+  it('README 超长截断对齐码点边界：材料不携带孤立代理对', () => {
+    rmSync(join(repo, 'README.md'))
+    // 3999 个 ASCII 后接 emoji：第 4000 个 code unit 恰是首个 emoji 的高位代理，
+    // 截断点必须回退一位，否则材料携带孤立代理（JSON 发往模型端点可能整请求 400）
+    writeFileSync(join(repo, 'README.md'), 'a'.repeat(3999) + '🎉'.repeat(10))
+    const tree = scanRepoTree(repo)
+    const ctx = buildOverviewEnrichContext({
+      tree,
+      dependencyNames: readRepoDependencyNames(tree),
+    })
+    expect(ctx.material).toContain('…（已截断）')
+    // 孤立高位代理（后不跟低位）或孤立低位代理（前无高位）都不得出现
+    expect(ctx.material).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
+    expect(ctx.material).not.toMatch(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/)
+    // 截断块末位回到 'a'（回退一位生效），完整 emoji 不入材料
+    expect(ctx.material).not.toContain('🎉')
+  })
 })

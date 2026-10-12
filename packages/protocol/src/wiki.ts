@@ -293,11 +293,11 @@ export interface WikiRepoEnrichmentSection {
 /** 增强 run 回执（计数如实回报，不含正文片段） */
 export interface WikiRepoEnrichmentRunReceipt {
   ok: boolean
-  /** 差集计划的目标页数（截断后） */
+  /** 计划的目标页数（截断后；综述页 + 模块差集页，综述不占 maxPages 配额） */
   target: number
   /** 已有 ready 缓存被跳过的页数 */
   cached: number
-  /** 因 maxPages 截断而丢弃的页数 */
+  /** 因 maxPages 截断而丢弃的模块页数（综述页不受配额限制） */
   droppedByLimit: number
   ready: number
   failed: number
@@ -473,10 +473,7 @@ export interface WikiIpcChannelMap {
 
   'wiki:repo:enrichment:get': [{ pageId: string }, { section: WikiRepoEnrichmentSection | null }]
 
-  'wiki:repo:enrichment:run': [
-    { spaceId: string; slug?: string },
-    WikiRepoEnrichmentRunReceipt,
-  ]
+  'wiki:repo:enrichment:run': [{ spaceId: string; slug?: string }, WikiRepoEnrichmentRunReceipt]
 
   'wiki:repo:enrichment:status': [{ spaceId: string }, WikiRepoEnrichmentProgress]
 }

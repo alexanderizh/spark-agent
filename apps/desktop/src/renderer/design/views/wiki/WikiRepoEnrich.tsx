@@ -72,6 +72,7 @@ export function WikiRepoEnrichBlock({
 
   const rev = section?.repoRev ?? null
   const tag = rev != null ? revTag(rev) : null
+  const noun = kind === 'overview' ? 'AI 综述' : 'AI 导读'
   const originFallback =
     kind === 'overview'
       ? 'AI 综述基于仓库结构与 README 生成，完成后自动展示'
@@ -88,7 +89,7 @@ export function WikiRepoEnrichBlock({
       <div className="wiki_repo_enrich_head">
         <span className="wiki_repo_enrich_label">
           <Icons.Sparkles size={12} />
-          {running ? 'AI 导读生成中…' : 'AI 导读'}
+          {running ? `${noun}生成中…` : noun}
         </span>
         {tag != null && (
           <span className="wiki_repo_enrich_rev">
@@ -101,7 +102,7 @@ export function WikiRepoEnrichBlock({
             <button
               type="button"
               className="wiki_repo_enrich_ib"
-              aria-label="AI 导读说明"
+              aria-label={`${noun}说明`}
               onClick={(e) => e.currentTarget.blur()}
             >
               <Icons.HelpCircle size={13} />
@@ -110,8 +111,8 @@ export function WikiRepoEnrichBlock({
           <button
             type="button"
             className="wiki_repo_enrich_ib"
-            title="重新生成 AI 导读"
-            aria-label="重新生成 AI 导读"
+            title={`重新生成${noun}`}
+            aria-label={`重新生成${noun}`}
             disabled={running}
             onClick={onRun}
           >

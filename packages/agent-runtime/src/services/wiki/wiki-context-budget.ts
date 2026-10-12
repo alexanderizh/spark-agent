@@ -88,6 +88,8 @@ export function resolveWikiBudget(raw: {
   turnTotal?: unknown
 }): WikiBudgetProfile {
   const clampInt = (value: unknown, fallback: number, min: number, max: number): number => {
+    // 未设置 ≠ 0：仓储未命中返回 null，必须回退默认值而不是被 Number(null)=0 钳到下限
+    if (value == null) return fallback
     const n = typeof value === 'number' ? value : Number(value)
     if (!Number.isFinite(n)) return fallback
     return Math.max(min, Math.min(max, Math.floor(n)))

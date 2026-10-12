@@ -552,7 +552,7 @@ import {
   resolveWikiBudgetFromSettings,
   type WikiServiceStack,
 } from './wiki/wiki-service-stack.js'
-import { resetTurnWikiBudget } from './wiki/wiki-context-budget.js'
+import { chargeTurnWikiTokens, resetTurnWikiBudget } from './wiki/wiki-context-budget.js'
 import {
   repoOwnershipFromSourceType,
   WIKI_REPO_SOURCE_TYPE,
@@ -702,11 +702,12 @@ export interface WikiBridgeRepoStatusReceipt {
 }
 
 /**
- * 读取路径附带 AI 导读的体量闸门（token）：正常段 ≤1500 字符（提示词硬约束）
- * ≈ 600~800 token，闸门只拦异常肥段——超限直接不附，而不是撑爆单页读取预算
- * 或把导读截得残缺（截断的导读比没有更误导）。
+ * 读取路径附带 AI 导读的体量闸门（token）。校验侧约束段 ≤1500 字符，而导读是
+ * 中文主导段——o200k 对纯中文约 1 token/字符（实测），合法段的实际上界约
+ * 1500 token；闸门取 1600 留余量，只拦异常肥段（DB 篡改/程序错误的产物），
+ * 正常段永不误拦。超限直接不附，而不是把导读截得残缺（截断的导读比没有更误导）。
  */
-const WIKI_READ_ENRICH_MAX_TOKENS = 800
+const WIKI_READ_ENRICH_MAX_TOKENS = 1600
 
 /** repo 页所有权 → read 头行标记（与 spark-wiki-mcp-server.mjs 的渲染同义）。 */
 function repoOwnershipNote(ownership: WikiRepoPageOwnership | undefined): string {
@@ -2147,7 +2148,16 @@ export class SessionService {
     if (!r.ok) return { error: r.message }
     // 首页读取附带 AI 导读（若命中）：续读不重复，任何一步不满足都零痕迹。
     const repoEnrich = this.resolveRepoEnrichForRead(wiki, params, r.page.repoOwnership)
-    return repoEnrich != null ? { ...r.page, repoEnrich } : { ...r.page }
+    if (repoEnrich != null) {
+      // 导读同样计入单轮总闸；装不下时降级为零痕迹——正文已成功，增益不毁主读
+      const charge = chargeTurnWikiTokens(
+        params.sessionId,
+        estimateTokens(repoEnrich.section),
+        wiki.budget.turnTotal,
+      )
+      if (charge.allowed) return { ...r.page, repoEnrich }
+    }
+    return { ...r.page }
   }
 
   /**
@@ -2155,23 +2165,33 @@ export class SessionService {
    * ① 首页（offset=0/缺省，续读不重复附）；② repo 页且生成态（人工接管页
    * 不再展示，与渲染端 WikiRepoEnrich 过滤语义镜像）；③ 空间有当前 rev；
    * ④ 缓存命中且 status='ready'（失败/未生成零痕迹）；⑤ 段体量 ≤ 闸门
-   * （正常段 ≤1500 字符，异常肥段直接丢弃而不是撑爆读取预算）。
+   * （合法段 ≤1500 字符 ≈ ≤1500 token，异常肥段直接丢弃而不是撑爆读取预算）。
+   * enrich 链路查询异常也零痕迹——正文已成功读出，增益查询不毁主读
+   * （与渲染端 refreshEnrichSection 的静默降级语义镜像）。
    */
   private resolveRepoEnrichForRead(
     wiki: WikiServiceStack,
     params: { pageId: string; offset?: number },
     ownership: WikiRepoPageOwnership | undefined,
   ): { section: string; repoRev: string } | null {
-    if (params.offset != null && params.offset > 0) return null
-    if (ownership !== 'generated') return null
-    const page = wiki.pageRepo.getById(params.pageId)
-    if (page == null) return null
-    const space = wiki.spaceRepo.getById(page.space_id)
-    if (space == null || space.space_type !== 'repo' || space.repo_rev == null) return null
-    const row = wiki.repoEnrichRepo.get(page.space_id, page.slug, space.repo_rev)
-    if (row == null || row.status !== 'ready' || row.section.length === 0) return null
-    if (estimateTokens(row.section) > WIKI_READ_ENRICH_MAX_TOKENS) return null
-    return { section: row.section, repoRev: row.repo_rev }
+    try {
+      if (params.offset != null && params.offset > 0) return null
+      if (ownership !== 'generated') return null
+      const page = wiki.pageRepo.getById(params.pageId)
+      if (page == null) return null
+      const space = wiki.spaceRepo.getById(page.space_id)
+      if (space == null || space.space_type !== 'repo' || space.repo_rev == null) return null
+      const row = wiki.repoEnrichRepo.get(page.space_id, page.slug, space.repo_rev)
+      if (row == null || row.status !== 'ready' || row.section.length === 0) return null
+      if (estimateTokens(row.section) > WIKI_READ_ENRICH_MAX_TOKENS) return null
+      return { section: row.section, repoRev: row.repo_rev }
+    } catch (error) {
+      log.warn('wiki read 导读附加查询失败，静默降级为零痕迹', {
+        pageId: params.pageId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return null
+    }
   }
 
   /**

@@ -24,6 +24,7 @@ import path from 'node:path'
 import { SparkDatabase, WorkspaceRepository } from '@spark/storage'
 import { SessionService } from '../../services/session.service.js'
 import { createWikiServiceStack } from '../../services/wiki/wiki-service-stack.js'
+import { WIKI_ITEM_TOKEN_TARGETS } from '../../services/wiki/wiki-context-budget.js'
 
 describe('Agent wiki 桥（repo 空间可见 / CAS 版本链）', () => {
   let db: SparkDatabase
@@ -508,7 +509,7 @@ describe('Agent wiki 桥（repo 空间可见 / CAS 版本链）', () => {
     expect(userList.items.every((i) => i.repoOwnership === undefined)).toBe(true)
 
     // 计量诚实：所有权字段纳入载荷后，节点成本仍受 listNode 目标约束
-    expect(list.items.every((i) => i.tokens <= 38)).toBe(true)
+    expect(list.items.every((i) => i.tokens <= WIKI_ITEM_TOKEN_TARGETS.listNode)).toBe(true)
   })
 
   it('wiki_list 长标题 repo 页按 listNode 目标截断（所有权字段不挤爆节点预算）', async () => {
@@ -529,7 +530,7 @@ describe('Agent wiki 桥（repo 空间可见 / CAS 版本链）', () => {
     const item = list.items.find((i) => i.id === (long.ok ? long.row.id : ''))
     expect(item).toBeDefined()
     if (item != null) {
-      expect(item.tokens).toBeLessThanOrEqual(38)
+      expect(item.tokens).toBeLessThanOrEqual(WIKI_ITEM_TOKEN_TARGETS.listNode)
       expect(item.title.endsWith('…')).toBe(true)
       expect(item.repoOwnership).toBe('generated')
     }
@@ -561,6 +562,30 @@ describe('Agent wiki 桥（repo 空间可见 / CAS 版本链）', () => {
       expect(read.repoEnrich?.section).toContain('模块职责')
       // 导读是附加而非替换：正文骨架原样在场
       expect(read.body).toContain('扫描生成的骨架内容')
+    }
+  })
+
+  it('wiki_read 导读闸门不误拦合法中文段：o200k 对中文 ≈1 token/字符（校验上限 1500 字符内的密集段必须附上）', async () => {
+    const seed = createWikiServiceStack({ db })
+    seed.spaceRepo.update(repoSpaceId, { repo_rev: 'rev-zh' })
+    const slug = seed.pageRepo.getById(generatedPageId)?.slug as string
+    // 1400 字符纯中文 = 1400 token：按「2 字符/token」旧口径会误判为异常肥段而丢弃
+    seed.repoEnrichRepo.upsert({
+      spaceId: repoSpaceId,
+      slug,
+      repoRev: 'rev-zh',
+      section: '模'.repeat(1400),
+      status: 'ready',
+    })
+
+    const read = await service.bridgeWikiRead({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+    })
+    expect('error' in read && read.error != null).toBe(false)
+    if (!('error' in read)) {
+      expect(read.repoEnrich).toBeDefined()
+      expect(read.repoEnrich?.section.length).toBe(1400)
     }
   })
 

@@ -58,6 +58,18 @@ describe('WikiContextBudget（服务端强制裁剪）', () => {
     )
   })
 
+  it('resolveWikiBudget：仓储未命中（null）回退默认值，不得被 Number(null)=0 钳到下限', () => {
+    // SettingsRepository.get 未命中返回 null（非 undefined）——曾因 Number(null)=0
+    // 把未设置的预算全部钳到 min（turnTotal 8000→1000），wiki 能力整体缩水
+    const unset = resolveWikiBudget({
+      turnTotal: null,
+      readMaxTokens: null,
+      searchLimit: null,
+      summaryChars: null,
+    })
+    expect(unset).toEqual(DEFAULT_WIKI_BUDGET)
+  })
+
   // ─── 摘要截断 ───────────────────────────────────────────────────────
 
   it('clampSummary：超长截断 + 省略号，短文原样', () => {
