@@ -1826,12 +1826,15 @@ textarea.wiki_editor_input {
 
 .wiki_repo_page {
   max-width: 720px;
-  padding-bottom: 24px;
+  /* 内边距与上方 .wiki_results_head 的 20px 水平节奏对齐（标题/正文/表格不再贴边），
+     底部留滚动收尾空隙；窄面板下靠 20px 内边距 + .md-table-wrap 横向滚动兜底 */
+  padding: 4px 20px 24px;
 }
 
 .wiki_repo_note {
-  max-width: 720px;
-  margin-top: 18px;
+  /* 700 = 720（.wiki_repo_page 盒宽）- 20（左 margin）：盒子右缘与内容页右缘对齐 */
+  max-width: 700px;
+  margin: 18px 20px 24px;
   padding: 9px 12px;
   border-radius: 6px;
   font-size: 11.5px;
