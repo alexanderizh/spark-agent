@@ -311,10 +311,13 @@
   }
 
   // max-height 不在此声明：由 TSX 以 VIRTUAL_SCROLL_MAX_HEIGHT 常量内联
-  // （单真源，审查 U6），此处只保留滚动容器形态。
+  // （单真源，审查 U6），此处只保留滚动容器形态。虚拟时间线超 40 条才出现，
+  // 同样局部恢复细滚动条（>40 条裁剪到 440px，无滚动条时「加载更早」历史不可发现）。
   &__scroll {
     overflow-y: auto;
     border-radius: 8px;
+    scrollbar-width: thin !important;
+    scrollbar-color: color-mix(in srgb, var(--text-faint, #9b9489) 60%, transparent) transparent !important;
   }
 
   &__virtual {
@@ -659,12 +662,50 @@
   font-family: var(--font-mono, monospace);
   font-size: 10.5px;
   line-height: 1.65;
-  white-space: pre;
-  overflow: auto;
-  max-height: 280px;
+  // 长行折行：检查器面板窄（300~620px），横向滚动在隐藏滚动条下不可发现，
+  // 折行后载荷只保留纵向一个滚动维度。
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  // 窗口较矮时保底 280px，高窗口最多 520px（clamp 随 vh 自适应）。
+  max-height: clamp(280px, 48vh, 520px);
   color: var(--text, #23231f);
   margin: 0;
   tab-size: 2;
+  // 载荷查看区局部恢复细滚动条（双 !important 压过 styles.css 的全局隐藏
+  // 双保险；thin + scrollbar-color 走标准路径，Chromium 渲染原生细滚动条，
+  // 可见可拖拽，无 webkit「方头」残留问题）。
+  scrollbar-width: thin !important;
+  scrollbar-color: color-mix(in srgb, var(--text-faint, #9b9489) 60%, transparent) transparent !important;
+}
+
+// 载荷 pre 的相对包装：全局滚动条被隐藏（styles.css 决策），溢出可供性由浮动提示承担
+.chat-toollog-json-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.chat-toollog-json__scrollhint {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-muted, #888);
+  background: color-mix(in srgb, var(--bg-soft, #fff) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 7px;
+  pointer-events: none;
+}
+
+// 内联载荷完整性标注（inline 即完整，明示以防「看似截断」误读）
+.chat-toollog-payload-meta {
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--text-faint, #9b9489);
+  font-family: var(--font-mono, monospace);
+  text-align: right;
 }
 
 // 归档载荷

@@ -645,7 +645,7 @@ export function ChatInspectorToolLog({ sessionId }: ChatInspectorToolLogProps) {
               P95 <b>{formatDurationMs(stats.p95Ms)}</b>
             </span>
             <span className="chat-toollog__stat">
-              输出 <b>{formatBytes(stats.totalBytes)}</b>
+              载荷 <b>{formatBytes(stats.totalBytes)}</b>
             </span>
             {chainError != null ? (
               <button

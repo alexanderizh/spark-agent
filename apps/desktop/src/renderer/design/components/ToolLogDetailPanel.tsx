@@ -111,6 +111,36 @@ function PayloadView({ label, view, rowTruncated = false }: PayloadViewProps) {
   /** 预算耗尽守卫触发（256 页 ≈ 10MB）时的本地截断提示；触发后停用续读。 */
   const [guardHit, setGuardHit] = useState(false)
   const aliveRef = useRef(true)
+  // 全局滚动条被整体隐藏（styles.css 决策），载荷 pre 溢出时没有任何视觉线索：
+  // 溢出未滚尽时浮出「滚动查看更多」，滚尽后消失（滚轮滚动本身可用，仅缺可供性）。
+  const preRef = useRef<HTMLPreElement | null>(null)
+  const [scrollHint, setScrollHint] = useState(false)
+  const syncScrollHint = useCallback(() => {
+    const el = preRef.current
+    if (el == null) {
+      setScrollHint(false)
+      return
+    }
+    const moreY = el.scrollHeight > el.clientHeight + 1
+    const moreX = el.scrollWidth > el.clientWidth + 1
+    if (!moreY && !moreX) {
+      setScrollHint(false)
+      return
+    }
+    const endY = !moreY || el.scrollTop + el.clientHeight >= el.scrollHeight - 4
+    const endX = !moreX || el.scrollLeft + el.clientWidth >= el.scrollWidth - 4
+    setScrollHint(!(endY && endX))
+  }, [])
+  // text 增长（分页续读）不改 pre 盒尺寸，ResizeObserver 感知不到——依赖 text 重测；
+  // 面板宽度变化（拖拽分隔条）由 RO 兜底。
+  useEffect(() => {
+    syncScrollHint()
+    const el = preRef.current
+    if (el == null || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => syncScrollHint())
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [syncScrollHint, text, view])
   // 分页循环跨越多次 await，卸载（切页签/收起行）后必须中止（审查 U12）。
   useEffect(() => {
     aliveRef.current = true
@@ -125,7 +155,23 @@ function PayloadView({ label, view, rowTruncated = false }: PayloadViewProps) {
   if (view.inline !== undefined) {
     const body = renderInlineValue(view.inline)
     if (body === '') return <div className="chat-toollog__hint">（{label}为空）</div>
-    return <pre className="chat-toollog-json">{body}</pre>
+    return (
+      <>
+        <div className="chat-toollog-json-wrap">
+          <pre ref={preRef} className="chat-toollog-json" onScroll={syncScrollHint}>
+            {body}
+          </pre>
+          {scrollHint && (
+            <span className="chat-toollog-json__scrollhint" aria-hidden="true">
+              滚动查看更多
+            </span>
+          )}
+        </div>
+        <div className="chat-toollog-payload-meta">
+          内联载荷{view.bytes != null ? ` · ${formatBytes(view.bytes)}` : ''} · 完整
+        </div>
+      </>
+    )
   }
 
   const artifactId = view.artifactId
@@ -178,8 +224,20 @@ function PayloadView({ label, view, rowTruncated = false }: PayloadViewProps) {
     <div className="chat-toollog-archive">
       <div className="chat-toollog-archive__meta">
         归档载荷 {formatBytes(view.bytes)} · sha256 {shortHash(view.sha256)}
+        {fullyLoaded ? ' · 已全部加载' : ''}
       </div>
-      {text != null && <pre className="chat-toollog-json">{text}</pre>}
+      {text != null && (
+        <div className="chat-toollog-json-wrap">
+          <pre ref={preRef} className="chat-toollog-json" onScroll={syncScrollHint}>
+            {text}
+          </pre>
+          {scrollHint && (
+            <span className="chat-toollog-json__scrollhint" aria-hidden="true">
+              滚动查看更多
+            </span>
+          )}
+        </div>
+      )}
       {!fullyLoaded && (
         <button
           type="button"
