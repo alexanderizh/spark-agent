@@ -12,6 +12,7 @@ import './SidebarFilterMenu.less'
 import { Icons } from './Icons'
 import { useI18n } from './i18n'
 import { getCanvasWorkspaceIds } from './workspace-visibility'
+import { NO_PROJECT_WORKSPACE_NAME } from './session-workspace-root'
 import './session-labels.less'
 import {
   SIDEBAR_LABEL_FILTER_OPTIONS,
@@ -317,17 +318,23 @@ function FilterPopupContent({
     [t],
   )
   const projectOptions = useMemo(() => {
+    // 内置分类（未归属会话、临时会话）置顶，排在真实项目之前，便于快速定位。
+    const noProject = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME)
     const list: Array<{ value: string; label: string; hint?: string }> = [
       { value: 'all', label: t('sidebar.filter.allProjects') },
-      {
-        value: SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID,
-        label: t('sidebar.ungroupedChats'),
-      },
+      { value: SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID, label: t('sidebar.ungroupedChats') },
     ]
+    if (noProject) {
+      list.push({ value: noProject.id, label: t('sidebar.noProjectChats') })
+    }
     for (const w of workspaces) {
+      if (w === noProject) continue
       const last = w.rootPath?.split(/[/\\]/).filter(Boolean).slice(-1)[0] ?? ''
       const hint = last && last !== w.name ? last : undefined
-      const item: { value: string; label: string; hint?: string } = { value: w.id, label: w.name }
+      const item: { value: string; label: string; hint?: string } = {
+        value: w.id,
+        label: w.name,
+      }
       if (hint !== undefined) item.hint = hint
       list.push(item)
     }
@@ -336,11 +343,12 @@ function FilterPopupContent({
 
   // 行值文案：空选择=「全部」；单选显示项目名；多选显示「首个 +N」（悬停子菜单可见完整勾选）。
   const projectLabel = useMemo(() => {
-    const names = state.projectIds.map((id) =>
-      id === SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID
-        ? t('sidebar.ungroupedChats')
-        : (workspaces.find((w) => w.id === id)?.name ?? id),
-    )
+    const names = state.projectIds.map((id) => {
+      if (id === SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID) return t('sidebar.ungroupedChats')
+      const w = workspaces.find((item) => item.id === id)
+      if (!w) return id
+      return w.name === NO_PROJECT_WORKSPACE_NAME ? t('sidebar.noProjectChats') : w.name
+    })
     return formatMultiSelectRowLabel(names, t('sidebar.filter.all'))
   }, [state.projectIds, workspaces, t])
   const selectedProjectIdSet = useMemo(() => new Set(state.projectIds), [state.projectIds])
