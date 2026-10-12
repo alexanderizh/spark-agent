@@ -16,6 +16,7 @@ import {
   WikiExtractionStateRepository,
   WikiLinkRepository,
   WikiPageRepository,
+  WikiRepoEnrichmentRepository,
   WikiRevisionRepository,
   WikiSearchRepository,
   WikiSkillProposalRepository,
@@ -31,6 +32,10 @@ import { WikiWriteService } from './wiki-write.service.js'
 import { WikiCandidateService } from './wiki-candidate.service.js'
 import { WikiSkillProposerService } from './wiki-skill-proposer.service.js'
 import { WikiRepoScanService } from './wiki-repo-scan.service.js'
+import {
+  WikiRepoEnrichService,
+  type WikiRepoEnrichTargetResolver,
+} from './wiki-repo-enrich.service.js'
 import {
   WikiExtractionService,
   type WikiExtractionModelCall,
@@ -61,6 +66,21 @@ export interface WikiServiceStackInput {
   skillsRootDir?: string
   /** 漂移提示阈值（落后多少个提交提示重建；方案 §12 D 组 wiki/repo/staleCommits） */
   staleCommits?: number
+  /** 导读模型调用注入（测试用；缺省真实 HTTP 调用） */
+  repoEnrichCallModel?: WikiExtractionModelCall
+  /**
+   * 导读渠道解析注入（方案 §6.3 三级回落的第三级：桌面装配侧在此注入默认
+   * 运行时解析——profileId 为 null 时回落系统默认渠道；与 Dream 的
+   * resolveDefaultRuntime 同一接缝语义）。agent-runtime 缺省实现直接判无渠道。
+   */
+  repoEnrichResolveTarget?: WikiRepoEnrichTargetResolver
+  /**
+   * 共享的导读服务实例注入。互斥态（runningSpaces）是实例级 Set——
+   * 「扫描自动触发 + 手动重跑」要真正互斥，所有触达点必须共用同一实例；
+   * 桌面 IPC 侧每次 handler 重建栈时传入同一单例（缺省每次装配各自新建，
+   * 适合一次性场景与测试）。
+   */
+  repoEnrichService?: WikiRepoEnrichService
 }
 
 export interface WikiServiceStack {
@@ -73,6 +93,7 @@ export interface WikiServiceStack {
   sourceRepo: WikiSourceRepository
   extractionStateRepo: WikiExtractionStateRepository
   skillProposalRepo: WikiSkillProposalRepository
+  repoEnrichRepo: WikiRepoEnrichmentRepository
   store: WikiStoreService
   budget: WikiBudgetProfile
   spaceService: WikiSpaceService
@@ -84,6 +105,7 @@ export interface WikiServiceStack {
   extractionService: WikiExtractionService
   skillProposerService: WikiSkillProposerService
   repoScanService: WikiRepoScanService
+  repoEnrichService: WikiRepoEnrichService
 }
 
 /** 从设置读取构建预算档（(category='wiki', key='budget/xxx') 二元组契约）。 */
@@ -143,6 +165,19 @@ export function createWikiServiceStack(input: WikiServiceStackInput): WikiServic
     },
   )
 
+  const repoEnrichRepo = new WikiRepoEnrichmentRepository(db)
+  // 互斥是实例态：注入了共享实例就复用（桌面 IPC 的所有触达点同一互斥域）。
+  const repoEnrichService =
+    input.repoEnrichService ??
+    new WikiRepoEnrichService(repoEnrichRepo, spaceRepo, pageRepo, {
+      db,
+      ...(input.settingsGet != null ? { settingsGet: input.settingsGet } : {}),
+      ...(input.repoEnrichCallModel != null ? { callModel: input.repoEnrichCallModel } : {}),
+      ...(input.repoEnrichResolveTarget != null
+        ? { resolveTarget: input.repoEnrichResolveTarget }
+        : {}),
+    })
+
   return {
     spaceRepo,
     pageRepo,
@@ -153,6 +188,7 @@ export function createWikiServiceStack(input: WikiServiceStackInput): WikiServic
     sourceRepo,
     extractionStateRepo,
     skillProposalRepo,
+    repoEnrichRepo,
     store,
     budget,
     spaceService: new WikiSpaceService(spaceRepo),
@@ -167,6 +203,9 @@ export function createWikiServiceStack(input: WikiServiceStackInput): WikiServic
     }),
     repoScanService: new WikiRepoScanService(spaceRepo, pageRepo, writeService, {
       ...(input.staleCommits != null ? { staleCommits: input.staleCommits } : {}),
+      // 扫描后自动增强（fire-and-forget 由 scan 服务内部 void 掉；闸门在服务内读取）
+      enrichHook: (params) => repoEnrichService.enrichAfterScan(params),
     }),
+    repoEnrichService,
   }
 }

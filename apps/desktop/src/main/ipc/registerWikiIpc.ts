@@ -18,12 +18,18 @@ import {
   WorkspaceRepository,
   SettingsRepository,
   SkillRepository,
+  ProviderProfileRepository,
   type WikiScope,
   type WikiSpaceType,
   type WikiPageKind,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
-import { createWikiServiceStack, resolveWikiBudgetFromSettings } from '@spark/agent-runtime'
+import {
+  createWikiServiceStack,
+  resolveWikiBudgetFromSettings,
+  resolveSessionTitleTarget,
+  type WikiRepoEnrichService,
+} from '@spark/agent-runtime'
 import { estimateTokens } from '@spark/shared'
 import type {
   WikiPageMeta,
@@ -92,8 +98,52 @@ export function registerWikiIpc(): void {
     return typeof raw === 'number' && Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 20
   }
 
+  /**
+   * 导读增强服务单例（方案B §7 运行层互斥）。
+   *
+   * 互斥态（runningSpaces）是实例内 Set，而 repoStack() 每次调用都重建栈——
+   * 不做共享单例的话，「扫描自动触发 + 手动重跑」会落在两个实例上，空间级
+   * 互斥形同虚设。所有触达点（scan hook / enrichment:* handler）都经此取实例。
+   */
+  let _repoEnrichService: WikiRepoEnrichService | null = null
+  const sharedRepoEnrichService = (): WikiRepoEnrichService => {
+    if (_repoEnrichService == null) {
+      _repoEnrichService = createWikiServiceStack({
+        db,
+        budget: getBudget(),
+        settingsGet: (category, key) => settingsRepo.get(category, key),
+        // §6.3 三级回落的第三级：专属/抽取档位都为空时，回落系统默认渠道
+        // （与 Dream 的 resolveDefaultRuntime 同一接缝语义；AutoRouter 默认
+        // 渠道由解析链内部的候选链展开）
+        repoEnrichResolveTarget: async (profileId) => {
+          const resolvedId =
+            profileId ??
+            (() => {
+              try {
+                return new ProviderProfileRepository(db).getDefault()?.id ?? null
+              } catch {
+                return null
+              }
+            })()
+          if (resolvedId == null) return { ok: false, code: 'provider_missing' }
+          return resolveSessionTitleTarget({
+            db,
+            session: { provider_profile_id: resolvedId, model_id: null },
+          })
+        },
+      }).repoEnrichService
+    }
+    return _repoEnrichService
+  }
+
   const repoStack = () =>
-    createWikiServiceStack({ db, budget: getBudget(), staleCommits: getStaleCommits() })
+    createWikiServiceStack({
+      db,
+      budget: getBudget(),
+      staleCommits: getStaleCommits(),
+      // 互斥是 enrich 服务实例态：scan 自动触发的 hook 与手动重跑必须同一实例
+      repoEnrichService: sharedRepoEnrichService(),
+    })
 
   const base = stack()
 
@@ -553,6 +603,29 @@ export function registerWikiIpc(): void {
     const result = repoStack().repoScanService.setOwnership(request.pageId, request.ownership)
     if (!result.ok) throw new Error(result.message ?? '切换所有权失败')
     return { ok: true }
+  })
+
+  // ─── Repo Wiki 混合增强（方案B：模块页 AI 导读，按 rev 缓存） ──────────
+
+  /** 页面的 AI 导读段（无 = null，渲染端静默回落纯骨架页）。 */
+  typedIpcHandle('wiki:repo:enrichment:get', async (request) => {
+    return { section: sharedRepoEnrichService().getSection(request.pageId) }
+  })
+
+  /**
+   * 手动重跑 / 补跑（不受 repo/enrich/enabled 总闸限制——点击即成本授权）。
+   * 携带 slug = 单页强制重跑；缺省 = 全量差集补跑。
+   */
+  typedIpcHandle('wiki:repo:enrichment:run', async (request) => {
+    return sharedRepoEnrichService().runManually({
+      spaceId: request.spaceId,
+      ...(request.slug != null ? { slug: request.slug } : {}),
+    })
+  })
+
+  /** 空间级增强进度（面板轮询；纯 DB 查询，不触发扫描或生成）。 */
+  typedIpcHandle('wiki:repo:enrichment:status', async (request) => {
+    return sharedRepoEnrichService().progress(request.spaceId)
   })
 }
 

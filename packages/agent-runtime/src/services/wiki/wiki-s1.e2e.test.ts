@@ -334,25 +334,34 @@ describe('Wiki S1 e2e（写入闭环 / 双链 / 删除屏障 / 版本还原）',
 
   it('L1 目录树：每节点不含摘要/正文，hasChildren 正确', async () => {
     const spaceId = await makeSpace()
-    const parentId = await makePage(spaceId, '父页', '父正文 SECRET_PARENT')
+    // 8ebfe75b1 起树语义 = 只有文件夹可作父节点（页面下不挂子节点）
+    const folder = await stack.writeService.commitPage({
+      spaceId,
+      title: '父夹',
+      kind: 'folder',
+      authorRole: 'manual_user',
+    })
+    expect(folder.ok).toBe(true)
+    if (!folder.ok) throw new Error('folder create failed')
+    const parentId = folder.row.id
     const child = await stack.writeService.commitPage({
       spaceId,
       parentId,
       title: '子页',
-      body: '子正文',
+      body: '子正文 SECRET_PARENT',
       authorRole: 'manual_user',
     })
     expect(child.ok).toBe(true)
 
     const roots = stack.pageService.listForAgent({ spaceId })
     expect(roots.items).toHaveLength(1)
-    expect(roots.items[0]!.title).toBe('父页')
+    expect(roots.items[0]!.title).toBe('父夹')
     expect(roots.items[0]!.hasChildren).toBe(true)
     expect(JSON.stringify(roots)).not.toContain('SECRET_PARENT')
     // 每节点受服务端目标约束（30 token = 结构地板 22 + 标题余量）
     expect(roots.items[0]!.tokens).toBeLessThanOrEqual(30)
     // 短标题绝不被裁空（宁可多花 1~2 token 也要可导航）
-    expect(roots.items[0]!.title).toBe('父页')
+    expect(roots.items[0]!.title).toBe('父夹')
 
     const children = stack.pageService.listForAgent({ spaceId, parentId })
     expect(children.items.map((i) => i.title)).toEqual(['子页'])

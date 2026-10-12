@@ -547,6 +547,11 @@ export interface PlatformBridgeDeps {
       description?: string
       triggers?: string[]
     }): Promise<unknown>
+    bridgeWikiSetOwnership(params: {
+      sessionId: string
+      pageId: string
+      ownership: 'generated' | 'manual' | 'ignored'
+    }): Promise<unknown>
     /**
      * 会话 worktree 状态桥（codex / claude CLI 的 stdio spark_session MCP 子进程
      * 走这条路径回到主进程，复用 setSessionRuntimeWorktree 的校验与持久化）。
@@ -1031,6 +1036,8 @@ export class PlatformBridgeService {
         return this.wikiLink(d, params)
       case 'wiki.propose_skill':
         return this.wikiProposeSkill(d, params)
+      case 'wiki.set_ownership':
+        return this.wikiSetOwnership(d, params)
 
       // ── Canvas（codex CLI / claude CLI 的 stdio spark_canvas 子进程走这条路径）──
       case 'canvas.call_tool':
@@ -2367,6 +2374,18 @@ export class PlatformBridgeService {
       skillDraft,
       sourcePageIds: rawPageIds.filter((v): v is string => typeof v === 'string'),
     })
+  }
+
+  private async wikiSetOwnership(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const pageId = String(params.pageId ?? '')
+    const ownership = String(params.ownership ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!pageId) throw new Error('Missing parameter: pageId')
+    if (ownership !== 'generated' && ownership !== 'manual' && ownership !== 'ignored') {
+      throw new Error('Invalid parameter: ownership')
+    }
+    return d.sessionService.bridgeWikiSetOwnership({ sessionId, pageId, ownership })
   }
 
   private async memorySearch(d: PlatformBridgeDeps, params: Record<string, unknown>) {

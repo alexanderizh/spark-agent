@@ -308,4 +308,174 @@ describe('Wiki 工具面（S1）', () => {
       server.close()
     }
   })
+
+  // ─── CAS 版本链（Agent 自纠错闭环）────────────────────────────────────
+
+  it('wiki_read 回执头行透出 id/标题/版本（Agent 拿 expected_version 的唯一途径）', async () => {
+    const { server, port } = await startFakeBridge({
+      id: 'wp_9',
+      title: '模块导读',
+      version: 5,
+      body: '正文内容。',
+      truncated: false,
+      nextOffset: null,
+      tokens: 4,
+    })
+    try {
+      const text = await callBridgeTool(port, 'wiki_read', { id: 'wp_9' })
+      expect(text.startsWith('[wp_9] 模块导读（v5）')).toBe(true)
+      expect(text).toContain('正文内容。')
+    } finally {
+      server.close()
+    }
+  })
+
+  it('wiki_read 空正文与续读提示并存时头行仍在（空页也能拿到版本）', async () => {
+    const { server, port } = await startFakeBridge({
+      id: 'wp_10',
+      title: '空页',
+      version: 1,
+      body: '',
+      truncated: false,
+      nextOffset: null,
+      tokens: 0,
+    })
+    try {
+      const text = await callBridgeTool(port, 'wiki_read', { id: 'wp_10' })
+      expect(text).toBe('[wp_10] 空页（v1）\n(空正文)')
+    } finally {
+      server.close()
+    }
+  })
+
+  it('wiki_update CAS 失配回执渲染当前版本（不逼 Agent 盲猜重试）', async () => {
+    const { server, received, port } = await startFakeBridge({
+      ok: false,
+      error: '页面已被并发修改，请基于最新版本重试',
+      currentVersion: 7,
+    })
+    try {
+      const text = await callBridgeTool(port, 'wiki_update', {
+        id: 'wp_1',
+        expected_version: 3,
+        body: 'x',
+      })
+      expect(text).toContain('wiki_update 失败')
+      expect(text).toContain('页面已被并发修改')
+      expect(text).toContain('当前版本 v7')
+      expect(text).toContain('expected_version')
+      expect(received).toHaveLength(1)
+      expect(received[0]!.method).toBe('wiki.update')
+    } finally {
+      server.close()
+    }
+  })
+
+  it('wiki_update 非 CAS 失败不渲染版本提示（currentVersion 缺省时干净回执）', async () => {
+    const { server, port } = await startFakeBridge({
+      ok: false,
+      error: '页面不在本会话可见范围内',
+    })
+    try {
+      const text = await callBridgeTool(port, 'wiki_update', {
+        id: 'wp_2',
+        expected_version: 1,
+        body: 'x',
+      })
+      expect(text).toContain('wiki_update 失败')
+      expect(text).not.toContain('当前版本')
+    } finally {
+      server.close()
+    }
+  })
+
+  // ─── P0-3 所有权隔离（read 感知 + set_ownership 打通）───────────────────
+
+  it('wiki_read repo 生成页头行带所有权标记（改动会被重建覆写的威胁提示）', async () => {
+    const { server, port } = await startFakeBridge({
+      id: 'wp_11',
+      title: 'src 模块页',
+      version: 3,
+      repoOwnership: 'generated',
+      body: '骨架内容。',
+      truncated: false,
+      nextOffset: null,
+      tokens: 4,
+    })
+    try {
+      const text = await callBridgeTool(port, 'wiki_read', { id: 'wp_11' })
+      expect(text.startsWith('[wp_11] src 模块页（v3，repo生成页·重建会覆写）')).toBe(true)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('wiki_set_ownership 打通到 wiki.set_ownership RPC，回执带新版本号衔接 CAS', async () => {
+    const { server, received, port } = await startFakeBridge({
+      ok: true,
+      id: 'wp_12',
+      title: 'src 模块页',
+      version: 4,
+      ownership: 'manual',
+      note: '已人工接管：重建不再覆写该页，可安全编辑',
+    })
+    try {
+      const text = await callBridgeTool(port, 'wiki_set_ownership', {
+        id: 'wp_12',
+        ownership: 'manual',
+      })
+      expect(text).toBe(
+        '已接管 [wp_12] src 模块页（当前版本 v4，重建不再覆写，后续 wiki_update 以该版本为 expected_version）',
+      )
+      expect(received).toHaveLength(1)
+      expect(received[0]!.method).toBe('wiki.set_ownership')
+      expect(received[0]!.params).toEqual({
+        sessionId: 'test-session',
+        pageId: 'wp_12',
+        ownership: 'manual',
+      })
+    } finally {
+      server.close()
+    }
+  })
+
+  it('wiki_set_ownership 经 wiki_admin 二级入口同样打通（工具瘦身档位）', async () => {
+    const { server, received, port } = await startFakeBridge({
+      ok: true,
+      id: 'wp_13',
+      title: '旧模块页',
+      version: 2,
+      ownership: 'generated',
+      note: '已回归生成态：下次重建将覆写该页现有内容',
+    })
+    try {
+      const text = await callBridgeTool(port, WIKI_ADMIN_TOOL_NAME, {
+        tool: 'wiki_set_ownership',
+        args: { id: 'wp_13', ownership: 'generated' },
+      })
+      // 回归生成态是唯一有数据损失风险的切换，回执必须保留覆写警告
+      expect(text).toBe('已回归生成态 [wp_13] 旧模块页（当前版本 v2，下次重建将覆写现有内容）')
+      expect(received).toHaveLength(1)
+      expect(received[0]!.method).toBe('wiki.set_ownership')
+      expect(received[0]!.params).toEqual({
+        sessionId: 'test-session',
+        pageId: 'wp_13',
+        ownership: 'generated',
+      })
+    } finally {
+      server.close()
+    }
+  })
+
+  it('wiki_set_ownership 非法 ownership 在瘦桥层直接拒绝（不空耗一次 RPC）', async () => {
+    const { server, received, port } = await startFakeBridge({ ok: true })
+    try {
+      await expect(
+        callBridgeTool(port, 'wiki_set_ownership', { id: 'wp_14', ownership: 'yolo' }),
+      ).rejects.toThrow(/ownership must be one of/)
+      expect(received).toHaveLength(0)
+    } finally {
+      server.close()
+    }
+  })
 })

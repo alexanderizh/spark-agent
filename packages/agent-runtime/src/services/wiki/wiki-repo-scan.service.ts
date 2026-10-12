@@ -35,6 +35,9 @@ import {
   WIKI_REPO_DEFAULT_MAX_FILES,
 } from './wiki-repo-scan-tree.js'
 import { renderRepoPages } from './wiki-repo-scan-render.js'
+// type-only：enrich 服务反向 import 本模块的 WIKI_REPO_SOURCE_TYPE，
+// 运行时方向保持单向（scan → 无依赖 enrich），不构成环。
+import type { WikiRepoEnrichScanHookParams } from './wiki-repo-enrich.service.js'
 
 const log = createLogger('wiki:repo-scan')
 
@@ -50,6 +53,26 @@ const OWNERSHIP_TO_SOURCE_TYPE: Record<WikiRepoPageOwnership, string> = {
   generated: WIKI_REPO_SOURCE_TYPE,
   manual: WIKI_REPO_SOURCE_TYPE_MANUAL,
   ignored: WIKI_REPO_SOURCE_TYPE_IGNORED,
+}
+
+/**
+ * source_type → 页面所有权（读取侧感知用）。非 Repo Wiki 页面返回 null
+ * （普通页面没有"重建覆写"语义，不该被误标）。ownershipOf 与 Agent
+ * 读取路径（wiki_read 头行标记）共用这一份映射。
+ */
+export function repoOwnershipFromSourceType(
+  sourceType: string | null | undefined,
+): WikiRepoPageOwnership | null {
+  switch (sourceType) {
+    case WIKI_REPO_SOURCE_TYPE:
+      return 'generated'
+    case WIKI_REPO_SOURCE_TYPE_MANUAL:
+      return 'manual'
+    case WIKI_REPO_SOURCE_TYPE_IGNORED:
+      return 'ignored'
+    default:
+      return null
+  }
 }
 
 /** 漂移提示缺省阈值（落后多少个提交提示重建；方案 §12 D 组） */
@@ -95,11 +118,18 @@ export interface WikiRepoDriftStatus {
 export interface WikiRepoScanServiceOptions {
   git?: GitCommandService
   staleCommits?: number
+  /**
+   * 扫描完成后自动触发导读增强（方案B §7 触发层；缺省不触发 = 行为零变化）。
+   * fire-and-forget：本服务 void 掉返回的 promise 并兜 catch，异常止步于日志，
+   * 绝不影响扫描回执；闸门 / 互斥 / 差集在 WikiRepoEnrichService 内闭环。
+   */
+  enrichHook?: (params: WikiRepoEnrichScanHookParams) => Promise<unknown>
 }
 
 export class WikiRepoScanService {
   private readonly git: GitCommandService
   private readonly staleCommits: number
+  private readonly enrichHook: ((params: WikiRepoEnrichScanHookParams) => Promise<unknown>) | null
 
   constructor(
     private readonly spaceRepo: WikiSpaceRepository,
@@ -109,6 +139,7 @@ export class WikiRepoScanService {
   ) {
     this.git = options.git ?? getDefaultGitCommandService()
     this.staleCommits = options.staleCommits ?? WIKI_REPO_DEFAULT_STALE_COMMITS
+    this.enrichHook = options.enrichHook ?? null
   }
 
   /** 扫描（或重建）一个仓库的 Repo Wiki。 */
@@ -202,6 +233,16 @@ export class WikiRepoScanService {
         `created=${pagesCreated} updated=${pagesUpdated} skipped=${pagesSkipped}`,
     )
 
+    // 扫描后自动增强（C4 触发层隔离：void + catch，扫描回执绝不被增强拖垮；
+    // 树与 rev 直接复用，enrich 不再重复同步遍历仓库）
+    if (this.enrichHook != null) {
+      void this.enrichHook({ spaceId: space.id, rev, repoRoot, tree }).catch((err) => {
+        log.warn(
+          `repo enrich hook crashed: space=${space.id} — ${err instanceof Error ? err.message : String(err)}`,
+        )
+      })
+    }
+
     return {
       ok: true,
       spaceId: space.id,
@@ -287,14 +328,7 @@ export class WikiRepoScanService {
   ownershipOf(pageId: string): WikiRepoPageOwnership {
     const page = this.pageRepo.getById(pageId)
     if (page == null) return 'generated'
-    switch (page.source_type) {
-      case WIKI_REPO_SOURCE_TYPE_MANUAL:
-        return 'manual'
-      case WIKI_REPO_SOURCE_TYPE_IGNORED:
-        return 'ignored'
-      default:
-        return 'generated'
-    }
+    return repoOwnershipFromSourceType(page.source_type) ?? 'generated'
   }
 
   /** 定位或新建 repo 空间（同 repo_path 复用，避免重复空间堆积）。 */

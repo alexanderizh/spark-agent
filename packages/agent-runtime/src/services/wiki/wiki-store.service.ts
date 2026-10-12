@@ -41,9 +41,16 @@ export class WikiStoreService {
       case 'user':
         return path.join(this.homeDir, 'wiki', 'user', spaceId)
       case 'project':
+        if (scopeRef == null) {
+          // project/NULL = 未绑定 workspace 的空间（Repo Wiki 扫描的既定身份）。
+          // 路径身份必须由空间自身决定：会话侧栈带着 workspaceRootPath 时若仍
+          // 解析到 <workspace>/.spark-agent/wiki/，同一页面在 UI 路径（按空间
+          // scope 建栈 → home 侧 project-orphan）与 Agent 路径会指向两个文件。
+          return path.join(this.homeDir, 'wiki', 'project-orphan', spaceId)
+        }
         if (this.workspaceRootPath == null) {
-          // project 空间在无 workspace 的会话中不可写正文；读取场景由上层校验，
-          // 此处返回 home 侧路径保持函数完整（写入前服务层已拒绝）。
+          // 绑定了 workspace 的 project 空间在无 workspace 的会话中不可写正文；
+          // 读取场景由上层校验，此处返回 home 侧路径保持函数完整（写入前服务层已拒绝）。
           return path.join(this.homeDir, 'wiki', 'project-orphan', spaceId)
         }
         return path.join(this.workspaceRootPath, '.spark-agent', 'wiki', spaceId)

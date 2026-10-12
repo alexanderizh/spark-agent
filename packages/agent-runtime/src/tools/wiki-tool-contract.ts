@@ -4,13 +4,14 @@
  * Wiki 工具契约 — 内置（in-process SDK MCP）与 MCP（stdio 瘦桥）两形态共用。
  *
  * 职责：
- *   - 12 个工具（mcp__spark_wiki__ 命名空间）的名称、描述、入参 schema 单一事实源
+ *   - 13 个工具（mcp__spark_wiki__ 命名空间）的名称、描述、入参 schema 单一事实源
  *   - L0 system prompt 片段（≤200 token，递进规则写进提示词作为行为契约）
  *   - 常驻 token 计量（L0 + L0′ ≤ 800 软目标，CI 断言基线）
  *
- * 挂载集（S1）：5 只读 + 6 写 ——
+ * 挂载集（S1）：5 只读 + 7 写 ——
  *   只读 wiki_list_spaces / wiki_search / wiki_read / wiki_list / wiki_backlinks（免审批）
- *   写入 wiki_write / wiki_update / wiki_archive / wiki_delete / wiki_restore / wiki_link（走审批）
+ *   写入 wiki_write / wiki_update / wiki_archive / wiki_delete / wiki_restore / wiki_link /
+ *        wiki_set_ownership（走审批）
  * wiki_propose_skill 属 S3（技能提议区落地后挂载）。
  *
  * 同一会话内置 / MCP 择一挂载（设计原则 4）；工具瘦身（wiki/budget/helpDisclosure）
@@ -45,6 +46,7 @@ export const WIKI_WRITE_TOOL_NAMES = [
   'wiki_delete',
   'wiki_restore',
   'wiki_link',
+  'wiki_set_ownership',
 ] as const
 
 /** S3 起追加的写工具（技能提议区落地后挂载；契约已冻结） */
@@ -79,6 +81,8 @@ export const WIKI_DEFERRED_TOOL_NAMES = [
   'wiki_link',
   // S3：技能提议是低频动作（知识沉淀成技能是偶发决策），同样收进二级入口
   'wiki_propose_skill',
+  // Repo 所有权切换是低频决策（接管/放弃跟踪），且生成页编辑守卫会指引到它
+  'wiki_set_ownership',
 ] as const
 
 /** 二级入口工具名（工具瘦身开启时挂载） */
@@ -129,7 +133,7 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
   {
     name: 'wiki_list_spaces',
     description:
-      '列出当前会话可访问的知识库空间（每空间一行：id+名称+页面数）。开始取用 wiki 前先看有哪些空间。',
+      '列出当前会话可访问的知识库空间（每空间一行：id+名称+页面数）。取用 wiki 前先看有哪些空间。',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -138,7 +142,7 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
   {
     name: 'wiki_search',
     description:
-      '按关键词检索知识库页面（FTS 全文，中英文均可）。只返回 id+标题+摘要+标签，不返回正文；需要全文时再用 wiki_read。',
+      '按关键词检索知识库页面（FTS 全文，中英文均可）。只返回 id+标题+摘要+标签；需要全文时再用 wiki_read。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -152,7 +156,7 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
   {
     name: 'wiki_read',
     description:
-      '读取一个知识页面的正文（默认单页 ≤3000 token）。超长页返回 truncated + nextOffset，传 offset 续读。读到文件夹 id 时会提示改用 wiki_list 浏览。',
+      '读取一个知识页面的正文（默认单页 ≤3000 token，头行带 id/标题/版本）。超长页返回 truncated + nextOffset，传 offset 续读。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -165,14 +169,14 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
   {
     name: 'wiki_list',
     description:
-      "列出一个空间内的目录树（每节点 id+标题+类型+有无子节点，无正文摘要）。kind='folder' 是文件夹容器；传 parent_id 逐层下钻，浏览结构时用。",
+      '列出一个空间内的目录树（每节点 id+标题+类型+有无子节点，无正文摘要）；传 parent_id 逐层下钻。',
     inputSchema: {
       type: 'object',
       properties: {
         space_id: { type: 'string', description: '空间 id。' },
         parent_id: {
           type: 'string',
-          description: '父节点 id（缺省根层；传文件夹 id 可下钻一层）。',
+          description: '父文件夹 id（缺省根层）。',
         },
       },
       required: ['space_id'],
@@ -191,21 +195,21 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
   {
     name: 'wiki_write',
     description:
-      '在知识库新建页面或文件夹（回执只含 id/title/version，不回显正文）。kind=folder 是纯结构容器，只需 space_id+title；内容页必须带 body，可用 parent_id 挂进层级。',
+      '在知识库新建页面或文件夹（回执只含 id/title/version）。kind=folder 只需 space_id+title；内容页必须带 body。',
     inputSchema: {
       type: 'object',
       properties: {
         space_id: { type: 'string', description: '目标空间 id。' },
         title: { type: 'string', description: '页面 / 文件夹标题。' },
-        body: { type: 'string', description: 'Markdown 正文；kind=folder 时省略，其余必填。' },
+        body: { type: 'string', description: 'Markdown 正文（folder 省略，其余必填）。' },
         kind: {
           type: 'string',
           enum: ['knowledge', 'experience', 'pattern', 'reference', 'note', 'folder'],
-          description: '默认 knowledge；folder=文件夹容器（无正文）。',
+          description: '默认 knowledge；folder=文件夹容器。',
         },
         parent_id: {
           type: 'string',
-          description: '父节点 id（只能是文件夹；页面下不挂子节点）；缺省挂根层。',
+          description: '父文件夹 id；缺省挂根层。',
         },
         summary: { type: 'string', description: '摘要（folder 忽略）。' },
         tags: { type: 'array', items: { type: 'string' }, description: '标签（folder 忽略）。' },
@@ -289,12 +293,28 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
     },
   },
   {
+    name: 'wiki_set_ownership',
+    description:
+      '设置 Repo Wiki 页面所有权。manual=人工接管（重建不再覆写，编辑生成页前必须先接管）；ignored=忽略该页；generated=回归生成态（下次重建覆写现有内容）。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: '页面 id。' },
+        ownership: {
+          type: 'string',
+          enum: ['generated', 'manual', 'ignored'],
+          description: '目标所有权。',
+        },
+      },
+      required: ['id', 'ownership'],
+    },
+  },
+  {
     name: WIKI_ADMIN_TOOL_NAME,
     description:
       '知识库低频入口。tool 取 enum 中的子工具名，args 传其入参：' +
-      'wiki_update(id,expected_version)、wiki_backlinks(id)、wiki_archive(id)、' +
-      'wiki_restore(id)、wiki_delete(id)、wiki_link(from_id,to_id)、' +
-      'wiki_propose_skill(name,purpose,source_page_ids,skill_draft)。',
+      'wiki_update(id,expected_version)、wiki_set_ownership(id,ownership)、' +
+      'wiki_link(from_id,to_id)、wiki_propose_skill(name,purpose,…)；其余传 id 即可。',
     inputSchema: {
       type: 'object',
       properties: {

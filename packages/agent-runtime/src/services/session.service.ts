@@ -549,6 +549,10 @@ import type { WikiSpaceScopeFilter } from './wiki/wiki-space.service.js'
 import { createWikiServiceStack, resolveWikiBudgetFromSettings } from './wiki/wiki-service-stack.js'
 import { resetTurnWikiBudget } from './wiki/wiki-context-budget.js'
 import {
+  WIKI_REPO_SOURCE_TYPE,
+  type WikiRepoPageOwnership,
+} from './wiki/wiki-repo-scan.service.js'
+import {
   WIKI_ADMIN_TOOL_NAME,
   WIKI_DEFERRED_TOOL_NAMES,
   WIKI_L0_PROMPT,
@@ -598,6 +602,8 @@ export interface WikiBridgeReadResult {
   id?: string
   title?: string
   version?: number
+  /** Repo Wiki 页面所有权（仅 repo 页有值；generated 态改动会被重建覆写） */
+  repoOwnership?: WikiRepoPageOwnership
   body?: string
   truncated?: boolean
   nextOffset?: number | null
@@ -631,6 +637,38 @@ export interface WikiBridgeWriteReceipt {
   version?: number
   indexReady?: boolean
   error?: string
+  /** CAS 失配时的当前实际版本（供 Agent 直接以它为 expected_version 重试，不必重读全文） */
+  currentVersion?: number
+}
+
+/**
+ * wiki bridge 所有权设置回执（wiki_set_ownership 专用）。
+ * version = 接管后的当前版本（pageRepo.update 对元数据 patch 也推版本）——
+ * Agent 应以它为 expected_version 发起后续更新，不必再读一遍全文。
+ */
+export interface WikiBridgeOwnershipReceipt {
+  ok: boolean
+  id?: string
+  title?: string
+  version?: number
+  ownership?: WikiRepoPageOwnership
+  /** 语义提示（成功时也会带，如回归生成态的覆写警告） */
+  note?: string
+  error?: string
+}
+
+/** repo 页所有权 → read 头行标记（与 spark-wiki-mcp-server.mjs 的渲染同义）。 */
+function repoOwnershipNote(ownership: WikiRepoPageOwnership | undefined): string {
+  switch (ownership) {
+    case 'generated':
+      return '，repo生成页·重建会覆写'
+    case 'manual':
+      return '，repo页·人工接管'
+    case 'ignored':
+      return '，repo页·已忽略'
+    default:
+      return ''
+  }
 }
 
 export type SessionEventHandler = (event: AgentEvent) => void
@@ -1943,12 +1981,19 @@ export class SessionService {
     }
   }
 
-  /** wiki scope 集合与 memory 同源（user + 首workspace + agent），不信任子进程传参。 */
+  /**
+   * wiki scope 集合与 memory 同源（user + 首workspace + agent），不信任子进程传参。
+   * 差异点：额外并入 project/NULL —— Repo Wiki 扫描建的空间即以此身份落库
+   * （触发时没有会话上下文，repo_path 已足够定位仓库），UI 空间列表同样带这条。
+   * 少了它，扫描生成的 Repo Wiki 空间对 Agent 完全不可见。memory 不并入：
+   * 记忆没有"未绑定 workspace 的 project"这层语义。
+   */
   private resolveWikiScopesForSession(sessionId: string): WikiSpaceScopeFilter[] {
-    return this.resolveMemoryScopesForSession(sessionId).map((s) => ({
+    const scopes = this.resolveMemoryScopesForSession(sessionId).map((s) => ({
       scope: s.scope,
       scopeRef: s.scopeRef,
     }))
+    return [...scopes, { scope: 'project', scopeRef: null }]
   }
 
   /** 从 sessionId 解析 workspaceRootPath（wiki 正文文件读写需要）。 */
@@ -2126,6 +2171,29 @@ export class SessionService {
     if (!this.isWikiPageVisible(wiki, params.pageId)) {
       return { ok: false, error: '页面不在本会话可见范围内' }
     }
+    // Repo Wiki 生成页守卫：generated 态内容页的 title/summary/body 会被下次
+    // 重建静默覆写（更新保留 source_type，见 wiki-write.service），Agent 必须
+    // 先显式接管 —— 与 UI「转人工维护后才可编辑」同语义。folder 改名与纯
+    // 移动放行：rebuild 对已存在 folder 不覆写、且从不改 parentId。
+    if (
+      params.title != null ||
+      params.body != null ||
+      params.summary != null
+    ) {
+      const page = wiki.pageRepo.getById(params.pageId)
+      if (
+        page != null &&
+        page.kind !== 'folder' &&
+        page.source_type === WIKI_REPO_SOURCE_TYPE
+      ) {
+        return {
+          ok: false,
+          error:
+            '该页是 Repo Wiki 生成页，下次重建会覆写本次修改；请先调用 ' +
+            `wiki_set_ownership(id="${params.pageId}", ownership="manual") 接管后再编辑`,
+        }
+      }
+    }
     const result = await wiki.writeService.commitPage({
       pageId: params.pageId,
       expectedVersion: params.expectedVersion,
@@ -2136,13 +2204,58 @@ export class SessionService {
       ...(params.parentId != null ? { parentId: params.parentId } : {}),
       authorRole: 'agent',
     })
-    if (!result.ok) return { ok: false, error: result.message }
+    if (!result.ok) {
+      // CAS 失配时把服务层回传的当前版本一并透出：没有它，Agent 只能瞎猜版本号死循环
+      return {
+        ok: false,
+        error: result.message,
+        ...(result.currentVersion != null ? { currentVersion: result.currentVersion } : {}),
+      }
+    }
     return {
       ok: true,
       id: result.row.id,
       title: result.row.title,
       version: result.row.version,
       indexReady: result.indexReady,
+    }
+  }
+
+  /**
+   * wiki 设置 Repo 页所有权桥（wiki_set_ownership）。委托 WikiRepoScanService：
+   * manual / ignored 之后重建不再覆写该页；generated 则重新纳入重建（内容会被
+   * 下次扫描覆盖 —— 回执里明确警告）。非 repo 空间页面由服务层拒绝。
+   */
+  async bridgeWikiSetOwnership(params: {
+    sessionId: string
+    pageId: string
+    ownership: WikiRepoPageOwnership
+  }): Promise<WikiBridgeOwnershipReceipt> {
+    const wiki = this.buildWikiServices(params.sessionId)
+    if (!this.isWikiPageVisible(wiki, params.pageId)) {
+      return { ok: false, error: '页面不在本会话可见范围内' }
+    }
+    const page = wiki.pageRepo.getById(params.pageId)
+    const result = wiki.repoScanService.setOwnership(params.pageId, params.ownership)
+    if (!result.ok) {
+      return { ok: false, ...(result.message != null ? { error: result.message } : {}) }
+    }
+    // 接管本身推一次版本（pageRepo.update 语义）：重取行拿最新版本号回传，
+    // Agent 以它为 expected_version 即可无缝衔接后续 wiki_update
+    const after = wiki.pageRepo.getById(params.pageId)
+    const note =
+      params.ownership === 'generated'
+        ? '已回归生成态：下次重建将覆写该页现有内容'
+        : params.ownership === 'manual'
+          ? '已人工接管：重建不再覆写该页，可安全编辑'
+          : '已忽略：重建跳过该页'
+    return {
+      ok: true,
+      id: params.pageId,
+      ...(page?.title != null ? { title: page.title } : {}),
+      ...(after?.version != null ? { version: after.version } : {}),
+      ownership: params.ownership,
+      note,
     }
   }
 
@@ -8110,6 +8223,25 @@ export class SessionService {
             return lines.join('\n')
           },
         },
+        wiki_set_ownership: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_set_ownership')!
+            .description,
+          schema: {
+            id: z.string().min(1).max(64),
+            ownership: z.enum(['generated', 'manual', 'ignored']),
+          },
+          run: async (args) =>
+            this.summarizeWikiOwnershipReceipt(
+              await this.bridgeWikiSetOwnership({
+                sessionId,
+                pageId: typeof args.id === 'string' ? args.id : '',
+                ownership:
+                  args.ownership === 'manual' || args.ownership === 'ignored'
+                    ? args.ownership
+                    : 'generated',
+              }),
+            ),
+        },
       }
 
       const mounted = plan.toolNames.map((name) => {
@@ -8203,7 +8335,10 @@ export class SessionService {
 
   private summarizeWikiRead(data: WikiBridgeReadResult): string {
     if ('error' in data && data.error != null) return `wiki_read 失败：${data.error}`
-    let text = data.body || '(空正文)'
+    // 头行透出 id/标题/版本：wiki_update 的 CAS 需要 expected_version，
+    // 没有 version 的正文对 Agent 是"只能读不能改"的死数据
+    let text = `[${data.id}] ${data.title}（v${data.version}${repoOwnershipNote(data.repoOwnership)}）`
+    text += data.body && data.body.length > 0 ? `\n${data.body}` : '\n(空正文)'
     if (data.truncated && data.nextOffset != null) {
       text += `\n\n[truncated] 正文超单页上限，已返回前 ${data.tokens} token；续读请传 offset=${data.nextOffset}`
     }
@@ -8241,12 +8376,35 @@ export class SessionService {
     return text
   }
 
+  /** 所有权设置回执 → agent 可读文本（与 spark-wiki-mcp-server.mjs 同义）。 */
+  private summarizeWikiOwnershipReceipt(receipt: WikiBridgeOwnershipReceipt): string {
+    if (!receipt.ok) {
+      return `wiki_set_ownership 失败：${receipt.error ?? '未知错误'}`
+    }
+    const v = receipt.version != null ? `（当前版本 v${receipt.version}，` : '（'
+    if (receipt.ownership === 'manual') {
+      return `已接管 [${receipt.id}] ${receipt.title ?? ''}${v}重建不再覆写，后续 wiki_update 以该版本为 expected_version）`
+    }
+    if (receipt.ownership === 'ignored') {
+      return `已忽略 [${receipt.id}] ${receipt.title ?? ''}${v}重建跳过该页）`
+    }
+    return `已回归生成态 [${receipt.id}] ${receipt.title ?? ''}${v}下次重建将覆写现有内容）`
+  }
+
   /**
    * 写入类回执的 agent 可读文本。回执**只含 id/标题/版本/索引状态**，
    * 绝不复述正文（§7.2 回执瘦身 ≤40 token）。
    */
   private summarizeWikiWriteReceipt(kind: string, receipt: WikiBridgeWriteReceipt): string {
-    if (!receipt.ok) return `${kind} 失败：${receipt.error ?? '未知错误'}`
+    if (!receipt.ok) {
+      // CAS 失配必须给出当前版本：契约承诺"失配拒绝并回传当前版本"，
+      // 没有版本号的冲突信息会让 Agent 陷入盲猜重试
+      const conflictNote =
+        receipt.currentVersion != null
+          ? `（当前版本 v${receipt.currentVersion}，请以它为 expected_version 重试）`
+          : ''
+      return `${kind} 失败：${receipt.error ?? '未知错误'}${conflictNote}`
+    }
     const indexNote = receipt.indexReady === false ? '，检索索引未就绪' : ''
     if (kind === 'wiki_archive') {
       return `已归档 [${receipt.id}] ${receipt.title}`

@@ -276,6 +276,53 @@ export interface WikiRepoScanReceipt {
 /** 页面所有权（决定重建时是否覆写） */
 export type WikiRepoPageOwnership = 'generated' | 'manual' | 'ignored'
 
+/* ------------------------------------------------------------------ */
+/* Repo Wiki 混合增强（方案B：模块页 AI 导读段，按 rev 缓存的派生数据）    */
+/* ------------------------------------------------------------------ */
+
+/** AI 导读段视图（读取侧过滤后才会返回：页面存在 && 仍是生成态 && rev 匹配） */
+export interface WikiRepoEnrichmentSection {
+  section: string
+  /** 生成时依据的代码版本（与空间 repo_rev 一致才可见） */
+  repoRev: string
+  model: string | null
+  provider: string | null
+  updatedAt: number
+}
+
+/** 增强 run 回执（计数如实回报，不含正文片段） */
+export interface WikiRepoEnrichmentRunReceipt {
+  ok: boolean
+  /** 差集计划的目标页数（截断后） */
+  target: number
+  /** 已有 ready 缓存被跳过的页数 */
+  cached: number
+  /** 因 maxPages 截断而丢弃的页数 */
+  droppedByLimit: number
+  ready: number
+  failed: number
+  reason?:
+    | 'disabled'
+    | 'busy'
+    | 'no_provider'
+    | 'no_rev'
+    | 'not_repo_space'
+    | 'no_repo_path'
+    | 'no_pages'
+  message?: string
+}
+
+/** 空间级增强进度（面板轮询用） */
+export interface WikiRepoEnrichmentProgress {
+  running: boolean
+  /** 空间当前生效的代码版本（读取过滤基准） */
+  repoRev: string | null
+  ready: number
+  failed: number
+  /** 该 rev 下尚无缓存行的可增强模块页数 */
+  pending: number
+}
+
 /** 漂移状态（生成版本 vs 当前 HEAD） */
 export interface WikiRepoDriftStatus {
   spaceId: string
@@ -423,6 +470,15 @@ export interface WikiIpcChannelMap {
     { pageId: string; ownership: WikiRepoPageOwnership },
     { ok: boolean; message?: string },
   ]
+
+  'wiki:repo:enrichment:get': [{ pageId: string }, { section: WikiRepoEnrichmentSection | null }]
+
+  'wiki:repo:enrichment:run': [
+    { spaceId: string; slug?: string },
+    WikiRepoEnrichmentRunReceipt,
+  ]
+
+  'wiki:repo:enrichment:status': [{ spaceId: string }, WikiRepoEnrichmentProgress]
 }
 
 /* ------------------------------------------------------------------ */
@@ -594,5 +650,17 @@ export const WikiIpcSchemaRegistry = {
   'wiki:repo:page:ownership': z.object({
     pageId: z.string().min(1).max(64),
     ownership: z.enum(['generated', 'manual', 'ignored']),
+  }),
+
+  'wiki:repo:enrichment:get': z.object({
+    pageId: z.string().min(1).max(64),
+  }),
+  'wiki:repo:enrichment:run': z.object({
+    spaceId: z.string().min(1).max(64),
+    // 指定 slug = 单页强制重跑（不受 ready 缓存跳过限制）；缺省 = 全量差集补跑
+    slug: z.string().min(1).max(120).optional(),
+  }),
+  'wiki:repo:enrichment:status': z.object({
+    spaceId: z.string().min(1).max(64),
   }),
 } as const

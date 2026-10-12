@@ -84,12 +84,14 @@ describe('Wiki S4 e2e（Repo Wiki 扫描 / 重建 / 所有权 / 漂移）', () =
     const first = renderRepoPages('demo-repo', 'abc1234', tree)
     const second = renderRepoPages('demo-repo', 'abc1234', tree)
     expect(second.map((p) => p.body)).toEqual(first.map((p) => p.body))
-    // 页面规划：总览 / 结构 / 技术栈 + 每个顶层目录一页。
+    // 页面规划：总览 / 结构 / 技术栈 + 每个顶层目录一页（8ebfe75b1 起
+    // 顶层目录同时产出目录树页 repo-dir-*，挂在模块页之前）。
     // node_modules 被默认忽略 → 不产生模块页（这正是忽略规则生效的证据）。
     expect(first.map((p) => p.slug)).toEqual([
       'repo-overview',
       'repo-structure',
       'repo-stack',
+      'repo-dir-src',
       'repo-module-src',
     ])
     expect(first.map((p) => p.slug)).not.toContain('repo-module-node-modules')

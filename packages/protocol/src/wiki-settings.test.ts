@@ -154,6 +154,36 @@ describe('知识库设置契约', () => {
     })
   })
 
+  it('Repo 导读增强（repo/enrich/*）键契约：默认关、maxPages/concurrency 越界拒绝', () => {
+    // 自动增强默认关（方案 §12.1：不制造默认烧 token 的行为；手动重跑不受总闸限制）
+    expect(WIKI_SETTING_BY_KEY.get('repo/enrich/enabled')?.default).toBe(false)
+    expect(validateWikiSettingValue('repo/enrich/enabled', true)).toEqual({
+      ok: true,
+      value: true,
+    })
+    expect(validateWikiSettingValue('repo/enrich/enabled', 'on').ok).toBe(false)
+    // 档位留空合法（三级回落：repo/enrich/modelProfile → extract/modelProfile → 默认运行时）
+    expect(WIKI_SETTING_BY_KEY.get('repo/enrich/modelProfile')?.default).toBe('')
+    expect(validateWikiSettingValue('repo/enrich/modelProfile', '')).toEqual({
+      ok: true,
+      value: '',
+    })
+    expect(validateWikiSettingValue('repo/enrich/modelProfile', 42).ok).toBe(false)
+    // maxPages 硬区间 1~50：越界拒绝而非钳制（截断要如实回报，不能静默改值）
+    expect(WIKI_SETTING_BY_KEY.get('repo/enrich/maxPages')?.default).toBe(20)
+    expect(validateWikiSettingValue('repo/enrich/maxPages', 20)).toEqual({ ok: true, value: 20 })
+    expect(validateWikiSettingValue('repo/enrich/maxPages', 50).ok).toBe(true)
+    expect(validateWikiSettingValue('repo/enrich/maxPages', 51).ok).toBe(false)
+    expect(validateWikiSettingValue('repo/enrich/maxPages', 0).ok).toBe(false)
+    // concurrency 硬区间 1~4（并发上限是成本护栏）
+    expect(WIKI_SETTING_BY_KEY.get('repo/enrich/concurrency')?.default).toBe(2)
+    expect(validateWikiSettingValue('repo/enrich/concurrency', 4)).toEqual({ ok: true, value: 4 })
+    expect(validateWikiSettingValue('repo/enrich/concurrency', 5).ok).toBe(false)
+    expect(validateWikiSettingValue('repo/enrich/concurrency', 0).ok).toBe(false)
+    // 生效分片：随 repo 分组在 S4 生效
+    expect(isWikiSettingActive(WIKI_SETTING_BY_KEY.get('repo/enrich/enabled')!, 'S4')).toBe(true)
+  })
+
   it('分片生效判定：S2 / S4 分组在 S1 标注为未生效', () => {
     const extract = WIKI_SETTING_BY_KEY.get('extract/enabled')!
     expect(isWikiSettingActive(extract, 'S1')).toBe(false)

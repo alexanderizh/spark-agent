@@ -509,6 +509,12 @@ export type {
   WikiExtractionStateRow,
   WikiExtractionTriggerKind,
 } from './wiki-extraction-state.repository.js'
+export { WikiRepoEnrichmentRepository } from './wiki-repo-enrichment.repository.js'
+export type {
+  WikiRepoEnrichmentRow,
+  WikiRepoEnrichmentStatus,
+  WikiRepoEnrichmentUpsert,
+} from './wiki-repo-enrichment.repository.js'
 export {
   WikiSkillProposalRepository,
   generateWikiSkillProposalId,

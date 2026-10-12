@@ -538,6 +538,18 @@ export {
   resolveWikiBudgetFromSettings,
 } from './services/wiki/wiki-service-stack.js'
 export type { WikiServiceStack, WikiServiceStackInput } from './services/wiki/wiki-service-stack.js'
+// 渠道解析（标题链共用直连解析；Repo Wiki 导读的桌面装配侧默认回落也走它）
+export { resolveSessionTitleTarget } from './services/session/session-title-target.js'
+export type {
+  SessionTitleTarget,
+  SessionTitleTargetResolution,
+} from './services/session/session-title-target.js'
+export type {
+  WikiRepoEnrichScanHookParams,
+  WikiRepoEnrichService,
+  WikiRepoEnrichServiceDeps,
+  WikiRepoEnrichTargetResolver,
+} from './services/wiki/wiki-repo-enrich.service.js'
 export { WikiLinkService, parseWikiLinks } from './services/wiki/wiki-link.service.js'
 export type {
   WikiBacklinkItem,

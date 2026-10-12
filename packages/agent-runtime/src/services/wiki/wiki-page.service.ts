@@ -23,6 +23,7 @@ import {
   type WikiBudgetProfile,
 } from './wiki-context-budget.js'
 import type { WikiPageVersionEntry, WikiRevisionDetail } from '@spark/protocol'
+import { repoOwnershipFromSourceType, type WikiRepoPageOwnership } from './wiki-repo-scan.service.js'
 
 const log = createLogger('wiki:page')
 
@@ -34,6 +35,11 @@ export interface WikiPageReadResult {
   truncated: boolean
   nextOffset: number | null
   tokens: number
+  /**
+   * Repo Wiki 页面所有权（仅 repo 空间页面有值）。generated 态的内容改动
+   * 会被下次重建覆写 —— Agent 编辑前必须先接管（wiki_set_ownership）。
+   */
+  repoOwnership?: WikiRepoPageOwnership
 }
 
 export class WikiPageService {
@@ -85,6 +91,8 @@ export class WikiPageService {
 
     const offset = Math.max(0, Math.floor(input.offset ?? 0))
     const clipped = clipBody(body, this.budget.readMaxTokens, offset)
+    // repo 页身份随 read 透出（非 repo 页为 undefined，不占字段）
+    const repoOwnership = repoOwnershipFromSourceType(page.source_type) ?? undefined
     if (clipped.tokens === 0 && offset === 0) {
       return {
         ok: true,
@@ -96,6 +104,7 @@ export class WikiPageService {
           truncated: false,
           nextOffset: null,
           tokens: 0,
+          ...(repoOwnership != null ? { repoOwnership } : {}),
         },
       }
     }
@@ -120,6 +129,7 @@ export class WikiPageService {
         truncated: clipped.truncated,
         nextOffset: clipped.nextOffset,
         tokens: clipped.tokens,
+        ...(repoOwnership != null ? { repoOwnership } : {}),
       },
     }
   }

@@ -35,6 +35,8 @@ const DEFERRED_TOOLS = [
   'wiki_link',
   // S3：技能提议是偶发决策，与更新/删除同级收进二级入口
   'wiki_propose_skill',
+  // Repo 所有权切换是低频决策（接管/放弃跟踪），且生成页编辑守卫会指引到它
+  'wiki_set_ownership',
 ]
 const ALL_TOOLS = [...CORE_TOOLS, ...DEFERRED_TOOLS]
 const ADMIN_TOOL = 'wiki_admin'
@@ -198,6 +200,15 @@ const IMPL = {
       sourcePageIds: pageIds,
     })
   },
+  async wiki_set_ownership(args) {
+    const id = str(args.id)
+    const ownership = str(args.ownership)
+    if (!id) throw new Error('id is required')
+    if (!['generated', 'manual', 'ignored'].includes(ownership)) {
+      throw new Error('ownership must be one of: generated, manual, ignored')
+    }
+    return rpc('wiki.set_ownership', { sessionId: SID, pageId: id, ownership })
+  },
 }
 
 // ── Tool definitions（与 wiki-tool-contract.ts 同义同描述）──────────────────
@@ -205,13 +216,13 @@ const TOOLS = [
   {
     name: 'wiki_list_spaces',
     description:
-      '列出当前会话可访问的知识库空间（每空间一行：id+名称+页面数）。开始取用 wiki 前先看有哪些空间。',
+      '列出当前会话可访问的知识库空间（每空间一行：id+名称+页面数）。取用 wiki 前先看有哪些空间。',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'wiki_search',
     description:
-      '按关键词检索知识库页面（FTS 全文，中英文均可）。只返回 id+标题+摘要+标签，不返回正文；需要全文时再用 wiki_read。',
+      '按关键词检索知识库页面（FTS 全文，中英文均可）。只返回 id+标题+摘要+标签；需要全文时再用 wiki_read。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -225,7 +236,7 @@ const TOOLS = [
   {
     name: 'wiki_read',
     description:
-      '读取一个知识页面的正文（默认单页 ≤3000 token）。超长页返回 truncated + nextOffset，传 offset 续读。读到文件夹 id 时会提示改用 wiki_list 浏览。',
+      '读取一个知识页面的正文（默认单页 ≤3000 token，头行带 id/标题/版本）。超长页返回 truncated + nextOffset，传 offset 续读。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -238,14 +249,14 @@ const TOOLS = [
   {
     name: 'wiki_list',
     description:
-      "列出一个空间内的目录树（每节点 id+标题+类型+有无子节点，无正文摘要）。kind='folder' 是文件夹容器；传 parent_id 逐层下钻，浏览结构时用。",
+      '列出一个空间内的目录树（每节点 id+标题+类型+有无子节点，无正文摘要）；传 parent_id 逐层下钻。',
     inputSchema: {
       type: 'object',
       properties: {
         space_id: { type: 'string', description: '空间 id。' },
         parent_id: {
           type: 'string',
-          description: '父节点 id（缺省根层；传文件夹 id 可下钻一层）。',
+          description: '父文件夹 id（缺省根层）。',
         },
       },
       required: ['space_id'],
@@ -263,21 +274,21 @@ const TOOLS = [
   {
     name: 'wiki_write',
     description:
-      '在知识库新建页面或文件夹（回执只含 id/title/version，不回显正文）。kind=folder 是纯结构容器，只需 space_id+title；内容页必须带 body，可用 parent_id 挂进层级。',
+      '在知识库新建页面或文件夹（回执只含 id/title/version）。kind=folder 只需 space_id+title；内容页必须带 body。',
     inputSchema: {
       type: 'object',
       properties: {
         space_id: { type: 'string', description: '目标空间 id。' },
         title: { type: 'string', description: '页面 / 文件夹标题。' },
-        body: { type: 'string', description: 'Markdown 正文；kind=folder 时省略，其余必填。' },
+        body: { type: 'string', description: 'Markdown 正文（folder 省略，其余必填）。' },
         kind: {
           type: 'string',
           enum: ['knowledge', 'experience', 'pattern', 'reference', 'note', 'folder'],
-          description: '默认 knowledge；folder=文件夹容器（无正文）。',
+          description: '默认 knowledge；folder=文件夹容器。',
         },
         parent_id: {
           type: 'string',
-          description: '父节点 id（只能是文件夹；页面下不挂子节点）；缺省挂根层。',
+          description: '父文件夹 id；缺省挂根层。',
         },
         summary: { type: 'string', description: '摘要（folder 忽略）。' },
         tags: { type: 'array', items: { type: 'string' }, description: '标签（folder 忽略）。' },
@@ -360,15 +371,31 @@ const TOOLS = [
       required: ['name', 'purpose', 'source_page_ids', 'skill_draft'],
     },
   },
+  {
+    name: 'wiki_set_ownership',
+    description:
+      '设置 Repo Wiki 页面所有权。manual=人工接管（重建不再覆写，编辑生成页前必须先接管）；ignored=忽略该页；generated=回归生成态（下次重建覆写现有内容）。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: '页面 id。' },
+        ownership: {
+          type: 'string',
+          enum: ['generated', 'manual', 'ignored'],
+          description: '目标所有权。',
+        },
+      },
+      required: ['id', 'ownership'],
+    },
+  },
 ]
 
 const ADMIN_TOOL_DEF = {
   name: ADMIN_TOOL,
   description:
     '知识库低频入口。tool 取 enum 中的子工具名，args 传其入参：' +
-    'wiki_update(id,expected_version)、wiki_backlinks(id)、wiki_archive(id)、' +
-    'wiki_restore(id)、wiki_delete(id)、wiki_link(from_id,to_id)、' +
-    'wiki_propose_skill(name,purpose,source_page_ids,skill_draft)。',
+    'wiki_update(id,expected_version)、wiki_set_ownership(id,ownership)、' +
+    'wiki_link(from_id,to_id)、wiki_propose_skill(name,purpose,…)；其余传 id 即可。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -386,6 +413,21 @@ function visibleTools() {
 }
 
 // ── Summarize（结构化结果 → agent 可读文本）─────────────────────────────────
+
+/** repo 页所有权 → read 头行标记（与 session.service 的 repoOwnershipNote 同义）。 */
+function ownershipNote(ownership) {
+  switch (ownership) {
+    case 'generated':
+      return '，repo生成页·重建会覆写'
+    case 'manual':
+      return '，repo页·人工接管'
+    case 'ignored':
+      return '，repo页·已忽略'
+    default:
+      return ''
+  }
+}
+
 function summarize(name, data) {
   if (name === 'wiki_list_spaces') {
     const items = Array.isArray(data.items) ? data.items : []
@@ -420,7 +462,10 @@ function summarize(name, data) {
   }
   if (name === 'wiki_read') {
     if (data.error) return `wiki_read 失败：${data.error}`
-    let text = data.body || '(空正文)'
+    // 头行透出 id/标题/版本（wiki_update 的 CAS 需要 expected_version）；
+    // repo 页附带所有权标记（generated 态改动会被重建覆写，Agent 须先接管）
+    let text = `[${data.id}] ${data.title}（v${data.version}${ownershipNote(data.repoOwnership)}）`
+    text += data.body && data.body.length > 0 ? `\n${data.body}` : '\n(空正文)'
     if (data.truncated) {
       text += `\n\n[truncated] 正文超单页上限，已返回前 ${data.tokens} token；续读请传 offset=${data.nextOffset}`
     }
@@ -439,8 +484,14 @@ function summarize(name, data) {
     return text
   }
   if (name === 'wiki_write' || name === 'wiki_update') {
-    if (data.ok === false || data.error)
-      return `${name} 失败：${data.error || data.message || '未知错误'}`
+    if (data.ok === false || data.error) {
+      // CAS 失配时渲染服务层回传的当前版本（与 SDK 路径 summarize 同语义）
+      const conflictNote =
+        typeof data.currentVersion === 'number'
+          ? `（当前版本 v${data.currentVersion}，请以它为 expected_version 重试）`
+          : ''
+      return `${name} 失败：${data.error || data.message || '未知错误'}${conflictNote}`
+    }
     return `已写入 [${data.id}] ${data.title}（v${data.version}${data.indexReady === false ? '，检索索引未就绪' : ''}）`
   }
   if (name === 'wiki_archive') {
@@ -476,6 +527,19 @@ function summarize(name, data) {
       lines.push(`注意：该名称此前的提议被拒，原因 —— ${data.rejectionHistory.join('；')}`)
     }
     return lines.join('\n')
+  }
+  if (name === 'wiki_set_ownership') {
+    if (data.ok === false || data.error) {
+      return `wiki_set_ownership 失败：${data.error || data.message || '未知错误'}`
+    }
+    const v = typeof data.version === 'number' ? `（当前版本 v${data.version}，` : '（'
+    if (data.ownership === 'manual') {
+      return `已接管 [${data.id}] ${data.title || ''}${v}重建不再覆写，后续 wiki_update 以该版本为 expected_version）`
+    }
+    if (data.ownership === 'ignored') {
+      return `已忽略 [${data.id}] ${data.title || ''}${v}重建跳过该页）`
+    }
+    return `已回归生成态 [${data.id}] ${data.title || ''}${v}下次重建将覆写现有内容）`
   }
   return JSON.stringify(data)
 }
