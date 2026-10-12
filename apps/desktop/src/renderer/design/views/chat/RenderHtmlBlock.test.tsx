@@ -165,7 +165,31 @@ describe('RenderHtmlBlock', () => {
 
     expect(markup).toContain('HTML 渲染失败')
     expect(markup).toContain('非法标签')
+    expect(markup).toContain('安全沙箱')
+    expect(markup).toContain('用外部浏览器打开')
     expect(markup).not.toContain('<iframe')
+  })
+
+  it('opens the failed html in the external browser from the error hint', async () => {
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<RenderHtmlBlock block={{ ...block, status: 'error', error: '非法标签' }} />)
+    })
+    await act(async () => {})
+
+    const button = Array.from(container.querySelectorAll('button')).find((el) =>
+      el.textContent?.includes('用外部浏览器打开'),
+    )
+    expect(button).not.toBeUndefined()
+
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(invoke).toHaveBeenCalledWith(
+      'html:open-external',
+      expect.objectContaining({ html: block.html, title: block.title }),
+    )
   })
 
   it('uses the HTML code preview style for source content', () => {

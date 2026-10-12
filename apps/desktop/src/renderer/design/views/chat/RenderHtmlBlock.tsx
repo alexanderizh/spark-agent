@@ -235,6 +235,13 @@ export function RenderHtmlBlock({
             <Icons.AlertTriangle size={15} /> HTML 渲染失败
           </div>
           <div>{block.error ?? frameError ?? '无法渲染该 HTML 内容'}</div>
+          <div className="render-html-error-hint">
+            <Icons.Shield size={14} />
+            <span>内置渲染受安全沙箱限制，部分内容可能无法展示，可切换到外部浏览器试试</span>
+            <button type="button" onClick={() => void openMode('external')}>
+              <Icons.ExternalLink size={12} /> 用外部浏览器打开
+            </button>
+          </div>
           <details>
             <summary>查看原始 HTML</summary>
             <HtmlCodePreview code={block.html} />
