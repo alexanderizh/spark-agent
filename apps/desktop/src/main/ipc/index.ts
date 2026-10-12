@@ -154,6 +154,7 @@ import {
   MemoryOperationRepository,
   MemoryRevisionRepository,
   MemoryCandidateRepository,
+  DreamAuditRepository,
   buildRevisionCoverage,
 } from '@spark/storage'
 import type {
@@ -10134,6 +10135,9 @@ export function registerAllIpcHandlers(): void {
       })
       _dreamOrchestrationService = new DreamOrchestrationService({
         stateStore,
+        // 提案审计落表（dream_audit，migration 120）：与 dream-audit 日志行双写，
+        // 供设置页「提案明细」与历史运行追溯——被拒提案不再只活在日志里。
+        auditSink: new DreamAuditRepository(getDatabase()),
         settingsGet: (category, key) => settings.get(category, key),
         resolveDefaultRuntime: async () => {
           const runtime = await resolveScheduledTaskRuntime({ agentId: null, modelId: null })
@@ -10206,6 +10210,34 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('dream:cancel', async (req) => {
     const service = getDreamOrchestrationService()
     return service.cancel(req.track)
+  })
+
+  // 提案审计查询（设置页「查看明细」弹层数据源；dream_audit 表由 migration 120
+  // 建立且随启动迁移执行——异常缺失时仓储抛错，由前端以错误态兜底展示）
+  typedIpcHandle('dream:get-audit-runs', async (req) => {
+    const repo = new DreamAuditRepository(getDatabase())
+    const limit = Math.max(1, Math.min(100, req.limit ?? 20))
+    const runs = repo.listRuns(limit, req.track)
+    return {
+      runs: runs.map((r) => ({
+        runId: r.runId,
+        track: r.track,
+        startedAt: r.startedAt,
+        endedAt: r.endedAt,
+        counts: {
+          proposals: r.proposals,
+          autoApplied: r.autoApplied,
+          pendingReview: r.pendingReview,
+          rejectedInvalid: r.rejectedInvalid,
+          droppedByLimit: r.droppedByLimit,
+        },
+      })),
+    }
+  })
+
+  typedIpcHandle('dream:get-audit', async (req) => {
+    const repo = new DreamAuditRepository(getDatabase())
+    return { rows: repo.listByRun(req.runId) }
   })
 
   /**

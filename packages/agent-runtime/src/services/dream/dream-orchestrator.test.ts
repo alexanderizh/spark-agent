@@ -163,6 +163,7 @@ function valid(raw: Record<string, unknown>): DreamProposal {
 
 describe('dispatchDreamProposals（分流统计）', () => {
   const base = {
+    track: 'memory' as const,
     batchLimit: 50,
     autoApplyThresholdPct: 85,
     autoDeleteEnabled: false,
@@ -207,6 +208,44 @@ describe('dispatchDreamProposals（分流统计）', () => {
       expect.objectContaining({ op: 'delete' }),
       'pending-review',
     )
+  })
+
+  it('审计条目携带轨道与原文快照：合法提案 snapshot 全文，被拒条目带原因与 rawJson', async () => {
+    const audit = vi.fn()
+    const parsed = parseDreamProposals(
+      '```dream-proposals\n' +
+        JSON.stringify([
+          memoryProposal(),
+          { kind: 'wiki', op: 'create', title: '缺 spaceId 的提案', payload: { body: 'x' } },
+        ]) +
+        '\n```',
+    )
+    expect(parsed.proposals).toHaveLength(1)
+    expect(parsed.invalid).toHaveLength(1)
+    const bad = parsed.invalid[0]
+    if (bad == null) throw new Error('expected one invalid entry')
+    expect(bad.rawJson).toContain('缺 spaceId 的提案')
+
+    await dispatchDreamProposals({
+      ...base,
+      audit,
+      track: 'wiki',
+      proposals: parsed.proposals,
+      invalid: parsed.invalid,
+    })
+    expect(audit).toHaveBeenCalledTimes(2)
+    const rejected = audit.mock.calls.find(
+      ([e]) => (e as { outcome: string }).outcome === 'rejected-invalid',
+    )?.[0] as { track: string; note: string; payloadJson: string }
+    // 被拒条目：轨道 + 原因 + 原文快照齐备（审计表可追溯口径）
+    expect(rejected.track).toBe('wiki')
+    expect(rejected.note).toContain('未通过校验')
+    expect(rejected.payloadJson).toContain('缺 spaceId 的提案')
+    const applied = audit.mock.calls.find(
+      ([e]) => (e as { outcome: string }).outcome === 'auto-applied',
+    )?.[0] as { track: string; payloadJson: string }
+    expect(applied.track).toBe('wiki')
+    expect(JSON.parse(applied.payloadJson)).toMatchObject({ kind: 'memory', op: 'create' })
   })
 })
 

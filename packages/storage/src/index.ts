@@ -492,3 +492,9 @@ export type {
   WikiSkillProposalDraft,
   InsertWikiSkillProposalParams,
 } from './repositories/index.js'
+export { DreamAuditRepository } from './repositories/index.js'
+export type {
+  DreamAuditRow,
+  DreamAuditRunSummary,
+  DreamAuditInsert,
+} from './repositories/index.js'

@@ -1877,6 +1877,14 @@ export const IpcSchemaRegistry = {
   'dream:cancel': z.object({
     track: z.enum(['memory', 'wiki']),
   }),
+  // 提案审计查询（dream_audit 表；runId 必填防全表拉取，limit 服务端夹取 1~100）
+  'dream:get-audit-runs': z.object({
+    track: z.enum(['memory', 'wiki']).optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+  }),
+  'dream:get-audit': z.object({
+    runId: z.string().min(1),
+  }),
 
   // Turn Performance
   'perf:get-session': z.object({

@@ -13,11 +13,17 @@
  * 写入纪律与 WikiSettingsPanel 一致：保存即生效，越界值客户端先拦。
  * 展示约定对齐设置页统一风格：行内标题 + ⓘ 悬浮详情 + 右侧控件，灰底模块卡。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { InputNumber, Popconfirm, Select, Slider, Switch, Tooltip } from 'antd'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { InputNumber, Modal, Popconfirm, Select, Slider, Switch, Tooltip } from 'antd'
 import { Button, Input as LobeInput } from '@lobehub/ui'
 import { DREAM_SETTING_DEFAULTS, validateWikiSettingValue } from '@spark/protocol'
-import type { DreamRunReport, DreamRunState, ProviderProfile } from '@spark/protocol'
+import type {
+  DreamAuditRecord,
+  DreamAuditRunSummary,
+  DreamRunReport,
+  DreamRunState,
+  ProviderProfile,
+} from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useToast } from '../../components/Toast'
 import './dream.less'
@@ -108,10 +114,27 @@ const REPORT_STATUS_LABEL: Record<string, string> = {
   cancelled: '已取消',
 }
 
+/** 提案去向的展示口径（审计明细弹层）：文案 + 语义色类（dream.less 配色） */
+const AUDIT_OUTCOME_META: Record<DreamAuditRecord['outcome'], { label: string; tone: string }> = {
+  'auto-applied': { label: '自动落库', tone: 'is-ok' },
+  'pending-review': { label: '待人审', tone: 'is-review' },
+  'rejected-invalid': { label: '已拒绝', tone: 'is-reject' },
+  'dropped-by-limit': { label: '超限丢弃', tone: 'is-drop' },
+}
+
 function formatTime(ts: number): string {
   const d = new Date(ts)
   const pad = (n: number): string => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** 审计原文快照的展示格式化：能解析则美化缩进；截断/非法 JSON 原样展示 */
+function prettyJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2)
+  } catch {
+    return raw
+  }
 }
 
 /** 梦境维度累计用量的最小结构（usage:get-by-date-range source='dream'） */
@@ -173,6 +196,66 @@ export function DreamSettingsSection({
   const [starting, setStarting] = useState(false)
   /** 运行秒数滴答：running 期间每秒刷新，驱动「已运行 N 秒」实时跳动 */
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  /** 提案审计明细弹层（dream_audit 表；可追溯：被拒/丢弃提案的去向与原因） */
+  const [auditOpen, setAuditOpen] = useState(false)
+  const [auditRuns, setAuditRuns] = useState<DreamAuditRunSummary[]>([])
+  const [auditRunId, setAuditRunId] = useState<string | null>(null)
+  const [auditRows, setAuditRows] = useState<DreamAuditRecord[] | null>(null)
+  const [auditLoading, setAuditLoading] = useState(false)
+  /** 明细加载失败文案（null = 无错误）：与「真空态」区分，避免错误伪装成没有记录 */
+  const [auditError, setAuditError] = useState<string | null>(null)
+  /** 最新明细请求的 runId：快速切换运行时丢弃乱序返回的旧响应 */
+  const auditReqRunId = useRef<string | null>(null)
+
+  /** 拉取单次运行的审计明细（按写入顺序）；乱序响应按 auditReqRunId 丢弃 */
+  const loadAuditRows = useCallback((runId: string) => {
+    auditReqRunId.current = runId
+    setAuditRunId(runId)
+    setAuditRows(null)
+    setAuditError(null)
+    void window.spark
+      .invoke('dream:get-audit', { runId })
+      .then((r: { rows?: DreamAuditRecord[] }) => {
+        if (auditReqRunId.current !== runId) return
+        setAuditRows(r?.rows ?? [])
+      })
+      .catch(() => {
+        if (auditReqRunId.current !== runId) return
+        setAuditRows([])
+        setAuditError('审计明细加载失败，请稍后重试')
+      })
+  }, [])
+
+  /** 打开审计弹层：拉最近运行列表（本轨），优先选中上次报告的 runId；
+   *  无运行/失败也要落到可达的空态（rows=[]），不能停在「加载中…」 */
+  const openAudit = useCallback(() => {
+    setAuditOpen(true)
+    setAuditLoading(true)
+    setAuditRows(null)
+    setAuditError(null)
+    void window.spark
+      .invoke('dream:get-audit-runs', { track, limit: 20 })
+      .then((r: { runs?: DreamAuditRunSummary[] }) => {
+        const runs = r?.runs ?? []
+        setAuditRuns(runs)
+        const preferred =
+          runs.find((x) => x.runId === lastReport?.runId)?.runId ?? runs[0]?.runId ?? null
+        if (preferred != null) loadAuditRows(preferred)
+        else {
+          setAuditRunId(null)
+          setAuditRows([])
+        }
+      })
+      .catch(() => {
+        setAuditRuns([])
+        setAuditRunId(null)
+        setAuditRows([])
+        setAuditError('审计运行列表加载失败，请稍后重试')
+      })
+      .finally(() => {
+        setAuditLoading(false)
+      })
+  }, [track, lastReport?.runId, loadAuditRows])
 
   /** 梦境维度累计用量（source='dream' 单列分账，§12-2）：初始加载与终态后刷新 */
   const refreshDreamUsage = useCallback(() => {
@@ -597,13 +680,31 @@ export function DreamSettingsSection({
         </div>
       )}
       {dreamState?.status !== 'running' && lastReport != null && (
-        <div className={`dream_set_report${lastReport.status === 'failed' ? ' is-error' : ''}`}>
-          上次整理（{formatTime(lastReport.finishedAt)}）·{' '}
-          {REPORT_STATUS_LABEL[lastReport.status] ?? lastReport.status}
-          {lastReport.status !== 'failed' && lastReport.status !== 'cancelled'
-            ? ` · 提案 ${lastReport.stats.proposals} · 自动落库 ${lastReport.stats.autoApplied} · 待人审 ${lastReport.stats.pendingReview}`
-            : ''}
-          {lastReport.error != null ? ` · ${lastReport.error.slice(0, 120)}` : ''}
+        <div
+          className={`dream_set_report has-audit${lastReport.status === 'failed' ? ' is-error' : ''}`}
+        >
+          <span className="dream_set_report_text">
+            上次整理（{formatTime(lastReport.finishedAt)}）·{' '}
+            {REPORT_STATUS_LABEL[lastReport.status] ?? lastReport.status}
+            {lastReport.status !== 'failed' && lastReport.status !== 'cancelled'
+              ? ` · 提案 ${lastReport.stats.proposals} · 自动落库 ${lastReport.stats.autoApplied} · 待人审 ${lastReport.stats.pendingReview}`
+              : ''}
+            {lastReport.stats.rejectedInvalid > 0 ? (
+              <>
+                {' · '}
+                <span className="dream_set_report_warn">
+                  被拒 {lastReport.stats.rejectedInvalid}
+                </span>
+              </>
+            ) : null}
+            {lastReport.stats.droppedByLimit > 0
+              ? ` · 超限丢弃 ${lastReport.stats.droppedByLimit}`
+              : ''}
+            {lastReport.error != null ? ` · ${lastReport.error.slice(0, 120)}` : ''}
+          </span>
+          <button type="button" className="dream_set_report_link" onClick={openAudit}>
+            查看明细
+          </button>
         </div>
       )}
       {dreamUsage != null && dreamUsage.recordCount > 0 && (
@@ -627,6 +728,76 @@ export function DreamSettingsSection({
         </Button>
         <SettingHelp tip="手动触发不受总开关限制；定时触发需开启上方开关，也可在会话输入框用 /dream 命令触发。" />
       </div>
+
+      {/* 提案审计明细弹层：dream_audit 表全量留痕（含历史运行），被拒/丢弃
+          提案的原因与原文快照在这里可追溯——报告摘要行只存最近一次的统计 */}
+      <Modal
+        open={auditOpen}
+        title="提案审计明细"
+        width={640}
+        footer={null}
+        onCancel={() => setAuditOpen(false)}
+      >
+        <div className="dream_audit">
+          <div className="dream_audit_runs">
+            <Select
+              size="small"
+              style={{ minWidth: 320, flex: 1 }}
+              loading={auditLoading}
+              value={auditRunId ?? null}
+              placeholder={auditRuns.length === 0 ? '暂无审计记录' : '选择运行'}
+              onChange={(v: string) => loadAuditRows(v)}
+              options={auditRuns.map((r) => ({
+                value: r.runId,
+                label: `${formatTime(r.startedAt)} · 提案 ${r.counts.proposals} · 落库 ${r.counts.autoApplied} · 待审 ${r.counts.pendingReview} · 被拒 ${r.counts.rejectedInvalid} · 丢弃 ${r.counts.droppedByLimit}`,
+              }))}
+            />
+            <SettingHelp tip="审计表保留全部历史运行；被拒/超限丢弃提案的拒绝原因与原文快照均可在此追溯。上方报告摘要行只存最近一次，这里可切换历史运行查看完整去向。" />
+          </div>
+          {auditError != null ? (
+            <div className="dream_audit_empty is-error">{auditError}</div>
+          ) : auditRows == null ? (
+            <div className="dream_audit_empty">加载中…</div>
+          ) : auditRows.length === 0 ? (
+            <div className="dream_audit_empty">
+              {auditRunId == null
+                ? '暂无审计记录——本轨还没有运行过，或运行发生在审计功能上线之前。'
+                : '该次运行没有提案审计行。'}
+            </div>
+          ) : (
+            <div className="dream_audit_list">
+              {auditRows.map((row) => {
+                const meta = AUDIT_OUTCOME_META[row.outcome] ?? { label: row.outcome, tone: '' }
+                return (
+                  <div key={row.id} className={`dream_audit_row ${meta.tone}`}>
+                    <div className="dream_audit_row_head">
+                      <span className="dream_audit_kind">
+                        {row.kind}/{row.op}
+                      </span>
+                      <span className="dream_audit_outcome">{meta.label}</span>
+                      <span className="dream_audit_conf">
+                        {row.outcome === 'rejected-invalid'
+                          ? '—'
+                          : `${Math.round(row.confidence * 100)}%`}
+                      </span>
+                      <span className="dream_audit_time">{formatTime(row.createdAt)}</span>
+                    </div>
+                    {row.note != null && row.note !== '' ? (
+                      <div className="dream_audit_note">{row.note}</div>
+                    ) : null}
+                    {row.payloadJson != null && row.payloadJson !== '' ? (
+                      <details className="dream_audit_payload">
+                        <summary>提案原文</summary>
+                        <pre>{prettyJson(row.payloadJson)}</pre>
+                      </details>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   )
 }

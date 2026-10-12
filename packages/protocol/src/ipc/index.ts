@@ -26,7 +26,14 @@ import type {
 } from '../events/index.js'
 import type { TurnSource, UserMessagePresentation } from '../turn-message-presentation.js'
 import type { AutoRouterConfig, AutoRouterExecutorHealthSnapshot } from '../auto-router-config.js'
-import type { DreamRunReport, DreamRunState } from '../dream.js'
+import type {
+  DreamProposalOp,
+  DreamProposalOutcome,
+  DreamRunReport,
+  DreamRunState,
+  DreamRunStats,
+  DreamTrack,
+} from '../dream.js'
 import type {
   ImageProcessProgress,
   ImageProcessRequest,
@@ -8052,6 +8059,8 @@ export interface IpcChannelMap
   'dream:run': [DreamRunRequest, DreamRunResponse]
   'dream:get-state': [DreamGetStateRequest, DreamGetStateResponse]
   'dream:cancel': [DreamCancelRequest, DreamCancelResponse]
+  'dream:get-audit-runs': [DreamGetAuditRunsRequest, DreamGetAuditRunsResponse]
+  'dream:get-audit': [DreamGetAuditRequest, DreamGetAuditResponse]
 
   // dev 实例继承安装版数据库（快照导入 + 重启生效）
   'data:get-inherit-info': [DataGetInheritInfoRequest, DataGetInheritInfoResponse]
@@ -8666,6 +8675,48 @@ export interface DreamCancelRequest {
 export interface DreamCancelResponse {
   ok: boolean
   message: string
+}
+
+// ─── Dream 提案审计（可追溯：被拒/丢弃提案明细与历史运行）──────────────────
+
+/** 审计表单行（dream_audit；与 @spark/storage DreamAuditRow 结构对齐） */
+export interface DreamAuditRecord {
+  id: number
+  runId: string
+  track: DreamTrack
+  kind: 'memory' | 'wiki'
+  op: DreamProposalOp
+  outcome: DreamProposalOutcome
+  confidence: number
+  targetId: string | null
+  note: string | null
+  /** 提案原文快照（超长已截断，仅供展示） */
+  payloadJson: string | null
+  createdAt: number
+}
+
+/** 运行粒度审计摘要（GROUP BY runId） */
+export interface DreamAuditRunSummary {
+  runId: string
+  track: DreamTrack
+  startedAt: number
+  endedAt: number
+  counts: DreamRunStats
+}
+export interface DreamGetAuditRunsRequest {
+  /** 缺省为两轨合计 */
+  track?: DreamTrack
+  /** 最近运行数（缺省 20，上限 100） */
+  limit?: number
+}
+export interface DreamGetAuditRunsResponse {
+  runs: DreamAuditRunSummary[]
+}
+export interface DreamGetAuditRequest {
+  runId: string
+}
+export interface DreamGetAuditResponse {
+  rows: DreamAuditRecord[]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */

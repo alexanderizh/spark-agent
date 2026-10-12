@@ -20,6 +20,7 @@ import type {
   DreamProposalOutcome,
   DreamProposalResult,
   DreamRunStats,
+  DreamTrack,
 } from '@spark/protocol'
 
 const log = createLogger('dream:proposals')
@@ -27,17 +28,22 @@ const log = createLogger('dream:proposals')
 /** dream-proposals fenced 代码块标记 */
 const FENCE_TAG = 'dream-proposals'
 
+/** 审计快照上限（字符）：提案原文超长截断，防单条脏输出撑爆审计表 */
+const PAYLOAD_JSON_MAX_CHARS = 16 * 1024
+
 export interface ParsedDreamProposals {
   /** 通过 schema 校验的提案（保持模型输出顺序） */
   proposals: DreamProposal[]
   /** 未通过校验的原始条目与拒绝原因（进审计日志与运行报告）；
    * rawKind/rawOp 为尽力提取的原始字段（形态非法时缺省）——审计与报告不应
-   * 把 wiki 轨的非法条目记成虚构的 memory/create。 */
+   * 把 wiki 轨的非法条目记成虚构的 memory/create；
+   * rawJson 为原文快照（超长截断），供审计表追溯「模型到底输出了什么」。 */
   invalid: Array<{
     index: number
     reason: string
     rawKind?: 'memory' | 'wiki'
     rawOp?: DreamProposalOp
+    rawJson?: string
   }>
   /** 终态文本中一个 dream-proposals 块都没找到 */
   missing: boolean
@@ -54,7 +60,13 @@ export function parseDreamProposals(finalText: string): ParsedDreamProposals {
     return { proposals: [], invalid: [], missing: true }
   }
   const proposals: DreamProposal[] = []
-  const invalid: Array<{ index: number; reason: string }> = []
+  const invalid: Array<{
+    index: number
+    reason: string
+    rawKind?: 'memory' | 'wiki'
+    rawOp?: DreamProposalOp
+    rawJson?: string
+  }> = []
   let index = 0
   for (const block of blocks) {
     let raws: unknown[]
@@ -63,7 +75,7 @@ export function parseDreamProposals(finalText: string): ParsedDreamProposals {
       raws = Array.isArray(parsed) ? parsed : [parsed]
     } catch (err) {
       log.warn(`dream-proposals block is not valid JSON: ${errText(err)}`)
-      invalid.push({ index, reason: `代码块不是合法 JSON：${errText(err)}` })
+      invalid.push({ index, reason: `代码块不是合法 JSON：${errText(err)}`, rawJson: clamp(block) })
       index += 1
       continue
     }
@@ -83,6 +95,7 @@ export function parseDreamProposals(finalText: string): ParsedDreamProposals {
           ...(typeof rawOp === 'string' && ['create', 'update', 'merge', 'delete'].includes(rawOp)
             ? { rawOp: rawOp as DreamProposalOp }
             : {}),
+          rawJson: clamp(raw),
         })
       }
       index += 1
@@ -110,14 +123,18 @@ function extractFencedBlocks(text: string): string[] {
 // ─── 分流执行 ───────────────────────────────────────────────────────────────
 
 export interface DreamProposalDispatchParams {
+  /** 轨道归属（memory/wiki）：审计行按运行轨道记账，kind 异常时仍可追溯来源轨 */
+  track: DreamTrack
   proposals: DreamProposal[]
   /** parseDreamProposals 的非法条目（可缺省 = 无非法条目）；rawKind/rawOp
-   * 为尽力提取的原始字段，审计与报告不把 wiki 轨非法条目记成 memory/create */
+   * 为尽力提取的原始字段，审计与报告不把 wiki 轨非法条目记成 memory/create；
+   * rawJson 为原文快照（超长截断），随审计落表 */
   invalid?: Array<{
     index: number
     reason: string
     rawKind?: 'memory' | 'wiki'
     rawOp?: DreamProposalOp
+    rawJson?: string
   }>
   batchLimit: number
   autoApplyThresholdPct: number
@@ -133,12 +150,16 @@ export interface DreamProposalDispatchParams {
 
 export interface DreamAuditEntry {
   runId: string
+  /** 运行轨道（审计表记账维度；与 kind 可能不一致——那是异常提案本身的问题） */
+  track: DreamTrack
   kind: 'memory' | 'wiki'
   op: DreamProposalOp
   targetId?: string
   confidence: number
   outcome: DreamProposalOutcome
   note?: string
+  /** 提案原文快照（超长截断）：被拒/丢弃提案的可追溯凭证 */
+  payloadJson?: string
 }
 
 export interface DreamDispatchSummary {
@@ -175,11 +196,13 @@ export async function dispatchDreamProposals(
     const op = item.rawOp ?? 'create'
     params.audit({
       runId: params.runId,
+      track: params.track,
       kind,
       op,
       confidence: 0,
       outcome: 'rejected-invalid',
       note: `第 ${item.index} 条提案未通过校验：${item.reason}`,
+      ...(item.rawJson != null ? { payloadJson: item.rawJson } : {}),
     })
     results.push({ op, kind, confidence: 0, outcome: 'rejected-invalid' })
   }
@@ -190,12 +213,14 @@ export async function dispatchDreamProposals(
       stats.droppedByLimit += 1
       params.audit({
         runId: params.runId,
+        track: params.track,
         kind: proposal.kind,
         op: proposal.op,
         ...(proposal.targetId != null ? { targetId: proposal.targetId } : {}),
         confidence: proposal.confidence,
         outcome: 'dropped-by-limit',
         note: `超过单次提案上限 ${params.batchLimit}，丢弃`,
+        payloadJson: clamp(proposal),
       })
       results.push({
         op: proposal.op,
@@ -236,12 +261,14 @@ export async function dispatchDreamProposals(
     }
     params.audit({
       runId: params.runId,
+      track: params.track,
       kind: proposal.kind,
       op: proposal.op,
       ...(proposal.targetId != null ? { targetId: proposal.targetId } : {}),
       confidence: proposal.confidence,
       outcome: result.outcome,
       ...(result.note != null ? { note: result.note } : {}),
+      payloadJson: clamp(proposal),
     })
     results.push({
       op: proposal.op,
@@ -256,4 +283,19 @@ export async function dispatchDreamProposals(
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/** 提案原文快照（审计用）：JSON 序列化并按上限截断；截断会破坏 JSON 合法性，
+ * 尾部加标记便于展示侧识别——快照仅供人读，不回灌任何解析路径。 */
+function clamp(raw: unknown): string {
+  let text: string
+  try {
+    text = JSON.stringify(raw) ?? 'null'
+  } catch {
+    return '"<unserializable>"'
+  }
+  if (text.length > PAYLOAD_JSON_MAX_CHARS) {
+    return `${text.slice(0, PAYLOAD_JSON_MAX_CHARS)}\n…[payload truncated at 16KB]`
+  }
+  return text
 }

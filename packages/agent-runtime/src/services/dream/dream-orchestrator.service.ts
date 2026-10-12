@@ -84,6 +84,9 @@ export interface DreamOrchestratorDeps {
   memorySink: DreamTrackSink
   /** 知识库轨提案执行器（S2；缺省时 wiki 轨提案全部 rejected-invalid） */
   wikiSink?: DreamTrackSink
+  /** 持久化审计 sink（migration 120 dream_audit 表；缺省仅记日志行——测试
+   *  与降级装配可不注入）。条目形状与 dream_audit 表 DreamAuditInsert 对齐。 */
+  auditSink?: { append(entry: DreamAuditEntry): void }
 }
 
 export type DreamRunHandle =
@@ -326,6 +329,7 @@ export class DreamOrchestrationService {
         }
         const dispatch = await dispatchDreamProposals({
           runId,
+          track,
           proposals: parsed.proposals,
           invalid: parsed.invalid,
           batchLimit: cfg.batchLimit,
@@ -415,13 +419,21 @@ export class DreamOrchestrationService {
     }
   }
 
-  /** 审计：每条提案一行结构化日志（dream runId 溯源；S4 扩展持久化审计表时复用） */
+  /** 审计：每条提案一行结构化日志 + 落 dream_audit 表（双写；表侧供设置页
+   *  「提案明细」与历史追溯——报告只存最近一次，审计表补齐全量历史）。
+   *  落表异常吞掉记 warn：审计是旁路，不能反毁运行主链路。 */
   private audit(entry: DreamAuditEntry): void {
     log.info(
       `dream-audit run=${entry.runId} kind=${entry.kind} op=${entry.op} ` +
         `target=${entry.targetId ?? '-'} confidence=${entry.confidence.toFixed(2)} ` +
         `outcome=${entry.outcome}${entry.note != null ? ` note=${entry.note}` : ''}`,
     )
+    if (this.deps.auditSink == null) return
+    try {
+      this.deps.auditSink.append(entry)
+    } catch (err) {
+      log.warn(`dream audit persist failed (run=${entry.runId}): ${errText(err)}`)
+    }
   }
 
   private lastRunAt(track: DreamTrack): number | null {
