@@ -52,6 +52,9 @@ export class TurnRuntimeMetricsTracker {
   private lastOutputTokens: number | null = null
   private finalized = false
   private ttftMeasured = false
+  /** 流式输出估算：按 segment 累积已观测文本（delta 追加 / complete 替换），节流估算。 */
+  private readonly observedStreamSegments = new Map<string, string>()
+  private lastEstimateEmitAt: number | null = null
 
   constructor(private readonly options: TurnRuntimeMetricsTrackerOptions) {
     this.now = options.now ?? (() => performance.now())
@@ -153,6 +156,7 @@ export class TurnRuntimeMetricsTracker {
         })
       }
       this.streamWindowActiveAt ??= eventTime
+      this.observeStreamContent(event, eventTime)
       this.scheduleSchemaObservation()
       this.scheduleMetricsDelivery()
     }
@@ -163,8 +167,14 @@ export class TurnRuntimeMetricsTracker {
       // 流时长再关窗，随后下发一次 live 口径（outputTokens + streamActiveMs），
       // 供渲染层在轮次进行中显示实时 tok/s。
       this.closeStreamWindow()
+      const incomingInput = Math.max(0, event.inputTokens)
       this.mergePendingMetrics({
-        providerInputTokens: Math.max(0, event.inputTokens),
+        // 零值不覆写已观测的正值：部分兼容渠道消息体 input 恒为 0，真实值来自
+        // message_start / message_delta / result；后到的 0 只是无计量占位。
+        providerInputTokens:
+          incomingInput > 0
+            ? incomingInput
+            : Math.max(0, this.mergedMetrics.providerInputTokens ?? 0),
         outputTokens: this.lastOutputTokens,
         ...(this.streamActiveElapsedMs > 0
           ? { streamActiveMs: Math.round(this.streamActiveElapsedMs) }
@@ -191,6 +201,38 @@ export class TurnRuntimeMetricsTracker {
     if (this.streamWindowActiveAt == null) return
     this.streamActiveElapsedMs += Math.max(0, this.now() - this.streamWindowActiveAt)
     this.streamWindowActiveAt = null
+  }
+
+  /**
+   * 流式内容估算兜底：按 segmentId 累积可见输出（delta 追加、complete 整段替换，
+   * 防「流式 delta + 同段 complete」重复计数），1s 节流合并 estimatedOutputTokens
+   * 与含开窗中窗口的实时 streamActiveMs——渠道不报 usage 时渲染端 LIVE 吞吐依然
+   * 可见。仅 LIVE 兜底口径：结算与用量统计不读取估算值（缺测不冒充）。
+   */
+  private observeStreamContent(
+    event: Extract<AgentEvent, { type: 'assistant_message' | 'agent_thinking' }>,
+    eventTime: number,
+  ): void {
+    if (event.segmentId == null || event.content.length === 0) return
+    if (event.mode === 'complete') {
+      this.observedStreamSegments.set(event.segmentId, event.content)
+    } else {
+      const existing = this.observedStreamSegments.get(event.segmentId)
+      this.observedStreamSegments.set(event.segmentId, (existing ?? '') + event.content)
+    }
+    if (this.lastEstimateEmitAt != null && eventTime - this.lastEstimateEmitAt < 1_000) return
+    this.lastEstimateEmitAt = eventTime
+    const estimatedOutputTokens = estimateTokens(
+      [...this.observedStreamSegments.values()].join(''),
+    )
+    if (estimatedOutputTokens <= 0) return
+    const liveStreamMs =
+      this.streamActiveElapsedMs +
+      (this.streamWindowActiveAt != null ? Math.max(0, eventTime - this.streamWindowActiveAt) : 0)
+    this.mergePendingMetrics({
+      estimatedOutputTokens,
+      ...(liveStreamMs > 0 ? { streamActiveMs: Math.round(liveStreamMs) } : {}),
+    })
   }
 
   /** 终态收尾：结算轮次时长与吞吐，只产出可观测字段（无流输出则吞吐缺测）。 */

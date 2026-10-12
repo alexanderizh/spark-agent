@@ -429,7 +429,16 @@ export interface SDKStreamEvent {
     content_block?: { type: string; id?: string; name?: string; text?: string; thinking?: string }
     index?: number
     message?: { usage?: { input_tokens: number; output_tokens: number } }
-    usage?: { output_tokens: number }
+    /**
+     * message_delta 携带的请求内累计 usage（Anthropic 流协议的标准位置）。
+     * output_tokens 恒有；input/cache 字段按上游实现可选（部分兼容渠道不回传）。
+     */
+    usage?: {
+      output_tokens: number
+      input_tokens?: number
+      cache_read_input_tokens?: number
+      cache_creation_input_tokens?: number
+    }
   }
   parent_tool_use_id: string | null
   uuid: string

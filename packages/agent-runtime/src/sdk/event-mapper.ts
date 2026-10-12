@@ -126,6 +126,67 @@ function getSegmentState(ctx: EventContext): SegmentState {
   return record.segmentState
 }
 
+/**
+ * 每轮流式 usage 累加器（usage_update 的 outputTokens 口径是「轮内累计」）。
+ *
+ * Anthropic 流协议里 usage 有两个请求内入口：
+ *   - message_delta.usage.output_tokens：请求内累计值（流式逐步推进）
+ *   - assistant 消息 usage.output_tokens：同一请求的最终值（消息收尾）
+ * 两者终值相同，必须经 requestOutputCounted 去重后只入累计一次；channel 不回传
+ * message_delta 时由 assistant 消息兜底推进，回传时 assistant 消息推进量为 0。
+ * message_start 开启新请求：input/cache 快照更新，输出基线归零。
+ */
+interface StreamUsageState {
+  /** 当前请求内已确认入累计的输出 token（请求内累计口径的已计基数） */
+  requestOutputCounted: number
+  /** 本轮跨请求累计输出 token（usage_update.outputTokens 的轮内累计口径） */
+  turnOutputTokens: number
+  /** 最近一次流式上报的请求 input（message_start / message_delta 透传，兼容渠道可能缺失） */
+  inputTokens: number | null
+  cacheHitTokens: number | null
+  cacheWriteTokens: number | null
+}
+
+function getStreamUsageState(ctx: EventContext): StreamUsageState {
+  const record = ctx as EventContext & { streamUsageState?: StreamUsageState }
+  if (record.streamUsageState == null) {
+    record.streamUsageState = {
+      requestOutputCounted: 0,
+      turnOutputTokens: 0,
+      inputTokens: null,
+      cacheHitTokens: null,
+      cacheWriteTokens: null,
+    }
+  }
+  return record.streamUsageState
+}
+
+/**
+ * 把一个「请求内累计」输出读数并入轮内累计（幂等：同读数重复到达不重复计数）。
+ * 返回并入后的轮内累计值。
+ */
+function countRequestOutput(state: StreamUsageState, requestCumulativeOutput: number): number {
+  const newlyCounted = Math.max(0, requestCumulativeOutput - state.requestOutputCounted)
+  state.turnOutputTokens += newlyCounted
+  state.requestOutputCounted = requestCumulativeOutput
+  return state.turnOutputTokens
+}
+
+/**
+ * 主链 assistant 消息收尾：把该请求的最终输出并入轮内累计，并用其真实 input
+ * 刷新透传快照（零值不覆写已有正值——部分兼容渠道消息体 input 恒为 0）。
+ */
+function advanceMainChainUsage(
+  ctx: EventContext,
+  usage: { input_tokens: number; output_tokens: number },
+): number {
+  const state = getStreamUsageState(ctx)
+  if (state.inputTokens == null || usage.input_tokens > 0) {
+    state.inputTokens = usage.input_tokens
+  }
+  return countRequestOutput(state, usage.output_tokens)
+}
+
 function currentTextSegment(ctx: EventContext): string {
   const state = getSegmentState(ctx)
   if (state.currentText == null) state.currentText = randomUUID()
@@ -1064,13 +1125,19 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
   if (msg.message.usage) {
     const cacheHit = msg.message.usage.cache_read_input_tokens
     const cacheWrite = msg.message.usage.cache_creation_input_tokens
+    // 主链消息的 usage 是该请求的最终值：经累加器并入轮内累计（message_delta 已
+    // 推进过则幂等跳过）。subagent 消息是独立请求，保持 per-message 原值且不触碰
+    // 主链累加器（历史行为）。
+    const outputTokens = isSubagentMessage
+      ? msg.message.usage.output_tokens
+      : advanceMainChainUsage(ctx, msg.message.usage)
     events.push({
       ...baseEvent(ctx),
       type: 'usage_update',
       provider: 'claude',
       model: msg.message.model ?? '',
       inputTokens: msg.message.usage.input_tokens,
-      outputTokens: msg.message.usage.output_tokens,
+      outputTokens,
       ...(cacheHit != null ? { cacheHitTokens: cacheHit } : {}),
       ...(cacheWrite != null ? { cacheWriteTokens: cacheWrite } : {}),
     })
@@ -1303,6 +1370,13 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
     case 'message_start': {
       const usage = event.message?.usage
       if (usage) {
+        // 新请求开跑：透传快照更新、输出基线归零；outputTokens 发轮内累计
+        // （保持 usage_update 的「轮内累计」口径，台账差值核算依赖单调性）。
+        const state = getStreamUsageState(ctx)
+        state.requestOutputCounted = 0
+        if (usage.input_tokens > 0 || state.inputTokens == null) {
+          state.inputTokens = usage.input_tokens
+        }
         return [
           {
             ...baseEvent(ctx),
@@ -1310,11 +1384,49 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
             provider: 'claude',
             model: '',
             inputTokens: usage.input_tokens,
-            outputTokens: usage.output_tokens,
+            outputTokens: state.turnOutputTokens,
           },
         ]
       }
       return []
+    }
+
+    case 'message_delta': {
+      // Anthropic 流协议里累计 usage 的标准位置（此前落 default 被丢弃，导致
+      // 流式期间计量恒 0、LIVE 吞吐无法计算）。请求内累计值并入轮内累计后透传；
+      // subagent 流式的 usage 由其 assistant 消息兜底，此处不重复处理。
+      if (msg.parent_tool_use_id != null) return []
+      const usage = event.usage
+      if (usage == null) return []
+      const state = getStreamUsageState(ctx)
+      if (usage.input_tokens != null && (usage.input_tokens > 0 || state.inputTokens == null)) {
+        state.inputTokens = usage.input_tokens
+      }
+      if (
+        usage.cache_read_input_tokens != null &&
+        (usage.cache_read_input_tokens > 0 || state.cacheHitTokens == null)
+      ) {
+        state.cacheHitTokens = usage.cache_read_input_tokens
+      }
+      if (
+        usage.cache_creation_input_tokens != null &&
+        (usage.cache_creation_input_tokens > 0 || state.cacheWriteTokens == null)
+      ) {
+        state.cacheWriteTokens = usage.cache_creation_input_tokens
+      }
+      const outputTokens = countRequestOutput(state, usage.output_tokens ?? 0)
+      return [
+        {
+          ...baseEvent(ctx),
+          type: 'usage_update',
+          provider: 'claude',
+          model: '',
+          inputTokens: state.inputTokens ?? 0,
+          outputTokens,
+          ...(state.cacheHitTokens != null ? { cacheHitTokens: state.cacheHitTokens } : {}),
+          ...(state.cacheWriteTokens != null ? { cacheWriteTokens: state.cacheWriteTokens } : {}),
+        },
+      ]
     }
 
     default:

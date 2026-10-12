@@ -1,4 +1,5 @@
 import type { AgentEvent } from '@spark/protocol'
+import { estimateTokens } from '@spark/shared'
 import { describe, expect, it, vi } from 'vitest'
 import { measureDeclaredToolSchemas, TurnRuntimeMetricsTracker } from './turn-runtime-metrics.js'
 
@@ -289,3 +290,151 @@ function event(value: { type: AgentEvent['type'] } & Record<string, unknown>): A
     ...value,
   } as AgentEvent
 }
+
+describe('TurnRuntimeMetricsTracker streaming estimate', () => {
+  it('emits throttled estimatedOutputTokens with live stream window during streaming', () => {
+    const emit = vi.fn()
+    // 0=构造, 100=首 delta, 200=节流内 delta（跳过）, 1300=节流到期 delta
+    const ticks = [0, 100, 200, 1300]
+    const scheduled: Array<() => void> = []
+    const tracker = new TurnRuntimeMetricsTracker({
+      emit,
+      now: () => ticks.shift() ?? 1300,
+      schedule: (task) => scheduled.push(task),
+    })
+
+    tracker.observe(
+      event({
+        type: 'assistant_message',
+        mode: 'delta',
+        content: 'Hello',
+        isFinal: false,
+        segmentId: 'seg-1',
+      }),
+    )
+    tracker.observe(
+      event({
+        type: 'assistant_message',
+        mode: 'delta',
+        content: ' World',
+        isFinal: false,
+        segmentId: 'seg-1',
+      }),
+    )
+    tracker.observe(
+      event({
+        type: 'assistant_message',
+        mode: 'delta',
+        content: '!',
+        isFinal: false,
+        segmentId: 'seg-1',
+      }),
+    )
+
+    for (const task of scheduled) task()
+    // 1s 节流：三次 delta 只交付一次估算心跳；流时长含开窗中的窗口（1300-100=1200ms）。
+    expect(emit).toHaveBeenCalledExactlyOnceWith({
+      estimatedOutputTokens: expect.any(Number),
+      streamActiveMs: 1200,
+    })
+    const metrics = emit.mock.calls[0]?.[0] as { estimatedOutputTokens: number }
+    expect(metrics.estimatedOutputTokens).toBe(estimateTokens('Hello World!'))
+  })
+
+  it('replaces segment content on complete so streamed deltas are not double counted', () => {
+    const emit = vi.fn()
+    // 0=构造, 100=delta, 1500=同段 complete（替换而非追加）
+    const ticks = [0, 100, 1500]
+    const scheduled: Array<() => void> = []
+    const tracker = new TurnRuntimeMetricsTracker({
+      emit,
+      now: () => ticks.shift() ?? 1500,
+      schedule: (task) => scheduled.push(task),
+    })
+
+    tracker.observe(
+      event({
+        type: 'assistant_message',
+        mode: 'delta',
+        content: 'Hello World',
+        isFinal: false,
+        segmentId: 'seg-1',
+      }),
+    )
+    tracker.observe(
+      event({
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'Hello World',
+        isFinal: false,
+        segmentId: 'seg-1',
+      }),
+    )
+
+    for (const task of scheduled) task()
+    // complete 整段替换同段内容：估算值等于该段文本本身，不因 delta+complete 翻倍。
+    expect(emit).toHaveBeenCalledExactlyOnceWith({
+      estimatedOutputTokens: estimateTokens('Hello World'),
+      streamActiveMs: 1400,
+    })
+  })
+
+  it('keeps estimates out of terminal settlement and zero input from clobbering real values', () => {
+    const emit = vi.fn()
+    const onFinalized = vi.fn()
+    const ticks = [0, 100, 300, 300, 300]
+    const tracker = new TurnRuntimeMetricsTracker({
+      emit,
+      onFinalized,
+      now: () => ticks.shift() ?? 300,
+      schedule: (task) => task(),
+    })
+
+    tracker.observe(
+      event({
+        type: 'assistant_message',
+        mode: 'delta',
+        content: 'Hello',
+        isFinal: false,
+        segmentId: 'seg-1',
+      }),
+    )
+    tracker.observe(
+      event({
+        type: 'usage_update',
+        provider: 'claude',
+        model: '',
+        inputTokens: 120,
+        outputTokens: 1,
+      }),
+    )
+    // 部分兼容渠道消息体 input 恒 0：后到的零值不覆写已观测的正值。
+    tracker.observe(
+      event({
+        type: 'usage_update',
+        provider: 'claude',
+        model: '',
+        inputTokens: 0,
+        outputTokens: 1,
+      }),
+    )
+    tracker.observe(event({ type: 'agent_status', status: 'completed' }))
+
+    const usageEmits = emit.mock.calls
+      .map((call) => call[0] as Record<string, unknown>)
+      .filter((metrics) => 'providerInputTokens' in metrics)
+    expect(usageEmits.at(-1)).toMatchObject({ providerInputTokens: 120, outputTokens: 1 })
+    // 结算只用真实计量（200ms / 1 token = 5 tok/s）；摘要与最终指标都不含估算字段。
+    expect(onFinalized).toHaveBeenCalledExactlyOnceWith({
+      terminalStatus: 'completed',
+      streamActiveMs: 200,
+      outputTokens: 1,
+      outputTokensPerSecond: 5,
+      turnDurationMs: 300,
+    })
+    const summary = onFinalized.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(summary.estimatedOutputTokens).toBeUndefined()
+    const finalEmit = emit.mock.calls.at(-1)?.[0] as Record<string, unknown>
+    expect(finalEmit.estimatedOutputTokens).toBeUndefined()
+  })
+})

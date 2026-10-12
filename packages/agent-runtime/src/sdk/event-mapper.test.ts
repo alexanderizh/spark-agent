@@ -1383,3 +1383,175 @@ describe('mapSDKMessageToEvents', () => {
     expect(events.some((event) => event.type === 'context_compaction')).toBe(false)
   })
 })
+
+describe('claude stream usage mapping (message_start / message_delta)', () => {
+  const baseCtx = { sessionId: 'session-1', turnId: 'turn-1' }
+
+  function streamEvent(
+    event: Record<string, unknown>,
+    parentToolUseId: string | null = null,
+  ): Parameters<typeof mapSDKMessageToEvents>[0] {
+    return {
+      type: 'stream_event',
+      event,
+      parent_tool_use_id: parentToolUseId,
+      uuid: `stream-${Math.random().toString(36).slice(2)}`,
+      session_id: 'sdk-session',
+    } as Parameters<typeof mapSDKMessageToEvents>[0]
+  }
+
+  function usageEvents(events: ReturnType<typeof mapSDKMessageToEvents>) {
+    return events.filter((event) => event.type === 'usage_update')
+  }
+
+  it('maps message_delta cumulative usage into turn-cumulative usage_update', () => {
+    const ctx = { ...baseCtx }
+    // 请求 1：message_start(input 100) → message_delta(output 500)
+    const start = usageEvents(
+      mapSDKMessageToEvents(
+        streamEvent({
+          type: 'message_start',
+          message: { usage: { input_tokens: 100, output_tokens: 0 } },
+        }),
+        ctx,
+      ),
+    )
+    expect(start).toEqual([
+      expect.objectContaining({
+        type: 'usage_update',
+        provider: 'claude',
+        inputTokens: 100,
+        outputTokens: 0,
+      }),
+    ])
+
+    const delta1 = usageEvents(
+      mapSDKMessageToEvents(
+        streamEvent({ type: 'message_delta', usage: { output_tokens: 500 } }),
+        ctx,
+      ),
+    )
+    expect(delta1).toEqual([
+      expect.objectContaining({
+        type: 'usage_update',
+        provider: 'claude',
+        // input 透传 message_start 快照（message_delta 未携带时不丢）
+        inputTokens: 100,
+        outputTokens: 500,
+      }),
+    ])
+  })
+
+  it('does not double count assistant-message usage after message_delta already advanced', () => {
+    const ctx = { ...baseCtx }
+    mapSDKMessageToEvents(
+      streamEvent({ type: 'message_start', message: { usage: { input_tokens: 100, output_tokens: 0 } } }),
+      ctx,
+    )
+    mapSDKMessageToEvents(streamEvent({ type: 'message_delta', usage: { output_tokens: 500 } }), ctx)
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-1',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        message: {
+          role: 'assistant',
+          model: 'glm-5.3',
+          content: [{ type: 'text', text: 'hi' }],
+          usage: { input_tokens: 100, output_tokens: 500 },
+        },
+      } as SDKAssistantMessage,
+      ctx,
+    )
+    const update = events.find((event) => event.type === 'usage_update')
+    // 请求最终值 500 已被 message_delta 计入：assistant 消息幂等，不重复加 500。
+    expect(update).toEqual(expect.objectContaining({ outputTokens: 500 }))
+  })
+
+  it('accumulates output across requests and resets the per-request baseline at message_start', () => {
+    const ctx = { ...baseCtx }
+    mapSDKMessageToEvents(
+      streamEvent({ type: 'message_start', message: { usage: { input_tokens: 100, output_tokens: 0 } } }),
+      ctx,
+    )
+    mapSDKMessageToEvents(streamEvent({ type: 'message_delta', usage: { output_tokens: 500 } }), ctx)
+
+    // 请求 2 开始：输出基线归零，但 usage_update 仍发轮内累计（台账单调差值依赖）。
+    const start2 = usageEvents(
+      mapSDKMessageToEvents(
+        streamEvent({ type: 'message_start', message: { usage: { input_tokens: 200, output_tokens: 0 } } }),
+        ctx,
+      ),
+    )
+    expect(start2).toEqual([
+      expect.objectContaining({ inputTokens: 200, outputTokens: 500 }),
+    ])
+
+    const delta2 = usageEvents(
+      mapSDKMessageToEvents(
+        streamEvent({
+          type: 'message_delta',
+          usage: { output_tokens: 300, input_tokens: 200 },
+        }),
+        ctx,
+      ),
+    )
+    expect(delta2).toEqual([
+      expect.objectContaining({ inputTokens: 200, outputTokens: 800 }),
+    ])
+  })
+
+  it('advances turn-cumulative usage from assistant messages when message_delta is absent', () => {
+    const ctx = { ...baseCtx }
+    mapSDKMessageToEvents(
+      streamEvent({ type: 'message_start', message: { usage: { input_tokens: 100, output_tokens: 0 } } }),
+      ctx,
+    )
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-2',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        message: {
+          role: 'assistant',
+          content: [],
+          usage: { input_tokens: 100, output_tokens: 300 },
+        },
+      } as SDKAssistantMessage,
+      ctx,
+    )
+    expect(events.find((event) => event.type === 'usage_update')).toEqual(
+      expect.objectContaining({ outputTokens: 300 }),
+    )
+  })
+
+  it('keeps subagent usage raw and ignores subagent-scoped message_delta', () => {
+    const ctx = { ...baseCtx }
+    const subDelta = mapSDKMessageToEvents(
+      streamEvent({ type: 'message_delta', usage: { output_tokens: 900 } }, 'tool-1'),
+      ctx,
+    )
+    expect(subDelta).toEqual([])
+
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-sub',
+        session_id: 'sdk-session',
+        parent_tool_use_id: 'tool-1',
+        message: {
+          role: 'assistant',
+          content: [],
+          usage: { input_tokens: 50, output_tokens: 77 },
+        },
+      } as SDKAssistantMessage,
+      ctx,
+    )
+    // subagent 消息保持 per-message 原值，不影响主链轮内累计。
+    expect(events.find((event) => event.type === 'usage_update')).toEqual(
+      expect.objectContaining({ inputTokens: 50, outputTokens: 77 }),
+    )
+  })
+})

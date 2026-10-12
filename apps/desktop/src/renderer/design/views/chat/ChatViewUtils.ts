@@ -345,6 +345,8 @@ export type TurnPerfRow = {
   streamActiveMs: number | null
   turnDurationMs: number | null
   outputTokens: number | null
+  /** 流式期间的输出 token 估算（仅 LIVE 行兜底展示；结算统计不使用） */
+  estimatedOutputTokens: number | null
   /** 吞吐 = outputTokens / streamActiveMs；任一缺测为 null */
   tokensPerSecond: number | null
   /** AutoRouter 分流耗时（TTFT 的路由分量；非 router 会话为 null） */
@@ -410,6 +412,7 @@ export function buildSessionPerf(
       streamActiveMs: metrics.streamActiveMs ?? null,
       turnDurationMs: metrics.turnDurationMs ?? null,
       outputTokens: metrics.outputTokens ?? null,
+      estimatedOutputTokens: metrics.estimatedOutputTokens ?? null,
       tokensPerSecond: metrics.outputTokensPerSecond ?? null,
       autoRouterRoutingMs: metrics.autoRouterRoutingMs ?? null,
       autoRouterIntensity: metrics.autoRouterIntensity ?? null,

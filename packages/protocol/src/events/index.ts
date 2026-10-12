@@ -931,6 +931,12 @@ export interface TurnRuntimeMetrics {
   /** 该轮输出 token 终值（最近一条 usage_update 的 outputTokens，后值覆盖）。 */
   outputTokens?: number
   /**
+   * 流式进行中的输出 token 估算（对已观测流式内容实时估算，1s 节流上报）。
+   * 仅用于渲染端 LIVE 吞吐兜底（渠道不报 usage 时速度依然可见）；结算与用量
+   * 口径不使用该值——终态结算仍只认真实 outputTokens，缺测不冒充。
+   */
+  estimatedOutputTokens?: number
+  /**
    * 纯生成时长（ms）：仅累计模型流式输出的时间窗口（首输出开窗、
    * tool_call / usage_update 关窗、下一段输出再开窗），剔除工具执行时间。
    */
