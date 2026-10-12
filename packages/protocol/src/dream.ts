@@ -356,10 +356,21 @@ export function validateDreamProposal(raw: unknown): DreamProposalValidation {
     }
   }
 
-  // wiki create 必须指定空间
-  const spaceId = typeof p.spaceId === 'string' && p.spaceId.length > 0 ? p.spaceId : undefined
-  if (kind === 'wiki' && op === 'create' && spaceId == null) {
-    return { ok: false, message: 'wiki create 提案必须携带 spaceId（目标空间）' }
+  // wiki create 的 spaceId 可选：省略时由候选确认兜底链解析目标空间（请求
+  // spaceId → 候选预选 → scope 内 manual 空间 → 兜底新建，见 dream-wiki-sink）。
+  // 空串与缺字段同样视为省略（沿用旧归一化口径，避免换形态复现硬拒）；非空纯
+  // 白色串属「提供了非法值」，拒绝并给审计原因。
+  const rawSpaceId = typeof p.spaceId === 'string' ? p.spaceId : undefined
+  const spaceId =
+    rawSpaceId != null && rawSpaceId.trim().length > 0 ? rawSpaceId.trim() : undefined
+  if (
+    kind === 'wiki' &&
+    op === 'create' &&
+    rawSpaceId != null &&
+    rawSpaceId.length > 0 &&
+    spaceId == null
+  ) {
+    return { ok: false, message: 'wiki create 提案的 spaceId 不能为空白字符串' }
   }
 
   const confidence = clamp01(p.confidence)
@@ -397,7 +408,8 @@ export function validateDreamProposal(raw: unknown): DreamProposalValidation {
 
 /**
  * 置信度分流判定（计划 §7，纯函数便于单测）：
- * delete 提案在未开 autoDeleteEnabled 时一律人审，无视置信度。
+ * delete/merge 提案在未开 autoDeleteEnabled 时一律人审，无视置信度——merge
+ * 会归档被并方条目/页面，破坏面与 delete 同级，同受删除门控保护。
  */
 export function resolveDreamProposalOutcome(params: {
   op: DreamProposalOp
@@ -405,7 +417,7 @@ export function resolveDreamProposalOutcome(params: {
   autoApplyThresholdPct: number
   autoDeleteEnabled: boolean
 }): DreamProposalOutcome {
-  if (params.op === 'delete' && !params.autoDeleteEnabled) {
+  if ((params.op === 'delete' || params.op === 'merge') && !params.autoDeleteEnabled) {
     return 'pending-review'
   }
   // +EPSILON 吸收浮点表示误差（如 0.29*100 = 28.999…96 被误判为未达 29）：

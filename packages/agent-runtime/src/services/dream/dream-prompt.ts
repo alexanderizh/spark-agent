@@ -84,7 +84,7 @@ export function buildDreamSystemPrompt(track: DreamTrack): string {
 - \`kind\`：\`memory\`（记忆提案）或 \`wiki\`（知识库提案）——必须与本次轨道一致；
 - \`op\`：\`create\` | \`update\` | \`merge\` | \`delete\`；
 - \`targetId\`：update/merge/delete 必填（现状快照中的条目/页面 id）；\`mergeTargetId\`：merge 必填（被并入保留的一方）；
-- \`payload\`：create/update 必填。memory 轨为 \`{ type: 'user'|'feedback'|'project'|'reference', name, description, body }\`；wiki 轨为 \`{ title, body, summary?, kind?, tags? }\` 且 create 需 \`spaceId\`；
+- \`payload\`：create/update 必填。memory 轨为 \`{ type: 'user'|'feedback'|'project'|'reference', name, description, body }\`；wiki 轨为 \`{ title, body, summary?, kind?, tags? }\`；\`spaceId\`：wiki create 可选——推荐携带现状快照中的目标空间 id，省略时确认环节自动兜底选择/新建空间；
 - 相对日期一律换算为绝对日期（如 2026-10-10）后再写入 body。`
 }
 
@@ -101,7 +101,7 @@ export function buildDreamUserMessage(ctx: DreamRunPromptContext): string {
     `- 轨道：${ctx.track === 'memory' ? '记忆整理' : '知识库整理'}`,
     `- 梦境编号：${ctx.runId}`,
     `- 回看窗口：最近 ${ctx.scanSessionsDays} 天的会话存档`,
-    `- 提案上限：${ctx.batchLimit} 条；自动落库阈值 ${ctx.autoApplyThresholdPct}%${ctx.autoDeleteEnabled ? '（已允许高置信自动删除）' : '（删除提案一律人审）'}`,
+    `- 提案上限：${ctx.batchLimit} 条；自动落库阈值 ${ctx.autoApplyThresholdPct}%${ctx.autoDeleteEnabled ? '（已允许高置信自动删除/合并）' : '（删除/合并提案一律人审）'}`,
     `- 上次整理：${ctx.lastRunAt != null ? humanizeTime(ctx.lastRunAt) : '首次整理（无水位线，按回看窗口全量扫描）'}`,
   ]
   if (ctx.lastReportSummary != null && ctx.lastReportSummary.length > 0) {

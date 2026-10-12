@@ -34,7 +34,7 @@ describe('dream 提案校验', () => {
     expect((r.proposal as DreamMemoryProposal).payload?.name).toBe('不吃辣')
   })
 
-  it('合法 wiki create 提案必须携带 spaceId', () => {
+  it('wiki create 的 spaceId 可选：省略通过校验（进候选兜底链），携带时保留', () => {
     const base = {
       kind: 'wiki',
       op: 'create',
@@ -43,12 +43,27 @@ describe('dream 提案校验', () => {
       sourceRefs: [{ kind: 'session', id: 'sess-1' }],
       payload: { title: '部署手册', body: '…' },
     }
-    expect(validateDreamProposal(base).ok).toBe(false)
-    const r = validateDreamProposal({ ...base, spaceId: 'sp-1' })
-    expect(r.ok).toBe(true)
-    const wiki = r.proposal as DreamWikiProposal
-    expect(wiki.kind).toBe('wiki')
-    expect(wiki.spaceId).toBe('sp-1')
+    const omitted = validateDreamProposal(base)
+    expect(omitted.ok).toBe(true)
+    const noSpace = omitted.proposal as DreamWikiProposal
+    expect(noSpace.kind).toBe('wiki')
+    expect(noSpace.spaceId).toBeUndefined()
+    const given = validateDreamProposal({ ...base, spaceId: ' sp-1 ' })
+    expect(given.ok).toBe(true)
+    expect((given.proposal as DreamWikiProposal).spaceId).toBe('sp-1')
+  })
+
+  it('wiki create 提供空白 spaceId 被拒绝（提供即须非空白）', () => {
+    const base = {
+      kind: 'wiki',
+      op: 'create',
+      confidence: 0.8,
+      rationale: '新知识点沉淀',
+      sourceRefs: [{ kind: 'session', id: 'sess-1' }],
+      payload: { title: '部署手册', body: '…' },
+    }
+    expect(validateDreamProposal({ ...base, spaceId: '   ' }).ok).toBe(false)
+    expect(validateDreamProposal({ ...base, spaceId: '' }).ok).toBe(true) // 空串视为省略
   })
 
   it('update/merge/delete 必须携带 targetId；merge 另需 mergeTargetId', () => {
@@ -172,13 +187,41 @@ describe('dream 置信度分流', () => {
     ).toBe('pending-review')
   })
 
-  it('merge/update 与 create 同规则', () => {
+  it('merge 与 delete 同受删除门控：未开 autoDeleteEnabled 时无视置信度一律人审', () => {
     expect(resolveDreamProposalOutcome({ ...base, op: 'merge', confidence: 0.9 })).toBe(
-      'auto-applied',
+      'pending-review',
     )
+    expect(resolveDreamProposalOutcome({ ...base, op: 'merge', confidence: 1 })).toBe(
+      'pending-review',
+    )
+  })
+
+  it('merge 在开启 autoDeleteEnabled 后按阈值分流', () => {
+    expect(
+      resolveDreamProposalOutcome({
+        ...base,
+        op: 'merge',
+        confidence: 0.9,
+        autoDeleteEnabled: true,
+      }),
+    ).toBe('auto-applied')
+    expect(
+      resolveDreamProposalOutcome({
+        ...base,
+        op: 'merge',
+        confidence: 0.6,
+        autoDeleteEnabled: true,
+      }),
+    ).toBe('pending-review')
+  })
+
+  it('update 与 create 同规则（不受删除门控影响）', () => {
     expect(resolveDreamProposalOutcome({ ...base, op: 'update', confidence: 0.6 })).toBe(
       'pending-review',
     )
+    expect(
+      resolveDreamProposalOutcome({ ...base, op: 'update', confidence: 0.9 }),
+    ).toBe('auto-applied')
   })
 
   it('浮点边界不误判：恰好达阈即自动落库（0.29*100 的 28.99…96 案例）', () => {
