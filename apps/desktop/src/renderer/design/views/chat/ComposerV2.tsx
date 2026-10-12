@@ -4937,7 +4937,6 @@ export function ComposerV2({
               onClick={() => void handleToggleDebugMode()}
             >
               <Icons.Bug size={16} style={{ marginTop: 2 }} />
-              <span>Debug</span>
             </button>
             {isNewSessionComposer && (
               <div className="composer-worktree-controls">
