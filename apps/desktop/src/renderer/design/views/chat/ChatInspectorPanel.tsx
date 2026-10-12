@@ -1055,6 +1055,10 @@ export function ChatInspector({
           isSessionRunning={session?.status === 'running'}
         />
 
+        {/* 工具执行审计日志：账本时间线 + 哈希链完整性（tool-audit:* IPC）。
+            固定在性能之后、上下文窗口之前（执行观测区聚在一起）。 */}
+        {session != null && <ChatInspectorToolLog sessionId={session.id} />}
+
         {subagents.length > 0 && (
           <div className="inspector-section">
             <h4>
@@ -1125,9 +1129,6 @@ export function ChatInspector({
 
         {/* 工程信息统一置底，并保持各自独立、默认折叠。 */}
         {workspace && <WorktreePanel workspaceId={workspace.id} sessionId={session?.id ?? null} />}
-
-        {/* 工具执行审计日志：账本时间线 + 哈希链完整性（tool-audit:* IPC） */}
-        {session != null && <ChatInspectorToolLog sessionId={session.id} />}
 
         {session != null && projectContext != null && (
           <InspectorCollapsibleSection
