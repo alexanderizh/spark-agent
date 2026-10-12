@@ -527,7 +527,8 @@ export interface PlatformBridgeDeps {
       body?: string
       summary?: string
       tags?: string[]
-      parentId?: string
+      /** 三态：缺省=不动；null=移回根层；字符串=移入该文件夹 */
+      parentId?: string | null
     }): Promise<unknown>
     bridgeWikiArchive(params: { sessionId: string; pageId: string }): Promise<unknown>
     bridgeWikiRestore(params: { sessionId: string; pageId: string }): Promise<unknown>
@@ -552,6 +553,10 @@ export interface PlatformBridgeDeps {
       pageId: string
       ownership: 'generated' | 'manual' | 'ignored'
     }): Promise<unknown>
+    /** wiki repo 空间重扫（Agent 触发重建，scope 守卫在 SessionService 桥） */
+    bridgeWikiRepoScan(params: { sessionId: string; spaceId: string }): Promise<unknown>
+    /** wiki repo 空间漂移状态查询（只读） */
+    bridgeWikiRepoStatus(params: { sessionId: string; spaceId: string }): Promise<unknown>
     /**
      * 会话 worktree 状态桥（codex / claude CLI 的 stdio spark_session MCP 子进程
      * 走这条路径回到主进程，复用 setSessionRuntimeWorktree 的校验与持久化）。
@@ -1038,6 +1043,10 @@ export class PlatformBridgeService {
         return this.wikiProposeSkill(d, params)
       case 'wiki.set_ownership':
         return this.wikiSetOwnership(d, params)
+      case 'wiki.repo_scan':
+        return this.wikiRepoScan(d, params)
+      case 'wiki.repo_status':
+        return this.wikiRepoStatus(d, params)
 
       // ── Canvas（codex CLI / claude CLI 的 stdio spark_canvas 子进程走这条路径）──
       case 'canvas.call_tool':
@@ -2305,7 +2314,13 @@ export class PlatformBridgeService {
     const tags = Array.isArray(params.tags)
       ? params.tags.filter((t): t is string => typeof t === 'string')
       : undefined
-    const parentId = typeof params.parentId === 'string' ? params.parentId : undefined
+    // 三态：缺省=不动；null=移回根层；字符串=移入该文件夹（!= null 会把 null 归并成缺省）
+    const parentId =
+      params.parentId === null
+        ? null
+        : typeof params.parentId === 'string'
+          ? params.parentId
+          : undefined
     return d.sessionService.bridgeWikiUpdate({
       sessionId,
       pageId,
@@ -2314,7 +2329,7 @@ export class PlatformBridgeService {
       ...(body != null ? { body } : {}),
       ...(summary != null ? { summary } : {}),
       ...(tags != null ? { tags } : {}),
-      ...(parentId != null ? { parentId } : {}),
+      ...(parentId !== undefined ? { parentId } : {}),
     })
   }
 
@@ -2386,6 +2401,24 @@ export class PlatformBridgeService {
       throw new Error('Invalid parameter: ownership')
     }
     return d.sessionService.bridgeWikiSetOwnership({ sessionId, pageId, ownership })
+  }
+
+  /** wiki repo 空间重扫（wiki_repo_scan）：回 SessionService 桥做 scope 守卫与重建。 */
+  private async wikiRepoScan(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const spaceId = String(params.spaceId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!spaceId) throw new Error('Missing parameter: spaceId')
+    return d.sessionService.bridgeWikiRepoScan({ sessionId, spaceId })
+  }
+
+  /** wiki repo 空间漂移状态（wiki_repo_status）：回 SessionService 桥做 scope 守卫。 */
+  private async wikiRepoStatus(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const spaceId = String(params.spaceId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!spaceId) throw new Error('Missing parameter: spaceId')
+    return d.sessionService.bridgeWikiRepoStatus({ sessionId, spaceId })
   }
 
   private async memorySearch(d: PlatformBridgeDeps, params: Record<string, unknown>) {

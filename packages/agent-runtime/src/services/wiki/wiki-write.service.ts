@@ -407,7 +407,9 @@ export class WikiWriteService {
           status: 'published',
           confidence: 1.0,
           sort_order: 0,
-          source_type: 'manual',
+          // 尊重调用方标记（repo 扫描的 folder 容器也是生成态，删除/归档
+          // 守卫据此判定）；普通创建缺省 'manual'，与内容页兜底口径一致
+          source_type: input.sourceType ?? 'manual',
           source_session_id: null,
           author_role: input.authorRole ?? 'manual_user',
           hit_count: 0,

@@ -549,8 +549,11 @@ import type { WikiSpaceScopeFilter } from './wiki/wiki-space.service.js'
 import { createWikiServiceStack, resolveWikiBudgetFromSettings } from './wiki/wiki-service-stack.js'
 import { resetTurnWikiBudget } from './wiki/wiki-context-budget.js'
 import {
+  repoOwnershipFromSourceType,
   WIKI_REPO_SOURCE_TYPE,
   type WikiRepoPageOwnership,
+  type WikiRepoScanResult,
+  type WikiRepoDriftStatus,
 } from './wiki/wiki-repo-scan.service.js'
 import {
   WIKI_ADMIN_TOOL_NAME,
@@ -654,6 +657,35 @@ export interface WikiBridgeOwnershipReceipt {
   ownership?: WikiRepoPageOwnership
   /** 语义提示（成功时也会带，如回归生成态的覆写警告） */
   note?: string
+  error?: string
+}
+
+/**
+ * wiki bridge repo 扫描回执（wiki_repo_scan 专用）。
+ * 失败时计数全 0 + error 载明原因（越权 / 非 repo 空间 / 路径缺失等）；
+ * 扫描后自动增强是 fire-and-forget，回执不等待增强结果。
+ */
+export interface WikiBridgeRepoScanReceipt {
+  ok: boolean
+  spaceId?: string
+  /** 本次扫描记录的代码版本（git 不可用时为 null） */
+  repoRev?: string | null
+  pagesCreated: number
+  pagesUpdated: number
+  pagesSkipped: number
+  filesScanned: number
+  truncated: boolean
+  error?: string
+}
+
+/**
+ * wiki bridge repo 漂移状态回执（wiki_repo_status 专用）。
+ * status 缺省 = 空间不存在（「查了，没有」不是失败，ok 仍为 true）；
+ * 非 repo 空间由 status 原文透出（repoPath=null），渲染层区分文案。
+ */
+export interface WikiBridgeRepoStatusReceipt {
+  ok: boolean
+  status?: WikiRepoDriftStatus
   error?: string
 }
 
@@ -2163,8 +2195,11 @@ export class SessionService {
     body?: string
     summary?: string
     tags?: string[]
-    /** 移动节点到该父节点下（页面 / 文件夹均可）；防环由写入服务统一守卫 */
-    parentId?: string
+    /**
+     * 移动节点到该父节点下（页面 / 文件夹均可）；防环由写入服务统一守卫。
+     * 三态：缺省=不动父节点；null=移回空间根层；字符串=移入该文件夹。
+     */
+    parentId?: string | null
   }): Promise<WikiBridgeWriteReceipt> {
     const root = await this.resolveWorkspaceRootForSession(params.sessionId)
     const wiki = this.buildWikiServices(params.sessionId, root)
@@ -2175,17 +2210,9 @@ export class SessionService {
     // 重建静默覆写（更新保留 source_type，见 wiki-write.service），Agent 必须
     // 先显式接管 —— 与 UI「转人工维护后才可编辑」同语义。folder 改名与纯
     // 移动放行：rebuild 对已存在 folder 不覆写、且从不改 parentId。
-    if (
-      params.title != null ||
-      params.body != null ||
-      params.summary != null
-    ) {
+    if (params.title != null || params.body != null || params.summary != null) {
       const page = wiki.pageRepo.getById(params.pageId)
-      if (
-        page != null &&
-        page.kind !== 'folder' &&
-        page.source_type === WIKI_REPO_SOURCE_TYPE
-      ) {
+      if (page != null && page.kind !== 'folder' && page.source_type === WIKI_REPO_SOURCE_TYPE) {
         return {
           ok: false,
           error:
@@ -2201,7 +2228,8 @@ export class SessionService {
       ...(params.body != null ? { body: params.body } : {}),
       ...(params.summary != null ? { summary: params.summary } : {}),
       ...(params.tags != null ? { tags: params.tags } : {}),
-      ...(params.parentId != null ? { parentId: params.parentId } : {}),
+      // 三态透传：null=移回根层须显式下发（!= null 会把 null 归并成缺省）
+      ...(params.parentId !== undefined ? { parentId: params.parentId } : {}),
       authorRole: 'agent',
     })
     if (!result.ok) {
@@ -2259,6 +2287,73 @@ export class SessionService {
     }
   }
 
+  /**
+   * wiki Repo 空间重扫桥（wiki_repo_scan）。委托 WikiRepoScanService.rebuild：
+   * 按空间记录的 repo_path 重新扫描重建骨架页（人工接管页不覆写），扫描后
+   * 自动增强由服务层 fire-and-forget，回执不等待。repo 空间固定 project/NULL，
+   * 正文路径由 store 的 project-orphan 规则解析，不依赖 workspaceRootPath。
+   * 越权防线与 bridgeWikiList 同款：spaceId 须落在会话可见空间集合内。
+   */
+  async bridgeWikiRepoScan(params: {
+    sessionId: string
+    spaceId: string
+  }): Promise<WikiBridgeRepoScanReceipt> {
+    const wiki = this.buildWikiServices(params.sessionId)
+    if (!this.resolveWikiVisibleSpaceIds(wiki.scopes).includes(params.spaceId)) {
+      log.warn(`wiki repo scan 拒绝越权空间：session=${params.sessionId} space=${params.spaceId}`)
+      return {
+        ok: false,
+        pagesCreated: 0,
+        pagesUpdated: 0,
+        pagesSkipped: 0,
+        filesScanned: 0,
+        truncated: false,
+        error: '目标空间不在本会话可见范围内',
+      }
+    }
+    const result: WikiRepoScanResult = await wiki.repoScanService.rebuild(params.spaceId)
+    if (!result.ok) {
+      return {
+        ok: false,
+        pagesCreated: result.pagesCreated,
+        pagesUpdated: result.pagesUpdated,
+        pagesSkipped: result.pagesSkipped,
+        filesScanned: result.filesScanned,
+        truncated: result.truncated,
+        ...(result.message != null ? { error: result.message } : {}),
+      }
+    }
+    return {
+      ok: true,
+      ...(result.spaceId != null ? { spaceId: result.spaceId } : {}),
+      ...(result.repoRev !== undefined ? { repoRev: result.repoRev } : {}),
+      pagesCreated: result.pagesCreated,
+      pagesUpdated: result.pagesUpdated,
+      pagesSkipped: result.pagesSkipped,
+      filesScanned: result.filesScanned,
+      truncated: result.truncated,
+    }
+  }
+
+  /**
+   * wiki Repo 空间漂移状态桥（wiki_repo_status）。服务层 null（空间不存在）
+   * 映射为 ok:true + status 缺省；非 repo 空间（repo_path=null）由 status
+   * 原文透出，渲染层区分「未关联仓库路径」文案。越权防线与 scan 同口径。
+   */
+  async bridgeWikiRepoStatus(params: {
+    sessionId: string
+    spaceId: string
+  }): Promise<WikiBridgeRepoStatusReceipt> {
+    const wiki = this.buildWikiServices(params.sessionId)
+    if (!this.resolveWikiVisibleSpaceIds(wiki.scopes).includes(params.spaceId)) {
+      log.warn(`wiki repo status 拒绝越权空间：session=${params.sessionId} space=${params.spaceId}`)
+      return { ok: false, error: '目标空间不在本会话可见范围内' }
+    }
+    const status = await wiki.repoScanService.status(params.spaceId)
+    if (status == null) return { ok: true }
+    return { ok: true, status }
+  }
+
   /** wiki 归档页面桥（可恢复）。 */
   async bridgeWikiArchive(params: {
     sessionId: string
@@ -2268,6 +2363,20 @@ export class SessionService {
     const wiki = this.buildWikiServices(params.sessionId, root)
     if (!this.isWikiPageVisible(wiki, params.pageId)) {
       return { ok: false, error: '页面不在本会话可见范围内' }
+    }
+    // Repo 页归档守卫：getBySlug 过滤 archived（归档释放槽位），下次重建会把
+    // 该页当新页重新生成 —— 归档行残留 + 复活页双份噪声，且 manual / ignored
+    // 身份一并丢失（三态全拦，folder 容器同样会被重建）。
+    {
+      const page = wiki.pageRepo.getById(params.pageId)
+      if (page != null && repoOwnershipFromSourceType(page.source_type) != null) {
+        return {
+          ok: false,
+          error:
+            '该页属于 Repo Wiki，归档后下次重建会重新生成新页（归档行残留、所有权丢失）；' +
+            `如需跳过该页请调用 wiki_set_ownership(id="${params.pageId}", ownership="ignored")`,
+        }
+      }
     }
     const result = await wiki.writeService.archivePage(params.pageId)
     if (!result.ok) return { ok: false, error: result.message }
@@ -2310,6 +2419,20 @@ export class SessionService {
     const wiki = this.buildWikiServices(params.sessionId, root)
     if (!this.isWikiPageVisible(wiki, params.pageId)) {
       return { ok: false, error: '页面不在本会话可见范围内' }
+    }
+    // Repo 页删除守卫：行消失后下次重建走"新建分支"原样复活，且 manual /
+    // ignored 身份降级回 generated（三态全拦，folder 容器同样会复活）。
+    // 「这页不要了」的持久表达是 ignored，不是删除。
+    {
+      const page = wiki.pageRepo.getById(params.pageId)
+      if (page != null && repoOwnershipFromSourceType(page.source_type) != null) {
+        return {
+          ok: false,
+          error:
+            '该页属于 Repo Wiki，物理删除后下次重建会以生成页复活（所有权标记丢失）；' +
+            `如需跳过该页请调用 wiki_set_ownership(id="${params.pageId}", ownership="ignored")`,
+        }
+      }
     }
     const result = await wiki.writeService.deletePage(params.pageId)
     if (!result.ok) return { ok: false, error: result.message }
@@ -8115,7 +8238,8 @@ export class SessionService {
             expected_version: z.number().int().min(1),
             title: z.string().min(1).max(200).optional(),
             body: z.string().optional(),
-            parent_id: z.string().min(1).max(64).optional(),
+            // nullable 放在 optional 前：null=移回根层（服务层三态语义），缺省=不动
+            parent_id: z.string().min(1).max(64).nullable().optional(),
             summary: z.string().max(600).optional(),
             tags: z.array(z.string().min(1).max(40)).max(20).optional(),
           },
@@ -8129,7 +8253,9 @@ export class SessionService {
                   typeof args.expected_version === 'number' ? args.expected_version : 0,
                 ...(typeof args.title === 'string' ? { title: args.title } : {}),
                 ...(typeof args.body === 'string' ? { body: args.body } : {}),
-                ...(typeof args.parent_id === 'string' ? { parentId: args.parent_id } : {}),
+                ...(args.parent_id === null || typeof args.parent_id === 'string'
+                  ? { parentId: args.parent_id }
+                  : {}),
                 ...(typeof args.summary === 'string' ? { summary: args.summary } : {}),
                 ...(Array.isArray(args.tags)
                   ? { tags: args.tags.filter((t): t is string => typeof t === 'string') }
@@ -8239,6 +8365,29 @@ export class SessionService {
                   args.ownership === 'manual' || args.ownership === 'ignored'
                     ? args.ownership
                     : 'generated',
+              }),
+            ),
+        },
+        wiki_repo_scan: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_repo_scan')!.description,
+          schema: { space_id: z.string().min(1).max(64) },
+          run: async (args) =>
+            this.summarizeWikiRepoScanReceipt(
+              await this.bridgeWikiRepoScan({
+                sessionId,
+                spaceId: typeof args.space_id === 'string' ? args.space_id : '',
+              }),
+            ),
+        },
+        wiki_repo_status: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_repo_status')!
+            .description,
+          schema: { space_id: z.string().min(1).max(64) },
+          run: async (args) =>
+            this.summarizeWikiRepoStatusReceipt(
+              await this.bridgeWikiRepoStatus({
+                sessionId,
+                spaceId: typeof args.space_id === 'string' ? args.space_id : '',
               }),
             ),
         },
@@ -8389,6 +8538,34 @@ export class SessionService {
       return `已忽略 [${receipt.id}] ${receipt.title ?? ''}${v}重建跳过该页）`
     }
     return `已回归生成态 [${receipt.id}] ${receipt.title ?? ''}${v}下次重建将覆写现有内容）`
+  }
+
+  /** repo 扫描回执 → agent 可读文本（与 spark-wiki-mcp-server.mjs 的 summarize 同义）。 */
+  private summarizeWikiRepoScanReceipt(receipt: WikiBridgeRepoScanReceipt): string {
+    if (!receipt.ok) {
+      return `repo 扫描失败：${receipt.error ?? '未知错误'}`
+    }
+    let text =
+      `repo 扫描完成 ${receipt.spaceId ?? '未知'}：rev=${receipt.repoRev ?? '未知'}，` +
+      `新建 ${receipt.pagesCreated}，更新 ${receipt.pagesUpdated}，` +
+      `跳过 ${receipt.pagesSkipped}，文件 ${receipt.filesScanned}`
+    if (receipt.truncated) text += '（文件数达上限已截断）'
+    return text
+  }
+
+  /** repo 漂移状态回执 → agent 可读文本（与 spark-wiki-mcp-server.mjs 的 summarize 同义）。 */
+  private summarizeWikiRepoStatusReceipt(receipt: WikiBridgeRepoStatusReceipt): string {
+    if (!receipt.ok) {
+      return `repo 状态查询失败：${receipt.error ?? '未知错误'}`
+    }
+    const s = receipt.status
+    if (s == null) return '空间不存在'
+    if (s.repoPath == null) return '该空间未关联仓库路径（非 repo 空间）'
+    return (
+      `repo 状态 ${s.spaceId}：路径 ${s.repoPath}，` +
+      `已扫描 rev=${s.generatedRev ?? '未知'}，当前 HEAD=${s.currentRev ?? '未知'}，` +
+      `落后 ${s.commitsBehind ?? '未知'} 提交，stale=${s.stale}（阈值 ${s.threshold}）`
+    )
   }
 
   /**

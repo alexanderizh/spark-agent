@@ -155,9 +155,8 @@ describe('Agent wiki 桥（repo 空间可见 / CAS 版本链）', () => {
     foreignPageId = foreignPage.row.id
 
     service = new SessionService(db, () => {})
-    noWorkspaceSessionId = (
-      await service.createSession({ providerProfileId: 'provider-test' })
-    ).sessionId
+    noWorkspaceSessionId = (await service.createSession({ providerProfileId: 'provider-test' }))
+      .sessionId
 
     new WorkspaceRepository(db).create({
       id: 'ws-1',
@@ -402,5 +401,83 @@ describe('Agent wiki 桥（repo 空间可见 / CAS 版本链）', () => {
     })
     expect(foreignPage.ok).toBe(false)
     expect(foreignPage.error).toContain('可见范围')
+  })
+
+  // ── P1 生成页删除/归档守卫：行消失会让 rebuild 走新建分支复活 ────────────
+
+  it('删除/归档守卫：repo 三态页全拦并指引 ignored，页面原样保留', async () => {
+    // 生成态：delete 与 archive 都拒绝，指引带 pageId 可直接照抄
+    const del = await service.bridgeWikiDelete({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+    })
+    expect(del.ok).toBe(false)
+    expect(del.error).toContain('wiki_set_ownership')
+    expect(del.error).toContain(generatedPageId)
+
+    const arc = await service.bridgeWikiArchive({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+    })
+    expect(arc.ok).toBe(false)
+    expect(arc.error).toContain('归档')
+
+    // manual / ignored 同样拦截：删除丢身份、归档卡行且复活
+    await service.bridgeWikiSetOwnership({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+      ownership: 'manual',
+    })
+    const delManual = await service.bridgeWikiDelete({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+    })
+    expect(delManual.ok).toBe(false)
+
+    const delIgnored = await service.bridgeWikiDelete({
+      sessionId: workspaceSessionId,
+      pageId: ignoredPageId,
+    })
+    expect(delIgnored.ok).toBe(false)
+    const arcIgnored = await service.bridgeWikiArchive({
+      sessionId: workspaceSessionId,
+      pageId: ignoredPageId,
+    })
+    expect(arcIgnored.ok).toBe(false)
+
+    // 生成态 folder 容器删了 rebuild 同样会重建 → 拦
+    const delFolder = await service.bridgeWikiDelete({
+      sessionId: workspaceSessionId,
+      pageId: generatedFolderId,
+    })
+    expect(delFolder.ok).toBe(false)
+
+    // 拒绝必须无副作用：页面原样可读
+    const still = await service.bridgeWikiRead({
+      sessionId: workspaceSessionId,
+      pageId: generatedPageId,
+    })
+    expect('error' in still && still.error != null).toBe(false)
+  })
+
+  it('守卫按所有权标记而非空间判定：无标记页与普通空间页放行', async () => {
+    // repo 空间里 source_type 为空的页（扫描前手工建的）不受守卫影响
+    const delUnmarked = await service.bridgeWikiDelete({
+      sessionId: workspaceSessionId,
+      pageId,
+    })
+    expect(delUnmarked.ok).toBe(true)
+
+    // 普通空间页面归档/还原照常
+    const arc = await service.bridgeWikiArchive({
+      sessionId: workspaceSessionId,
+      pageId: userSpacePageId,
+    })
+    expect(arc.ok).toBe(true)
+    const restore = await service.bridgeWikiRestore({
+      sessionId: workspaceSessionId,
+      pageId: userSpacePageId,
+    })
+    expect(restore.ok).toBe(true)
   })
 })

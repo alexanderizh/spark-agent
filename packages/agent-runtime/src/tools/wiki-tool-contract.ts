@@ -4,11 +4,11 @@
  * Wiki 工具契约 — 内置（in-process SDK MCP）与 MCP（stdio 瘦桥）两形态共用。
  *
  * 职责：
- *   - 13 个工具（mcp__spark_wiki__ 命名空间）的名称、描述、入参 schema 单一事实源
+ *   - 15 个工具（mcp__spark_wiki__ 命名空间）的名称、描述、入参 schema 单一事实源
  *   - L0 system prompt 片段（≤200 token，递进规则写进提示词作为行为契约）
  *   - 常驻 token 计量（L0 + L0′ ≤ 800 软目标，CI 断言基线）
  *
- * 挂载集（S1）：5 只读 + 7 写 ——
+ * 挂载集（S1）：5 只读 + 9 写 ——
  *   只读 wiki_list_spaces / wiki_search / wiki_read / wiki_list / wiki_backlinks（免审批）
  *   写入 wiki_write / wiki_update / wiki_archive / wiki_delete / wiki_restore / wiki_link /
  *        wiki_set_ownership（走审批）
@@ -47,6 +47,9 @@ export const WIKI_WRITE_TOOL_NAMES = [
   'wiki_restore',
   'wiki_link',
   'wiki_set_ownership',
+  // repo 编排：scan 是重建写操作；status 虽只读但与 scan 成对，一并走审批门控
+  'wiki_repo_scan',
+  'wiki_repo_status',
 ] as const
 
 /** S3 起追加的写工具（技能提议区落地后挂载；契约已冻结） */
@@ -83,6 +86,9 @@ export const WIKI_DEFERRED_TOOL_NAMES = [
   'wiki_propose_skill',
   // Repo 所有权切换是低频决策（接管/放弃跟踪），且生成页编辑守卫会指引到它
   'wiki_set_ownership',
+  // repo 编排（重扫 / 漂移查询）是低频动作，瘦身时收进二级入口
+  'wiki_repo_scan',
+  'wiki_repo_status',
 ] as const
 
 /** 二级入口工具名（工具瘦身开启时挂载） */
@@ -132,8 +138,7 @@ export interface WikiToolDefinition {
 export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
   {
     name: 'wiki_list_spaces',
-    description:
-      '列出当前会话可访问的知识库空间（每空间一行：id+名称+页面数）。取用 wiki 前先看有哪些空间。',
+    description: '列出当前会话可访问的知识库空间（每空间一行：id+名称+页面数）。',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -141,8 +146,7 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
   },
   {
     name: 'wiki_search',
-    description:
-      '按关键词检索知识库页面（FTS 全文，中英文均可）。只返回 id+标题+摘要+标签；需要全文时再用 wiki_read。',
+    description: '按关键词检索知识库页面（FTS 全文，中英文均可）。只返回 id+标题+摘要+标签。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -229,7 +233,7 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
         title: { type: 'string', description: '新标题（内容页须带 body；folder 可单改）。' },
         body: { type: 'string', description: '新正文。' },
         parent_id: {
-          type: 'string',
+          type: ['string', 'null'],
           description: '移动到该父节点下（只能是文件夹）；传 null 移回根层。',
         },
         summary: { type: 'string', description: '新摘要（须带 body）。' },
@@ -310,11 +314,34 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
     },
   },
   {
+    name: 'wiki_repo_scan',
+    description: '重扫 Repo Wiki 空间（重建骨架页，人工接管页不覆写）。代码变动后同步用。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        space_id: { type: 'string', description: 'Repo 空间 id。' },
+      },
+      required: ['space_id'],
+    },
+  },
+  {
+    name: 'wiki_repo_status',
+    description: '查 Repo Wiki 空间漂移状态（已扫描 rev vs 当前 HEAD、落后提交数）。只读。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        space_id: { type: 'string', description: 'Repo 空间 id。' },
+      },
+      required: ['space_id'],
+    },
+  },
+  {
     name: WIKI_ADMIN_TOOL_NAME,
     description:
       '知识库低频入口。tool 取 enum 中的子工具名，args 传其入参：' +
       'wiki_update(id,expected_version)、wiki_set_ownership(id,ownership)、' +
-      'wiki_link(from_id,to_id)、wiki_propose_skill(name,purpose,…)；其余传 id 即可。',
+      'wiki_link(from_id,to_id)、wiki_propose_skill(name,purpose,…)、' +
+      'wiki_repo_scan/status(space_id)；其余传 id 即可。',
     inputSchema: {
       type: 'object',
       properties: {

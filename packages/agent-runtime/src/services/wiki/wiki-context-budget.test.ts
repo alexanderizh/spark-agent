@@ -128,7 +128,7 @@ describe('WikiContextBudget（服务端强制裁剪）', () => {
     expect(total).toBeLessThanOrEqual(800)
   })
 
-  it('工具瘦身把常驻 token 压回 ≤800 软目标（默认全量档放宽到 1400）', () => {
+  it('工具瘦身把常驻 token 压回 ≤800 软目标（默认全量档放宽到 1700）', () => {
     const full = measureS1ResidentTokens()
     const slim = measureSlimResidentTokens()
     // eslint-disable-next-line no-console
@@ -138,23 +138,25 @@ describe('WikiContextBudget（服务端强制裁剪）', () => {
     // 瘦身档位（首屏四件套 + 空间列表 + 二级入口）必须落在 §8.3 的 800 软目标内
     expect(slim).toBeLessThanOrEqual(800)
     // 默认全量档位超出软目标是有意的取舍：能力优先，超限由设置里的瘦身开关兜底。
-    // 上限 1500（2026-10 二次校准：Repo 所有权感知/设置工具落地后全量档实测
-    // 1479，旧硬线 1400 是 12 工具时代定的）。仍是 800 软目标的「两倍警戒线」
-    // 之内；超过说明必须再精简描述而不是继续加工具。
-    expect(full).toBeLessThanOrEqual(1500)
+    // 上限 1700（2026-10 三次校准：Repo 编排工具族 wiki_repo_scan/status 落地后
+    // 全量档实测 1599，旧硬线 1500 是 13 工具时代定的；slim 侧已用描述压缩把
+    // admin 枚举增长对冲回 798）。超过说明必须再精简描述而不是继续加工具。
+    expect(full).toBeLessThanOrEqual(1700)
   })
 
   it('契约完整性：工具定义齐备、命名规范、读写集互斥', () => {
     const names = WIKI_TOOL_DEFINITIONS.map((d) => d.name)
-    // 10 个 S1 工具 + S3 的技能提议 + 取消归档 + 所有权设置 + 二级入口
-    expect(names).toHaveLength(14)
+    // 10 个 S1 工具 + S3 的技能提议 + 取消归档 + 所有权设置 + repo 编排 ×2 + 二级入口
+    expect(names).toHaveLength(16)
     expect(names).toContain('wiki_propose_skill')
     expect(names).toContain('wiki_restore')
     expect(names).toContain('wiki_set_ownership')
+    expect(names).toContain('wiki_repo_scan')
+    expect(names).toContain('wiki_repo_status')
     expect(names).toContain(WIKI_ADMIN_TOOL_NAME)
     expect(WIKI_S0_TOOL_NAMES).toHaveLength(3)
     expect(WIKI_ALL_READ_TOOL_NAMES).toHaveLength(5)
-    expect(WIKI_WRITE_TOOL_NAMES).toHaveLength(7)
+    expect(WIKI_WRITE_TOOL_NAMES).toHaveLength(9)
     expect(WIKI_S3_TOOL_NAMES).toHaveLength(1)
     expect(WIKI_READ_TOOL_NAMES).toEqual(WIKI_ALL_READ_TOOL_NAMES)
     // archive 与 restore 必须成对出现，且 archive 的描述要指向还原入口
@@ -184,8 +186,8 @@ describe('WikiContextBudget（服务端强制裁剪）', () => {
   it('挂载计划：默认全量；工具瘦身只留核心 + 二级入口（能力不丢失）', () => {
     const full = resolveWikiMountPlan(false)
     expect(full.admin).toBe(false)
-    // 5 只读 + 7 写（含 Repo 所有权设置）+ S3 技能提议（低频但首屏可见，默认能力优先）
-    expect(full.toolNames).toHaveLength(13)
+    // 5 只读 + 9 写（含 Repo 所有权设置 + repo 编排 ×2）+ S3 技能提议（低频但首屏可见，默认能力优先）
+    expect(full.toolNames).toHaveLength(15)
     expect(full.toolNames).toContain('wiki_delete')
     expect(full.toolNames).toContain('wiki_restore')
     expect(full.toolNames).toContain('wiki_propose_skill')

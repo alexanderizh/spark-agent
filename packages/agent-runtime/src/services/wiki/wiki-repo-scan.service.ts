@@ -196,7 +196,13 @@ export class WikiRepoScanService {
         continue
       }
       if (draft.kind === 'folder') {
-        // 容器已存在即复用：不覆写标题（用户改过名保留），只登记挂载点
+        // 容器已存在即复用：不覆写标题（用户改过名保留），只登记挂载点。
+        // 存量归一：早期创建分支丢弃 sourceType（folder 一律落兜底 'manual'），
+        // 老扫描空间的 folder 因此不在生成态、逃过删除/归档守卫——归一回生成
+        // 态。setOwnership 的接管标记是 'repo-scan-manual'（不同值），不受影响。
+        if (existing.source_type === 'manual') {
+          this.pageRepo.update(existing.id, { source_type: WIKI_REPO_SOURCE_TYPE })
+        }
         folderIdBySlug.set(draft.slug, existing.id)
         continue
       }

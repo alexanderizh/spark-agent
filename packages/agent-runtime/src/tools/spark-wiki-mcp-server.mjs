@@ -37,6 +37,9 @@ const DEFERRED_TOOLS = [
   'wiki_propose_skill',
   // Repo 所有权切换是低频决策（接管/放弃跟踪），且生成页编辑守卫会指引到它
   'wiki_set_ownership',
+  // repo 编排（重扫 / 漂移查询）是低频动作，瘦身时收进二级入口
+  'wiki_repo_scan',
+  'wiki_repo_status',
 ]
 const ALL_TOOLS = [...CORE_TOOLS, ...DEFERRED_TOOLS]
 const ADMIN_TOOL = 'wiki_admin'
@@ -136,7 +139,7 @@ const IMPL = {
       title,
       ...(body.length > 0 ? { body } : {}),
       ...(kind != null ? { kind } : {}),
-      ...(optionalStr(args.parent_id) != null ? { parent_id: args.parent_id } : {}),
+      ...(optionalStr(args.parent_id) != null ? { parentId: args.parent_id } : {}),
       ...(optionalStr(args.summary) != null ? { summary: args.summary } : {}),
       ...(Array.isArray(args.tags) ? { tags: args.tags.filter((t) => typeof t === 'string') } : {}),
     })
@@ -151,7 +154,12 @@ const IMPL = {
       expectedVersion,
       ...(optionalStr(args.title) != null ? { title: args.title } : {}),
       ...(optionalStr(args.body) != null ? { body: args.body } : {}),
-      ...(optionalStr(args.parent_id) != null ? { parent_id: args.parent_id } : {}),
+      // parent_id 三态：不传=不动父节点；null=移回根层；非空字符串=移入该文件夹。
+      // 键名用 camel（与载荷其余键及桥端 handler 一致，历史 snake 键从未被 handler 读取）
+      ...(args.parent_id === null ||
+      (typeof args.parent_id === 'string' && args.parent_id.length > 0)
+        ? { parentId: args.parent_id }
+        : {}),
       ...(optionalStr(args.summary) != null ? { summary: args.summary } : {}),
       ...(Array.isArray(args.tags) ? { tags: args.tags.filter((t) => typeof t === 'string') } : {}),
     })
@@ -209,20 +217,28 @@ const IMPL = {
     }
     return rpc('wiki.set_ownership', { sessionId: SID, pageId: id, ownership })
   },
+  async wiki_repo_scan(args) {
+    const spaceId = str(args.space_id)
+    if (!spaceId) throw new Error('space_id is required')
+    return rpc('wiki.repo_scan', { sessionId: SID, spaceId })
+  },
+  async wiki_repo_status(args) {
+    const spaceId = str(args.space_id)
+    if (!spaceId) throw new Error('space_id is required')
+    return rpc('wiki.repo_status', { sessionId: SID, spaceId })
+  },
 }
 
 // ── Tool definitions（与 wiki-tool-contract.ts 同义同描述）──────────────────
 const TOOLS = [
   {
     name: 'wiki_list_spaces',
-    description:
-      '列出当前会话可访问的知识库空间（每空间一行：id+名称+页面数）。取用 wiki 前先看有哪些空间。',
+    description: '列出当前会话可访问的知识库空间（每空间一行：id+名称+页面数）。',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'wiki_search',
-    description:
-      '按关键词检索知识库页面（FTS 全文，中英文均可）。只返回 id+标题+摘要+标签；需要全文时再用 wiki_read。',
+    description: '按关键词检索知识库页面（FTS 全文，中英文均可）。只返回 id+标题+摘要+标签。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -308,7 +324,7 @@ const TOOLS = [
         title: { type: 'string', description: '新标题（内容页须带 body；folder 可单改）。' },
         body: { type: 'string', description: '新正文。' },
         parent_id: {
-          type: 'string',
+          type: ['string', 'null'],
           description: '移动到该父节点下（只能是文件夹）；传 null 移回根层。',
         },
         summary: { type: 'string', description: '新摘要（须带 body）。' },
@@ -388,6 +404,28 @@ const TOOLS = [
       required: ['id', 'ownership'],
     },
   },
+  {
+    name: 'wiki_repo_scan',
+    description: '重扫 Repo Wiki 空间（重建骨架页，人工接管页不覆写）。代码变动后同步用。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        space_id: { type: 'string', description: 'Repo 空间 id。' },
+      },
+      required: ['space_id'],
+    },
+  },
+  {
+    name: 'wiki_repo_status',
+    description: '查 Repo Wiki 空间漂移状态（已扫描 rev vs 当前 HEAD、落后提交数）。只读。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        space_id: { type: 'string', description: 'Repo 空间 id。' },
+      },
+      required: ['space_id'],
+    },
+  },
 ]
 
 const ADMIN_TOOL_DEF = {
@@ -395,7 +433,8 @@ const ADMIN_TOOL_DEF = {
   description:
     '知识库低频入口。tool 取 enum 中的子工具名，args 传其入参：' +
     'wiki_update(id,expected_version)、wiki_set_ownership(id,ownership)、' +
-    'wiki_link(from_id,to_id)、wiki_propose_skill(name,purpose,…)；其余传 id 即可。',
+    'wiki_link(from_id,to_id)、wiki_propose_skill(name,purpose,…)、' +
+    'wiki_repo_scan/status(space_id)；其余传 id 即可。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -540,6 +579,30 @@ function summarize(name, data) {
       return `已忽略 [${data.id}] ${data.title || ''}${v}重建跳过该页）`
     }
     return `已回归生成态 [${data.id}] ${data.title || ''}${v}下次重建将覆写现有内容）`
+  }
+  if (name === 'wiki_repo_scan') {
+    if (data.ok === false || data.error) {
+      return `repo 扫描失败：${data.error || data.message || '未知错误'}`
+    }
+    let text =
+      `repo 扫描完成 ${data.spaceId ?? '未知'}：rev=${data.repoRev ?? '未知'}，` +
+      `新建 ${data.pagesCreated}，更新 ${data.pagesUpdated}，` +
+      `跳过 ${data.pagesSkipped}，文件 ${data.filesScanned}`
+    if (data.truncated) text += '（文件数达上限已截断）'
+    return text
+  }
+  if (name === 'wiki_repo_status') {
+    if (data.ok === false || data.error) {
+      return `repo 状态查询失败：${data.error || data.message || '未知错误'}`
+    }
+    const s = data.status
+    if (s == null) return '空间不存在'
+    if (s.repoPath == null) return '该空间未关联仓库路径（非 repo 空间）'
+    return (
+      `repo 状态 ${s.spaceId}：路径 ${s.repoPath}，` +
+      `已扫描 rev=${s.generatedRev ?? '未知'}，当前 HEAD=${s.currentRev ?? '未知'}，` +
+      `落后 ${s.commitsBehind ?? '未知'} 提交，stale=${s.stale}（阈值 ${s.threshold}）`
+    )
   }
   return JSON.stringify(data)
 }

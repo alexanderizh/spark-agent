@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest'
 import { spawn } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { buildSparkEngineMcpRuntime } from '../services/session/spark-engine-runtime.js'
 import { resolveSparkWikiMcpServerPath } from '../services/session-mcp-tooling-helpers.js'
 import {
@@ -477,5 +477,41 @@ describe('Wiki 工具面（S1）', () => {
     } finally {
       server.close()
     }
+  })
+
+  // ─── repo 编排工具：契约与瘦桥 mjs 的两处副本同步（文本层）────────────────
+  // 上面的子进程断言已覆盖运行时一致性；这里再从源文本层锁一遍，副本漂移
+  // （改了契约忘了同步 mjs）在文本层就能暴露，不必起子进程。
+
+  describe('repo 编排工具副本同步（契约 ↔ spark-wiki-mcp-server.mjs 文本层）', () => {
+    const serverPath = resolveSparkWikiMcpServerPath()
+    const source = serverPath != null ? readFileSync(serverPath, 'utf-8') : ''
+
+    it('契约含 wiki_repo_scan / wiki_repo_status 定义，且描述在 mjs 源文本逐字出现', () => {
+      const scanDef = WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_repo_scan')
+      const statusDef = WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_repo_status')
+      expect(scanDef).toBeDefined()
+      expect(statusDef).toBeDefined()
+      expect(source).toContain(scanDef!.description)
+      expect(source).toContain(statusDef!.description)
+    })
+
+    it('两工具进写工具集（审批门控）+ DEFERRED（瘦身收进二级入口）', () => {
+      for (const name of ['wiki_repo_scan', 'wiki_repo_status'] as const) {
+        expect(WIKI_WRITE_TOOL_NAMES).toContain(name)
+        expect(WIKI_DEFERRED_TOOL_NAMES).toContain(name)
+      }
+    })
+
+    it('wiki_admin 描述（契约与 mjs 副本）都提及 wiki_repo_scan/status(space_id)', () => {
+      const admin = WIKI_TOOL_DEFINITIONS.find((d) => d.name === WIKI_ADMIN_TOOL_NAME)!
+      expect(admin.description).toContain('wiki_repo_scan/status(space_id)')
+      expect(source).toContain('wiki_repo_scan/status(space_id)')
+    })
+
+    it('mjs IMPL 接线到 wiki.repo_scan / wiki.repo_status RPC', () => {
+      expect(source).toContain("rpc('wiki.repo_scan'")
+      expect(source).toContain("rpc('wiki.repo_status'")
+    })
   })
 })
