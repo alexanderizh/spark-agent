@@ -59,6 +59,8 @@ import {
 import { z } from 'zod'
 import { executeHttpTool } from '../custom-tools/http-executor.js'
 import type { CustomToolService } from '../custom-tools/custom-tool.service.js'
+import type { ToolAuditRecorder } from '../tool-audit/tool-audit-recorder.js'
+import { redactToolPayload } from '../tool-audit/tool-audit-payload.js'
 
 export interface ToolPackageChangeEvent {
   change:
@@ -146,6 +148,11 @@ export class ToolPackageService {
     processHost?: ToolProcessHost,
     private readonly secretStore: ToolPackageSecretStore = defaultSecretStore,
     private readonly mcpBridge?: ToolPackageMcpBridge,
+    /** 工具执行审计（设计 §5）：invokeInstalledVersion 直记入账（覆盖测试路径与 mcp-import 内层）；模型路径由目录包装层负责。 */
+    private readonly toolAudit?: Pick<
+      ToolAuditRecorder,
+      'recordDirectStart' | 'recordDirectFinish'
+    >,
   ) {
     this.packageRootOverride = packageRoot
     this.databasePath = typeof db.path === 'string' && db.path.length > 0 ? db.path : undefined
@@ -1191,33 +1198,39 @@ export class ToolPackageService {
     }
     const manifest = ToolPackageManifestSchema.parse(JSON.parse(version.manifest_json) as unknown)
     assertExecutableAdapter(manifest)
-    const traceId = randomUUID()
     const correlationId = request.context?.correlationId ?? randomUUID()
-    this.invocationRepositoryInstance?.start({
-      id: traceId,
-      correlationId,
-      sourceKind: 'tool-package',
-      sourceId: request.packageId,
-      packageId: request.packageId,
-      toolName: request.toolName,
-      version: request.version,
-      adapter: manifest.runtime.adapter,
-      ...(request.context?.sessionId != null ? { sessionId: request.context.sessionId } : {}),
-      ...(request.context?.turnId != null ? { turnId: request.context.turnId } : {}),
-      ...(request.context?.projectId != null ? { projectId: request.context.projectId } : {}),
-      ...(request.context?.agentId != null ? { agentId: request.context.agentId } : {}),
-      ...(request.context?.workflowId != null ? { workflowId: request.context.workflowId } : {}),
-      invocationSource:
-        request.context?.invocationSource ??
-        (request.context?.workflowId != null ? 'workflow' : 'model'),
-      ...(request.context?.hookAttribution != null
-        ? {
-            hookId: request.context.hookAttribution.hookId,
-            hookRunId: request.context.hookAttribution.hookRunId,
-          }
-        : {}),
-      inputSha256: hashJson(request.input),
-    })
+    // 工具执行审计（设计 §5.2 迁移）：start/finish 由 ToolInvocationRepository 直写
+    // 升级为 recorder 直记——保留真实 started_at 时序与全部归因，新增脱敏、
+    // 内容寻址归档与引擎补全；toolAudit 缺席（无库测试实例）时无账本行。
+    const auditRowId = this.toolAudit?.recordDirectStart(
+      {
+        sourceKind: 'tool-package',
+        sourceId: request.packageId,
+        packageId: request.packageId,
+        toolName: request.toolName,
+        version: request.version,
+        adapter: manifest.runtime.adapter,
+      },
+      {
+        ...(request.context?.sessionId != null ? { sessionId: request.context.sessionId } : {}),
+        ...(request.context?.turnId != null ? { turnId: request.context.turnId } : {}),
+        ...(request.context?.projectId != null ? { projectId: request.context.projectId } : {}),
+        ...(request.context?.agentId != null ? { agentId: request.context.agentId } : {}),
+        ...(request.context?.workflowId != null ? { workflowId: request.context.workflowId } : {}),
+        invocationSource:
+          request.context?.invocationSource ??
+          (request.context?.workflowId != null ? 'workflow' : 'model'),
+        ...(request.context?.hookAttribution != null
+          ? {
+              hookId: request.context.hookAttribution.hookId,
+              hookRunId: request.context.hookAttribution.hookRunId,
+            }
+          : {}),
+        // 对账键：工具包测试 / 平台桥按 correlationId 查询账本行。
+        correlationId,
+      },
+      request.input,
+    )
     try {
       const environment = await this.resolveEnvironment(
         request.packageId,
@@ -1333,16 +1346,35 @@ export class ToolPackageService {
       }
       request.signal?.throwIfAborted()
       validateToolPackageOutput(manifest, request.toolName, result)
-      this.invocationRepositoryInstance?.finish(traceId, {
-        status: 'ok',
-        outputBytes: jsonBytes(result),
-      })
+      if (auditRowId != null && this.toolAudit != null) {
+        this.toolAudit.recordDirectFinish(
+          auditRowId,
+          { status: 'ok' },
+          result,
+          request.context?.sessionId,
+        )
+      }
       return result
     } catch (error) {
-      this.invocationRepositoryInstance?.finish(traceId, {
-        status: classifyInvocationFailure(error),
-        errorCode: toolPackageErrorCode(error),
-      })
+      if (auditRowId != null && this.toolAudit != null) {
+        // errorMessage 与 output 同过脱敏管道（审查 D4）：HTTP 适配器错误常回显
+        // URL/query，明文入账本列会泄漏 token。
+        const redactedMessage =
+          error instanceof Error ? redactToolPayload(error.message) : String(error)
+        const messageText =
+          typeof redactedMessage === 'string' ? redactedMessage : String(redactedMessage)
+        this.toolAudit.recordDirectFinish(
+          auditRowId,
+          {
+            status: classifyInvocationFailure(error),
+            errorCode: toolPackageErrorCode(error),
+            errorMessage:
+              messageText.length > 2000 ? `${messageText.slice(0, 2000)}…[truncated]` : messageText,
+          },
+          { error: String(error) },
+          request.context?.sessionId,
+        )
+      }
       throw error
     }
   }
@@ -1522,22 +1554,6 @@ function validateToolPackageOutput(
     throw new Error(
       `Invalid output from Tool Package ${manifest.id}/${toolName}: ${z.prettifyError(parsed.error)}`,
     )
-  }
-}
-
-function hashJson(value: unknown): string {
-  return createHash('sha256').update(safeJson(value)).digest('hex')
-}
-
-function jsonBytes(value: unknown): number {
-  return Buffer.byteLength(safeJson(value), 'utf8')
-}
-
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? 'null'
-  } catch {
-    return '[unserializable]'
   }
 }
 

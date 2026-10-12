@@ -56,6 +56,7 @@ import {
   SessionWorkflowBindingIpcSchemaRegistry,
 } from '../session-workflow-binding.js'
 import { WikiIpcSchemaRegistry } from '../wiki.js'
+import { ToolAuditIpcSchemaRegistry } from '../tool-audit.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -1210,6 +1211,7 @@ export const IpcSchemaRegistry = {
   ...WorkflowBundleIpcSchemaRegistry,
   ...SessionWorkflowBindingIpcSchemaRegistry,
   ...WikiIpcSchemaRegistry,
+  ...ToolAuditIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,

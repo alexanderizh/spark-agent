@@ -11,7 +11,10 @@ import type { RuntimeToolDefinition } from '@spark/protocol'
 import type { CustomToolRuntimeCatalog } from '../custom-tools/custom-tool-runtime-catalog.js'
 import type { ToolPackageRuntimeCatalog } from '../tool-packages/tool-package-runtime-catalog.js'
 import type { ToolProcessInvocationContext } from '../tool-packages/tool-process-host.js'
-import { UnifiedToolCatalog } from '../unified-tools/unified-tool-catalog.js'
+import {
+  UnifiedToolCatalog,
+  type UnifiedToolCatalogAudit,
+} from '../unified-tools/unified-tool-catalog.js'
 
 const log = createLogger('plugin-runtime:mcp-bridge')
 const MAX_RESULT_BYTES = 2 * 1024 * 1024
@@ -54,6 +57,7 @@ export class PluginRuntimeMcpBridge {
     private readonly broker: RuntimeBroker,
     private readonly customTools?: CustomToolRuntimeCatalog,
     private readonly toolPackages?: ToolPackageRuntimeCatalog,
+    private readonly audit?: UnifiedToolCatalogAudit,
   ) {}
 
   async serve(
@@ -224,6 +228,7 @@ export class PluginRuntimeMcpBridge {
       this.broker,
       this.customTools,
       this.toolPackages,
+      this.audit,
     ).list(invocationContext)
     return entries.map((entry) => ({
       runtimeId: entry.sourceKind === 'connector' ? entry.sourceId : null,

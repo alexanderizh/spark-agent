@@ -9,16 +9,24 @@
 export { BaseRepository } from './base.repository.js'
 export { ToolPackageRepository } from './tool-package.repository.js'
 export { ToolInvocationRepository } from './tool-invocation.repository.js'
+export { UNATTRIBUTED_CHAIN_ID, WORKFLOW_CHAIN_PREFIX } from './tool-invocation.repository.js'
 export { ToolPackageStorageRepository } from './tool-package-storage.repository.js'
 export type { ToolPackageStorageEntry } from './tool-package-storage.repository.js'
 export type {
+  AppendToolLedgerParams,
   FinishToolInvocationParams,
   ListToolInvocationsParams,
+  ListToolLedgerParams,
+  ListToolLedgerResult,
+  PruneToolLedgerResult,
   StartToolInvocationParams,
   ToolInvocationRow,
   ToolInvocationSource,
   ToolInvocationSourceKind,
   ToolInvocationStatus,
+  ToolLedgerStats,
+  VerifyChainBreakReason,
+  VerifyChainResult,
 } from './tool-invocation.repository.js'
 export type {
   ToolPackageState,

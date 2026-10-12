@@ -5,6 +5,7 @@ import type { CustomToolRuntimeCatalog } from '../custom-tools/custom-tool-runti
 import type { RuntimeBroker } from '../plugin-runtime/runtime-broker.js'
 import type { ToolPackageRuntimeCatalog } from '../tool-packages/tool-package-runtime-catalog.js'
 import type { ToolProcessInvocationContext } from '../tool-packages/tool-process-host.js'
+import type { ToolAuditAttribution, ToolAuditToolMeta } from '../tool-audit/tool-audit-recorder.js'
 
 export type UnifiedToolSourceKind = 'connector' | 'custom-tool' | 'tool-package' | 'builtin'
 
@@ -20,6 +21,22 @@ export interface UnifiedToolCatalogEntry {
   help: Record<string, unknown>
 }
 
+/**
+ * 审计采集点 2（设计方案 §5.2）：目录 invoke 包装层。结构化最小接口由
+ * ToolAuditRecorder 实现——目录侧不直接依赖 recorder 类，测试可注入 fake。
+ */
+export interface UnifiedToolCatalogAudit {
+  /** 目录快照登记（喂事件漏斗的去重名册；同步生效）。 */
+  noteCatalogSnapshot(metas: Array<{ qualifiedName: string }>): void
+  /** invoke 包装：账本行 append → 原 invoke → finish；审计故障时透传原 invoke。 */
+  wrapCatalogInvoke(
+    meta: ToolAuditToolMeta,
+    attribution: ToolAuditAttribution,
+    input: Record<string, unknown>,
+    invoke: (input: Record<string, unknown>) => Promise<unknown>,
+  ): Promise<unknown>
+}
+
 const log = createLogger('unified-tool-catalog')
 
 /** One snapshot used by native function calling, MCP projection and workflows. */
@@ -28,6 +45,7 @@ export class UnifiedToolCatalog {
     private readonly broker?: RuntimeBroker,
     private readonly customTools?: CustomToolRuntimeCatalog,
     private readonly toolPackages?: ToolPackageRuntimeCatalog,
+    private readonly audit?: UnifiedToolCatalogAudit,
   ) {}
 
   async list(
@@ -72,7 +90,62 @@ export class UnifiedToolCatalog {
     }
     const resolved = resolveQualifiedNameCollisions(entries)
     if (resolved.length > 0) resolved.push(createHelpEntry(resolved))
-    return resolved.sort((left, right) => left.qualifiedName.localeCompare(right.qualifiedName))
+    const sorted = resolved.sort((left, right) =>
+      left.qualifiedName.localeCompare(right.qualifiedName),
+    )
+    return this.audit != null ? this.applyAuditWrapping(sorted, context) : sorted
+  }
+
+  /**
+   * 审计包装（§5.2）：custom-tool 与 connector 的 invoke 过 wrapCatalogInvoke
+   * （connector 从此有审计；custom-tool 修复 F4 事后补记）。tool-package 不在目录层
+   * 包装——其服务层 start/finish 已升级为 recorder 直记（覆盖目录/测试/platform/
+   * 嵌套全部路径），目录层再包会双行。名册登记含全部非 builtin 目录工具（事件漏斗
+   * 据此跳过，漏斗行与目录行不重复）。碰撞改名后的 qualifiedName 才是模型可见名。
+   */
+  private applyAuditWrapping(
+    entries: UnifiedToolCatalogEntry[],
+    context: Omit<ToolProcessInvocationContext, 'environment'>,
+  ): UnifiedToolCatalogEntry[] {
+    const auditable = entries.filter((entry) => entry.sourceKind !== 'builtin')
+    this.audit?.noteCatalogSnapshot(
+      auditable.map((entry) => ({ qualifiedName: entry.qualifiedName })),
+    )
+    if (auditable.length === 0) return entries
+    return entries.map((entry) => {
+      if (entry.sourceKind !== 'custom-tool' && entry.sourceKind !== 'connector') return entry
+      const meta: ToolAuditToolMeta = {
+        sourceKind: entry.sourceKind,
+        sourceId: entry.sourceId,
+        ...(entry.sourceKind === 'custom-tool' ? { toolId: entry.sourceId } : {}),
+        // 诊断口径：custom-tool 记 record.id（即 tool.name），connector 记 tool.name。
+        toolName: entry.tool.name,
+        qualifiedName: entry.qualifiedName,
+        ...(entry.version != null ? { version: entry.version } : {}),
+      }
+      const attribution: ToolAuditAttribution = {
+        ...(context.sessionId != null ? { sessionId: context.sessionId } : {}),
+        ...(context.turnId != null ? { turnId: context.turnId } : {}),
+        ...(context.projectId != null ? { projectId: context.projectId } : {}),
+        ...(context.agentId != null ? { agentId: context.agentId } : {}),
+        ...(context.workflowId != null ? { workflowId: context.workflowId } : {}),
+        invocationSource: context.invocationSource ?? 'model',
+        ...(context.hookAttribution != null
+          ? {
+              hookId: context.hookAttribution.hookId,
+              hookRunId: context.hookAttribution.hookRunId,
+            }
+          : {}),
+      }
+      const inner = entry.invoke
+      return {
+        ...entry,
+        invoke: (input: Record<string, unknown>) =>
+          this.audit != null
+            ? this.audit.wrapCatalogInvoke(meta, attribution, input, inner)
+            : inner(input),
+      }
+    })
   }
 
   private async appendConnectorEntries(entries: UnifiedToolCatalogEntry[]): Promise<void> {

@@ -199,6 +199,7 @@ import type { CustomToolService } from './custom-tools/custom-tool.service.js'
 import { CustomToolRuntimeCatalog } from './custom-tools/custom-tool-runtime-catalog.js'
 import { ToolPackageService } from './tool-packages/tool-package.service.js'
 import { ToolPackageRuntimeCatalog } from './tool-packages/tool-package-runtime-catalog.js'
+import { ToolAuditRecorder } from './tool-audit/tool-audit-recorder.js'
 import { UnifiedToolCatalog } from './unified-tools/unified-tool-catalog.js'
 import { TOOL_GUIDANCE_SYSTEM_PROMPT } from './unified-tools/tool-guidance-system-prompt.js'
 
@@ -1238,6 +1239,8 @@ export class SessionService {
   /** 引擎注册表（P1-W1-D5）：kind → 执行器构造 + 能力声明；第三引擎接入只需 register。 */
   private readonly engineRegistry = createDefaultEngineRegistry()
   private readonly usageLedger: SessionUsageLedger
+  /** 工具执行审计记录器（设计 §5 采集层）：事件漏斗 + 目录包装 + MCP 直调三采集点。 */
+  private readonly toolAuditRecorder: ToolAuditRecorder
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandController: SessionCommandController
   private readonly resumeGate = new ResumeGateManager()
@@ -1660,6 +1663,9 @@ export class SessionService {
     private readonly mcpOAuthProvider?: McpOAuthTokenProvider,
   ) {
     this.mcpService = mcpService ?? new McpService(new McpServerRepository(db), mcpOAuthProvider)
+    // 工具执行审计（设计 §5）：唯一账本写入口；启动时做遗留 running 行对账。
+    // 先于 toolPackageService 构造——其测试/mcp-import 路径要用它包审计行。
+    this.toolAuditRecorder = new ToolAuditRecorder({ db })
     this.commandController = new SessionCommandController(this.db, this)
     this.usageLedger = new SessionUsageLedger(this.db)
     this.platformBridge = new PlatformBridgeService()
@@ -1671,6 +1677,7 @@ export class SessionService {
       undefined,
       undefined,
       this.mcpService,
+      this.toolAuditRecorder,
     )
     this.toolPackageRuntimeUnsubscribe = this.toolPackageService.onChange((event) => {
       if (!event.runtimeChanged) return
@@ -6442,6 +6449,7 @@ export class SessionService {
 
     if (this.turnRegistry.isTurnCancelled(turnId)) return
     const executor = this.engineRegistry.get('claude-sdk').createExecutor(config)
+    this.toolAuditRecorder.noteTurnRuntime(sessionId, turnId, 'claude', config.workspaceRootPath)
     const changedFiles = new Set<string>()
     const workspaceRootPath = config.workspaceRootPath
     const observedFileChangeKeys = this.getTurnFileChangeKeys(sessionId, turnId)
@@ -7144,6 +7152,7 @@ export class SessionService {
     const useCodexCli = config.useLocalConfig === true || config.codexCliProvider != null
     if (this.turnRegistry.isTurnCancelled(turnId)) return
     const executor = this.engineRegistry.get('codex').createExecutor(config)
+    this.toolAuditRecorder.noteTurnRuntime(sessionId, turnId, 'codex', config.workspaceRootPath)
     const completeAssistantEvents: AssistantMessageEvent[] = []
     const mentionAgentId = options.mentionAgentId
     const mentionMemberContext =
@@ -7515,6 +7524,7 @@ export class SessionService {
     }
 
     const executor = this.engineRegistry.resolveExecutor('spark', config)
+    this.toolAuditRecorder.noteTurnRuntime(sessionId, turnId, 'spark', config.workspaceRootPath)
     let pendingTerminalStatus: AgentStatusEvent | null = null
     let pendingTerminalBroadcast = false
     let completedBroadcast = false
@@ -8988,6 +8998,7 @@ export class SessionService {
         ? undefined
         : new CustomToolRuntimeCatalog(this.customToolService),
       new ToolPackageRuntimeCatalog(this.toolPackageService),
+      this.toolAuditRecorder,
     ).list(context)
   }
 
@@ -9036,6 +9047,7 @@ export class SessionService {
           ? undefined
           : new CustomToolRuntimeCatalog(this.customToolService),
         new ToolPackageRuntimeCatalog(this.toolPackageService),
+        this.toolAuditRecorder,
       )
     }
     try {
@@ -10326,7 +10338,25 @@ export class SessionService {
     }
     if (spec.source === 'mcp') {
       try {
-        const result = await this.mcpService.callTool(spec.serverId ?? '', spec.toolName, spec.args)
+        // 审计采集点 3（设计 §5.3）：workflow mcp 节点确定性直调不经事件漏斗，单独入账。
+        const result = await this.toolAuditRecorder.wrapDirectInvocation(
+          {
+            sourceKind: 'mcp',
+            sourceId: spec.serverId ?? '',
+            toolName: spec.toolName,
+            ...(spec.serverId != null ? { mcpServerId: spec.serverId } : {}),
+          },
+          {
+            sessionId: invocationContext.sessionId,
+            ...(invocationContext.turnId != null ? { turnId: invocationContext.turnId } : {}),
+            ...(invocationContext.workflowId != null
+              ? { workflowId: invocationContext.workflowId }
+              : {}),
+            invocationSource: 'workflow',
+          },
+          spec.args,
+          () => this.mcpService.callTool(spec.serverId ?? '', spec.toolName, spec.args),
+        )
         const content = formatWorkflowMcpToolResult(result)
         if (result.isError === true) {
           return {
@@ -11296,6 +11326,15 @@ export class SessionService {
     // FR-0a：按成员 adapter 经引擎注册表解析执行器（P1-W1-D5；codex 载具三选一
     // 收敛在 codex descriptor 内）。四执行器 onEvent/cancel/executeTurn 签名一致，监听复用。
     const executor = this.engineRegistry.resolveExecutor(memberAdapter, sdkConfig)
+    // 成员轮审计归因：成员不挂 spark_plugins（无目录工具），账本行来自事件漏斗，
+    // 引擎按成员 adapter 归一（claude-sdk → 'claude'）。
+    const memberEngineKind = resolveEngineKind(memberAdapter)
+    this.toolAuditRecorder.noteTurnRuntime(
+      sessionId,
+      turnId,
+      memberEngineKind === 'claude-sdk' ? 'claude' : memberEngineKind,
+      workspaceRootPath,
+    )
 
     // 显示点 4：AutoRouter 一次性强度 worker 的展示信息（普通成员为 null）。
     // worker 是每轮临时合成、不入 Agent 表，渲染端无法反查其模型，必须随事件下发。
@@ -11710,6 +11749,12 @@ export class SessionService {
     }
     const seq = this.eventSequencer.reserve(sessionId, eventRepo)
     const sequenced = { ...event, seq }
+    // 工具执行审计（设计 §5.1 采集点 1）：全引擎模型路径的 tool_call/tool_result
+    // 在事件漏斗统一入账（成员路径事件重写后同样流经此处）。目录工具（spark_plugins）
+    // 由采集点 2 的目录包装层负责，漏斗侧按名册去重跳过；审计故障不冒泡到事件管线。
+    if (event.type === 'tool_call' || event.type === 'tool_result') {
+      this.toolAuditRecorder.recordEventFunnel(sessionId, turnId, event)
+    }
     try {
       persistAndPublishAgentEvent(eventRepo, sequenced, this.onEvent)
     } catch (err) {
@@ -12089,6 +12134,8 @@ export class SessionService {
       }
       await getTeamMcpHttpBridge().dispose()
       await this.pluginRuntimeMcpBridge?.dispose()
+      // 工具审计：关停 flusher 前排空队列，避免退出丢账。
+      this.toolAuditRecorder.dispose()
       // 执行连续性：Supervisor 心跳定时器与租约缓存随服务关停。
       this.executionSupervisor.dispose()
     })()

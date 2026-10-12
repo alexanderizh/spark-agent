@@ -9,6 +9,7 @@ import { TeamInspectorSection } from '../../components/TeamInspectorSection'
 import { ChatInspectorPerf } from './ChatInspectorPerf'
 import { OutcomeRoomContainer } from '../../outcome-room/OutcomeRoomContainer'
 import { InspectorCollapsibleSection } from '../../components/InspectorCollapsibleSection'
+import { ChatInspectorToolLog } from '../../components/ChatInspectorToolLog'
 import { WorktreePanel } from '../../components/WorktreePanel'
 import { useToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
@@ -214,13 +215,9 @@ export function ChatConfigPanel({
   const visibleAgents = allAgents
     .filter(
       (agent) =>
-        normalizedAgentFilter === '' ||
-        agent.name.toLowerCase().includes(normalizedAgentFilter),
+        normalizedAgentFilter === '' || agent.name.toLowerCase().includes(normalizedAgentFilter),
     )
-    .sort(
-      (a, b) =>
-        Number(allowedAgentDrafts.has(b.id)) - Number(allowedAgentDrafts.has(a.id)),
-    )
+    .sort((a, b) => Number(allowedAgentDrafts.has(b.id)) - Number(allowedAgentDrafts.has(a.id)))
   const sessionId = session?.id as string | undefined
   const workspaceId = workspace?.id
 
@@ -277,7 +274,14 @@ export function ChatConfigPanel({
     } finally {
       setSavingAgentScope(false)
     }
-  }, [workspaceId, projectDefaultAgentDraft, allowedAgentDrafts, updateWorkspace, sessionCtx, toast])
+  }, [
+    workspaceId,
+    projectDefaultAgentDraft,
+    allowedAgentDrafts,
+    updateWorkspace,
+    sessionCtx,
+    toast,
+  ])
 
   const savePromptLayer = useCallback(
     async (scope: 'project' | 'session', scopeRef: string, content: string) => {
@@ -734,7 +738,9 @@ export function ChatConfigPanel({
                     })}
                   </div>
                 ) : (
-                  <div className="project-agent-empty">没有匹配「{agentFilter.trim()}」的 Agent</div>
+                  <div className="project-agent-empty">
+                    没有匹配「{agentFilter.trim()}」的 Agent
+                  </div>
                 )}
                 <button
                   type="button"
@@ -1119,6 +1125,9 @@ export function ChatInspector({
 
         {/* 工程信息统一置底，并保持各自独立、默认折叠。 */}
         {workspace && <WorktreePanel workspaceId={workspace.id} sessionId={session?.id ?? null} />}
+
+        {/* 工具执行审计日志：账本时间线 + 哈希链完整性（tool-audit:* IPC） */}
+        {session != null && <ChatInspectorToolLog sessionId={session.id} />}
 
         {session != null && projectContext != null && (
           <InspectorCollapsibleSection

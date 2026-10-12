@@ -953,48 +953,55 @@ export class CustomToolService {
       })
       return undefined
     }
-    try {
-      const unifiedTraceId = randomUUID()
-      const finishedAt = new Date()
-      const startedAt = new Date(
-        finishedAt.getTime() - Math.max(0, Math.round(input.durationMs)),
-      ).toISOString()
-      this.unifiedInvocations.start({
-        id: unifiedTraceId,
-        correlationId: input.correlationId ?? unifiedTraceId,
-        sourceKind: 'custom-tool',
-        sourceId: input.record.id,
-        toolId: input.record.id,
-        toolName: input.record.id,
-        ...(effectiveToolVersion != null ? { version: String(effectiveToolVersion) } : {}),
-        adapter: input.record.type,
-        ...(input.sessionId != null ? { sessionId: input.sessionId } : {}),
-        ...(input.turnId != null ? { turnId: input.turnId } : {}),
-        ...(input.projectId != null ? { projectId: input.projectId } : {}),
-        ...(input.agentId != null ? { agentId: input.agentId } : {}),
-        ...(input.workflowId != null ? { workflowId: input.workflowId } : {}),
-        invocationSource:
-          input.invocationSource ?? (input.source === 'model' ? 'model' : 'platform'),
-        ...(input.hookAttribution != null
-          ? {
-              hookId: input.hookAttribution.hookId,
-              hookRunId: input.hookAttribution.hookRunId,
-            }
-          : {}),
-        inputSha256,
-        startedAt,
-      })
-      this.unifiedInvocations.finish(unifiedTraceId, {
-        status: input.status,
-        ...(input.errorCode != null ? { errorCode: input.errorCode } : {}),
-        ...(input.outputBytes != null ? { outputBytes: input.outputBytes } : {}),
-        finishedAt: finishedAt.toISOString(),
-      })
-    } catch (error) {
-      log.warn('custom tool unified trace write failed', {
-        toolId: input.record.id,
-        error: error instanceof Error ? error.message : String(error),
-      })
+    // 统一审计账本写入范围（审查 D1 修复）：source='model' 的调用方是
+    // UnifiedToolCatalog 包装层（模型/hook/codex-chat）与 tool-package 嵌套——
+    // 前者 wrapCatalogInvoke 已记高质量行（真实时序+脱敏+归档），再写即双行；
+    // 后者有外层 tool-package 直记行。source='host'/'direct'（provider-vision
+    // 路由、testRun）不经目录，服务内层是唯一审计来源，必须保留写入。
+    if (input.source !== 'model') {
+      try {
+        const unifiedTraceId = randomUUID()
+        const finishedAt = new Date()
+        const startedAt = new Date(
+          finishedAt.getTime() - Math.max(0, Math.round(input.durationMs)),
+        ).toISOString()
+        this.unifiedInvocations.start({
+          id: unifiedTraceId,
+          correlationId: input.correlationId ?? unifiedTraceId,
+          sourceKind: 'custom-tool',
+          sourceId: input.record.id,
+          toolId: input.record.id,
+          toolName: input.record.id,
+          ...(effectiveToolVersion != null ? { version: String(effectiveToolVersion) } : {}),
+          adapter: input.record.type,
+          ...(input.sessionId != null ? { sessionId: input.sessionId } : {}),
+          ...(input.turnId != null ? { turnId: input.turnId } : {}),
+          ...(input.projectId != null ? { projectId: input.projectId } : {}),
+          ...(input.agentId != null ? { agentId: input.agentId } : {}),
+          ...(input.workflowId != null ? { workflowId: input.workflowId } : {}),
+          // 块内 source 已收窄为 'host' | 'direct'（'model' 在上方被排除）。
+          invocationSource: input.invocationSource ?? 'platform',
+          ...(input.hookAttribution != null
+            ? {
+                hookId: input.hookAttribution.hookId,
+                hookRunId: input.hookAttribution.hookRunId,
+              }
+            : {}),
+          inputSha256,
+          startedAt,
+        })
+        this.unifiedInvocations.finish(unifiedTraceId, {
+          status: input.status,
+          ...(input.errorCode != null ? { errorCode: input.errorCode } : {}),
+          ...(input.outputBytes != null ? { outputBytes: input.outputBytes } : {}),
+          finishedAt: finishedAt.toISOString(),
+        })
+      } catch (error) {
+        log.warn('custom tool unified trace write failed', {
+          toolId: input.record.id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
     return legacyTraceId
   }

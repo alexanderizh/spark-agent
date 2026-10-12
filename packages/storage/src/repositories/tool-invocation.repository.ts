@@ -1,43 +1,72 @@
+import { createHash } from 'node:crypto'
 import type { SparkDatabase } from '../database.js'
 import { BaseRepository } from './base.repository.js'
 
 export type ToolInvocationSourceKind =
-  | 'connector'
+  | 'sdk-builtin'
+  | 'mcp'
   | 'custom-tool'
   | 'tool-package'
+  | 'connector'
   | 'workflow'
+  | 'hook'
   | 'test'
 export type ToolInvocationSource = 'model' | 'workflow' | 'test' | 'platform' | 'nested' | 'hook'
-export type ToolInvocationStatus = 'running' | 'ok' | 'error' | 'timeout' | 'denied' | 'cancelled'
+export type ToolInvocationStatus =
+  | 'running'
+  | 'ok'
+  | 'error'
+  | 'timeout'
+  | 'denied'
+  | 'cancelled'
+  | 'stale'
+
+/** 哈希链分链键：会话行 = session_id；无会话的工作流调用 = 'wf:<workflowId>'；两者皆无 = 'unattributed'。 */
+export const UNATTRIBUTED_CHAIN_ID = 'unattributed'
+export const WORKFLOW_CHAIN_PREFIX = 'wf:'
 
 export interface ToolInvocationRow {
   id: string
-  correlation_id: string
-  source_kind: ToolInvocationSourceKind
-  source_id: string
-  package_id: string | null
-  tool_id: string | null
-  tool_name: string
-  version: string | null
-  adapter: string | null
+  ledger_seq: number
+  correlation_id: string | null
+  chain_session_id: string
+  prev_hash: string | null
+  record_hash: string | null
+  finished_record_hash: string | null
   session_id: string | null
   turn_id: string | null
   project_id: string | null
   agent_id: string | null
   workflow_id: string | null
-  invocation_source: ToolInvocationSource
+  member_agent_id: string | null
+  dispatch_id: string | null
   hook_id: string | null
   hook_run_id: string | null
+  tool_id: string | null
+  tool_name: string
+  source_kind: ToolInvocationSourceKind
+  invocation_source: ToolInvocationSource
+  mcp_server_id: string | null
+  engine: string | null
+  source_id: string
+  package_id: string | null
+  version: string | null
+  adapter: string | null
   status: ToolInvocationStatus
   started_at: string
   finished_at: string | null
   duration_ms: number | null
   error_code: string | null
-  input_sha256: string
-  output_bytes: number | null
-  result_archived: number
-  result_truncated: number
+  error_message: string | null
   retry_count: number
+  input_sha256: string | null
+  input_bytes: number | null
+  input_artifact_id: string | null
+  output_bytes: number | null
+  output_sha256: string | null
+  output_artifact_id: string | null
+  result_truncated: number
+  result_archived: number
   created_at: string
 }
 
@@ -64,13 +93,52 @@ export interface StartToolInvocationParams {
   startedAt?: string
 }
 
+/** 审计账本追加参数：start() 的超集（P2 采集层使用）。 */
+export interface AppendToolLedgerParams {
+  id: string
+  /** 跨表关联与去重键（tool_call 事件 id / 目录调用 id）；缺省时用 id 顶替。 */
+  correlationId?: string
+  /** 显式分链键；缺省按 sessionId / workflowId 推导。 */
+  chainSessionId?: string
+  sourceKind: ToolInvocationSourceKind
+  sourceId: string
+  packageId?: string
+  toolId?: string
+  toolName: string
+  version?: string
+  adapter?: string
+  sessionId?: string
+  turnId?: string
+  projectId?: string
+  agentId?: string
+  workflowId?: string
+  memberAgentId?: string
+  dispatchId?: string
+  hookId?: string
+  hookRunId?: string
+  invocationSource: ToolInvocationSource
+  mcpServerId?: string
+  /** 'claude' | 'codex' | 'spark'（模型路径才有）。 */
+  engine?: string
+  inputSha256?: string
+  inputBytes?: number
+  inputArtifactId?: string
+  startedAt?: string
+}
+
 export interface FinishToolInvocationParams {
   status: Exclude<ToolInvocationStatus, 'running'>
   errorCode?: string
+  /** 脱敏后截断的错误正文（≤2000 字符，由采集层负责截断）。 */
+  errorMessage?: string
   outputBytes?: number
+  outputSha256?: string
+  outputArtifactId?: string
   resultArchived?: boolean
   resultTruncated?: boolean
   retryCount?: number
+  /** 事件侧有权威耗时时优先传入；缺省用 started_at→finished_at 墙钟差。 */
+  durationMs?: number
   finishedAt?: string
 }
 
@@ -88,43 +156,230 @@ export interface ListToolInvocationsParams {
   offset?: number
 }
 
+/** 检查器账本查询：ledger_seq 游标向下翻页（新→旧）。 */
+export interface ListToolLedgerParams {
+  sessionId?: string
+  chainSessionId?: string
+  turnId?: string
+  toolName?: string
+  sourceKind?: ToolInvocationSourceKind
+  invocationSource?: ToolInvocationSource
+  status?: ToolInvocationStatus
+  memberAgentId?: string
+  correlationId?: string
+  /** 取 ledger_seq 严格小于该值的行（上一页最后一行的 ledger_seq）。 */
+  cursor?: number
+  limit?: number
+}
+
+export interface ListToolLedgerResult {
+  items: ToolInvocationRow[]
+  nextCursor: number | null
+  total: number
+}
+
+export interface ToolLedgerStats {
+  sessionId: string
+  total: number
+  byStatus: Partial<Record<ToolInvocationStatus, number>>
+  bySourceKind: Partial<Record<ToolInvocationSourceKind, number>>
+  byTool: Array<{ toolName: string; count: number }>
+  durationP50Ms: number | null
+  durationP95Ms: number | null
+  totalInputBytes: number
+  totalOutputBytes: number
+  firstStartedAt: string | null
+  lastFinishedAt: string | null
+}
+
+export type VerifyChainBreakReason =
+  | 'hash-mismatch'
+  | 'finish-hash-mismatch'
+  | 'prev-mismatch'
+  | 'seq-order'
+
+export interface VerifyChainResult {
+  chainSessionId: string
+  valid: boolean
+  /** 实际校验过哈希的记录数（NULL 哈希的回填行不计）。 */
+  checkedCount: number
+  break?: {
+    ledgerSeq: number
+    reason: VerifyChainBreakReason
+    expectedRecordHash?: string
+    actualRecordHash?: string | null
+  }
+}
+
+export interface PruneToolLedgerResult {
+  deletedRows: number
+  /** 删除后已无任何账本行引用、可安全清理的载荷归档 id。 */
+  artifactIds: string[]
+}
+
+/**
+ * 主链哈希覆盖的字段子集：只含 INSERT 后不可变的身份字段。
+ * 设计方案 §4.4 原稿把 status/finished_at/duration_ms 等生命周期字段也纳入主链，
+ * 但 finish() 是合法状态推进会改写这些列——用当前行值重算创建态哈希必然失配。
+ * 修正口径：不可变身份归主链（record_hash），可变生命周期归补充哈希（finished_record_hash）。
+ * 两类字段集都不得再变更，变更即断链。
+ */
+interface RecordHashFields {
+  ledger_seq: number
+  correlation_id: string | null
+  chain_session_id: string
+  tool_name: string
+  source_kind: ToolInvocationSourceKind
+  /** 定位「哪个工具」的身份三要素之一（source_kind + source_id + tool_name），防篡改必覆盖。 */
+  source_id: string
+  started_at: string
+  input_sha256: string | null
+  input_bytes: number | null
+}
+
+/** 收尾态补充哈希覆盖的字段子集（finish / reconcileStale 推进时写入）。 */
+interface FinishedHashFields {
+  ledger_seq: number
+  status: ToolInvocationStatus
+  finished_at: string | null
+  duration_ms: number | null
+  error_code: string | null
+  error_message: string | null
+  output_bytes: number | null
+  output_sha256: string | null
+  retry_count: number
+}
+
+/** 稳定键序 JSON（哈希输入的规范化序列化；只处理 null/字符串/数字/数组/纯对象）。 */
+function canonicalJson(value: unknown): string {
+  if (value === null) return 'null'
+  const type = typeof value
+  if (type === 'string' || type === 'number' || type === 'boolean') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(',')}]`
+  if (type === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`
+  }
+  return 'null'
+}
+
+function sha256Hex(input: string): string {
+  return createHash('sha256').update(input, 'utf8').digest('hex')
+}
+
+/** record_hash = sha256(prev_hash || '\n' || canonical_json(创建态字段))；链首 prev_hash 为空串。 */
+function computeRecordHash(fields: RecordHashFields, prevHash: string | null): string {
+  return sha256Hex(`${prevHash ?? ''}\n${canonicalJson(fields)}`)
+}
+
+function computeFinishedRecordHash(fields: FinishedHashFields): string {
+  return sha256Hex(canonicalJson(fields))
+}
+
 export class ToolInvocationRepository extends BaseRepository {
   constructor(db: SparkDatabase) {
     super(db, 'tool_invocations')
   }
 
+  /** 兼容入口：现有 custom-tool / tool-package 写入方零改动继续工作，行同样入链。 */
   start(params: StartToolInvocationParams): ToolInvocationRow {
+    return this.appendLedger(params)
+  }
+
+  /**
+   * 追加一条审计账本行（status='running'），单事务内完成：
+   * 分配全局 ledger_seq（MAX+1）→ 取分链前一条 record_hash 作 prev_hash →
+   * 计算创建态 record_hash → INSERT。better-sqlite3 同步单写者，天然无并发竞态。
+   */
+  appendLedger(params: AppendToolLedgerParams): ToolInvocationRow {
     const startedAt = params.startedAt ?? new Date().toISOString()
-    this.raw
-      .prepare(
-        `INSERT INTO tool_invocations (
-          id, correlation_id, source_kind, source_id, package_id, tool_id, tool_name,
-          version, adapter, session_id, turn_id, project_id, agent_id, workflow_id,
-          invocation_source, hook_id, hook_run_id, status, started_at, input_sha256, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`,
+    const chainSessionId =
+      params.chainSessionId ??
+      params.sessionId ??
+      (params.workflowId != null
+        ? `${WORKFLOW_CHAIN_PREFIX}${params.workflowId}`
+        : UNATTRIBUTED_CHAIN_ID)
+    const correlationId = params.correlationId ?? params.id
+    this.transaction(() => {
+      const seqRow = this.raw
+        .prepare('SELECT COALESCE(MAX(ledger_seq), 0) + 1 AS seq FROM tool_invocations')
+        .get() as { seq: number }
+      const ledgerSeq = seqRow.seq
+      const prevRow = this.raw
+        .prepare(
+          `SELECT record_hash FROM tool_invocations
+           WHERE chain_session_id = ? AND record_hash IS NOT NULL
+           ORDER BY ledger_seq DESC LIMIT 1`,
+        )
+        .get(chainSessionId) as { record_hash: string } | undefined
+      const prevHash = prevRow?.record_hash ?? null
+      const recordHash = computeRecordHash(
+        {
+          ledger_seq: ledgerSeq,
+          correlation_id: correlationId,
+          chain_session_id: chainSessionId,
+          tool_name: params.toolName,
+          source_kind: params.sourceKind,
+          source_id: params.sourceId,
+          started_at: startedAt,
+          input_sha256: params.inputSha256 ?? null,
+          input_bytes: params.inputBytes ?? null,
+        },
+        prevHash,
       )
-      .run(
-        params.id,
-        params.correlationId,
-        params.sourceKind,
-        params.sourceId,
-        params.packageId ?? null,
-        params.toolId ?? null,
-        params.toolName,
-        params.version ?? null,
-        params.adapter ?? null,
-        params.sessionId ?? null,
-        params.turnId ?? null,
-        params.projectId ?? null,
-        params.agentId ?? null,
-        params.workflowId ?? null,
-        params.invocationSource,
-        params.hookId ?? null,
-        params.hookRunId ?? null,
-        startedAt,
-        params.inputSha256,
-        startedAt,
-      )
+      this.raw
+        .prepare(
+          `INSERT INTO tool_invocations (
+            id, ledger_seq, correlation_id, chain_session_id, prev_hash, record_hash,
+            session_id, turn_id, project_id, agent_id, workflow_id,
+            member_agent_id, dispatch_id, hook_id, hook_run_id,
+            tool_id, tool_name, source_kind, invocation_source, mcp_server_id, engine,
+            source_id, package_id, version, adapter,
+            status, started_at, input_sha256, input_bytes, input_artifact_id, created_at
+          ) VALUES (
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?,
+            'running',
+            ?, ?, ?, ?, ?
+          )`,
+        )
+        .run(
+          params.id,
+          ledgerSeq,
+          correlationId,
+          chainSessionId,
+          prevHash,
+          recordHash,
+          params.sessionId ?? null,
+          params.turnId ?? null,
+          params.projectId ?? null,
+          params.agentId ?? null,
+          params.workflowId ?? null,
+          params.memberAgentId ?? null,
+          params.dispatchId ?? null,
+          params.hookId ?? null,
+          params.hookRunId ?? null,
+          params.toolId ?? null,
+          params.toolName,
+          params.sourceKind,
+          params.invocationSource,
+          params.mcpServerId ?? null,
+          params.engine ?? null,
+          params.sourceId,
+          params.packageId ?? null,
+          params.version ?? null,
+          params.adapter ?? null,
+          startedAt,
+          params.inputSha256 ?? null,
+          params.inputBytes ?? null,
+          params.inputArtifactId ?? null,
+          startedAt,
+        )
+    })
     const inserted = this.get(params.id)
     if (inserted == null) {
       throw new Error(`tool_invocations insert failed to read back row ${params.id}`)
@@ -132,16 +387,38 @@ export class ToolInvocationRepository extends BaseRepository {
     return inserted
   }
 
+  /**
+   * running→终态的合法状态推进：不改 record_hash（主链验创建态），
+   * 另记 finished_record_hash 补充哈希（验收尾态字段子集）。
+   */
   finish(id: string, params: FinishToolInvocationParams): ToolInvocationRow | undefined {
     const current = this.get(id)
     if (current == null) return undefined
     const finishedAt = params.finishedAt ?? new Date().toISOString()
-    const durationMs = Math.max(0, Date.parse(finishedAt) - Date.parse(current.started_at))
+    const durationMs =
+      params.durationMs ?? Math.max(0, Date.parse(finishedAt) - Date.parse(current.started_at))
+    const resultArchived =
+      params.resultArchived === true ||
+      (params.resultArchived == null && params.outputArtifactId != null)
+        ? 1
+        : 0
+    const finishedHash = computeFinishedRecordHash({
+      ledger_seq: current.ledger_seq,
+      status: params.status,
+      finished_at: finishedAt,
+      duration_ms: durationMs,
+      error_code: params.errorCode ?? null,
+      error_message: params.errorMessage ?? null,
+      output_bytes: params.outputBytes ?? null,
+      output_sha256: params.outputSha256 ?? null,
+      retry_count: Math.max(0, params.retryCount ?? 0),
+    })
     this.raw
       .prepare(
         `UPDATE tool_invocations SET
-          status = ?, finished_at = ?, duration_ms = ?, error_code = ?, output_bytes = ?,
-          result_archived = ?, result_truncated = ?, retry_count = ?
+          status = ?, finished_at = ?, duration_ms = ?, error_code = ?, error_message = ?,
+          output_bytes = ?, output_sha256 = ?, output_artifact_id = ?,
+          result_archived = ?, result_truncated = ?, retry_count = ?, finished_record_hash = ?
          WHERE id = ?`,
       )
       .run(
@@ -149,13 +426,33 @@ export class ToolInvocationRepository extends BaseRepository {
         finishedAt,
         durationMs,
         params.errorCode ?? null,
+        params.errorMessage ?? null,
         params.outputBytes ?? null,
-        params.resultArchived === true ? 1 : 0,
+        params.outputSha256 ?? null,
+        params.outputArtifactId ?? null,
+        resultArchived,
         params.resultTruncated === true ? 1 : 0,
         Math.max(0, params.retryCount ?? 0),
+        finishedHash,
         id,
       )
     return this.get(id)
+  }
+
+  /** 采集层配对收尾：按 correlation_id 找最新一条 running 行执行 finish。 */
+  finalizeByCorrelation(
+    correlationId: string,
+    params: FinishToolInvocationParams,
+  ): ToolInvocationRow | undefined {
+    const row = this.raw
+      .prepare(
+        `SELECT id FROM tool_invocations
+         WHERE correlation_id = ? AND status = 'running'
+         ORDER BY ledger_seq DESC LIMIT 1`,
+      )
+      .get(correlationId) as { id: string } | undefined
+    if (row == null) return undefined
+    return this.finish(row.id, params)
   }
 
   get(id: string): ToolInvocationRow | undefined {
@@ -195,7 +492,337 @@ export class ToolInvocationRepository extends BaseRepository {
     return { items, total }
   }
 
+  /** 检查器账本查询：ledger_seq 降序（新→旧）+ 游标向下翻页。 */
+  listLedger(params: ListToolLedgerParams = {}): ListToolLedgerResult {
+    const filters: string[] = []
+    const values: Array<string | number> = []
+    const add = (clause: string, value: string | number | undefined): void => {
+      if (value == null) return
+      filters.push(clause)
+      values.push(value)
+    }
+    const totalFilters: string[] = []
+    const totalValues: Array<string | number> = []
+    const addTotal = (clause: string, value: string | undefined): void => {
+      if (value == null) return
+      totalFilters.push(clause)
+      totalValues.push(value)
+    }
+    add('session_id = ?', params.sessionId)
+    add('chain_session_id = ?', params.chainSessionId)
+    add('turn_id = ?', params.turnId)
+    add('tool_name = ?', params.toolName)
+    add('source_kind = ?', params.sourceKind)
+    add('invocation_source = ?', params.invocationSource)
+    add('status = ?', params.status)
+    add('member_agent_id = ?', params.memberAgentId)
+    add('correlation_id = ?', params.correlationId)
+    if (params.cursor != null) {
+      filters.push('ledger_seq < ?')
+      values.push(params.cursor)
+    }
+    const where = filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : ''
+    // total 不含游标条件：检查器要的是「本会话总共多少条」，翻页不影响
+    addTotal('session_id = ?', params.sessionId)
+    addTotal('chain_session_id = ?', params.chainSessionId)
+    addTotal('turn_id = ?', params.turnId)
+    addTotal('tool_name = ?', params.toolName)
+    addTotal('source_kind = ?', params.sourceKind)
+    addTotal('invocation_source = ?', params.invocationSource)
+    addTotal('status = ?', params.status)
+    addTotal('member_agent_id = ?', params.memberAgentId)
+    addTotal('correlation_id = ?', params.correlationId)
+    const totalWhere = totalFilters.length > 0 ? ` WHERE ${totalFilters.join(' AND ')}` : ''
+    const total = (
+      this.raw
+        .prepare(`SELECT COUNT(*) AS count FROM tool_invocations${totalWhere}`)
+        .get(...totalValues) as { count: number }
+    ).count
+    const limit = Math.min(200, Math.max(1, params.limit ?? 50))
+    const rows = this.raw
+      .prepare(`SELECT * FROM tool_invocations${where} ORDER BY ledger_seq DESC LIMIT ?`)
+      .all(...values, limit + 1) as ToolInvocationRow[]
+    const hasMore = rows.length > limit
+    const items = hasMore ? rows.slice(0, limit) : rows
+    const lastItem = items[items.length - 1]
+    // cursor 必须 > 0：095 重放段行的 ledger_seq 兜底为 0（DESC 排序在最尾），
+    // `ledger_seq < 0` 无结果——传 0 回去只会被协议层 zod positive 拒掉（审查 D5）。
+    const nextCursor =
+      hasMore && lastItem != null && lastItem.ledger_seq > 0 ? lastItem.ledger_seq : null
+    return { items, nextCursor, total }
+  }
+
+  /** 会话级聚合：counts by status/source/tool、p50/p95 duration、总 bytes、时间范围。 */
+  statsBySession(sessionId: string): ToolLedgerStats {
+    const byStatus = {} as Partial<Record<ToolInvocationStatus, number>>
+    for (const row of this.raw
+      .prepare(
+        'SELECT status, COUNT(*) AS count FROM tool_invocations WHERE session_id = ? GROUP BY status',
+      )
+      .all(sessionId) as Array<{ status: ToolInvocationStatus; count: number }>) {
+      byStatus[row.status] = row.count
+    }
+    const bySourceKind = {} as Partial<Record<ToolInvocationSourceKind, number>>
+    for (const row of this.raw
+      .prepare(
+        'SELECT source_kind, COUNT(*) AS count FROM tool_invocations WHERE session_id = ? GROUP BY source_kind',
+      )
+      .all(sessionId) as Array<{ source_kind: ToolInvocationSourceKind; count: number }>) {
+      bySourceKind[row.source_kind] = row.count
+    }
+    const byTool = this.raw
+      .prepare(
+        `SELECT tool_name, COUNT(*) AS count FROM tool_invocations
+         WHERE session_id = ? GROUP BY tool_name ORDER BY count DESC, tool_name`,
+      )
+      .all(sessionId) as Array<{ tool_name: string; count: number }>
+    const durations = (
+      this.raw
+        .prepare(
+          'SELECT duration_ms FROM tool_invocations WHERE session_id = ? AND duration_ms IS NOT NULL',
+        )
+        .all(sessionId) as Array<{ duration_ms: number }>
+    )
+      .map((row) => row.duration_ms)
+      .sort((a, b) => a - b)
+    const sums = this.raw
+      .prepare(
+        `SELECT
+           COALESCE(SUM(input_bytes), 0) AS input_bytes,
+           COALESCE(SUM(output_bytes), 0) AS output_bytes,
+           MIN(started_at) AS first_started_at,
+           MAX(COALESCE(finished_at, started_at)) AS last_finished_at
+         FROM tool_invocations WHERE session_id = ?`,
+      )
+      .get(sessionId) as {
+      input_bytes: number
+      output_bytes: number
+      first_started_at: string | null
+      last_finished_at: string | null
+    }
+    return {
+      sessionId,
+      total: Object.values(byStatus).reduce((sum, count) => sum + count, 0),
+      byStatus,
+      bySourceKind,
+      byTool: byTool.map((row) => ({ toolName: row.tool_name, count: row.count })),
+      durationP50Ms: percentileNearestRank(durations, 0.5),
+      durationP95Ms: percentileNearestRank(durations, 0.95),
+      totalInputBytes: sums.input_bytes,
+      totalOutputBytes: sums.output_bytes,
+      firstStartedAt: sums.first_started_at,
+      lastFinishedAt: sums.last_finished_at,
+    }
+  }
+
+  /**
+   * 链校验：按 ledger_seq 顺序重算全链哈希。
+   * 主链验不可变身份字段（record_hash），终态行另验收尾态补充哈希（finished_record_hash）。
+   * NULL record_hash 的行（121 迁移回填段）视为新链起点，豁免校验。
+   * 返回首个断点及其原因；valid=true 表示全链一致。
+   */
+  verifyChain(chainSessionId: string): VerifyChainResult {
+    const rows = this.raw
+      .prepare(
+        `SELECT ledger_seq, correlation_id, record_hash, prev_hash, finished_record_hash,
+                tool_name, source_kind, source_id, started_at, input_sha256, input_bytes,
+                status, finished_at, duration_ms, error_code, error_message,
+                output_bytes, output_sha256, retry_count
+         FROM tool_invocations WHERE chain_session_id = ? ORDER BY ledger_seq ASC`,
+      )
+      .all(chainSessionId) as Array<
+      Omit<RecordHashFields, 'chain_session_id'> &
+        FinishedHashFields & {
+          record_hash: string | null
+          prev_hash: string | null
+          finished_record_hash: string | null
+        }
+    >
+    let expectedPrev: string | null = null
+    /** 分链内是否已见过有效哈希行：首条的前驱可能在 prune 保留窗外，跳过 prev 检查（审查 D2）。 */
+    let seenHashedRow = false
+    let lastSeq = 0
+    let checkedCount = 0
+    for (const row of rows) {
+      if (row.ledger_seq <= lastSeq) {
+        return {
+          chainSessionId,
+          valid: false,
+          checkedCount,
+          break: { ledgerSeq: row.ledger_seq, reason: 'seq-order' },
+        }
+      }
+      lastSeq = row.ledger_seq
+      // 回填段 / 段边界：无哈希即重置链头（下一条有效哈希行重新作为段首）
+      if (row.record_hash == null) {
+        expectedPrev = null
+        seenHashedRow = false
+        continue
+      }
+      // 段首行：前驱哈希不可验（可能指向已 prune 的保留窗外行），重算用行自身 prev_hash。
+      const prevForRecompute = seenHashedRow ? expectedPrev : row.prev_hash
+      if (seenHashedRow && row.prev_hash !== expectedPrev) {
+        return {
+          chainSessionId,
+          valid: false,
+          checkedCount,
+          break: {
+            ledgerSeq: row.ledger_seq,
+            reason: 'prev-mismatch',
+            actualRecordHash: row.record_hash,
+          },
+        }
+      }
+      const recomputed = computeRecordHash(
+        {
+          ledger_seq: row.ledger_seq,
+          correlation_id: row.correlation_id,
+          chain_session_id: chainSessionId,
+          tool_name: row.tool_name,
+          source_kind: row.source_kind,
+          source_id: row.source_id,
+          started_at: row.started_at,
+          input_sha256: row.input_sha256,
+          input_bytes: row.input_bytes,
+        },
+        prevForRecompute,
+      )
+      if (recomputed !== row.record_hash) {
+        return {
+          chainSessionId,
+          valid: false,
+          checkedCount,
+          break: {
+            ledgerSeq: row.ledger_seq,
+            reason: 'hash-mismatch',
+            expectedRecordHash: recomputed,
+            actualRecordHash: row.record_hash,
+          },
+        }
+      }
+      // 终态行：验收尾态补充哈希（防篡改 finish 结果）
+      if (row.finished_at != null && row.finished_record_hash != null) {
+        const recomputedFinish = computeFinishedRecordHash({
+          ledger_seq: row.ledger_seq,
+          status: row.status,
+          finished_at: row.finished_at,
+          duration_ms: row.duration_ms,
+          error_code: row.error_code,
+          error_message: row.error_message,
+          output_bytes: row.output_bytes,
+          output_sha256: row.output_sha256,
+          retry_count: row.retry_count,
+        })
+        if (recomputedFinish !== row.finished_record_hash) {
+          return {
+            chainSessionId,
+            valid: false,
+            checkedCount,
+            break: {
+              ledgerSeq: row.ledger_seq,
+              reason: 'finish-hash-mismatch',
+              expectedRecordHash: recomputedFinish,
+              actualRecordHash: row.finished_record_hash,
+            },
+          }
+        }
+      }
+      expectedPrev = row.record_hash
+      seenHashedRow = true
+      checkedCount += 1
+    }
+    return { chainSessionId, valid: true, checkedCount }
+  }
+
+  /**
+   * 悬挂对账：running 且 started_at < cutoff 的行推进为 'stale'
+   * （区别于主动 cancelled 的对账终态），并补记收尾态哈希。
+   */
+  reconcileStale(cutoff: string): number {
+    // `<=`：cutoff 即「当下」，同毫秒写入的 running 也是遗留（构造时对账语义）。
+    const candidates = this.raw
+      .prepare("SELECT id FROM tool_invocations WHERE status = 'running' AND started_at <= ?")
+      .all(cutoff) as Array<{ id: string }>
+    if (candidates.length === 0) return 0
+    let changed = 0
+    this.transaction(() => {
+      const update = this.raw.prepare(
+        `UPDATE tool_invocations SET
+           status = 'stale', finished_at = ?, duration_ms = ?, finished_record_hash = ?
+         WHERE id = ? AND status = 'running'`,
+      )
+      for (const { id } of candidates) {
+        const row = this.get(id)
+        if (row == null || row.status !== 'running') continue
+        const finishedAt = row.finished_at ?? cutoff
+        const durationMs =
+          row.duration_ms ?? Math.max(0, Date.parse(finishedAt) - Date.parse(row.started_at))
+        update.run(
+          finishedAt,
+          durationMs,
+          computeFinishedRecordHash({
+            ledger_seq: row.ledger_seq,
+            status: 'stale',
+            finished_at: finishedAt,
+            duration_ms: durationMs,
+            error_code: row.error_code,
+            error_message: row.error_message,
+            output_bytes: row.output_bytes,
+            output_sha256: row.output_sha256,
+            retry_count: row.retry_count,
+          }),
+          id,
+        )
+        changed += 1
+      }
+    })
+    return changed
+  }
+
+  /**
+   * 账本保留期清理：删除 created_at < cutoff 的行；
+   * 回调仅收到删除后已无任何账本行引用的载荷归档 id（内容寻址共享，防误删）。
+   */
+  prune(
+    ledgerCutoff: string,
+    payloadPruneHook?: (artifactIds: string[]) => void,
+  ): PruneToolLedgerResult {
+    const collected = new Set<string>()
+    for (const row of this.raw
+      .prepare(
+        `SELECT input_artifact_id AS a, output_artifact_id AS b FROM tool_invocations
+         WHERE created_at < ?
+           AND (input_artifact_id IS NOT NULL OR output_artifact_id IS NOT NULL)`,
+      )
+      .all(ledgerCutoff) as Array<{ a: string | null; b: string | null }>) {
+      if (row.a != null) collected.add(row.a)
+      if (row.b != null) collected.add(row.b)
+    }
+    const deletedRows = this.raw
+      .prepare('DELETE FROM tool_invocations WHERE created_at < ?')
+      .run(ledgerCutoff).changes
+    if (collected.size > 0) {
+      const stillReferenced = this.raw.prepare(
+        `SELECT 1 AS hit FROM tool_invocations
+         WHERE input_artifact_id = ? OR output_artifact_id = ? LIMIT 1`,
+      )
+      for (const artifactId of [...collected]) {
+        if (stillReferenced.get(artifactId, artifactId) != null) collected.delete(artifactId)
+      }
+    }
+    const artifactIds = [...collected]
+    if (artifactIds.length > 0) payloadPruneHook?.(artifactIds)
+    return { deletedRows, artifactIds }
+  }
+
   pruneOlderThan(cutoff: string): number {
     return this.raw.prepare('DELETE FROM tool_invocations WHERE created_at < ?').run(cutoff).changes
   }
+}
+
+/** 最近邻秩百分位（nearest-rank）：空样本返回 null。 */
+function percentileNearestRank(sortedValues: number[], quantile: number): number | null {
+  if (sortedValues.length === 0) return null
+  const rank = Math.min(sortedValues.length, Math.max(1, Math.ceil(quantile * sortedValues.length)))
+  return sortedValues[rank - 1] ?? null
 }

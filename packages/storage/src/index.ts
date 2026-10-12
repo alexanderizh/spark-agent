@@ -475,6 +475,11 @@ export type {
   FinishToolInvocationParams,
   ListToolInvocationsParams,
   StartToolInvocationParams,
+  AppendToolLedgerParams,
+  ListToolLedgerParams,
+  ListToolLedgerResult,
+  PruneToolLedgerResult,
+  ToolLedgerStats,
   CreateHookDefinitionParams,
   HookDefinitionRow,
   UpdateHookDefinitionParams,
@@ -497,8 +502,4 @@ export type {
   InsertWikiSkillProposalParams,
 } from './repositories/index.js'
 export { DreamAuditRepository } from './repositories/index.js'
-export type {
-  DreamAuditRow,
-  DreamAuditRunSummary,
-  DreamAuditInsert,
-} from './repositories/index.js'
+export type { DreamAuditRow, DreamAuditRunSummary, DreamAuditInsert } from './repositories/index.js'

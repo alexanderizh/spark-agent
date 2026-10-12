@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToolHostCapabilityBroker } from './tool-host-capability-broker.js'
 import { ToolPackageRuntimeCatalog } from './tool-package-runtime-catalog.js'
 import { ToolPackageService, type ToolPackageSecretStore } from './tool-package.service.js'
+import { ToolAuditRecorder } from '../tool-audit/tool-audit-recorder.js'
 
 const migrationsDir = fileURLToPath(new URL('../../../../storage/migrations/', import.meta.url))
 const roots: string[] = []
@@ -167,6 +168,7 @@ describe('ToolPackageService', () => {
   let db: SparkDatabase | undefined
   let service: ToolPackageService | undefined
   let capabilities: ToolHostCapabilityBroker
+  let auditRecorder: ToolAuditRecorder | undefined
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'spark-tool-package-service-'))
@@ -175,12 +177,25 @@ describe('ToolPackageService', () => {
     db.runMigrations(migrationsDir)
     capabilities = new ToolHostCapabilityBroker()
     capabilities.register({ name: 'files.upload', invoke: async () => ({ ok: true }) })
-    service = new ToolPackageService(db, join(root, 'installed'), capabilities)
+    // 审计直记已升级为 recorder 唯一写入口（设计 §5.2）：测试注入真实 recorder，
+    // invokeInstalledVersion 的账本行断言（如取消记录）才有数据源。
+    auditRecorder = new ToolAuditRecorder({ db })
+    service = new ToolPackageService(
+      db,
+      join(root, 'installed'),
+      capabilities,
+      undefined,
+      undefined,
+      undefined,
+      auditRecorder,
+    )
   })
 
   afterEach(async () => {
     vi.restoreAllMocks()
     await service?.dispose()
+    auditRecorder?.dispose()
+    auditRecorder = undefined
     await Promise.all(services.splice(0).map((extra) => extra.dispose().catch(() => undefined)))
     await Promise.all(
       servers.splice(0).map(
@@ -270,6 +285,8 @@ describe('ToolPackageService', () => {
       correlationId,
       error: { code: 'AbortError' },
     })
+    // 审计直记经异步队列落库：断言前同步排空（生产消费方是检查器 IPC，无此时序）。
+    auditRecorder?.flushSync()
     expect(service!.listInvocations({ correlationId }).items[0]).toMatchObject({
       status: 'cancelled',
     })

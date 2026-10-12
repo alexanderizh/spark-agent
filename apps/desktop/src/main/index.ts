@@ -89,6 +89,7 @@ import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
 import { startBackgroundMaintenanceWorker } from './services/background-maintenance-worker.js'
 import { startSnapshotVaultMaintenance } from './services/computer-use/SnapshotVaultMaintenance.js'
 import { TempMediaFilesMaintenance } from './services/TempMediaFilesMaintenance.js'
+import { ToolAuditLedgerMaintenance } from './services/ToolAuditLedgerMaintenance.js'
 import {
   disposeComputerUseServices,
   getComputerUseServices,
@@ -1240,6 +1241,12 @@ async function initializeApp(): Promise<void> {
     const backgroundMaintenanceWorker = startBackgroundMaintenanceWorker(dbPath)
     customToolsRuntime = new CustomToolsRuntimeService(db, getMcpService())
     const snapshotVaultMaintenance = startSnapshotVaultMaintenance(db)
+    // 工具执行审计治理（P4）：账本 90 天 / 载荷 30 天 + 256MB 配额，6 小时一跑。
+    const toolAuditLedgerMaintenance = new ToolAuditLedgerMaintenance(db)
+    toolAuditLedgerMaintenance.start()
+    registerAppShutdownCleanup('tool audit ledger maintenance', () => {
+      toolAuditLedgerMaintenance.stop()
+    })
     // 临时媒体目录（粘贴/预览副本）周期清理：按 mtime 保留 7 天，6 小时一跑。
     const tempMediaFilesMaintenance = new TempMediaFilesMaintenance()
     tempMediaFilesMaintenance.start()

@@ -617,4 +617,29 @@ describe('CustomToolService', () => {
   it('throws CustomToolError NOT_FOUND for missing tools', async () => {
     await expect(service.get('ghost')).rejects.toBeInstanceOf(CustomToolError)
   })
+
+  // 审查 D1 回归：放在末尾——前面用例有顺序敏感的 items[0] 断言，本用例会写入
+  // 新的 unified 行。source 语义见 recordInvocationSafely 内注释。
+  it('executeEnabled(model) 不写统一审计账本（目录包装层唯一记账），testRun 仍记', async () => {
+    await service.createDraft(httpDraft())
+    await service.publish('jira_search', 1)
+    await service.setEnabled('jira_search', true)
+
+    const countUnified = (): number =>
+      (db.raw.prepare('SELECT COUNT(*) AS c FROM tool_invocations').get() as { c: number }).c
+
+    // 经目录的模型路径：审计行由 UnifiedToolCatalog 包装层记（wrapCatalogInvoke），
+    // 服务内层不得再补一行（此前双记：wrap 行 + 事后补记行）。内网地址不可达，
+    // 失败态同样应零行。
+    await service
+      .executeEnabled({ toolId: 'jira_search', input: { issueKey: 'X-1' }, source: 'model' })
+      .catch(() => undefined)
+    expect(countUnified()).toBe(0)
+
+    // 工具编辑器测试路径不经目录：服务内层保留唯一审计来源。
+    await service
+      .testRun({ toolId: 'jira_search', input: { issueKey: 'X-2' } })
+      .catch(() => undefined)
+    expect(countUnified()).toBe(1)
+  })
 })
