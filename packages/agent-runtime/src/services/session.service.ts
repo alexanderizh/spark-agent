@@ -10356,6 +10356,17 @@ export class SessionService {
           },
           spec.args,
           () => this.mcpService.callTool(spec.serverId ?? '', spec.toolName, spec.args),
+          // 审查 F2：MCP isError:true 时 callTool 正常 resolve 不 throw——账本
+          // 若固定记 ok 会与下方节点失败口径矛盾，按结果分类入账。
+          {
+            classifyResult: (mcpResult) =>
+              mcpResult.isError === true
+                ? {
+                    status: 'error',
+                    errorMessage: `MCP tool ${spec.toolName} failed: ${formatWorkflowMcpToolResult(mcpResult)}`,
+                  }
+                : null,
+          },
         )
         const content = formatWorkflowMcpToolResult(result)
         if (result.isError === true) {

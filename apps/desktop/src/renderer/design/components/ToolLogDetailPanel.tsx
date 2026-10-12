@@ -11,7 +11,7 @@
  *
  * 载荷本身已在上游脱敏（敏感字段即 `***` 形态），这里直接 JSON 展示。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   ToolAuditChainVerifyResult,
   ToolAuditLedgerRow,
@@ -62,11 +62,19 @@ function renderInlineValue(inline: unknown): string {
 /** 可复制元信息值（哈希 / correlation_id 等）。 */
 function CopyableValue({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
+  const copiedTimerRef = useRef<number | null>(null)
+  // 卸载时清理复位定时器，避免向已卸载组件 setState（审查 U12）。
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current != null) window.clearTimeout(copiedTimerRef.current)
+    }
+  }, [])
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(value)
       setCopied(true)
-      window.setTimeout(() => setCopied(false), 1200)
+      if (copiedTimerRef.current != null) window.clearTimeout(copiedTimerRef.current)
+      copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1200)
     } catch {
       // 剪贴板不可用时静默失败（非关键路径）
     }
@@ -87,19 +95,29 @@ function CopyableValue({ value }: { value: string }) {
 interface PayloadViewProps {
   label: string
   view: ToolAuditPayloadView | undefined
-  /** 行级采集截断标志（载荷超 64MB 上限时采集层置位）。 */
-  rowTruncated: boolean
+  /** 行级采集截断标志（载荷超 64MB 上限时采集层置位）；仅输出页签关注（审查 U9）。 */
+  rowTruncated?: boolean
 }
 
 /** 参数/结果载荷视图：内联直出；归档显示字节数 + 分页加载。 */
-function PayloadView({ label, view, rowTruncated }: PayloadViewProps) {
+function PayloadView({ label, view, rowTruncated = false }: PayloadViewProps) {
   const { invoke: invokeReadPayload } = useIpcInvoke('tool-audit:read-payload')
   const [text, setText] = useState<string | null>(null)
   const [pages, setPages] = useState(0)
+  /** 已累计的续读偏移：null = 未开始或已读尽；「继续加载」从此推进（审查 U8）。 */
+  const [nextOffset, setNextOffset] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  /** 预算耗尽守卫触发（256 页 ≈ 10MB）时的本地截断提示。 */
+  /** 预算耗尽守卫触发（256 页 ≈ 10MB）时的本地截断提示；触发后停用续读。 */
   const [guardHit, setGuardHit] = useState(false)
+  const aliveRef = useRef(true)
+  // 分页循环跨越多次 await，卸载（切页签/收起行）后必须中止（审查 U12）。
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+    }
+  }, [])
 
   if (view == null) {
     return <div className="chat-toollog__hint">（{label}未记录）</div>
@@ -116,56 +134,66 @@ function PayloadView({ label, view, rowTruncated }: PayloadViewProps) {
   }
 
   const handleLoad = async () => {
+    if (loading || guardHit) return
     setLoading(true)
     setError(null)
-    setGuardHit(false)
     try {
-      let acc = ''
-      let offset = 0
-      let pageCount = 0
-      let pendingOffset: number | null | undefined = null
-      while (pageCount < PAYLOAD_PAGE_GUARD) {
+      // 从已累计偏移续读，不从 0 重读（审查 U8）。
+      let acc = text ?? ''
+      let offset = nextOffset ?? 0
+      let pageCount = pages
+      let batch = 0
+      let pendingOffset: number | null = null
+      while (batch < PAYLOAD_PAGE_GUARD) {
         const res = await invokeReadPayload({
           artifactId,
           limit: TOOL_AUDIT_PAYLOAD_PAGE_BYTES,
           ...(offset > 0 ? { offset } : {}),
         })
+        if (!aliveRef.current) return
         acc += res.chunk
         pageCount += 1
+        batch += 1
         setText(acc)
         setPages(pageCount)
-        pendingOffset = res.nextOffset
+        pendingOffset = res.nextOffset ?? null
+        setNextOffset(pendingOffset)
         if (pendingOffset == null) break
         offset = pendingOffset
       }
-      // 守卫耗尽且仍有未读偏移：静默截断不可接受（审查 D6），显式提示。
+      // 守卫耗尽且仍有未读偏移：静默截断不可接受（审查 D6），显式提示并停用续读。
       if (pendingOffset != null) setGuardHit(true)
     } catch (err) {
-      setError(errorMessage(err))
+      if (aliveRef.current) setError(errorMessage(err))
     } finally {
-      setLoading(false)
+      if (aliveRef.current) setLoading(false)
     }
   }
+
+  // 全部读尽（有内容且无续读偏移）时不再渲染按钮；其余状态保留按钮：
+  // 未开始 → 首次加载；有续读偏移 → 继续加载；守卫命中 → 禁用并明示上限。
+  const fullyLoaded = text != null && nextOffset == null
 
   return (
     <div className="chat-toollog-archive">
       <div className="chat-toollog-archive__meta">
         归档载荷 {formatBytes(view.bytes)} · sha256 {shortHash(view.sha256)}
       </div>
-      {text != null ? (
-        <pre className="chat-toollog-json">{text}</pre>
-      ) : (
+      {text != null && <pre className="chat-toollog-json">{text}</pre>}
+      {!fullyLoaded && (
         <button
           type="button"
           className="chat-toollog-archive__load"
           onClick={() => void handleLoad()}
-          disabled={loading}
+          disabled={loading || guardHit}
         >
           {loading
             ? `加载中 · 已 ${pages} 页…`
-            : pages > 0
-              ? `继续加载（已 ${pages} 页 · 40k/页）`
-              : '加载完整内容（40k/页）'}
+            : guardHit
+              ? `已达预览读取上限（${pages} 页）`
+              : pages > 0
+                ? `继续加载（已 ${pages} 页 · 40k/页）`
+                : '加载完整内容（40k/页）'}
         </button>
       )}
       {(guardHit || rowTruncated) && (
@@ -204,6 +232,24 @@ function chainTitle(chain: ToolAuditChainVerifyResult | null): string {
         (breakAt.expectedHash != null ? ` · 期望 ${breakAt.expectedHash}` : '') +
         (breakAt.actualHash != null ? ` · 实际 ${breakAt.actualHash}` : '')
   return `哈希链在第 ${breakAt?.ledgerSeq ?? '?'} 条断裂${reason ? `（${reason}）` : ''}`
+}
+
+/**
+ * record_hash 行级色调（审查 U10）：不复用全会话链结论——
+ * - chain==null（未校验）→ 中性（undefined，不额外着色）；
+ * - 链完整 → 绿；
+ * - 链断裂 → 断点 ledgerSeq 之前的记录哈希本身仍连续（绿），≥ 断点为红；
+ *   断点未知时无法证明任何记录在断前，统一按红处理。
+ */
+function recordHashTone(
+  row: ToolAuditLedgerRow,
+  chain: ToolAuditChainVerifyResult | null,
+): 'ok' | 'err' | undefined {
+  if (chain == null) return undefined
+  if (chain.ok) return 'ok'
+  const breakSeq = chain.breakAt?.ledgerSeq
+  if (breakSeq == null) return 'err'
+  return row.ledgerSeq < breakSeq ? 'ok' : 'err'
 }
 
 interface MetaRowProps {
@@ -248,6 +294,7 @@ function MetaView({
 }) {
   const statusLabel = TOOL_AUDIT_STATUS_LABEL[row.status] ?? row.status
   const chainTone = chain == null ? undefined : chain.ok ? ('ok' as const) : ('err' as const)
+  const recordTone = recordHashTone(row, chain)
 
   const sourceParts: string[] = [
     TOOL_AUDIT_SOURCE_LABEL[row.sourceKind] ?? row.sourceKind,
@@ -285,7 +332,7 @@ function MetaView({
       label: 'record_hash',
       value: shortHash(row.recordHash),
       ...(row.recordHash != null ? { copyText: row.recordHash } : {}),
-      ...(chain != null && !chain.ok ? { tone: 'err' as const } : { tone: 'ok' as const }),
+      ...(recordTone != null ? { tone: recordTone } : {}),
     },
     {
       label: 'prev_hash',
@@ -364,6 +411,9 @@ export function ToolLogDetailPanel({ row, chain }: ToolLogDetailPanelProps) {
     { key: 'output', label: '结果' },
     { key: 'meta', label: '元信息' },
   ]
+  // tab 与 tabpanel 的 id/aria-controls 关联（row.id 为 UUID，同屏仅一个展开行）。
+  const tabId = (key: DetailTab): string => `chat-toollog-detail-tab-${row.id}-${key}`
+  const panelId = (key: DetailTab): string => `chat-toollog-detail-panel-${row.id}-${key}`
 
   return (
     <div className="chat-toollog-detail">
@@ -373,6 +423,8 @@ export function ToolLogDetailPanel({ row, chain }: ToolLogDetailPanelProps) {
             key={t.key}
             type="button"
             role="tab"
+            id={tabId(t.key)}
+            aria-controls={panelId(t.key)}
             aria-selected={tab === t.key}
             className={`chat-toollog-detail__tab${tab === t.key ? ' is-active' : ''}`}
             onClick={() => setTab(t.key)}
@@ -381,7 +433,12 @@ export function ToolLogDetailPanel({ row, chain }: ToolLogDetailPanelProps) {
           </button>
         ))}
       </div>
-      <div className="chat-toollog-detail__body">
+      <div
+        className="chat-toollog-detail__body"
+        role="tabpanel"
+        id={panelId(tab)}
+        aria-labelledby={tabId(tab)}
+      >
         {error != null ? (
           <div className="chat-toollog-detail__error">
             <span>详情加载失败：{error}</span>
@@ -398,7 +455,6 @@ export function ToolLogDetailPanel({ row, chain }: ToolLogDetailPanelProps) {
             key={`input:${detail?.input?.artifactId ?? 'inline'}`}
             label="参数"
             view={detail?.input}
-            rowTruncated={mergedRow?.resultTruncated ?? false}
           />
         ) : (
           <PayloadView

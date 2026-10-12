@@ -199,6 +199,8 @@ export function ChatInspectorToolLog({ sessionId }: ChatInspectorToolLogProps) {
   const [listError, setListError] = useState<string | null>(null)
   const [stats, setStats] = useState<ToolAuditStats | null>(null)
   const [chain, setChain] = useState<ToolAuditChainVerifyResult | null>(null)
+  /** 链校验 IPC 抛错（与「未校验」的 chain==null 区分，审查 U11）。 */
+  const [chainError, setChainError] = useState<string | null>(null)
 
   // 过滤状态：statusSet 多选（0 = 全部）；sourceKind 单选；搜索 300ms 防抖。
   const [statusSet, setStatusSet] = useState<ReadonlySet<ToolAuditStatus>>(new Set())
@@ -219,6 +221,9 @@ export function ChatInspectorToolLog({ sessionId }: ChatInspectorToolLogProps) {
   const aliveRef = useRef(true)
   /** 首屏请求序号：过滤切换时旧响应落地前被新请求作废（审查 D9）。 */
   const loadSeqRef = useRef(0)
+  /** stats / verify-chain 各自的请求序号（会话切换与刷新重入时作废旧响应，审查 U3）。 */
+  const statsSeqRef = useRef(0)
+  const chainSeqRef = useRef(0)
   const exportBudgetRef = useRef(EXPORT_ARCHIVED_BUDGET_BYTES)
   const exportSkippedRef = useRef(false)
 
@@ -259,20 +264,29 @@ export function ChatInspectorToolLog({ sessionId }: ChatInspectorToolLogProps) {
   }, [invokeList, sessionId, singleStatus, sourceKind, searchQuery])
 
   const loadStats = useCallback(async () => {
+    // 序号守卫（审查 U3）：会话切换 / 刷新重入时旧响应不得落地。
+    const requestId = ++statsSeqRef.current
     try {
       const res = await invokeStats({ sessionId })
-      if (aliveRef.current) setStats(res)
+      if (!aliveRef.current || requestId !== statsSeqRef.current) return
+      setStats(res)
     } catch {
       // 统计失败不阻塞时间线；保持 null（统计条隐藏）
     }
   }, [invokeStats, sessionId])
 
   const loadChain = useCallback(async () => {
+    // 序号守卫同 stats（审查 U3）；IPC 抛错落 chainError 与「未校验」区分（审查 U11）。
+    const requestId = ++chainSeqRef.current
     try {
       const res = await invokeVerifyChain({ sessionId })
-      if (aliveRef.current) setChain(res)
-    } catch {
-      if (aliveRef.current) setChain(null)
+      if (!aliveRef.current || requestId !== chainSeqRef.current) return
+      setChain(res)
+      setChainError(null)
+    } catch (err) {
+      if (!aliveRef.current || requestId !== chainSeqRef.current) return
+      setChain(null)
+      setChainError(errorMessage(err))
     }
   }, [invokeVerifyChain, sessionId])
 
@@ -290,6 +304,7 @@ export function ChatInspectorToolLog({ sessionId }: ChatInspectorToolLogProps) {
     return () => window.clearTimeout(id)
   }, [loadStats, loadChain])
 
+  // 刷新三者口径一致：每个加载器自带序号守卫，并发重入时旧响应统一作废（审查 U3）。
   const handleRefresh = useCallback(() => {
     void loadFirstPage()
     void loadStats()
@@ -299,15 +314,19 @@ export function ChatInspectorToolLog({ sessionId }: ChatInspectorToolLogProps) {
   const loadOlder = useCallback(async () => {
     const { hasMore, nextCursor } = pageInfo
     if (!hasMore || nextCursor == null || loadingMore) return
+    // 竞态守卫（审查 U2）：翻页不递增序号（它是「被继续」方），任何
+    // loadFirstPage（递增 loadSeqRef）都会作废在途的翻页响应。
+    const requestId = loadSeqRef.current
     setLoadingMore(true)
     try {
       const res = await invokeList(
         buildListRequest({ sessionId, singleStatus, sourceKind, searchQuery }, nextCursor),
       )
-      if (!aliveRef.current) return
+      if (!aliveRef.current || requestId !== loadSeqRef.current) return
       setRows((prev) => mergeRows(prev, res.rows))
       setPageInfo({ hasMore: res.hasMore, nextCursor: res.nextCursor ?? null })
     } catch (err) {
+      if (!aliveRef.current || requestId !== loadSeqRef.current) return
       toast.error(`加载更早的工具日志失败：${errorMessage(err)}`)
     } finally {
       if (aliveRef.current) setLoadingMore(false)
@@ -445,7 +464,16 @@ export function ChatInspectorToolLog({ sessionId }: ChatInspectorToolLogProps) {
       if (dialog.canceled || dialog.filePath == null) return
       await writeText({ path: dialog.filePath, content: `${lines.join('\n')}\n` })
       if (!aliveRef.current) return
-      toast.success(`已导出 ${lines.length} 条工具日志：${dialog.filePath}`)
+      // 完整性提示（审查 U4）：还有未加载页时明示导出的只是已加载部分。
+      if (pageInfo.hasMore) {
+        toast.success(
+          stats != null
+            ? `已导出 ${lines.length} 条（仅已加载部分，共 ${stats.total} 条，可加载更多后再导出）：${dialog.filePath}`
+            : `已导出 ${lines.length} 条（仅已加载部分，可加载更多后再导出）：${dialog.filePath}`,
+        )
+      } else {
+        toast.success(`已导出 ${lines.length} 条工具日志：${dialog.filePath}`)
+      }
       if (exportSkippedRef.current) {
         toast.warning('部分归档载荷因超出导出预算未内联，行内保留 artifactId 与 sha256 引用')
       }
@@ -457,9 +485,11 @@ export function ChatInspectorToolLog({ sessionId }: ChatInspectorToolLogProps) {
   }, [
     exportState.active,
     invokeDetail,
+    pageInfo.hasMore,
     resolvePayloadForExport,
     saveFileDialog,
     sessionId,
+    stats,
     toast,
     visibleRows,
     writeText,
@@ -617,17 +647,29 @@ export function ChatInspectorToolLog({ sessionId }: ChatInspectorToolLogProps) {
             <span className="chat-toollog__stat">
               输出 <b>{formatBytes(stats.totalBytes)}</b>
             </span>
-            {chain != null && chain.checkedCount > 0 && (
-              <span
-                className={`chat-toollog__chain${chain.ok ? ' is-ok' : ' is-bad'}`}
-                title={
-                  chain.ok
-                    ? `哈希链校验通过（${chain.checkedCount} 条）`
-                    : `哈希链断裂于 seq ${chain.breakAt?.ledgerSeq ?? '?'}`
-                }
+            {chainError != null ? (
+              <button
+                type="button"
+                className="chat-toollog__chain is-error"
+                title={`哈希链校验失败：${chainError}（点击重试）`}
+                onClick={() => void loadChain()}
               >
-                {chain.ok ? '⛓ 链完整 ✓' : `⛓ 链断裂 ⚠ seq ${chain.breakAt?.ledgerSeq ?? '?'}`}
-              </span>
+                ⛓ 链校验失败 ↻
+              </button>
+            ) : (
+              chain != null &&
+              chain.checkedCount > 0 && (
+                <span
+                  className={`chat-toollog__chain${chain.ok ? ' is-ok' : ' is-bad'}`}
+                  title={
+                    chain.ok
+                      ? `哈希链校验通过（${chain.checkedCount} 条）`
+                      : `哈希链断裂于 seq ${chain.breakAt?.ledgerSeq ?? '?'}`
+                  }
+                >
+                  {chain.ok ? '⛓ 链完整 ✓' : `⛓ 链断裂 ⚠ seq ${chain.breakAt?.ledgerSeq ?? '?'}`}
+                </span>
+              )
             )}
           </div>
         )}

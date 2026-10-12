@@ -254,11 +254,19 @@ export function registerToolAuditIpc(): void {
 /** 全部 workspace 根（read-payload 无会话上下文时的内容寻址候选面）。 */
 function allWorkspaceRoots(workspaceRepo: WorkspaceRepository): string[] {
   try {
-    return workspaceRepo
-      .listAll(500, 0)
-      .flatMap((workspace) =>
-        workspace.root_path != null && workspace.root_path !== '' ? [workspace.root_path] : [],
-      )
+    const roots: string[] = []
+    let offset = 0
+    for (;;) {
+      const page = workspaceRepo.listAll(500, offset)
+      for (const workspace of page) {
+        if (workspace.root_path != null && workspace.root_path !== '') {
+          roots.push(workspace.root_path)
+        }
+      }
+      if (page.length < 500) break
+      offset += page.length
+    }
+    return roots
   } catch {
     return []
   }

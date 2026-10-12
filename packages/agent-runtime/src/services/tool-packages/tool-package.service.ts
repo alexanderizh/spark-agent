@@ -1199,6 +1199,9 @@ export class ToolPackageService {
     const manifest = ToolPackageManifestSchema.parse(JSON.parse(version.manifest_json) as unknown)
     assertExecutableAdapter(manifest)
     const correlationId = request.context?.correlationId ?? randomUUID()
+    // 真实耗时口径（与目录包装层一致）：finish 显式携带 invoke 墙钟差，
+    // 不含审计队列的 flush 停留延迟。
+    const auditStartedAtMs = Date.now()
     // 工具执行审计（设计 §5.2 迁移）：start/finish 由 ToolInvocationRepository 直写
     // 升级为 recorder 直记——保留真实 started_at 时序与全部归因，新增脱敏、
     // 内容寻址归档与引擎补全；toolAudit 缺席（无库测试实例）时无账本行。
@@ -1349,7 +1352,7 @@ export class ToolPackageService {
       if (auditRowId != null && this.toolAudit != null) {
         this.toolAudit.recordDirectFinish(
           auditRowId,
-          { status: 'ok' },
+          { status: 'ok', durationMs: Date.now() - auditStartedAtMs },
           result,
           request.context?.sessionId,
         )
@@ -1357,8 +1360,9 @@ export class ToolPackageService {
       return result
     } catch (error) {
       if (auditRowId != null && this.toolAudit != null) {
-        // errorMessage 与 output 同过脱敏管道（审查 D4）：HTTP 适配器错误常回显
-        // URL/query，明文入账本列会泄漏 token。
+        // errorMessage 过脱敏管道（审查 D4）：HTTP 适配器错误常回显 URL/query 与
+        // 响应正文，正文中的凭据由 redactValue 的内容级掩码兜底。
+        // 错误不再归档为 output 载荷——正文已入 errorMessage 列，归档只是冗余泄漏面。
         const redactedMessage =
           error instanceof Error ? redactToolPayload(error.message) : String(error)
         const messageText =
@@ -1370,8 +1374,9 @@ export class ToolPackageService {
             errorCode: toolPackageErrorCode(error),
             errorMessage:
               messageText.length > 2000 ? `${messageText.slice(0, 2000)}…[truncated]` : messageText,
+            durationMs: Date.now() - auditStartedAtMs,
           },
-          { error: String(error) },
+          null,
           request.context?.sessionId,
         )
       }

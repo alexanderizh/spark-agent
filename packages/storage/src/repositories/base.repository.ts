@@ -38,6 +38,16 @@ export abstract class BaseRepository {
   }
 
   /**
+   * BEGIN IMMEDIATE 变体：进入事务即取写锁。读-改-写序列（如序号分配、对账）
+   * 在多连接拓扑（主进程 + 维护 worker）下，DEFERRED 事务会在升级写时撞
+   * SQLITE_BUSY_SNAPSHOT 且 busy_timeout 不生效——IMMEDIATE 让等待发生在
+   * 取锁阶段，busy_timeout 可正常重试。
+   */
+  protected transactionImmediate<T>(fn: () => T): T {
+    return this.raw.transaction(fn).immediate() as T
+  }
+
+  /**
    * 根据 ID 查找单条记录
    */
   protected findById<T>(id: string): T | null {

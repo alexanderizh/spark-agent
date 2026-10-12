@@ -560,10 +560,12 @@ export { WikiStoreService } from './services/wiki/wiki-store.service.js'
 export { WikiSpaceService } from './services/wiki/wiki-space.service.js'
 // 工具执行审计（设计方案 §6 查询层）：main IPC 的归档载荷读取辅助。
 export {
+  AUDIT_PAYLOAD_DIRECTORY,
   AUDIT_PAYLOAD_INLINE_MAX_BYTES,
   AUDIT_PAYLOAD_READ_CHUNK_MAX,
   readAuditedPayloadChunk,
   readAuditedPayloadInline,
+  resolveAuditPayloadDirectory,
 } from './services/tool-audit/tool-audit-payload.js'
 export type { WikiSpaceScopeFilter, WikiSpaceListItem } from './services/wiki/wiki-space.service.js'
 export { WikiSearchService } from './services/wiki/wiki-search.service.js'

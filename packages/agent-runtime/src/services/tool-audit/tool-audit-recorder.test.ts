@@ -117,6 +117,74 @@ describe('ToolAuditRecorder', () => {
     expect(rows()).toHaveLength(0)
   })
 
+  it('去重（chat 模式）：目录工具以裸 qualifiedName 直注 native function calling，事件 source=builtin 也跳过（F1）', () => {
+    recorder.noteCatalogSnapshot([{ qualifiedName: 'my_custom_tool' }])
+    recorder.recordEventFunnel('session-2b', 'turn-2b', {
+      type: 'tool_call',
+      toolCallId: 'call-2b',
+      // codex chat 模式：executor 硬编码 source='builtin'，工具名就是裸 qualifiedName
+      toolName: 'my_custom_tool',
+      toolInput: { q: 'hi' },
+      source: 'builtin',
+      timestamp: '2026-10-12T10:00:00.000Z',
+    })
+    recorder.flushSync()
+    expect(rows()).toHaveLength(0)
+    // 名册外的 builtin 工具（SDK 原生 Bash）照常入账
+    recorder.recordEventFunnel('session-2b', 'turn-2b', {
+      type: 'tool_call',
+      toolCallId: 'call-2c',
+      toolName: 'Bash',
+      toolInput: { command: 'ls' },
+      source: 'builtin',
+      timestamp: '2026-10-12T10:00:01.000Z',
+    })
+    recorder.flushSync()
+    expect(rows()).toHaveLength(1)
+    expect(rows()[0]?.tool_name).toBe('Bash')
+  })
+
+  it('名册并集：新快照不撤销旧名登记，目录变更瞬间在飞调用不双行（F8）', () => {
+    recorder.noteCatalogSnapshot([{ qualifiedName: 'tool_old' }])
+    // 后续快照只剩 tool_new（tool_old 被禁用/卸载）
+    recorder.noteCatalogSnapshot([{ qualifiedName: 'tool_new' }])
+    // 持旧 bridge 定义的会话仍以旧名调用 → 包装层记账，漏斗必须仍跳过
+    recorder.recordEventFunnel('session-2d', 'turn-2d', {
+      type: 'tool_call',
+      toolCallId: 'call-2d',
+      toolName: 'tool_old',
+      toolInput: {},
+      source: 'builtin',
+      timestamp: '2026-10-12T10:00:00.000Z',
+    })
+    recorder.flushSync()
+    expect(rows()).toHaveLength(0)
+  })
+
+  it('classifyResult：MCP isError:true 正常 resolve 也按 error 入账（F2），错误输出不归档', async () => {
+    await recorder.wrapDirectInvocation(
+      { sourceKind: 'mcp', sourceId: 'srv-x', toolName: 'failing_tool', mcpServerId: 'srv-x' },
+      { sessionId: 'session-f2', invocationSource: 'workflow' },
+      { a: 1 },
+      () =>
+        Promise.resolve({
+          isError: true,
+          content: [{ type: 'text', text: 'boom sk-abcdef0123456789abcdef' }],
+        }),
+      {
+        classifyResult: (result) =>
+          result.isError === true
+            ? { status: 'error', errorMessage: 'tool failed: token sk-abcdef0123456789abcdef' }
+            : null,
+      },
+    )
+    recorder.flushSync()
+    const row = firstRow()
+    expect(row.status).toBe('error')
+    // 错误正文含凭据：errorMessage 列经内容级掩码（S1）后不得明文保留
+    expect(row.error_message).toBe('tool failed: token ***')
+  })
+
   it('背压：队列超限丢最旧并计数，stats 可观测', () => {
     const tiny = new ToolAuditRecorder({ db, maxQueue: 2, flushIntervalMs: 60_000 })
     for (let i = 0; i < 5; i += 1) {

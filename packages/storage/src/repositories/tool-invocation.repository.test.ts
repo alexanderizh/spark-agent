@@ -34,6 +34,8 @@ describe('ToolInvocationRepository audit ledger', () => {
     workflowId?: string
     turnId?: string
     toolName?: string
+    correlationId?: string
+    memberAgentId?: string
     sourceKind?:
       | 'sdk-builtin'
       | 'mcp'
@@ -49,7 +51,7 @@ describe('ToolInvocationRepository audit ledger', () => {
   }) {
     return repo.appendLedger({
       id: params.id,
-      correlationId: params.id,
+      correlationId: params.correlationId ?? params.id,
       sourceKind: params.sourceKind ?? 'sdk-builtin',
       sourceId: params.sessionId ?? 'test-source',
       toolName: params.toolName ?? 'Bash',
@@ -58,6 +60,7 @@ describe('ToolInvocationRepository audit ledger', () => {
       ...(params.sessionId != null ? { sessionId: params.sessionId } : {}),
       ...(params.turnId != null ? { turnId: params.turnId } : {}),
       ...(params.workflowId != null ? { workflowId: params.workflowId } : {}),
+      ...(params.memberAgentId != null ? { memberAgentId: params.memberAgentId } : {}),
       inputSha256: 'b'.repeat(64),
       inputBytes: 64,
       ...(params.startedAt != null ? { startedAt: params.startedAt } : {}),
@@ -394,11 +397,9 @@ describe('ToolInvocationRepository audit ledger', () => {
       finishedAt: '2026-03-01T00:00:01.000Z',
     })
 
-    const prunedIds: string[] = []
-    const result = repo.prune('2026-02-01T00:00:00.000Z', (ids) => prunedIds.push(...ids))
+    const result = repo.prune('2026-02-01T00:00:00.000Z')
     expect(result.deletedRows).toBe(2)
     expect(result.artifactIds).toEqual(['f'.repeat(64)])
-    expect(prunedIds).toEqual(['f'.repeat(64)])
     // 剩余行及其 artifact 引用完好
     expect(repo.get('new-1')?.output_artifact_id).toBe(sharedArtifact)
     // 审查 D2 回归：prune 截断后保留段首行的 prev_hash 指向被删行——
@@ -409,6 +410,154 @@ describe('ToolInvocationRepository audit ledger', () => {
     // 段首豁免只免 prev 检查，行内容篡改仍必须可检（hash-mismatch）。
     db.raw.prepare("UPDATE tool_invocations SET tool_name = 'tampered' WHERE id = 'new-1'").run()
     expect(repo.verifyChain('session-pr').valid).toBe(false)
+  })
+
+  it('prune keeps chain-integrity over retention: out-of-order old rows beyond the seq prefix survive', () => {
+    // 审查 P1-1：seq 按到达序、created_at 按事件时钟，两域可倒挂。
+    // 链内 seq1(new) / seq2(old) / seq3(new)：按时间删 seq2 会在链中段掏空 →
+    // verifyChain 永久误报 prev-mismatch。前缀删除只删 seq < 幸存最小 seq 的行。
+    const seqNew1 = append({
+      id: 'o-1',
+      sessionId: 'session-oo',
+      startedAt: '2026-03-05T00:00:00.000Z',
+    })
+    const seqOld = append({
+      id: 'o-2',
+      sessionId: 'session-oo',
+      startedAt: '2026-01-01T00:00:00.000Z',
+    })
+    const seqNew2 = append({
+      id: 'o-3',
+      sessionId: 'session-oo',
+      startedAt: '2026-03-06T00:00:00.000Z',
+    })
+    expect(seqNew1.ledger_seq).toBeLessThan(seqOld.ledger_seq)
+    expect(seqOld.ledger_seq).toBeLessThan(seqNew2.ledger_seq)
+    for (const id of ['o-1', 'o-2', 'o-3']) {
+      repo.finish(id, { status: 'ok', finishedAt: '2026-03-06T00:00:01.000Z' })
+    }
+
+    const result = repo.prune('2026-02-01T00:00:00.000Z')
+    // o-2 超保留期但 seq 高于幸存最小 seq（o-1 的 seq）——必须保留
+    expect(result.deletedRows).toBe(0)
+    expect(repo.get('o-2')).toBeDefined()
+    // 链完整
+    expect(repo.verifyChain('session-oo').valid).toBe(true)
+
+    // 整链全旧（幸存集为空）→ 整链删除
+    const allOld = append({
+      id: 'oo-a',
+      sessionId: 'session-oo2',
+      startedAt: '2026-01-01T00:00:00.000Z',
+    })
+    append({ id: 'oo-b', sessionId: 'session-oo2', startedAt: '2026-01-02T00:00:00.000Z' })
+    expect(allOld.ledger_seq).toBeGreaterThan(0)
+    const result2 = repo.prune('2026-02-01T00:00:00.000Z')
+    expect(repo.get('oo-a')).toBeUndefined()
+    expect(repo.get('oo-b')).toBeUndefined()
+    expect(result2.deletedRows).toBeGreaterThanOrEqual(2)
+  })
+
+  it('finish refuses to overwrite terminal rows (terminal immutability, P2-3)', () => {
+    const row = append({ id: 'term-1', sessionId: 'session-term' })
+    repo.finish(row.id, { status: 'ok', finishedAt: '2026-01-01T00:00:05.000Z' })
+    // 迟到的失败收尾不得覆写已终态行
+    const late = repo.finish(row.id, {
+      status: 'error',
+      errorMessage: 'late failure must not win',
+      finishedAt: '2026-01-01T00:00:09.000Z',
+    })
+    expect(late).toBeUndefined()
+    const after = repo.get(row.id)
+    expect(after?.status).toBe('ok')
+    expect(after?.error_message).toBeNull()
+    // 链校验不受影响
+    expect(repo.verifyChain('session-term').valid).toBe(true)
+  })
+
+  it('finalizeByCorrelation narrows by session when provided (F4)', () => {
+    // running 态部分唯一索引已结构性保证同一 correlationId 至多一条 running 行；
+    // 会话收窄是纵深防御：会话键不匹配时即使全局存在 running 行也不得误收。
+    const a = append({
+      id: 'fa-1',
+      sessionId: 'session-fa',
+      correlationId: 'mcp-42',
+    })
+    // 错会话的收尾：全局有 running 行但会话键不匹配 → no-op
+    expect(
+      repo.finalizeByCorrelation(
+        'mcp-42',
+        { status: 'ok', finishedAt: '2026-01-01T00:00:05.000Z' },
+        'session-fb',
+      ),
+    ).toBeUndefined()
+    expect(repo.get('fa-1')?.status).toBe('running')
+    // 正确会话键 → 收尾成功
+    const finished = repo.finalizeByCorrelation(
+      'mcp-42',
+      { status: 'ok', finishedAt: '2026-01-01T00:00:06.000Z' },
+      'session-fa',
+    )
+    expect(finished?.id).toBe(a.id)
+    expect(repo.get('fa-1')?.status).toBe('ok')
+  })
+
+  it('listLedger toolName filter is contains-match with LIKE escaping (U1)', () => {
+    append({
+      id: 'l-1',
+      sessionId: 'session-l',
+      toolName: 'mcp__spark_plugins__spark_wiki__wiki_search',
+    })
+    append({ id: 'l-2', sessionId: 'session-l', toolName: 'Bash' })
+    append({ id: 'l-3', sessionId: 'session-l', toolName: 'a%b_c' })
+    // 部分词命中
+    expect(
+      repo.listLedger({ sessionId: 'session-l', toolName: 'wiki' }).items.map((r) => r.id),
+    ).toEqual(['l-1'])
+    // 大小写不敏感命中（SQLite LIKE 默认 ASCII 不敏感）
+    expect(
+      repo.listLedger({ sessionId: 'session-l', toolName: 'bash' }).items.map((r) => r.id),
+    ).toEqual(['l-2'])
+    // LIKE 通配符被转义：用户输入 % 不再当通配符
+    expect(
+      repo.listLedger({ sessionId: 'session-l', toolName: '%' }).items.map((r) => r.id),
+    ).toEqual(['l-3'])
+    expect(
+      repo.listLedger({ sessionId: 'session-l', toolName: 'a%b' }).items.map((r) => r.id),
+    ).toEqual(['l-3'])
+    expect(repo.listLedger({ sessionId: 'session-l', toolName: 'a_b' }).items).toEqual([])
+    expect(repo.listLedger({ sessionId: 'session-l', toolName: 'a%b_c' }).total).toBe(1)
+  })
+
+  it('verifyChain detects attribution tampering on v2 rows and stays compatible with v1 rows (P2-2)', () => {
+    // v2 行：归因列篡改（turn_id 挪到别的轮次）必须被主链哈希检出
+    const v2row = append({
+      id: 'v2-1',
+      sessionId: 'session-v2',
+      turnId: 'turn-1',
+      memberAgentId: 'member-a',
+    })
+    db.raw.prepare("UPDATE tool_invocations SET turn_id = 'turn-hijacked' WHERE id = 'v2-1'").run()
+    const broken = repo.verifyChain('session-v2')
+    expect(broken.valid).toBe(false)
+    expect(broken.break?.reason).toBe('hash-mismatch')
+    // 复原后 valid
+    db.raw.prepare("UPDATE tool_invocations SET turn_id = 'turn-1' WHERE id = 'v2-1'").run()
+    expect(repo.verifyChain('session-v2').valid).toBe(true)
+    expect(v2row.turn_id).toBe('turn-1')
+  })
+
+  it('verifyChain flags terminal rows whose finished hash was erased (P3-3)', () => {
+    const row = append({ id: 'fh-1', sessionId: 'session-fh' })
+    repo.finish(row.id, { status: 'ok', finishedAt: '2026-01-01T00:00:05.000Z' })
+    expect(repo.verifyChain('session-fh').valid).toBe(true)
+    // 抹掉收尾哈希 = 廉价篡改路径，必须视为断链而非跳过
+    db.raw
+      .prepare('UPDATE tool_invocations SET finished_record_hash = NULL WHERE id = ?')
+      .run(row.id)
+    const broken = repo.verifyChain('session-fh')
+    expect(broken.valid).toBe(false)
+    expect(broken.break?.reason).toBe('missing-finish-hash')
   })
 
   it('enforces at most one running row per correlation_id', () => {

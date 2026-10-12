@@ -127,6 +127,21 @@
       color: var(--tl-err);
       cursor: help;
     }
+
+    // 链校验 IPC 抛错（区别于链断裂）：同失败色，可点击重试（审查 U11）。
+    &.is-error {
+      padding: 0;
+      border: none;
+      background: transparent;
+      font: inherit;
+      font-size: 10.5px;
+      color: var(--tl-err);
+      cursor: pointer;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
   }
 
   // ── 过滤栏 ──
@@ -214,8 +229,6 @@
 
     // 虚拟滚动模式：组头+标尺合并为一张闭合小卡（行不嵌在卡内）
     &.is-flat.is-open {
-      border-radius: 8px;
-
       .chat-toollog__group-head {
         border-bottom: none;
       }
@@ -276,11 +289,12 @@
     border-top: 1px solid var(--border);
   }
 
-  // 时钟标尺
+  // 时钟标尺。左缘与行瀑布轨道起点对齐（审查 U15）：
+  // 行 __main 为 10px padding + 18px 状态点列 + 6px 列距 = 34px。
   &__ruler {
     display: flex;
     justify-content: space-between;
-    padding: 4px 10px 2px 30px;
+    padding: 4px 10px 2px 34px;
     font-size: 9.5px;
     color: var(--text-faint, #9b9489);
     font-family: var(--font-mono, monospace);
@@ -296,8 +310,9 @@
     }
   }
 
+  // max-height 不在此声明：由 TSX 以 VIRTUAL_SCROLL_MAX_HEIGHT 常量内联
+  // （单真源，审查 U6），此处只保留滚动容器形态。
   &__scroll {
-    max-height: 440px;
     overflow-y: auto;
     border-radius: 8px;
   }
@@ -312,11 +327,23 @@
     top: 0;
     left: 0;
     width: 100%;
+
+    // 虚拟模式下每行都是所在 vrow 的唯一子元素，上面的
+    // `.chat-toollog-row:last-child` 会全命中而丢失分隔线（审查 U7）：
+    // 虚拟模式的行分隔线统一由 vrow 层承担（本块在 .chat-toollog-row
+    // 规则之后，同特异性下以后者为准），末尾 vrow 再收口，与静态模式一致。
+    .chat-toollog-row,
+    .chat-toollog-row:last-child {
+      border-bottom: 1px solid var(--border);
+    }
+
+    &:last-child .chat-toollog-row {
+      border-bottom: none;
+    }
   }
 
   // ── 空态 / 骨架 / 错误 / 底注 ──
-  &__empty,
-  &__hint {
+  &__empty {
     text-align: center;
     color: var(--text-faint, #9b9489);
     font-size: 11.5px;
@@ -327,15 +354,18 @@
     }
   }
 
+  // 详情内提示（原两处声明合并为一，审查 U6；无 <p> 子元素）
+  &__hint {
+    text-align: center;
+    color: var(--text-faint, #9b9489);
+    font-size: 11px;
+    padding: 10px 8px;
+  }
+
   &__empty-hint {
     margin-top: 4px;
     font-size: 10.5px;
     line-height: 1.6;
-  }
-
-  &__hint {
-    padding: 10px 8px;
-    font-size: 11px;
   }
 
   &__skeleton-row {
@@ -776,6 +806,9 @@
 }
 
 // ── 暗色主题：状态七色按设计稿覆盖（通用面随既有 token 自动翻转） ──
+// 注：原先此处还有一块「暗色对比修正」覆盖，逐条核实后与 styles.css 的
+// token 翻转完全等值（#fff 与基座同字面量；--text/--text-muted 在
+// html[data-theme='dark'] 下均有定义，var 解析值一致），已删除（审查 U6）。
 html[data-theme='dark'] .chat-toollog {
   --tl-ok: #4dbd7e;
   --tl-err: #ef6b6b;
@@ -784,21 +817,4 @@ html[data-theme='dark'] .chat-toollog {
   --tl-cancel: #93918a;
   --tl-stale: #b49ad4;
   --tl-running: #5f9bf8;
-}
-
-// 暗色下徽标/标记的浅色文字对比修正
-html[data-theme='dark'] {
-  .chat-toollog__chip.is-active {
-    color: #fff;
-  }
-
-  .chat-toollog__stat b,
-  .chat-toollog-row__name,
-  .chat-toollog-json {
-    color: var(--text, #e4e4e7);
-  }
-
-  .chat-toollog-badge {
-    color: var(--text-muted, #9ca3af);
-  }
 }

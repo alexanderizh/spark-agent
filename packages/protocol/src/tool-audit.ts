@@ -108,7 +108,12 @@ export interface ToolAuditChainVerifyResult {
   checkedCount: number
   breakAt?: {
     ledgerSeq: number
-    reason: 'seq-order' | 'prev-mismatch' | 'hash-mismatch' | 'finish-hash-mismatch'
+    reason:
+      | 'seq-order'
+      | 'prev-mismatch'
+      | 'hash-mismatch'
+      | 'finish-hash-mismatch'
+      | 'missing-finish-hash'
     expectedHash?: string
     actualHash?: string
   }
@@ -119,12 +124,13 @@ export interface ToolAuditIpcChannelMap {
     {
       sessionId: string
       turnId?: string
+      /** 工具名搜索词（包含匹配，LIKE 转义由仓储层处理）。 */
       toolName?: string
       status?: ToolAuditStatus
       sourceKind?: ToolAuditSourceKind
       invocationSource?: ToolAuditInvocationSource
       memberAgentId?: string
-      /** ledger_seq 游标：向下（旧）翻页；缺省从最新开始。 */
+      /** ledger_seq 游标（上一页最后一行的 seq，严格小于该值继续）：向下（旧）翻页；缺省从最新开始。 */
       cursor?: number
       /** ≤200。 */
       limit?: number

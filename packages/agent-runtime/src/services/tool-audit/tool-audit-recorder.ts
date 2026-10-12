@@ -78,6 +78,8 @@ type AuditQueueItem =
       kind: 'finish'
       rowId: string
       correlationId: string | undefined
+      /** 事件漏斗配对收尾的会话收窄键（审查 F4：防跨会话 correlationId 碰撞收错行）。 */
+      sessionId: string | undefined
       params: FinishToolInvocationParams
       redactedOutput: unknown
       workspaceRoot: string | undefined
@@ -255,6 +257,7 @@ export class ToolAuditRecorder {
       kind: 'finish',
       rowId: '',
       correlationId: event.toolCallId,
+      sessionId,
       workspaceRoot: this.sessionWorkspaces.get(sessionId),
       params: {
         status: event.status === 'success' ? 'ok' : event.status === 'denied' ? 'denied' : 'error',
@@ -273,7 +276,10 @@ export class ToolAuditRecorder {
   /** 目录快照登记：喂去重名册（同步生效——事件漏斗在建行判定前就能看到）。 */
   noteCatalogSnapshot(metas: Array<{ qualifiedName: string }>): void {
     try {
-      this.catalogQualifiedNames.clear()
+      // 名册按「历史并集」维护而非最后一次快照（审查 F8）：工具禁用/卸载瞬间，
+      // 持旧 bridge 定义的在飞调用仍由包装层记账——若名册被新快照清掉对应名，
+      // 事件漏斗兜底判定会再记一行造成双行。并集只增不减，容量由名字空间自然
+      // 有界（目录工具的 qualifiedName 集合有限）。
       for (const meta of metas) this.catalogQualifiedNames.add(meta.qualifiedName)
     } catch (error) {
       log.warn('tool audit catalog snapshot register failed', {
@@ -286,12 +292,21 @@ export class ToolAuditRecorder {
    * 目录 invoke 包装：invoke 前 append（真实 started_at，修复 F4 事后补记），
    * invoke 后 finish（ok/error/timeout/denied + 真实 duration）。审计故障时直接
    * 透传原 invoke——账本缺行不阻断工具执行。泛型 T 透传 invoke 返回类型。
+   *
+   * options.classifyResult：invoke 正常 resolve 但业务语义为失败的分类钩子
+   * （审查 F2：MCP isError:true 时 callTool 不 throw，账本若固定记 ok 则与
+   * 调用方失败口径矛盾）。返回 null 视为 ok。
    */
   async wrapCatalogInvoke<T>(
     meta: ToolAuditToolMeta,
     attribution: ToolAuditAttribution,
     input: Record<string, unknown>,
     invoke: (input: Record<string, unknown>) => Promise<T>,
+    options?: {
+      classifyResult?: (
+        output: T,
+      ) => { status: 'error' | 'denied' | 'timeout'; errorMessage?: string } | null
+    },
   ): Promise<T> {
     const rowId = randomUUID()
     const startedAt = new Date().toISOString()
@@ -303,21 +318,34 @@ export class ToolAuditRecorder {
       rowId,
       workspaceRoot,
       params: appendParams,
-      redactedInput: redactToolPayload(input),
+      // S4：脱敏遍历可能被异常 getter/Proxy 打断，兜底为未脱敏截断——审计
+      // 故障不得冒泡到工具执行路径。
+      redactedInput: tryRedact(input),
     })
     const startedAtMs = Date.now()
     try {
       const output = await invoke(input)
+      let classified: { status: 'error' | 'denied' | 'timeout'; errorMessage?: string } | null =
+        null
+      try {
+        classified = options?.classifyResult?.(output) ?? null
+      } catch {
+        classified = null
+      }
       this.enqueue({
         kind: 'finish',
         rowId,
         correlationId: undefined,
+        sessionId: undefined,
         workspaceRoot,
         params: {
-          status: 'ok',
+          status: classified?.status ?? 'ok',
+          ...(classified?.errorMessage != null
+            ? { errorMessage: truncateMessage(tryRedact(classified.errorMessage)) }
+            : {}),
           durationMs: Date.now() - startedAtMs,
         },
-        redactedOutput: output === undefined ? null : redactToolPayload(output),
+        redactedOutput: output === undefined ? null : tryRedact(output),
       })
       return output
     } catch (error) {
@@ -326,12 +354,13 @@ export class ToolAuditRecorder {
         kind: 'finish',
         rowId,
         correlationId: undefined,
+        sessionId: undefined,
         workspaceRoot,
         params: {
           status: classifyThrownToolFailure(error),
           ...(errorCode != null ? { errorCode } : {}),
           errorMessage: truncateMessage(
-            redactToolPayload(error instanceof Error ? error.message : String(error)),
+            tryRedact(error instanceof Error ? error.message : String(error)),
           ),
           durationMs: Date.now() - startedAtMs,
         },
@@ -349,9 +378,18 @@ export class ToolAuditRecorder {
     attribution: ToolAuditAttribution,
     input: unknown,
     invoke: () => Promise<T>,
+    options?: {
+      classifyResult?: (
+        output: T,
+      ) => { status: 'error' | 'denied' | 'timeout'; errorMessage?: string } | null
+    },
   ): Promise<T> {
-    return this.wrapCatalogInvoke(meta, attribution, input as Record<string, unknown>, async () =>
-      invoke(),
+    return this.wrapCatalogInvoke(
+      meta,
+      attribution,
+      input as Record<string, unknown>,
+      async () => invoke(),
+      options,
     )
   }
 
@@ -373,7 +411,7 @@ export class ToolAuditRecorder {
       rowId,
       workspaceRoot,
       params: this.buildWrappedAppendParams(rowId, meta, attribution, new Date().toISOString()),
-      redactedInput: redactToolPayload(input),
+      redactedInput: tryRedact(input),
     })
     return rowId
   }
@@ -388,9 +426,10 @@ export class ToolAuditRecorder {
       kind: 'finish',
       rowId,
       correlationId: undefined,
+      sessionId: undefined,
       workspaceRoot: sessionId != null ? this.sessionWorkspaces.get(sessionId) : undefined,
       params,
-      redactedOutput: output === undefined ? null : redactToolPayload(output),
+      redactedOutput: output === undefined ? null : tryRedact(output),
     })
   }
 
@@ -503,10 +542,14 @@ export class ToolAuditRecorder {
         })
       } else if (item.correlationId != null) {
         const audited = archiveAuditedPayload(item.redactedOutput, item.workspaceRoot)
-        this.repository.finalizeByCorrelation(item.correlationId, {
-          ...item.params,
-          ...mergeAuditedOutput(audited),
-        })
+        this.repository.finalizeByCorrelation(
+          item.correlationId,
+          {
+            ...item.params,
+            ...mergeAuditedOutput(audited),
+          },
+          item.sessionId,
+        )
       }
     } catch (error) {
       this.rejectedCount += 1
@@ -559,21 +602,27 @@ export class ToolAuditRecorder {
   }
 
   /**
-   * 去重判定：目录工具（custom-tool/tool-package/connector）经 spark_plugins 桥接
-   * 暴露给引擎，账本行由目录包装层负责——事件漏斗跳过，避免双行。
+   * 去重判定：目录工具（custom-tool/tool-package/connector）的账本行由目录包装层
+   * 或 tool-package 内层直记负责——事件漏斗跳过，避免双行。
+   * 两条暴露路径都要认（审查 F1）：
+   *   - spark_plugins 桥接（source='mcp'，claude/codex/spark 响应式路径）；
+   *   - native function calling 直注（codex chat 模式，事件 source 恒为 'builtin'，
+   *     工具名就是裸 qualifiedName）——按名册名匹配。
    */
   private isCatalogOwnedTool(
     toolName: string,
     source: 'builtin' | 'mcp',
     mcpServerId?: string,
   ): boolean {
-    if (source !== 'mcp') return false
-    if (mcpServerId === SPARK_PLUGINS_SERVER) return true
-    if (toolName.startsWith(SPARK_PLUGINS_PREFIX)) {
-      const qualified = toolName.slice(SPARK_PLUGINS_PREFIX.length)
-      return this.catalogQualifiedNames.has(qualified)
+    if (source === 'mcp') {
+      if (mcpServerId === SPARK_PLUGINS_SERVER) return true
+      if (toolName.startsWith(SPARK_PLUGINS_PREFIX)) {
+        const qualified = toolName.slice(SPARK_PLUGINS_PREFIX.length)
+        return this.catalogQualifiedNames.has(qualified)
+      }
+      return false
     }
-    return false
+    return this.catalogQualifiedNames.has(toolName)
   }
 
   private pendingFunnelSet(key: string, entry: PendingFunnelEntry): void {
@@ -628,6 +677,18 @@ function parseMcpServerId(toolName: string): string | undefined {
   const separator = rest.indexOf('__')
   if (separator <= 0) return undefined
   return rest.slice(0, separator)
+}
+
+/**
+ * 脱敏兜底（审查 S4）：redactValue 遍历对象可能被 throwing getter/Proxy 打断，
+ * 包装层调用点不得让审计故障冒泡到工具执行路径——失败时降级为未脱敏截断。
+ */
+function tryRedact(value: unknown): unknown {
+  try {
+    return redactToolPayload(value)
+  } catch {
+    return truncateMessage(value)
+  }
 }
 
 function truncateMessage(value: unknown): string {
