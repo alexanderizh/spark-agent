@@ -10,6 +10,7 @@
  *    （partial 行为回归，零风险兼容）
  * 4. 容错：句级解码抛错 → 不 emit error、不中断会话，后续句照常出字
  * 5. speech-activity 事件（sentence 会话的确认窗口撤销信号源）
+ * 6. >5s 长句整句单次解码（不做 5s 硬切，杜绝段边界切词/伪句号）
  *
  * mock 注入：setVoiceModuleForTests（sherpa native 模块）+ setVadModuleForTests
  * （silero Vad）+ vi.mock(VoiceIntegrityService)（模型路径解析）。
@@ -250,13 +251,31 @@ describe('sentence 句级出字', () => {
     expect(finals.length).toBe(1)
     expect(finals[0]?.text).toBe('句1')
     expect(finals[0]?.sessionId).toBe(sessionId)
-    // 解码区间 = span ±0.2s = [28800, 51200) = 22400 samples（单段 5s 切分）
+    // 解码区间 = span ±0.2s = [28800, 51200) = 22400 samples（整句单次解码）
     const offline = MockOfflineRecognizer.instances[MockOfflineRecognizer.instances.length - 1]
     expect(offline?.streams.length).toBe(1)
     const stream = offline?.streams[0]
     expect(stream?.sampleCounts.reduce((a, b) => a + b, 0)).toBe(22400)
     // gate 前原始音频直通缓存（confirm-only 不置零）
     expect(stream?.sawNonZero).toBe(true)
+  })
+
+  it('>5s 长句整句单次解码（不做 5s 硬切，杜绝段边界切词/伪句号）', async () => {
+    const handle = startVoiceSession({ sampleRate: 16000, decodeMode: 'sentence' }, 1)
+    expect(handle.success).toBe(true)
+    const sessionId = handle.sessionId as string
+    // 10s 音频（100 chunk）；span [2s, 8s) = 6s 长句
+    for (let i = 0; i < 100; i += 1) feedVoiceAudio(sessionId, tone(0.5), 1)
+    const vad = MockVad.instances[MockVad.instances.length - 1] as MockVad
+    vad.emitSegment(32000, 96000)
+    feedVoiceAudio(sessionId, tone(0.5), 1) // process 触发 drain → span 入队
+    await waitForVoiceSentenceTasks(sessionId)
+    expect(events.filter((e) => e.type === 'final')).toHaveLength(1)
+    const offline = MockOfflineRecognizer.instances[MockOfflineRecognizer.instances.length - 1]
+    // 解码音频 = 6s span + 0.4s padding = 102400 samples（6.4s > 5s）。
+    // 5s 粒度会被硬切成 2 段（段边界可能劈开词）；整句粒度必须单 stream 一次喂入
+    expect(offline?.streams.length).toBe(1)
+    expect(offline?.streams[0]?.sampleCounts).toEqual([102400])
   })
 
   it('停止收口：flush 尾句补发 final，队列排空后才 session-stopped；恒不精修', async () => {

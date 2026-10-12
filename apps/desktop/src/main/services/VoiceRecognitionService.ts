@@ -335,10 +335,16 @@ function int16ToFloat32(samples: Int16Array): Float32Array {
 const MIN_REFINE_AUDIO_SECONDS = 0.3
 /** 超长音频不做精修：避免离线解码长时间占用主进程与过大内存 */
 const MAX_REFINE_AUDIO_SECONDS = 600
-/** 分段解码粒度：段间让出事件循环，避免长音频一次 decode 阻塞主进程数秒。
- * 30s 粒度下单段 decode 仍会同步阻塞主进程数秒（日志实锤 main-blocked #2），
- * 调小到 5s：单段阻塞压到亚秒级，段间 setImmediate 让出间隙足以消化积压的
- * IPC 消息（采集 chunk/打断指令），段数增多带来的总耗时差异远小于阻塞感收益。 */
+/** 分段解码粒度（流式收口/按轮精修默认值）：段间让出事件循环，避免长音频一次
+ * decode 阻塞主进程数秒。30s 粒度下单段 decode 仍会同步阻塞主进程数秒（日志实锤
+ * main-blocked #2），调小到 5s：单段阻塞压到亚秒级，段间 setImmediate 让出间隙
+ * 足以消化积压的 IPC 消息（采集 chunk/打断指令），段数增多带来的总耗时差异远小于
+ * 阻塞感收益。
+ *
+ * 句级路径（decodeSentenceTask）例外：传 SENTENCE_MAX_SECONDS 粒度实现整句单次
+ * 解码。span ≤30s 恒单段，无段边界可言——5s 硬切会把词劈开（实测「三点」→「前三
+ * 点」）且切点冒伪句号；阻塞风险可控：解码走异步任务队列（非 feed 路径），句间
+ * setImmediate 让出，单句 ≤20s 的同步 decode 实测约 0.2-0.6s，仍在亚秒级。 */
 const REFINE_SEGMENT_SECONDS = 5
 
 function senseVoiceLanguage(language: VoiceLanguage): string {
@@ -393,20 +399,27 @@ function smartJoinSegments(segments: string[]): string {
   return out
 }
 
+/** refineTranscript 分段粒度选项：句级路径传整句上限实现单次解码，流式路径用默认 5s */
+interface RefineTranscriptOptions {
+  segmentSeconds?: number
+}
+
 /**
- * 整段离线识别：按 REFINE_SEGMENT_SECONDS 分段 decode，段间让出事件循环。
- * 返回 null 表示精修不可用（native 包过旧 / 模型未安装），调用方回退流式结果。
+ * 整段离线识别：按调用方粒度（默认 REFINE_SEGMENT_SECONDS）分段 decode，段间让出
+ * 事件循环。返回 null 表示精修不可用（native 包过旧 / 模型未安装），调用方回退流式结果。
  */
 async function refineTranscript(
   samples: Int16Array,
   sampleRate: number,
   language: VoiceLanguage,
+  options?: RefineTranscriptOptions,
 ): Promise<string | null> {
   const mod = loadSherpaModule()
   const recognizer = getOrCreateRefineRecognizer(mod, language)
   if (!recognizer) return null
   const float32 = int16ToFloat32(samples)
-  const segmentSamples = Math.max(1, Math.floor(sampleRate * REFINE_SEGMENT_SECONDS))
+  const segmentSeconds = Math.max(1, options?.segmentSeconds ?? REFINE_SEGMENT_SECONDS)
+  const segmentSamples = Math.max(1, Math.floor(sampleRate * segmentSeconds))
   const segments: string[] = []
   for (let offset = 0; offset < float32.length; offset += segmentSamples) {
     const slice = float32.subarray(offset, Math.min(offset + segmentSamples, float32.length))
@@ -508,7 +521,11 @@ function enqueueSentenceDecode(session: SentenceVoiceSession, span: SpeechSpan):
 async function decodeSentenceTask(task: SentenceDecodeTask): Promise<void> {
   const startedAt = Date.now()
   try {
-    const text = await refineTranscript(task.pcm, task.sampleRate, task.language)
+    // 整句单次解码（span ≤30s 恒单段）：5s 硬切会把词劈开并在切点冒伪句号，
+    // A/B 实测整句解码逐字全对且不比分段慢；阻塞由异步队列的句间让出兜底
+    const text = await refineTranscript(task.pcm, task.sampleRate, task.language, {
+      segmentSeconds: SENTENCE_MAX_SECONDS,
+    })
     const trimmed = (text ?? '').trim()
     if (trimmed) {
       task.finals.push(trimmed)
