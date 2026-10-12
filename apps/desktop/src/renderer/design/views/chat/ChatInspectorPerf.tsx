@@ -93,8 +93,8 @@ export function ChatInspectorPerf({
   ).length
   const slowEnabled = perf.slowTokensPerSecond != null && measurableCount >= 3
 
-  // live 行的边界口径吞吐：usage_update 已合并 outputTokens + streamActiveMs 时即可算，
-  // 首段流式期间（尚无 usage 上报）如实显示 —
+  // live 行吞吐：消息边界的真实计量（usage_update 合并 outputTokens + streamActiveMs）
+  // 优先；流式进行中回退到估算口径（tracker 对已观测流式内容的估算），带 ≈ 前缀展示。
   const liveTps = perf.liveRow != null ? liveTokensPerSecond(perf.liveRow) : null
 
   const shownRows = perf.rows
@@ -112,7 +112,7 @@ export function ChatInspectorPerf({
       {perf.liveRow != null && (
         <div
           className="perf-live-strip"
-          title="吞吐在消息边界更新（usage 上报时）；流式进行中暂无逐 token 计量"
+          title="吞吐在消息边界按真实 usage 更新；流式进行中按已观测内容的估算口径展示（≈ 前缀），结算统计仅使用真实计量"
         >
           <span className="perf-live-badge">LIVE</span>
           <span className="perf-live-text">
@@ -122,7 +122,9 @@ export function ChatInspectorPerf({
               : ''}
           </span>
           <span className="perf-live-tps">
-            {liveTps != null ? `${formatTokensPerSecond(liveTps)} tok/s` : '— tok/s'}
+            {liveTps != null
+              ? `${liveTps.estimated ? '≈' : ''}${formatTokensPerSecond(liveTps.value)} tok/s`
+              : '— tok/s'}
           </span>
         </div>
       )}
@@ -215,8 +217,8 @@ export function ChatInspectorPerf({
               <span className="perf-row-tps">
                 {row.tokensPerSecond != null ? formatTokensPerSecond(row.tokensPerSecond) : '—'}
               </span>
+              {/* 路由耗时不再内联展示（⚙ 前缀过挤），收进行悬浮提示 rowTooltip */}
               <span className="perf-row-ttft">
-                {row.autoRouterRoutingMs != null ? `⚙${formatMs(row.autoRouterRoutingMs)} ` : ''}
                 {row.ttftMs != null ? formatMs(row.ttftMs) : '—'}
                 {isSlow ? ' ⚠' : ''}
               </span>
@@ -242,8 +244,15 @@ function liveStartedTimestamp(snapshots: TurnPromptSnapshotEvent[], turnId: stri
   return null
 }
 
-/** live 行的边界口径吞吐：usage_update 已合并 outputTokens + streamActiveMs 时即可算。 */
-function liveTokensPerSecond(row: TurnPerfRow): number | null {
-  if (row.outputTokens == null || row.streamActiveMs == null || row.streamActiveMs <= 0) return null
-  return (row.outputTokens / row.streamActiveMs) * 1000
+/** live 行吞吐：真实计量优先（消息边界更新），流式进行中回退估算口径（estimated 标记）。 */
+function liveTokensPerSecond(row: TurnPerfRow): { value: number; estimated: boolean } | null {
+  if (row.streamActiveMs == null || row.streamActiveMs <= 0) return null
+  const realTokens = row.outputTokens ?? 0
+  const estimatedTokens = row.estimatedOutputTokens ?? 0
+  const tokens = Math.max(realTokens, estimatedTokens)
+  if (tokens <= 0) return null
+  return {
+    value: (tokens / row.streamActiveMs) * 1000,
+    estimated: estimatedTokens > realTokens,
+  }
 }

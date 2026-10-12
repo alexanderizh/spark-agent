@@ -175,7 +175,10 @@
 .perf-row-ttft {
   font-size: 10px;
   color: var(--text-muted);
-  width: 44px;
+  // 路由耗时收进行悬浮提示（rowTooltip），格内只放 TTFT，宽度弹性兜底；
+  // 禁止折行，避免固定 18px 行高内溢出与相邻行文字重叠。
+  min-width: 44px;
+  white-space: nowrap;
   text-align: right;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
