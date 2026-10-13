@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { type ReactNode } from 'react'
+import { type ReactNode, useState } from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,7 @@ import type { McpServerItem } from '@spark/protocol'
 import {
   McpServersPickerModal,
   allSelectableMcpIds,
+  normalizeMcpSelection,
   resolveMcpSelectionLabel,
   staleMcpSelectionIds,
 } from './McpServersPickerModal'
@@ -164,5 +165,139 @@ describe('McpServersPickerModal 失效选择分组（T5）', () => {
   it('无失效 id 时不渲染失效分组', () => {
     render(['srv-enabled', 'builtin:spark_search'])
     expect(container.innerHTML).not.toContain('已失效选择')
+  })
+})
+
+describe('normalizeMcpSelection', () => {
+  it('覆盖全部可选项时归一化为 []，部分选择保留显式清单', () => {
+    expect(normalizeMcpSelection(allSelectableMcpIds(userServers), userServers)).toEqual([])
+    expect(normalizeMcpSelection([], userServers)).toEqual([])
+    expect(normalizeMcpSelection(['builtin:spark_search'], userServers)).toEqual([
+      'builtin:spark_search',
+    ])
+  })
+
+  it('失效 id 不参与「覆盖全部」判等，归一化时随空集一并丢弃', () => {
+    const ids = [...allSelectableMcpIds(userServers), 'ghost-deleted-abcdef01']
+    expect(normalizeMcpSelection(ids, userServers)).toEqual([])
+  })
+})
+
+describe('McpServersPickerModal 视图态（空选择 = 全部可用，按全勾呈现）', () => {
+  let container: HTMLDivElement
+  let root: Root | null = null
+  let latest: string[] = []
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    latest = []
+  })
+
+  afterEach(() => {
+    act(() => {
+      root?.unmount()
+    })
+    container.remove()
+    root = null
+  })
+
+  // 受控宿主：模拟 AgentsView 的 draft 往返，让连续点击能累积到最新选择集。
+  function Harness({ initial }: { initial: string[] }): ReactNode {
+    const [ids, setIds] = useState<string[]>(initial)
+    latest = ids
+    return (
+      <McpServersPickerModal
+        visible
+        userServers={userServers}
+        selectedIds={ids}
+        onChange={setIds}
+        onConfirm={() => {}}
+        onClose={() => {}}
+      />
+    )
+  }
+
+  function render(initial: string[]): void {
+    act(() => {
+      root = createRoot(container)
+      root.render(<Harness initial={initial} />)
+    })
+  }
+
+  function clickRow(name: string): void {
+    const row = Array.from(container.querySelectorAll<HTMLElement>('.mcp-picker-row')).find((r) =>
+      r.textContent?.includes(name),
+    )
+    if (row == null) throw new Error(`未找到 MCP 行：${name}`)
+    act(() => {
+      row.click()
+    })
+  }
+
+  it('空选择时按「全部可用」呈现为全部勾选（停用 server 除外）', () => {
+    render([])
+    const rows = Array.from(container.querySelectorAll<HTMLElement>('.mcp-picker-row'))
+    const boxOf = (row: HTMLElement) =>
+      row.querySelector<HTMLInputElement>('[data-testid="checkbox"]')
+
+    // 停用 server 不参与挂载，保持未勾选
+    const disabledRow = rows.find((r) => r.textContent?.includes('disabled_mcp'))
+    if (disabledRow == null) throw new Error('未找到停用 server 行')
+    expect(boxOf(disabledRow)?.checked).toBe(false)
+
+    // 其余可选行（可选档内置 + enabled 用户 server）全部勾选
+    const selectableBoxes = rows
+      .filter((r) => !r.textContent?.includes('disabled_mcp'))
+      .map(boxOf)
+      .filter((box): box is HTMLInputElement => box != null)
+    expect(selectableBoxes.length).toBeGreaterThan(0)
+    expect(selectableBoxes.every((box) => box.checked)).toBe(true)
+    expect(container.innerHTML).toContain('全部可用（默认，无需勾选）')
+  })
+
+  it('全量模式下取消单项即落为不含该项的显式白名单', () => {
+    render([])
+    clickRow('enabled_mcp')
+
+    expect(latest).not.toContain('srv-enabled')
+    expect(latest).toContain('builtin:spark_search')
+    expect(latest.length).toBe(allSelectableMcpIds(userServers).length - 1)
+  })
+
+  it('白名单模式下勾满全部可选项归一化回 []（动态全量）', () => {
+    render(['srv-enabled'])
+    for (const label of [
+      '平台管理',
+      '插件工具',
+      '子应用',
+      '多媒体生成',
+      '图片生成',
+      '浏览器自动化',
+      '桌面控制',
+      '联网搜索',
+    ]) {
+      clickRow(label)
+    }
+    expect(latest).toEqual([])
+  })
+
+  it('取消后再勾回，选择集恢复全部即归一化回 []', () => {
+    render([])
+    clickRow('enabled_mcp')
+    expect(latest.length).toBe(allSelectableMcpIds(userServers).length - 1)
+
+    clickRow('enabled_mcp')
+    expect(latest).toEqual([])
+  })
+
+  it('部分选择模式下按实际清单呈现，未选项不显示为勾选', () => {
+    render(['srv-enabled'])
+    const checkedCount = Array.from(
+      container.querySelectorAll<HTMLInputElement>('[data-testid="checkbox"]'),
+    ).filter((box) => box.checked).length
+    // 仅 srv-enabled 勾选；表头全选为未全选态，不计入 checked
+    expect(checkedCount).toBe(1)
+    expect(container.innerHTML).toContain('仅挂载所选')
   })
 })

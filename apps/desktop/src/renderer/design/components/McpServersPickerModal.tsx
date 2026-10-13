@@ -13,7 +13,10 @@ import '../views/AgentsView.less' // mcp-picker-* 样式挂在 AgentsView.less�
  *  2. 内置服务（可选档）：可勾选，提交 builtin:spark_* 合成 id；
  *  3. 自定义 MCP 服务器：可勾选（停用的禁选），提交 DB 行 id。
  *
- * 清空/未选择 = 全部可用（默认）；勾满全部可选项由父组件归一化为 []（D6）。
+ * 清空/未选择 = 全部可用（默认）；勾满全部可选项归一化为 []（D6 动态全量）。
+ * 「未选择」在界面上按「全部勾选」呈现：存储态的空数组代表全量挂载，若渲染成
+ * 全不勾选会被误读成「全不可用」，用户随手勾一项就把 Agent 锁成单项白名单
+ * （0.14.14 升级回归的触发路径）。勾选操作一律从视图态出发再归一化。
  * 内置清单与 packages/agent-runtime/src/services/agent-mcp-policy.ts 的
  * REQUIRED/OPTIONAL 分级表双向注释锚定，两侧同时改时必须保持同步。
  */
@@ -70,6 +73,22 @@ export function allSelectableMcpIds(userServers: McpServerItem[]): string[] {
 }
 
 /**
+ * 归一化选择集：覆盖全部可选项时提交 []（= 动态全量，后续新增 server 自动纳入，
+ * 见 D6）；否则提交显式白名单。失效 id（已删除 server）不在可选项内，不影响判等，
+ * 由父组件保存时清理。
+ */
+export function normalizeMcpSelection(
+  ids: readonly string[],
+  userServers: McpServerItem[],
+): string[] {
+  const selectable = allSelectableMcpIds(userServers)
+  if (selectable.length === 0) return [...ids]
+  const selectableSet = new Set(selectable)
+  const covered = ids.filter((id) => selectableSet.has(id))
+  return covered.length === selectable.length ? [] : [...ids]
+}
+
+/**
  * 选择集中已失效的 id（server 已被删除：既不在内置清单、也不在现存 server——含停用——
  * 的 id 集合里）。停用 server 不算失效：它仍在列表中锁定展示，重新启用后选择自动恢复。
  */
@@ -117,7 +136,16 @@ export function McpServersPickerModal({
 }: McpServersPickerModalProps) {
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+  // 视图态：selectedIds 为空 = 「全部可用（默认）」模式——该 Agent 挂载全部已启用
+  // MCP。此时按「全部勾选」呈现，与后端 agent-mcp-policy 的「空 = 全量」语义对齐；
+  // 否则用户会把「全量」误读成「全不可用」，随手勾一项就把 Agent 落成只挂该项的
+  // 白名单（这正是升级后存量非空清单被误锁的触发路径）。
+  const isAllMode = selectedIds.length === 0
+  const viewSelectedIds = useMemo(
+    () => (isAllMode ? allSelectableMcpIds(userServers) : selectedIds),
+    [isAllMode, selectedIds, userServers],
+  )
+  const selectedSet = useMemo(() => new Set(viewSelectedIds), [viewSelectedIds])
 
   const selectable: SelectableRow[] = useMemo(
     () => [
@@ -163,19 +191,23 @@ export function McpServersPickerModal({
     })
   }, [selectable, searchText, statusFilter, selectedSet])
 
+  // 勾选操作一律从「视图态」出发：全量模式下取消某项即从全部可选项里摘掉它，
+  // 落成显式白名单；白名单模式下勾满全部可选项则归一化回 []（动态全量）。
   const handleSelect = (id: string, checked: boolean) => {
-    if (checked) onChange([...selectedIds, id])
-    else onChange(selectedIds.filter((sid) => sid !== id))
+    const next = new Set(viewSelectedIds)
+    if (checked) next.add(id)
+    else next.delete(id)
+    onChange(normalizeMcpSelection(Array.from(next), userServers))
   }
 
   const handleSelectAll = (checked: boolean) => {
     const visibleIds = filtered.filter((row) => row.enabled).map((row) => row.id)
-    if (checked) {
-      onChange(Array.from(new Set([...selectedIds, ...visibleIds])))
-    } else {
-      const visibleIdSet = new Set(visibleIds)
-      onChange(selectedIds.filter((id) => !visibleIdSet.has(id)))
+    const next = new Set(viewSelectedIds)
+    for (const id of visibleIds) {
+      if (checked) next.add(id)
+      else next.delete(id)
     }
+    onChange(normalizeMcpSelection(Array.from(next), userServers))
   }
 
   const checkable = filtered.filter((row) => row.enabled)
@@ -287,12 +319,20 @@ export function McpServersPickerModal({
         <div className="mcp-picker-group">
           <div className="mcp-picker-group-head">
             可选服务
-            <span className="mcp-picker-group-note">按需勾选，未勾选即不挂载</span>
+            <span className="mcp-picker-group-note">
+              {isAllMode ? '默认全部可用' : '仅挂载所选'}
+            </span>
             {checkable.length > 0 && (
-              <span className="mcp-picker-cell mcp-picker-cell--checkbox">
+              <span
+                className="mcp-picker-cell mcp-picker-cell--checkbox"
+                title={
+                  isAllMode ? '默认全部可用；如需收窄请取消单项勾选' : '全选并恢复默认全部可用'
+                }
+              >
                 <Checkbox
                   checked={allSelected}
                   indeterminate={someSelected}
+                  disabled={isAllMode}
                   onChange={(checked) => handleSelectAll(checked)}
                 />
               </span>
@@ -401,7 +441,7 @@ export function McpServersPickerModal({
               {selectedIds.length} 已选
             </Tag>
           ) : (
-            <span className="skills-picker-footer-hint">未选择 = 全部可用（默认）</span>
+            <span className="skills-picker-footer-hint">全部可用（默认，无需勾选）</span>
           )}
           {(searchText || statusFilter !== 'all') && (
             <span className="skills-picker-footer-hint">
@@ -416,7 +456,7 @@ export function McpServersPickerModal({
             disabled={selectedIds.length === 0}
             onClick={() => onChange([])}
           >
-            清空
+            恢复默认
           </Button>
           <Button type="primary" size="middle" onClick={onConfirm}>
             完成
