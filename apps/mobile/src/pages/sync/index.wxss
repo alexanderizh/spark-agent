@@ -1,0 +1,62 @@
+.sync-page {
+  padding: 24rpx 24rpx 48rpx;
+}
+
+/* ─── 进度条 ───────────────────────────────────────────────────────────────── */
+
+.progress {
+  height: 10rpx;
+  background: #f2f2f2;
+  border-radius: 6rpx;
+  margin-top: 20rpx;
+  overflow: hidden;
+}
+.progress-inner {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 6rpx;
+  min-width: 6rpx;
+}
+
+.source-tip {
+  margin-top: 16rpx;
+  padding: 12rpx 16rpx;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 8rpx;
+  line-height: 1.5;
+}
+
+/* ─── 历史条目 ─────────────────────────────────────────────────────────────── */
+
+.history-item {
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #efede8;
+}
+.history-item:last-child {
+  border-bottom: none;
+}
+.history-item--highlight {
+  background: rgba(59, 130, 246, 0.06);
+  border-radius: 8rpx;
+  padding: 20rpx 16rpx;
+  margin: 0 -16rpx;
+}
+
+.history-meta {
+  margin-top: 10rpx;
+}
+
+.history-errors {
+  margin-top: 8rpx;
+  color: #ef4444;
+  line-height: 1.5;
+}
+
+.load-more {
+  text-align: center;
+  padding: 20rpx 0 4rpx;
+}
+.loading-tip {
+  text-align: center;
+  padding: 16rpx 0;
+}

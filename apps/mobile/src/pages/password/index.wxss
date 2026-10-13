@@ -1,0 +1,35 @@
+.password-page {
+  padding: 24rpx 24rpx 48rpx;
+}
+
+.captcha-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16rpx;
+}
+.captcha-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 8rpx;
+}
+
+.notice {
+  margin-top: 24rpx;
+  padding: 16rpx 20rpx;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 8rpx;
+  line-height: 1.6;
+  color: #8d8a86;
+}
+
+.btn-primary--hover {
+  background: #2563eb;
+}
+.btn-plain--hover {
+  background: #f7f7f5;
+}

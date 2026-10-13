@@ -1,0 +1,71 @@
+.home-page {
+  padding: 24rpx 24rpx 48rpx;
+}
+
+.user-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 24rpx;
+}
+.user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+/* ─── 同步 Hero ────────────────────────────────────────────────────────────── */
+
+.sync-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+/* ─── 进度条 ───────────────────────────────────────────────────────────────── */
+
+.progress {
+  height: 10rpx;
+  background: #f2f2f2;
+  border-radius: 6rpx;
+  margin-top: 20rpx;
+  overflow: hidden;
+}
+.progress-inner {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 6rpx;
+  min-width: 6rpx;
+}
+
+/* ─── 类别 chips ───────────────────────────────────────────────────────────── */
+
+.sync-desc {
+  line-height: 1.6;
+  display: block;
+  margin-bottom: 16rpx;
+}
+.category-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+.category-chip {
+  background: #f2f2f2;
+  border-radius: 8rpx;
+  padding: 8rpx 18rpx;
+  font-size: 24rpx;
+  color: #23231f;
+}
+
+/* ─── 入口卡 ───────────────────────────────────────────────────────────────── */
+
+.entry-card {
+  border: 1rpx solid #efede8;
+}
+
+.loading-tip {
+  text-align: center;
+  padding: 16rpx 0;
+}

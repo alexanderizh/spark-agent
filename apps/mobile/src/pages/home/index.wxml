@@ -1,0 +1,94 @@
+<view class="home-page">
+  <!-- 用户卡片 -->
+  <view class="card user-card" bindtap="onGoProfile">
+    <image class="avatar-large" src="{{user && user.avatarUrl ? user.avatarUrl : ''}}" mode="aspectFill" />
+    <view class="grow user-info">
+      <view class="row gap-12">
+        <text class="t-title ellipsis">{{user && user.nickname ? user.nickname : accountMasked}}</text>
+        <text wx:if="{{user && user.tier}}" class="badge {{user.tier.isPaid ? 'badge-info' : 'badge-neutral'}}">{{user.tier.name}}</text>
+      </view>
+      <text class="t-subtitle ellipsis">{{accountMasked}}</text>
+    </view>
+    <text class="card-action">个人中心 ›</text>
+  </view>
+
+  <!-- 同步状态卡 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">账号同步</text>
+      <text class="card-action" bindtap="onGoSync">同步中心 ›</text>
+    </view>
+
+    <view class="sync-hero">
+      <view class="row gap-12">
+        <view class="dot {{status && status.lastStatus === 'success' ? 'dot-success' : (status && status.lastStatus ? 'dot-warning' : 'dot-neutral')}}"></view>
+        <text class="t-strong">{{status && status.lastSyncAt ? formatRelativeTime(status.lastSyncAt) : '尚未同步'}}</text>
+      </view>
+      <text class="t-subtitle">{{status && status.lastDeviceLabel ? '来自 ' + status.lastDeviceLabel : '桌面端登录同一账号后自动同步'}}</text>
+    </view>
+
+    <view class="divider"></view>
+
+    <view class="row between">
+      <view class="col">
+        <text class="t-caption">上次同步数据量</text>
+        <text class="t-strong t-mono">{{formatBytes(status && status.lastPayloadBytes)}}</text>
+      </view>
+      <view class="col" style="align-items: flex-end;">
+        <text class="t-caption">单次上限</text>
+        <text class="t-strong t-mono">{{formatBytes(status ? status.maxPayloadBytes : null)}}</text>
+      </view>
+    </view>
+
+    <view class="progress" wx:if="{{status && status.lastPayloadBytes != null && status.maxPayloadBytes > 0}}">
+      <view class="progress-inner" style="width: {{usagePercent()}}%"></view>
+    </view>
+  </view>
+
+  <!-- 最近同步记录 -->
+  <view class="card" wx:if="{{recent.length > 0}}">
+    <view class="card-head">
+      <text class="card-title">最近同步</text>
+      <text class="card-action" bindtap="onGoSync">全部记录 ›</text>
+    </view>
+    <view
+      wx:for="{{recent}}"
+      wx:key="operationId"
+      class="list-row"
+      data-id="{{item.operationId}}"
+      bindtap="onOpenHistoryItem"
+    >
+      <view class="grow col">
+        <text class="list-row-label ellipsis">{{item.deviceLabel}}</text>
+        <text class="t-caption">{{formatShortTime(item.createdAt)}} · {{item.categories.length}} 类数据</text>
+      </view>
+      <text class="{{historyItemBadgeClass(item.status)}}">{{historyItemLabel(item.status)}}</text>
+    </view>
+  </view>
+
+  <!-- 同步类别说明 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">双向同步内容</text>
+    </view>
+    <text class="t-subtitle sync-desc">桌面端与移动端登录同一账号后，以下数据经服务端双向流转：</text>
+    <view class="category-grid">
+      <view wx:for="{{categories}}" wx:key="*this" class="category-chip">
+        <text>{{categoryLabel(item)}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 设备入口 -->
+  <view class="card card-flat entry-card" bindtap="onGoDevices">
+    <view class="row between">
+      <view class="col">
+        <text class="t-strong">设备与登录会话</text>
+        <text class="t-caption">查看通过同步识别的桌面端设备</text>
+      </view>
+      <text class="card-action">查看 ›</text>
+    </view>
+  </view>
+
+  <view class="loading-tip t-caption" wx:if="{{loading}}">加载中…</view>
+</view>

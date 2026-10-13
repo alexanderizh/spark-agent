@@ -1,0 +1,83 @@
+<view class="sync-page">
+  <!-- 状态详情 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">同步状态</text>
+      <text class="{{statusBadgeClass(status ? status.lastStatus : null)}}">{{statusLabel(status ? status.lastStatus : null)}}</text>
+    </view>
+
+    <view class="list-row">
+      <text class="list-row-label grow">最近同步时间</text>
+      <text class="list-row-value">{{status && status.lastSyncAt ? formatFullTime(status.lastSyncAt) : '—'}}</text>
+    </view>
+    <view class="list-row">
+      <text class="list-row-label grow">最近同步设备</text>
+      <text class="list-row-value">{{status && status.lastDeviceLabel ? status.lastDeviceLabel : '—'}}</text>
+    </view>
+    <view class="list-row">
+      <text class="list-row-label grow">上次数据量 / 单次上限</text>
+      <text class="list-row-value t-mono">{{formatBytes(status && status.lastPayloadBytes)}} / {{formatBytes(status ? status.maxPayloadBytes : null)}}</text>
+    </view>
+
+    <view class="progress" wx:if="{{status && status.lastPayloadBytes != null && status.maxPayloadBytes > 0}}">
+      <view class="progress-inner" style="width: {{usagePercent()}}%"></view>
+    </view>
+
+    <view class="source-tip t-caption" wx:if="{{status && status.source === 'fallback'}}">
+      <text>上限为保守默认值（服务端未返回实测值），仅供参考</text>
+    </view>
+  </view>
+
+  <!-- 同步类别 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">同步类别（{{categories.length}} 类，双向）</text>
+    </view>
+    <view wx:for="{{categories}}" wx:key="*this" class="list-row">
+      <text class="list-row-label grow">{{categoryLabel(item)}}</text>
+      <text class="t-faint t-mono">{{item}}</text>
+    </view>
+  </view>
+
+  <!-- 历史记录 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">同步记录</text>
+      <text class="t-caption" wx:if="{{total > 0}}">共 {{total}} 条</text>
+    </view>
+
+    <block wx:if="{{list.length > 0}}">
+      <view
+        wx:for="{{list}}"
+        wx:key="operationId"
+        class="history-item {{highlight === item.operationId ? 'history-item--highlight' : ''}}"
+      >
+        <view class="row between">
+          <view class="row gap-12 grow">
+            <view class="dot {{item.status === 'success' ? 'dot-success' : (item.status === 'partial' ? 'dot-warning' : 'dot-danger')}}"></view>
+            <text class="t-strong ellipsis">{{item.deviceLabel}}</text>
+          </view>
+          <text class="t-caption">{{formatShortTime(item.createdAt)}}</text>
+        </view>
+        <view class="row between history-meta">
+          <text class="t-caption">{{item.categories.length}} 类 · {{formatDuration(item.durationMs)}}</text>
+          <text class="t-caption">↑{{item.stats.uploaded}} ↓{{item.stats.downloaded}}{{item.stats.conflicts > 0 ? ' ⚠' + item.stats.conflicts : ''}}</text>
+        </view>
+        <view wx:if="{{item.errorCodes.length > 0}}" class="history-errors t-caption ellipsis-2">
+          <text>{{joinErrors(item.errorCodes)}}</text>
+        </view>
+      </view>
+    </block>
+
+    <view wx:elif="{{!loading}}" class="empty">
+      <view class="empty-icon">☁️</view>
+      <text>暂无同步记录</text>
+      <text class="t-caption" style="margin-top: 8rpx;">在桌面端登录同一账号并开启同步后，这里会显示记录</text>
+    </view>
+
+    <view class="load-more t-caption" wx:if="{{loadingMore}}">加载中…</view>
+    <view class="load-more t-caption" wx:elif="{{noMore && list.length > 0}}">— 没有更多了 —</view>
+  </view>
+
+  <view class="loading-tip t-caption" wx:if="{{loading}}">加载中…</view>
+</view>

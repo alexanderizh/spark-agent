@@ -1,0 +1,27 @@
+{
+  "description": "SparkWork 移动端（微信小程序）。miniprogramRoot 指向构建产物 dist/，源码在 src/，由 `pnpm build`（tsc + 静态资产拷贝）生成。",
+  "miniprogramRoot": "dist/",
+  "projectname": "sparkwork-mobile",
+  "appid": "touristappid",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "urlCheck": false,
+    "coverView": true,
+    "lazyloadPlaceholderEnable": false,
+    "skyline": false,
+    "ignoreUploadUnusedFiles": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.4.10",
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  }
+}

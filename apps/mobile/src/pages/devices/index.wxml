@@ -1,0 +1,65 @@
+<view class="devices-page">
+  <!-- 当前设备 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">当前设备</text>
+      <text class="badge badge-info">小程序</text>
+    </view>
+    <view class="list-row">
+      <text class="list-row-label grow">运行平台</text>
+      <text class="list-row-value">{{currentDevice.platform}}</text>
+    </view>
+    <view class="list-row">
+      <text class="list-row-label grow">系统版本</text>
+      <text class="list-row-value">{{currentDevice.system}}</text>
+    </view>
+    <view class="list-row">
+      <text class="list-row-label grow">微信版本</text>
+      <text class="list-row-value">{{currentDevice.version}}</text>
+    </view>
+    <view class="list-row">
+      <text class="list-row-label grow">基础库</text>
+      <text class="list-row-value">{{currentDevice.sdkVersion}}</text>
+    </view>
+  </view>
+
+  <!-- 桌面端设备（同步记录聚合） -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">桌面端设备</text>
+      <text class="t-caption" wx:if="{{devices.length > 0}}">{{devices.length}} 台 · 同步记录 {{total}} 条</text>
+    </view>
+
+    <block wx:if="{{devices.length > 0}}">
+      <view wx:for="{{devices}}" wx:key="label" class="device-item">
+        <view class="row gap-16">
+          <view class="device-icon">🖥</view>
+          <view class="grow col">
+            <text class="t-strong ellipsis">{{item.label}}</text>
+            <text class="t-caption">{{formatRelativeTime(item.lastSeen)}}活跃 · 同步 {{item.count}} 次</text>
+          </view>
+        </view>
+        <view class="device-cats">
+          <text wx:for="{{item.categories}}" wx:for-item="cat" wx:key="*this" class="category-chip">{{categoryLabel(cat)}}</text>
+        </view>
+      </view>
+    </block>
+
+    <view wx:elif="{{!loading}}" class="empty">
+      <view class="empty-icon">🖥</view>
+      <text>暂未识别到桌面端设备</text>
+      <text class="t-caption" style="margin-top: 8rpx; text-align: center;">在桌面端用同一账号登录并开启账号同步后，设备会出现在这里</text>
+    </view>
+  </view>
+
+  <!-- 说明 -->
+  <view class="card card-flat note-card">
+    <text class="t-caption note-text">
+      设备列表来自账号同步记录中的设备标识（edu-server 同步历史）。
+      桌面端为本地优先架构，会话与数据默认存于本机；登录同一账号并开启同步后，
+      自定义命令、提示词、长期记忆、助手、工作流、外观与提示词库会在两端双向流转。
+    </text>
+  </view>
+
+  <view class="loading-tip t-caption" wx:if="{{loading}}">加载中…</view>
+</view>

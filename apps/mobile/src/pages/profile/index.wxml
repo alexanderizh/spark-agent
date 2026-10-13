@@ -1,0 +1,76 @@
+<view class="profile-page">
+  <!-- 用户卡片 -->
+  <view class="card user-card">
+    <view class="avatar-wrap" bindtap="onChangeAvatar">
+      <image
+        class="avatar-large"
+        wx:if="{{user && user.avatarUrl}}"
+        src="{{user.avatarUrl}}"
+        mode="aspectFill"
+      />
+      <view wx:else class="avatar-large avatar-placeholder">
+        <text class="avatar-text">{{avatarInitial()}}</text>
+      </view>
+      <view class="avatar-badge" wx:if="{{!uploadingAvatar}}">📷</view>
+      <view class="avatar-loading" wx:if="{{uploadingAvatar}}">…</view>
+    </view>
+    <view class="grow col">
+      <view class="row gap-12">
+        <text class="t-title ellipsis">{{user && user.nickname ? user.nickname : '未设置昵称'}}</text>
+        <text class="edit-link" bindtap="onEditNickname">编辑</text>
+      </view>
+      <text class="t-subtitle ellipsis">{{accountMasked}}</text>
+      <view class="row gap-8" wx:if="{{user && user.tier}}">
+        <text class="badge {{user.tier.isPaid ? 'badge-info' : 'badge-neutral'}}">{{user.tier.name}}</text>
+        <text class="t-caption">注册于 {{user.createdAt ? formatFullTime(user.createdAt) : '—'}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 账号与安全 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">账号与安全</text>
+    </view>
+    <view class="list-row" bindtap="onGoChangePassword">
+      <text class="list-row-label grow">修改密码</text>
+      <text class="t-faint">›</text>
+    </view>
+  </view>
+
+  <!-- 同步与设备 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">同步与设备</text>
+    </view>
+    <view class="list-row" bindtap="onGoSync">
+      <text class="list-row-label grow">同步中心</text>
+      <text class="t-faint">›</text>
+    </view>
+    <view class="list-row" bindtap="onGoDevices">
+      <text class="list-row-label grow">设备与登录会话</text>
+      <text class="t-faint">›</text>
+    </view>
+  </view>
+
+  <!-- 关于 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">关于</text>
+    </view>
+    <view class="list-row">
+      <text class="list-row-label grow">服务端地址</text>
+      <text class="list-row-value t-mono ellipsis" style="max-width: 360rpx;">{{serverUrl}}</text>
+    </view>
+    <view class="list-row">
+      <text class="list-row-label grow">版本</text>
+      <text class="list-row-value">v1.0.0</text>
+    </view>
+  </view>
+
+  <view class="btn btn-danger-plain btn-block" hover-class="btn-danger-plain--hover" bindtap="onLogout">
+    <text>退出登录</text>
+  </view>
+
+  <view class="safe-bottom"></view>
+</view>

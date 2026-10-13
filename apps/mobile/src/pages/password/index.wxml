@@ -1,0 +1,96 @@
+<view class="password-page">
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">验证身份</text>
+    </view>
+
+    <view class="field">
+      <text class="field-label">账号绑定的手机号</text>
+      <input
+        class="field-input"
+        placeholder="短信将发送至该手机号"
+        type="number"
+        maxlength="11"
+        value="{{phone}}"
+        bindinput="onPhoneInput"
+      />
+    </view>
+
+    <view class="field">
+      <text class="field-label">图片验证码</text>
+      <view class="captcha-row">
+        <input
+          class="field-input captcha-input"
+          placeholder="请输入验证码"
+          value="{{captchaText}}"
+          bindinput="onCaptchaInput"
+        />
+        <captcha-image
+          id="captcha"
+          svg="{{captchaSvg}}"
+          captcha-id="{{captchaId}}"
+          bind:refresh="onRefreshCaptcha"
+        />
+      </view>
+    </view>
+
+    <view class="field">
+      <text class="field-label">短信验证码</text>
+      <view class="captcha-row">
+        <input
+          class="field-input captcha-input"
+          placeholder="请输入验证码"
+          type="number"
+          value="{{smsCode}}"
+          bindinput="onSmsCodeInput"
+        />
+        <view
+          class="btn btn-plain btn-small {{codeCountdown > 0 ? 'btn-loading' : ''}}"
+          hover-class="btn-plain--hover"
+          bindtap="onSendCode"
+        >
+          <text>{{codeCountdown > 0 ? codeCountdown + 's' : (sendingCode ? '发送中' : '获取验证码')}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">设置新密码</text>
+    </view>
+
+    <view class="field">
+      <text class="field-label">新密码（至少 8 位）</text>
+      <input
+        class="field-input"
+        placeholder="请输入新密码"
+        password
+        value="{{newPassword}}"
+        bindinput="onNewPasswordInput"
+      />
+      <text wx:if="{{passwordLevel()}}" class="field-hint t-caption">强度：{{passwordLevel()}}</text>
+    </view>
+
+    <view class="field">
+      <text class="field-label">确认新密码</text>
+      <input
+        class="field-input"
+        placeholder="请再次输入新密码"
+        password
+        value="{{confirmPassword}}"
+        bindinput="onConfirmPasswordInput"
+      />
+    </view>
+
+    <view class="btn btn-primary btn-block {{submitting ? 'btn-loading' : ''}}" hover-class="btn-primary--hover" bindtap="onSubmit">
+      <text>{{submitting ? '提交中…' : '确认修改'}}</text>
+    </view>
+
+    <view class="notice t-caption">
+      <text>修改成功后，所有设备（含桌面端）的登录状态都会失效，需要重新登录。</text>
+    </view>
+  </view>
+
+  <view class="safe-bottom"></view>
+</view>

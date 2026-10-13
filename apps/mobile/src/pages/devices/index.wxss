@@ -1,0 +1,55 @@
+.devices-page {
+  padding: 24rpx 24rpx 48rpx;
+}
+
+/* ─── 设备条目 ─────────────────────────────────────────────────────────────── */
+
+.device-item {
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #efede8;
+}
+.device-item:last-child {
+  border-bottom: none;
+}
+
+.device-icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 16rpx;
+  background: #f2f2f2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36rpx;
+  flex: none;
+}
+
+.device-cats {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 14rpx;
+}
+.category-chip {
+  background: #f2f2f2;
+  border-radius: 8rpx;
+  padding: 6rpx 14rpx;
+  font-size: 20rpx;
+  color: #8d8a86;
+}
+
+/* ─── 说明卡 ───────────────────────────────────────────────────────────────── */
+
+.note-card {
+  border: 1rpx solid #efede8;
+}
+.note-text {
+  line-height: 1.7;
+  display: block;
+}
+
+.loading-tip {
+  text-align: center;
+  padding: 16rpx 0;
+}

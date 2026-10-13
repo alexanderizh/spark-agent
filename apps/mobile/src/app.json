@@ -1,0 +1,52 @@
+{
+  "pages": [
+    "pages/entry/index",
+    "pages/login/index",
+    "pages/home/index",
+    "pages/sync/index",
+    "pages/devices/index",
+    "pages/profile/index"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTitleText": "SparkWork",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#fafafa",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#8d8a86",
+    "selectedColor": "#3b82f6",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "工作台",
+        "iconPath": "assets/tabbar/home-normal.png",
+        "selectedIconPath": "assets/tabbar/home-active.png"
+      },
+      {
+        "pagePath": "pages/sync/index",
+        "text": "同步",
+        "iconPath": "assets/tabbar/sync-normal.png",
+        "selectedIconPath": "assets/tabbar/sync-active.png"
+      },
+      {
+        "pagePath": "pages/devices/index",
+        "text": "设备",
+        "iconPath": "assets/tabbar/devices-normal.png",
+        "selectedIconPath": "assets/tabbar/devices-active.png"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的",
+        "iconPath": "assets/tabbar/profile-normal.png",
+        "selectedIconPath": "assets/tabbar/profile-active.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

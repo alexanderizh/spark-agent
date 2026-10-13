@@ -1,0 +1,68 @@
+.login-page {
+  padding: 48rpx 40rpx 64rpx;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* ─── 品牌区 ───────────────────────────────────────────────────────────────── */
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 48rpx;
+}
+.brand-logo {
+  width: 108rpx;
+  height: 108rpx;
+  border-radius: 24rpx;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 52rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20rpx;
+}
+.brand-name {
+  font-size: 40rpx;
+  margin-bottom: 8rpx;
+}
+.brand-slogan {
+  text-align: center;
+}
+
+/* ─── 表单细节 ─────────────────────────────────────────────────────────────── */
+
+.captcha-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16rpx;
+}
+.captcha-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.toggle-register {
+  text-align: center;
+  margin-top: 28rpx;
+  color: #3b82f6;
+}
+
+.agreement {
+  text-align: center;
+  margin-top: 48rpx;
+  line-height: 1.6;
+}
+
+/* ─── hover 态 ─────────────────────────────────────────────────────────────── */
+
+.btn-primary--hover {
+  background: #2563eb;
+}
+.btn-plain--hover {
+  background: #f7f7f5;
+}

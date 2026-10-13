@@ -1,0 +1,16 @@
+<view class="captcha">
+  <image
+    wx:if="{{!failed}}"
+    class="captcha-img"
+    src="{{useLocal ? localPath : svg}}"
+    mode="aspectFit"
+    binderror="onImageError"
+    bindtap="onTap"
+  />
+  <view wx:elif class="captcha-failed" bindtap="onTap">
+    <text class="t-caption">加载失败\n点击重试</text>
+  </view>
+  <view class="captcha-refresh" hover-class="captcha-refresh--hover" bindtap="onTap">
+    <text class="captcha-refresh-text">换一张</text>
+  </view>
+</view>

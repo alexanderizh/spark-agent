@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "登录 SparkWork",
+  "usingComponents": {
+    "captcha-image": "/components/captcha-image/index"
+  }
+}

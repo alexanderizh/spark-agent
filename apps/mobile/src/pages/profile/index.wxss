@@ -1,0 +1,65 @@
+.profile-page {
+  padding: 24rpx 24rpx 48rpx;
+}
+
+/* ─── 用户卡片 ─────────────────────────────────────────────────────────────── */
+
+.user-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.avatar-wrap {
+  position: relative;
+  flex: none;
+}
+.avatar-placeholder {
+  background: #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.avatar-text {
+  color: #fff;
+  font-size: 48rpx;
+  font-weight: 600;
+}
+.avatar-badge {
+  position: absolute;
+  right: -4rpx;
+  bottom: -4rpx;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  background: #fff;
+  border: 1rpx solid #efede8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+}
+.avatar-loading {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(17, 16, 14, 0.5);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+}
+
+.edit-link {
+  font-size: 24rpx;
+  color: #3b82f6;
+  flex: none;
+}
+
+/* ─── hover ────────────────────────────────────────────────────────────────── */
+
+.btn-danger-plain--hover {
+  background: #fef2f2;
+}

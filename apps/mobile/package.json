@@ -1,0 +1,18 @@
+{
+  "name": "@spark/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SparkWork 移动端（微信小程序）— 桌面端的移动伴侣：账号登录同步、同步状态、设备与会话管理",
+  "scripts": {
+    "dev": "node scripts/build.mjs --watch",
+    "build": "node scripts/build.mjs && node scripts/verify-dist.mjs",
+    "icons": "node scripts/gen-tabbar-icons.mjs",
+    "verify": "node scripts/verify-dist.mjs",
+    "smoke": "node scripts/smoke-api.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "miniprogram-api-typings": "^3.12.3",
+    "typescript": "^5.5.0"
+  }
+}

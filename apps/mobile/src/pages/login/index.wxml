@@ -1,0 +1,204 @@
+<view class="login-page">
+  <view class="brand">
+    <view class="brand-logo">S</view>
+    <view class="brand-name t-strong">SparkWork</view>
+    <view class="brand-slogan t-subtitle">桌面端的移动伴侣 · 账号同步 · 设备互通</view>
+  </view>
+
+  <view class="segment">
+    <view
+      class="segment-item {{mode === 'password' ? 'active' : ''}}"
+      data-mode="password"
+      bindtap="onModeChange"
+    >密码登录</view>
+    <view
+      class="segment-item {{mode === 'code' ? 'active' : ''}}"
+      data-mode="code"
+      bindtap="onModeChange"
+    >邮箱验证码</view>
+    <view
+      class="segment-item {{mode === 'sms' ? 'active' : ''}}"
+      data-mode="sms"
+      bindtap="onModeChange"
+    >短信登录</view>
+  </view>
+
+  <!-- 密码登录 -->
+  <block wx:if="{{mode === 'password' && !registering}}">
+    <view class="field">
+      <text class="field-label">账号（邮箱 / 手机号）</text>
+      <input class="field-input" placeholder="请输入账号" value="{{account}}" bindinput="onAccountInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">密码</text>
+      <input class="field-input" placeholder="请输入密码" password value="{{password}}" bindinput="onPasswordInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">图片验证码</text>
+      <view class="captcha-row">
+        <input
+          class="field-input captcha-input"
+          placeholder="请输入验证码"
+          value="{{captchaText}}"
+          bindinput="onCaptchaInput"
+        />
+        <captcha-image
+          id="captcha"
+          svg="{{captchaSvg}}"
+          captcha-id="{{captchaId}}"
+          bind:refresh="onRefreshCaptcha"
+        />
+      </view>
+    </view>
+  </block>
+
+  <!-- 邮箱验证码登录 -->
+  <block wx:elif="{{mode === 'code' && !registering}}">
+    <view class="field">
+      <text class="field-label">邮箱账号</text>
+      <input class="field-input" placeholder="请输入邮箱" value="{{account}}" bindinput="onAccountInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">图片验证码</text>
+      <view class="captcha-row">
+        <input
+          class="field-input captcha-input"
+          placeholder="请输入验证码"
+          value="{{captchaText}}"
+          bindinput="onCaptchaInput"
+        />
+        <captcha-image
+          id="captcha"
+          svg="{{captchaSvg}}"
+          captcha-id="{{captchaId}}"
+          bind:refresh="onRefreshCaptcha"
+        />
+      </view>
+    </view>
+    <view class="field">
+      <text class="field-label">邮箱验证码</text>
+      <view class="captcha-row">
+        <input
+          class="field-input captcha-input"
+          placeholder="请输入验证码"
+          value="{{emailCode}}"
+          bindinput="onEmailCodeInput"
+        />
+        <view
+          class="btn btn-plain btn-small {{codeCountdown > 0 ? 'btn-loading' : ''}}"
+          hover-class="btn-plain--hover"
+          bindtap="onSendCode"
+        >
+          <text>{{codeCountdown > 0 ? codeCountdown + 's' : (sendingCode ? '发送中' : '获取验证码')}}</text>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 短信登录 -->
+  <block wx:elif="{{mode === 'sms' && !registering}}">
+    <view class="field">
+      <text class="field-label">手机号</text>
+      <input class="field-input" placeholder="请输入手机号" type="number" maxlength="11" value="{{phone}}" bindinput="onPhoneInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">图片验证码</text>
+      <view class="captcha-row">
+        <input
+          class="field-input captcha-input"
+          placeholder="请输入验证码"
+          value="{{captchaText}}"
+          bindinput="onCaptchaInput"
+        />
+        <captcha-image
+          id="captcha"
+          svg="{{captchaSvg}}"
+          captcha-id="{{captchaId}}"
+          bind:refresh="onRefreshCaptcha"
+        />
+      </view>
+    </view>
+    <view class="field">
+      <text class="field-label">短信验证码</text>
+      <view class="captcha-row">
+        <input
+          class="field-input captcha-input"
+          placeholder="请输入验证码"
+          type="number"
+          value="{{smsCode}}"
+          bindinput="onSmsCodeInput"
+        />
+        <view
+          class="btn btn-plain btn-small {{codeCountdown > 0 ? 'btn-loading' : ''}}"
+          hover-class="btn-plain--hover"
+          bindtap="onSendCode"
+        >
+          <text>{{codeCountdown > 0 ? codeCountdown + 's' : (sendingCode ? '发送中' : '获取验证码')}}</text>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 注册 -->
+  <block wx:elif="{{registering}}">
+    <view class="field">
+      <text class="field-label">邮箱账号</text>
+      <input class="field-input" placeholder="请输入邮箱" value="{{account}}" bindinput="onAccountInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">密码（至少 6 位）</text>
+      <input class="field-input" placeholder="请输入密码" password value="{{password}}" bindinput="onPasswordInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">图片验证码</text>
+      <view class="captcha-row">
+        <input
+          class="field-input captcha-input"
+          placeholder="请输入验证码"
+          value="{{captchaText}}"
+          bindinput="onCaptchaInput"
+        />
+        <captcha-image
+          id="captcha"
+          svg="{{captchaSvg}}"
+          captcha-id="{{captchaId}}"
+          bind:refresh="onRefreshCaptcha"
+        />
+      </view>
+    </view>
+    <view class="field">
+      <text class="field-label">邮箱验证码</text>
+      <view class="captcha-row">
+        <input
+          class="field-input captcha-input"
+          placeholder="请输入验证码"
+          value="{{emailCode}}"
+          bindinput="onEmailCodeInput"
+        />
+        <view
+          class="btn btn-plain btn-small {{codeCountdown > 0 ? 'btn-loading' : ''}}"
+          hover-class="btn-plain--hover"
+          bindtap="onSendCode"
+        >
+          <text>{{codeCountdown > 0 ? codeCountdown + 's' : (sendingCode ? '发送中' : '获取验证码')}}</text>
+        </view>
+      </view>
+    </view>
+    <view class="field">
+      <text class="field-label">邀请码（选填）</text>
+      <input class="field-input" placeholder="如有邀请码请填写" value="{{inviteCode}}" bindinput="onInviteCodeInput" />
+    </view>
+  </block>
+
+  <view class="btn btn-primary btn-block {{submitting ? 'btn-loading' : ''}}" hover-class="btn-primary--hover" bindtap="onSubmit">
+    <text>{{submitting ? '处理中…' : (registering ? '注 册' : '登 录')}}</text>
+  </view>
+
+  <view class="toggle-register t-caption" bindtap="onToggleRegister">
+    <text>{{registering ? '已有账号？去登录' : '没有账号？注册新账号'}}</text>
+  </view>
+
+  <view class="agreement t-caption">
+    <text>登录即表示同意与桌面端 SparkWork 使用同一账号体系</text>
+  </view>
+</view>
