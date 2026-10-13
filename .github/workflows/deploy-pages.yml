@@ -46,6 +46,9 @@ jobs:
             docs-site/capabilities.html \
             docs-site/operations.html \
             docs-site/404.html \
+            docs-site/robots.txt \
+            docs-site/sitemap.xml \
+            docs-site/llms.txt \
             docs-site/assets/site.css; do
             test -s "$file"
           done

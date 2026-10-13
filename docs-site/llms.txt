@@ -1,0 +1,22 @@
+# SparkWork
+
+> SparkWork is a local-first desktop Agent workbench for professional software development and complex work.
+
+SparkWork helps users orchestrate workflows, collaborate across Agent sessions, route tasks to models, and extend runs with custom tools and apps. Runs are reviewable, steerable, and reversible.
+
+The product supports macOS, Windows, and Linux. The desktop app is licensed under MIT. Model providers, bundled dependencies, and external services may have separate terms.
+
+## Product
+
+- Official website: https://www.yiqibyte.com/
+- Download: https://www.yiqibyte.com/download
+- User documentation: https://www.yiqibyte.com/docs
+- Source repository: https://github.com/alexanderizh/spark-agent
+- Source license: https://github.com/alexanderizh/spark-agent/blob/master/LICENSE
+
+## Engineering handbook
+
+- Overview: https://alexanderizh.github.io/spark-agent/
+- Runtime architecture: https://alexanderizh.github.io/spark-agent/architecture.html
+- Capabilities: https://alexanderizh.github.io/spark-agent/capabilities.html
+- Operations: https://alexanderizh.github.io/spark-agent/operations.html

@@ -2,11 +2,13 @@
 
 # SparkWork
 
-**本地优先的桌面 AI Agent 工作台：在一个应用里完成对话、开发、调研、文档、多媒体创作与自动化。**
+**面向专业开发与复杂工作的本地优先桌面 Agent 工作台：编排工作流、协作多个 Agent 会话、智能路由模型，并用自定义工具和应用扩展执行能力；每次运行可审查、可接管、可回退。**
+
+**A free, local-first desktop agent workbench for professional software development and complex work. Orchestrate workflows, collaborate across agent sessions, route tasks to the right models, and extend the workspace with custom tools and apps — with reviewable, steerable, reversible runs on macOS, Windows and Linux.**
 
 [官网](https://www.yiqibyte.com/) · [下载](#下载安装) · [能力图解](#能力图解) · [功能特性](#功能特性) · [快速开始](#快速开始) · [从源码构建](#从源码构建) · [工程手册](https://alexanderizh.github.io/spark-agent/) · [贡献指南](CONTRIBUTING.md) · [更新日志](CHANGELOG.md)
 
-[![License](https://img.shields.io/badge/license-Personal%20Use-blue)](#许可证)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](apps/desktop)
 [![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](apps/desktop)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](tsconfig.base.json)
@@ -17,7 +19,15 @@
 
 ## ✨ 项目简介
 
-SparkWork（仓库名 Spark Agent）是一个运行在 macOS、Windows 和 Linux 上的桌面 AI Agent 工作台。
+SparkWork 是面向专业开发者与重度知识工作者的桌面 Agent 工作台，运行于 macOS、Windows 和 Linux。它把任务编排、Agent 会话协作、模型智能路由、代码和文件工具、自定义应用，以及执行审查与回退放进一个本地优先的工作空间。
+
+核心亮点：
+
+- **可编排工作流**：把计划、Agent、工具、审批、验证与交付组织为可恢复的执行流程。
+- **Agent 会话协作**：由 Host Agent 调度多个成员 Agent 分工执行，并可回看交接与汇总。
+- **智能路由**：按任务强度分派到合适的模型和渠道，失败时自动降级。
+- **自定义工具与应用**：把 API、脚本和团队流程扩展为 Agent 可调用的工具或桌面应用。
+- **可审查的执行**：查看工具调用、权限审批与代码改动，并按需接管或回退。
 
 > 项目仍在快速迭代，部分功能和界面可能继续调整。
 
@@ -368,9 +378,7 @@ pnpm typecheck && pnpm lint && pnpm test
 
 ## 许可证
 
-本项目使用基于 Apache License 2.0、附加个人用途限制的许可证，详情见 [LICENSE](LICENSE)。个人学习、研究、评估与非商业自用可以使用；公司/机构内部使用、客户交付、付费服务或其他商业用途需要事先获得书面授权。
-
-该许可证不是标准 SPDX `Apache-2.0` 许可证。
+SparkWork 使用 [MIT License](LICENSE)。你可以使用、修改、分发本项目，也可以将其用于商业用途；项目依赖、模型服务和第三方资源仍分别遵循各自的许可证与服务条款。
 
 ---
 

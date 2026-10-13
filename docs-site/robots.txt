@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://alexanderizh.github.io/spark-agent/sitemap.xml

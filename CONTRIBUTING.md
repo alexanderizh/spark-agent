@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你关注 SparkWork。仓库当前是公开源码项目，使用项目自定义的个人使用许可证；提交代码前请先阅读 [LICENSE](LICENSE)。
+感谢你关注 SparkWork。项目使用 MIT License；提交代码前请先阅读 [LICENSE](LICENSE)。
 
 ## 开始之前
 

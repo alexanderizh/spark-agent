@@ -1,7 +1,7 @@
 {
   "name": "@spark/desktop",
   "version": "0.14.15",
-  "description": "SparkWork desktop application — Electron + React + TypeScript",
+  "description": "SparkWork — local-first desktop agent workbench for professional development and complex work",
   "author": "SparkWork Team",
   "private": true,
   "main": "./out/main/index.js",

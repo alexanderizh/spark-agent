@@ -2,9 +2,9 @@
   "name": "spark-agent",
   "version": "0.1.22",
   "private": true,
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "type": "module",
-  "description": "Spark Agent — Local-first AI Agent desktop workbench",
+  "description": "SparkWork — Local-first desktop agent workbench for professional development and complex work",
   "packageManager": "pnpm@11.13.0",
   "engines": {
     "node": ">=22.14.0 <23",
