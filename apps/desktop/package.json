@@ -1,6 +1,6 @@
 {
   "name": "@spark/desktop",
-  "version": "0.14.15",
+  "version": "0.14.16",
   "description": "SparkWork — local-first desktop agent workbench for professional development and complex work",
   "author": "SparkWork Team",
   "private": true,
