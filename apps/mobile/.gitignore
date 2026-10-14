@@ -1,3 +1,6 @@
 dist/
 node_modules/
 *.log
+
+# 微信开发者工具个人私有配置（appid、编译条件等本机状态）
+project.private.config.json

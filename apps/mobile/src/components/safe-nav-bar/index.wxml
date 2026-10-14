@@ -1,0 +1,17 @@
+<!-- 自定义导航栏：状态栏占位 + 胶囊对齐内容行 -->
+
+<view class="navbar" style="padding-top: {{statusBarHeight}}px;">
+  <view class="navbar-row" style="height: {{navHeight}}px; padding-right: {{navClearance}}px;">
+    <view class="navbar-side">
+      <view wx:if="{{showBack}}" class="circle-btn circle-btn--sm" hover-class="hover-dim" bindtap="onBack">
+        <view class="icon icon-sm icon-back"></view>
+      </view>
+    </view>
+    <view class="navbar-title ellipsis">{{title}}</view>
+    <view class="navbar-side navbar-side--right">
+      <view wx:if="{{showMore}}" class="circle-btn circle-btn--sm" hover-class="hover-dim" bindtap="onMore">
+        <view class="icon icon-sm icon-more"></view>
+      </view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,9 @@
+{
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "safe-nav-bar": "../../components/safe-nav-bar/index",
+    "rich-md": "../../components/rich-md/index",
+    "capsule-composer": "../../components/capsule-composer/index",
+    "empty-state": "../../components/empty-state/index"
+  }
+}

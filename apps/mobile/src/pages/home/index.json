@@ -1,4 +1,8 @@
 {
-  "navigationBarTitleText": "SparkWork 工作台",
-  "usingComponents": {}
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "SparkWork",
+  "usingComponents": {
+    "capsule-composer": "../../components/capsule-composer/index",
+    "empty-state": "../../components/empty-state/index"
+  }
 }

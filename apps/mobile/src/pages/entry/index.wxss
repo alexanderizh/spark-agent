@@ -1,3 +1,46 @@
 .entry-page {
-  background: transparent;
+  min-height: 100vh;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* navigationStyle: custom —— 顶部留出状态栏空间，否则内容被状态栏压住 */
+  padding: calc(env(safe-area-inset-top) + 80rpx) 48rpx 120rpx;
+}
+
+.entry-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.entry-name {
+  font-size: 40rpx;
+  font-weight: 600;
+  color: #11100e;
+  letter-spacing: 2rpx;
+}
+
+.entry-hint {
+  font-size: 24rpx;
+  color: #8d8a86;
+  text-align: center;
+  line-height: 1.6;
+  max-width: 560rpx;
+}
+
+.entry-retry {
+  margin-top: 40rpx;
+  font-size: 26rpx;
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.12);
+  border-radius: 8rpx;
+  padding: 16rpx 48rpx;
+  line-height: 1;
+}
+
+.entry-retry--hover {
+  opacity: 0.7;
 }

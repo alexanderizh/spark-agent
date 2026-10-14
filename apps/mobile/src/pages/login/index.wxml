@@ -190,7 +190,7 @@
     </view>
   </block>
 
-  <view class="btn btn-primary btn-block {{submitting ? 'btn-loading' : ''}}" hover-class="btn-primary--hover" bindtap="onSubmit">
+  <view class="btn btn-primary btn-block submit-btn {{submitting ? 'btn-loading' : ''}}" hover-class="btn-primary--hover" bindtap="onSubmit">
     <text>{{submitting ? '处理中…' : (registering ? '注 册' : '登 录')}}</text>
   </view>
 

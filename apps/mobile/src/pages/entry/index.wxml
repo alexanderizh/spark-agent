@@ -1,1 +1,9 @@
-<view class="entry-page"><!-- 透明中转页，无内容 --></view>
+<view class="entry-page">
+  <view class="entry-brand">
+    <text class="entry-name">SparkWork</text>
+    <text class="entry-hint">{{hint}}</text>
+  </view>
+  <view wx:if="{{failed}}" class="entry-retry" hover-class="entry-retry--hover" bindtap="go">
+    <text>重试</text>
+  </view>
+</view>

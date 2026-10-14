@@ -1,0 +1,30 @@
+<!-- 胶囊输入框：float=悬浮 / dock=停靠；右圆形按钮发送/停止 -->
+
+<view class="composer composer--{{mode}} {{focus ? 'composer--focus' : ''}}">
+  <view class="composer-shell row">
+    <textarea
+      class="composer-input"
+      value="{{value}}"
+      placeholder="{{placeholder}}"
+      placeholder-style="color:#b3b0ab"
+      auto-height
+      maxlength="8000"
+      show-confirm-bar="{{false}}"
+      confirm-type="send"
+      disabled="{{disabled}}"
+      adjust-position="{{mode === 'dock'}}"
+      cursor-spacing="16"
+      bindinput="onInput"
+      bindfocus="onFocus"
+      bindblur="onBlur"
+      bindconfirm="onSend"
+    />
+    <view
+      class="composer-action {{running || value ? 'composer-action--dark' : ''}}"
+      hover-class="composer-action--hover"
+      bindtap="onSend"
+    >
+      <view class="icon icon-sm {{running ? 'icon-stop' : 'icon-send-white'}}"></view>
+    </view>
+  </view>
+</view>

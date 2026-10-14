@@ -1,0 +1,10 @@
+<!-- 空态三件套：图标 + 标题 + 指引 -->
+
+<view class="empty-state">
+  <view class="empty-state-icon">
+    <view class="icon icon-{{icon}}"></view>
+  </view>
+  <text class="empty-state-title">{{title}}</text>
+  <text wx:if="{{desc}}" class="empty-state-desc">{{desc}}</text>
+  <slot></slot>
+</view>

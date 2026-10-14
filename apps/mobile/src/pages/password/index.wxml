@@ -69,7 +69,7 @@
         value="{{newPassword}}"
         bindinput="onNewPasswordInput"
       />
-      <text wx:if="{{passwordLevel()}}" class="field-hint t-caption">强度：{{passwordLevel()}}</text>
+      <text wx:if="{{passwordLevel}}" class="field-hint t-caption">强度：{{passwordLevel}}</text>
     </view>
 
     <view class="field">

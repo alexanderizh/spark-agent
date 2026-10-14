@@ -1,0 +1,32 @@
+/* 自定义导航栏：透明背景融入页面暖白底，标题居中 */
+
+.navbar {
+  background: #f7f6f4;
+}
+
+.navbar-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+}
+
+.navbar-side {
+  width: 68rpx;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+.navbar-side--right {
+  justify-content: flex-end;
+}
+
+.navbar-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}

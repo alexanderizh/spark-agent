@@ -1,0 +1,69 @@
+<!-- 远程对话页：自定义导航 + 居中时间分界 + 用户气泡/AI 文档排版 + 胶囊输入 -->
+
+<view class="chat-page">
+  <safe-nav-bar title="{{title}}" show-more="{{true}}" bind:more="onMore" />
+
+  <scroll-view class="chat-scroll" scroll-y scroll-into-view="{{scrollToId}}" scroll-anchoring>
+    <view class="chat-body">
+      <view wx:if="{{loading}}" class="loading-tip">加载历史…</view>
+
+      <empty-state
+        wx:elif="{{messages.length === 0}}"
+        icon="chat"
+        title="开始新的对话"
+        desc="发送的消息会直达桌面端同一会话，回复实时流式回传"
+      />
+
+      <block wx:else>
+        <block wx:for="{{items}}" wx:key="key">
+          <!-- 天级时间分界（居中灰字） -->
+          <view wx:if="{{item.kind === 'time'}}" class="chat-time">{{item.label}}</view>
+
+          <!-- 用户消息：右侧灰色气泡 -->
+          <view wx:elif="{{item.kind === 'user'}}" class="msg-row msg-row--user">
+            <view class="bubble-user">
+              <text user-select>{{item.text}}</text>
+            </view>
+          </view>
+
+          <!-- AI 回复：全宽文档式 Markdown -->
+          <view wx:elif="{{item.kind === 'assistant'}}" class="msg-row msg-row--assistant">
+            <rich-md wx:if="{{item.text}}" content="{{item.text}}" />
+            <view wx:else class="chat-typing row gap-8">
+              <view class="typing-dot"></view>
+              <view class="typing-dot typing-dot--2"></view>
+              <view class="typing-dot typing-dot--3"></view>
+            </view>
+          </view>
+
+          <!-- 工具调用行（折叠样式） -->
+          <view wx:elif="{{item.kind === 'tool'}}" class="tool-line row">
+            <view class="tool-dot dot {{item.toolStatus === 'success' ? 'dot-success' : (item.toolStatus === 'error' ? 'dot-danger' : 'dot-warning')}}"></view>
+            <text class="tool-name t-mono ellipsis">{{item.toolName}}</text>
+            <text class="tool-status">{{item.toolStatus === 'success' ? '完成' : (item.toolStatus === 'error' ? '失败' : '运行中')}}</text>
+          </view>
+
+          <!-- 状态行（思考中 / 错误） -->
+          <view wx:elif="{{item.kind === 'status'}}" class="status-line {{item.tone === 'error' ? 'status-line--error' : ''}}">
+            <view wx:if="{{item.tone === 'running'}}" class="status-spinner"></view>
+            <text class="t-caption">{{item.text}}</text>
+          </view>
+        </block>
+      </block>
+
+      <view class="chat-anchor" id="chat-anchor"></view>
+    </view>
+  </scroll-view>
+
+  <view class="chat-dock safe-bottom">
+    <capsule-composer
+      mode="dock"
+      value="{{inputText}}"
+      placeholder="继续对话…"
+      running="{{running}}"
+      bind:input="onInput"
+      bind:send="onSend"
+      bind:stop="onCancel"
+    />
+  </view>
+</view>

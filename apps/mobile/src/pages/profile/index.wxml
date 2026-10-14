@@ -9,7 +9,7 @@
         mode="aspectFill"
       />
       <view wx:else class="avatar-large avatar-placeholder">
-        <text class="avatar-text">{{avatarInitial()}}</text>
+        <text class="avatar-text">{{avatarInitial}}</text>
       </view>
       <view class="avatar-badge" wx:if="{{!uploadingAvatar}}">📷</view>
       <view class="avatar-loading" wx:if="{{uploadingAvatar}}">…</view>
@@ -22,7 +22,7 @@
       <text class="t-subtitle ellipsis">{{accountMasked}}</text>
       <view class="row gap-8" wx:if="{{user && user.tier}}">
         <text class="badge {{user.tier.isPaid ? 'badge-info' : 'badge-neutral'}}">{{user.tier.name}}</text>
-        <text class="t-caption">注册于 {{user.createdAt ? formatFullTime(user.createdAt) : '—'}}</text>
+        <text class="t-caption">注册于 {{createdAtLabel}}</text>
       </view>
     </view>
   </view>
@@ -38,20 +38,24 @@
     </view>
   </view>
 
-  <!-- 同步与设备 -->
-  <view class="card">
-    <view class="card-head">
-      <text class="card-title">同步与设备</text>
-    </view>
-    <view class="list-row" bindtap="onGoSync">
-      <text class="list-row-label grow">同步中心</text>
-      <text class="t-faint">›</text>
-    </view>
-    <view class="list-row" bindtap="onGoDevices">
-      <text class="list-row-label grow">设备与登录会话</text>
-      <text class="t-faint">›</text>
-    </view>
-  </view>
+      <!-- 同步与设备 -->
+      <view class="card">
+        <view class="card-head">
+          <text class="card-title">会话与设备</text>
+        </view>
+        <view class="list-row" bindtap="onGoSessions">
+          <text class="list-row-label grow">全部会话</text>
+          <text class="t-faint">›</text>
+        </view>
+        <view class="list-row" bindtap="onGoSync">
+          <text class="list-row-label grow">同步中心</text>
+          <text class="t-faint">›</text>
+        </view>
+        <view class="list-row" bindtap="onGoDevices">
+          <text class="list-row-label grow">设备与登录会话</text>
+          <text class="t-faint">›</text>
+        </view>
+      </view>
 
   <!-- 关于 -->
   <view class="card">

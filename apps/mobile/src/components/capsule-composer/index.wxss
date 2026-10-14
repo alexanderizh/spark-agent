@@ -1,0 +1,64 @@
+/* 胶囊输入框：白底全圆角，聚焦时描边加深 */
+
+.composer {
+  box-sizing: border-box;
+}
+
+/* 悬浮模式：fixed 覆盖在列表之上，距底部安全区 24rpx */
+.composer--float {
+  position: fixed;
+  left: 32rpx;
+  right: 32rpx;
+  bottom: calc(env(safe-area-inset-bottom) + 24rpx);
+  z-index: 20;
+}
+
+/* 停靠模式：聊天页文档流内，页面自身负责底部安全区 */
+.composer--dock {
+  padding: 16rpx 24rpx;
+}
+
+.composer-shell {
+  background: #fff;
+  border: 1rpx solid #e9e6e1;
+  border-radius: 48rpx;
+  padding: 10rpx 10rpx 10rpx 28rpx;
+  box-shadow: 0 4rpx 20rpx rgba(26, 26, 26, 0.06);
+  align-items: flex-end;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.composer--focus .composer-shell {
+  border-color: #1a1a1a;
+  box-shadow: 0 6rpx 24rpx rgba(26, 26, 26, 0.08);
+}
+
+.composer-input {
+  flex: 1;
+  /* 单行时与 68rpx 发送按钮等高（6+56+6），文字垂直居中；多行时对称 padding 不偏移 */
+  min-height: 68rpx;
+  max-height: 320rpx;
+  font-size: 30rpx;
+  line-height: 56rpx;
+  padding: 6rpx 0;
+  color: #1a1a1a;
+  width: 100%;
+}
+
+.composer-action {
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 50%;
+  background: #e9e6e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin-left: 16rpx;
+  transition: background 0.15s ease;
+}
+.composer-action--dark {
+  background: #1a1a1a;
+}
+.composer-action--hover {
+  opacity: 0.8;
+}

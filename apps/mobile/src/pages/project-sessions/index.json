@@ -1,0 +1,8 @@
+{
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "safe-nav-bar": "../../components/safe-nav-bar/index",
+    "capsule-composer": "../../components/capsule-composer/index",
+    "empty-state": "../../components/empty-state/index"
+  }
+}

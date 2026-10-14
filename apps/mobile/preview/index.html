@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SparkWork 移动端 · 设计预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #f5f5f3;
+    font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans', 'Helvetica Neue', sans-serif;
+    color: #23231f;
+    padding: 40px 48px 64px;
+  }
+  .page-head { max-width: 1280px; margin: 0 auto 32px; }
+  .page-head h1 { font-size: 22px; font-weight: 600; color: #11100e; }
+  .page-head p { font-size: 13px; color: #8d8a86; margin-top: 6px; line-height: 1.6; }
+  .page-head code { background: #ececea; border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+
+  .screens {
+    display: flex; gap: 40px; flex-wrap: wrap; justify-content: center;
+    max-width: 1280px; margin: 0 auto;
+  }
+  .screen-item { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .screen-label { font-size: 13px; font-weight: 500; color: #5f5e5a; }
+  .screen-label span { color: #9b9489; font-weight: 400; margin-left: 6px; }
+
+  .phone {
+    width: 300px; height: 620px;
+    background: #fafafa;
+    border-radius: 36px;
+    border: 1px solid #d7d2c9;
+    overflow: hidden;
+    position: relative;
+    display: flex; flex-direction: column;
+    box-shadow: 0 2px 12px rgba(17,16,14,.06);
+  }
+  .statusbar {
+    height: 30px; flex: none;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 22px; font-size: 11px; color: #11100e; font-weight: 500;
+    background: #fff;
+  }
+  .statusbar .icons { display: flex; gap: 5px; align-items: center; }
+  .sig { display: inline-block; width: 12px; height: 8px;
+    background: linear-gradient(to right, #11100e 0 3px, transparent 3px 4px, #11100e 4px 7px, transparent 7px 8px, #11100e 8px 11px);
+    -webkit-mask: none; }
+  .battery { width: 16px; height: 8px; border: 1px solid #11100e; border-radius: 2px; position: relative; }
+  .battery::after { content: ''; position: absolute; inset: 1.5px; right: 4px; background: #11100e; border-radius: 1px; }
+
+  .navbar {
+    height: 40px; flex: none; background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 500; color: #11100e;
+    border-bottom: 1px solid #efede8;
+  }
+
+  .content { flex: 1; overflow: hidden; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+
+  .tabbar {
+    height: 46px; flex: none; background: #fff;
+    border-top: 1px solid #efede8;
+    display: flex; align-items: center;
+    padding-bottom: 4px;
+  }
+  .tabbar-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .tabbar-item img { width: 20px; height: 20px; }
+  .tabbar-item span { font-size: 9.5px; color: #8d8a86; }
+  .tabbar-item.active span { color: #3b82f6; }
+
+  .card { background: #fff; border-radius: 12px; padding: 14px; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .card-title { font-size: 13px; font-weight: 600; color: #11100e; }
+  .card-action { font-size: 11px; color: #3b82f6; }
+
+  .row { display: flex; align-items: center; }
+  .between { justify-content: space-between; }
+  .grow { flex: 1; min-width: 0; }
+  .col { display: flex; flex-direction: column; }
+  .gap6 { gap: 6px; } .gap8 { gap: 8px; } .gap12 { gap: 12px; }
+  .ellipsis { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+  .avatar { width: 44px; height: 44px; border-radius: 50%; background: #3b82f6; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 600; flex: none; }
+  .avatar.lg { width: 52px; height: 52px; font-size: 21px; }
+
+  .badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 5px; font-size: 10px; line-height: 1.4; }
+  .badge-success { background: rgba(16,185,129,.12); color: #10b981; }
+  .badge-warning { background: rgba(245,158,11,.12); color: #f59e0b; }
+  .badge-info { background: rgba(59,130,246,.12); color: #3b82f6; }
+  .badge-neutral { background: #f2f2f2; color: #8d8a86; }
+
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .dot-success { background: #10b981; } .dot-warning { background: #f59e0b; } .dot-neutral { background: #d7d2c9; }
+
+  .btn { display: flex; align-items: center; justify-content: center; height: 38px; border-radius: 9px;
+    font-size: 13px; font-weight: 500; }
+  .btn-primary { background: #3b82f6; color: #fff; }
+  .btn-danger-plain { background: #fff; color: #ef4444; border: 1px solid #f3c1c1; }
+  .btn-small { height: 28px; font-size: 11px; border-radius: 6px; padding: 0 12px; background: #fff; border: 1px solid #d7d2c9; color: #23231f; }
+
+  .progress { height: 5px; background: #f2f2f2; border-radius: 3px; margin-top: 12px; overflow: hidden; }
+  .progress-inner { height: 100%; width: 12%; background: #3b82f6; border-radius: 3px; }
+
+  .chip { background: #f2f2f2; border-radius: 6px; padding: 4px 10px; font-size: 11px; color: #23231f; }
+
+  .list-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0;
+    border-bottom: 1px solid #efede8; font-size: 12.5px; }
+  .list-row:last-child { border-bottom: none; }
+  .list-row .v { color: #8d8a86; font-size: 11.5px; }
+  .list-row .arrow { color: #9b9489; font-size: 13px; }
+
+  .field { margin-bottom: 12px; }
+  .field-label { font-size: 11px; color: #8d8a86; display: block; margin-bottom: 5px; }
+  .field-input { height: 38px; border: 1px solid #d7d2c9; border-radius: 9px; background: #fff;
+    display: flex; align-items: center; padding: 0 12px; font-size: 12.5px; color: #23231f; }
+  .field-input .ph { color: #b4b2a9; }
+  .captcha-img { width: 78px; height: 30px; border-radius: 5px; background: #f4f4f8; border: 1px solid #d7d2c9;
+    display: flex; align-items: center; justify-content: center; flex: none; }
+  .captcha-img b { font-size: 14px; letter-spacing: 3px; color: #3b82f6; font-style: italic; }
+  .captcha-row { display: flex; gap: 8px; align-items: center; }
+  .captcha-row .field-input { flex: 1; min-width: 0; }
+
+  .segment { display: flex; background: #f2f2f2; border-radius: 9px; padding: 3px; margin-bottom: 16px; }
+  .segment-item { flex: 1; text-align: center; padding: 7px 0; font-size: 11.5px; color: #8d8a86; border-radius: 6px; }
+  .segment-item.active { background: #fff; color: #11100e; font-weight: 500; box-shadow: 0 1px 3px rgba(17,16,14,.08); }
+
+  .brand { display: flex; flex-direction: column; align-items: center; margin: 10px 0 22px; }
+  .brand-logo { width: 52px; height: 52px; border-radius: 13px; background: #3b82f6; color: #fff;
+    font-size: 24px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+  .brand-name { font-size: 17px; font-weight: 600; color: #11100e; margin-bottom: 3px; }
+  .brand-slogan { font-size: 10.5px; color: #8d8a86; }
+
+  .history-item { padding: 9px 0; border-bottom: 1px solid #efede8; }
+  .history-item:last-child { border-bottom: none; }
+  .history-meta { margin-top: 4px; }
+
+  .note { background: #fff; border: 1px solid #efede8; border-radius: 12px; padding: 12px;
+    font-size: 10.5px; color: #8d8a86; line-height: 1.7; }
+
+  .mono { font-family: 'SF Mono', Menlo, Consolas, monospace; }
+  .t-title { font-size: 14px; font-weight: 600; color: #11100e; }
+  .t-sub { font-size: 11px; color: #8d8a86; }
+  .t-cap { font-size: 10px; color: #9b9489; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>SparkWork 移动端 · 设计预览</h1>
+  <p>静态设计稿（非小程序运行时），数据为模拟值。真实运行请用微信开发者工具打开 <code>apps/mobile/</code>（miniprogramRoot 指向 <code>dist/</code>）。设计令牌与桌面端一致：中性灰、无渐变、主色 #3b82f6。</p>
+</div>
+
+<div class="screens">
+
+  <!-- 启动分流 -->
+  <div class="screen-item">
+    <div class="screen-label">启动分流<span>pages/entry</span></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="icons"><span class="sig"></span><span class="battery"></span></span></div>
+      <div class="content" style="align-items: center; justify-content: center; gap: 10px;">
+        <div style="font-size: 26px; font-weight: 600; color: #11100e; letter-spacing: 1px;">SparkWork</div>
+        <div style="font-size: 12px; color: #8d8a86;">正在进入…</div>
+        <div style="margin-top: 20px; font-size: 13px; color: #3b82f6; background: rgba(59,130,246,.12); border-radius: 8px; padding: 8px 24px;">重试</div>
+        <div style="margin-top: 6px; font-size: 11px; color: #9b9489; text-align: center; line-height: 1.6;">
+          跳转失败 / 超时才显示重试<br>曾为透明页，白屏无从定位
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 登录 -->
+  <div class="screen-item">
+    <div class="screen-label">登录 / 注册<span>pages/login</span></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="icons"><span class="sig"></span><span class="battery"></span></span></div>
+      <div class="content" style="padding: 20px 18px;">
+        <div class="brand">
+          <div class="brand-logo">S</div>
+          <div class="brand-name">SparkWork</div>
+          <div class="brand-slogan">桌面端的移动伴侣 · 账号同步 · 设备互通</div>
+        </div>
+        <div class="segment">
+          <div class="segment-item active">密码登录</div>
+          <div class="segment-item">邮箱验证码</div>
+          <div class="segment-item">短信登录</div>
+        </div>
+        <div class="field">
+          <span class="field-label">账号（邮箱 / 手机号）</span>
+          <div class="field-input">zhangyang@example.com</div>
+        </div>
+        <div class="field">
+          <span class="field-label">密码</span>
+          <div class="field-input">••••••••••</div>
+        </div>
+        <div class="field">
+          <span class="field-label">图片验证码</span>
+          <div class="captcha-row">
+            <div class="field-input">a3f9</div>
+            <div class="captcha-img"><b>K7mQ</b></div>
+            <div class="btn-small">换一张</div>
+          </div>
+        </div>
+        <div class="btn btn-primary">登 录</div>
+        <div style="text-align: center; margin-top: 14px; font-size: 11px; color: #3b82f6;">没有账号？注册新账号</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 工作台 -->
+  <div class="screen-item">
+    <div class="screen-label">工作台<span>pages/home</span></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="icons"><span class="sig"></span><span class="battery"></span></span></div>
+      <div class="navbar">SparkWork 工作台</div>
+      <div class="content">
+        <div class="card row gap12">
+          <div class="avatar lg">张</div>
+          <div class="grow col gap6">
+            <div class="row gap8">
+              <span class="t-title ellipsis">张阳</span>
+              <span class="badge badge-info">专业版</span>
+            </div>
+            <span class="t-sub ellipsis">zha***@example.com</span>
+          </div>
+          <span class="card-action">个人中心 ›</span>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">账号同步</span>
+            <span class="card-action">同步中心 ›</span>
+          </div>
+          <div class="row gap8">
+            <span class="dot dot-success"></span>
+            <span style="font-size: 13px; font-weight: 600; color: #11100e;">3 分钟前</span>
+          </div>
+          <div class="t-sub" style="margin-top: 4px;">来自 MacBook Pro（桌面端）</div>
+          <div class="row between" style="margin-top: 12px;">
+            <div class="col"><span class="t-cap">上次同步数据量</span><span class="mono" style="font-size: 12px; font-weight: 600;">42.6 KB</span></div>
+            <div class="col" style="align-items: flex-end;"><span class="t-cap">单次上限</span><span class="mono" style="font-size: 12px; font-weight: 600;">5.0 MB</span></div>
+          </div>
+          <div class="progress"><div class="progress-inner"></div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">最近同步</span><span class="card-action">全部记录 ›</span></div>
+          <div class="list-row">
+            <div class="grow col gap6"><span class="ellipsis">MacBook Pro（桌面端）</span><span class="t-cap">10-13 09:12 · 7 类数据</span></div>
+            <span class="badge badge-success">成功</span>
+          </div>
+          <div class="list-row">
+            <div class="grow col gap6"><span class="ellipsis">Windows 工作机</span><span class="t-cap">10-12 21:40 · 5 类数据</span></div>
+            <span class="badge badge-success">成功</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">双向同步内容</span></div>
+          <div class="t-sub" style="line-height: 1.6; margin-bottom: 10px;">桌面端与移动端登录同一账号后，以下数据经服务端双向流转：</div>
+          <div class="row gap6" style="flex-wrap: wrap; gap: 6px;">
+            <span class="chip">自定义命令</span><span class="chip">提示词</span><span class="chip">长期记忆</span>
+            <span class="chip">助手</span><span class="chip">工作流</span><span class="chip">外观主题</span><span class="chip">提示词库</span>
+          </div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tabbar-item active"><img src="../src/assets/tabbar/home-active.png"><span>工作台</span></div>
+        <div class="tabbar-item"><img src="../src/assets/tabbar/sync-normal.png"><span>同步</span></div>
+        <div class="tabbar-item"><img src="../src/assets/tabbar/devices-normal.png"><span>设备</span></div>
+        <div class="tabbar-item"><img src="../src/assets/tabbar/profile-normal.png"><span>我的</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 同步中心 -->
+  <div class="screen-item">
+    <div class="screen-label">同步中心<span>pages/sync</span></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="icons"><span class="sig"></span><span class="battery"></span></span></div>
+      <div class="navbar">同步中心</div>
+      <div class="content">
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">同步状态</span>
+            <span class="badge badge-success">成功</span>
+          </div>
+          <div class="list-row"><span>最近同步时间</span><span class="v">2026-10-13 09:12:33</span></div>
+          <div class="list-row"><span>最近同步设备</span><span class="v">MacBook Pro</span></div>
+          <div class="list-row"><span>数据量 / 上限</span><span class="v mono">42.6 KB / 5.0 MB</span></div>
+          <div class="progress"><div class="progress-inner"></div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">同步类别（7 类，双向）</span></div>
+          <div class="list-row"><span>自定义命令</span><span class="v mono">customCommands</span></div>
+          <div class="list-row"><span>提示词</span><span class="v mono">prompts</span></div>
+          <div class="list-row"><span>长期记忆</span><span class="v mono">memory</span></div>
+          <div class="list-row"><span>助手</span><span class="v mono">assistants</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">同步记录</span><span class="t-cap">共 128 条</span></div>
+          <div class="history-item">
+            <div class="row between">
+              <div class="row gap8 grow"><span class="dot dot-success"></span><span style="font-size: 12.5px; font-weight: 600;" class="ellipsis">MacBook Pro</span></div>
+              <span class="t-cap">10-13 09:12</span>
+            </div>
+            <div class="row between history-meta">
+              <span class="t-cap">7 类 · 1.8 秒</span>
+              <span class="t-cap">↑14 ↓9</span>
+            </div>
+          </div>
+          <div class="history-item">
+            <div class="row between">
+              <div class="row gap8 grow"><span class="dot dot-warning"></span><span style="font-size: 12.5px; font-weight: 600;" class="ellipsis">Windows 工作机</span></div>
+              <span class="t-cap">10-12 21:40</span>
+            </div>
+            <div class="row between history-meta">
+              <span class="t-cap">5 类 · 0.9 秒</span>
+              <span class="t-cap">↑6 ↓4 ⚠2</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tabbar-item"><img src="../src/assets/tabbar/home-normal.png"><span>工作台</span></div>
+        <div class="tabbar-item active"><img src="../src/assets/tabbar/sync-active.png"><span>同步</span></div>
+        <div class="tabbar-item"><img src="../src/assets/tabbar/devices-normal.png"><span>设备</span></div>
+        <div class="tabbar-item"><img src="../src/assets/tabbar/profile-normal.png"><span>我的</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设备 -->
+  <div class="screen-item">
+    <div class="screen-label">设备与登录会话<span>pages/devices</span></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="icons"><span class="sig"></span><span class="battery"></span></span></div>
+      <div class="navbar">设备与登录会话</div>
+      <div class="content">
+        <div class="card">
+          <div class="card-head"><span class="card-title">当前设备</span><span class="badge badge-info">小程序</span></div>
+          <div class="list-row"><span>运行平台</span><span class="v">iOS</span></div>
+          <div class="list-row"><span>系统版本</span><span class="v">iOS 18.1</span></div>
+          <div class="list-row"><span>微信版本</span><span class="v">8.0.53</span></div>
+          <div class="list-row"><span>基础库</span><span class="v">3.4.10</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">桌面端设备</span><span class="t-cap">2 台 · 记录 128 条</span></div>
+          <div style="padding: 10px 0; border-bottom: 1px solid #efede8;">
+            <div class="row gap8">
+              <div style="width: 34px; height: 34px; border-radius: 9px; background: #f2f2f2; display: flex; align-items: center; justify-content: center; font-size: 16px; flex: none;">🖥</div>
+              <div class="grow col gap6">
+                <span style="font-size: 12.5px; font-weight: 600;" class="ellipsis">MacBook Pro（桌面端）</span>
+                <span class="t-cap">3 分钟前活跃 · 同步 96 次</span>
+              </div>
+            </div>
+            <div class="row gap6" style="margin-top: 8px; flex-wrap: wrap; gap: 5px;">
+              <span class="chip">自定义命令</span><span class="chip">提示词</span><span class="chip">长期记忆</span><span class="chip">助手</span>
+            </div>
+          </div>
+          <div style="padding: 10px 0;">
+            <div class="row gap8">
+              <div style="width: 34px; height: 34px; border-radius: 9px; background: #f2f2f2; display: flex; align-items: center; justify-content: center; font-size: 16px; flex: none;">🖥</div>
+              <div class="grow col gap6">
+                <span style="font-size: 12.5px; font-weight: 600;" class="ellipsis">Windows 工作机</span>
+                <span class="t-cap">1 天前活跃 · 同步 32 次</span>
+              </div>
+            </div>
+            <div class="row gap6" style="margin-top: 8px; flex-wrap: wrap; gap: 5px;">
+              <span class="chip">工作流</span><span class="chip">外观主题</span><span class="chip">提示词库</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="note">设备列表来自账号同步记录中的设备标识。桌面端为本地优先架构，会话与数据默认存于本机；登录同一账号并开启同步后，7 类数据会在两端双向流转。</div>
+      </div>
+      <div class="tabbar">
+        <div class="tabbar-item"><img src="../src/assets/tabbar/home-normal.png"><span>工作台</span></div>
+        <div class="tabbar-item"><img src="../src/assets/tabbar/sync-normal.png"><span>同步</span></div>
+        <div class="tabbar-item active"><img src="../src/assets/tabbar/devices-active.png"><span>设备</span></div>
+        <div class="tabbar-item"><img src="../src/assets/tabbar/profile-normal.png"><span>我的</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 远程会话 -->
+  <div class="screen-item">
+    <div class="screen-label">远程会话<span>pages/sessions</span></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="icons"><span class="sig"></span><span class="battery"></span></span></div>
+      <div class="navbar">远程会话</div>
+      <div class="content" style="gap: 10px;">
+        <div class="row between" style="margin-bottom: 2px;">
+          <span class="t-sub">共 3 个会话</span>
+          <span class="btn btn-primary btn-small" style="height: 26px; font-size: 10px;">＋ 新建</span>
+        </div>
+
+        <div class="card" style="padding: 13px;">
+          <div class="row between">
+            <span class="t-strong ellipsis" style="font-size: 13px; max-width: 190px;">重构登录模块</span>
+            <span class="badge badge-info">进行中</span>
+          </div>
+          <div class="t-sub ellipsis-2" style="margin-top: 6px; line-height: 1.5;">把登录页拆成三个子组件，顺便补上单测</div>
+          <div class="row between" style="margin-top: 10px;">
+            <span class="t-cap">3 分钟前</span>
+            <span style="font-size: 10px; color: #3b82f6;">继续对话 ›</span>
+          </div>
+        </div>
+
+        <div class="card" style="padding: 13px;">
+          <div class="row between">
+            <span class="t-strong ellipsis" style="font-size: 13px; max-width: 190px;">移动端桥接联调</span>
+            <span class="badge badge-neutral">空闲</span>
+          </div>
+          <div class="t-sub ellipsis-2" style="margin-top: 6px; line-height: 1.5;">WS 增量推送已经通了，接下来做断线重连</div>
+          <div class="row between" style="margin-top: 10px;">
+            <span class="t-cap">2 小时前</span>
+            <span style="font-size: 10px; color: #3b82f6;">继续对话 ›</span>
+          </div>
+        </div>
+
+        <div class="card" style="padding: 13px;">
+          <div class="row between">
+            <span class="t-strong ellipsis" style="font-size: 13px; max-width: 190px;">移动端会话</span>
+            <span class="badge badge-neutral">空闲</span>
+          </div>
+          <div class="t-sub" style="margin-top: 6px;">（暂无消息）</div>
+          <div class="row between" style="margin-top: 10px;">
+            <span class="t-cap">昨天</span>
+            <span style="font-size: 10px; color: #3b82f6;">继续对话 ›</span>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 10px 14px 14px; background: #fff; border-top: 1px solid #efede8;">
+        <div class="t-cap" style="text-align: center;">与桌面端实时同步 · 同账号双向互通</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 对话 -->
+  <div class="screen-item">
+    <div class="screen-label">远程对话<span>pages/chat</span></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="icons"><span class="sig"></span><span class="battery"></span></span></div>
+      <div class="navbar">重构登录模块</div>
+      <div style="flex: 1; overflow: hidden; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: #fafafa;">
+        <div style="align-self: flex-end; max-width: 84%; background: #3b82f6; color: #fff; padding: 9px 11px; border-radius: 12px; border-bottom-right-radius: 3px; font-size: 12.5px; line-height: 1.6;">帮我看下登录页还有哪些可以拆的</div>
+
+        <div style="align-self: flex-start; max-width: 84%; background: #fff; padding: 9px 11px; border-radius: 12px; border-bottom-left-radius: 3px; font-size: 12.5px; line-height: 1.6; box-shadow: 0 1px 3px rgba(17,16,14,.05);">
+          当前登录页有 4 个职责混在一起：表单状态、验证码、三方登录入口、路由跳转。建议按这四块拆。
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #f2f2f2; border-radius: 6px; max-width: 84%;">
+          <span class="dot dot-success"></span>
+          <span class="t-cap">Read 完成 · login/index.tsx</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 6px; padding: 5px 8px; color: #8d8a86;">
+          <span style="width: 10px; height: 10px; border: 2px solid #d7d2c9; border-top-color: #3b82f6; border-radius: 50%;"></span>
+          <span class="t-cap">执行工具 · Edit</span>
+        </div>
+
+        <div style="align-self: flex-start; max-width: 84%; background: #fff; padding: 9px 11px; border-radius: 12px; border-bottom-left-radius: 3px; font-size: 12.5px; line-height: 1.6; box-shadow: 0 1px 3px rgba(17,16,14,.05);">
+          已经拆出 useLoginForm 和 CaptchaRow 两个 hook/组件，测试用例我补了 3 个。
+        </div>
+
+        <div style="align-self: flex-end; max-width: 84%; background: #3b82f6; color: #fff; padding: 9px 11px; border-radius: 12px; border-bottom-right-radius: 3px; font-size: 12.5px; line-height: 1.6;">可以，顺手把错误提示也统一下</div>
+
+        <div style="display: flex; align-items: center; gap: 6px; padding: 5px 8px; color: #8d8a86;">
+          <span style="width: 10px; height: 10px; border: 2px solid #d7d2c9; border-top-color: #3b82f6; border-radius: 50%;"></span>
+          <span class="t-cap">思考中…</span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #fff; border-top: 1px solid #efede8;">
+        <div style="flex: 1; height: 34px; background: #f2f2f2; border-radius: 17px; display: flex; align-items: center; padding: 0 14px; font-size: 11px; color: #b4b2a9;">发消息到桌面端会话…</div>
+        <span class="btn btn-primary btn-small" style="width: 56px;">发送</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 我的 -->
+  <div class="screen-item">
+    <div class="screen-label">我的<span>pages/profile</span></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="icons"><span class="sig"></span><span class="battery"></span></span></div>
+      <div class="navbar">我的</div>
+      <div class="content">
+        <div class="card row gap12">
+          <div class="avatar lg">张</div>
+          <div class="grow col gap6">
+            <div class="row gap8">
+              <span class="t-title ellipsis">张阳</span>
+              <span style="font-size: 10.5px; color: #3b82f6; flex: none;">编辑</span>
+            </div>
+            <span class="t-sub ellipsis">zha***@example.com</span>
+            <div class="row gap8">
+              <span class="badge badge-info">专业版</span>
+              <span class="t-cap">注册于 2025-08-12</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">账号与安全</span></div>
+          <div class="list-row"><span>修改密码</span><span class="arrow">›</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">同步与设备</span></div>
+          <div class="list-row"><span>同步中心</span><span class="arrow">›</span></div>
+          <div class="list-row"><span>设备与登录会话</span><span class="arrow">›</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">关于</span></div>
+          <div class="list-row"><span>服务端地址</span><span class="v mono ellipsis" style="max-width: 130px;">yiqibyte.com</span></div>
+          <div class="list-row"><span>版本</span><span class="v">v1.0.0</span></div>
+        </div>
+
+        <div class="btn btn-danger-plain">退出登录</div>
+      </div>
+      <div class="tabbar">
+        <div class="tabbar-item"><img src="../src/assets/tabbar/home-normal.png"><span>工作台</span></div>
+        <div class="tabbar-item"><img src="../src/assets/tabbar/sync-normal.png"><span>同步</span></div>
+        <div class="tabbar-item"><img src="../src/assets/tabbar/devices-normal.png"><span>设备</span></div>
+        <div class="tabbar-item active"><img src="../src/assets/tabbar/profile-active.png"><span>我的</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

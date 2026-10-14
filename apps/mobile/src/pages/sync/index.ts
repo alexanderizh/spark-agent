@@ -12,13 +12,18 @@
 
 import * as syncApi from '../../api/sync'
 import { ensureAuthenticated } from '../../utils/auth-guard'
-import { formatBytes, formatDuration, formatFullTime, formatShortTime } from '../../utils/format'
-import { ACCOUNT_SYNC_CATEGORY_LABELS, ACCOUNT_SYNC_CATEGORIES } from '../../types'
-import type { AccountSyncHistoryItem, AccountSyncStatus } from '../../types'
+import {
+  SYNC_CATEGORY_VMS,
+  syncHistoryItemVM,
+  syncStatusVM,
+  type SyncCategoryVM,
+  type SyncHistoryItemVM,
+  type SyncStatusVM,
+} from '../../utils/view-model'
 
 interface SyncPageData {
-  status: AccountSyncStatus | null
-  list: AccountSyncHistoryItem[]
+  status: SyncStatusVM | null
+  list: SyncHistoryItemVM[]
   total: number
   page: number
   pageSize: number
@@ -26,8 +31,8 @@ interface SyncPageData {
   loadingMore: boolean
   noMore: boolean
   highlight: string
-  /** 同步类别清单（WXML wx:for 直接遍历 data，不走方法调用） */
-  categories: readonly string[]
+  /** 同步类别清单（key + 中文标签，WXML wx:for 直接遍历 data，不走方法调用） */
+  categories: readonly SyncCategoryVM[]
 }
 
 const PAGE_SIZE = 20
@@ -43,7 +48,7 @@ Page({
     loadingMore: false,
     noMore: false,
     highlight: '',
-    categories: ACCOUNT_SYNC_CATEGORIES,
+    categories: SYNC_CATEGORY_VMS,
   } as SyncPageData,
 
   onLoad(options: Record<string, string | undefined>) {
@@ -74,8 +79,8 @@ Page({
       ])
       const list = history?.list ?? []
       this.setData({
-        status,
-        list,
+        status: syncStatusVM(status),
+        list: list.map(syncHistoryItemVM),
         total: history?.total ?? 0,
         page: 1,
         noMore: list.length < PAGE_SIZE,
@@ -92,7 +97,7 @@ Page({
     try {
       const next = page + 1
       const history = await syncApi.getSyncHistory({ page: next, pageSize: PAGE_SIZE })
-      const appended = history?.list ?? []
+      const appended = (history?.list ?? []).map(syncHistoryItemVM)
       this.setData({
         list: [...this.data.list, ...appended],
         page: next,
@@ -103,36 +108,5 @@ Page({
     } finally {
       this.setData({ loadingMore: false })
     }
-  },
-
-  methods: {
-    formatBytes,
-    formatDuration,
-    formatFullTime,
-    formatShortTime,
-    categoryLabel(key: keyof typeof ACCOUNT_SYNC_CATEGORY_LABELS): string {
-      return ACCOUNT_SYNC_CATEGORY_LABELS[key] ?? key
-    },
-    /** WXML 不支持数组 .join()，错误码拼接放这里 */
-    joinErrors(codes: string[]): string {
-      return (codes ?? []).join('、')
-    },
-    statusBadgeClass(status: string | null): string {
-      if (status === 'success') return 'badge badge-success'
-      if (status === 'partial') return 'badge badge-warning'
-      if (status === 'failed') return 'badge badge-danger'
-      return 'badge badge-neutral'
-    },
-    statusLabel(status: string | null): string {
-      if (status === 'success') return '成功'
-      if (status === 'partial') return '部分完成'
-      if (status === 'failed') return '失败'
-      return '暂无'
-    },
-    usagePercent(): number {
-      const { status } = this.data
-      if (!status || status.lastPayloadBytes == null || status.maxPayloadBytes <= 0) return 0
-      return Math.min(100, Math.round((status.lastPayloadBytes / status.maxPayloadBytes) * 100))
-    },
   },
 })

@@ -14,6 +14,10 @@ import type { AuthUserInfo } from '../../types'
 interface ProfilePageData {
   user: AuthUserInfo | null
   accountMasked: string
+  /** 注册时间展示文案（WXML 不能调 formatFullTime，预计算） */
+  createdAtLabel: string
+  /** 头像占位首字母（WXML 不支持 .slice()，预计算） */
+  avatarInitial: string
   serverUrl: string
   uploadingAvatar: boolean
 }
@@ -24,6 +28,8 @@ Page({
   data: {
     user: null,
     accountMasked: '',
+    createdAtLabel: '—',
+    avatarInitial: 'S',
     serverUrl: '',
     uploadingAvatar: false,
   } as ProfilePageData,
@@ -44,7 +50,18 @@ Page({
 
   applyUser() {
     const user = getState().user
-    this.setData({ user, accountMasked: user ? maskAccount(user.account) : '' })
+    const nickname = user?.nickname?.trim()
+    const account = user?.account?.trim() || ''
+    this.setData({
+      user,
+      accountMasked: user ? maskAccount(user.account) : '',
+      createdAtLabel: user?.createdAt ? formatFullTime(user.createdAt) : '—',
+      avatarInitial: nickname
+        ? nickname.slice(0, 1)
+        : account
+          ? account.slice(0, 1).toUpperCase()
+          : 'S',
+    })
   },
 
   // ─── 头像 ───────────────────────────────────────────────────────────────────
@@ -110,12 +127,16 @@ Page({
 
   // ─── 导航 ───────────────────────────────────────────────────────────────────
 
+  onGoSessions() {
+    wx.navigateTo({ url: '/pages/project-sessions/index' })
+  },
+
   onGoSync() {
-    wx.switchTab({ url: '/pages/sync/index' })
+    wx.navigateTo({ url: '/pages/sync/index' })
   },
 
   onGoDevices() {
-    wx.switchTab({ url: '/pages/devices/index' })
+    wx.navigateTo({ url: '/pages/devices/index' })
   },
 
   onGoChangePassword() {
@@ -135,16 +156,5 @@ Page({
         void logout()
       },
     })
-  },
-
-  methods: {
-    formatFullTime,
-    /** 头像占位首字母（WXML 不支持数据对象 .slice()） */
-    avatarInitial(): string {
-      const nickname = this.data.user?.nickname?.trim()
-      if (nickname) return nickname.slice(0, 1)
-      const account = this.data.user?.account?.trim()
-      return account ? account.slice(0, 1).toUpperCase() : 'S'
-    },
   },
 })

@@ -11,8 +11,8 @@
 
 import * as syncApi from '../../api/sync'
 import { ensureAuthenticated } from '../../utils/auth-guard'
-import { formatRelativeTime, formatShortTime } from '../../utils/format'
-import { ACCOUNT_SYNC_CATEGORY_LABELS } from '../../types'
+import { formatRelativeTime } from '../../utils/format'
+import { categoryLabelOf } from '../../utils/view-model'
 
 interface DeviceAggregate {
   label: string
@@ -21,8 +21,16 @@ interface DeviceAggregate {
   categories: string[]
 }
 
+/** 设备视图模型：相对活跃时间与类别中文标签已预计算，WXML 直接绑定 */
+interface DeviceAggregateVM {
+  label: string
+  count: number
+  lastSeenLabel: string
+  categoryLabels: string[]
+}
+
 interface DevicesPageData {
-  devices: DeviceAggregate[]
+  devices: DeviceAggregateVM[]
   total: number
   loading: boolean
   currentDevice: {
@@ -95,29 +103,19 @@ Page({
           })
         }
       }
-      const devices = [...map.values()].sort(
-        (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
-      )
+      const devices = [...map.values()]
+        .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
+        .map((device): DeviceAggregateVM => ({
+          label: device.label,
+          count: device.count,
+          lastSeenLabel: formatRelativeTime(device.lastSeen),
+          categoryLabels: device.categories.map(categoryLabelOf),
+        }))
       this.setData({ devices, total: history?.total ?? list.length })
     } catch (error) {
       wx.showToast({ title: (error as Error).message || '加载失败', icon: 'none' })
     } finally {
       this.setData({ loading: false })
     }
-  },
-
-  methods: {
-    formatRelativeTime,
-    formatShortTime,
-    categoryLabel(key: keyof typeof ACCOUNT_SYNC_CATEGORY_LABELS): string {
-      return ACCOUNT_SYNC_CATEGORY_LABELS[key] ?? key
-    },
-    categoryNames(categories: string[]): string {
-      return categories
-        .map(
-          (c) => ACCOUNT_SYNC_CATEGORY_LABELS[c as keyof typeof ACCOUNT_SYNC_CATEGORY_LABELS] ?? c,
-        )
-        .join('、')
-    },
   },
 })

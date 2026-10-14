@@ -1,0 +1,7 @@
+/* 空态组件：布局样式继承 app.wxss 的 .empty-state 三件套，这里只补图标位 */
+
+.empty-state-icon .icon {
+  width: 36rpx;
+  height: 36rpx;
+  background-size: 36rpx 36rpx;
+}
