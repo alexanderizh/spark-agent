@@ -2661,3 +2661,53 @@ body.settings-nav-resizing .settings-nav-resizer {
   font-size: 11px;
   margin-top: 4px;
 }
+
+// ─── 移动端桥接（设置 → 生态 → 移动端桥接） ────────────────────────────────────
+.mobile-bridge-port {
+  width: 92px;
+  height: var(--row-h);
+  padding: 0 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+
+  &:focus {
+    border-color: var(--primary);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+// 空状态：settings-card 本身不带 padding，直接塞文字会贴边，这里补一个居中空态
+.mobile-bridge-empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.mobile-bridge-qr {
+  padding: 6px;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  border: 1px solid var(--border-strong);
+  line-height: 0;
+}
+
+.mobile-bridge-url {
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  word-break: break-all;
+}

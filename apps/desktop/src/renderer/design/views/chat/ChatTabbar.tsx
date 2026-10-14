@@ -12,6 +12,7 @@ import {
   PanelRight,
   PanelsTopLeft,
   Server,
+  Share2,
   SlidersHorizontal,
   Trash,
 } from 'lucide-react'
@@ -72,6 +73,8 @@ export function ChatTabbar({
   onClearMessages,
   clearWillStopRun = false,
   onCopyAllMessages,
+  onShareSession,
+  shareDisabled = false,
   onExpandSidebar,
   onOpenInEditor,
   onOpenInTerminal,
@@ -113,6 +116,9 @@ export function ChatTabbar({
   /** 会话正在运行：清空会强制终止执行器，确认条需要给出更重的提示 */
   clearWillStopRun?: boolean
   onCopyAllMessages?: () => void
+  /** 生成当前会话长图，并在预览里复制、缩放或下载。 */
+  onShareSession?: () => void
+  shareDisabled?: boolean
   onExpandSidebar?: () => void
   /** 打开内置代码编辑器侧面板，供项目打开方式下拉新增「从内置编辑器打开」选项 */
   onOpenInEditor?: () => void
@@ -252,6 +258,17 @@ export function ChatTabbar({
       onSelect: onToggleUnifiedPanel,
       active: showUnifiedPanel,
     },
+    ...(onShareSession
+      ? [
+          {
+            id: 'share',
+            label: '分享会话',
+            icon: Share2,
+            onSelect: onShareSession,
+            disabled: shareDisabled,
+          },
+        ]
+      : []),
   ]
 
   return (
@@ -274,12 +291,6 @@ export function ChatTabbar({
             ) : (
               <span className="chat-title truncate">{session.title || '新会话'}</span>
             )}
-            <span className="chat-project-label truncate" title={workspace?.rootPath ?? '临时会话'}>
-              <Icons.Folder size={10} />
-              {workspace?.name === NO_PROJECT_WORKSPACE_NAME
-                ? '临时会话'
-                : (workspace?.name ?? '未归属项目')}
-            </span>
             {displayStatus && (
               <span className="msg-running">
                 <Icons.Spinner size={11} /> {displayStatus}
@@ -385,7 +396,7 @@ export function ChatTabbar({
         {onCopyAllMessages && (
           <TabbarTooltipButton
             title="复制全部聊天记录"
-            className="icon-btn chat-header-collapsible chat-header-collapsible-secondary"
+            className="icon-btn chat-header-collapsible"
             onClick={onCopyAllMessages}
           >
             <TabbarIcon icon={Copy} />
@@ -394,17 +405,17 @@ export function ChatTabbar({
         {!showClearConfirm && onClearMessages && (
           <TabbarTooltipButton
             title="清空会话消息"
-            className="icon-btn chat-header-collapsible chat-header-collapsible-secondary"
+            className="icon-btn chat-header-collapsible"
             onClick={handleClearClick}
           >
             <TabbarIcon icon={Trash} />
           </TabbarTooltipButton>
         )}
-        {/* 收起优先级：secondary（复制/清空）最先并入溢出菜单，其次才是 middle（计划任务/配置） */}
+        {/* 溢出菜单出现时，清单内按钮（含分享）整体并入菜单，栏上不再保留重复入口 */}
         <TabbarTooltipButton
           title="计划任务"
           ariaLabel="计划任务"
-          className={`icon-btn chat-header-collapsible chat-header-collapsible-middle ${showSessionSchedule ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible ${showSessionSchedule ? 'active' : ''}`}
           onClick={onToggleSessionSchedule}
         >
           <span className="chat-session-schedule-icon">
@@ -417,7 +428,7 @@ export function ChatTabbar({
         <TabbarTooltipButton
           title="配置面板（环境变量 / 提示词 / Skills / 工具）"
           ariaLabel="配置面板"
-          className={`icon-btn chat-header-collapsible chat-header-collapsible-middle ${showConfigPanel ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible ${showConfigPanel ? 'active' : ''}`}
           onClick={onToggleConfig}
         >
           <TabbarIcon icon={SlidersHorizontal} />
@@ -438,6 +449,17 @@ export function ChatTabbar({
         >
           <TabbarIcon icon={PanelsTopLeft} />
         </TabbarTooltipButton>
+        {onShareSession && (
+          <TabbarTooltipButton
+            title={shareDisabled ? '当前没有可分享的消息' : '生成会话长图'}
+            ariaLabel="分享会话"
+            className="icon-btn chat-header-collapsible"
+            disabled={shareDisabled}
+            onClick={onShareSession}
+          >
+            <TabbarIcon icon={Share2} />
+          </TabbarTooltipButton>
+        )}
         <ChatHeaderOverflowMenu items={overflowItems} />
       </div>
       <ChatTitlebarEnd />

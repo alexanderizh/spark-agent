@@ -49,9 +49,9 @@ describe('MessageHoverBar', () => {
       container.querySelectorAll<HTMLButtonElement>('.msg-hover-bar button'),
     )
     expect(buttons.map((button) => button.className)).toEqual([
-      'msg-hover-copy',
-      'msg-hover-fork',
-      'msg-hover-delete',
+      'msg-hover-btn msg-hover-copy',
+      'msg-hover-btn msg-hover-fork',
+      'msg-hover-btn msg-hover-delete',
     ])
     expect(buttons[1]?.textContent).toBe('')
     expect(buttons[1]?.getAttribute('aria-label')).toBe('从此处分支')
@@ -112,7 +112,7 @@ describe('MessageHoverBar 语音播报按钮', () => {
       )
     })
     const button = container.querySelector<HTMLButtonElement>('.msg-hover-speech')
-    expect(button?.getAttribute('aria-label')).toBe('语音播报')
+    expect(button?.getAttribute('aria-label')).toBe('朗读')
     expect(button?.classList.contains('is-playing')).toBe(false)
     act(() => button?.click())
     expect(onSpeechToggle).toHaveBeenCalledOnce()
@@ -176,11 +176,11 @@ describe('MessageHoverBar 语音播报按钮', () => {
       container.querySelectorAll<HTMLButtonElement>('.msg-hover-bar button'),
     )
     expect(buttons.map((button) => button.className.replace(' is-playing', ''))).toEqual([
-      'msg-hover-copy',
-      'msg-hover-speech',
-      'msg-hover-edit',
-      'msg-hover-fork',
-      'msg-hover-delete',
+      'msg-hover-btn msg-hover-copy',
+      'msg-hover-btn msg-hover-speech',
+      'msg-hover-btn msg-hover-edit',
+      'msg-hover-btn msg-hover-fork',
+      'msg-hover-btn msg-hover-delete',
     ])
   })
 })

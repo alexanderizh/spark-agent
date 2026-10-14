@@ -1,0 +1,134 @@
+/* 半屏选择面板 */
+
+.icon-close {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6L6 18M6 6l12 12'/%3E%3C/svg%3E");
+}
+
+.icon-check {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+}
+
+.sheet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(15, 14, 12, 0.42);
+  display: flex;
+  align-items: flex-end;
+}
+
+.sheet {
+  width: 100%;
+  max-height: 68vh;
+  background: #ffffff;
+  border-radius: 28rpx 28rpx 0 0;
+  padding: 20rpx 24rpx calc(env(safe-area-inset-bottom) + 28rpx);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -12rpx 40rpx rgba(15, 14, 12, 0.12);
+}
+
+.sheet-head {
+  justify-content: space-between;
+  align-items: center;
+  padding: 8rpx 8rpx 20rpx;
+}
+
+.sheet-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.sheet-close {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 50%;
+  background: #f2f0ed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  padding: 80rpx 0;
+}
+
+.sheet-list {
+  max-height: 52vh;
+}
+
+.sheet-empty {
+  padding: 80rpx 0;
+  text-align: center;
+}
+
+.sheet-option {
+  align-items: center;
+  padding: 24rpx 16rpx;
+  border-radius: 20rpx;
+  gap: 12rpx;
+}
+
+.sheet-option--checked {
+  background: #f5f4f1;
+}
+
+.sheet-option--disabled {
+  opacity: 0.4;
+}
+
+.sheet-option-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  min-width: 0;
+}
+
+.sheet-option-label {
+  font-size: 29rpx;
+  color: #1a1a1a;
+  font-weight: 500;
+}
+
+.sheet-option--checked .sheet-option-label {
+  font-weight: 600;
+}
+
+.sheet-option-sub {
+  font-size: 23rpx;
+  color: #8f8b85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 滑块模式 */
+
+.sheet-slider {
+  padding: 16rpx 16rpx 8rpx;
+}
+
+.sheet-slider-value {
+  text-align: center;
+  margin-bottom: 8rpx;
+}
+
+.sheet-slider-current {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.sheet-slider-ticks {
+  justify-content: space-between;
+  padding: 0 8rpx;
+}
+
+.sheet-slider-tick {
+  color: #b3b0ab;
+}

@@ -3,12 +3,12 @@
   <view class="card">
     <view class="card-head">
       <text class="card-title">同步状态</text>
-      <text class="{{statusBadgeClass(status ? status.lastStatus : null)}}">{{statusLabel(status ? status.lastStatus : null)}}</text>
+      <text class="{{status ? status.badgeClass : 'badge badge-neutral'}}">{{status ? status.badgeLabel : '暂无'}}</text>
     </view>
 
     <view class="list-row">
       <text class="list-row-label grow">最近同步时间</text>
-      <text class="list-row-value">{{status && status.lastSyncAt ? formatFullTime(status.lastSyncAt) : '—'}}</text>
+      <text class="list-row-value">{{status ? status.fullTime : '—'}}</text>
     </view>
     <view class="list-row">
       <text class="list-row-label grow">最近同步设备</text>
@@ -16,11 +16,11 @@
     </view>
     <view class="list-row">
       <text class="list-row-label grow">上次数据量 / 单次上限</text>
-      <text class="list-row-value t-mono">{{formatBytes(status && status.lastPayloadBytes)}} / {{formatBytes(status ? status.maxPayloadBytes : null)}}</text>
+      <text class="list-row-value t-mono">{{status ? status.bytesLabel : '— / —'}}</text>
     </view>
 
     <view class="progress" wx:if="{{status && status.lastPayloadBytes != null && status.maxPayloadBytes > 0}}">
-      <view class="progress-inner" style="width: {{usagePercent()}}%"></view>
+      <view class="progress-inner" style="width: {{status.usagePercent}}%"></view>
     </view>
 
     <view class="source-tip t-caption" wx:if="{{status && status.source === 'fallback'}}">
@@ -33,9 +33,9 @@
     <view class="card-head">
       <text class="card-title">同步类别（{{categories.length}} 类，双向）</text>
     </view>
-    <view wx:for="{{categories}}" wx:key="*this" class="list-row">
-      <text class="list-row-label grow">{{categoryLabel(item)}}</text>
-      <text class="t-faint t-mono">{{item}}</text>
+    <view wx:for="{{categories}}" wx:key="key" class="list-row">
+      <text class="list-row-label grow">{{item.label}}</text>
+      <text class="t-faint t-mono">{{item.key}}</text>
     </view>
   </view>
 
@@ -57,20 +57,20 @@
             <view class="dot {{item.status === 'success' ? 'dot-success' : (item.status === 'partial' ? 'dot-warning' : 'dot-danger')}}"></view>
             <text class="t-strong ellipsis">{{item.deviceLabel}}</text>
           </view>
-          <text class="t-caption">{{formatShortTime(item.createdAt)}}</text>
+          <text class="t-caption">{{item.createdAtLabel}}</text>
         </view>
         <view class="row between history-meta">
-          <text class="t-caption">{{item.categories.length}} 类 · {{formatDuration(item.durationMs)}}</text>
+          <text class="t-caption">{{item.categories.length}} 类 · {{item.durationLabel}}</text>
           <text class="t-caption">↑{{item.stats.uploaded}} ↓{{item.stats.downloaded}}{{item.stats.conflicts > 0 ? ' ⚠' + item.stats.conflicts : ''}}</text>
         </view>
         <view wx:if="{{item.errorCodes.length > 0}}" class="history-errors t-caption ellipsis-2">
-          <text>{{joinErrors(item.errorCodes)}}</text>
+          <text>{{item.errorsLabel}}</text>
         </view>
       </view>
     </block>
 
     <view wx:elif="{{!loading}}" class="empty">
-      <view class="empty-icon">☁️</view>
+      <view class="empty-icon"><view class="icon icon-cloud"></view></view>
       <text>暂无同步记录</text>
       <text class="t-caption" style="margin-top: 8rpx;">在桌面端登录同一账号并开启同步后，这里会显示记录</text>
     </view>

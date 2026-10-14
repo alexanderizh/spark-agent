@@ -502,8 +502,7 @@ summary:focus {
   transition: background-color 0.2s ease;
 }
 /* 浅色减重：floating 卡片提到与内容区同底的近白，分隔靠既有阴影而非灰底
-   （现为 #fcfcfa）；特异性低于下方 backdrop-blur / content-focused
-   规则，仅接管默认不透明路径。 */
+   （现为 #fcfcfa）；特异性低于下方 backdrop-blur 规则，仅接管默认不透明路径。 */
 .sidebar-style-floating.theme-light .floating-sidebar {
   background: #fcfcfa;
 }
@@ -528,36 +527,6 @@ html[data-theme='dark'][data-backdrop-blur='1']
   border-color: rgba(255, 255, 255, 0.09);
 }
 
-/* 内容区聚焦时（根 .app 挂 .content-focused，仅 floating + 侧栏可见 + 焦点落在
-   main-content-area 时触发），浮动侧栏背景轻微加深，营造"侧栏退后、内容区为
-   焦点"的层次感。比上方原规则多一个 .content-focused 类，特异性更高，无需
-   !important。加深量用 --sidebar-focus-darken 统一控制（默认 9%），嫌过深可在
-   :root 调小；light 主题白底混黑易发灰，已单独压到 6%。transition 由基础
-   .sidebar-style-floating .floating-sidebar 规则提供，进出均平滑。 */
-.sidebar-style-floating.content-focused .floating-sidebar {
-  background: color-mix(in srgb, var(--panel-elev), #000 var(--sidebar-focus-darken, 5%));
-}
-html[data-backdrop-blur='1'] .sidebar-style-floating.content-focused .floating-sidebar {
-  background: color-mix(
-    in srgb,
-    color-mix(in srgb, var(--panel-elev) 80%, transparent),
-    #000 var(--sidebar-focus-darken, 6%)
-  );
-}
-html[data-theme='light'][data-backdrop-blur='1']
-  .sidebar-style-floating.theme-light.content-focused
-  .floating-sidebar {
-  background: color-mix(in srgb, color-mix(in srgb, #fff 78%, transparent), #000 6%);
-}
-html[data-theme='dark'][data-backdrop-blur='1']
-  .sidebar-style-floating.theme-dark.content-focused
-  .floating-sidebar {
-  background: color-mix(
-    in srgb,
-    color-mix(in srgb, var(--panel-elev) 54%, transparent),
-    #000 var(--sidebar-focus-darken, 6%)
-  );
-}
 /* 'flat' mirrors the Windows look: sidebar is flush to the window edges
    (no floating design, no rounded corners, no shadow). Its background can
    still use the shared backdrop-blur preference for a frosted menu surface. */
@@ -1388,6 +1357,43 @@ body.floating-sidebar-resizing * {
 /* 同步执行中：整行保持可读但不再触发点击（重复点击由宿主拦掉）。 */
 .ant-dropdown-menu.user-menu .ant-dropdown-menu-item.user-menu-item-busy {
   cursor: default;
+}
+
+/* 图标按钮 tooltip：深色实心气泡 + 箭头，压过组件库默认的浅底描边。
+   用于消息操作栏、会话顶栏、侧栏底部按钮组。 */
+.spark-icon-tooltip {
+  --spark-icon-tooltip-bg: #2c2c2e;
+  border: none !important;
+  border-radius: 8px !important;
+  background: var(--spark-icon-tooltip-bg) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16) !important;
+  font-size: 12px !important;
+  font-weight: 500;
+  line-height: 1.2 !important;
+}
+
+.spark-icon-tooltip > :last-child {
+  padding: 5px 8px !important;
+  color: inherit;
+}
+
+.spark-icon-tooltip > :first-child {
+  width: 10px;
+  height: 5px;
+}
+
+.spark-icon-tooltip svg {
+  fill: var(--spark-icon-tooltip-bg) !important;
+}
+
+.spark-icon-tooltip [data-role='stroke'] {
+  display: none;
+}
+
+html[data-theme='dark'] .spark-icon-tooltip {
+  --spark-icon-tooltip-bg: #141414;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4) !important;
 }
 
 /* App popups render in portals and may overlap titlebar drag regions. Electron

@@ -16,7 +16,7 @@
 
 import { execSync, spawn } from 'node:child_process'
 import { cp, mkdir, readdir, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, watch } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -61,8 +61,8 @@ async function copyStaticAssets() {
  * 移动端保持一致；本地/测试环境可用环境变量覆盖：
  *   SPARK_EDUGEN_BASE_URL=http://192.168.x.x:7001 node scripts/build.mjs
  *
- * 先写 src/config.json（tsc resolveJsonModule 静态内联，产物不依赖运行时 require），
- * 再由静态资产拷贝流程同步到 dist/。
+ * 写成 **TS 模块** 而不是 JSON：小程序的 require 会自动补 `.js` 后缀，
+ * `require('./config.json')` 会去找 `config.json.js` 并报 module not defined。
  */
 async function buildRuntimeConfig() {
   const baseUrl = (process.env.SPARK_EDUGEN_BASE_URL || 'https://www.yiqibyte.com').replace(
@@ -74,7 +74,21 @@ async function buildRuntimeConfig() {
     /** 与 edu-server 的全局前缀保持一致（EduServerClient.resolveUrl） */
     apiPrefix: '/api/v1',
   }
-  await writeFile(join(srcDir, 'config.json'), `${JSON.stringify(config, null, 2)}\n`, 'utf8')
+  const content = `/**
+ * 运行时配置 —— 由 scripts/build.mjs 在构建期生成，请勿手工修改。
+ *
+ * 为什么是 .ts 而不是 .json：
+ *   小程序不支持 require('./config.json') —— 它的 require 会自动补 .js 后缀，
+ *   去找 config.json.js，于是报
+ *   "module 'config.json.js' is not defined, require args is './config.json'"。
+ *   所以构建期把配置写成 TS 模块，编译成 require('./config.generated') 才可用。
+ *
+ * 覆盖方式：SPARK_EDUGEN_BASE_URL=http://192.168.x.x:7001 node scripts/build.mjs
+ */
+
+export const RUNTIME_CONFIG = ${JSON.stringify(config, null, 2)} as const
+`
+  await writeFile(join(srcDir, 'config.generated.ts'), content, 'utf8')
   return config
 }
 
@@ -106,14 +120,22 @@ async function watchMode() {
   })
 
   let timer = null
-  const { watch } = await import('node:fs/promises')
-  watch(srcDir, { recursive: true }, (_event, filename) => {
+  // 注意：必须用 node:fs 的回调版 watch —— fs/promises 的 watch() 返回 AsyncIterable，
+  // 不接受 listener 参数（传了也被静默忽略），资产变更将永远不会被拷贝。
+  const watcher = watch(srcDir, { recursive: true }, (_event, filename) => {
     if (!filename || !isStaticAsset(filename)) return
     clearTimeout(timer)
     timer = setTimeout(async () => {
-      const n = await copyStaticAssets()
-      console.log(`[mobile] static assets re-copied: ${n}`)
+      try {
+        const n = await copyStaticAssets()
+        console.log(`[mobile] static assets re-copied: ${n} (last: ${filename})`)
+      } catch (error) {
+        console.error('[mobile] static assets copy failed:', error)
+      }
     }, 120)
+  })
+  watcher.on('error', (error) => {
+    console.error('[mobile] watcher error:', error)
   })
 
   process.on('SIGINT', () => {

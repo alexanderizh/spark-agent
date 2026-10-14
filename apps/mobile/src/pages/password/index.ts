@@ -10,7 +10,6 @@
 import * as authApi from '../../api/auth'
 import { clearSession } from '../../api/request'
 import { getState } from '../../store/auth'
-import { formatRelativeTime } from '../../utils/format'
 
 interface PasswordPageData {
   phone: string
@@ -19,6 +18,8 @@ interface PasswordPageData {
   captchaText: string
   smsCode: string
   newPassword: string
+  /** 密码强度提示文案（WXML 不能调 Page 方法，输入时预计算） */
+  passwordLevel: string
   confirmPassword: string
   sendingCode: boolean
   codeCountdown: number
@@ -29,6 +30,19 @@ const COUNTDOWN_SECONDS = 60
 
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 
+/** 密码强度提示（仅展示用；空串表示不展示） */
+function passwordLevelOf(pwd: string): string {
+  if (pwd.length === 0) return ''
+  if (pwd.length < 8) return '至少 8 位'
+  let score = 1
+  if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) score += 1
+  if (/\d/.test(pwd)) score += 1
+  if (/[^a-zA-Z0-9]/.test(pwd)) score += 1
+  if (score >= 4) return '强'
+  if (score >= 3) return '中'
+  return '弱'
+}
+
 Page({
   data: {
     phone: '',
@@ -37,6 +51,7 @@ Page({
     captchaText: '',
     smsCode: '',
     newPassword: '',
+    passwordLevel: '',
     confirmPassword: '',
     sendingCode: false,
     codeCountdown: 0,
@@ -87,7 +102,7 @@ Page({
   },
 
   onNewPasswordInput(e: WechatMiniprogram.Input) {
-    this.setData({ newPassword: e.detail.value })
+    this.setData({ newPassword: e.detail.value, passwordLevel: passwordLevelOf(e.detail.value) })
   },
 
   onConfirmPasswordInput(e: WechatMiniprogram.Input) {
@@ -170,22 +185,5 @@ Page({
     } finally {
       this.setData({ submitting: false })
     }
-  },
-
-  methods: {
-    formatRelativeTime,
-    // 密码强度提示（仅展示用）
-    passwordLevel(): string {
-      const pwd = this.data.newPassword
-      if (pwd.length === 0) return ''
-      if (pwd.length < 8) return '至少 8 位'
-      let score = 1
-      if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) score += 1
-      if (/\d/.test(pwd)) score += 1
-      if (/[^a-zA-Z0-9]/.test(pwd)) score += 1
-      if (score >= 4) return '强'
-      if (score >= 3) return '中'
-      return '弱'
-    },
   },
 })

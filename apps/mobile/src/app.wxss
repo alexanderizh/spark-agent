@@ -1,60 +1,73 @@
 /*
- * SparkWork 移动端全局样式。
+ * SparkWork 移动端全局样式 — Cursor 移动端风格重构。
  *
- * 设计令牌与桌面端一致（apps/desktop/src/renderer/design/styles/styles.css）：
- *   中性灰、无渐变、紧凑密度、彩色语义图标；主色 #3b82f6。
+ * 设计令牌（对齐 Cursor iOS App，浅色暖白主题）：
+ *   背景 #F7F6F4 / 卡片 #FFFFFF / 主文字 #1A1A1A / 次级 #8E8E8E / 分割线 #ECECEC
+ *   用户气泡 #E9E9E7；彩色仅用于状态：运行蓝 / 需关注橙黄 / 异常红 / 待审查品红 / 完成绿。
  * 注意：wxss 不依赖 CSS 自定义属性（规避低版本基础库兼容问题），全部用字面值类名。
  */
 
 page {
-  background: #fafafa;
+  background: #f7f6f4;
   font-family:
     -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans', 'Helvetica Neue', sans-serif;
-  font-size: 28rpx;
-  line-height: 1.5;
-  color: #23231f;
+  font-size: 30rpx;
+  line-height: 1.6;
+  color: #1a1a1a;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ─── 文本 ─────────────────────────────────────────────────────────────────── */
 
 .t-strong {
-  color: #11100e;
+  color: #1a1a1a;
   font-weight: 600;
 }
 .t {
-  color: #23231f;
+  color: #1a1a1a;
+}
+.t-2 {
+  color: #6b6b6b;
 }
 .t-muted {
-  color: #8d8a86;
+  color: #8e8e8e;
 }
 .t-faint {
-  color: #9b9489;
+  color: #b3b0ab;
 }
-.t-primary {
+.t-accent {
   color: #3b82f6;
 }
-.t-success {
-  color: #10b981;
-}
-.t-warning {
-  color: #f59e0b;
-}
-.t-danger {
-  color: #ef4444;
+
+/* 页面大标题：左对齐加粗（Cursor 式） */
+.page-title {
+  font-size: 56rpx;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: 0.5rpx;
 }
 
+/* 分组标题：灰色小字 */
+.group-title {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: #8e8e8e;
+  letter-spacing: 0.5rpx;
+}
+
+.t-caption {
+  font-size: 22rpx;
+  color: #8e8e8e;
+}
+/* 卡片内主标题（昵称等）与次级说明（账号掩码、slogan 等） */
 .t-title {
   font-size: 34rpx;
   font-weight: 600;
-  color: #11100e;
+  color: #1a1a1a;
 }
 .t-subtitle {
   font-size: 26rpx;
-  color: #8d8a86;
-}
-.t-caption {
-  font-size: 22rpx;
-  color: #9b9489;
+  color: #6b6b6b;
 }
 .t-mono {
   font-family: 'SF Mono', Menlo, Consolas, monospace;
@@ -76,7 +89,6 @@ page {
 /* ─── 布局 ─────────────────────────────────────────────────────────────────── */
 
 .page {
-  padding: 24rpx 24rpx 48rpx;
   min-height: 100vh;
   box-sizing: border-box;
 }
@@ -112,105 +124,198 @@ page {
 .gap-24 {
   gap: 24rpx;
 }
-.wrap {
-  flex-wrap: wrap;
-}
 
-/* ─── 卡片 ─────────────────────────────────────────────────────────────────── */
+/* ─── 卡片（白底上浮，极淡阴影，16px 圆角） ────────────────────────────────── */
 
 .card {
   background: #fff;
-  border-radius: 16rpx;
-  padding: 24rpx;
+  border-radius: 32rpx;
+  padding: 28rpx;
   margin-bottom: 24rpx;
-  box-shadow: 0 1rpx 4rpx rgba(17, 16, 14, 0.04);
+  box-shadow: 0 2rpx 12rpx rgba(26, 26, 26, 0.04);
 }
+/* 扁平变体：说明性/次要卡片去阴影 */
 .card-flat {
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 24rpx;
-  margin-bottom: 24rpx;
+  box-shadow: none;
 }
-.card-head {
+
+/* 状态仪表盘 2×2 卡片（Cursor Inbox 式竖排：彩色图标在上，标签+计数在下） */
+.stat-card {
+  background: #fff;
+  border-radius: 32rpx;
+  padding: 28rpx;
+  box-shadow: 0 2rpx 12rpx rgba(26, 26, 26, 0.04);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 184rpx;
+  box-sizing: border-box;
+}
+.stat-card-icon {
+  width: 44rpx;
+  height: 44rpx;
+  background-size: 44rpx 44rpx;
+  flex: none;
+}
+.stat-card-foot {
   display: flex;
   flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20rpx;
+  align-items: baseline;
+  min-width: 0;
+}
+.stat-card-label {
+  font-size: 30rpx;
+  font-weight: 500;
+  color: #1a1a1a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stat-card-count {
+  font-size: 30rpx;
+  color: #b3b0ab;
+  margin-left: 14rpx;
+  flex: none;
+}
+
+/* 卡片内分组标题（「账号与安全」等小节头），与首页 group-title 同风格 */
+.card-head {
+  padding: 4rpx 0 8rpx;
 }
 .card-title {
-  font-size: 30rpx;
+  font-size: 26rpx;
   font-weight: 600;
-  color: #11100e;
-}
-.card-action {
-  font-size: 24rpx;
-  color: #3b82f6;
+  color: #8e8e8e;
+  letter-spacing: 0.5rpx;
 }
 
-/* ─── 列表行 ───────────────────────────────────────────────────────────────── */
+/* ─── 列表行（无容器白底直排 + 缩进式细分割线） ────────────────────────────── */
 
+.list-row-label {
+  font-size: 30rpx;
+  color: #1a1a1a;
+}
+.list-row-value {
+  font-size: 26rpx;
+  color: #8e8e8e;
+  text-align: right;
+}
 .list-row {
   display: flex;
   flex-direction: row;
   align-items: center;
-  padding: 22rpx 0;
-  border-bottom: 1rpx solid #efede8;
-  font-size: 28rpx;
+  min-height: 108rpx;
+  padding: 20rpx 0;
 }
-.list-row:last-child {
-  border-bottom: none;
-}
-.list-row-label {
-  color: #23231f;
-}
-.list-row-value {
-  color: #8d8a86;
-  font-size: 26rpx;
+.list-row + .list-row {
+  border-top: 1rpx solid #ececec;
 }
 
-/* ─── 按钮 ─────────────────────────────────────────────────────────────────── */
+/* ─── 圆形按钮（白底 + 细描边 + 微阴影，88rpx 直径） ───────────────────────── */
 
-.btn {
+.circle-btn {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 50%;
+  background: #fff;
+  border: 1rpx solid #ececec;
+  box-shadow: 0 2rpx 8rpx rgba(26, 26, 26, 0.05);
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 88rpx;
-  border-radius: 12rpx;
-  font-size: 30rpx;
-  font-weight: 500;
-  padding: 0 32rpx;
+  flex: none;
   box-sizing: border-box;
 }
-.btn-primary {
-  background: #3b82f6;
-  color: #fff;
+.circle-btn:active {
+  background: #f2f1ef;
 }
-.btn-primary[disabled] {
-  background: #a8c7fa;
-  color: #fff;
+.circle-btn--sm {
+  width: 68rpx;
+  height: 68rpx;
 }
-.btn-plain {
-  background: #fff;
-  color: #23231f;
-  border: 1rpx solid #d7d2c9;
+.circle-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
-.btn-danger-plain {
-  background: #fff;
-  color: #ef4444;
-  border: 1rpx solid #f3c1c1;
+
+/* 通用触摸态（hover-class 用类名，不能用 :active 伪类） */
+.hover-dim {
+  opacity: 0.72;
 }
-.btn-block {
-  width: 100%;
+
+/* SVG 图标（data URL，统一 #1A1A1A 或指定色） */
+.icon {
+  width: 40rpx;
+  height: 40rpx;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 40rpx 40rpx;
 }
-.btn-small {
-  height: 64rpx;
-  font-size: 26rpx;
-  border-radius: 8rpx;
-  padding: 0 24rpx;
+.icon-sm {
+  width: 32rpx;
+  height: 32rpx;
+  background-size: 32rpx 32rpx;
 }
-.btn-loading {
-  opacity: 0.7;
+.icon-back {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 18l-6-6 6-6'/%3E%3C/svg%3E");
+}
+.icon-search {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-3.5-3.5'/%3E%3C/svg%3E");
+}
+.icon-plus {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E");
+}
+.icon-folder-plus {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h16a1 1 0 001-1V8a1 1 0 00-1-1h-7.6L10 4.8A1 1 0 009.2 4.4H4a1 1 0 00-1 1V19a1 1 0 001 1z'/%3E%3Cpath d='M12 11v6M9 14h6'/%3E%3C/svg%3E");
+}
+.icon-folder {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e8e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h16a1 1 0 001-1V8a1 1 0 00-1-1h-7.6L10 4.8A1 1 0 009.2 4.4H4a1 1 0 00-1 1V19a1 1 0 001 1z'/%3E%3C/svg%3E");
+}
+.icon-chevron {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b3b0ab' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 6l6 6-6 6'/%3E%3C/svg%3E");
+}
+.icon-chevron-down {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e8e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+.icon-more {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231a1a1a'%3E%3Ccircle cx='5' cy='12' r='1.8'/%3E%3Ccircle cx='12' cy='12' r='1.8'/%3E%3Ccircle cx='19' cy='12' r='1.8'/%3E%3C/svg%3E");
+}
+.icon-monitor {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e8e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='13' rx='1.5'/%3E%3Cpath d='M8 21h8M12 17v4'/%3E%3C/svg%3E");
+}
+.icon-chat {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e8590c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12a8 8 0 01-8 8H4l2.3-2.9A8 8 0 1121 12z'/%3E%3C/svg%3E");
+}
+.icon-bell {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f59e0b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0'/%3E%3C/svg%3E");
+}
+.icon-working {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Ccircle cx='12' cy='5' r='1.6'/%3E%3Ccircle cx='12' cy='19' r='1.6'/%3E%3Ccircle cx='5' cy='12' r='1.6'/%3E%3Ccircle cx='19' cy='12' r='1.6'/%3E%3C/svg%3E");
+}
+.icon-review {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ec4899' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M8.5 12.5l2.5 2.5 4.5-5'/%3E%3C/svg%3E");
+}
+.icon-send {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231a1a1a'%3E%3Cpath d='M3.4 20.4l17.4-7.5a1 1 0 000-1.8L3.4 3.6a1 1 0 00-1.4 1.1L4 12l-2 7.3a1 1 0 001.4 1.1z'/%3E%3C/svg%3E");
+}
+.icon-send-white {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff'%3E%3Cpath d='M3.4 20.4l17.4-7.5a1 1 0 000-1.8L3.4 3.6a1 1 0 00-1.4 1.1L4 12l-2 7.3a1 1 0 001.4 1.1z'/%3E%3C/svg%3E");
+}
+.icon-stop {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff'%3E%3Crect x='7' y='7' width='10' height='10' rx='1.5'/%3E%3C/svg%3E");
+}
+.icon-mic {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='11' rx='3'/%3E%3Cpath d='M5 11a7 7 0 0014 0M12 18v3'/%3E%3C/svg%3E");
+}
+.icon-sync {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e8e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12a9 9 0 01-15.5 6.2M3 12a9 9 0 0115.5-6.2'/%3E%3Cpath d='M21 4v5h-5M3 20v-5h5'/%3E%3C/svg%3E");
+}
+.icon-camera {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z'/%3E%3Ccircle cx='12' cy='13' r='4'/%3E%3C/svg%3E");
+}
+.icon-cloud {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e8e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z'/%3E%3C/svg%3E");
 }
 
 /* ─── 徽标 / 状态点 ────────────────────────────────────────────────────────── */
@@ -219,29 +324,34 @@ page {
   display: inline-flex;
   align-items: center;
   padding: 4rpx 14rpx;
-  border-radius: 8rpx;
+  border-radius: 999rpx;
   font-size: 22rpx;
-  line-height: 1.4;
+  line-height: 1.5;
+  font-weight: 500;
 }
 .badge-success {
   background: rgba(16, 185, 129, 0.12);
-  color: #10b981;
+  color: #059669;
 }
 .badge-warning {
-  background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
 }
 .badge-danger {
   background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
+  color: #dc2626;
 }
 .badge-info {
   background: rgba(59, 130, 246, 0.12);
-  color: #3b82f6;
+  color: #2563eb;
+}
+.badge-review {
+  background: rgba(236, 72, 153, 0.12);
+  color: #db2777;
 }
 .badge-neutral {
-  background: #f2f2f2;
-  color: #8d8a86;
+  background: #f0efed;
+  color: #8e8e8e;
 }
 
 .dot {
@@ -259,8 +369,11 @@ page {
 .dot-danger {
   background: #ef4444;
 }
+.dot-info {
+  background: #3b82f6;
+}
 .dot-neutral {
-  background: #d7d2c9;
+  background: #c9c6c0;
 }
 
 /* ─── 表单 ─────────────────────────────────────────────────────────────────── */
@@ -270,94 +383,155 @@ page {
 }
 .field-label {
   font-size: 26rpx;
-  color: #8d8a86;
+  color: #8e8e8e;
   margin-bottom: 10rpx;
   display: block;
 }
 .field-input {
   height: 88rpx;
   background: #fff;
-  border: 1rpx solid #d7d2c9;
-  border-radius: 12rpx;
+  border: 1rpx solid #e5e2dd;
+  border-radius: 20rpx;
   padding: 0 24rpx;
   font-size: 28rpx;
-  color: #23231f;
+  color: #1a1a1a;
   width: 100%;
   box-sizing: border-box;
 }
 .field-input:focus {
-  border-color: #3b82f6;
+  border-color: #1a1a1a;
 }
 
-/* ─── 空态 ─────────────────────────────────────────────────────────────────── */
+/* ─── 按钮 ─────────────────────────────────────────────────────────────────── */
 
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  border-radius: 999rpx;
+  font-size: 30rpx;
+  font-weight: 500;
+  padding: 0 36rpx;
+  box-sizing: border-box;
+}
+.btn-dark {
+  background: #1a1a1a;
+  color: #fff;
+}
+.btn-dark[disabled] {
+  background: #4d4d4d;
+  color: #fff;
+}
+.btn-plain {
+  background: #fff;
+  color: #1a1a1a;
+  border: 1rpx solid #e5e2dd;
+}
+.btn-plain--hover {
+  background: #f2f1ef;
+}
+/* 主按钮：Cursor 式黑底白字胶囊（彩色仅用于状态，主操作用黑） */
+.btn-primary {
+  background: #1a1a1a;
+  color: #fff;
+}
+.btn-primary[disabled] {
+  background: #4d4d4d;
+  color: #fff;
+}
+.btn-primary--hover {
+  background: #3d3d3d;
+}
+.btn-danger-plain {
+  background: #fff;
+  color: #dc2626;
+  border: 1rpx solid #f3c1c1;
+}
+.btn-block {
+  width: 100%;
+}
+.btn-small {
+  height: 64rpx;
+  font-size: 26rpx;
+  padding: 0 28rpx;
+}
+.btn-loading {
+  opacity: 0.7;
+}
+
+/* ─── 空态（图标 + 标题 + 指引文案 三件套） ────────────────────────────────── */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 40rpx 8rpx;
+}
+
+/* 卡片内居中空态（同步/设备等列表为空时） */
 .empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 96rpx 48rpx;
-  color: #9b9489;
-  font-size: 26rpx;
+  padding: 88rpx 48rpx;
+  text-align: center;
+  color: #6b6b6b;
+  font-size: 28rpx;
 }
 .empty-icon {
-  font-size: 64rpx;
-  margin-bottom: 16rpx;
-  opacity: 0.6;
-}
-
-/* ─── 分段控件（登录模式切换） ──────────────────────────────────────────────── */
-
-.segment {
-  display: flex;
-  flex-direction: row;
-  background: #f2f2f2;
-  border-radius: 12rpx;
-  padding: 6rpx;
-  margin-bottom: 28rpx;
-}
-.segment-item {
-  flex: 1;
-  text-align: center;
-  padding: 14rpx 0;
-  font-size: 26rpx;
-  color: #8d8a86;
-  border-radius: 8rpx;
-}
-.segment-item.active {
-  background: #fff;
-  color: #11100e;
-  font-weight: 500;
-  box-shadow: 0 1rpx 4rpx rgba(17, 16, 14, 0.06);
-}
-
-/* ─── 头像 ─────────────────────────────────────────────────────────────────── */
-
-.avatar {
   width: 96rpx;
   height: 96rpx;
   border-radius: 50%;
-  background: #f2f2f2;
-  flex: none;
+  background: #efedea;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24rpx;
 }
-.avatar-large {
-  width: 128rpx;
-  height: 128rpx;
+.empty-state-icon {
+  width: 64rpx;
+  height: 64rpx;
   border-radius: 50%;
-  background: #f2f2f2;
-  flex: none;
+  background: #efedea;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20rpx;
+}
+.empty-state-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 8rpx;
+}
+.empty-state-desc {
+  font-size: 26rpx;
+  color: #8e8e8e;
+  line-height: 1.6;
 }
 
 /* ─── 分割线 ───────────────────────────────────────────────────────────────── */
 
 .divider {
   height: 1rpx;
-  background: #efede8;
-  margin: 24rpx 0;
+  background: #ececec;
 }
 
-/* ─── 安全区（iPhone 底部横条） ────────────────────────────────────────────── */
+/* ─── 安全区（iPhone 底部横条 / 刘海屏顶部） ───────────────────────────────── */
 
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+.safe-top {
+  padding-top: var(--status-bar-height, 44px);
+}
+
+/* ─── 加载态 ───────────────────────────────────────────────────────────────── */
+
+.loading-tip {
+  text-align: center;
+  padding: 48rpx 0;
+  color: #b3b0ab;
+  font-size: 26rpx;
 }

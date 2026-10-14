@@ -15,6 +15,13 @@
   position: relative;
   flex: none;
 }
+.avatar-large {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 50%;
+  flex: none;
+  display: block;
+}
 .avatar-placeholder {
   background: #3b82f6;
   display: flex;
@@ -23,7 +30,7 @@
 }
 .avatar-text {
   color: #fff;
-  font-size: 48rpx;
+  font-size: 44rpx;
   font-weight: 600;
 }
 .avatar-badge {
@@ -34,11 +41,18 @@
   height: 44rpx;
   border-radius: 50%;
   background: #fff;
-  border: 1rpx solid #efede8;
+  border: 1rpx solid #ececec;
+  box-shadow: 0 2rpx 8rpx rgba(26, 26, 26, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22rpx;
+}
+.avatar-badge-icon {
+  width: 22rpx;
+  height: 22rpx;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 22rpx 22rpx;
 }
 .avatar-loading {
   position: absolute;
@@ -52,10 +66,18 @@
   font-size: 32rpx;
 }
 
-.edit-link {
-  font-size: 24rpx;
-  color: #3b82f6;
+/* 昵称旁「编辑」描边小胶囊 */
+.edit-chip {
+  font-size: 22rpx;
+  color: #6b6b6b;
+  border: 1rpx solid #e5e2dd;
+  border-radius: 999rpx;
+  padding: 4rpx 20rpx;
+  line-height: 1.5;
   flex: none;
+}
+.edit-chip--hover {
+  background: #f2f1ef;
 }
 
 /* ─── hover ────────────────────────────────────────────────────────────────── */

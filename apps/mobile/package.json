@@ -5,14 +5,16 @@
   "description": "SparkWork 移动端（微信小程序）— 桌面端的移动伴侣：账号登录同步、同步状态、设备与会话管理",
   "scripts": {
     "dev": "node scripts/build.mjs --watch",
-    "build": "node scripts/build.mjs && node scripts/verify-dist.mjs",
+    "build": "node scripts/build.mjs && node scripts/verify-dist.mjs && node scripts/verify-wxml-methods.mjs",
     "icons": "node scripts/gen-tabbar-icons.mjs",
-    "verify": "node scripts/verify-dist.mjs",
+    "verify": "node scripts/verify-dist.mjs && node scripts/verify-wxml-methods.mjs",
     "smoke": "node scripts/smoke-api.mjs",
+    "smoke:boot": "node scripts/smoke-boot.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
     "miniprogram-api-typings": "^3.12.3",
+    "miniprogram-automator": "^0.12.1",
     "typescript": "^5.5.0"
   }
 }

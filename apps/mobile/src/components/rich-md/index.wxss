@@ -1,0 +1,177 @@
+/* Markdown 文档式排版（AI 回复）：正文 30rpx 黑色，层级靠字号/字重/灰度 */
+
+.md {
+  font-size: 30rpx;
+  color: #1a1a1a;
+  line-height: 1.7;
+}
+
+.md-p {
+  margin: 0 0 16rpx;
+}
+.md-p:last-child {
+  margin-bottom: 0;
+}
+
+/* 标题层级 */
+.md-h {
+  font-weight: 700;
+  color: #1a1a1a;
+  margin: 24rpx 0 12rpx;
+}
+.md-h:first-child {
+  margin-top: 0;
+}
+.md-h1 {
+  font-size: 40rpx;
+}
+.md-h2 {
+  font-size: 36rpx;
+}
+.md-h3 {
+  font-size: 33rpx;
+}
+.md-h4,
+.md-h5,
+.md-h6 {
+  font-size: 30rpx;
+}
+
+/* 行内样式（rich-text 节点 class 需落在组件样式内） */
+.md-strong {
+  font-weight: 700;
+  color: #1a1a1a;
+}
+.md-em {
+  font-style: italic;
+}
+.md-del {
+  text-decoration: line-through;
+  color: #8e8e8e;
+}
+.md-link {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 4rpx;
+}
+.md-inline-code {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: #eceae6;
+  border-radius: 8rpx;
+  padding: 2rpx 10rpx;
+  color: #1a1a1a;
+}
+
+/* 代码块 */
+.md-code {
+  background: #201f1d;
+  border-radius: 20rpx;
+  margin: 16rpx 0 20rpx;
+  overflow: hidden;
+}
+.md-code-head {
+  padding: 14rpx 24rpx;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
+}
+.md-code-lang {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+.md-code-copy {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.75);
+  padding: 4rpx 12rpx;
+}
+.md-code-copy:active {
+  color: #fff;
+}
+.md-code-body {
+  padding: 20rpx 24rpx;
+  max-width: 100%;
+}
+.md-code-text {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #e8e6e1;
+  white-space: pre;
+}
+
+/* 引用 */
+.md-quote {
+  border-left: 6rpx solid #dcd9d4;
+  padding: 4rpx 0 4rpx 24rpx;
+  margin: 16rpx 0;
+}
+.md-quote-p {
+  color: #6b6b6b;
+  margin: 8rpx 0;
+}
+
+/* 列表 */
+.md-list {
+  margin: 8rpx 0 16rpx;
+}
+.md-li {
+  display: flex;
+  flex-direction: row;
+  margin: 6rpx 0;
+}
+.md-li-marker {
+  color: #8e8e8e;
+  font-size: 30rpx;
+  line-height: 1.7;
+  margin-right: 16rpx;
+  flex: none;
+  min-width: 28rpx;
+}
+.md-li-body {
+  font-size: 30rpx;
+  line-height: 1.7;
+  color: #1a1a1a;
+}
+
+/* 分割线 */
+.md-hr {
+  height: 1rpx;
+  background: #ececec;
+  margin: 24rpx 0;
+}
+
+/* 表格 */
+.md-table-wrap {
+  margin: 16rpx 0 20rpx;
+  border: 1rpx solid #ececec;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+.md-table-scroll {
+  max-width: 100%;
+}
+.md-table {
+  min-width: 100%;
+}
+.md-tr {
+  display: flex;
+  flex-direction: row;
+  border-top: 1rpx solid #ececec;
+}
+.md-tr:first-child,
+.md-tr--head {
+  border-top: none;
+}
+.md-tr--head {
+  background: #faf9f7;
+}
+.md-td {
+  padding: 14rpx 20rpx;
+  font-size: 26rpx;
+  color: #1a1a1a;
+  flex: 1;
+  min-width: 160rpx;
+}
+.md-td--head {
+  font-weight: 600;
+}

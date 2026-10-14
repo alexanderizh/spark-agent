@@ -59,7 +59,13 @@ export function NotificationBell(): React.ReactElement {
           />
         }
       >
-        <Tooltip title={t('app.notification.bellTip')} mouseEnterDelay={0.05}>
+        <Tooltip
+          title={t('app.notification.bellTip')}
+          placement="top"
+          mouseEnterDelay={0.05}
+          arrow
+          className="spark-icon-tooltip"
+        >
           <button
             className="sidebar-user-settings nb-bell-btn"
             aria-label={t('app.notification.bellTip')}

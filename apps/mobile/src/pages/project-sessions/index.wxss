@@ -1,0 +1,80 @@
+/* 项目会话列表页：大标题 + 分组条目 + 悬浮胶囊（Cursor 工作区列表式） */
+
+.ps-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.ps-title-row {
+  padding: 16rpx 32rpx 8rpx;
+}
+.ps-title-row .page-title {
+  display: block;
+}
+
+/* ─── 筛选 + 搜索 ──────────────────────────────────────────────────────────── */
+
+.ps-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  padding: 16rpx 32rpx 8rpx;
+}
+
+.ps-segments {
+  display: flex;
+  flex-direction: row;
+  gap: 12rpx;
+}
+.ps-segment {
+  padding: 10rpx 26rpx;
+  border-radius: 999rpx;
+  background: #efedea;
+  font-size: 24rpx;
+  color: #6b6b6b;
+}
+.ps-segment--active {
+  background: #1a1a1a;
+  color: #fff;
+  font-weight: 500;
+}
+
+.ps-search {
+  background: #fff;
+  border: 1rpx solid #ececec;
+  border-radius: 999rpx;
+  padding: 14rpx 24rpx;
+  gap: 12rpx;
+}
+.ps-search-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: #1a1a1a;
+}
+
+/* ─── 分组列表 ─────────────────────────────────────────────────────────────── */
+
+.ps-group {
+  padding: 24rpx 32rpx 8rpx;
+}
+.ps-group .group-title {
+  display: block;
+  margin-bottom: 8rpx;
+}
+.ps-row-text {
+  margin: 0 20rpx;
+}
+.list-row--hover {
+  background: #f2f1ef;
+}
+
+.ps-error,
+.ps-empty {
+  padding: 48rpx 40rpx;
+}
+
+/* ─── 底部占位 ─────────────────────────────────────────────────────────────── */
+
+.ps-spacer {
+  height: calc(env(safe-area-inset-bottom) + 200rpx);
+}

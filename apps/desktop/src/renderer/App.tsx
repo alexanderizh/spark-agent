@@ -1209,7 +1209,14 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
            记忆按用户决策收归设置页，不在此列。 */}
       <div className="sidebar-shared-resources" role="toolbar" aria-label={tr('nav.group.shared')}>
         {pickNavItems(SHARED_RESOURCE_IDS).map((item) => (
-          <Tooltip key={item.id} title={tr(item.labelKey)} mouseEnterDelay={0.05}>
+          <Tooltip
+            key={item.id}
+            title={tr(item.labelKey)}
+            placement="top"
+            mouseEnterDelay={0.05}
+            arrow
+            className="spark-icon-tooltip"
+          >
             <button
               type="button"
               className={`shared-resource-btn${t.view === item.id ? ' active' : ''}`}
@@ -1288,7 +1295,13 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
           </UserMenuDropdown>
           <NotificationBell />
           <VoiceAssistantButton />
-          <Tooltip title={tr('app.user.settings')} mouseEnterDelay={0.05}>
+          <Tooltip
+            title={tr('app.user.settings')}
+            placement="top"
+            mouseEnterDelay={0.05}
+            arrow
+            className="spark-icon-tooltip"
+          >
             <button
               className="sidebar-user-settings"
               aria-label={tr('app.user.settings')}
@@ -1357,12 +1370,6 @@ function Shell() {
   const lastSidebarViewportWidthRef = useRef<number | null>(null)
   // 用 ref 同步 floatingSidebarWidth，避免在 syncSidebarForViewport 内部依赖 React state。
   const floatingSidebarWidthRef = useRef(t.floatingSidebarWidth)
-  // 浮动菜单栏模式下，当用户焦点落在右侧内容区（main-content-area）时，让侧栏
-  // 背景轻微加深，营造"侧栏退后、内容区为焦点"的视觉层次。仅 floating + 侧栏
-  // 可见时挂 .content-focused（见根 className 与 styles.css 的对应规则），
-  // flat / hidden 完全不受影响。
-  const mainContentRef = useRef<HTMLDivElement>(null)
-  const [contentFocused, setContentFocused] = useState(false)
   const [sidebarOverlaysContent, setSidebarOverlaysContent] = useState(
     () =>
       t.view === 'chat' &&
@@ -1372,42 +1379,6 @@ function Shell() {
         sidebarGutter: t.sidebarStyle === 'flat' ? 0 : SIDEBAR_VISIBLE_GUTTER,
       }),
   )
-  useEffect(() => {
-    const main = mainContentRef.current
-    if (!main) return
-    const isComposerTarget = (target: EventTarget | null) =>
-      target instanceof Element && target.closest('.composer-wrap') != null
-    const isContentTarget = (target: EventTarget | null) =>
-      target instanceof Element && main.contains(target) && !isComposerTarget(target)
-    const syncFromActiveElement = () => {
-      setContentFocused(isContentTarget(document.activeElement))
-    }
-    // focusin/focusout 覆盖键盘 Tab、点击 focusable 元素以及焦点离开内容区的场景。
-    // 底部 composer 属于 main-content-area，但不属于会话内容区，必须排除。
-    const onFocusIn = (event: FocusEvent) => {
-      setContentFocused(isContentTarget(event.target))
-    }
-    const onFocusOut = (event: FocusEvent) => {
-      setContentFocused(isContentTarget(event.relatedTarget))
-    }
-    document.addEventListener('focusin', onFocusIn)
-    document.addEventListener('focusout', onFocusOut)
-    // 点击内容区非 focusable 元素（空白/画布）也计入聚焦态；点击 composer、侧栏或
-    // 其他区域都视为内容区失焦并恢复原色。
-    const onDocumentMouseDown = (event: MouseEvent) => {
-      setContentFocused(isContentTarget(event.target))
-    }
-    const onWindowBlur = () => setContentFocused(false)
-    document.addEventListener('mousedown', onDocumentMouseDown)
-    window.addEventListener('blur', onWindowBlur)
-    syncFromActiveElement()
-    return () => {
-      document.removeEventListener('focusin', onFocusIn)
-      document.removeEventListener('focusout', onFocusOut)
-      document.removeEventListener('mousedown', onDocumentMouseDown)
-      window.removeEventListener('blur', onWindowBlur)
-    }
-  }, [])
   useEffect(() => {
     floatingSidebarWidthRef.current = t.floatingSidebarWidth
   }, [t.floatingSidebarWidth])
@@ -2116,7 +2087,7 @@ function Shell() {
       <SubAppSurfaceProvider>
         <div
           ref={scaleRef}
-          className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${sidebarOverlaysContent ? ' sidebar-overlay-mode' : ''}${sidebarOverlaysContent && !sidebarHidden ? ' sidebar-overlay-open' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}${usesSettingsTitlebarSurface ? ' titlebar-surface-settings' : ''}${usesAuthTitlebarSurface ? ' titlebar-surface-auth' : ''}${contentFocused && t.sidebarStyle === 'floating' && !sidebarHidden ? ' content-focused' : ''}`}
+          className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${sidebarOverlaysContent ? ' sidebar-overlay-mode' : ''}${sidebarOverlaysContent && !sidebarHidden ? ' sidebar-overlay-open' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}${usesSettingsTitlebarSurface ? ' titlebar-surface-settings' : ''}${usesAuthTitlebarSurface ? ' titlebar-surface-auth' : ''}`}
           style={
             {
               '--primary': primary,
@@ -2165,7 +2136,6 @@ function Shell() {
                   </div>
                 )}
               <div
-                ref={mainContentRef}
                 className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}
               >
                 {/* Windows: custom title bar spanning full width with drag region.

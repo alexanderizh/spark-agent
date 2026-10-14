@@ -80,6 +80,7 @@ import { AccountSyncSettingsSection } from './account-sync/AccountSyncSettingsSe
 import { UpdateReleaseNotesCard } from './UpdateReleaseNotesCard'
 import { HooksV2Section } from './hooks/HooksV2Section'
 import { SettingsNavResizer } from './settings-nav/SettingsNavResizer'
+import { MobileBridgeSettingsSection } from './SettingsMobileBridge'
 import { MemoryPendingBadge } from '../MemoryPendingBadge'
 import './SettingsView.less'
 import type {
@@ -412,6 +413,12 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           label: '子应用',
           keywords: ['sub-app', '子应用', '沙箱', 'CSP', '外部网络', 'eval', '小工具'],
         },
+        {
+          id: 'mobile-bridge',
+          icon: <Icons.Phone size={13} />,
+          label: '移动端桥接',
+          keywords: ['小程序', '移动端', '手机', '配对', '远程会话', '桥接', 'mobile', 'bridge'],
+        },
       ],
     },
     {
@@ -490,6 +497,7 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     'system-prompt': SystemPromptSection,
     // 直接引用模块级组件，不要包箭头函数（同 MemoryPanel 的教训）
     'sub-app': SubAppRuntimeSettingsCard,
+    'mobile-bridge': MobileBridgeSettingsSection,
     'computer-use': ComputerUseSettingsSection,
     performance: PerformanceSettingsSection,
     integrity: IntegritySection,

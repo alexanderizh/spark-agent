@@ -11,7 +11,8 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
-    "resolveJsonModule": true,
+    // 小程序不支持 require('*.json')（会补 .js 后缀找 config.json.js），故禁用 JSON 导入
+    "resolveJsonModule": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "types": ["miniprogram-api-typings"],

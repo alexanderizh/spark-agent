@@ -44,10 +44,26 @@ walk(dist, (file) => {
 
 // 2-3. 页面四件套 + tabBar 图标
 const appJson = JSON.parse(readFileSync(join(dist, 'app.json'), 'utf8'))
+const registeredPages = new Set(appJson.pages)
 for (const page of appJson.pages) {
   for (const ext of ['.js', '.json', '.wxml', '.wxss']) {
     if (!existsSync(join(dist, page + ext))) {
       errors.push(`页面文件缺失: ${page}${ext}`)
+    }
+  }
+}
+
+// 2b. 孤儿页面：pages/ 下有完整四件套但未注册进 app.json（改了 WXML 忘加路由）
+const pagesDir = join(dist, 'pages')
+if (existsSync(pagesDir)) {
+  for (const group of readdirSync(pagesDir)) {
+    const pagePath = `pages/${group}/index`
+    if (registeredPages.has(pagePath)) continue
+    const hasAll = ['.js', '.json', '.wxml', '.wxss'].every((ext) =>
+      existsSync(join(dist, pagePath + ext)),
+    )
+    if (hasAll) {
+      errors.push(`孤儿页面（四件套齐全但未注册进 app.json）: ${pagePath}`)
     }
   }
 }
@@ -79,6 +95,71 @@ walk(dist, (file) => {
   const close = (content.match(/<\/view>/g) ?? []).length
   if (open !== close) {
     errors.push(`view 标签不配对: ${relative(root, file)}（${open} 开 / ${close} 闭）`)
+  }
+})
+
+// 6. require 路径可达性 —— 小程序的 require 只认 .js，且会自动补 .js 后缀。
+//    所以 `require('./config.json')` 会去找 config.json.js 并崩（曾真实发生）。
+walk(dist, (file) => {
+  if (!file.endsWith('.js')) return
+  // 先剥注释：注释里经常出现 `require('./config.json')` 这类反例文案，不剥会误报
+  const content = readFileSync(file, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|\s)\/\/[^\n]*/g, '')
+  const re = /require\(\s*['"](\.[^'"]+)['"]\s*\)/g
+  let match
+  while ((match = re.exec(content)) !== null) {
+    const spec = match[1]
+    const base = join(dirname(file), spec)
+    const ok = existsSync(`${base}.js`) || existsSync(join(base, 'index.js')) || existsSync(base)
+    if (!ok) {
+      errors.push(
+        `require 目标不可达: ${relative(root, file)} 里的 "${spec}"` +
+          `（小程序只加载 .js，require('./x.json') 会去找 x.json.js 而失败）`,
+      )
+    }
+  }
+})
+
+// 7. Page 不允许 methods 字段 —— 那是 Vue/uni-app 的写法；原生 Page({ methods: {...} })
+//    里的事件回调与 WXML 函数全都拿不到。Component({ methods }) 才是合法的（自定义组件）。
+const pagesRoot = join(dist, 'pages')
+if (existsSync(pagesRoot)) {
+  walk(pagesRoot, (file) => {
+    if (!file.endsWith('.js')) return
+    const src = readFileSync(file, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|\s)\/\/[^\n]*/g, '')
+    if (/(^|[^.\w])methods\s*:/.test(src)) {
+      errors.push(
+        `Page 使用了 methods 字段: ${relative(root, file)}` +
+          `（原生小程序 Page 不支持 methods，方法必须挂在顶层；Component 才用 methods）`,
+      )
+    }
+  })
+}
+
+// 8. 小程序不兼容 API / ESM 残留 —— Node 冒烟跑得通不代表小程序跑得通
+const INCOMPATIBLE = [
+  ['process.*', /\bprocess\.\w/],
+  ['Buffer', /\bBuffer\b/],
+  ['require(node 内置模块)', /require\(\s*['"](fs|path|os|crypto)['"]\s*\)/],
+  ['window.*', /\bwindow\.\w/],
+  ['document.*', /\bdocument\.\w/],
+  ['localStorage', /\blocalStorage\b/],
+  ['fetch()', /\bfetch\s*\(/],
+  ['XMLHttpRequest', /\bXMLHttpRequest\b/],
+  ['ESM import 语句', /^\s*import\s+[\w{*'"]/m],
+  ['ESM export 语句', /^\s*export\s+(default|const|function|class|\{)/m],
+  ['__dirname', /__dirname/],
+]
+walk(dist, (file) => {
+  if (!file.endsWith('.js')) return
+  const src = readFileSync(file, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|\s)\/\/[^\n]*/g, '')
+  for (const [name, re] of INCOMPATIBLE) {
+    if (re.test(src)) errors.push(`小程序不支持: ${relative(root, file)} 使用了 ${name}`)
   }
 })
 

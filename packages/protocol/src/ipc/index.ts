@@ -143,6 +143,7 @@ import type { ToolPackageRuntimeEvent, ToolPackagesIpcChannelMap } from '../tool
 import type { NotificationsIpcChannelMap } from '../notifications.js'
 import type { HookV2IpcChannelMap } from '../hooks-v2.js'
 import type { AccountSyncIpcChannelMap } from '../account-sync.js'
+import type { MobileBridgeIpcChannelMap } from '../mobile-bridge.js'
 import type { WorkflowBundleIpcChannelMap } from '../workflow-bundle-ipc.js'
 import type { SessionWorkflowBindingIpcChannelMap } from '../session-workflow-binding.js'
 import type { SessionWorkflowBindingCreate } from '../session-workflow-binding.js'
@@ -635,6 +636,8 @@ export interface SessionUpdateRequest {
   reasoningEffort?: SessionReasoningEffort
   /** OpenAI Fast mode (request-level service_tier=fast), independent from reasoning effort. */
   fastMode?: boolean
+  /** 切换会话所属项目（workspace id）；仅改侧边栏归属列，不动工作区 */
+  projectId?: string
   /** 调试模式开关（per-session，持久化到 metadata） */
   debugMode?: boolean
   /** 会话标记（per-session，持久化到 metadata）；null = 取消标记，undefined = 不修改 */
@@ -7648,6 +7651,7 @@ export interface IpcChannelMap
     NotificationsIpcChannelMap,
     HookV2IpcChannelMap,
     AccountSyncIpcChannelMap,
+    MobileBridgeIpcChannelMap,
     WorkflowBundleIpcChannelMap,
     SessionWorkflowBindingIpcChannelMap,
     WikiIpcChannelMap,

@@ -1188,70 +1188,36 @@ body.sidebar-resizing {
   user-select: none;
 }
 
-.msg-hover-copy {
+/* 消息操作图标：固定点击热区 + 圆角底，hover 与顶栏 icon-btn 一致 */
+.msg-hover-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   background: transparent;
   border: none;
   color: var(--text-faint);
   cursor: pointer;
-  padding: 2px;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-sm);
   transition:
-    color 0.15s,
-    background 0.15s;
+    color 0.12s,
+    background 0.12s;
   line-height: 0;
 }
 
-.msg-hover-copy:hover {
-  color: var(--text-muted);
-  background: var(--bg-subtle);
+.msg-hover-btn:hover {
+  color: var(--text);
+  background: var(--hover);
 }
 
-.msg-hover-edit {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: var(--r-xs);
-  transition:
-    color 0.15s,
-    background 0.15s;
-  line-height: 0;
+.msg-hover-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
-.msg-hover-edit:hover {
-  color: var(--text-muted);
-  background: var(--bg-subtle);
-}
-
-/* 语音播报：与复制/编辑同款式；播报中保留主色提醒「再点即停」 */
-.msg-hover-speech {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: var(--r-xs);
-  transition:
-    color 0.15s,
-    background 0.15s;
-  line-height: 0;
-}
-
-.msg-hover-speech:hover {
-  color: var(--text-muted);
-  background: var(--bg-subtle);
-}
-
+/* 语音播报：播报中保留主色提醒「再点即停」 */
 .msg-hover-speech.is-playing {
   color: var(--primary);
 }
@@ -1358,62 +1324,14 @@ body.sidebar-resizing {
   }
 }
 
-.msg-hover-fork {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: var(--r-xs);
-  transition:
-    color 0.15s,
-    background 0.15s;
-  line-height: 0;
-}
-
 .msg-hover-fork:hover {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-.msg-hover-delete {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: var(--r-xs);
-  transition:
-    color 0.15s,
-    background 0.15s;
-  line-height: 0;
-}
-
 .msg-hover-delete:hover {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, transparent);
-}
-
-.msg-hover-resend {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: var(--r-xs);
-  transition:
-    color 0.15s,
-    background 0.15s;
-  line-height: 0;
 }
 
 .msg-hover-resend:hover {

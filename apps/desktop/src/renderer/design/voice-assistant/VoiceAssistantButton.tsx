@@ -90,7 +90,7 @@ export function VoiceAssistantButtonView({
     .join(' ')
 
   return (
-    <Tooltip title={tip} mouseEnterDelay={0.05}>
+    <Tooltip title={tip} placement="top" mouseEnterDelay={0.05} arrow className="spark-icon-tooltip">
       <button
         type="button"
         className={className}

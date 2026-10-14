@@ -36,17 +36,17 @@
           <view class="device-icon">🖥</view>
           <view class="grow col">
             <text class="t-strong ellipsis">{{item.label}}</text>
-            <text class="t-caption">{{formatRelativeTime(item.lastSeen)}}活跃 · 同步 {{item.count}} 次</text>
+            <text class="t-caption">{{item.lastSeenLabel}}活跃 · 同步 {{item.count}} 次</text>
           </view>
         </view>
         <view class="device-cats">
-          <text wx:for="{{item.categories}}" wx:for-item="cat" wx:key="*this" class="category-chip">{{categoryLabel(cat)}}</text>
+          <text wx:for="{{item.categoryLabels}}" wx:for-item="cat" wx:key="*this" class="category-chip">{{cat}}</text>
         </view>
       </view>
     </block>
 
     <view wx:elif="{{!loading}}" class="empty">
-      <view class="empty-icon">🖥</view>
+      <view class="empty-icon"><view class="icon icon-monitor"></view></view>
       <text>暂未识别到桌面端设备</text>
       <text class="t-caption" style="margin-top: 8rpx; text-align: center;">在桌面端用同一账号登录并开启账号同步后，设备会出现在这里</text>
     </view>

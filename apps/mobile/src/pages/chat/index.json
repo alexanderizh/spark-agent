@@ -1,0 +1,11 @@
+{
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "safe-nav-bar": "../../components/safe-nav-bar/index",
+    "rich-md": "../../components/rich-md/index",
+    "capsule-composer": "../../components/capsule-composer/index",
+    "empty-state": "../../components/empty-state/index",
+    "sheet-panel": "../../components/sheet-panel/index",
+    "session-tasks-panel": "../../components/session-tasks-panel/index"
+  }
+}

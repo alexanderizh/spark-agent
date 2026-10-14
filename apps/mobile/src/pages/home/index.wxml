@@ -1,94 +1,213 @@
+<!-- 首页 Inbox：头像/搜索工具行 → 大标题 → 状态仪表盘 → 项目 → 最近会话 → 悬浮胶囊 -->
+
 <view class="home-page">
-  <!-- 用户卡片 -->
-  <view class="card user-card" bindtap="onGoProfile">
-    <image class="avatar-large" src="{{user && user.avatarUrl ? user.avatarUrl : ''}}" mode="aspectFill" />
-    <view class="grow user-info">
-      <view class="row gap-12">
-        <text class="t-title ellipsis">{{user && user.nickname ? user.nickname : accountMasked}}</text>
-        <text wx:if="{{user && user.tier}}" class="badge {{user.tier.isPaid ? 'badge-info' : 'badge-neutral'}}">{{user.tier.name}}</text>
+  <!-- 顶部工具行（状态栏安全区） -->
+  <view class="home-header" style="padding-top: {{statusBarHeight}}px;">
+    <view class="home-toolbar row between" style="padding-right: {{navClearance}}px;">
+      <view class="home-avatar-wrap" hover-class="home-avatar-wrap--hover" bindtap="onGoProfile">
+        <image
+          wx:if="{{avatarUrl}}"
+          class="home-avatar"
+          src="{{avatarUrl}}"
+          mode="aspectFill"
+        />
+        <view wx:else class="home-avatar home-avatar--fallback center">
+          <text>{{accountLabel ? accountLabel[0] : 'S'}}</text>
+        </view>
       </view>
-      <text class="t-subtitle ellipsis">{{accountMasked}}</text>
-    </view>
-    <text class="card-action">个人中心 ›</text>
-  </view>
-
-  <!-- 同步状态卡 -->
-  <view class="card">
-    <view class="card-head">
-      <text class="card-title">账号同步</text>
-      <text class="card-action" bindtap="onGoSync">同步中心 ›</text>
-    </view>
-
-    <view class="sync-hero">
-      <view class="row gap-12">
-        <view class="dot {{status && status.lastStatus === 'success' ? 'dot-success' : (status && status.lastStatus ? 'dot-warning' : 'dot-neutral')}}"></view>
-        <text class="t-strong">{{status && status.lastSyncAt ? formatRelativeTime(status.lastSyncAt) : '尚未同步'}}</text>
-      </view>
-      <text class="t-subtitle">{{status && status.lastDeviceLabel ? '来自 ' + status.lastDeviceLabel : '桌面端登录同一账号后自动同步'}}</text>
-    </view>
-
-    <view class="divider"></view>
-
-    <view class="row between">
-      <view class="col">
-        <text class="t-caption">上次同步数据量</text>
-        <text class="t-strong t-mono">{{formatBytes(status && status.lastPayloadBytes)}}</text>
-      </view>
-      <view class="col" style="align-items: flex-end;">
-        <text class="t-caption">单次上限</text>
-        <text class="t-strong t-mono">{{formatBytes(status ? status.maxPayloadBytes : null)}}</text>
+      <view class="row gap-16">
+        <view class="circle-btn" hover-class="hover-dim" bindtap="onOpenSearch">
+          <view class="icon icon-search"></view>
+        </view>
+        <view class="circle-btn" hover-class="hover-dim" bindtap="onNewProjectHint">
+          <view class="icon icon-folder-plus"></view>
+        </view>
       </view>
     </view>
-
-    <view class="progress" wx:if="{{status && status.lastPayloadBytes != null && status.maxPayloadBytes > 0}}">
-      <view class="progress-inner" style="width: {{usagePercent()}}%"></view>
+    <view class="home-title-row">
+      <text class="page-title">会话</text>
     </view>
   </view>
 
-  <!-- 最近同步记录 -->
-  <view class="card" wx:if="{{recent.length > 0}}">
-    <view class="card-head">
-      <text class="card-title">最近同步</text>
-      <text class="card-action" bindtap="onGoSync">全部记录 ›</text>
+  <!-- ─── 门控态 ──────────────────────────────────────────────────────────── -->
+  <view wx:if="{{gate !== 'ok'}}" class="home-gate">
+    <empty-state
+      icon="{{gate === 'no-pair' ? 'monitor' : 'chat'}}"
+      title="{{gate === 'no-url' ? '先连接桌面端' : (gate === 'no-pair' ? '配对桌面端' : '连接出了点问题')}}"
+      desc="{{gate === 'no-url' ? '扫桌面端设置页的配对二维码，或手动填写局域网地址' : (gate === 'no-pair' ? '两端登录同一账号后一键配对' : errorText)}}"
+    />
+    <view class="row gap-16 home-gate-actions">
+      <view class="btn btn-dark btn-small" hover-class="hover-dim" bindtap="onScan">
+        <text>扫码配对</text>
+      </view>
+      <view class="btn btn-plain btn-small" hover-class="hover-dim" bindtap="onEditUrl">
+        <text>填写地址</text>
+      </view>
+      <view
+        wx:if="{{gate === 'no-pair' || gate === 'error'}}"
+        class="btn btn-plain btn-small {{pairing ? 'btn-loading' : ''}}"
+        hover-class="hover-dim"
+        bindtap="onPair"
+      >
+        <text>{{pairing ? '配对中…' : '重新配对'}}</text>
+      </view>
     </view>
+    <text wx:if="{{gate === 'error' && errorHint}}" class="t-caption home-gate-hint">{{errorHint}}</text>
+    <text wx:if="{{serverUrl}}" class="t-caption home-gate-url t-mono">{{serverUrl}}</text>
+  </view>
+
+  <!-- ─── 内容态 ──────────────────────────────────────────────────────────── -->
+  <block wx:else>
+    <!-- 2×2 状态仪表盘（Cursor Inbox 式竖排白卡） -->
+    <view class="stat-grid" wx:if="{{!loading || sessionTotal > 0}}">
+      <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
+        <view class="icon icon-chat stat-card-icon"></view>
+        <view class="stat-card-foot">
+          <text class="stat-card-label">全部会话</text>
+          <text class="stat-card-count">{{stats.total}}</text>
+        </view>
+      </view>
+      <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
+        <view class="icon icon-working stat-card-icon"></view>
+        <view class="stat-card-foot">
+          <text class="stat-card-label">进行中</text>
+          <text class="stat-card-count">{{stats.running}}</text>
+        </view>
+      </view>
+      <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
+        <view class="icon icon-bell stat-card-icon"></view>
+        <view class="stat-card-foot">
+          <text class="stat-card-label">异常</text>
+          <text class="stat-card-count">{{stats.error}}</text>
+        </view>
+      </view>
+      <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
+        <view class="icon icon-review stat-card-icon"></view>
+        <view class="stat-card-foot">
+          <text class="stat-card-label">项目</text>
+          <text class="stat-card-count">{{stats.projects}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{loading && sessionTotal === 0}}" class="loading-tip">加载中…</view>
+
+    <!-- 项目列表加载失败提示（桌面端旧版本无项目端点时最常见） -->
+    <view wx:if="{{projectsError}}" class="home-group">
+      <view class="projects-error">
+        <text class="t-caption">项目列表加载失败：请确认桌面端已更新到最新版本并重启，然后下拉刷新重试</text>
+      </view>
+    </view>
+
+    <!-- 项目分组（Cursor Workspaces 式：新建行 + 单行项目条目，缩进分割线） -->
+    <view class="home-group" wx:if="{{projects.length > 0 || projectsError}}">
+      <view class="group-title home-group-title">项目</view>
+      <view
+        class="list-row home-row"
+        hover-class="list-row--hover"
+        bindtap="onNewProjectHint"
+      >
+        <view class="icon icon-plus home-row-icon home-row-icon--accent"></view>
+        <text class="home-row-title home-row-title--action">新建项目</text>
+      </view>
+      <view
+        wx:for="{{projects}}"
+        wx:key="id"
+        class="list-row home-row"
+        hover-class="list-row--hover"
+        data-id="{{item.id}}"
+        data-name="{{item.name}}"
+        bindtap="onOpenProject"
+      >
+        <view class="icon icon-folder home-row-icon"></view>
+        <text class="home-row-title ellipsis">{{item.name}}</text>
+        <view class="icon icon-chevron"></view>
+      </view>
+    </view>
+
+    <!-- 会话（按项目分组，临时会话置底） -->
+    <view class="home-group" wx:if="{{sessionTotal > 0}}">
+      <view class="row between home-group-head">
+        <view class="group-title">会话</view>
+        <text class="t-caption t-accent" bindtap="onOpenAll">全部 ›</text>
+      </view>
+      <block wx:for="{{sessionGroups}}" wx:for-item="group" wx:key="key">
+        <view
+          class="row between home-group-subhead"
+          hover-class="{{group.projectId ? 'list-row--hover' : ''}}"
+          data-project-id="{{group.projectId}}"
+          data-name="{{group.name}}"
+          bindtap="onOpenGroup"
+        >
+          <view class="row gap-8 home-subhead-text">
+            <view wx:if="{{!group.isTemp}}" class="icon icon-folder-small"></view>
+            <text class="home-subhead-title">{{group.name}}</text>
+          </view>
+          <text class="t-caption">{{group.sessions.length}} 条{{group.projectId ? ' ›' : ''}}</text>
+        </view>
+        <view
+          wx:for="{{group.sessions}}"
+          wx:for-item="session"
+          wx:key="id"
+          class="list-row list-row--nested"
+          hover-class="list-row--hover"
+          data-id="{{session.id}}"
+          data-title="{{session.title}}"
+          bindtap="onOpenSession"
+        >
+          <view class="dot {{session.dotClass}}"></view>
+          <view class="grow col gap-8 home-session-text">
+            <text class="t-strong ellipsis">{{session.title}}</text>
+            <text class="t-caption ellipsis">{{session.statusLabel}} · {{session.timeLabel}}{{session.preview ? ' · ' + session.preview : ''}}</text>
+          </view>
+        </view>
+      </block>
+    </view>
+
     <view
-      wx:for="{{recent}}"
-      wx:key="operationId"
-      class="list-row"
-      data-id="{{item.operationId}}"
-      bindtap="onOpenHistoryItem"
+      wx:if="{{!loading && sessionTotal === 0 && projects.length === 0}}"
+      class="home-gate"
     >
-      <view class="grow col">
-        <text class="list-row-label ellipsis">{{item.deviceLabel}}</text>
-        <text class="t-caption">{{formatShortTime(item.createdAt)}} · {{item.categories.length}} 类数据</text>
+      <empty-state
+        icon="chat"
+        title="还没有会话"
+        desc="在下方输入框说点什么，会自动创建会话并发送到桌面端"
+      />
+    </view>
+
+    <!-- 底部胶囊占位 -->
+    <view class="home-spacer"></view>
+  </block>
+
+  <!-- 底部悬浮胶囊输入框（快速发起） -->
+  <capsule-composer
+    wx:if="{{gate === 'ok'}}"
+    mode="float"
+    value="{{quickText}}"
+    placeholder="发起新对话…"
+    disabled="{{quickSending}}"
+    bind:input="onQuickInput"
+    bind:send="onQuickSend"
+  />
+
+  <!-- 手动填写地址弹窗 -->
+  <view wx:if="{{urlDialog.visible}}" class="dialog-mask" bindtap="onUrlCancel">
+    <view class="dialog" catchtap="">
+      <text class="t-strong dialog-title">桌面端地址</text>
+      <input
+        class="field-input"
+        value="{{urlDialog.value}}"
+        placeholder="http://192.168.1.5:3721"
+        bindinput="onUrlInput"
+      />
+      <view class="row gap-16 dialog-actions">
+        <view class="btn btn-plain grow" hover-class="hover-dim" bindtap="onUrlCancel">
+          <text>取消</text>
+        </view>
+        <view class="btn btn-dark grow" hover-class="hover-dim" bindtap="onUrlConfirm">
+          <text>保存</text>
+        </view>
       </view>
-      <text class="{{historyItemBadgeClass(item.status)}}">{{historyItemLabel(item.status)}}</text>
     </view>
   </view>
-
-  <!-- 同步类别说明 -->
-  <view class="card">
-    <view class="card-head">
-      <text class="card-title">双向同步内容</text>
-    </view>
-    <text class="t-subtitle sync-desc">桌面端与移动端登录同一账号后，以下数据经服务端双向流转：</text>
-    <view class="category-grid">
-      <view wx:for="{{categories}}" wx:key="*this" class="category-chip">
-        <text>{{categoryLabel(item)}}</text>
-      </view>
-    </view>
-  </view>
-
-  <!-- 设备入口 -->
-  <view class="card card-flat entry-card" bindtap="onGoDevices">
-    <view class="row between">
-      <view class="col">
-        <text class="t-strong">设备与登录会话</text>
-        <text class="t-caption">查看通过同步识别的桌面端设备</text>
-      </view>
-      <text class="card-action">查看 ›</text>
-    </view>
-  </view>
-
-  <view class="loading-tip t-caption" wx:if="{{loading}}">加载中…</view>
 </view>

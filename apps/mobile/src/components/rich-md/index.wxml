@@ -1,0 +1,65 @@
+<!-- AI 回复 Markdown 渲染：块级 view 循环 + 行内 rich-text（Cursor 文档式排版） -->
+
+<view class="md">
+  <block wx:for="{{blocks}}" wx:key="index">
+
+    <!-- 段落 -->
+    <view wx:if="{{item.type === 'p'}}" class="md-p">
+      <rich-text nodes="{{item.nodes}}"></rich-text>
+    </view>
+
+    <!-- 标题 -->
+    <view wx:elif="{{item.type === 'h'}}" class="md-h md-h{{item.level}}">
+      <rich-text nodes="{{item.nodes}}"></rich-text>
+    </view>
+
+    <!-- 代码块：语言标签 + 复制 + 横向滚动 -->
+    <view wx:elif="{{item.type === 'code'}}" class="md-code">
+      <view class="md-code-head row between">
+        <text class="md-code-lang">{{item.lang || 'code'}}</text>
+        <text class="md-code-copy" data-code="{{item.text}}" catchtap="onCopyCode">复制</text>
+      </view>
+      <scroll-view class="md-code-body" scroll-x>
+        <text class="md-code-text" user-select>{{item.text}}</text>
+      </scroll-view>
+    </view>
+
+    <!-- 引用（拍平段落） -->
+    <view wx:elif="{{item.type === 'quote'}}" class="md-quote">
+      <view wx:for="{{item.paragraphs}}" wx:for-item="para" wx:key="index" class="md-quote-p">
+        <rich-text nodes="{{para}}"></rich-text>
+      </view>
+    </view>
+
+    <!-- 列表 -->
+    <view wx:elif="{{item.type === 'list'}}" class="md-list {{item.ordered ? 'md-list--ol' : ''}}">
+      <view wx:for="{{item.items}}" wx:for-item="li" wx:key="index" class="md-li">
+        <text class="md-li-marker">{{item.ordered ? (index + 1) + '.' : '•'}}</text>
+        <view class="md-li-body grow">
+          <rich-text nodes="{{li}}"></rich-text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 分割线 -->
+    <view wx:elif="{{item.type === 'hr'}}" class="md-hr"></view>
+
+    <!-- 表格 -->
+    <view wx:elif="{{item.type === 'table'}}" class="md-table-wrap">
+      <scroll-view scroll-x class="md-table-scroll">
+        <view class="md-table">
+          <view class="md-tr md-tr--head">
+            <view wx:for="{{item.header}}" wx:for-item="cell" wx:key="index" class="md-td md-td--head">
+              <rich-text nodes="{{cell}}"></rich-text>
+            </view>
+          </view>
+          <view wx:for="{{item.rows}}" wx:for-item="row" wx:key="index" class="md-tr">
+            <view wx:for="{{row}}" wx:for-item="cell" wx:key="index" class="md-td">
+              <rich-text nodes="{{cell}}"></rich-text>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </block>
+</view>

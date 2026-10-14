@@ -229,7 +229,7 @@ export function TabbarTooltipButton({
   )
 
   return (
-    <Tooltip title={title} placement="bottom" mouseEnterDelay={0}>
+    <Tooltip title={title} placement="bottom" mouseEnterDelay={0} arrow className="spark-icon-tooltip">
       {disabled ? <span className="tabbar-tooltip-wrap">{button}</span> : button}
     </Tooltip>
   )

@@ -1,6 +1,6 @@
 <view class="login-page">
   <view class="brand">
-    <view class="brand-logo">S</view>
+    <image class="brand-logo" src="/assets/brand/logo.png" mode="aspectFit" />
     <view class="brand-name t-strong">SparkWork</view>
     <view class="brand-slogan t-subtitle">桌面端的移动伴侣 · 账号同步 · 设备互通</view>
   </view>
@@ -190,7 +190,7 @@
     </view>
   </block>
 
-  <view class="btn btn-primary btn-block {{submitting ? 'btn-loading' : ''}}" hover-class="btn-primary--hover" bindtap="onSubmit">
+  <view class="btn btn-primary btn-block submit-btn {{submitting ? 'btn-loading' : ''}}" hover-class="btn-primary--hover" bindtap="onSubmit">
     <text>{{submitting ? '处理中…' : (registering ? '注 册' : '登 录')}}</text>
   </view>
 

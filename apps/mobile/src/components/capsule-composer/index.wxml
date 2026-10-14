@@ -1,0 +1,136 @@
+<!-- 胶囊输入框：float=悬浮 / dock=停靠；附件条 + 麦克风/加号 + 发送 + 配置条 chips + 命令补全 -->
+
+<view class="composer composer--{{mode}} {{focus ? 'composer--focus' : ''}}">
+
+  <!-- 命令补全面板（输入以 / 开头时浮出） -->
+  <view wx:if="{{commands.length > 0}}" class="cmd-panel">
+    <view
+      wx:for="{{commands}}"
+      wx:key="name"
+      class="cmd-item"
+      hover-class="hover-dim"
+      data-name="{{item.name}}"
+      bindtap="onCommandPick"
+    >
+      <text class="cmd-name t-mono">/{{item.name}}</text>
+      <text class="cmd-desc ellipsis">{{item.description}}</text>
+    </view>
+  </view>
+
+  <!-- 附件条 -->
+  <scroll-view wx:if="{{attachments.length > 0}}" class="attach-bar" scroll-x>
+    <view class="attach-bar-row row">
+      <view wx:for="{{attachments}}" wx:key="path" class="attach-chip row">
+        <image
+          wx:if="{{item.type === 'image'}}"
+          class="attach-thumb"
+          src="{{item.localPath}}"
+          mode="aspectFill"
+        />
+        <view wx:else class="attach-file-icon icon icon-file"></view>
+        <text class="attach-name ellipsis">{{item.name}}</text>
+        <view
+          wx:if="{{!item.uploaded}}"
+          class="attach-uploading"
+        >
+          <view class="status-spinner"></view>
+        </view>
+        <view
+          class="attach-remove"
+          hover-class="hover-dim"
+          data-index="{{index}}"
+          bindtap="onRemoveAttachment"
+        >
+          <view class="icon icon-close-sm"></view>
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+
+  <!-- 快捷行：两个常用选择器（模型 / 权限策略），扁平文字按钮 -->
+  <view wx:if="{{quickChips.length > 0}}" class="quick-row">
+    <view
+      wx:for="{{quickChips}}"
+      wx:key="key"
+      class="quick-chip row"
+      hover-class="hover-dim"
+      data-key="{{item.key}}"
+      bindtap="onChipTap"
+    >
+      <text class="quick-chip-value ellipsis">{{item.value}}</text>
+      <view class="icon icon-chevron-down quick-chip-chevron"></view>
+    </view>
+  </view>
+
+  <view class="composer-shell row">
+    <!-- 语音按钮：按住说话 -->
+    <view
+      class="composer-side {{recording ? 'composer-side--rec' : ''}}"
+      hover-class="hover-dim"
+      bindtouchstart="onVoiceStart"
+      bindtouchend="onVoiceEnd"
+      bindtouchcancel="onVoiceCancel"
+    >
+      <view class="icon icon-sm icon-mic"></view>
+    </view>
+
+    <!-- 加号：添加附件 -->
+    <view class="composer-side" hover-class="hover-dim" bindtap="onAddAttachment">
+      <view class="icon icon-sm icon-plus"></view>
+    </view>
+
+    <!-- 语音录入状态覆盖层 -->
+    <view wx:if="{{recording}}" class="voice-overlay row">
+      <view class="voice-pulse"></view>
+      <text class="voice-hint">松开结束，语音将转成文字</text>
+    </view>
+    <view wx:elif="{{transcribing}}" class="voice-overlay row">
+      <view class="status-spinner"></view>
+      <text class="voice-hint">转写中…</text>
+    </view>
+
+    <textarea
+      wx:else
+      class="composer-input"
+      value="{{localValue}}"
+      placeholder="{{placeholder}}"
+      placeholder-style="color:#b3b0ab"
+      auto-height
+      maxlength="8000"
+      show-confirm-bar="{{false}}"
+      confirm-type="send"
+      disabled="{{disabled}}"
+      adjust-position="{{mode === 'dock'}}"
+      cursor-spacing="16"
+      bindinput="onInput"
+      bindfocus="onFocus"
+      bindblur="onBlur"
+      bindconfirm="onSend"
+    />
+    <view
+      class="composer-action {{running || localValue ? 'composer-action--dark' : ''}}"
+      hover-class="composer-action--hover"
+      bindtap="onSend"
+    >
+      <view class="icon icon-sm {{running ? 'icon-stop' : 'icon-send-white'}}"></view>
+    </view>
+  </view>
+
+  <!-- 配置条 chips（扁平态，横向滚动；模型/权限已提为快捷行，不再重复） -->
+  <scroll-view wx:if="{{chips.length > quickChips.length}}" class="chip-bar" scroll-x>
+    <view class="chip-bar-row row">
+      <block wx:for="{{chips}}" wx:key="key">
+        <view
+          wx:if="{{item.key !== 'model' && item.key !== 'permission'}}"
+          class="config-chip row"
+          hover-class="hover-dim"
+          data-key="{{item.key}}"
+          bindtap="onChipTap"
+        >
+          <text class="config-chip-value ellipsis">{{item.value}}</text>
+          <view class="icon icon-chevron-down config-chip-chevron"></view>
+        </view>
+      </block>
+    </view>
+  </scroll-view>
+</view>

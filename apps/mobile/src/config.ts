@@ -1,13 +1,15 @@
 /**
  * 运行时配置。
  *
- * src/config.json 由 scripts/build.mjs 在构建期生成（可被 SPARK_EDUGEN_BASE_URL 覆盖），
- * tsc 以 resolveJsonModule 静态内联进产物，不依赖运行时动态 require。
- * 默认值与桌面端一致：https://www.yiqibyte.com
+ * `src/config.generated.ts` 由 scripts/build.mjs 在构建期生成（可被
+ * SPARK_EDUGEN_BASE_URL 覆盖）。默认值与桌面端一致：https://www.yiqibyte.com
  * （见 apps/desktop/src/main/index.ts 的 defaultBaseUrl）。
+ *
+ * 注意：不要改回 `import ... from './config.json'` —— 小程序的 require 会补 `.js`
+ * 后缀去找 `config.json.js`，必然报 module not defined。
  */
 
-import defaultConfig from './config.json'
+import { RUNTIME_CONFIG } from './config.generated'
 
 export interface RuntimeConfig {
   /** edu-server 根地址，不带结尾斜杠 */
@@ -25,7 +27,7 @@ let cached: RuntimeConfig | null = null
 
 export function getConfig(): RuntimeConfig {
   if (cached) return cached
-  const config = defaultConfig as Partial<RuntimeConfig>
+  const config = RUNTIME_CONFIG as Partial<RuntimeConfig>
   cached = {
     baseUrl:
       typeof config?.baseUrl === 'string' && config.baseUrl.length > 0

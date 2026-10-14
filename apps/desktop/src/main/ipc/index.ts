@@ -121,6 +121,9 @@ import { HistoryImportService } from '../services/HistoryImport/HistoryImportSer
 import type { ImportProviderResolution } from '../services/HistoryImport/HistoryImportService.js'
 import { registerAuthIpc } from '../services/Auth/registerAuthIpc.js'
 import { registerAccountSyncIpc } from '../services/AccountSync/registerAccountSyncIpc.js'
+import { registerMobileBridgeIpc } from './registerMobileBridgeIpc.js'
+import { getAuthService } from '../services/Auth/AuthService.js'
+import type { MobileBridgeSessionSummary } from '@spark/protocol'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
 import {
   EventRepository,
@@ -450,7 +453,10 @@ import { registerImageProcessIpc } from './registerImageProcessIpc.js'
 import { resolveBrowserAutomationMcpServerPath } from '../services/BrowserAutomationMcpRuntime.js'
 import { resolveStandaloneNodeRuntimePath } from '../services/StandaloneNodeRuntime.js'
 import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
-import { createRemoteVoiceTranscriber } from '../services/remoteVoiceTranscription.js'
+import {
+  createRemoteVoiceTranscriber,
+  type RemoteVoiceTranscriber,
+} from '../services/remoteVoiceTranscription.js'
 import { formatRemoteConnectionCapabilityStatus } from '../services/remoteConnectionStatus.js'
 import { deliverRemoteTurnReply } from '../services/remoteTurnReply.js'
 import {
@@ -3603,6 +3609,79 @@ async function createRemoteSession(
   return { sessionId: created.sessionId, connectionName: connection.name }
 }
 
+/**
+ * 移动桥接建会话（小程序「新建远程会话」）。
+ *
+ * 与 createRemoteSession 同规则（默认对话渠道 + 引擎协议校准 + 权限缺省），
+ * 但不依赖远程连接配置——移动端会话的渠道/模型就是桌面端默认值。
+ */
+async function createMobileBridgeSession(
+  title?: string,
+  projectId?: string,
+): Promise<MobileBridgeSessionSummary> {
+  const providers = (await getProviderService().listProviders()).filter(
+    isConversationalProviderCandidate,
+  )
+  const provider = providers.find((item) => item.isDefault) ?? providers[0]
+  if (provider == null) {
+    throw new Error('没有可用 Provider，请先在设置中配置模型 Provider。')
+  }
+  const defaults = getRuntimePermissionDefaults()
+  const agentAdapter = resolveCompatibleSessionAdapter(
+    toAdapterCompatProvider(provider),
+    defaults.agentAdapter,
+  )
+  await ensureNoProjectDirectoryExists()
+  const created = await getSessionService().createSession({
+    providerProfileId: provider.id,
+    modelId: provider.defaultModel,
+    agentAdapter,
+    permissionMode: defaultRemotePermissionMode(agentAdapter),
+    reasoningEffort: 'max',
+    title: title?.trim() || '移动端会话',
+    // 归属项目（workspace）：project_id 即主 workspace id，缺省落 default
+    ...(projectId != null && projectId !== '' ? { workspaceId: projectId } : {}),
+  })
+  return {
+    id: created.sessionId,
+    title: created.session.title,
+    status: created.session.status,
+    updatedAt: created.session.updatedAt,
+    preview: '',
+    projectId: created.session.projectId,
+    pinnedAt: created.session.pinnedAt ?? null,
+  }
+}
+
+/**
+ * 移动桥接账号校验：小程序持 edu-server JWT 配对，桌面端用同一 token 调 /me
+ * 验明正身（同账号即授权，无需额外配对码）。
+ */
+async function validateMobileAccountToken(
+  token: string,
+): Promise<{ userId: string; account: string } | null> {
+  const base = getAuthService().getEduClient().getBaseUrl().replace(/\/+$/, '')
+  try {
+    const res = await fetch(`${base}/api/v1/me`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!res.ok) return null
+    const json = (await res.json()) as {
+      code?: number
+      data?: { id?: number | string; account?: string }
+    }
+    if (json.code !== 0 || json.data?.id == null) return null
+    return {
+      userId: String(json.data.id),
+      account: json.data.account ?? '',
+    }
+  } catch (error) {
+    log.warn(`mobile bridge account validation failed: ${(error as Error).message}`)
+    return null
+  }
+}
+
 const REMOTE_SESSION_QUERY_LIMIT = 1000
 
 /** listProviders 的 ProviderProfile → 兼容性判定所需的最小渠道信息。 */
@@ -5393,6 +5472,30 @@ export function registerAllIpcHandlers(): void {
     .catch((err) => {
       log.warn(`Failed to start remote runtime: ${String(err)}`)
     })
+
+  // 移动桥接（SparkWork 小程序直连桌面端）：配对/项目/会话/流式。设置里关闭时不监听。
+  // 语音转写与远程连接同链路：本地 SenseVoice 优先，云渠道 audio.transcription 兜底。
+  let mobileVoiceTranscriber: RemoteVoiceTranscriber | null = null
+  registerMobileBridgeIpc({
+    getSessionService,
+    getSettingsService,
+    getWorkspaceService,
+    getTerminalService,
+    getScheduledTaskService,
+    validateAccountToken: validateMobileAccountToken,
+    createMobileSession: createMobileBridgeSession,
+    getProviderService,
+    getVoiceTranscriber: () => {
+      if (mobileVoiceTranscriber == null) {
+        mobileVoiceTranscriber = createRemoteVoiceTranscriber({
+          resolveMediaProviders: resolveCanvasMediaProviders,
+          mediaRouter: getMediaRouterService(),
+          workDir: path.join(app.getPath('userData'), 'attachments', 'mobile', 'voice-transcribe'),
+        })
+      }
+      return mobileVoiceTranscriber
+    },
+  })
 
   // 启动时仅在宿主机存在对应 CLI 时补种内置本地 provider。
   // 失败仅记日志，不阻塞后续注册。

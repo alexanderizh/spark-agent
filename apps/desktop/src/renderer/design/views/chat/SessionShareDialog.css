@@ -1,0 +1,337 @@
+.session-share-capture-host {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  overflow: visible;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.session-share-sheet {
+  box-sizing: border-box;
+  overflow: visible;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans), 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+}
+
+.session-share-header {
+  padding: 22px var(--session-share-pad-right, 24px) 4px var(--session-share-pad-left, 24px);
+}
+
+.session-share-header h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 640;
+  line-height: 1.3;
+}
+
+.session-share-header p,
+.session-share-omit {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.session-share-omit {
+  margin: 12px var(--session-share-pad-right, 24px) 0 var(--session-share-pad-left, 24px);
+}
+
+.session-share-live-host {
+  min-height: 24px;
+}
+
+/* 分享副本必须铺开全部消息，不能沿用会话流的视口高度和滚动裁切。 */
+.session-share-live.chat-stream {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  flex: none !important;
+  overflow: visible !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.session-share-live .chat-stream-inner {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  box-sizing: border-box;
+  padding-right: var(--session-share-pad-right, 24px) !important;
+  padding-left: var(--session-share-pad-left, 24px) !important;
+}
+
+.session-share-live .msg-hover-bar {
+  display: none !important;
+}
+
+.session-share-brand {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.session-share-brand-line {
+  height: 1px;
+  margin-right: var(--session-share-pad-right, 24px);
+  margin-left: var(--session-share-pad-left, 24px);
+  background: var(--border);
+}
+
+.session-share-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px var(--session-share-pad-right, 24px) 16px var(--session-share-pad-left, 24px);
+}
+
+.session-share-logo {
+  display: block;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.session-share-brand-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.session-share-brand-copy strong {
+  font-size: 13px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+}
+
+.session-share-brand-copy span,
+.session-share-brand time {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.session-share-brand time {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-share-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 28px;
+  background: rgba(16, 16, 18, 0.28);
+}
+
+.session-share-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+}
+
+.session-share-panel.is-status {
+  width: min(280px, calc(100vw - 56px));
+}
+
+.session-share-panel.is-preview {
+  width: min(860px, calc(100vw - 96px));
+  height: min(720px, calc(100vh - 96px));
+}
+
+.session-share-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.session-share-toolbar-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.session-share-toolbar-title strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.session-share-toolbar-title span,
+.session-share-zoom-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-share-toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.session-share-zoom,
+.session-share-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.session-share-toolbar button:not(.icon-btn),
+.session-share-status-close,
+.session-share-status button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.session-share-toolbar button:not(.icon-btn):not(.is-primary):hover:not(:disabled),
+.session-share-status-close:hover,
+.session-share-status button:hover {
+  background: var(--hover);
+}
+
+.session-share-toolbar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.session-share-toolbar button.is-primary,
+.session-share-status button.is-primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+
+.session-share-status .session-share-status-close {
+  width: 28px;
+  padding: 0;
+}
+
+.session-share-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  background: var(--bg-sunken);
+}
+
+.session-share-stage-inner {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  margin: 0 auto;
+}
+
+.session-share-stage img {
+  display: block;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+  cursor: zoom-in;
+}
+
+.session-share-stage img.is-actual {
+  cursor: zoom-out;
+}
+
+.session-share-status {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 24px 22px;
+  text-align: center;
+}
+
+.session-share-status-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.session-share-status strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.session-share-status p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.session-share-status button.is-primary {
+  margin-top: 6px;
+}
+
+.session-share-progress {
+  width: 148px;
+  height: 2px;
+  margin-bottom: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.session-share-progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  animation: session-share-progress 1.05s ease-in-out infinite;
+}
+
+@keyframes session-share-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-share-progress span {
+    width: 100%;
+    animation: none;
+    opacity: 0.7;
+  }
+}
