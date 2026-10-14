@@ -38,6 +38,7 @@
     "test:e2e": "playwright test",
     "lint": "eslint src --ext .ts,.tsx",
     "i18n:scan": "node scripts/scan-client-i18n.mjs",
+    "i18n:check": "node scripts/check-i18n.mjs",
     "prepare:file-viewer-assets": "node scripts/copy-file-viewer-assets.mjs",
     "prepare:computer-use-host": "node scripts/prepare-computer-use-host.js",
     "smoke:mobile-bridge-relay": "node scripts/smoke-mobile-bridge-relay.mjs"

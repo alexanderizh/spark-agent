@@ -26,6 +26,7 @@ import type {
   AuthSendCodeType,
   AuthSession,
 } from '@spark/protocol'
+import { translate } from '../i18n'
 
 export type AuthFlow = 'login' | 'register'
 
@@ -272,7 +273,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       // 未打开浏览器等前置失败：不进入等待态，直接在表单内提示
       setDesktopLoginPhase('idle')
       setDesktopLoginStartError(
-        error instanceof Error ? error.message : '无法打开浏览器，请稍后重试',
+        error instanceof Error ? error.message : translate('auth.browser.openFailed'),
       )
     } finally {
       setDesktopLoginStarting(false)

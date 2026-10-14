@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Select } from '@lobehub/ui'
 import { PRIMARIES, useApp } from './AppContext'
+import { useI18n } from './i18n'
 
 const PANEL_CSS = `
   .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
@@ -109,6 +110,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 
 export function TweaksPanel() {
   const { t, setTweak } = useApp()
+  const { t: tr } = useI18n()
   const [open, setOpen] = useState(false)
   const dragRef = useRef<HTMLDivElement | null>(null)
   const offsetRef = useRef({ x: 16, y: 16 })
@@ -164,14 +166,14 @@ export function TweaksPanel() {
     <div ref={dragRef} className="twk-panel">
       <div className="twk-hd" onMouseDown={onDragStart}>
         <b>Tweaks</b>
-        <button className="twk-x" aria-label="关闭" onMouseDown={(e) => e.stopPropagation()} onClick={() => setOpen(false)}>✕</button>
+        <button className="twk-x" aria-label={tr('tweaks.closeAria')} onMouseDown={(e) => e.stopPropagation()} onClick={() => setOpen(false)}>✕</button>
       </div>
       <div className="twk-body">
-        <Section label="主题" />
-        <Row label="模式">
+        <Section label={tr('tweaks.themeLabel')} />
+        <Row label={tr('tweaks.modeLabel')}>
           <Seg value={t.theme} options={['light', 'dark', 'system']} onChange={(v) => setTweak('theme', v)} />
         </Row>
-        <Row label="主色">
+        <Row label={tr('tweaks.accentLabel')}>
           <div className="twk-chips" role="radiogroup">
             {Object.keys(PRIMARIES).map((c) => {
               const on = t.primary === c
@@ -198,12 +200,12 @@ export function TweaksPanel() {
           </div>
         </Row>
 
-        <Section label="布局" />
-        <Row label="密度">
+        <Section label={tr('tweaks.layoutLabel')} />
+        <Row label={tr('tweaks.densityLabel')}>
           <Seg value={t.density} options={['compact', 'regular', 'comfy']} onChange={(v) => setTweak('density', v)} />
         </Row>
-        <Section label="视图" />
-        <Row label="当前视图">
+        <Section label={tr('tweaks.viewLabel')} />
+        <Row label={tr('tweaks.currentViewLabel')}>
           <Select
             className="twk-field"
             value={t.view}
@@ -219,19 +221,19 @@ export function TweaksPanel() {
             ]}
           />
         </Row>
-        <Row label="会话模式">
+        <Row label={tr('tweaks.sessionModeLabel')}>
           {/* workspace 仅为历史状态兼容保留，已废弃；新入口统一使用 vibe。 */}
           <Seg value={t.chatMode} options={['vibe', 'workspace']} onChange={(v) => setTweak('chatMode', v)} />
         </Row>
 
-        <Section label="覆盖层" />
-        <Row label="命令面板" inline>
+        <Section label={tr('tweaks.overlayLabel')} />
+        <Row label={tr('tweaks.commandPaletteLabel')} inline>
           <Toggle value={t.showPalette} onChange={(v) => setTweak('showPalette', v)} />
         </Row>
-        <Row label="审批弹窗" inline>
+        <Row label={tr('tweaks.approvalDialogLabel')} inline>
           <Toggle value={t.showPerm} onChange={(v) => setTweak('showPerm', v)} />
         </Row>
-        <Row label="Provider 编辑" inline>
+        <Row label={tr('tweaks.providerEditLabel')} inline>
           <Toggle value={t.showProviderEdit} onChange={(v) => setTweak('showProviderEdit', v)} />
         </Row>
       </div>

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, Tag, Tooltip, Drawer, Empty, Tabs } from '@lobehub/ui'
 import { Input, message, Switch } from 'antd'
 import { Icons } from '../Icons'
+import { translate, useI18n } from '../i18n'
 import { GITHUB_CONNECTOR_MANIFEST } from '@spark/protocol'
 import type {
   ConnectorAuthMethod,
@@ -204,16 +205,16 @@ function deriveServer(
     config.description?.trim() && config.description.trim().length > 0
       ? config.description.trim()
       : transport === 'stdio'
-        ? `${transport} · ${config.command ?? '未配置启动信息'}`
-        : `${transport} · ${config.url ?? '未配置 URL'}`
+        ? `${transport} · ${config.command ?? translate('mcpView.t1')}`
+        : translate('mcpView.tpl8Desc', { transport, url: config.url ?? translate('mcpView.t2') })
   let statusLabel: string
-  if (status === 'off') statusLabel = '未启用'
-  else if (authStatus === 'authorized') statusLabel = '已授权'
-  else if (authStatus === 'authorizing') statusLabel = '授权中'
-  else if (authStatus === 'failed') statusLabel = '授权失败'
-  else if (needsAuth) statusLabel = '需要授权'
-  else if (status === 'warn') statusLabel = '配置不完整'
-  else statusLabel = '本地配置'
+  if (status === 'off') statusLabel = translate('mcpView.t3')
+  else if (authStatus === 'authorized') statusLabel = translate('mcpView.t4')
+  else if (authStatus === 'authorizing') statusLabel = translate('mcpView.t5')
+  else if (authStatus === 'failed') statusLabel = translate('mcpView.t6')
+  else if (needsAuth) statusLabel = translate('mcpView.t7')
+  else if (status === 'warn') statusLabel = translate('mcpView.t8')
+  else statusLabel = translate('mcpView.t9')
 
   return {
     id: item.id,
@@ -256,12 +257,14 @@ type McpTab = 'mcp' | 'custom-tools' | 'plugins' | 'team-store'
 
 const MCP_TAB_ITEMS: Array<{ key: McpTab; label: string }> = [
   { key: 'mcp', label: 'MCP' },
-  { key: 'custom-tools', label: '自定义工具' },
-  { key: 'plugins', label: '连接器' },
-  { key: 'team-store', label: '团队商店' },
+  { key: 'custom-tools', label: translate('mcpView.t10') },
+  { key: 'plugins', label: translate('mcpView.t11') },
+  { key: 'team-store', label: translate('mcpView.t12') },
 ]
 
 export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const { requestConfirm } = useApp()
   const [activeTab, setActiveTab] = useState<McpTab>(() =>
     hasPendingCustomToolTrace() ? 'custom-tools' : initialTab,
@@ -313,7 +316,7 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
         setAuthStatuses(Object.fromEntries(entries))
       })
       .catch((err) => {
-        const errorMsg = err instanceof Error ? err.message : '加载 MCP 服务器失败'
+        const errorMsg = err instanceof Error ? err.message : translate('mcpView.t13')
         message.error(errorMsg)
       })
   }, [listMcp, getAuthStatus, scopeFilter])
@@ -372,19 +375,19 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
   }, [saving])
 
   const validateDraft = (value: DraftBase): string | null => {
-    if (value.name.trim().length === 0) return '名称不能为空'
+    if (value.name.trim().length === 0) return translate('mcpView.t14')
     if (value.transport === 'stdio') {
-      if (value.command.trim().length === 0) return 'stdio 服务器需要填写启动命令'
+      if (value.command.trim().length === 0) return translate('mcpView.t15Desc')
     } else {
-      if (value.url.trim().length === 0) return 'HTTP / SSE 服务器需要填写 URL'
+      if (value.url.trim().length === 0) return translate('mcpView.t16Desc')
       try {
         // 允许 ws / http / https
         const url = new URL(value.url.trim())
         if (!/^https?:$/.test(url.protocol) && url.protocol !== 'ws:' && url.protocol !== 'wss:') {
-          return 'URL 协议必须是 http / https / ws / wss'
+          return translate('mcpView.t17Desc')
         }
       } catch {
-        return 'URL 格式不正确'
+        return translate('mcpView.t18')
       }
     }
     if (
@@ -393,7 +396,7 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
       !value.authDcr &&
       value.authClientId.trim().length === 0
     ) {
-      return '关闭动态注册时需要填写 Client ID'
+      return translate('mcpView.t19Desc')
     }
     return null
   }
@@ -415,7 +418,7 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
           configJson,
           enabled: draft.enabled,
         })
-        message.success('MCP 服务器已添加')
+        message.success(translate('mcpView.t20'))
       } else {
         await updateMcp({
           id: editingId,
@@ -423,12 +426,12 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
           configJson,
           enabled: draft.enabled,
         })
-        message.success('已保存')
+        message.success(translate('mcpView.t21'))
       }
       setDrawerOpen(false)
       refresh()
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '保存失败'
+      const errorMsg = err instanceof Error ? err.message : translate('mcpView.t22')
       setDraftError(errorMsg)
       message.error(errorMsg)
     } finally {
@@ -442,7 +445,7 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
         await updateMcp({ id: item.id, enabled: next })
         refresh()
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : '更新状态失败'
+        const errorMsg = err instanceof Error ? err.message : translate('mcpView.t23')
         message.error(errorMsg)
       }
     },
@@ -452,18 +455,18 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
   const handleDelete = useCallback(
     async (item: McpServerItem) => {
       const confirmed = await requestConfirm({
-        title: `删除 ${item.name}？`,
-        description: '删除后该 MCP 配置会从本地移除，相关工具将不再可用。',
-        confirmText: '删除',
+        title: translate('mcpView.tpl1Desc', { name: item.name }),
+        description: translate('mcpView.t24Desc'),
+        confirmText: translate('mcpView.t25'),
         danger: true,
       })
       if (!confirmed) return
       try {
         await deleteMcp({ id: item.id })
-        message.success('已删除')
+        message.success(translate('mcpView.t26'))
         refresh()
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : '删除失败'
+        const errorMsg = err instanceof Error ? err.message : translate('mcpView.t27')
         message.error(errorMsg)
       }
     },
@@ -476,11 +479,11 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
       setAuthStatuses((prev) => ({ ...prev, [item.id]: 'authorizing' }))
       try {
         await authorizeMcp({ serverId: item.id })
-        message.success('MCP 授权已完成')
+        message.success(translate('mcpView.t28'))
         refresh()
       } catch (err) {
         setAuthStatuses((prev) => ({ ...prev, [item.id]: 'failed' }))
-        message.error(err instanceof Error ? err.message : 'MCP 授权失败')
+        message.error(err instanceof Error ? err.message : translate('mcpView.t29'))
       } finally {
         setAuthorizingId(null)
       }
@@ -492,10 +495,10 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
     async (item: McpServerItem) => {
       try {
         await deauthorizeMcp({ serverId: item.id })
-        message.success('已断开授权')
+        message.success(translate('mcpView.t30'))
         refresh()
       } catch (err) {
-        message.error(err instanceof Error ? err.message : '断开授权失败')
+        message.error(err instanceof Error ? err.message : translate('mcpView.t31'))
       }
     },
     [deauthorizeMcp, refresh],
@@ -528,11 +531,11 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
                     size="middle"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="搜索服务器名称、传输、端点..."
+                    placeholder={translate('mcpView.t59Desc')}
                     prefix={<Icons.Search size={14} />}
                   />
                 </div>
-                <Tooltip title="刷新 (Ctrl+R)">
+                <Tooltip title={translate('mcpView.t60')}>
                   <Button
                     size="middle"
                     shape="circle"
@@ -547,7 +550,7 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
                   icon={<Icons.Plus size={12} />}
                   onClick={openCreate}
                 >
-                  添加 MCP
+                  {translate('mcpView.t68')}
                 </Button>
               </div>
             ) : null
@@ -570,8 +573,8 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
             <div className="mv_grid_wrap">
               {loading && derived.length === 0 ? (
                 <div className="mv_empty">
-                  <div className="mv_empty_title">正在加载...</div>
-                  <div className="mv_empty_desc">从本地 SQLite 读取 MCP 配置</div>
+                  <div className="mv_empty_title">{translate('mcpView.t69')}</div>
+                  <div className="mv_empty_desc">{translate('mcpView.t70Desc')}</div>
                 </div>
               ) : !loading && filtered.length === 0 ? (
                 <EmptyState
@@ -610,13 +613,13 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
       {/* ── Drawer：添加 / 编辑 ────────────────────────────────────── */}
       <Drawer
         width={520}
-        title={editingId == null ? '添加 MCP 服务器' : '编辑 MCP 服务器'}
+        title={editingId == null ? translate('mcpView.t32') : translate('mcpView.t33')}
         open={drawerOpen}
         onClose={closeDrawer}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <Button type="text" onClick={closeDrawer} disabled={saving}>
-              取消
+              {translate('mcpView.t71')}
             </Button>
             <Button
               type="primary"
@@ -624,7 +627,7 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
               onClick={() => void handleSave()}
               icon={<Icons.Check />}
             >
-              {editingId == null ? '添加' : '保存'}
+              {editingId == null ? translate('mcpView.t34') : translate('mcpView.t35')}
             </Button>
           </div>
         }
@@ -692,7 +695,7 @@ function McpCard({
             <span className="mv_card_sub_text">{server.transport}</span>
             <span className="mv_card_sub_dot" />
             <span className="mv_card_sub_text" title={server.endpoint}>
-              {server.endpoint || '未配置端点'}
+              {server.endpoint || translate('mcpView.t36')}
             </span>
           </div>
         </div>
@@ -723,22 +726,22 @@ function McpCard({
         {server.authEnabled &&
           (server.authStatus === 'authorized' ? (
             <Button type="text" size="small" onClick={onDeauthorize}>
-              断开授权
+              {translate('mcpView.t72')}
             </Button>
           ) : (
             <Button type="primary" size="small" loading={authorizing} onClick={onAuthorize}>
-              {server.authStatus === 'failed' ? '重新授权' : '连接授权'}
+              {server.authStatus === 'failed' ? translate('mcpView.t37') : translate('mcpView.t38')}
             </Button>
           ))}
         {onPublishTeam != null && (
-          <Tooltip title="发布到团队">
+          <Tooltip title={translate('mcpView.t61')}>
             <Button type="text" size="small" icon={<Icons.Upload />} onClick={onPublishTeam} />
           </Tooltip>
         )}
-        <Tooltip title="编辑">
+        <Tooltip title={translate('mcpView.t62')}>
           <Button type="text" size="small" icon={<Icons.Edit />} onClick={onEdit} />
         </Tooltip>
-        <Tooltip title="删除">
+        <Tooltip title={translate('mcpView.t25')}>
           <Button type="text" size="small" danger icon={<Icons.Trash />} onClick={onDelete} />
         </Tooltip>
       </div>
@@ -764,15 +767,14 @@ function EmptyState({
         description={
           isFiltered ? (
             <div>
-              <div className="mv_empty_title">没有匹配的 MCP 服务器</div>
-              <div className="mv_empty_desc">试试调整搜索关键词或清除过滤条件</div>
+              <div className="mv_empty_title">{translate('mcpView.t73Desc')}</div>
+              <div className="mv_empty_desc">{translate('mcpView.t74Desc')}</div>
             </div>
           ) : (
             <div>
-              <div className="mv_empty_title">还没有配置 MCP 服务器</div>
+              <div className="mv_empty_title">{translate('mcpView.t75Desc')}</div>
               <div className="mv_empty_desc">
-                添加一个 stdio / http / sse 协议的 MCP 服务器，Claude SDK 与本地 Codex CLI Agent
-                即可调用其暴露的工具
+                {translate('mcpView.tpl2LongDesc')}
               </div>
             </div>
           )
@@ -780,7 +782,7 @@ function EmptyState({
       />
       {!isFiltered && (
         <Button type="primary" size="middle" icon={<Icons.Plus />} onClick={onAdd}>
-          添加第一个 MCP
+          {translate('mcpView.t76')}
         </Button>
       )}
     </div>
@@ -846,13 +848,13 @@ function McpForm({
           <span className="mv_drawer_section_icon">
             <Icons.Database />
           </span>
-          <span className="mv_drawer_section_title">基本信息</span>
+          <span className="mv_drawer_section_title">{translate('mcpView.t77')}</span>
         </header>
         <div className="mv_drawer_section_body">
           <div className="mv_form_grid">
             <label className="mv_form_label">
-              名称
-              <span className="mv_form_sub">用于在工具与列表中标识</span>
+              {translate('mcpView.t78')}
+              <span className="mv_form_sub">{translate('mcpView.t79')}</span>
             </label>
             <div className="mv_form_field">
               <Input
@@ -861,11 +863,11 @@ function McpForm({
                   minWidth: 200,
                 }}
                 onChange={(event) => update('name', event.target.value)}
-                placeholder="例：filesystem"
+                placeholder={translate('mcpView.t63')}
               />
             </div>
 
-            <label className="mv_form_label">作用域</label>
+            <label className="mv_form_label">{translate('mcpView.t80')}</label>
             <div className="mv_form_field">
               <LobeSelect
                 value={draft.scope}
@@ -876,12 +878,12 @@ function McpForm({
                 options={SCOPES.map((scope) => ({ label: scope, value: scope }))}
               />
               <span className="mv_form_hint">
-                决定配置的可见范围与会话覆盖优先级；会按 Agent / Workflow 配置注入 Claude SDK 与本地
+                {translate('mcpView.tpl3LongDesc')}
                 Codex CLI
               </span>
             </div>
 
-            <label className="mv_form_label">描述</label>
+            <label className="mv_form_label">{translate('mcpView.t81')}</label>
             <div className="mv_form_field">
               <Input
                 style={{
@@ -889,11 +891,11 @@ function McpForm({
                 }}
                 value={draft.description}
                 onChange={(event) => update('description', event.target.value)}
-                placeholder="可选：给该 MCP 写一句话说明"
+                placeholder={translate('mcpView.t64Desc')}
               />
             </div>
 
-            <label className="mv_form_label">启用</label>
+            <label className="mv_form_label">{translate('mcpView.t82')}</label>
             <div className="mv_form_field mv_form_field_inline">
               <Switch
                 size="middle"
@@ -913,12 +915,12 @@ function McpForm({
           <span className="mv_drawer_section_icon">
             {isStdio ? <Icons.Code /> : <Icons.Link />}
           </span>
-          <span className="mv_drawer_section_title">启动配置</span>
+          <span className="mv_drawer_section_title">{translate('mcpView.t83')}</span>
           <span className="mv_drawer_section_hint">{isStdio ? 'stdio' : 'http / sse'}</span>
         </header>
         <div className="mv_drawer_section_body">
           <div className="mv_form_grid">
-            <label className="mv_form_label">传输</label>
+            <label className="mv_form_label">{translate('mcpView.t84')}</label>
             <div className="mv_form_field">
               <div className="mv_segmented">
                 {(['stdio', 'http', 'sse'] as McpTransport[]).map((transport) => (
@@ -937,8 +939,8 @@ function McpForm({
             {isStdio ? (
               <>
                 <label className="mv_form_label">
-                  启动命令
-                  <span className="mv_form_sub">在用户目录执行的二进制</span>
+                  {translate('mcpView.t85')}
+                  <span className="mv_form_sub">{translate('mcpView.t86')}</span>
                 </label>
                 <div className="mv_form_field">
                   <Input
@@ -949,8 +951,8 @@ function McpForm({
                 </div>
 
                 <label className="mv_form_label">
-                  参数
-                  <span className="mv_form_sub">空格分隔</span>
+                  {translate('mcpView.t87')}
+                  <span className="mv_form_sub">{translate('mcpView.t88')}</span>
                 </label>
                 <div className="mv_form_field">
                   <Input
@@ -963,7 +965,7 @@ function McpForm({
             ) : (
               <label className="mv_form_label">
                 URL
-                <span className="mv_form_sub">HTTP / SSE 端点</span>
+                <span className="mv_form_sub">{translate('mcpView.t89Desc')}</span>
               </label>
             )}
             {!isStdio && (
@@ -983,12 +985,12 @@ function McpForm({
         <section className="mv_drawer_section">
           <header className="mv_drawer_section_head">
             <span className="mv_drawer_section_icon">🔐</span>
-            <span className="mv_drawer_section_title">认证方式</span>
+            <span className="mv_drawer_section_title">{translate('mcpView.t90')}</span>
             <span className="mv_drawer_section_hint">OAuth 2.0 / PKCE</span>
           </header>
           <div className="mv_drawer_section_body">
             <div className="mv_form_grid">
-              <label className="mv_form_label">认证</label>
+              <label className="mv_form_label">{translate('mcpView.t91')}</label>
               <div className="mv_form_field">
                 <div className="mv_segmented">
                   {(['none', 'oauth2'] as const).map((authType) => (
@@ -998,7 +1000,7 @@ function McpForm({
                       className={`mv_segmented_item ${draft.authType === authType ? 'mv_segmented_active' : ''}`}
                       onClick={() => update('authType', authType)}
                     >
-                      {authType === 'none' ? '无' : 'OAuth 2.0'}
+                      {authType === 'none' ? translate('mcpView.t39') : 'OAuth 2.0'}
                     </button>
                   ))}
                 </div>
@@ -1010,10 +1012,10 @@ function McpForm({
                     <Input
                       value={draft.authScope}
                       onChange={(event) => update('authScope', event.target.value)}
-                      placeholder="可选 OAuth scope"
+                      placeholder={translate('mcpView.t65Desc')}
                     />
                   </div>
-                  <label className="mv_form_label">动态注册</label>
+                  <label className="mv_form_label">{translate('mcpView.t92')}</label>
                   <div className="mv_form_field mv_form_field_inline">
                     <Switch
                       checked={draft.authDcr}
@@ -1029,7 +1031,7 @@ function McpForm({
                         <Input
                           value={draft.authClientId}
                           onChange={(event) => update('authClientId', event.target.value)}
-                          placeholder="静态 client_id"
+                          placeholder={translate('mcpView.t66')}
                         />
                       </div>
                       <label className="mv_form_label">Client Secret</label>
@@ -1038,7 +1040,7 @@ function McpForm({
                           type="password"
                           value={draft.authClientSecret}
                           onChange={(event) => update('authClientSecret', event.target.value)}
-                          placeholder="可选，保存到安全存储迁移前暂存配置"
+                          placeholder={translate('mcpView.t67Desc')}
                         />
                       </div>
                     </>
@@ -1054,13 +1056,13 @@ function McpForm({
       <section className="mv_drawer_section">
         <header className="mv_drawer_section_head">
           <span className="mv_drawer_section_icon">⚙</span>
-          <span className="mv_drawer_section_title">环境变量</span>
-          <span className="mv_drawer_section_hint">仅 stdio 模式生效</span>
+          <span className="mv_drawer_section_title">{translate('mcpView.t93')}</span>
+          <span className="mv_drawer_section_hint">{translate('mcpView.t94')}</span>
         </header>
         <div className="mv_drawer_section_body">
           <div className="mv_env_list">
             {draft.env.length === 0 ? (
-              <div className="mv_env_empty">暂无环境变量，点击下方按钮添加</div>
+              <div className="mv_env_empty">{translate('mcpView.t95Desc')}</div>
             ) : (
               draft.env.map((row, idx) => (
                 <div key={idx} className="mv_env_row">
@@ -1096,7 +1098,7 @@ function McpForm({
             icon={<Icons.Plus />}
             onClick={addEnvRow}
           >
-            添加变量
+            {translate('mcpView.t96')}
           </Button>
         </div>
       </section>
@@ -1238,14 +1240,14 @@ function getConnectorStatusMeta(
 ): { color: string; label: string } {
   if (!hasConnection) {
     return state.lastError != null
-      ? { color: 'red', label: '需处理' }
-      : { color: 'orange', label: '待认证' }
+      ? { color: 'red', label: translate('mcpView.t40') }
+      : { color: 'orange', label: translate('mcpView.t41') }
   }
-  if (!state.enabled || state.status === 'disabled') return { color: 'default', label: '已禁用' }
-  if (state.status === 'connected') return { color: 'green', label: '已连接' }
-  if (state.status === 'syncing') return { color: 'blue', label: '同步中' }
-  if (state.status === 'needs_auth') return { color: 'orange', label: '需重新认证' }
-  return { color: 'red', label: '需处理' }
+  if (!state.enabled || state.status === 'disabled') return { color: 'default', label: translate('mcpView.t42') }
+  if (state.status === 'connected') return { color: 'green', label: translate('mcpView.t43') }
+  if (state.status === 'syncing') return { color: 'blue', label: translate('mcpView.t44') }
+  if (state.status === 'needs_auth') return { color: 'orange', label: translate('mcpView.t45') }
+  return { color: 'red', label: translate('mcpView.t40') }
 }
 
 function ConnectorsPanel() {
@@ -1278,7 +1280,7 @@ function ConnectorsPanel() {
       } catch (err) {
         if (cancelled) return
         const next = createDefaultGitHubConnectorState()
-        next.lastError = err instanceof Error ? err.message : 'GitHub 连接状态读取失败'
+        next.lastError = err instanceof Error ? err.message : translate('mcpView.t46Desc')
         setPersistedConnection(null)
         setState(next)
       } finally {
@@ -1319,14 +1321,14 @@ function ConnectorsPanel() {
       setState({
         ...state,
         status: 'needs_auth',
-        lastError: `${selectedAuth?.label ?? '该认证方式'} 需要主进程 OAuth/Device/GitHub App 接线；已打开配置入口。`,
+        lastError: translate('mcpView.tpl4LongDesc', { label: selectedAuth?.label ?? translate('mcpView.t47') }),
       })
       return
     }
 
     const token = patToken.trim()
     if (token.length === 0) {
-      message.warning('请输入 GitHub Fine-grained PAT 后再连接')
+      message.warning(translate('mcpView.t48Desc'))
       return
     }
 
@@ -1346,9 +1348,9 @@ function ConnectorsPanel() {
       })
       applyConnection(connection)
       setPatToken('')
-      message.success('GitHub 连接已保存，下次启动仍可继续使用')
+      message.success(translate('mcpView.t49Desc'))
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'GitHub 连接验证失败'
+      const msg = err instanceof Error ? err.message : translate('mcpView.t50Desc')
       setState((current) => ({ ...current, status: 'needs_auth', lastError: msg }))
       message.error(msg)
     } finally {
@@ -1378,7 +1380,7 @@ function ConnectorsPanel() {
         })
         applyConnection(connection)
         setPatToken('')
-        message.success('GitHub PAT 已更新并重新验证')
+        message.success(translate('mcpView.t51Desc'))
         return
       }
 
@@ -1390,9 +1392,9 @@ function ConnectorsPanel() {
         enabled: state.enabled,
       })
       applyConnection(connection)
-      message.success('GitHub 连接设置已保存')
+      message.success(translate('mcpView.t52Desc'))
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'GitHub 连接保存失败'
+      const msg = err instanceof Error ? err.message : translate('mcpView.t53Desc')
       setState((current) => ({ ...current, lastError: msg }))
       message.error(msg)
     } finally {
@@ -1406,9 +1408,9 @@ function ConnectorsPanel() {
       await disconnectGitHubConnector({})
       applyConnection(null)
       setPatToken('')
-      message.success('GitHub 连接已断开')
+      message.success(translate('mcpView.t54'))
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'GitHub 断开失败'
+      const msg = err instanceof Error ? err.message : translate('mcpView.t55')
       setState((current) => ({ ...current, lastError: msg }))
       message.error(msg)
     } finally {
@@ -1445,18 +1447,18 @@ function ConnectorsPanel() {
             {state.accountAvatarUrl != null && (
               <img src={state.accountAvatarUrl} alt="" aria-hidden="true" />
             )}
-            <span>已连接账号：{state.accountLogin}</span>
+            <span>{translate('mcpView.tpl5Desc', { account: state.accountLogin })}</span>
             {state.lastCheckedAt != null && (
-              <small>最近成功访问：{new Date(state.lastCheckedAt).toLocaleString()}</small>
+              <small>{translate('mcpView.tpl6Desc', { time: new Date(state.lastCheckedAt).toLocaleString() })}</small>
             )}
           </div>
         )}
         {state.grantedScopes.length > 0 && (
-          <div className="mv_connector_error">授权范围：{state.grantedScopes.join(', ')}</div>
+          <div className="mv_connector_error">{translate('mcpView.tpl7Desc', { scopes: state.grantedScopes.join(', ') })}</div>
         )}
         {state.lastError != null && <div className="mv_connector_error">{state.lastError}</div>}
         {bootstrapping && (
-          <div className="mv_connector_error">正在读取已保存的 GitHub 连接状态…</div>
+          <div className="mv_connector_error">{translate('mcpView.t97Desc')}</div>
         )}
 
         <div className="mv_auth_strategy_grid">
@@ -1478,7 +1480,7 @@ function ConnectorsPanel() {
         </div>
 
         <div className="mv_connector_form">
-          <label className="mv_form_label">当前认证</label>
+          <label className="mv_form_label">{translate('mcpView.t98')}</label>
           <div className="mv_form_field">
             <span className="mv_form_hint">
               {manifest.auth.find((auth) => auth.method === state.authMethod)?.description}
@@ -1496,13 +1498,13 @@ function ConnectorsPanel() {
                   placeholder="github_pat_..."
                 />
                 <span className="mv_form_hint">
-                  首次连接会把 PAT 保存到系统 keystore；后续如需轮换凭证，可在这里重新填写并保存。
+                  {translate('mcpView.t99LongDesc')}
                 </span>
               </div>
             </>
           )}
 
-          <label className="mv_form_label">仓库范围</label>
+          <label className="mv_form_label">{translate('mcpView.t100')}</label>
           <div className="mv_form_field">
             <Input
               value={state.repos}
@@ -1510,11 +1512,11 @@ function ConnectorsPanel() {
               placeholder="owner/repo, org/backend"
             />
             <span className="mv_form_hint">
-              留空表示允许访问 PAT 授权范围内的全部仓库；多个仓库用逗号分隔。
+              {translate('mcpView.t101Desc')}
             </span>
           </div>
 
-          <label className="mv_form_label">连接启用</label>
+          <label className="mv_form_label">{translate('mcpView.t102')}</label>
           <div className="mv_form_field mv_form_field_inline">
             <Switch
               size="middle"
@@ -1524,11 +1526,11 @@ function ConnectorsPanel() {
               unCheckedChildren="OFF"
             />
             <span className="mv_form_hint">
-              关闭后保留凭证与配置，但 agent 不再获得 GitHub 访问能力。
+              {translate('mcpView.t103Desc')}
             </span>
           </div>
 
-          <label className="mv_form_label">写入能力</label>
+          <label className="mv_form_label">{translate('mcpView.t104')}</label>
           <div className="mv_form_field mv_form_field_inline">
             <Switch
               size="middle"
@@ -1538,7 +1540,7 @@ function ConnectorsPanel() {
               unCheckedChildren="OFF"
             />
             <span className="mv_form_hint">
-              开启后才允许提交、创建分支、PR 和写回 Issue；默认关闭。
+              {translate('mcpView.t105Desc')}
             </span>
           </div>
         </div>
@@ -1581,9 +1583,9 @@ function ConnectorsPanel() {
           >
             {hasConnection
               ? patToken.trim().length > 0
-                ? '更新 PAT 并重新验证'
-                : '保存连接设置'
-              : '验证并连接 GitHub'}
+                ? translate('mcpView.t56')
+                : translate('mcpView.t57')
+              : translate('mcpView.t58')}
           </Button>
           {hasConnection && (
             <Button
@@ -1593,7 +1595,7 @@ function ConnectorsPanel() {
               icon={<Icons.X />}
               onClick={() => void handleDisconnect()}
             >
-              断开 GitHub
+              {translate('mcpView.t106')}
             </Button>
           )}
           <Button
@@ -1603,7 +1605,7 @@ function ConnectorsPanel() {
               window.open('https://github.com/settings/personal-access-tokens', '_blank')
             }
           >
-            创建 Fine-grained PAT
+            {translate('mcpView.t107Desc')}
           </Button>
         </div>
       </section>

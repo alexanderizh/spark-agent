@@ -1,3 +1,4 @@
+import { translate } from '../../../i18n'
 import type { Stage3DBodyType } from './stage3d.types'
 
 /**
@@ -153,39 +154,45 @@ export const JOINT_IDS = [
 
 export type JointId = (typeof JOINT_IDS)[number]
 
-export const JOINT_LABEL: Record<JointId, string> = {
-  hips: '髋部',
-  spine: '腰',
-  chest: '胸',
-  neck: '颈',
-  head: '头',
-  shoulderL: '左肩',
-  upperArmL: '左大臂',
-  lowerArmL: '左小臂',
-  handL: '左腕',
-  thumbL: '左拇指',
-  fingersL: '左四指',
-  shoulderR: '右肩',
-  upperArmR: '右大臂',
-  lowerArmR: '右小臂',
-  handR: '右腕',
-  thumbR: '右拇指',
-  fingersR: '右四指',
-  upperLegL: '左大腿',
-  lowerLegL: '左小腿',
-  footL: '左脚',
-  upperLegR: '右大腿',
-  lowerLegR: '右小腿',
-  footR: '右脚',
+/** 关节名：只存 i18n key，用 jointLabel() 取译文（模块级不固化翻译结果）。 */
+export const JOINT_LABEL_KEYS: Record<JointId, string> = {
+  hips: 'mannequin.t1',
+  spine: 'mannequin.t2',
+  chest: 'mannequin.t3',
+  neck: 'mannequin.t4',
+  head: 'mannequin.t5',
+  shoulderL: 'mannequin.t6',
+  upperArmL: 'mannequin.t7',
+  lowerArmL: 'mannequin.t8',
+  handL: 'mannequin.t9',
+  thumbL: 'mannequin.t10',
+  fingersL: 'mannequin.t11',
+  shoulderR: 'mannequin.t12',
+  upperArmR: 'mannequin.t13',
+  lowerArmR: 'mannequin.t14',
+  handR: 'mannequin.t15',
+  thumbR: 'mannequin.t16',
+  fingersR: 'mannequin.t17',
+  upperLegL: 'mannequin.t18',
+  lowerLegL: 'mannequin.t19',
+  footL: 'mannequin.t20',
+  upperLegR: 'mannequin.t21',
+  lowerLegR: 'mannequin.t22',
+  footR: 'mannequin.t23',
+}
+
+/** 关节名译文（随语言变化；用于 JSX 渲染与提示）。 */
+export function jointLabel(id: JointId): string {
+  return translate(JOINT_LABEL_KEYS[id])
 }
 
 /** 属性面板分组 */
-export const JOINT_GROUPS: { label: string; joints: JointId[] }[] = [
-  { label: '躯干 / 头', joints: ['hips', 'spine', 'chest', 'neck', 'head'] },
-  { label: '左臂', joints: ['shoulderL', 'upperArmL', 'lowerArmL', 'handL', 'thumbL', 'fingersL'] },
-  { label: '右臂', joints: ['shoulderR', 'upperArmR', 'lowerArmR', 'handR', 'thumbR', 'fingersR'] },
-  { label: '左腿', joints: ['upperLegL', 'lowerLegL', 'footL'] },
-  { label: '右腿', joints: ['upperLegR', 'lowerLegR', 'footR'] },
+export const JOINT_GROUPS: { labelKey: string; joints: JointId[] }[] = [
+  { labelKey: 'mannequin.t24', joints: ['hips', 'spine', 'chest', 'neck', 'head'] },
+  { labelKey: 'mannequin.t25', joints: ['shoulderL', 'upperArmL', 'lowerArmL', 'handL', 'thumbL', 'fingersL'] },
+  { labelKey: 'mannequin.t26', joints: ['shoulderR', 'upperArmR', 'lowerArmR', 'handR', 'thumbR', 'fingersR'] },
+  { labelKey: 'mannequin.t27', joints: ['upperLegL', 'lowerLegL', 'footL'] },
+  { labelKey: 'mannequin.t28', joints: ['upperLegR', 'lowerLegR', 'footR'] },
 ]
 
 /** 姿势预设：每个关节相对基准的欧拉角（弧度）。缺省关节视为 [0,0,0]。 */
@@ -337,7 +344,13 @@ export function copySidePose(
   return out
 }
 
-export type PoseGroup = '基础' | '武打'
+export type PoseGroup = 'basic' | 'martial'
+
+/** 姿势分组名：只存 i18n key（模块级不固化翻译结果）。 */
+export const POSE_GROUP_LABEL_KEYS: Record<PoseGroup, string> = {
+  basic: 'mannequin.t29',
+  martial: 'mannequin.t30',
+}
 
 function poseFromControls(controls: Record<string, number>): Pose {
   const pose: Pose = {}
@@ -370,11 +383,11 @@ function poseFromControls(controls: Record<string, number>): Pose {
   return pose
 }
 
-export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: Pose }[] = [
+export const POSE_PRESETS: { id: string; labelKey: string; group: PoseGroup; pose: Pose }[] = [
   {
     id: 'stand',
-    label: '站立',
-    group: '基础',
+    labelKey: 'mannequin.t31',
+    group: 'basic',
     pose: poseFromControls({
       'leftShoulder.spread': -16,
       'rightShoulder.spread': 16,
@@ -384,8 +397,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 't-pose',
-    label: 'T型',
-    group: '基础',
+    labelKey: 'mannequin.t32',
+    group: 'basic',
     pose: poseFromControls({
       'leftShoulder.spread': -70,
       'rightShoulder.spread': 70,
@@ -397,8 +410,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'walk',
-    label: '行走',
-    group: '基础',
+    labelKey: 'mannequin.t33',
+    group: 'basic',
     pose: poseFromControls({
       'leftShoulder.pitch': 20,
       'rightShoulder.pitch': -20,
@@ -410,8 +423,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'run',
-    label: '奔跑',
-    group: '基础',
+    labelKey: 'mannequin.t34',
+    group: 'basic',
     pose: poseFromControls({
       'leftShoulder.pitch': 42,
       'rightShoulder.pitch': -42,
@@ -423,8 +436,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'sit',
-    label: '坐',
-    group: '基础',
+    labelKey: 'mannequin.t35',
+    group: 'basic',
     pose: poseFromControls({
       'torso.pitch': -10,
       'leftHip.pitch': 80,
@@ -435,8 +448,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'crouch',
-    label: '蹲下',
-    group: '基础',
+    labelKey: 'mannequin.t36',
+    group: 'basic',
     pose: poseFromControls({
       'body.pitch': -26,
       'torso.pitch': -24,
@@ -455,8 +468,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'point',
-    label: '指向',
-    group: '基础',
+    labelKey: 'mannequin.t37',
+    group: 'basic',
     pose: poseFromControls({
       'rightShoulder.pitch': 68,
       'rightShoulder.spread': 2,
@@ -468,8 +481,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'arms-crossed',
-    label: '抱臂',
-    group: '基础',
+    labelKey: 'mannequin.t38',
+    group: 'basic',
     pose: poseFromControls({
       'leftShoulder.pitch': 50,
       'leftShoulder.spread': -55,
@@ -486,8 +499,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'lying',
-    label: '躺',
-    group: '基础',
+    labelKey: 'mannequin.t39',
+    group: 'basic',
     pose: poseFromControls({
       'body.pitch': -90,
       'leftShoulder.spread': 30,
@@ -498,8 +511,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'kneel',
-    label: '跪',
-    group: '基础',
+    labelKey: 'mannequin.t40',
+    group: 'basic',
     pose: poseFromControls({
       'body.pitch': -16,
       'torso.pitch': -10,
@@ -521,8 +534,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'hands-on-hips',
-    label: '叉腰',
-    group: '基础',
+    labelKey: 'mannequin.t41',
+    group: 'basic',
     pose: poseFromControls({
       'leftShoulder.pitch': -36,
       'rightShoulder.pitch': -36,
@@ -536,8 +549,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'bow',
-    label: '鞠躬',
-    group: '基础',
+    labelKey: 'mannequin.t42',
+    group: 'basic',
     pose: poseFromControls({
       'body.pitch': -46,
       'torso.pitch': -10,
@@ -554,8 +567,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'think',
-    label: '思考',
-    group: '基础',
+    labelKey: 'mannequin.t43',
+    group: 'basic',
     pose: poseFromControls({
       'rightShoulder.pitch': 8,
       'rightShoulder.twist': -40,
@@ -570,8 +583,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'wave',
-    label: '招手',
-    group: '基础',
+    labelKey: 'mannequin.t44',
+    group: 'basic',
     pose: poseFromControls({
       'rightShoulder.pitch': 60,
       'rightShoulder.twist': 30,
@@ -587,8 +600,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'phone',
-    label: '看手机',
-    group: '基础',
+    labelKey: 'mannequin.t45',
+    group: 'basic',
     pose: poseFromControls({
       'head.pitch': 18,
       'rightShoulder.pitch': 20,
@@ -607,8 +620,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   // ─────────────── 武打组 ───────────────
   {
     id: 'punch',
-    label: '出拳',
-    group: '武打',
+    labelKey: 'mannequin.t46',
+    group: 'martial',
     pose: {
       ...poseFromControls({
         'body.yaw': -8,
@@ -635,8 +648,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'kick',
-    label: '踢腿',
-    group: '武打',
+    labelKey: 'mannequin.t47',
+    group: 'martial',
     pose: poseFromControls({
       'leftHip.pitch': -8,
       'rightHip.pitch': 58,
@@ -647,8 +660,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'block',
-    label: '格挡',
-    group: '武打',
+    labelKey: 'mannequin.t48',
+    group: 'martial',
     pose: {
       ...poseFromControls({
         'body.pitch': 5,
@@ -676,8 +689,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'horse-stance',
-    label: '马步',
-    group: '武打',
+    labelKey: 'mannequin.t49',
+    group: 'martial',
     pose: {
       ...poseFromControls({
         'leftHip.pitch': 38,
@@ -701,8 +714,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'throw',
-    label: '投掷',
-    group: '武打',
+    labelKey: 'mannequin.t50',
+    group: 'martial',
     pose: poseFromControls({
       'body.pitch': 5,
       'body.yaw': 14,
@@ -731,8 +744,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'push',
-    label: '推进',
-    group: '武打',
+    labelKey: 'mannequin.t51',
+    group: 'martial',
     pose: poseFromControls({
       'body.pitch': 5,
       'body.yaw': 38,
@@ -760,8 +773,8 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
   {
     id: 'flying-kick',
-    label: '飞踢',
-    group: '武打',
+    labelKey: 'mannequin.t52',
+    group: 'martial',
     pose: {
       ...poseFromControls({
         'body.roll': -14,
@@ -787,9 +800,15 @@ export const POSE_PRESETS: { id: string; label: string; group: PoseGroup; pose: 
   },
 ]
 
-export const POSE_LABEL: Record<string, string> = Object.fromEntries(
-  POSE_PRESETS.map((p) => [p.id, p.label]),
+export const POSE_LABEL_KEYS: Record<string, string> = Object.fromEntries(
+  POSE_PRESETS.map((p) => [p.id, p.labelKey]),
 )
+
+/** 姿势名译文（随语言变化）。 */
+export function poseLabel(poseId: string): string {
+  const key = POSE_LABEL_KEYS[poseId]
+  return key ? translate(key) : poseId
+}
 
 export function getPose(poseId: string): Pose {
   return POSE_PRESETS.find((p) => p.id === poseId)?.pose ?? {}

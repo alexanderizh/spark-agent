@@ -21,6 +21,7 @@ import { rememberEmail } from './recentEmails'
 import { matchFieldError } from './errorMapping'
 import { EMAIL_RE, inferIdentifierKind, normalizeVerificationTarget, PHONE_RE } from './identifier'
 import { useVerificationCodeTimer } from './useVerificationCodeTimer'
+import { useI18n, type TranslateFn } from '../i18n'
 import { Icons } from '../Icons'
 
 type LoginTab = 'password' | 'code'
@@ -30,15 +31,18 @@ type LoginTab = 'password' | 'code'
  * 返回 Promise 风格，供 antd Form rule 的 validator 使用。
  */
 function validateAccount(
+  t: TranslateFn,
   requireEmailOnly: boolean,
 ): (rule: unknown, value: string) => Promise<void> {
   return (_rule, value) => {
     const v = (value ?? '').trim()
-    if (!v) return Promise.reject(new Error('请填写账号'))
+    if (!v) return Promise.reject(new Error(t('auth.login.accountRequired')))
     if (!requireEmailOnly && PHONE_RE.test(v)) return Promise.resolve()
     if (EMAIL_RE.test(v)) return Promise.resolve()
     return Promise.reject(
-      new Error(requireEmailOnly ? '请填写有效邮箱' : '请填写有效的邮箱或手机号'),
+      new Error(
+        requireEmailOnly ? t('auth.login.validEmail') : t('auth.login.validEmailOrPhone'),
+      ),
     )
   }
 }
@@ -46,6 +50,7 @@ function validateAccount(
 export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): React.ReactElement {
   const auth = useAuth()
   const { toast } = useToast()
+  const { t } = useI18n()
   const [form] = Form.useForm()
   const captchaRef = useRef<CaptchaFieldHandle>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -119,13 +124,13 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
 
   useEffect(() => {
     if (!isEmailCodeExpired || !emailCodeTarget) return
-    form.setFields([{ name: 'emailCode', errors: ['验证码已过期，请重新获取'] }])
-  }, [emailCodeTarget, form, isEmailCodeExpired])
+    form.setFields([{ name: 'emailCode', errors: [t('auth.common.codeExpired')] }])
+  }, [emailCodeTarget, form, isEmailCodeExpired, t])
 
   useEffect(() => {
     if (!isSmsCodeExpired || !smsCodeTarget) return
-    form.setFields([{ name: 'smsCode', errors: ['验证码已过期，请重新获取'] }])
-  }, [form, isSmsCodeExpired, smsCodeTarget])
+    form.setFields([{ name: 'smsCode', errors: [t('auth.common.codeExpired')] }])
+  }, [form, isSmsCodeExpired, smsCodeTarget, t])
 
   const handleTabChange = (key: string): void => {
     setTab(key as LoginTab)
@@ -148,11 +153,11 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
     try {
       const values = await form.validateFields(['account', 'captchaId', 'captchaText'])
       if (!values.account) {
-        setFieldError('account', '请填写邮箱')
+        setFieldError('account', t('auth.login.emailRequired'))
         return
       }
       if (!values.captchaId || !String(values.captchaText ?? '').trim()) {
-        setFieldError('captchaText', '请填写图片验证码')
+        setFieldError('captchaText', t('auth.common.captchaRequired'))
         return
       }
       const requestedAt = Date.now()
@@ -171,10 +176,12 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
         form.setFields([{ name: 'emailCode', value: '', errors: [] }])
       }
       toast.success(
-        isStillCurrentTarget ? '验证码已发送到邮箱' : '验证码已发送到原邮箱，请重新获取',
+        isStillCurrentTarget
+          ? t('auth.common.emailCodeSent')
+          : t('auth.common.emailCodeSentStale'),
       )
     } catch (e) {
-      const msg = (e as Error).message ?? '发送失败'
+      const msg = (e as Error).message ?? t('auth.common.sendFailed')
       const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
         if (target === 'captchaText') await setCaptchaError(msg)
@@ -197,15 +204,15 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
       const values = await form.validateFields(['account', 'captchaId', 'captchaText'])
       const phone = (values.account ?? '').trim()
       if (!phone) {
-        setFieldError('account', '请填写手机号')
+        setFieldError('account', t('auth.common.phoneRequired'))
         return
       }
       if (!PHONE_RE.test(phone)) {
-        setFieldError('account', '请填写有效的手机号')
+        setFieldError('account', t('auth.common.validPhone'))
         return
       }
       if (!values.captchaId || !String(values.captchaText ?? '').trim()) {
-        setFieldError('captchaText', '请填写图片验证码')
+        setFieldError('captchaText', t('auth.common.captchaRequired'))
         return
       }
       const requestedAt = Date.now()
@@ -223,10 +230,10 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
         form.setFields([{ name: 'smsCode', value: '', errors: [] }])
       }
       toast.success(
-        isStillCurrentTarget ? '短信验证码已发送' : '验证码已发送到原手机号，请重新获取',
+        isStillCurrentTarget ? t('auth.common.smsSent') : t('auth.common.smsSentStale'),
       )
     } catch (e) {
-      const msg = (e as Error).message ?? '发送失败'
+      const msg = (e as Error).message ?? t('auth.common.sendFailed')
       const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
         if (target === 'captchaText') await setCaptchaError(msg)
@@ -249,14 +256,14 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
 
       if (usesSmsCode) {
         if (!hasActiveSmsCode || !isSmsCodeActiveNow()) {
-          setFieldError('smsCode', '请先获取有效验证码')
+          setFieldError('smsCode', t('auth.common.codeRequired'))
           return
         }
         const result = await auth.loginBySms({
           phone: (values.account ?? '').trim(),
           smsCode: values.smsCode,
         })
-        toast.success(result.isNew ? '注册并登录成功' : '登录成功')
+        toast.success(result.isNew ? t('auth.login.successRegistered') : t('auth.login.success'))
         return
       }
 
@@ -271,7 +278,7 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
         })
       } else {
         if (!hasActiveEmailCode || !isEmailCodeActiveNow()) {
-          setFieldError('emailCode', '请先获取有效验证码')
+          setFieldError('emailCode', t('auth.common.codeRequired'))
           return
         }
         result = await auth.login({
@@ -284,10 +291,10 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
       if (EMAIL_RE.test(normalizedAccount)) {
         rememberEmail(normalizedAccount)
       }
-      toast.success('登录成功')
+      toast.success(t('auth.login.success'))
       void result
     } catch (e) {
-      const msg = (e as Error).message ?? '登录失败'
+      const msg = (e as Error).message ?? t('auth.login.failed')
       const candidates: Array<
         'account' | 'password' | 'captchaText' | 'emailCode' | 'phone' | 'smsCode'
       > =
@@ -313,7 +320,7 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
   // 主进程推送的 message 必须落地展示，否则用户只会看到表单悄悄恢复而不知原因
   const desktopLoginNotice =
     auth.desktopLogin.phase === 'expired' || auth.desktopLogin.phase === 'failed'
-      ? (auth.desktopLogin.message ?? '浏览器授权未完成，请重新发起')
+      ? (auth.desktopLogin.message ?? t('auth.login.browserIncomplete'))
       : undefined
 
   // 等待浏览器授权时整卡切换（成功由主进程登录态事件驱动，无需额外跳转）
@@ -327,18 +334,16 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
   }
 
   const methodItems: Array<{ key: LoginTab; label: string; visible: boolean }> = [
-    { key: 'password', label: '密码', visible: true },
-    { key: 'code', label: '验证码', visible: true },
+    { key: 'password', label: t('auth.login.methodPassword'), visible: true },
+    { key: 'code', label: t('auth.login.methodCode'), visible: true },
   ]
 
   return (
     <div className="auth-form">
       <div className="auth-form-head">
-        <h2 className="auth-form-title">欢迎回来</h2>
+        <h2 className="auth-form-title">{t('auth.login.title')}</h2>
         <p className="auth-form-greet">
-          {tab === 'code'
-            ? '输入邮箱或手机号，系统会自动选择验证码方式'
-            : '输入邮箱或手机号继续，也可以使用验证码登录'}
+          {tab === 'code' ? t('auth.login.subtitleCode') : t('auth.login.subtitlePassword')}
         </p>
       </div>
 
@@ -373,8 +378,8 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
               required: true,
               validator:
                 tab === 'password'
-                  ? validateAccount(false)
-                  : validateAccount(identifierKind === 'email'),
+                  ? validateAccount(t, false)
+                  : validateAccount(t, identifierKind === 'email'),
             },
           ]}
         >
@@ -386,7 +391,7 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
           <Form.Item
             name="password"
             className="auth-field-row"
-            rules={[{ required: true, min: 6, message: '至少 6 位' }]}
+            rules={[{ required: true, min: 6, message: t('auth.common.minPasswordHint') }]}
           >
             <PasswordInput />
           </Form.Item>
@@ -405,10 +410,10 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
           <Form.Item
             name="emailCode"
             className="auth-field-row"
-            rules={[{ required: true, message: '请填写邮箱验证码' }]}
+            rules={[{ required: true, message: t('auth.common.emailCodeRequired') }]}
           >
             <CodeInput
-              placeholder="6 位邮箱验证码"
+              placeholder={t('auth.login.emailCodePlaceholder')}
               countdown={countdown}
               sending={sendingEmailCode}
               onSend={() => void handleSendCode()}
@@ -419,10 +424,10 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
           <Form.Item
             name="smsCode"
             className="auth-field-row"
-            rules={[{ required: true, message: '请填写短信验证码' }]}
+            rules={[{ required: true, message: t('auth.common.smsCodeRequired') }]}
           >
             <CodeInput
-              placeholder="6 位短信验证码"
+              placeholder={t('auth.login.smsCodePlaceholder')}
               countdown={smsCountdown}
               sending={sendingSmsCode}
               onSend={() => void handleSendSms()}
@@ -438,7 +443,7 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
             loading={submitting}
             disabled={!canSubmit || submitting}
           >
-            {submitting ? '登录中' : '登录'}
+            {submitting ? t('auth.login.submitLoading') : t('auth.login.submitBtn')}
             {!submitting && <Icons.ArrowRight size={18} />}
           </Button>
         </Form.Item>
@@ -454,13 +459,13 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
           <div className="auth-foot-line">
             {tab === 'password' ? (
               <>
-                <span className="auth-foot-muted">忘记密码？</span>{' '}
+                <span className="auth-foot-muted">{t('auth.login.forgotPassword')}</span>{' '}
                 <button
                   type="button"
                   className="auth-foot-link"
                   onClick={() => handleTabChange('code')}
                 >
-                  用验证码登录
+                  {t('auth.login.useCode')}
                 </button>
               </>
             ) : (
@@ -469,7 +474,7 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
                 className="auth-foot-link"
                 onClick={() => handleTabChange('password')}
               >
-                返回密码登录
+                {t('auth.login.backToPassword')}
               </button>
             )}
           </div>
@@ -489,6 +494,7 @@ function AccountInput({
   onChange,
   onAccountChange,
 }: ControlledInputProps & { onAccountChange?: (value: string) => void }): React.ReactElement {
+  const { t } = useI18n()
   return (
     <div className="auth-input auth-input--flat">
       <Icons.Mail size={17} className="auth-input-icon" />
@@ -498,7 +504,7 @@ function AccountInput({
           onAccountChange?.(event.target.value)
           onChange?.(event)
         }}
-        placeholder="邮箱或手机号"
+        placeholder={t('auth.common.emailOrPhone')}
         allowClear
         autoComplete="username"
       />
@@ -507,12 +513,13 @@ function AccountInput({
 }
 
 function PasswordInput({ value, onChange }: ControlledInputProps): React.ReactElement {
+  const { t } = useI18n()
   const [visible, setVisible] = useState(false)
   return (
     <div className="auth-input auth-input--flat">
       <Icons.Lock size={17} className="auth-input-icon" />
       <Input
-        placeholder="请输入密码"
+        placeholder={t('auth.login.passwordPlaceholder')}
         value={value}
         onChange={onChange}
         autoComplete="current-password"
@@ -522,7 +529,7 @@ function PasswordInput({ value, onChange }: ControlledInputProps): React.ReactEl
         type="button"
         className="auth-input-action"
         onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? '隐藏密码' : '显示密码'}
+        aria-label={visible ? t('auth.common.hidePassword') : t('auth.common.showPassword')}
       >
         {visible ? <Icons.EyeOff size={16} /> : <Icons.Eye size={16} />}
       </button>
@@ -543,6 +550,7 @@ function CodeInput({
   sending: boolean
   onSend: () => void
 } & ControlledInputProps): React.ReactElement {
+  const { t } = useI18n()
   return (
     <div className="auth-input auth-input--flat auth-input--with-action">
       <Input value={value} onChange={onChange} placeholder={placeholder} maxLength={6} />
@@ -552,7 +560,7 @@ function CodeInput({
         onClick={() => countdown <= 0 && !sending && onSend()}
         disabled={countdown > 0 || sending}
       >
-        {sending ? '发送中' : countdown > 0 ? `${countdown}s` : '发送'}
+        {sending ? t('auth.common.sending') : countdown > 0 ? `${countdown}s` : t('auth.common.sendBtn')}
       </button>
     </div>
   )

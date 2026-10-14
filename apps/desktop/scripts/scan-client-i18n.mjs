@@ -54,9 +54,12 @@ function stripLineComment(line) {
 
 for (const file of files) {
   const text = readFileSync(file, 'utf8')
+  // 文件级豁免：带 @i18n-exempt 标记的文件（如匹配后端文案的正则表）跳过扫描
+  if (text.includes('@i18n-exempt')) continue
   const lines = text.split(/\r?\n/)
   let inBlockComment = false
   lines.forEach((line, index) => {
+    if (line.includes('i18n-exempt-line')) return
     const trimmed = line.trim()
     if (inBlockComment) {
       if (trimmed.includes('*/')) inBlockComment = false

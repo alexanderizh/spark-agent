@@ -1,4 +1,21 @@
 /**
+ * @i18n-exempt
+ *
+ * 本文件是**解析契约层**，中文字符串不是 UI 文案，翻译会直接破坏解析：
+ *
+ * 1. `item['时长']` / `item['画面/动作']` 等是**模型输出 JSON 的字段名别名**——
+ *    分镜 agent 产出的是中文 key，翻译后取不到值。
+ * 2. `HEADER_MATCHERS` 里的 `/镜号|分镜号|序号/`、`/景别|景\b/` 等是**Markdown 表头识别正则**——
+ *    与 `isShotScriptText` 的 `/\|\s*镜号/` 同理，匹配的是 AI 生成的表格文本。
+ * 3. `镜${index}` 是**镜头默认标题的命名契约**——
+ *    `canvasStoryboardEditor` / `canvasStoryboardNodeSplit` / `canvasStoryboardMaterialization` /
+ *    `canvasShotPlanner` / `canvasTextOutputValidation` 共 6 处生成同样格式，
+ *    且 `canvasShotTableParse.test.ts` 用 `title.startsWith('镜')` 断言。
+ *
+ * 若要让镜头默认标题跟随语言，需一次性改这 6 处 + 同步改该断言，不要单独改本文件。
+ *
+ * ---
+ *
  * 分镜表解析（把「分镜 agent」产出的 Markdown 分镜表解析回结构化片段，批量落库）。
  *
  * 分镜 agent / 导演 agent 输出的是 Markdown 表格（列可乱序、可增列），形如：

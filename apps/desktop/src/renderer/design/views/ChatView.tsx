@@ -18,6 +18,7 @@ import React, {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { MAIN_WINDOW_MIN_WIDTH } from '../../../window-sizing.js'
+import { translate, useI18n } from '../i18n'
 import './ChatView.less'
 import './ToolDropdown.less'
 import './chat/ChatEmptyThemes.less'
@@ -554,6 +555,8 @@ export function ChatView({
   onExpandSidebar,
   paletteCommandRequest = null,
 }: ChatViewProps = {}) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const { t, setTweak } = useApp()
   const appearance = useAppearanceSettings()
   const showTeamActivityLogs = useTeamActivityLogsVisible()
@@ -1452,13 +1455,13 @@ export function ChatView({
   const handleCopyAllMessages = useCallback(() => {
     const markdown = serializeMessagesToMarkdown(activeVisibleMessages)
     if (!markdown) {
-      toast.info('当前会话暂无可复制的聊天记录')
+      toast.info(translate('chatView.t1Desc'))
       return
     }
     navigator.clipboard
       .writeText(markdown)
-      .then(() => toast.success('已复制全部聊天记录'))
-      .catch((err) => toast.error(err instanceof Error ? err.message : '复制失败'))
+      .then(() => toast.success(translate('chatView.t2')))
+      .catch((err) => toast.error(err instanceof Error ? err.message : translate('chatView.t3')))
   }, [activeVisibleMessages, toast])
 
   // ── 文件预览状态 ──
@@ -1604,7 +1607,7 @@ export function ChatView({
       sessionCtx.refreshData().catch(console.error)
     } catch (err) {
       console.error(err)
-      toast.error(err instanceof Error ? err.message : '清空对话记录失败')
+      toast.error(err instanceof Error ? err.message : translate('chatView.t4'))
     }
   }, [active, clearEvents, sessionCtx, toast])
 
@@ -1759,14 +1762,14 @@ export function ChatView({
 
   const pickProjectFolder = useCallback(async () => {
     try {
-      const selected = await openDirectoryDialog({ title: '选择项目文件夹' })
+      const selected = await openDirectoryDialog({ title: translate('chatView.t5') })
       if (selected.canceled || selected.filePath == null) return
       const res = await openWorkspace({ rootPath: selected.filePath })
       setActiveWorkspaceId(res.workspace.id)
       await sessionCtx.refreshData()
     } catch (err) {
-      console.error('选择项目文件夹失败', err)
-      toast.error(err instanceof Error ? err.message : '选择项目文件夹失败')
+      console.error(translate('chatView.t6'), err)
+      toast.error(err instanceof Error ? err.message : translate('chatView.t6'))
     }
   }, [openDirectoryDialog, openWorkspace, sessionCtx, setActiveWorkspaceId, toast])
 
@@ -1795,11 +1798,11 @@ export function ChatView({
         setAgentStatus('')
         setSessionStatus(sessionId, 'idle')
         await sessionCtx.refreshData()
-        if (res.cancelled) toast.success('已停止会话')
-        else toast.info('该会话当前没有运行中的任务')
+        if (res.cancelled) toast.success(translate('chatView.t7'))
+        else toast.info(translate('chatView.t8Desc'))
       } catch (err) {
-        console.error('停止会话失败', err)
-        toast.error(err instanceof Error ? err.message : '停止会话失败')
+        console.error(translate('chatView.t9'), err)
+        toast.error(err instanceof Error ? err.message : translate('chatView.t9'))
       }
     },
     [cancelSessionTurn, sessionCtx, setSessionStatus, toast],
@@ -1981,13 +1984,13 @@ export function ChatView({
           activeSession?.id ?? null,
         )
         if (applied) {
-          toast.success(`已添加到对话：${relPath === '' ? '工作区根目录' : relPath}`)
+          toast.success(translate('chatView.tpl27Desc', { value: relPath === '' ? translate('chatView.t10') : relPath }))
         } else {
-          toast.error('未找到当前会话的输入框，添加失败')
+          toast.error(translate('chatView.t11Desc'))
         }
       } catch (err) {
-        console.error('添加到对话失败', err)
-        toast.error(err instanceof Error ? err.message : '添加到对话失败')
+        console.error(translate('chatView.t12'), err)
+        toast.error(err instanceof Error ? err.message : translate('chatView.t12'))
       }
     },
     [resolveAbsCodePath, prepareComposerImagePreview, statComposerFileKind, activeSession, toast],
@@ -2511,10 +2514,10 @@ export function ChatView({
       const res = await switchBranch({ workspaceId: gitWorkspace.id, branch })
       applyBranchState(res)
       await refreshGitStatus()
-      toast.success(`已切换到 ${res.currentBranch}`)
+      toast.success(translate('chatView.tpl28Desc', { branch: res.currentBranch }))
       return true
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '切换分支失败，请检查是否存在未提交改动')
+      toast.error(err instanceof Error ? err.message : translate('chatView.t13Desc'))
       return false
     }
   }
@@ -2534,9 +2537,9 @@ export function ChatView({
         branchDetails: res.branchDetails,
       })
       applyGitStatus(res.status)
-      toast.success(`已创建并切换到 ${res.currentBranch}`)
+      toast.success(translate('chatView.tpl29Desc', { branch: res.currentBranch }))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '创建并检出分支失败')
+      toast.error(err instanceof Error ? err.message : translate('chatView.t14'))
       throw err
     }
   }
@@ -2548,10 +2551,10 @@ export function ChatView({
       const res = await checkoutTag({ workspaceId: gitWorkspace.id, tag })
       applyBranchState(res)
       await refreshGitStatus()
-      toast.success(`已检出标签 ${tag}（分离头指针）`)
+      toast.success(translate('chatView.tpl30Desc', { tag }))
       return true
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '检出标签失败')
+      toast.error(err instanceof Error ? err.message : translate('chatView.t15'))
       return false
     }
   }
@@ -2563,10 +2566,10 @@ export function ChatView({
       const res = await checkoutTag({ workspaceId: gitWorkspace.id, tag, createBranch: branch })
       applyBranchState(res)
       await refreshGitStatus()
-      toast.success(`已从标签 ${tag} 创建并切换到 ${res.currentBranch}`)
+      toast.success(translate('chatView.tpl31Desc', { tag, branch: res.currentBranch }))
       return true
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '从标签创建分支失败')
+      toast.error(err instanceof Error ? err.message : translate('chatView.t16'))
       return false
     }
   }
@@ -2588,9 +2591,9 @@ export function ChatView({
     try {
       const res = await fetchBranches({ workspaceId: gitWorkspaceId })
       applyBranchState(res)
-      toast.success('Fetch 完成')
+      toast.success(translate('chatView.t17'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Fetch 失败')
+      toast.error(err instanceof Error ? err.message : translate('chatView.t18'))
     }
   }
 
@@ -2612,9 +2615,9 @@ export function ChatView({
             sessionId,
             message: buildAgentCommitMessage(options.includeUnstaged, options.push, options.paths),
           })
-          toast.success('已交给助手处理，请在对话中查看进度')
+          toast.success(translate('chatView.t19Desc'))
         } catch (err) {
-          toast.error(err instanceof Error ? err.message : '提交失败')
+          toast.error(err instanceof Error ? err.message : translate('chatView.t20'))
           throw err
         }
         return
@@ -2633,9 +2636,9 @@ export function ChatView({
         ...(commitOptions.paths != null ? { paths: commitOptions.paths } : {}),
       })
       applyGitStatus(res.status)
-      toast.success(commitOptions.push ? '已提交并推送' : '已提交变更')
+      toast.success(commitOptions.push ? translate('chatView.t21') : translate('chatView.t22'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '提交失败')
+      toast.error(err instanceof Error ? err.message : translate('chatView.t20'))
       throw err
     }
   }
@@ -2645,9 +2648,9 @@ export function ChatView({
     try {
       const res = await pushGitChanges({ workspaceId: gitWorkspace.id })
       applyGitStatus(res.status)
-      toast.success('已推送到远端')
+      toast.success(translate('chatView.t23'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '推送失败')
+      toast.error(err instanceof Error ? err.message : translate('chatView.t24'))
       throw err
     }
   }
@@ -2657,9 +2660,9 @@ export function ChatView({
     try {
       const res = await pullGitChanges({ workspaceId: gitWorkspace.id })
       applyGitStatus(res.status)
-      toast.success('已拉取远端更新')
+      toast.success(translate('chatView.t25'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '拉取失败')
+      toast.error(err instanceof Error ? err.message : translate('chatView.t26'))
       throw err
     }
   }
@@ -2673,7 +2676,7 @@ export function ChatView({
         role: msg.role,
         ...(agentId != null ? { agentId } : {}),
         ...(agentName != null ? { agentName } : {}),
-        contentPreview: preview || '(附件/图片)',
+        contentPreview: preview || translate('chatView.t27'),
       })
       setComposerFocusTrigger((n) => n + 1)
     },
@@ -2697,7 +2700,7 @@ export function ChatView({
         role: 'assistant',
         agentId: args.memberAgentId,
         agentName: args.memberName,
-        contentPreview: preview || '(附件/图片)',
+        contentPreview: preview || translate('chatView.t27'),
       })
       setComposerFocusTrigger((n) => n + 1)
     },
@@ -2705,7 +2708,7 @@ export function ChatView({
   )
 
   const handleQuoteSelection = useCallback(
-    (text: string, label = '引用') => {
+    (text: string, label = translate('chatView.t28')) => {
       const preview = compactQuotePreview(text)
       if (preview.length === 0) return
       setReplyTo({
@@ -3686,7 +3689,7 @@ export function ChatView({
               <BrowserChrome variant="panel" store={panelBrowserTabsStore} />
             ) : activeUnifiedSideTab === 'side-chat' && showSideChatPanel ? (
               <SideChatPanel
-                workspaceName={sideChatWorkspace?.name ?? activeWorkspace?.name ?? '当前项目'}
+                workspaceName={sideChatWorkspace?.name ?? activeWorkspace?.name ?? translate('chatView.t29')}
                 agentStatus={sideChatAgentStatus}
                 creating={sideChatCreating}
                 width={sideChatWidth}
@@ -4507,8 +4510,8 @@ function ChatStream({
       probe.count += 1
       if (probe.count === 30) {
         console.error(
-          `[chatview-probe] 历史加载 effect 在 1s 内重跑 ${probe.count}+ 次（sessionId=${sessionId}）——` +
-            '疑似 effect 依赖回归导致 session:get-history 死循环，请检查该 effect 依赖数组是否混入不稳定引用',
+          translate('chatView.tpl1LongDesc', { count: probe.count, sessionId }) +
+            translate('chatView.t30LongDesc'),
         )
       }
     }
@@ -5086,7 +5089,7 @@ function ChatStream({
       if (body.length === 0) continue
       const name =
         msg.role === 'user'
-          ? '用户'
+          ? translate('chatView.t31')
           : resolveAssistantIdentity(
               msg,
               agents,
@@ -5324,17 +5327,17 @@ function ChatStream({
         <div className={`chat-stream-inner${multiSelectMode ? ' has-multiselect' : ''}`}>
           {multiSelectMode && (
             <div className="chat-message-selectbar">
-              <span className="selectbar-count">已选 {selectedMessageIds.size} 条</span>
+              <span className="selectbar-count">{translate('chatView.tpl2Desc', { count: selectedMessageIds.size })}</span>
               <span className="selectbar-divider" />
               <button type="button" onClick={selectAllMessages}>
-                全选
+                {translate('chatView.t84')}
               </button>
               <button
                 type="button"
                 onClick={clearSelection}
                 disabled={selectedMessageIds.size === 0}
               >
-                全不选
+                {translate('chatView.t85')}
               </button>
               <span className="selectbar-divider" />
               <button
@@ -5344,7 +5347,7 @@ function ChatStream({
                 disabled={selectedMessageIds.size === 0}
               >
                 {copied ? <Icons.Check size={12} /> : null}
-                {copied ? '已复制' : '复制'}
+                {copied ? translate('chatView.t32') : translate('chatView.t33')}
               </button>
               <button
                 type="button"
@@ -5352,11 +5355,11 @@ function ChatStream({
                 onClick={deleteSelectedMessages}
                 disabled={selectedMessageIds.size === 0}
               >
-                删除
+                {translate('chatView.t66')}
               </button>
               <span className="selectbar-divider" />
               <button type="button" className="cancel" onClick={exitMultiSelectMode}>
-                取消
+                {translate('chatView.t86')}
               </button>
             </div>
           )}
@@ -5477,7 +5480,7 @@ function ChatStream({
                                   reference.title ??
                                   sessions.find((item) => item.id === reference.sourceSessionId)
                                     ?.title ??
-                                  '未命名会话',
+                                  translate('chatView.t34'),
                               })),
                             }
                           : {})}
@@ -5646,21 +5649,21 @@ function ChatStream({
                 {isLoadingHistory ? (
                   <div className="chat-loading">
                     <span className="chat-loading-spinner" aria-hidden="true" />
-                    <div className="chat-loading-text">加载中…</div>
+                    <div className="chat-loading-text">{translate('chatView.t87')}</div>
                   </div>
                 ) : emptyStateVariant === 'loading' ? (
                   // 发送后过渡窗口：hero 已隐藏、首条消息/Agent 运行尚未到达，用 loading 占位
                   <div className="chat-loading">
                     <span className="chat-loading-spinner" aria-hidden="true" />
-                    <div className="chat-loading-text">正在创建会话…</div>
+                    <div className="chat-loading-text">{translate('chatView.t88')}</div>
                   </div>
                 ) : (
                   <>
                     <div className="empty-icon">
                       <Icons.Chat size={24} />
                     </div>
-                    <div className="empty-title">开始对话</div>
-                    <div className="empty-desc">发送消息开始与 AI 交互</div>
+                    <div className="empty-title">{translate('chatView.t89')}</div>
+                    <div className="empty-desc">{translate('chatView.t90Desc')}</div>
                   </>
                 )}
               </div>
@@ -5677,8 +5680,8 @@ function ChatStream({
         <button
           className="scroll-to-bottom-btn"
           onClick={handleScrollToBottom}
-          title="滚动到底部"
-          aria-label="滚动到底部"
+          title={translate('chatView.t76')}
+          aria-label={translate('chatView.t76')}
         >
           <Icons.ArrowDown size={16} />
         </button>
@@ -5762,10 +5765,10 @@ function applyAgentStatus(
 ): void {
   const labels: Record<AgentStatusValue, string> = {
     idle: '',
-    thinking: '思考中',
-    calling_tool: '调用工具',
-    waiting_permission: '等待授权',
-    waiting_user: '等待用户',
+    thinking: translate('chatView.t35'),
+    calling_tool: translate('chatView.t36'),
+    waiting_permission: translate('chatView.t37'),
+    waiting_user: translate('chatView.t38'),
     completed: '',
     error: '',
     cancelled: '',
@@ -5981,7 +5984,7 @@ function renderBlocks(
               plan={{
                 id: `inline-plan-proposal-${i}`,
                 kind: 'proposal',
-                title: '执行方案',
+                title: translate('chatView.t39'),
                 rawPlan: block.plan,
               }}
               renderMarkdown={MarkdownText}
@@ -6332,12 +6335,12 @@ function WorkflowProgressBlockView({
   const totalTimeMs = terminal ? workflowTotalDurationMs(block.nodes) : null
   const stateLabel =
     block.runStatus === 'working'
-      ? '运行中'
+      ? translate('chatView.t40')
       : block.runStatus === 'completed'
-        ? '已完成'
+        ? translate('chatView.t41')
         : block.runStatus === 'failed'
-          ? '失败'
-          : '已取消'
+          ? translate('chatView.t42')
+          : translate('chatView.t43')
   const toggleExpanded = (nodeId: string): void => {
     setExpandedNodeIds((prev) => {
       const next = new Set(prev)
@@ -6350,14 +6353,14 @@ function WorkflowProgressBlockView({
     <div className="workflow-progress-card">
       <div className="workflow-progress-head">
         <Icons.Workflow size={13} />
-        <span>工作流进度</span>
+        <span>{translate('chatView.t91')}</span>
         <span className={`workflow-progress-state ${block.runStatus}`}>{stateLabel}</span>
         {totalTimeMs != null && (
           <span className="workflow-progress-total">{formatWorkflowDuration(totalTimeMs)}</span>
         )}
         <span
           className={`workflow-progress-count ${failed ? 'has-failure' : ''}`}
-          title={skipped > 0 ? `已完成 ${completed} 个，条件跳过 ${skipped} 个` : undefined}
+          title={skipped > 0 ? translate('chatView.tpl3Desc', { completed, skipped }) : undefined}
         >
           {completed + skipped}/{total}
         </span>
@@ -6519,7 +6522,7 @@ function TeamMemberMessageBlockView({
         onOpenDetail={() => setDrawerOpen(true)}
       >
         {empty && block.isStreaming ? (
-          <div className="team-member-typing-dots" aria-label="成员思考中">
+          <div className="team-member-typing-dots" aria-label={translate('chatView.t77')}>
             <span className="team-member-typing-dot" />
             <span className="team-member-typing-dot" />
             <span className="team-member-typing-dot" />
@@ -6586,11 +6589,11 @@ function TeamPeerMessageBlockView({
   const metaLabel =
     block.delivery === 'note'
       ? targetName != null
-        ? `留言 → ${targetName}`
-        : '留言 → 全员'
+        ? translate('chatView.tpl4Desc', { name: targetName })
+        : translate('chatView.t44')
       : targetName != null
         ? `${senderName} → ${targetName}`
-        : `${senderName} → 全员`
+        : translate('chatView.tpl5Desc', { name: senderName })
 
   // 正文 @ 自动转发：content 是发送者刚说完的回复原文副本，正文气泡已完整渲染过，
   // 这里降级为一条轻量转发提示，避免同一段内容出现两遍。
@@ -6600,8 +6603,8 @@ function TeamPeerMessageBlockView({
         <Icons.ArrowRight size={12} />
         <span>
           {targetName != null
-            ? `${senderName} 的回复已自动转发给 @${targetName}`
-            : `${senderName} 的回复已自动转发`}
+            ? translate('chatView.tpl6Desc', { sender: senderName, target: targetName })
+            : translate('chatView.tpl7Desc', { sender: senderName })}
         </span>
       </div>
     )
@@ -6633,9 +6636,9 @@ function TeamRoundDividerBlockView({
   block: Extract<UIBlock, { kind: 'team_round_divider' }>
 }) {
   return (
-    <div className="team-round-divider" role="separator" aria-label={`第 ${block.round + 1} 轮`}>
+    <div className="team-round-divider" role="separator" aria-label={translate('chatView.tpl8Desc', { round: block.round + 1 })}>
       <span className="team-round-divider-line" />
-      <span className="team-round-divider-label">{`第 ${block.round + 1} 轮 / 共 ${block.maxRounds} 轮`}</span>
+      <span className="team-round-divider-label">{translate('chatView.tpl9Desc', { round: block.round + 1, total: block.maxRounds })}</span>
       <span className="team-round-divider-line" />
     </div>
   )
@@ -6648,10 +6651,10 @@ function TeamDiscussionStatusBlockView({
 }) {
   const label =
     block.reason === 'concluded'
-      ? '讨论已结束'
+      ? translate('chatView.t45')
       : block.reason === 'max_rounds'
-        ? '达到轮次上限，讨论已结束'
-        : '讨论已取消'
+        ? translate('chatView.t46')
+        : translate('chatView.t47')
   return (
     <div className={`team-discussion-status ${block.reason}`}>
       <Icons.Activity size={12} />
@@ -6875,7 +6878,7 @@ function ValidationSuggestionCard({
 
   const runValidationCommand = async (command: string, repair: boolean) => {
     if (sessionId == null) {
-      toast.warning('请先选中会话再运行验证命令。')
+      toast.warning(translate('chatView.t48Desc'))
       return
     }
     const runKey = repair ? `${command}:repair` : command
@@ -6887,14 +6890,14 @@ function ValidationSuggestionCard({
         message: repair ? `/validate ${quotedCommand} --repair` : `/validate ${quotedCommand}`,
       })
       if (res.queued === true) {
-        toast.info('会话运行中，验证命令已加入队列，将在当前任务完成后执行。')
+        toast.info(translate('chatView.t49Desc'))
       } else {
         toast.info(
-          repair ? '验证命令已执行；失败时会交给 Agent 继续修复。' : '验证命令已开始执行。',
+          repair ? translate('chatView.t50Desc') : translate('chatView.t51'),
         )
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '验证命令执行失败')
+      toast.error(err instanceof Error ? err.message : translate('chatView.t52'))
     } finally {
       setRunningCommand(null)
     }
@@ -6906,7 +6909,7 @@ function ValidationSuggestionCard({
         <span className="ico">
           <Icons.CheckCircle />
         </span>
-        <span>建议验证</span>
+        <span>{translate('chatView.t92')}</span>
       </div>
       <div className="chat-card-body">
         <div className="validation-summary">{block.summary}</div>
@@ -6934,27 +6937,27 @@ function ValidationSuggestionCard({
                 className="btn ghost sm"
                 disabled={runningCommand != null}
                 onClick={() => void runValidationCommand(item.command, false)}
-                title="运行验证命令"
+                title={translate('chatView.t78')}
               >
                 {runningCommand === item.command ? (
                   <Icons.Spinner size={12} />
                 ) : (
                   <Icons.Play size={12} />
                 )}
-                运行
+                {translate('chatView.tpl10Desc')}
               </button>
               <button
                 className="btn ghost sm"
                 disabled={runningCommand != null}
                 onClick={() => void runValidationCommand(item.command, true)}
-                title="验证失败后交给 Agent 继续修复"
+                title={translate('chatView.t79Desc')}
               >
                 {runningCommand === `${item.command}:repair` ? (
                   <Icons.Spinner size={12} />
                 ) : (
                   <Icons.Refresh size={12} />
                 )}
-                修复
+                {translate('chatView.tpl11Desc')}
               </button>
             </div>
           ))}
@@ -6986,11 +6989,11 @@ function InlinePermissionCard({
   const { action, riskLevel, description, paths, command, domains } = block
 
   const handleAllow = () => {
-    toast.success(`已允许: ${description}`)
+    toast.success(translate('chatView.tpl12Desc', { description }))
   }
 
   const handleDeny = () => {
-    toast.info(`已拒绝: ${description}`)
+    toast.info(translate('chatView.tpl13Desc', { description }))
   }
 
   // Route to the appropriate card based on action type
@@ -7037,18 +7040,18 @@ function InlinePermissionCard({
         <span className="ico">
           <Icons.Shield size={14} />
         </span>
-        <span>权限请求 · {action}</span>
+        <span>{translate('chatView.tpl14Desc', { action })}</span>
         <span className="badge" style={{ marginLeft: 'auto', fontSize: 10 }}>
           {riskLevel}
         </span>
       </div>
       <div className="chat-card-body">
         <div className="spec-grid">
-          <span className="k">描述</span>
+          <span className="k">{translate('chatView.t93')}</span>
           <span className="v">{description}</span>
           {command && (
             <>
-              <span className="k">命令</span>
+              <span className="k">{translate('chatView.t94')}</span>
               <span className="v">
                 <code>{command}</code>
               </span>
@@ -7056,7 +7059,7 @@ function InlinePermissionCard({
           )}
           {paths && paths.length > 0 && (
             <>
-              <span className="k">路径</span>
+              <span className="k">{translate('chatView.t95')}</span>
               <span className="v">
                 <code>{paths.join(', ')}</code>
               </span>
@@ -7064,7 +7067,7 @@ function InlinePermissionCard({
           )}
           {domains && domains.length > 0 && (
             <>
-              <span className="k">域名</span>
+              <span className="k">{translate('chatView.t96')}</span>
               <span className="v">
                 <code>{domains.join(', ')}</code>
               </span>
@@ -7075,10 +7078,10 @@ function InlinePermissionCard({
       <div className="chat-card-foot">
         <span className="spacer" />
         <button className="btn sm" onClick={handleDeny}>
-          拒绝
+          {translate('chatView.t97')}
         </button>
         <button className="btn sm primary" onClick={handleAllow}>
-          <Icons.Check size={11} /> 允许
+          <Icons.Check size={11} /> {translate('chatView.t98')}
         </button>
       </div>
     </div>
@@ -7127,15 +7130,15 @@ function InlineQuestionCard({
         <span className="ico">
           <Icons.HelpCircle size={14} />
         </span>
-        <span>Agent 提问</span>
+        <span>{translate('chatView.t99')}</span>
         {block.answered && (
           <span className="badge" style={{ marginLeft: 8, fontSize: 10, color: 'var(--c-ok)' }}>
-            已回答
+            {translate('chatView.t100')}
           </span>
         )}
         {block.error != null && (
           <span className="badge" style={{ marginLeft: 8, fontSize: 10, color: 'var(--c-err)' }}>
-            提问失败
+            {translate('chatView.t101')}
           </span>
         )}
       </div>
@@ -7165,10 +7168,10 @@ function InlineQuestionCard({
                 {block.answered && (
                   <div className="inline-question-answer-a">
                     {summary?.skipped
-                      ? '已跳过'
+                      ? translate('chatView.t53')
                       : summary?.answer && summary.answer.length > 0
                         ? summary.answer
-                        : '未填写'}
+                        : translate('chatView.t54')}
                   </div>
                 )}
               </div>
@@ -7185,13 +7188,13 @@ function InlineQuestionCard({
               background: 'var(--c-bg-soft)',
             }}
           >
-            共 {total} 题
+            {translate('chatView.tpl15Desc', { total })}
           </span>
           {!block.answered && (
             <span
               style={{ fontSize: 12, color: block.error != null ? 'var(--c-err)' : 'var(--c-dim)' }}
             >
-              {block.error ?? '请在底部问答面板中逐题作答'}
+              {block.error ?? translate('chatView.t55Desc')}
             </span>
           )}
         </div>
@@ -7465,7 +7468,7 @@ function RetryTrailCard({ block }: { block: Extract<UIBlock, { kind: 'retry_trai
 async function reapplyTurnFiles(files: Array<FileChangeSummary & { diff: string }>): Promise<void> {
   const wsRes = await window.spark.invoke('workspace:get-current', {})
   const workspaceRootPath = wsRes?.workspace?.rootPath
-  if (workspaceRootPath == null) throw new Error('无法确定工作区路径')
+  if (workspaceRootPath == null) throw new Error(translate('chatView.t56'))
 
   for (const file of files) {
     const hunks = parseUnifiedDiff(file.diff)
@@ -7478,7 +7481,7 @@ async function reapplyTurnFiles(files: Array<FileChangeSummary & { diff: string 
         direction: 'forward',
       })
       if (!result?.applied) {
-        throw new Error(`${file.path}: ${result?.error ?? '未知错误'}`)
+        throw new Error(`${file.path}: ${result?.error ?? translate('chatView.t57')}`)
       }
     }
   }
@@ -7583,9 +7586,9 @@ function SelectionQuoteContextMenu({
       items={[
         {
           key: 'quote-selection',
-          label: '引用对话',
+          label: translate('chatView.t58'),
           icon: <Icons.CornerUpLeft size={14} />,
-          onClick: () => onQuote(menu.text, '选中内容'),
+          onClick: () => onQuote(menu.text, translate('chatView.t59')),
         },
       ]}
     />
@@ -7698,7 +7701,7 @@ const UserMsg = React.memo(
       if (contextMenu.imageSrc != null) {
         items.push({
           key: 'copy-image',
-          label: '复制图片',
+          label: translate('chatView.t60'),
           icon: <Icons.Image size={14} />,
           onClick: () => {
             if (contextMenu.imageSrc != null)
@@ -7709,7 +7712,7 @@ const UserMsg = React.memo(
         const selectedText = contextMenu.selectedText
         items.push({
           key: 'copy-text',
-          label: selectedText != null ? '复制选中' : '复制内容',
+          label: selectedText != null ? translate('chatView.t61') : translate('chatView.t62'),
           icon: <Icons.Copy size={14} />,
           onClick: () => {
             void navigator.clipboard.writeText(selectedText ?? textContent)
@@ -7721,7 +7724,7 @@ const UserMsg = React.memo(
         const replySelectedText = contextMenu.selectedText
         items.push({
           key: 'reply',
-          label: replySelectedText != null ? '引用选中' : '回复',
+          label: replySelectedText != null ? translate('chatView.t63') : translate('chatView.t64'),
           icon: <Icons.CornerUpLeft size={14} />,
           onClick: () => onReply(replySelectedText),
         })
@@ -7729,7 +7732,7 @@ const UserMsg = React.memo(
       if (onStartMultiSelect != null) {
         items.push({
           key: 'multi-select',
-          label: '多选',
+          label: translate('chatView.t65'),
           icon: <Icons.CheckSquare size={14} />,
           onClick: onStartMultiSelect,
         })
@@ -7737,7 +7740,7 @@ const UserMsg = React.memo(
       if (onDelete != null) {
         items.push({
           key: 'delete',
-          label: '删除',
+          label: translate('chatView.t66'),
           icon: <Icons.Trash size={14} />,
           danger: true,
           onClick: onDelete,
@@ -7767,7 +7770,7 @@ const UserMsg = React.memo(
               type="checkbox"
               checked={selected}
               onChange={onToggleSelected}
-              aria-label="选择该消息"
+              aria-label={translate('chatView.t80')}
             />
             <Icons.Check className="msg-select-checkmark" size={14} />
           </label>
@@ -7799,12 +7802,12 @@ const UserMsg = React.memo(
           <div className={`msg-user-delivery msg-user-delivery-${deliveryState}`}>
             <span>
               {deliveryState === 'submitting'
-                ? '正在提交…'
+                ? translate('chatView.t67')
                 : deliveryState === 'queued'
-                  ? '已加入队列'
+                  ? translate('chatView.t68')
                   : deliveryState === 'failed'
-                    ? '发送失败'
-                    : '已取消'}
+                    ? translate('chatView.t69')
+                    : translate('chatView.t43')}
             </span>
             {deliveryError != null && deliveryError.length > 0 && (
               <span className="msg-user-delivery-error" title={deliveryError}>
@@ -7813,15 +7816,15 @@ const UserMsg = React.memo(
             )}
             {deliveryState === 'failed' && onResend != null && (
               <button type="button" className="msg-user-delivery-retry" onClick={onResend}>
-                重试
+                {translate('chatView.t102')}
               </button>
             )}
           </div>
         )}
         {mentionAgentName != null && mentionAgentName.length > 0 && (
           <div className="msg-user-mention-hint">
-            → {deliveryState != null && deliveryState !== 'accepted' ? '将由' : '已直接由'}{' '}
-            <strong>@{mentionAgentName}</strong> 处理
+            → {deliveryState != null && deliveryState !== 'accepted' ? translate('chatView.t70') : translate('chatView.t71')}{' '}
+            <strong>@{mentionAgentName}</strong> {translate('chatView.t103')}
           </div>
         )}
         {!editing && (
@@ -8014,13 +8017,13 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
           items={[
             {
               key: 'preview',
-              label: '预览图片',
+              label: translate('chatView.t72'),
               icon: <Icons.Maximize size={14} />,
               onClick: () => setPreviewOpen(true),
             },
             {
               key: 'copy',
-              label: '复制图片',
+              label: translate('chatView.t60'),
               icon: <Icons.Copy size={14} />,
               onClick: () => {
                 void copyImageFromSrc(resolvedSrc).catch(() => {})
@@ -8503,7 +8506,7 @@ const AgentMsg = React.memo(function AgentMsg({
     if (contextMenu.imageSrc != null) {
       items.push({
         key: 'copy-image',
-        label: '复制图片',
+        label: translate('chatView.t60'),
         icon: <Icons.Image size={14} />,
         onClick: () => {
           if (contextMenu.imageSrc != null)
@@ -8514,7 +8517,7 @@ const AgentMsg = React.memo(function AgentMsg({
       const selectedText = contextMenu.selectedText
       items.push({
         key: 'copy-text',
-        label: selectedText != null ? '复制选中' : '复制内容',
+        label: selectedText != null ? translate('chatView.t61') : translate('chatView.t62'),
         icon: <Icons.Copy size={14} />,
         onClick: () => {
           void navigator.clipboard.writeText(selectedText ?? textContent)
@@ -8526,7 +8529,7 @@ const AgentMsg = React.memo(function AgentMsg({
       const replySelectedText = contextMenu.selectedText
       items.push({
         key: 'reply',
-        label: replySelectedText != null ? '引用选中' : '回复',
+        label: replySelectedText != null ? translate('chatView.t63') : translate('chatView.t64'),
         icon: <Icons.CornerUpLeft size={14} />,
         onClick: () => onReply(replySelectedText),
       })
@@ -8534,7 +8537,7 @@ const AgentMsg = React.memo(function AgentMsg({
     if (onStartMultiSelect != null) {
       items.push({
         key: 'multi-select',
-        label: '多选',
+        label: translate('chatView.t65'),
         icon: <Icons.CheckSquare size={14} />,
         onClick: onStartMultiSelect,
       })
@@ -8542,7 +8545,7 @@ const AgentMsg = React.memo(function AgentMsg({
     if (onDelete != null) {
       items.push({
         key: 'delete',
-        label: '删除',
+        label: translate('chatView.t66'),
         icon: <Icons.Trash size={14} />,
         danger: true,
         onClick: onDelete,
@@ -8590,7 +8593,7 @@ const AgentMsg = React.memo(function AgentMsg({
           key={group.key}
           message={block.message}
           code={block.code}
-          title={block.title ?? 'Agent 执行失败'}
+          title={block.title ?? translate('chatView.t73')}
           level="error"
           retryable={block.retryable}
           {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
@@ -8625,7 +8628,7 @@ const AgentMsg = React.memo(function AgentMsg({
             type="checkbox"
             checked={selected}
             onChange={onToggleSelected}
-            aria-label="选择该消息"
+            aria-label={translate('chatView.t80')}
           />
           <Icons.Check className="msg-select-checkmark" size={14} />
         </label>
@@ -8678,7 +8681,7 @@ const AgentMsg = React.memo(function AgentMsg({
         </div>
         {isStreaming && (
           <div className="agent-task-running-tag">
-            <span>执行中</span>
+            <span>{translate('chatView.t104')}</span>
             {/* 运行中实时耗时：与结束后折叠条的「耗时 Xs」同源同格式；isStreaming 翻 false 后本标签整体卸载 */}
             {timestamp != null && <TurnElapsedTicker startedAt={timestamp} />}
             <span className="agent-task-running-dots">
@@ -8761,7 +8764,7 @@ function ThinkingSection({
     >
       <button className="thinking-toggle" onClick={handleToggleOpen}>
         <ActivityLogSummaryIcon icon={Lightbulb} className="thinking-icon" />
-        <span className="thinking-label">思考过程</span>
+        <span className="thinking-label">{translate('chatView.t105')}</span>
         {isThinkingActive && <Icons.Spinner size={11} className="thinking-spinner" />}
         {!isThinkingActive &&
           showDoneBadge &&
@@ -8786,12 +8789,12 @@ function ThinkingSection({
           </div>
           {isCollapsed && (
             <button className="collapse-toggle" onClick={() => setExpanded(true)}>
-              展开全部
+              {translate('chatView.t106')}
             </button>
           )}
           {needsCollapse && expanded && (
             <button className="collapse-toggle" onClick={() => setExpanded(false)}>
-              收起
+              {translate('chatView.t107')}
             </button>
           )}
         </div>
@@ -8817,7 +8820,7 @@ function ToolLogsMasterToggle({
   // 不带绿色对勾（thinking-done-badge）与 spinner，保留 chevron 箭头按展开状态旋转。
   // 自身也挂 thinking-section，故隐藏规则须用 :not(.tool-logs-master) 排除自身。
   const durationSuffix = durationMs != null ? formatTurnDuration(durationMs) : null
-  const label = durationSuffix == null ? '思考和工具日志' : `用时 ${durationSuffix}`
+  const label = durationSuffix == null ? translate('chatView.t74') : translate('chatView.tpl16Desc', { value: durationSuffix })
   return (
     <div className={`thinking-section tool-logs-master ${open ? 'open' : ''}`}>
       <button className="thinking-toggle" onClick={onToggle} aria-expanded={open}>
@@ -8867,13 +8870,13 @@ function CollapsibleContent({
       {isCollapsed && (
         <div className="collapse-overlay">
           <button className="collapse-toggle" onClick={() => setExpanded(true)}>
-            展开全部
+            {translate('chatView.t106')}
           </button>
         </div>
       )}
       {needsCollapse && expanded && !streaming && (
         <button className="collapse-toggle collapse-less" onClick={() => setExpanded(false)}>
-          收起
+          {translate('chatView.t107')}
         </button>
       )}
     </div>
@@ -8970,14 +8973,14 @@ function ToolCall({
 
 /** 折叠头文案：按分组类别生成「动词 + 数量」摘要 */
 const TOOL_LOG_GROUP_LABELS: Record<ToolLogGroupKind, (count: number) => string> = {
-  command: (n) => `执行 ${n} 条命令`,
-  read: (n) => `查看 ${n} 个文件`,
-  image: (n) => `查看 ${n} 张图片`,
-  web: (n) => `联网检索 ${n} 次`,
-  browser: (n) => `操作浏览器 ${n} 次`,
-  media: (n) => `生成 ${n} 个媒体`,
-  write: (n) => `修改 ${n} 个文件`,
-  tool: (n) => `调用 ${n} 个工具`,
+  command: (n) => translate('chatView.tpl17Desc', { n }),
+  read: (n) => translate('chatView.tpl18Desc', { n }),
+  image: (n) => translate('chatView.tpl19Desc', { n }),
+  web: (n) => translate('chatView.tpl20Desc', { n }),
+  browser: (n) => translate('chatView.tpl21Desc', { n }),
+  media: (n) => translate('chatView.tpl22Desc', { n }),
+  write: (n) => translate('chatView.tpl23Desc', { n }),
+  tool: (n) => translate('chatView.tpl24Desc', { n }),
 }
 
 /** 折叠头图标：按分组类别取 lucide 图标（ActivityLogSummaryIcon 契约） */
@@ -9098,23 +9101,23 @@ function ToolLogEntry({
       <div className="tool-log-entry">
         <ToolLogEntryHead
           icon={<Icons.Terminal size={13} />}
-          title="终端"
+          title={translate('chatView.t81')}
           subtitle={`#${index + 1}`}
         />
         <div className="tool-log-card">
           {block.stdout && (
-            <ToolLogSection label="输出" content={block.stdout} kind="terminal" stream="stdout" />
+            <ToolLogSection label={translate('chatView.t82')} content={block.stdout} kind="terminal" stream="stdout" />
           )}
           {block.stderr && (
             <ToolLogSection
-              label="错误"
+              label={translate('chatView.t83')}
               content={block.stderr}
               tone="error"
               kind="terminal"
               stream="stderr"
             />
           )}
-          {block.isStreaming && <span className="tool-log-streaming">运行中...</span>}
+          {block.isStreaming && <span className="tool-log-streaming">{translate('chatView.t108')}</span>}
         </div>
       </div>
     )
@@ -9154,17 +9157,17 @@ function ToolLogEntry({
           />
         )}
         {input && (
-          <ToolLogSection label="输入" content={input} kind={isCommand ? 'terminal' : 'auto'} />
+          <ToolLogSection label={translate('chatView.t75')} content={input} kind={isCommand ? 'terminal' : 'auto'} />
         )}
         {output &&
           (richLinks != null ? (
             <ToolLogSourceList links={richLinks} />
           ) : (
-            <ToolLogSection label="输出" content={output} kind={isCommand ? 'terminal' : 'auto'} />
+            <ToolLogSection label={translate('chatView.t82')} content={output} kind={isCommand ? 'terminal' : 'auto'} />
           ))}
         {error && (
           <ToolLogSection
-            label="错误"
+            label={translate('chatView.t83')}
             content={error}
             tone="error"
             kind={isCommand ? 'terminal' : 'auto'}
@@ -9217,7 +9220,7 @@ function ToolLogSection({
   // 命令类工具：终端形态 — 等宽字体、--term-bg/--term-fg 主题色、bash 输入加 $ prompt、
   // stdout 保留原文，stderr 上色。
   if (kind === 'terminal') {
-    const isInput = label === '输入'
+    const isInput = label === translate('chatView.t75')
     const lines = content.replace(/\r\n/g, '\n').split('\n')
     return (
       <div
@@ -9282,8 +9285,8 @@ function TodoListInline({
   return (
     <div className="tool-todo-list">
       <div className="tool-todo-summary">
-        {done}/{todos.length} 完成
-        {inProgLabel ? ` · 进行中：${inProgLabel}` : ''}
+        {translate('chatView.tpl25Desc', { done, total: todos.length })}
+        {inProgLabel ? translate('chatView.tpl26Desc', { label: inProgLabel }) : ''}
       </div>
       {todos.map((t, idx) => (
         <div key={idx} className={`tool-todo-item is-${t.status.replace('_', '-')}`}>
@@ -9305,7 +9308,7 @@ function StoppedMarker() {
       <span className="stopped-marker-line" />
       <span className="stopped-marker-label">
         <Icons.Stop size={10} />
-        已停止生成
+        {translate('chatView.t109')}
       </span>
       <span className="stopped-marker-line" />
     </div>

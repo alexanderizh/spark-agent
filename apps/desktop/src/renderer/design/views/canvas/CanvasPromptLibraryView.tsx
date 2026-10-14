@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@lobehub/ui'
 import { Checkbox, Empty, Input, Modal, Popconfirm, Select, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { useApp } from '../../AppContext'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import promptLibraryPlaceholderCover from '../../../assets/canvas-prompt-library-placeholder-cover.png'
@@ -102,6 +103,8 @@ type ProjectPromptEntry = {
 type PromptLibrarySource = 'all' | 'global' | 'project'
 
 export function CanvasPromptLibraryView() {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const { t } = useApp()
   const { projects } = useCanvasProjects()
   const [snapshot, setSnapshot] = useState<CanvasSnapshot | null>(null)
@@ -157,7 +160,7 @@ export function CanvasPromptLibraryView() {
       }
     } catch (loadError) {
       if (requestId === reloadRequestRef.current) {
-        setError(loadError instanceof Error ? loadError.message : '提示词库加载失败')
+        setError(loadError instanceof Error ? loadError.message : translate('canvasPromptLibrary.t1'))
       }
     } finally {
       if (requestId === reloadRequestRef.current) setLoading(false)
@@ -326,22 +329,26 @@ export function CanvasPromptLibraryView() {
         })
       }
       if (items.length === 0) {
-        message.warning('请先选择要导出的提示词')
+        message.warning(translate('canvasPromptLibrary.t2'))
         return
       }
       const result = await exportPromptLibraryPackage({ categories, items })
       if (!result.exported) {
-        if (result.error) message.error(`导出失败：${result.error}`)
+        if (result.error) message.error(translate('canvasPromptLibrary.tpl5Desc', { reason: result.error }))
         return
       }
       message.success(
-        `已导出 ${result.exportedCount ?? items.length} 条提示词${
-          skippedCovers > 0 ? `（${skippedCovers} 个封面无法读取，已跳过）` : ''
-        }`,
+        translate('canvasPromptLibrary.tpl1Desc', {
+          count: result.exportedCount ?? items.length,
+          rest:
+            skippedCovers > 0
+              ? translate('canvasPromptLibrary.tpl2Desc', { count: skippedCovers })
+              : '',
+        }),
       )
       exitSelectionMode()
     } catch (exportError) {
-      message.error(exportError instanceof Error ? exportError.message : '导出提示词库失败')
+      message.error(exportError instanceof Error ? exportError.message : translate('canvasPromptLibrary.t3'))
     } finally {
       setExporting(false)
     }
@@ -357,18 +364,24 @@ export function CanvasPromptLibraryView() {
       if (importedCount === 0) {
         message.info(
           skippedCount > 0
-            ? `导入完成：${skippedCount} 条提示词已存在，未重复导入`
-            : '导入包中没有可导入的提示词',
+            ? translate('canvasPromptLibrary.tpl6Desc', { count: skippedCount })
+            : translate('canvasPromptLibrary.t4Desc'),
         )
         return
       }
       await writeGlobalPromptLibrary(next)
       setLibrary(next)
       message.success(
-        `已导入 ${importedCount} 条提示词${skippedCount > 0 ? `，跳过重复 ${skippedCount} 条` : ''}`,
+        translate('canvasPromptLibrary.tpl7Desc', {
+          count: importedCount,
+          rest:
+            skippedCount > 0
+              ? translate('canvasPromptLibrary.tpl8Desc', { count: skippedCount })
+              : '',
+        }),
       )
     } catch (importError) {
-      message.error(importError instanceof Error ? importError.message : '导入提示词库失败')
+      message.error(importError instanceof Error ? importError.message : translate('canvasPromptLibrary.t5'))
     } finally {
       setImporting(false)
     }
@@ -421,11 +434,11 @@ export function CanvasPromptLibraryView() {
   const handleCoverFile = (file: File | undefined) => {
     if (!file || !editor) return
     if (!file.type.startsWith('image/')) {
-      message.warning('请选择图片文件')
+      message.warning(translate('canvasPromptLibrary.t6'))
       return
     }
     if (file.size > 8 * 1024 * 1024) {
-      message.warning('封面图片请控制在 8MB 以内')
+      message.warning(translate('canvasPromptLibrary.t7Desc'))
       return
     }
     if (editor.coverPreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(editor.coverPreviewUrl)
@@ -443,7 +456,7 @@ export function CanvasPromptLibraryView() {
     if (!editor) return
     const promptText = editor.text.trim()
     if (!promptText) {
-      message.warning('请填写提示词')
+      message.warning(translate('canvasPromptLibrary.t8'))
       return
     }
     const promptTitle = editor.title.trim() || '-'
@@ -460,7 +473,7 @@ export function CanvasPromptLibraryView() {
 
       if (editor.source === 'project') {
         if (!editor.projectId || !editor.assetId) {
-          message.warning('提示词来源信息缺失，无法保存')
+          message.warning(translate('canvasPromptLibrary.t9Desc'))
           return
         }
         const existingEntry = visibleProjectEntries.find(
@@ -484,7 +497,7 @@ export function CanvasPromptLibraryView() {
         })
         saveLastPromptCategory(editor.category)
         closeEditor()
-        message.success('提示词已保存')
+        message.success(translate('canvasPromptLibrary.t10'))
         void reload()
         return
       }
@@ -516,9 +529,9 @@ export function CanvasPromptLibraryView() {
       setLibrary(nextLibrary)
       saveLastPromptCategory(editor.category)
       closeEditor()
-      message.success(editor.assetId ? '提示词已保存' : '提示词已创建')
+      message.success(editor.assetId ? translate('canvasPromptLibrary.t10') : translate('canvasPromptLibrary.t11'))
     } catch (saveError) {
-      message.error(saveError instanceof Error ? saveError.message : '保存提示词失败')
+      message.error(saveError instanceof Error ? saveError.message : translate('canvasPromptLibrary.t12'))
     } finally {
       setSaving(false)
     }
@@ -541,7 +554,7 @@ export function CanvasPromptLibraryView() {
     const nextName = name.trim()
     if (!nextName) return null
     if (categories.includes(nextName)) {
-      message.warning('分类已存在')
+      message.warning(translate('canvasPromptLibrary.t13'))
       return null
     }
     try {
@@ -549,7 +562,7 @@ export function CanvasPromptLibraryView() {
       setEditor((current) => (current ? { ...current, category: nextName } : current))
       return nextName
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '创建分类失败')
+      message.error(error instanceof Error ? error.message : translate('canvasPromptLibrary.t14'))
       return null
     }
   }
@@ -572,20 +585,20 @@ export function CanvasPromptLibraryView() {
       }
       if (activeCategory === from) setActiveCategory(nextName)
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '重命名分类失败')
+      message.error(error instanceof Error ? error.message : translate('canvasPromptLibrary.t15'))
     }
   }
 
   const deleteCategory = async (category: string) => {
     if (categories.length <= 1) {
-      message.warning('至少保留一个分类')
+      message.warning(translate('canvasPromptLibrary.t16'))
       return
     }
     const fallback = categories.find((item) => item !== category) ?? categories[0] ?? ''
     const count = usage[category] ?? 0
     if (
       count > 0 &&
-      !window.confirm(`分类“${category}”有 ${count} 条提示词，将迁移到“${fallback}”，继续吗？`)
+      !window.confirm(translate('canvasPromptLibrary.tpl10Desc', { category, count, fallback }))
     )
       return
     try {
@@ -605,16 +618,16 @@ export function CanvasPromptLibraryView() {
       setLibrary(next)
       if (activeCategory === category) setActiveCategory('all')
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '删除分类失败')
+      message.error(error instanceof Error ? error.message : translate('canvasPromptLibrary.t17'))
     }
   }
 
   const handleCopyPrompt = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      message.success(`已复制提示词：${label}`)
+      message.success(translate('canvasPromptLibrary.tpl11Desc', { title: label }))
     } catch {
-      message.error('复制失败，请稍后重试')
+      message.error(translate('canvasPromptLibrary.t18'))
     }
   }
 
@@ -623,7 +636,7 @@ export function CanvasPromptLibraryView() {
       if (source === 'project') {
         await canvasApi.deleteFilmAsset(asset.projectId, asset.id, { hardDelete: true })
         if (editor?.assetId === asset.id) closeEditor()
-        message.success(`已删除提示词：${asset.title ?? '提示词'}`)
+        message.success(translate('canvasPromptLibrary.tpl9Desc', { title: asset.title ?? translate('canvasPromptLibrary.t19') }))
         void reload()
         return
       }
@@ -635,16 +648,16 @@ export function CanvasPromptLibraryView() {
       await writeGlobalPromptLibrary(nextLibrary)
       setLibrary(nextLibrary)
       if (editor?.assetId === asset.id) closeEditor()
-      message.success(`已删除提示词：${asset.title ?? '提示词'}`)
+      message.success(translate('canvasPromptLibrary.tpl9Desc', { title: asset.title ?? translate('canvasPromptLibrary.t19') }))
     } catch (deleteError) {
-      message.error(deleteError instanceof Error ? deleteError.message : '删除提示词失败')
+      message.error(deleteError instanceof Error ? deleteError.message : translate('canvasPromptLibrary.t20'))
     }
   }
 
   const currentCoverUrl = editor?.coverPreviewUrl ?? editor?.coverUrl ?? null
 
   return (
-    <section className="canvas-prompt-library-page" aria-label="提示词库管理">
+    <section className="canvas-prompt-library-page" aria-label={translate('canvasPromptLibrary.t32')}>
       <header
         className="canvas-prompt-library-page-header canvas-view-titlebar"
         onDoubleClick={() => {
@@ -653,10 +666,10 @@ export function CanvasPromptLibraryView() {
       >
         {t.sidebarHidden && <SidebarExpandButton />}
         <div className="canvas-prompt-library-title-wrap">
-          <h2>提示词库管理</h2>
+          <h2>{translate('canvasPromptLibrary.t32')}</h2>
         </div>
         <div className="canvas-prompt-library-header-actions">
-          <span className="canvas-prompt-library-shortcut">⌘/Ctrl + E 新建</span>
+          <span className="canvas-prompt-library-shortcut">{translate('canvasPromptLibrary.t53Desc')}</span>
           <Button
             size="small"
             type="text"
@@ -664,9 +677,9 @@ export function CanvasPromptLibraryView() {
             disabled={!library}
             onClick={() => void handleImportPackage()}
             icon={<Icons.Upload size={15} />}
-            aria-label="从文件夹导入提示词"
+            aria-label={translate('canvasPromptLibrary.t33')}
           >
-            导入
+            {translate('canvasPromptLibrary.t54')}
           </Button>
           <Button
             size="small"
@@ -674,9 +687,9 @@ export function CanvasPromptLibraryView() {
             disabled={!library || selectionMode}
             onClick={enterSelectionMode}
             icon={<Icons.Download size={15} />}
-            aria-label="批量导出提示词"
+            aria-label={translate('canvasPromptLibrary.t34')}
           >
-            导出
+            {translate('canvasPromptLibrary.t55')}
           </Button>
           <Button
             size="small"
@@ -684,12 +697,12 @@ export function CanvasPromptLibraryView() {
             loading={loading}
             onClick={() => void reload()}
             icon={<Icons.Refresh size={15} />}
-            aria-label="刷新提示词库"
+            aria-label={translate('canvasPromptLibrary.t35')}
           >
-            刷新
+            {translate('canvasPromptLibrary.t56')}
           </Button>
           <Button size="small" type="text" onClick={openCreatePrompt} disabled={!library}>
-            <Icons.Plus size={15} /> 新建提示词
+            <Icons.Plus size={15} /> {translate('canvasPromptLibrary.t29')}
           </Button>
         </div>
       </header>
@@ -708,13 +721,13 @@ export function CanvasPromptLibraryView() {
             <div
               className="canvas-prompt-library-source-filter"
               role="tablist"
-              aria-label="提示词来源"
+              aria-label={translate('canvasPromptLibrary.t36')}
             >
               {(
                 [
-                  ['all', '全部'],
-                  ['global', '全局'],
-                  ['project', '画布项目'],
+                  ['all', translate('canvasPromptLibrary.t21')],
+                  ['global', translate('canvasPromptLibrary.t22')],
+                  ['project', translate('canvasPromptLibrary.t23')],
                 ] as const
               ).map(([source, label]) => (
                 <button
@@ -730,14 +743,14 @@ export function CanvasPromptLibraryView() {
             <div
               className="canvas-prompt-library-categories"
               role="tablist"
-              aria-label="提示词分类"
+              aria-label={translate('canvasPromptLibrary.t37')}
             >
               <button
                 type="button"
                 className={activeCategory === 'all' ? 'active' : ''}
                 onClick={() => setActiveCategory('all')}
               >
-                全部 <small>{sourceCount.all}</small>
+                {translate('canvasPromptLibrary.t21')} <small>{sourceCount.all}</small>
               </button>
               {categories.map((category) => (
                 <button
@@ -750,7 +763,7 @@ export function CanvasPromptLibraryView() {
                 </button>
               ))}
               <button type="button" className="manage" onClick={() => setCategoryManagerOpen(true)}>
-                <Icons.Settings size={13} /> 管理分类
+                <Icons.Settings size={13} /> {translate('canvasPromptLibrary.t51')}
               </button>
             </div>
             <div className="canvas-prompt-library-toolbar-tools">
@@ -758,7 +771,7 @@ export function CanvasPromptLibraryView() {
                 allowClear
                 className="canvas-prompt-library-search"
                 prefix={<Icons.Search size={15} />}
-                placeholder="搜索提示词"
+                placeholder={translate('canvasPromptLibrary.t38')}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
               />
@@ -769,7 +782,7 @@ export function CanvasPromptLibraryView() {
             <div
               className="canvas-prompt-library-selection-bar"
               role="toolbar"
-              aria-label="提示词批量操作"
+              aria-label={translate('canvasPromptLibrary.t39')}
             >
               <label className="canvas-prompt-library-selection-all">
                 <Checkbox
@@ -777,10 +790,10 @@ export function CanvasPromptLibraryView() {
                   indeterminate={!allVisibleSelected && someVisibleSelected}
                   onChange={toggleSelectAllVisible}
                 />
-                <span>全选当前列表（{visibleSelectableKeys.size}）</span>
+                <span>{translate('canvasPromptLibrary.tpl12Desc', { count: visibleSelectableKeys.size })}</span>
               </label>
               <span className="canvas-prompt-library-selection-count">
-                已选 {selectedKeys.size} 条
+                {translate('canvasPromptLibrary.tpl13Desc', { count: selectedKeys.size })}
               </span>
               <div className="canvas-prompt-library-selection-actions">
                 <Button
@@ -788,7 +801,7 @@ export function CanvasPromptLibraryView() {
                   onClick={() => setSelectedKeys(new Set())}
                   disabled={selectedKeys.size === 0}
                 >
-                  清空选择
+                  {translate('canvasPromptLibrary.t57')}
                 </Button>
                 <Button
                   size="small"
@@ -797,10 +810,10 @@ export function CanvasPromptLibraryView() {
                   disabled={selectedKeys.size === 0}
                   onClick={() => void handleExportSelected()}
                 >
-                  导出所选{selectedKeys.size > 0 ? `（${selectedKeys.size}）` : ''}
+                  {translate('canvasPromptLibrary.t74')}{selectedKeys.size > 0 ? translate('canvasPromptLibrary.tpl14Desc', { count: selectedKeys.size }) : ''}
                 </Button>
                 <Button size="small" onClick={exitSelectionMode}>
-                  完成
+                  {translate('canvasPromptLibrary.t58')}
                 </Button>
               </div>
             </div>
@@ -809,7 +822,7 @@ export function CanvasPromptLibraryView() {
           {filteredGlobalAssets.length === 0 && filteredProjectEntries.length === 0 ? (
             <Empty
               className="canvas-prompt-library-empty"
-              description={query ? '没有匹配的提示词' : '还没有提示词'}
+              description={query ? translate('canvasPromptLibrary.t24') : translate('canvasPromptLibrary.t25')}
             />
           ) : (
             <div className="canvas-prompt-library-card-grid">
@@ -856,27 +869,27 @@ export function CanvasPromptLibraryView() {
                       ) : (
                         <PromptLibraryCoverPlaceholder />
                       )}
-                      <span className="canvas-prompt-library-card-source">全局</span>
+                      <span className="canvas-prompt-library-card-source">{translate('canvasPromptLibrary.t22')}</span>
                     </div>
                     <div className="canvas-prompt-library-card-body">
                       <div className="canvas-prompt-library-card-title-row">
-                        <h3>{asset.title || '未命名提示词'}</h3>
+                        <h3>{asset.title || translate('canvasPromptLibrary.t26')}</h3>
                       </div>
-                      <p>{readPromptLibraryText(asset) || '暂无提示词文案'}</p>
+                      <p>{readPromptLibraryText(asset) || translate('canvasPromptLibrary.t27')}</p>
                       <div className="canvas-prompt-library-card-actions">
                         <button
                           type="button"
                           className="canvas-prompt-library-copy"
-                          aria-label={`复制${asset.title ?? '提示词'}`}
+                          aria-label={translate('canvasPromptLibrary.tpl15Desc', { title: asset.title ?? translate('canvasPromptLibrary.t19') })}
                           onClick={(event) => {
                             event.stopPropagation()
                             void handleCopyPrompt(
                               readPromptLibraryText(asset),
-                              asset.title ?? '提示词',
+                              asset.title ?? translate('canvasPromptLibrary.t19'),
                             )
                           }}
                         >
-                          复制
+                          {translate('canvasPromptLibrary.t59')}
                         </button>
                         <button
                           type="button"
@@ -885,23 +898,23 @@ export function CanvasPromptLibraryView() {
                             openEditPrompt(asset, 'global', snapshot?.assets ?? [])
                           }}
                         >
-                          编辑
+                          {translate('canvasPromptLibrary.t60')}
                         </button>
                         <span onClick={(event) => event.stopPropagation()}>
                           <Popconfirm
-                            title="确定删除这条提示词吗？"
-                            description="删除后无法恢复。"
-                            okText="删除"
-                            cancelText="取消"
+                            title={translate('canvasPromptLibrary.t40')}
+                            description={translate('canvasPromptLibrary.t41')}
+                            okText={translate('canvasPromptLibrary.t42')}
+                            cancelText={translate('canvasPromptLibrary.t43')}
                             okType="danger"
                             onConfirm={() => void handleDeletePrompt(asset, 'global')}
                           >
                             <button
                               type="button"
                               className="canvas-prompt-library-delete"
-                              aria-label={`删除${asset.title ?? '提示词'}`}
+                              aria-label={translate('canvasPromptLibrary.tpl16Desc', { title: asset.title ?? translate('canvasPromptLibrary.t19') })}
                             >
-                              删除
+                              {translate('canvasPromptLibrary.t42')}
                             </button>
                           </Popconfirm>
                         </span>
@@ -954,27 +967,29 @@ export function CanvasPromptLibraryView() {
                       ) : (
                         <PromptLibraryCoverPlaceholder />
                       )}
-                      <span className="canvas-prompt-library-card-source">画布·{projectName}</span>
+                      <span className="canvas-prompt-library-card-source">
+                  {translate('canvasPromptLibrary.tpl17Desc', { name: projectName })}
+                </span>
                     </div>
                     <div className="canvas-prompt-library-card-body">
                       <div className="canvas-prompt-library-card-title-row">
-                        <h3>{asset.title || '未命名提示词'}</h3>
+                        <h3>{asset.title || translate('canvasPromptLibrary.t26')}</h3>
                       </div>
-                      <p>{readPromptLibraryText(asset) || '暂无提示词文案'}</p>
+                      <p>{readPromptLibraryText(asset) || translate('canvasPromptLibrary.t27')}</p>
                       <div className="canvas-prompt-library-card-actions">
                         <button
                           type="button"
                           className="canvas-prompt-library-copy"
-                          aria-label={`复制${asset.title ?? '提示词'}`}
+                          aria-label={translate('canvasPromptLibrary.tpl15Desc', { title: asset.title ?? translate('canvasPromptLibrary.t19') })}
                           onClick={(event) => {
                             event.stopPropagation()
                             void handleCopyPrompt(
                               readPromptLibraryText(asset),
-                              asset.title ?? '提示词',
+                              asset.title ?? translate('canvasPromptLibrary.t19'),
                             )
                           }}
                         >
-                          复制
+                          {translate('canvasPromptLibrary.t59')}
                         </button>
                         <button
                           type="button"
@@ -983,23 +998,23 @@ export function CanvasPromptLibraryView() {
                             openEditPrompt(asset, 'project', projectAssets)
                           }}
                         >
-                          编辑
+                          {translate('canvasPromptLibrary.t60')}
                         </button>
                         <span onClick={(event) => event.stopPropagation()}>
                           <Popconfirm
-                            title="确定删除这条提示词吗？"
-                            description="该提示词来自画布项目，删除后会从对应项目中移除。"
-                            okText="删除"
-                            cancelText="取消"
+                            title={translate('canvasPromptLibrary.t40')}
+                            description={translate('canvasPromptLibrary.t44Desc')}
+                            okText={translate('canvasPromptLibrary.t42')}
+                            cancelText={translate('canvasPromptLibrary.t43')}
                             okType="danger"
                             onConfirm={() => void handleDeletePrompt(asset, 'project')}
                           >
                             <button
                               type="button"
                               className="canvas-prompt-library-delete"
-                              aria-label={`删除${asset.title ?? '提示词'}`}
+                              aria-label={translate('canvasPromptLibrary.tpl16Desc', { title: asset.title ?? translate('canvasPromptLibrary.t19') })}
                             >
-                              删除
+                              {translate('canvasPromptLibrary.t42')}
                             </button>
                           </Popconfirm>
                         </span>
@@ -1076,7 +1091,7 @@ function PromptLibraryCoverPlaceholder() {
         draggable={false}
       />
       <div className="canvas-prompt-library-card-cover-fallback-content">
-        <span>无封面</span>
+        <span>{translate('canvasPromptLibrary.t61')}</span>
       </div>
     </div>
   )
@@ -1115,30 +1130,30 @@ function PromptLibraryEditorModal({
   return (
     <Modal
       open
-      title={editor.assetId ? '编辑提示词' : '新建提示词'}
+      title={editor.assetId ? translate('canvasPromptLibrary.t28') : translate('canvasPromptLibrary.t29')}
       onCancel={onClose}
       width={720}
       destroyOnHidden
       footer={[
         <Button key="cancel" onClick={onClose} disabled={saving}>
-          取消
+          {translate('canvasPromptLibrary.t43')}
         </Button>,
         <Button key="save" type="primary" loading={saving} onClick={onSave}>
-          保存
+          {translate('canvasPromptLibrary.t62')}
         </Button>,
       ]}
     >
       <div className="canvas-prompt-editor-modal">
         <div className="canvas-prompt-editor-grid">
           <div>
-            <div className="canvas-prompt-editor-label">封面</div>
+            <div className="canvas-prompt-editor-label">{translate('canvasPromptLibrary.t63')}</div>
             <button type="button" className="canvas-prompt-cover-picker" onClick={onUploadCover}>
               {coverUrl ? (
-                <img src={coverUrl} alt="提示词封面" />
+                <img src={coverUrl} alt={translate('canvasPromptLibrary.t45')} />
               ) : (
                 <div className="canvas-prompt-cover-empty">
                   <Icons.ImagePlus size={22} />
-                  <span>上传封面图</span>
+                  <span>{translate('canvasPromptLibrary.t64')}</span>
                 </div>
               )}
               <span className="canvas-prompt-cover-actions">
@@ -1148,7 +1163,7 @@ function PromptLibraryEditorModal({
                     onUploadCover()
                   }}
                 >
-                  上传
+                  {translate('canvasPromptLibrary.t65')}
                 </span>
               </span>
             </button>
@@ -1171,23 +1186,23 @@ function PromptLibraryEditorModal({
           </div>
           <div>
             <label className="canvas-prompt-editor-field">
-              <span>名称</span>
+              <span>{translate('canvasPromptLibrary.t66')}</span>
               <Input
                 autoFocus
                 value={editor.title}
                 onChange={(event) => onChange({ ...editor, title: event.target.value })}
-                placeholder="不填写时默认为 -"
+                placeholder={translate('canvasPromptLibrary.t46')}
               />
             </label>
             <div className="canvas-prompt-editor-label canvas-prompt-category-label">
-              <span>分类</span>
+              <span>{translate('canvasPromptLibrary.t67')}</span>
               <button type="button" onClick={() => setNewCategoryOpen((value) => !value)}>
-                ＋ 新分类
+                {translate('canvasPromptLibrary.t68')}
               </button>
             </div>
             <Select
               value={editor.category || undefined}
-              placeholder="选择分类"
+              placeholder={translate('canvasPromptLibrary.t47')}
               options={categories.map((category) => ({ label: category, value: category }))}
               onChange={(category) => onChange({ ...editor, category: category ?? '' })}
               className="canvas-prompt-category-select"
@@ -1198,28 +1213,28 @@ function PromptLibraryEditorModal({
                   size="middle"
                   value={newCategory}
                   onChange={(event) => setNewCategory(event.target.value)}
-                  placeholder="新分类名称"
+                  placeholder={translate('canvasPromptLibrary.t48')}
                   onPressEnter={() => void addCategory()}
                 />
                 <Button size="middle" type="primary" onClick={() => void addCategory()}>
-                  添加
+                  {translate('canvasPromptLibrary.t69')}
                 </Button>
               </div>
             )}
             <div className="canvas-prompt-editor-label canvas-prompt-text-label">
-              <span>提示词</span>
+              <span>{translate('canvasPromptLibrary.t19')}</span>
             </div>
             <Input.TextArea
               value={editor.text}
               onChange={(event) => onChange({ ...editor, text: event.target.value })}
               rows={7}
-              placeholder="输入提示词文案"
+              placeholder={translate('canvasPromptLibrary.t49')}
             />
             <div className="canvas-prompt-editor-source">
-              {editor.text ? '来源：手写' : '支持手写提示词文案'}
+              {editor.text ? translate('canvasPromptLibrary.t30') : translate('canvasPromptLibrary.t31')}
             </div>
             <div className="canvas-prompt-editor-label">
-              <span>标签</span>
+              <span>{translate('canvasPromptLibrary.t70')}</span>
             </div>
             <Input
               value={editor.tags.join(', ')}
@@ -1232,12 +1247,12 @@ function PromptLibraryEditorModal({
                     .filter(Boolean),
                 })
               }
-              placeholder="用逗号分隔"
+              placeholder={translate('canvasPromptLibrary.t50')}
             />
           </div>
         </div>
         <div className="canvas-prompt-editor-hint">
-          保存后可从画布使用，也可以继续编辑封面、文案和分类。
+          {translate('canvasPromptLibrary.t71Desc')}
         </div>
       </div>
     </Modal>
@@ -1271,17 +1286,17 @@ function PromptCategoryManagerModal({
     category.toLowerCase().includes(query.trim().toLowerCase()),
   )
   return (
-    <Modal open={open} title="管理分类" onCancel={onClose} footer={null} width={480}>
+    <Modal open={open} title={translate('canvasPromptLibrary.t51')} onCancel={onClose} footer={null} width={480}>
       <div className="canvas-prompt-category-manager">
         <Input
           prefix={<Icons.Search size={14} />}
-          placeholder="搜索分类"
+          placeholder={translate('canvasPromptLibrary.t52')}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
         <div className="canvas-prompt-category-create">
           <Input
-            placeholder="新分类名称"
+            placeholder={translate('canvasPromptLibrary.t48')}
             value={newCategory}
             onChange={(event) => setNewCategory(event.target.value)}
             onPressEnter={() => {
@@ -1299,7 +1314,7 @@ function PromptCategoryManagerModal({
               })
             }}
           >
-            添加
+            {translate('canvasPromptLibrary.t69')}
           </Button>
         </div>
         <div className="canvas-prompt-category-list">
@@ -1317,7 +1332,7 @@ function PromptCategoryManagerModal({
               ) : (
                 <span>
                   {category}
-                  <small>{usage[category] ?? 0} 条</small>
+                  <small>{translate('canvasPromptLibrary.tpl18Desc', { count: usage[category] ?? 0 })}</small>
                 </span>
               )}
               <div>
@@ -1328,7 +1343,7 @@ function PromptCategoryManagerModal({
                       void onRename(category, editingValue).then(() => setEditing(null))
                     }}
                   >
-                    保存
+                    {translate('canvasPromptLibrary.t62')}
                   </button>
                 ) : (
                   <button
@@ -1338,17 +1353,17 @@ function PromptCategoryManagerModal({
                       setEditingValue(category)
                     }}
                   >
-                    重命名
+                    {translate('canvasPromptLibrary.t72')}
                   </button>
                 )}
                 <button type="button" className="danger" onClick={() => void onDelete(category)}>
-                  删除
+                  {translate('canvasPromptLibrary.t42')}
                 </button>
               </div>
             </div>
           ))}
         </div>
-        <p>删除有引用的分类时，会先迁移到其他分类。</p>
+        <p>{translate('canvasPromptLibrary.t73Desc')}</p>
       </div>
     </Modal>
   )

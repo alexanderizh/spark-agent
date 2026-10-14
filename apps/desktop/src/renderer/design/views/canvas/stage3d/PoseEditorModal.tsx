@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@lobehub/ui'
 import { Input, Segmented } from 'antd'
 import { Icons } from '../../../Icons'
+import { translate, useI18n } from '../../../i18n'
 import { Scene3D } from './Scene3D'
 import { JointSliders } from './JointSliders'
 import { usePoseUndoRedo, withJointAxis } from './usePoseUndoRedo'
 import {
   JOINT_GROUPS,
+  POSE_GROUP_LABEL_KEYS,
   POSE_PRESETS,
   composePose,
   copySidePose,
@@ -332,8 +334,8 @@ export function PoseEditorModal({ actor, onChange, onClose }: PoseEditorModalPro
               </div>
               {JOINT_GROUPS.map((group) => (
                 <JointGroup
-                  key={group.label}
-                  label={group.label}
+                  key={group.labelKey}
+                  label={translate(group.labelKey)}
                   joints={group.joints}
                   values={undo.joints}
                   onBegin={undo.begin}
@@ -472,16 +474,18 @@ function PresetGroupApply({
           key={group}
           className={`stage3d-pose-editor-preset-group${compact ? ' is-compact' : ''}`}
         >
-          <div className="stage3d-pose-editor-preset-group-title">{group}</div>
+          <div className="stage3d-pose-editor-preset-group-title">
+            {translate(POSE_GROUP_LABEL_KEYS[group])}
+          </div>
           <div className="stage3d-pose-editor-preset-row">
             {presets.map((p) => (
               <Button
                 key={p.id}
                 size="small"
                 onClick={() => onApply(p.id)}
-                title={`套用「${p.label}」预设`}
+                title={translate('mannequin.tpl1', { pose: translate(p.labelKey) })}
               >
-                {p.label}
+                {translate(p.labelKey)}
               </Button>
             ))}
           </div>

@@ -11,6 +11,7 @@
 
 import React from 'react'
 import { Button } from 'antd'
+import { useI18n } from '../i18n'
 import { Icons } from '../Icons'
 
 /** 仅用于展示「浏览器打开的是哪个站点」，不是安全判断依据 */
@@ -36,10 +37,11 @@ export function BrowserLoginEntry({
   notice?: string | undefined
   onStart: () => void
 }): React.ReactElement {
+  const { t } = useI18n()
   return (
     <div className="auth-browser-entry">
       <div className="auth-browser-divider" role="separator">
-        <span>或</span>
+        <span>{t('auth.browser.or')}</span>
       </div>
       <Button
         className="auth-browser-btn"
@@ -48,11 +50,9 @@ export function BrowserLoginEntry({
         disabled={starting}
         onClick={onStart}
       >
-        {starting ? '正在打开浏览器' : '使用浏览器登录'}
+        {starting ? t('auth.browser.starting') : t('auth.browser.useBtn')}
       </Button>
-      <p className="auth-browser-hint">
-        支持账号密码、邮箱验证码、短信与微信扫码，登录完成后自动返回桌面端
-      </p>
+      <p className="auth-browser-hint">{t('auth.browser.hint')}</p>
       {error !== undefined && (
         <p className="auth-browser-error" role="alert">
           <Icons.AlertTriangle size={14} />
@@ -76,29 +76,29 @@ export function BrowserLoginWaiting({
   webLoginUrl?: string | undefined
   onCancel: () => void
 }): React.ReactElement {
+  const { t, lang } = useI18n()
   const host = resolveWebLoginHost(webLoginUrl)
+  // 中文用全角括号、英文用半角括号；无 host 时留空。
+  const hostSuffix = host == null ? '' : lang === 'zh' ? `（${host}）` : ` (${host})`
   return (
     <div className="auth-form auth-browser-waiting">
       <div className="auth-browser-waiting-icon" aria-hidden>
         <Icons.Globe size={24} />
       </div>
-      <h2 className="auth-form-title">请在浏览器中完成登录</h2>
-      <p className="auth-form-greet">
-        已为你打开系统浏览器{host ? `（${host}）` : ''}
-        ，登录成功后会自动返回桌面端
-      </p>
+      <h2 className="auth-form-title">{t('auth.browser.waitingTitle')}</h2>
+      <p className="auth-form-greet">{t('auth.browser.waitingDesc', { host: hostSuffix })}</p>
       <ol className="auth-browser-steps">
-        <li>在浏览器中选择任意一种方式登录</li>
-        <li>看到「授权成功，正在返回 Spark 桌面端」后回到本应用</li>
+        <li>{t('auth.browser.step1')}</li>
+        <li>{t('auth.browser.step2')}</li>
       </ol>
       <div className="auth-browser-waiting-bar" aria-hidden>
         <span className="auth-browser-waiting-dot" />
         <span className="auth-browser-waiting-dot" />
         <span className="auth-browser-waiting-dot" />
       </div>
-      <p className="auth-browser-meta">正在等待授权，最长 5 分钟</p>
+      <p className="auth-browser-meta">{t('auth.browser.waitingMeta')}</p>
       <Button className="auth-browser-cancel" type="text" onClick={onCancel}>
-        取消，改用其他方式登录
+        {t('auth.browser.cancelBtn')}
       </Button>
     </div>
   )

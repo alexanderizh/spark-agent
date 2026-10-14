@@ -1,5 +1,6 @@
 import { Slider } from 'antd'
-import { JOINT_LABEL, type JointId } from './mannequin'
+import { useI18n } from '../../../i18n'
+import { jointLabel, type JointId } from './mannequin'
 
 /**
  * 单关节三轴滑杆（抽自 CanvasDirectorStage3DModal.JointSliders）。
@@ -32,9 +33,11 @@ export type JointSlidersProps = {
 }
 
 export function JointSliders({ jointId, value, onChange, onBegin, onCommit }: JointSlidersProps) {
+  // 顶层订阅语言变化：本文件用非响应式 translate()，靠订阅触发整树重渲染。
+  useI18n()
   return (
     <div className="stage3d-joint-row">
-      <div className="stage3d-joint-name">{JOINT_LABEL[jointId]}</div>
+      <div className="stage3d-joint-name">{jointLabel(jointId)}</div>
       <div className="stage3d-joint-sliders">
         {AXES.map(({ axis, label }) => {
           const deg = Math.round((value[axis] ?? 0) * DEG_PER_RADIAN)

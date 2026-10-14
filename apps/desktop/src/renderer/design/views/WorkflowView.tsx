@@ -20,6 +20,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import './WorkflowView.less'
 import { Icons } from '../Icons'
+import { translate, useI18n } from '../i18n'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
@@ -127,8 +128,8 @@ function defaultWorkflowNodeConfig(kind: WorkflowNodeKind): WorkflowNode['config
       retryCount: 1,
       outputKey: 'route',
       routeOptions: [
-        { value: 'deep', label: '深度处理', description: '需要完整实现或多步骤处理' },
-        { value: 'quick', label: '快速处理', description: '只需要摘要、答复或轻量处理' },
+        { value: 'deep', label: translate('workflowView.t1'), description: translate('workflowView.t2') },
+        { value: 'quick', label: translate('workflowView.t3'), description: translate('workflowView.t4Desc') },
       ],
     }
   }
@@ -173,10 +174,10 @@ function serializeSavedWorkflow(workflow: WorkflowItem | null): string {
 /** 工作流删除二次确认弹窗 —— 列表页与详情页共用。 */
 function confirmDeleteWorkflow(name: string, onOk: () => void) {
   AntdModal.confirm({
-    title: '删除工作流？',
-    content: `确认删除工作流「${name}」？该操作无法撤销，其下的节点编排将一并移除。`,
-    okText: '删除',
-    cancelText: '取消',
+    title: translate('workflowView.t5'),
+    content: translate('workflowView.tpl23LongDesc', { name }),
+    okText: translate('workflowView.t6'),
+    cancelText: translate('workflowView.t7'),
     okButtonProps: { danger: true },
     onOk,
   })
@@ -203,6 +204,8 @@ function readLastOpenWorkflowEditor(): WorkflowEditorMemory | null {
 }
 
 export function WorkflowView() {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   return (
     <ReactFlowProvider>
       <WorkflowViewInner />
@@ -437,9 +440,9 @@ function WorkflowViewInner() {
     registerNavGuard(async () => {
       if (!dirtyRef.current) return true
       return requestConfirm({
-        title: '放弃未保存的工作流修改？',
-        description: '离开后，当前工作流的未保存更改会恢复到上次保存的状态。',
-        confirmText: '离开',
+        title: translate('workflowView.t8'),
+        description: translate('workflowView.t9Desc'),
+        confirmText: translate('workflowView.t10'),
       })
     })
     return () => registerNavGuard(null)
@@ -483,9 +486,9 @@ function WorkflowViewInner() {
     async (action: () => void | Promise<void>) => {
       if (dirtyRef.current) {
         const confirmed = await requestConfirm({
-          title: '放弃未保存的工作流修改？',
-          description: '继续后会丢失当前尚未保存的节点与配置更改。',
-          confirmText: '继续',
+          title: translate('workflowView.t8'),
+          description: translate('workflowView.t11Desc'),
+          confirmText: translate('workflowView.t12'),
         })
         if (!confirmed) return
         discardCurrentDraft()
@@ -526,7 +529,7 @@ function WorkflowViewInner() {
             graph,
           })
         ).workflow
-        toast.success('工作流已创建')
+        toast.success(translate('workflowView.t13'))
         setWorkflows((prev) => [workflow, ...prev.filter((item) => item.id !== workflow.id)])
         screenRef.current = 'detail'
         activeIdRef.current = workflow.id
@@ -542,8 +545,8 @@ function WorkflowViewInner() {
   const createNewWorkflow = useCallback(async () => {
     await createWorkflowFromGraph(
       defaultStarterGraph(),
-      `工作流 ${workflows.length + 1}`,
-      '自定义 Agent 执行流程',
+      translate('workflowView.tpl1Desc', { value: workflows.length + 1 }),
+      translate('workflowView.t14Desc'),
     )
   }, [createWorkflowFromGraph, workflows.length])
 
@@ -560,9 +563,9 @@ function WorkflowViewInner() {
       const opened = openLoopBodyGraph(currentEditorGraph, loopNodeId, defaultLoopBodyGraph())
       const errors = validateLoopBodyGraph(opened.graph, currentEditorGraph, loopNodeId)
       if (opened.usedFallback) {
-        toast.warning('原循环体格式无效，已载入默认子图供修复。')
+        toast.warning(translate('workflowView.t15Desc'))
       } else if (errors.length > 0) {
-        toast.warning(`循环体需要修正：${errors[0]?.message ?? '配置无效'}`)
+        toast.warning(translate('workflowView.tpl2Desc', { message: errors[0]?.message ?? translate('workflowView.t16') }))
       }
       setEditorScope({
         kind: 'loop-body',
@@ -583,7 +586,7 @@ function WorkflowViewInner() {
       editorScope.loopNodeId,
     )
     if (errors.length > 0) {
-      toast.error(errors[0]?.message ?? '循环体配置无效。')
+      toast.error(errors[0]?.message ?? translate('workflowView.t17'))
       return
     }
     const rootGraph = commitLoopBodyGraph(
@@ -600,9 +603,9 @@ function WorkflowViewInner() {
     async (loopNodeId: string) => {
       if (editorScope.kind !== 'root') return
       const confirmed = await requestConfirm({
-        title: '重置循环体？',
-        description: '当前循环体节点、连线和配置将恢复为默认内容。',
-        confirmText: '重置',
+        title: translate('workflowView.t18'),
+        description: translate('workflowView.t19Desc'),
+        confirmText: translate('workflowView.t20'),
       })
       if (!confirmed) return
       setNodes((prev) =>
@@ -626,19 +629,19 @@ function WorkflowViewInner() {
     if (draft == null) return
     const loopBodyErrors = validateWorkflowLoopBodies(completeRootGraph)
     if (loopBodyErrors.length > 0) {
-      toast.error(loopBodyErrors[0]?.message ?? '循环体配置无效。')
+      toast.error(loopBodyErrors[0]?.message ?? translate('workflowView.t17'))
       return
     }
     // 执行者绑定闸门：引用已不存在的 Agent 阻断保存（与循环体校验同一入口、同一 toast 样式）；
     // 未绑定仅提醒，不阻断——运行时会回退使用会话当前 Agent。
     const bindingErrors = agentBindingIssues.filter((issue) => issue.level === 'error')
     if (bindingErrors.length > 0) {
-      toast.error(bindingErrors[0]?.message ?? '存在引用失效的执行节点，请修正后再保存。')
+      toast.error(bindingErrors[0]?.message ?? translate('workflowView.t21Desc'))
       return
     }
     const unboundCount = agentBindingIssues.length - bindingErrors.length
     if (unboundCount > 0) {
-      toast.warning(`${unboundCount} 个执行节点未显式指定执行者，运行时将回退使用会话当前 Agent。`)
+      toast.warning(translate('workflowView.tpl3LongDesc', { count: unboundCount }))
     }
     const graph = completeRootGraph
     let saved: WorkflowItem
@@ -655,10 +658,10 @@ function WorkflowViewInner() {
       ).workflow
     } catch (err) {
       // 保存被主进程环校验等拒绝：展示带节点标题的具体原因，不中断编辑。
-      toast.error(err instanceof Error ? err.message : '工作流保存失败。')
+      toast.error(err instanceof Error ? err.message : translate('workflowView.t22'))
       return
     }
-    toast.success('工作流已保存')
+    toast.success(translate('workflowView.t23'))
     activeIdRef.current = saved.id
     setWorkflows((prev) => prev.map((item) => (item.id === saved.id ? saved : item)))
     if (editorScope.kind === 'loop-body') {
@@ -678,7 +681,7 @@ function WorkflowViewInner() {
     async (id: string) => {
       const res = await deleteWorkflow({ id })
       if (res.deleted) {
-        toast.success('工作流已删除')
+        toast.success(translate('workflowView.t24'))
         if (activeIdRef.current === id) {
           activeIdRef.current = null
           screenRef.current = 'list'
@@ -695,8 +698,8 @@ function WorkflowViewInner() {
           const count = res.blockedReason.agentIds?.length ?? 0
           toast.error(
             count > 0
-              ? `仍有 ${count} 个 Agent 以此工作流为默认配置，请先在 Agent 设置中改绑或清除后再删除。`
-              : '仍有 Agent 以此工作流为默认配置，请先改绑后再删除。',
+              ? translate('workflowView.tpl4LongDesc', { count })
+              : translate('workflowView.t25Desc'),
           )
           return
         }
@@ -704,16 +707,16 @@ function WorkflowViewInner() {
           const count = res.blockedReason.sessionIds?.length ?? 0
           toast.error(
             count > 0
-              ? `仍有 ${count} 个会话挂载此工作流，请先在这些会话中解除挂载再删除。`
-              : '仍有会话挂载此工作流，请先解除挂载再删除。',
+              ? translate('workflowView.tpl5LongDesc', { count })
+              : translate('workflowView.t26Desc'),
           )
           return
         }
         case 'workflow_run_resumable':
-          toast.error('此工作流仍有进行中或可恢复的运行记录，请先取消或放弃运行再删除。')
+          toast.error(translate('workflowView.t27Desc'))
           return
         case 'workflow_in_installed_bundle':
-          toast.error('此工作流来自已安装的 Bundle，请在 Bundle 管理中卸载整包。')
+          toast.error(translate('workflowView.t28Desc'))
           return
       }
     },
@@ -750,7 +753,7 @@ function WorkflowViewInner() {
   const handleExportSelected = useCallback(() => {
     const ids = Array.from(visibleSelectedIds)
     if (ids.length === 0) {
-      toast.warning('请先选择要导出的工作流')
+      toast.warning(translate('workflowView.t29'))
       return
     }
     exportWorkflowIds(ids)
@@ -776,7 +779,7 @@ function WorkflowViewInner() {
   const addNodeAt = useCallback(
     (kind: WorkflowNodeKind, position?: { x: number; y: number }) => {
       if (editorScope.kind === 'loop-body' && kind === 'loop') {
-        toast.warning('运行时 v1 不支持嵌套循环。')
+        toast.warning(translate('workflowView.t30Desc'))
         return
       }
       const meta = getNodeKindMeta(kind)
@@ -821,7 +824,7 @@ function WorkflowViewInner() {
       const source = nodes.find((node) => node.id === nodeId)
       if (source == null) return
       if (editorScope.kind === 'loop-body' && source.data.kind === 'loop') {
-        toast.warning('运行时 v1 不支持嵌套循环。')
+        toast.warning(translate('workflowView.t30Desc'))
         return
       }
       const id =
@@ -842,7 +845,7 @@ function WorkflowViewInner() {
         position: { x: source.position.x + 48, y: source.position.y + 48 },
         data: {
           kind: source.data.kind,
-          title: `${source.data.title} 副本`,
+          title: translate('workflowView.tpl6Desc', { title: source.data.title }),
           config: structuredClone(source.data.config),
           orientation: source.data.orientation,
         },
@@ -1029,7 +1032,7 @@ function WorkflowViewInner() {
         <div className="workflow-home-head">
           <div className="workflow-home-title-block">
             <div className="agents-title-lg">Workflows</div>
-            <div className="agents-desc">管理可复用的 Agent 执行流程。</div>
+            <div className="agents-desc">{translate('workflowView.t110Desc')}</div>
           </div>
           <div className="agents-actions">
             <Button
@@ -1040,7 +1043,7 @@ function WorkflowViewInner() {
               icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />}
               onClick={() => void refresh()}
             >
-              刷新
+              {translate('workflowView.t111')}
             </Button>
             {workflows.length > 0 && (
               <Button
@@ -1056,7 +1059,7 @@ function WorkflowViewInner() {
                   setSelectionMode(true)
                 }}
               >
-                {selectionMode ? '退出选择' : '选择'}
+                {selectionMode ? translate('workflowView.t31') : translate('workflowView.t32')}
               </Button>
             )}
             <WorkflowBundleImportButton onImported={() => void refresh()} />
@@ -1067,7 +1070,7 @@ function WorkflowViewInner() {
               icon={<Icons.Download size={12} />}
               onClick={() => exportWorkflowIds([])}
             >
-              导出全部
+              {translate('workflowView.t112')}
             </Button>
             <Button
               size="middle"
@@ -1075,7 +1078,7 @@ function WorkflowViewInner() {
               icon={<Icons.Layers size={12} />}
               onClick={() => setTemplatePickerOpen(true)}
             >
-              模板库
+              {translate('workflowView.t113')}
             </Button>
             <Button
               size="middle"
@@ -1083,15 +1086,15 @@ function WorkflowViewInner() {
               icon={<Icons.Plus size={12} />}
               onClick={() => void createNewWorkflow()}
             >
-              新建工作流
+              {translate('workflowView.t114')}
             </Button>
           </div>
         </div>
         {workflows.length > 0 ? (
           <>
             {selectionMode && visibleSelectedIds.size > 0 && (
-              <div className="agents-selectbar" role="region" aria-label="工作流批量操作">
-                <span className="agents-selectbar-count">已选 {visibleSelectedIds.size} 个</span>
+              <div className="agents-selectbar" role="region" aria-label={translate('workflowView.t61')}>
+                <span className="agents-selectbar-count">{translate('workflowView.tpl7Desc', { count: visibleSelectedIds.size })}</span>
                 <span className="agents-selectbar-spacer" />
                 <Button
                   size="middle"
@@ -1104,10 +1107,10 @@ function WorkflowViewInner() {
                     setSelectedIds(new Set(workflows.map((workflow) => workflow.id)))
                   }}
                 >
-                  {visibleSelectedIds.size === workflows.length ? '取消全选' : '全选当前'}
+                  {visibleSelectedIds.size === workflows.length ? translate('workflowView.t33') : translate('workflowView.t34')}
                 </Button>
                 <Button size="middle" type="text" onClick={clearSelection}>
-                  清空选择
+                  {translate('workflowView.t115')}
                 </Button>
                 <Button
                   size="middle"
@@ -1115,7 +1118,7 @@ function WorkflowViewInner() {
                   icon={<Icons.Download size={12} />}
                   onClick={() => void handleExportSelected()}
                 >
-                  导出选中
+                  {translate('workflowView.t116')}
                 </Button>
               </div>
             )}
@@ -1145,20 +1148,20 @@ function WorkflowViewInner() {
                 <div className="empty-icon">
                   <Icons.Workflow size={24} />
                 </div>
-                <div className="empty-title">创建第一个工作流</div>
+                <div className="empty-title">{translate('workflowView.t117')}</div>
                 <div className="empty-actions">
                   <Button
                     type="primary"
                     icon={<Icons.Plus size={12} />}
                     onClick={() => void createNewWorkflow()}
                   >
-                    创建工作流
+                    {translate('workflowView.t118')}
                   </Button>
                   <Button
                     icon={<Icons.Layers size={12} />}
                     onClick={() => setTemplatePickerOpen(true)}
                   >
-                    从模板开始
+                    {translate('workflowView.t119')}
                   </Button>
                 </div>
               </div>
@@ -1211,17 +1214,17 @@ function WorkflowViewInner() {
                 size="small"
                 type="text"
                 onClick={showWorkflowList}
-                title="返回列表"
+                title={translate('workflowView.t62')}
                 icon={<Icons.ArrowLeft size={12} />}
               >
-                列表
+                {translate('workflowView.t120')}
               </Button>
               <LobeInput
                 className="wf-title-input"
                 size="small"
                 value={draft.name}
                 onChange={(event) => patchDraftMeta({ name: event.target.value })}
-                placeholder="工作流名称"
+                placeholder={translate('workflowView.t63')}
               />
               <LobeSelect
                 className="wf-status-select"
@@ -1241,10 +1244,10 @@ function WorkflowViewInner() {
             size="middle"
             type="text"
             onClick={() => setPaletteOpen((open) => !open)}
-            title="节点面板"
+            title={translate('workflowView.t64')}
             icon={<Icons.Plus size={12} />}
           >
-            节点
+            {translate('workflowView.t121')}
           </Button>
           <Button
             size="middle"
@@ -1252,11 +1255,11 @@ function WorkflowViewInner() {
             onClick={toggleOrientation}
             title={
               orientation === 'vertical'
-                ? '当前纵向编排，点击切换为横向'
-                : '当前横向编排，点击切换为纵向'
+                ? translate('workflowView.t35Desc')
+                : translate('workflowView.t36Desc')
             }
           >
-            {orientation === 'vertical' ? '↕ 纵向' : '↔ 横向'}
+            {orientation === 'vertical' ? translate('workflowView.t37') : translate('workflowView.t38')}
           </Button>
           {!editingLoopBody && (
             <Button
@@ -1266,7 +1269,7 @@ function WorkflowViewInner() {
               icon={<Icons.Trash size={12} />}
               onClick={() => void removeWorkflow()}
             >
-              删除
+              {translate('workflowView.t6')}
             </Button>
           )}
           <Button
@@ -1275,16 +1278,16 @@ function WorkflowViewInner() {
             icon={<Icons.Check size={12} />}
             onClick={() => void saveWorkflow()}
           >
-            保存
+            {translate('workflowView.t122')}
           </Button>
         </div>
 
         <div className="wf-canvas-wrap">
           {paletteOpen && (
             <div className="wf-palette">
-              <div className="wf-palette-title">节点类型</div>
+              <div className="wf-palette-title">{translate('workflowView.t76')}</div>
               <div className="agents-empty-mini wf-palette-note">
-                真实派发节点会执行 Agent；说明节点只产出结构化说明。
+                {translate('workflowView.t123Desc')}
               </div>
               {NODE_KIND_ORDER.map((kind) => {
                 const meta = NODE_KIND_META[kind]
@@ -1294,7 +1297,7 @@ function WorkflowViewInner() {
                     key={kind}
                     className={`wf-palette-item${disabled ? ' is-disabled' : ''}`}
                     disabled={disabled}
-                    title={disabled ? '运行时 v1 不支持嵌套循环' : undefined}
+                    title={disabled ? translate('workflowView.t39Desc') : undefined}
                     onClick={() => addNode(kind)}
                     style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
                   >
@@ -1361,8 +1364,8 @@ function WorkflowViewInner() {
           <button
             type="button"
             className="wf-rail-bar-btn"
-            title="展开面板区"
-            aria-label="展开面板区"
+            title={translate('workflowView.t65')}
+            aria-label={translate('workflowView.t65')}
             onClick={() => setRailCollapsed(false)}
           >
             <Icons.PanelRight size={16} />
@@ -1371,8 +1374,8 @@ function WorkflowViewInner() {
           <button
             type="button"
             className={`wf-rail-bar-btn${railTab === 'inspector' ? ' is-on' : ''}`}
-            title="检查器"
-            aria-label="检查器"
+            title={translate('workflowView.t66')}
+            aria-label={translate('workflowView.t66')}
             onClick={() => {
               setRailCollapsed(false)
               setRailTab('inspector')
@@ -1384,8 +1387,8 @@ function WorkflowViewInner() {
             <button
               type="button"
               className={`wf-rail-bar-btn${railTab === 'test-run' ? ' is-on' : ''}`}
-              title="试跑"
-              aria-label="试跑"
+              title={translate('workflowView.t67')}
+              aria-label={translate('workflowView.t67')}
               onClick={() => {
                 setRailCollapsed(false)
                 setRailTab('test-run')
@@ -1398,8 +1401,8 @@ function WorkflowViewInner() {
             <button
               type="button"
               className={`wf-rail-bar-btn${railTab === 'history' ? ' is-on' : ''}`}
-              title="历史"
-              aria-label="历史"
+              title={translate('workflowView.t68')}
+              aria-label={translate('workflowView.t68')}
               onClick={() => {
                 setRailCollapsed(false)
                 setRailTab('history')
@@ -1413,8 +1416,8 @@ function WorkflowViewInner() {
             <button
               type="button"
               className={`wf-rail-bar-btn is-featured${railTab === 'agent' ? ' is-on' : ''}`}
-              title="AI 助手：自然语言生成或修改工作流"
-              aria-label="AI 助手"
+              title={translate('workflowView.t69Desc')}
+              aria-label={translate('workflowView.t70')}
               onClick={() => {
                 setRailCollapsed(false)
                 setRailTab('agent')
@@ -1434,7 +1437,7 @@ function WorkflowViewInner() {
               onClick={() => setRailTab('inspector')}
             >
               <Icons.Sliders size={12} />
-              检查器
+              {translate('workflowView.t66')}
             </button>
             {canTestRun && (
               <button
@@ -1445,7 +1448,7 @@ function WorkflowViewInner() {
                 onClick={() => setRailTab('test-run')}
               >
                 <Icons.Play size={12} />
-                试跑
+                {translate('workflowView.t67')}
               </button>
             )}
             {canTestRun && (
@@ -1457,7 +1460,7 @@ function WorkflowViewInner() {
                 onClick={() => setRailTab('history')}
               >
                 <Icons.History size={12} />
-                历史
+                {translate('workflowView.t68')}
               </button>
             )}
             <div className="wf-rail-tab-divider" aria-hidden="true" />
@@ -1470,14 +1473,14 @@ function WorkflowViewInner() {
                 onClick={() => setRailTab('agent')}
               >
                 <Icons.Sparkles size={12} />
-                AI 助手
+                {translate('workflowView.t70')}
               </button>
             )}
             <button
               type="button"
               className="wf-rail-tab wf-rail-collapse"
-              title="折叠面板区（画布全宽）"
-              aria-label="折叠面板区"
+              title={translate('workflowView.t71')}
+              aria-label={translate('workflowView.t72')}
               onClick={() => setRailCollapsed(true)}
             >
               <Icons.PanelRight size={14} />
@@ -1554,7 +1557,7 @@ function WorkflowViewInner() {
                     showChatView: () => setTweak('view', 'chat'),
                     setActiveSession,
                   }).catch((error) => {
-                    toast.error(error instanceof Error ? error.message : '试跑会话打开失败。')
+                    toast.error(error instanceof Error ? error.message : translate('workflowView.t40'))
                   })
                 }}
               />
@@ -1571,7 +1574,7 @@ function WorkflowViewInner() {
               onClose={() => setRailTab('inspector')}
               editorState={{
                 workflowId: activeId,
-                name: draft?.name ?? '未命名工作流',
+                name: draft?.name ?? translate('workflowView.t41'),
                 graph: completeRootGraph,
               }}
               providers={providers}
@@ -1584,7 +1587,7 @@ function WorkflowViewInner() {
                     if (res.workflow != null) openWorkflow(res.workflow, { animate: true })
                   })
                   .catch((error) => {
-                    toast.error(error instanceof Error ? error.message : '打开新生成的工作流失败。')
+                    toast.error(error instanceof Error ? error.message : translate('workflowView.t42'))
                   })
               }}
               onRestoreGraph={(graph) => loadGraphIntoCanvas(graph)}
@@ -1625,7 +1628,7 @@ function WorkflowListCard({
         key: 'open',
         label: (
           <span className="agent-context-menu-item">
-            <Icons.Edit size={14} /> 打开编辑
+            <Icons.Edit size={14} /> {translate('workflowView.t124')}
           </span>
         ),
         onClick: onOpen,
@@ -1634,7 +1637,7 @@ function WorkflowListCard({
         key: 'export',
         label: (
           <span className="agent-context-menu-item">
-            <Icons.Download size={14} /> 导出
+            <Icons.Download size={14} /> {translate('workflowView.t125')}
           </span>
         ),
         onClick: onExport,
@@ -1643,7 +1646,7 @@ function WorkflowListCard({
         key: 'team-publish',
         label: (
           <span className="agent-context-menu-item">
-            <Icons.Users size={14} /> 发布到团队
+            <Icons.Users size={14} /> {translate('workflowView.t126')}
           </span>
         ),
         onClick: onPublishToTeam,
@@ -1652,7 +1655,7 @@ function WorkflowListCard({
         key: 'delete',
         label: (
           <span className="agent-context-menu-item danger">
-            <Icons.Trash size={14} /> 删除
+            <Icons.Trash size={14} /> {translate('workflowView.t6')}
           </span>
         ),
         onClick: onDelete,
@@ -1678,7 +1681,7 @@ function WorkflowListCard({
         <label
           className="workflow-card-check"
           onClick={(event) => event.stopPropagation()}
-          title={selected ? '取消选择' : '选择'}
+          title={selected ? translate('workflowView.t43') : translate('workflowView.t32')}
         >
           <input type="checkbox" checked={selected} onChange={onToggleSelect} />
         </label>
@@ -1690,15 +1693,15 @@ function WorkflowListCard({
         <span className={`wf-list-status status-${workflow.status}`}>{workflow.status}</span>
       </span>
       <span className="workflow-card-name">{workflow.name}</span>
-      <span className="workflow-card-desc">{workflow.description || '自定义 Agent 执行流程'}</span>
+      <span className="workflow-card-desc">{workflow.description || translate('workflowView.t14Desc')}</span>
       <span className="workflow-card-meta">
-        <span>{workflow.graph.nodes.length} 节点</span>
+        <span>{translate('workflowView.tpl8Desc', { count: workflow.graph.nodes.length })}</span>
         <span className="wf-list-dot" />
-        <span>{workflow.graph.edges.length} 连线</span>
+        <span>{translate('workflowView.tpl9Desc', { count: workflow.graph.edges.length })}</span>
         {conditionalEdgeCount > 0 && (
           <>
             <span className="wf-list-dot" />
-            <span>{conditionalEdgeCount} 条件</span>
+            <span>{translate('workflowView.tpl10Desc', { count: conditionalEdgeCount })}</span>
           </>
         )}
       </span>
@@ -1718,13 +1721,13 @@ function WorkflowListCard({
             )
           })
         ) : (
-          <span className="agents-empty-mini">暂无节点</span>
+          <span className="agents-empty-mini">{translate('workflowView.t127')}</span>
         )}
       </span>
       <button
         type="button"
         className="workflow-card-delete"
-        title="删除工作流"
+        title={translate('workflowView.t73')}
         onClick={(event) => {
           event.stopPropagation()
           onDelete()
@@ -1747,7 +1750,7 @@ function defaultStarterGraph(): WorkflowGraph {
     {
       id: 'input-1',
       kind: 'input',
-      title: '需求输入',
+      title: translate('workflowView.t44'),
       x: 80,
       y: 80,
       config: { prompt: NODE_KIND_META.input.defaultPrompt, retryCount: 1 },
@@ -1816,7 +1819,7 @@ function WorkflowInspector(props: InspectorProps) {
     return (
       <div className="wf-inspector">
         <div className="wf-insp-body">
-          <div className="agents-empty-mini">选择一个节点进行配置</div>
+          <div className="agents-empty-mini">{translate('workflowView.t128')}</div>
         </div>
       </div>
     )
@@ -1888,13 +1891,13 @@ function WorkflowInspector(props: InspectorProps) {
     try {
       const parsed = JSON.parse(value) as unknown
       if (!isWorkflowGraph(parsed)) {
-        setLoopBodyError('循环体格式无效，请检查节点、连线、条件和编排方向。')
+        setLoopBodyError(translate('workflowView.t45Desc'))
         return
       }
       props.onPatchConfig({ body: parsed })
       setLoopBodyError('')
     } catch (error) {
-      setLoopBodyError(error instanceof Error ? error.message : 'JSON 解析失败')
+      setLoopBodyError(error instanceof Error ? error.message : translate('workflowView.t46'))
     }
   }
   const loopBreakCondition = isLoop ? config.breakCondition : undefined
@@ -1929,22 +1932,22 @@ function WorkflowInspector(props: InspectorProps) {
         <div className="flex1">
           <div className="strong">{node.data.title}</div>
           <div className="muted wf-insp-role">
-            {meta.label} 节点 · {meta.runtimeLabel}
+            {translate('workflowView.tpl11Desc', { label: meta.label, runtime: meta.runtimeLabel })}
           </div>
         </div>
-        <button className="icon-btn" title="删除节点" onClick={props.onDelete}>
+        <button className="icon-btn" title={translate('workflowView.t74')} onClick={props.onDelete}>
           <Icons.Trash size={13} />
         </button>
       </div>
       <div className="wf-insp-body scroll">
         <div className="wf-runtime-note">{meta.runtimeHint}</div>
-        <InspectorField label="标题">
+        <InspectorField label={translate('workflowView.t75')}>
           <LobeInput
             value={node.data.title}
             onChange={(event) => props.onPatch({ title: event.target.value })}
           />
         </InspectorField>
-        <InspectorField label="节点类型">
+        <InspectorField label={translate('workflowView.t76')}>
           <LobeSelect
             value={node.data.kind}
             onChange={handleKindChange}
@@ -1961,7 +1964,7 @@ function WorkflowInspector(props: InspectorProps) {
           agents={agents}
           onPatchConfig={props.onPatchConfig}
         />
-        <InspectorField label="节点提示词">
+        <InspectorField label={translate('workflowView.t77')}>
           <LobeTextArea
             rows={6}
             value={String(config.prompt ?? '')}
@@ -1969,49 +1972,49 @@ function WorkflowInspector(props: InspectorProps) {
           />
           {upstreamOutputKeys.length > 0 && (
             <div className="wf-field-help">
-              可用上游变量：{upstreamOutputKeys.join('、')}（写 {'{{键名}}'}{' '}
-              引用，运行时替换为该输出）
+              {translate('workflowView.tpl12LongDesc', { keys: upstreamOutputKeys.join(', ') })}{translate('workflowView.tpl12bDesc')} {'{{key}}'}{' '}
+              {translate('workflowView.tpl12cDesc')}）
             </div>
           )}
         </InspectorField>
-        <InspectorField label="输出键 outputKey">
+        <InspectorField label={translate('workflowView.t78Desc')}>
           <LobeInput
-            placeholder="如 plan_result"
+            placeholder={translate('workflowView.t79Desc')}
             value={String(config.outputKey ?? '')}
             onChange={(event) => {
-              // 空串即"未配置"：运行时对空 outputKey 按无输出处理。
+              // 空串即"{translate('workflowView.tpl22Desc')}"：运行时对空 outputKey 按无输出处理。
               props.onPatchConfig({ outputKey: event.target.value })
             }}
           />
-          <div className="wf-field-help">下游节点的输入与连线条件都按此键读取本节点的输出。</div>
+          <div className="wf-field-help">{translate('workflowView.t129Desc')}</div>
         </InspectorField>
         {isInput && (
-          <InspectorField label="静态值 value">
+          <InspectorField label={translate('workflowView.t80')}>
             <LobeTextArea
               rows={3}
-              placeholder="可选：固定输入内容（JSON 或纯文本），静态回显模式下原样写入输出键"
+              placeholder={translate('workflowView.tpl13Desc')}
               value={String(config.value ?? '')}
               onChange={(event) => props.onPatchConfig({ value: event.target.value })}
             />
             <div className="wf-field-help">
-              配合「执行模式=静态回显」时原样透传；真实执行模式下该值会连同提示词一起交给模型拆解。
+              {translate('workflowView.t130LongDesc')}
             </div>
           </InspectorField>
         )}
         {isExecutionModeKind && (
-          <InspectorField label="执行模式">
+          <InspectorField label={translate('workflowView.t82')}>
             <LobeSelect
               value={String(config.execution ?? 'auto')}
               onChange={(value) =>
                 props.onPatchConfig({ execution: String(value) === 'static' ? 'static' : 'auto' })
               }
               options={[
-                { label: '真实执行（派发模型/工具）', value: 'auto' },
-                { label: '静态回显（不派发，占位/省成本）', value: 'static' },
+                { label: translate('workflowView.t47Desc'), value: 'auto' },
+                { label: translate('workflowView.t48Desc'), value: 'static' },
               ]}
             />
             <div className="wf-field-help">
-              静态回显：跳过真实执行，把节点内容（input 的静态值，否则提示词/标题）直接写入输出键。
+              {translate('workflowView.t131LongDesc')}
             </div>
           </InspectorField>
         )}
@@ -2033,23 +2036,23 @@ function WorkflowInspector(props: InspectorProps) {
           />
         )}
         {isArtifact && (
-          <InspectorField label="导出路径 exportPath">
+          <InspectorField label={translate('workflowView.t83Desc')}>
             <LobeInput
-              placeholder="如 output/report.md（工作区相对路径）"
+              placeholder={translate('workflowView.t84Desc')}
               value={String(config.exportPath ?? '')}
               onChange={(event) => props.onPatchConfig({ exportPath: event.target.value })}
             />
             <div className="wf-field-help">
-              配置后节点产出会写入该文件；须位于工作区内（防路径穿越），不配则只写输出键。
+              {translate('workflowView.t132Desc')}
             </div>
           </InspectorField>
         )}
         {isRoute && (
-          <InspectorField label="路由分支">
+          <InspectorField label={translate('workflowView.t85')}>
             <LobeTextArea
               rows={5}
               placeholder={
-                'deep | 深度处理 | 需要完整实现或多步骤处理\nquick | 快速处理 | 只需要摘要、答复或轻量处理'
+                translate('workflowView.t49LongDesc')
               }
               value={formatRouteOptionsText(routeOptions)}
               onChange={(event) =>
@@ -2057,12 +2060,12 @@ function WorkflowInspector(props: InspectorProps) {
               }
             />
             <div className="wf-field-help">
-              每行一个分支：value | label | description。运行时只接受 value，并写入 outputKey。
+              {translate('workflowView.t133LongDesc')}
             </div>
           </InspectorField>
         )}
         {isRoute && (
-          <InspectorField label="固定分支">
+          <InspectorField label={translate('workflowView.t86')}>
             <LobeSelect
               value={String(config.value ?? '')}
               onChange={(value) => {
@@ -2076,21 +2079,21 @@ function WorkflowInspector(props: InspectorProps) {
                 )
               }}
               options={[
-                { label: 'LLM 决策（按上下文选择分支）', value: '' },
+                { label: translate('workflowView.t50Desc'), value: '' },
                 ...routeOptions.map((option) => ({
-                  label: `固定：${option.value}${option.label ? `（${option.label}）` : ''}`,
+                  label: translate('workflowView.tpl14Desc', { value: option.value, label: option.label ? translate('workflowView.tpl14bDesc', { label: option.label }) : '' }),
                   value: option.value,
                 })),
               ]}
             />
             <div className="wf-field-help">
-              固定分支后运行时直接输出该值（不经模型），适用于确定性的静态路由。
+              {translate('workflowView.t134Desc')}
             </div>
           </InspectorField>
         )}
         {isLoop && (
           <>
-            <InspectorField label="最大迭代次数">
+            <InspectorField label={translate('workflowView.t87')}>
               <LobeInput
                 type="number"
                 min={1}
@@ -2101,35 +2104,35 @@ function WorkflowInspector(props: InspectorProps) {
                 }
               />
               <div className="wf-field-help">
-                运行时硬上限为 50；中断后 v1 会从第 0 轮重新执行该 loop。
+                {translate('workflowView.t135Desc')}
               </div>
             </InspectorField>
-            <InspectorField label="循环变量 loopVar">
+            <InspectorField label={translate('workflowView.t88')}>
               <LobeInput
                 placeholder="__loop_index"
                 value={String(config.loopVar ?? '__loop_index')}
                 onChange={(event) => props.onPatchConfig({ loopVar: event.target.value })}
               />
             </InspectorField>
-            <InspectorField label="本轮产出 resultKey">
+            <InspectorField label={translate('workflowView.t89Desc')}>
               <LobeInput
-                placeholder="如 draft"
+                placeholder={translate('workflowView.t90')}
                 value={String(config.resultKey ?? '')}
                 onChange={(event) => props.onPatchConfig({ resultKey: event.target.value })}
               />
-              <div className="wf-field-help">为空时运行时取循环体最后一个带 outputKey 的节点。</div>
+              <div className="wf-field-help">{translate('workflowView.t136Desc')}</div>
             </InspectorField>
-            <InspectorField label="收集所有轮次">
+            <InspectorField label={translate('workflowView.t91')}>
               <Switch
                 size="small"
                 checked={config.collectAll === true}
                 onChange={(collectAll) => props.onPatchConfig({ collectAll })}
               />
               <div className="wf-field-help">
-                开启后 outputKey 写入每轮 resultKey 的聚合文本；关闭则只写最后一轮。
+                {translate('workflowView.t137LongDesc')}
               </div>
             </InspectorField>
-            <InspectorField label="退出条件">
+            <InspectorField label={translate('workflowView.t92')}>
               <LobeSelect
                 value={loopBreakOp}
                 onChange={(value) =>
@@ -2145,9 +2148,9 @@ function WorkflowInspector(props: InspectorProps) {
               />
             </InspectorField>
             {loopBreakOp !== 'none' && (
-              <InspectorField label="退出状态键">
+              <InspectorField label={translate('workflowView.t93')}>
                 <LobeInput
-                  placeholder="如 verdict"
+                  placeholder={translate('workflowView.t94')}
                   value={loopBreakKey}
                   onChange={(event) =>
                     props.onPatchConfig({
@@ -2162,9 +2165,9 @@ function WorkflowInspector(props: InspectorProps) {
               </InspectorField>
             )}
             {loopBreakNeedsValue && (
-              <InspectorField label="退出比较值">
+              <InspectorField label={translate('workflowView.t95')}>
                 <LobeInput
-                  placeholder="如 pass / true / 42"
+                  placeholder={translate('workflowView.t96Desc')}
                   value={loopBreakValueText}
                   onChange={(event) =>
                     props.onPatchConfig({
@@ -2177,13 +2180,13 @@ function WorkflowInspector(props: InspectorProps) {
                   }
                 />
                 <div className="wf-field-help">
-                  true/false 按布尔、null 按空值、纯数字按数值比较，其余按字符串。
+                  {translate('workflowView.t138Desc')}
                 </div>
               </InspectorField>
             )}
             {editingLoopBody ? (
               <div className="wf-runtime-note wf-field-warn">
-                运行时 v1 不支持循环体内再嵌套 loop。请删除或转换这个旧节点。
+                {translate('workflowView.t139Desc')}
               </div>
             ) : (
               <WorkflowLoopBodySummary
@@ -2198,39 +2201,39 @@ function WorkflowInspector(props: InspectorProps) {
           </>
         )}
         {isAgent && (
-          <InspectorField label="执行 Agent">
+          <InspectorField label={translate('workflowView.t97')}>
             <LobeSelect
               value={String(config.agentId ?? '')}
               onChange={(value) => patchAgentBinding(String(value ?? ''))}
               options={[
-                { label: '宿主 Agent（当前会话）', value: '' },
+                { label: translate('workflowView.t51Desc'), value: '' },
                 ...selectableAgents.map((agent) => ({ label: agent.name, value: agent.id })),
               ]}
             />
             {agentBindingMissing ? (
               <div className="wf-field-help wf-field-error">
-                引用的 Agent 已不存在，保存将被阻止，请重新选择执行者。
+                {translate('workflowView.t140Desc')}
               </div>
             ) : (
               <div className="wf-field-help">
-                未选择时运行时回退使用会话当前 Agent；需要固定执行者请显式指定。
+                {translate('workflowView.tpl15Desc')}
               </div>
             )}
           </InspectorField>
         )}
         {isSubagent && (
           <>
-            <InspectorField label="子代理">
+            <InspectorField label={translate('workflowView.t98')}>
               <LobeSelect
                 value={String(config.agentId ?? '')}
                 onChange={(value) => patchAgentBinding(String(value ?? ''))}
                 options={[
-                  { label: '生成临时子代理', value: '' },
+                  { label: translate('workflowView.t52'), value: '' },
                   ...selectableAgents.map((agent) => ({ label: agent.name, value: agent.id })),
                 ]}
               />
             </InspectorField>
-            <InspectorField label="并发数">
+            <InspectorField label={translate('workflowView.t99')}>
               <LobeInput
                 type="number"
                 min={1}
@@ -2241,10 +2244,10 @@ function WorkflowInspector(props: InspectorProps) {
                 }
               />
               <div className="agent-field-hint">
-                parallelism≥2 时该子代理节点并发执行 N 次，结果按分支拼接。
+                {translate('workflowView.t142Desc')}
               </div>
             </InspectorField>
-            <InspectorField label="工具">
+            <InspectorField label={translate('workflowView.t100')}>
               <TagPicker
                 items={WORKFLOW_RESTRICTABLE_TOOLS.map((tool) => ({
                   id: tool.name,
@@ -2257,10 +2260,10 @@ function WorkflowInspector(props: InspectorProps) {
           </>
         )}
         {isVerify && (
-          <InspectorField label="验证命令">
+          <InspectorField label={translate('workflowView.t101')}>
             <LobeTextArea
               rows={3}
-              placeholder="一行一条，例如：pnpm test"
+              placeholder={translate('workflowView.t102Desc')}
               value={(config.verifyCommands ?? []).join('\n')}
               onChange={(event) =>
                 props.onPatchConfig({
@@ -2280,7 +2283,7 @@ function WorkflowInspector(props: InspectorProps) {
             onChange={(skillIds) => props.onPatchConfig({ skillIds })}
           />
         </InspectorField>
-        <InspectorField label="规则">
+        <InspectorField label={translate('workflowView.t103')}>
           <TagPicker
             items={rules.map((rule) => ({ id: rule.id, label: rule.name }))}
             selected={asStringArray(config.ruleIds)}
@@ -2290,17 +2293,17 @@ function WorkflowInspector(props: InspectorProps) {
         {!isMcp && (
           <InspectorField label="MCP">
             <div className="wf-field-help">
-              所有已启用的 MCP 会自动挂载到该节点，无需逐节点绑定。
+              {translate('workflowView.tpl16Desc')}
               {mcpServers.some((server) => server.enabled)
-                ? ` 当前启用：${mcpServers
+                ? `${translate('workflowView.tpl17Desc')}${mcpServers
                     .filter((server) => server.enabled)
                     .map((server) => server.name)
-                    .join('、')}`
-                : ' 当前没有已启用的 MCP。'}
+                    .join(', ')}`
+                : translate('workflowView.tpl18Desc')}
             </div>
           </InspectorField>
         )}
-        <InspectorField label="重试次数">
+        <InspectorField label={translate('workflowView.t104')}>
           <LobeInput
             type="number"
             min={0}
@@ -2308,7 +2311,7 @@ function WorkflowInspector(props: InspectorProps) {
             value={Number(config.retryCount ?? 1)}
             onChange={(event) => props.onPatchConfig({ retryCount: Number(event.target.value) })}
           />
-          <div className="wf-field-help">运行时上限 3 次（0-3），超出按 3 处理。</div>
+          <div className="wf-field-help">{translate('workflowView.t143Desc')}</div>
         </InspectorField>
       </div>
     </div>
@@ -2318,12 +2321,12 @@ function WorkflowInspector(props: InspectorProps) {
 type EdgeConditionOpChoice = WorkflowEdgeCondition['op'] | 'none'
 
 const EDGE_CONDITION_OP_OPTIONS: Array<{ label: string; value: EdgeConditionOpChoice }> = [
-  { label: '无条件（总是执行）', value: 'none' },
-  { label: '键存在 exists', value: 'exists' },
-  { label: '为真 truthy', value: 'truthy' },
-  { label: '为假 falsy', value: 'falsy' },
-  { label: '等于 equals', value: 'equals' },
-  { label: '不等于 not_equals', value: 'not_equals' },
+  { label: translate('workflowView.t54'), value: 'none' },
+  { label: translate('workflowView.t55'), value: 'exists' },
+  { label: translate('workflowView.t56'), value: 'truthy' },
+  { label: translate('workflowView.t57'), value: 'falsy' },
+  { label: translate('workflowView.t58'), value: 'equals' },
+  { label: translate('workflowView.t59Desc'), value: 'not_equals' },
 ]
 
 /**
@@ -2443,21 +2446,21 @@ function WorkflowEdgeInspector({
           <Icons.Branch size={14} />
         </div>
         <div className="flex1">
-          <div className="strong">连线</div>
+          <div className="strong">{translate('workflowView.t144')}</div>
           <div className="muted wf-insp-role">
             {sourceNode?.data.title ?? edge.source} → {targetNode?.data.title ?? edge.target}
           </div>
         </div>
-        <button className="icon-btn" title="删除连线" onClick={onDelete}>
+        <button className="icon-btn" title={translate('workflowView.t105')} onClick={onDelete}>
           <Icons.Trash size={13} />
         </button>
       </div>
       <div className="wf-insp-body scroll">
         <div className="wf-runtime-note">
-          条件按工作流状态求值：不满足时本连线不通，目标节点因此不可达则整段下游被跳过。状态键来自上游节点的「输出键
+          {translate('workflowView.tpl19LongDesc')}
           outputKey」。
         </div>
-        <InspectorField label="触发条件">
+        <InspectorField label={translate('workflowView.t106')}>
           <LobeSelect
             value={op}
             onChange={(value) =>
@@ -2467,10 +2470,10 @@ function WorkflowEdgeInspector({
           />
         </InspectorField>
         {op !== 'none' && (
-          <InspectorField label="状态键">
+          <InspectorField label={translate('workflowView.t107')}>
             <LobeInput
               placeholder={
-                sourceOutputKey.length > 0 ? `如上游输出键：${sourceOutputKey}` : '上游节点的输出键'
+                sourceOutputKey.length > 0 ? translate('workflowView.tpl20Desc', { key: sourceOutputKey }) : translate('workflowView.t60')
               }
               value={key}
               onChange={(event) => onPatchCondition(rebuild(op, event.target.value, valueText))}
@@ -2481,25 +2484,25 @@ function WorkflowEdgeInspector({
                 className="tool-chip wf-condition-key-chip"
                 onClick={() => onPatchCondition(rebuild(op, sourceOutputKey, valueText))}
               >
-                <Icons.Check size={11} /> 使用 {sourceOutputKey}
+                <Icons.Check size={11} /> {translate('workflowView.tpl21Desc', { key: sourceOutputKey })}
               </button>
             )}
             {key.trim().length === 0 && (
               <div className="wf-field-help wf-field-warn">
-                状态键为空时条件不生效（保存后会被忽略）。
+                {translate('workflowView.t145Desc')}
               </div>
             )}
           </InspectorField>
         )}
         {needsValue && (
-          <InspectorField label="比较值">
+          <InspectorField label={translate('workflowView.t108')}>
             <LobeInput
-              placeholder="如 true / 42 / done"
+              placeholder={translate('workflowView.t109Desc')}
               value={valueText}
               onChange={(event) => onPatchCondition(rebuild(op, key, event.target.value))}
             />
             <div className="wf-field-help">
-              true/false 按布尔、null 按空值、纯数字按数值比较，其余按字符串。
+              {translate('workflowView.t138Desc')}
             </div>
             {sourceRouteOptions.length > 0 && sourceOutputKey.length > 0 && (
               <div className="wf-route-option-chips">

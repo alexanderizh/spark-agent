@@ -15,6 +15,7 @@ import { Alert } from 'antd'
 import { useAuth } from './AuthContext'
 import { LoginForm } from './LoginForm'
 import { RegisterForm } from './RegisterForm'
+import { useI18n } from '../i18n'
 import { Icons } from '../Icons'
 import sparkLogo from '../../assets/spark-logo.png'
 import './Auth.less'
@@ -26,16 +27,17 @@ export interface AuthGateProps {
 
 export function AuthGate({ variant = 'full' }: AuthGateProps): React.ReactElement {
   const auth = useAuth()
+  const { t } = useI18n()
   const isEmbed = variant === 'embed'
   const flowSwitch = isEmbed ? (
     <div className="auth-switch-flow">
-      <span>{auth.flow === 'login' ? '没有账号？' : '已有账号？'}</span>
+      <span>{auth.flow === 'login' ? t('auth.gate.noAccount') : t('auth.gate.hasAccount')}</span>
       <button
         type="button"
         className="auth-switch-flow-link"
         onClick={() => auth.setFlow(auth.flow === 'login' ? 'register' : 'login')}
       >
-        {auth.flow === 'login' ? '去注册 →' : '去登录 →'}
+        {auth.flow === 'login' ? t('auth.gate.goRegister') : t('auth.gate.goLogin')}
       </button>
     </div>
   ) : undefined
@@ -54,49 +56,52 @@ export function AuthGate({ variant = 'full' }: AuthGateProps): React.ReactElemen
             <div className="auth-brand-headline">
               <div className="auth-brand-eyebrow">
                 <span className="auth-brand-eyebrow-line" />
-                {auth.flow === 'login' ? 'Welcome back' : 'Get started'}
+                {auth.flow === 'login'
+                  ? t('auth.gate.eyebrowLogin')
+                  : t('auth.gate.eyebrowRegister')}
               </div>
               <h1 className="auth-brand-h">
                 {auth.flow === 'login' ? (
                   <>
-                    让 AI <span className="auth-brand-accent">真正</span>
+                    {t('auth.gate.headlineLoginPrefix')}{' '}
+                    <span className="auth-brand-accent">{t('auth.gate.headlineLoginAccent')}</span>
                     <br />
-                    为你工作
+                    {t('auth.gate.headlineLoginSuffix')}
                   </>
                 ) : (
                   <>
-                    几秒创建
+                    {t('auth.gate.headlineRegisterPrefix')}
                     <br />
-                    <span className="auth-brand-accent">你的账号</span>
+                    <span className="auth-brand-accent">
+                      {t('auth.gate.headlineRegisterAccent')}
+                    </span>
                   </>
                 )}
               </h1>
               <p className="auth-brand-sub">
-                {auth.flow === 'login'
-                  ? '登录后即可使用平台模型，也可接入你已有的第三方模型。'
-                  : '注册即享平台模型额度，密钥安全保存在本机。'}
+                {auth.flow === 'login' ? t('auth.gate.subLogin') : t('auth.gate.subRegister')}
               </p>
 
               <div className="auth-brand-features">
                 <div className="auth-brand-feat">
                   <Icons.Zap size={18} />
                   <div className="auth-brand-feat-text">
-                    <strong>3 分钟开箱即用</strong>
-                    <span>无需复杂配置</span>
+                    <strong>{t('auth.gate.feat1Title')}</strong>
+                    <span>{t('auth.gate.feat1Desc')}</span>
                   </div>
                 </div>
                 <div className="auth-brand-feat">
                   <Icons.Lock size={18} />
                   <div className="auth-brand-feat-text">
-                    <strong>密钥本机安全存储</strong>
-                    <span>不上传云端</span>
+                    <strong>{t('auth.gate.feat2Title')}</strong>
+                    <span>{t('auth.gate.feat2Desc')}</span>
                   </div>
                 </div>
                 <div className="auth-brand-feat">
                   <Icons.Sparkles size={18} />
                   <div className="auth-brand-feat-text">
-                    <strong>可随时扩展能力</strong>
-                    <span>技能 / 工作流 / MCP</span>
+                    <strong>{t('auth.gate.feat3Title')}</strong>
+                    <span>{t('auth.gate.feat3Desc')}</span>
                   </div>
                 </div>
               </div>
@@ -104,7 +109,7 @@ export function AuthGate({ variant = 'full' }: AuthGateProps): React.ReactElemen
 
             <div className="auth-brand-foot">
               <span className="auth-brand-dot" />
-              <span>开箱即用，无需复杂配置</span>
+              <span>{t('auth.gate.foot')}</span>
             </div>
           </aside>
         )}
@@ -113,7 +118,11 @@ export function AuthGate({ variant = 'full' }: AuthGateProps): React.ReactElemen
         <div className="auth-form-side">
           {/* 登录/注册胶囊开关：仅 full 形态显示 */}
           {!isEmbed && (
-            <div className="auth-mode-switch" role="tablist" aria-label="登录或注册">
+            <div
+              className="auth-mode-switch"
+              role="tablist"
+              aria-label={t('auth.gate.modeSwitchAriaLabel')}
+            >
               <button
                 type="button"
                 role="tab"
@@ -121,7 +130,7 @@ export function AuthGate({ variant = 'full' }: AuthGateProps): React.ReactElemen
                 className={auth.flow === 'login' ? 'active' : ''}
                 onClick={() => auth.setFlow('login')}
               >
-                登录
+                {t('auth.gate.loginTab')}
               </button>
               <button
                 type="button"
@@ -130,7 +139,7 @@ export function AuthGate({ variant = 'full' }: AuthGateProps): React.ReactElemen
                 className={auth.flow === 'register' ? 'active' : ''}
                 onClick={() => auth.setFlow('register')}
               >
-                注册
+                {t('auth.gate.registerTab')}
               </button>
             </div>
           )}
@@ -141,10 +150,13 @@ export function AuthGate({ variant = 'full' }: AuthGateProps): React.ReactElemen
               showIcon
               message={
                 <div className="auth-keytar-warn">
-                  <div>本地凭证库不可用（keytar 加载失败），登录态不会保存到下次启动。</div>
+                  <div>{t('auth.gate.keytarWarn')}</div>
                   <div className="auth-keytar-warn-fix">
-                    请在仓库根目录执行 <code>pnpm --filter @spark/desktop rebuild keytar</code> 或
-                    <code> npx electron-rebuild -f -w keytar</code> 重新编译原生模块后重启应用。
+                    {t('auth.gate.keytarFixPrefix')}{' '}
+                    <code>pnpm --filter @spark/desktop rebuild keytar</code>{' '}
+                    {t('auth.gate.keytarFixOr')}{' '}
+                    <code>npx electron-rebuild -f -w keytar</code>{' '}
+                    {t('auth.gate.keytarFixSuffix')}
                   </div>
                 </div>
               }

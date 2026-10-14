@@ -20,6 +20,7 @@ import { Dropdown, Button, Tooltip } from '@lobehub/ui'
 import { DatePicker, Space, Switch } from 'antd'
 import type { DragEvent, ReactNode } from 'react'
 import { Icons } from '../Icons'
+import { translate, useI18n } from '../i18n'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -181,12 +182,12 @@ function BoardAttachmentImage({
     <div
       className={`${className ?? ''}${broken ? ' is-missing' : ''}`.trim()}
       onClick={handleClick}
-      title={broken ? `${attachment.name} 不可访问` : attachment.name}
+      title={broken ? translate('boardView.tpl2Desc', { name: attachment.name }) : attachment.name}
     >
       {broken ? (
         <div className={placeholderClassName}>
           <Icons.Image size={16} />
-          <span>图片不可用</span>
+          <span>{translate('boardView.t79')}</span>
         </div>
       ) : (
         <img src={currentSrc} alt={attachment.name} onError={handleError} />
@@ -201,12 +202,12 @@ function BoardAttachmentImage({
 /* ------------------------------------------------------------------ */
 
 const COLUMNS: { key: TaskStatus; label: string; color: string; icon: string; headerBg: string; headerFg: string; colBg: string; colClass: string }[] = [
-  { key: 'todo', label: '待办', color: '#6b7280', icon: '📋', headerBg: 'rgba(107,114,128,0.12)', headerFg: '#6b7280', colBg: 'rgba(107,114,128,0.04)', colClass: 'col-todo' },
-  { key: 'in-progress', label: '进行中', color: '#3b82f6', icon: '🔄', headerBg: 'rgba(59,130,246,0.12)', headerFg: '#3b82f6', colBg: 'rgba(59,130,246,0.04)', colClass: 'col-in-progress' },
-  { key: 'bug-fix', label: 'Bug 修复', color: '#ef4444', icon: '🐛', headerBg: 'rgba(239,68,68,0.12)', headerFg: '#ef4444', colBg: 'rgba(239,68,68,0.04)', colClass: 'col-bug-fix' },
-  { key: 'done', label: '已完成', color: '#10b981', icon: '✅', headerBg: 'rgba(16,185,129,0.12)', headerFg: '#10b981', colBg: 'rgba(16,185,129,0.04)', colClass: 'col-done' },
-  { key: 'accepted', label: '已验收', color: '#8b5cf6', icon: '🎯', headerBg: 'rgba(139,92,246,0.12)', headerFg: '#8b5cf6', colBg: 'rgba(139,92,246,0.04)', colClass: 'col-accepted' },
-  { key: 'closed', label: '已关闭', color: '#9ca3af', icon: '📦', headerBg: 'rgba(156,163,175,0.12)', headerFg: '#9ca3af', colBg: 'rgba(156,163,175,0.04)', colClass: 'col-closed' },
+  { key: 'todo', label: translate('boardView.t1'), color: '#6b7280', icon: '📋', headerBg: 'rgba(107,114,128,0.12)', headerFg: '#6b7280', colBg: 'rgba(107,114,128,0.04)', colClass: 'col-todo' },
+  { key: 'in-progress', label: translate('boardView.t2'), color: '#3b82f6', icon: '🔄', headerBg: 'rgba(59,130,246,0.12)', headerFg: '#3b82f6', colBg: 'rgba(59,130,246,0.04)', colClass: 'col-in-progress' },
+  { key: 'bug-fix', label: translate('boardView.t3'), color: '#ef4444', icon: '🐛', headerBg: 'rgba(239,68,68,0.12)', headerFg: '#ef4444', colBg: 'rgba(239,68,68,0.04)', colClass: 'col-bug-fix' },
+  { key: 'done', label: translate('boardView.t4'), color: '#10b981', icon: '✅', headerBg: 'rgba(16,185,129,0.12)', headerFg: '#10b981', colBg: 'rgba(16,185,129,0.04)', colClass: 'col-done' },
+  { key: 'accepted', label: translate('boardView.t5'), color: '#8b5cf6', icon: '🎯', headerBg: 'rgba(139,92,246,0.12)', headerFg: '#8b5cf6', colBg: 'rgba(139,92,246,0.04)', colClass: 'col-accepted' },
+  { key: 'closed', label: translate('boardView.t6'), color: '#9ca3af', icon: '📦', headerBg: 'rgba(156,163,175,0.12)', headerFg: '#9ca3af', colBg: 'rgba(156,163,175,0.04)', colClass: 'col-closed' },
 ]
 
 /* ------------------------------------------------------------------ */
@@ -245,10 +246,10 @@ function saveVisibleColumns(columns: TaskStatus[]): void {
 }
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; bg: string; icon: string }> = {
-  low: { label: '低', color: 'var(--text-muted)', bg: 'var(--hover)', icon: '⚪' },
-  medium: { label: '中', color: 'var(--info)', bg: 'var(--info-bg)', icon: '🔵' },
-  high: { label: '高', color: 'var(--warning)', bg: 'var(--warning-bg)', icon: '🟡' },
-  urgent: { label: '紧急', color: 'var(--danger)', bg: 'var(--danger-bg)', icon: '🔴' },
+  low: { label: translate('boardView.t7'), color: 'var(--text-muted)', bg: 'var(--hover)', icon: '⚪' },
+  medium: { label: translate('boardView.t8'), color: 'var(--info)', bg: 'var(--info-bg)', icon: '🔵' },
+  high: { label: translate('boardView.t9'), color: 'var(--warning)', bg: 'var(--warning-bg)', icon: '🟡' },
+  urgent: { label: translate('boardView.t10'), color: 'var(--danger)', bg: 'var(--danger-bg)', icon: '🔴' },
 }
 
 function uid(): string {
@@ -490,7 +491,7 @@ export async function executeTaskViaSession(
       // Resolve no-project workspace
       const wsRes = await window.spark.invoke('workspace:list', { includeArchived: false })
       const workspaces = (wsRes?.workspaces ?? []) as Array<{ id: string; name: string }>
-      const noProject = workspaces.find((w) => w.name === '不使用项目')
+      const noProject = workspaces.find((w) => w.name === translate('boardView.t11'))
       workspaceId = noProject?.id ?? workspaces[0]?.id
     }
 
@@ -498,11 +499,11 @@ export async function executeTaskViaSession(
     await ipcUpdateTask({ ...task, status: 'in-progress', updatedAt: now() })
 
     // Build prompt
-    const promptParts = [`## 任务：${task.title}`]
-    if (task.description) promptParts.push(`\n### 描述\n${task.description}`)
-    if (task.acceptanceCriteria) promptParts.push(`\n### 验收条件\n${task.acceptanceCriteria}`)
-    if (task.processingAgent) promptParts.push(`\n### 处理 Agent\n${task.processingAgent}`)
-    if (task.testAgent) promptParts.push(`\n### 测试 Agent\n${task.testAgent}`)
+    const promptParts = [translate('boardView.tpl27Desc', { title: task.title })]
+    if (task.description) promptParts.push(translate('boardView.tpl3LongDesc', { value: task.description }))
+    if (task.acceptanceCriteria) promptParts.push(translate('boardView.tpl4LongDesc', { value: task.acceptanceCriteria }))
+    if (task.processingAgent) promptParts.push(translate('boardView.tpl5Desc', { value: task.processingAgent }))
+    if (task.testAgent) promptParts.push(translate('boardView.tpl6Desc', { value: task.testAgent }))
 
     // 任务附件：映射为 SessionAttachment，随 turn 一并发送给会话
     const turnAttachments: SessionAttachment[] = (task.attachments ?? [])
@@ -513,20 +514,20 @@ export async function executeTaskViaSession(
       const imageCount = turnAttachments.filter((a) => a.type === 'image').length
       const fileCount = turnAttachments.length - imageCount
       const segs: string[] = []
-      if (imageCount > 0) segs.push(`${imageCount} 张图片`)
-      if (fileCount > 0) segs.push(`${fileCount} 个文件`)
-      promptParts.push(`\n### 任务附件\n本任务携带 ${segs.join('、')}，已在消息中一并提供，请结合附件内容处理。`)
+      if (imageCount > 0) segs.push(translate('boardView.tpl7Desc', { count: imageCount }))
+      if (fileCount > 0) segs.push(translate('boardView.tpl8Desc', { count: fileCount }))
+      promptParts.push(translate('boardView.tpl9LongDesc', { items: segs.join(', ') }))
     }
 
-    promptParts.push('\n请严格按照上述任务要求完成开发工作。完成后请审查代码并确保测试通过。')
+    promptParts.push(translate('boardView.t12Desc'))
     promptParts.push(
       [
-        '\n### 任务状态回写（必须）',
-        `本任务的 taskId 为：\`${task.id}\`。`,
-        '完成后必须调用平台工具 `mcp__spark_platform__board_update` 写回任务状态：',
-        '- 全部完成且验收通过：`{ id: "' + task.id + '", status: "done" }`',
-        '- 出现无法解决的问题或失败：`{ id: "' + task.id + '", status: "bug-fix" }`',
-        '不要遗漏此步骤，状态回写后任务才算闭环。',
+        translate('boardView.t13Desc'),
+        translate('boardView.tpl28Desc', { id: task.id }),
+        translate('boardView.t14LongDesc'),
+        translate('boardView.t15Desc') + task.id + '", status: "done" }`',
+        translate('boardView.t16Desc') + task.id + '", status: "bug-fix" }`',
+        translate('boardView.t17Desc'),
       ].join('\n'),
     )
     const prompt = promptParts.join('\n')
@@ -691,7 +692,7 @@ function TaskFormPage({
         setAttachments(prev => [...prev, ...newAttachments])
       }
     } catch (err) {
-      console.error('粘贴图片失败', err)
+      console.error(translate('boardView.t18'), err)
     }
   }, [])
 
@@ -699,7 +700,7 @@ function TaskFormPage({
   const handleUploadFile = useCallback(async () => {
     try {
       const selected = await window.spark.invoke('dialog:open-file', {
-        title: '添加文件或图片',
+        title: translate('boardView.t19'),
         multiple: true,
       })
       const filePaths: string[] = selected.filePaths ?? (selected.filePath ? [selected.filePath] : [])
@@ -725,7 +726,7 @@ function TaskFormPage({
       )
       setAttachments(prev => [...prev, ...newAttachments])
     } catch (err) {
-      console.error('上传文件失败', err)
+      console.error(translate('boardView.t20'), err)
     }
   }, [])
 
@@ -744,9 +745,9 @@ function TaskFormPage({
       <div className="tfp-header">
         <button className="tfp-back-btn" onClick={onBack}>
           <Icons.ChevronLeft size={18} />
-          <span>返回看板</span>
+          <span>{translate('boardView.t80')}</span>
         </button>
-        <h2 className="tfp-title">{isEdit ? '编辑任务' : '创建任务'}</h2>
+        <h2 className="tfp-title">{isEdit ? translate('boardView.t21') : translate('boardView.t22')}</h2>
         <div className="tfp-header-actions">
           <Button
             size="middle"
@@ -756,16 +757,16 @@ function TaskFormPage({
             disabled={!title.trim() || !project || runningNow}
             loading={runningNow}
           >
-            立即执行
+            {translate('boardView.t81')}
           </Button>
-          <Button size="middle" type="text" onClick={onBack}>取消</Button>
+          <Button size="middle" type="text" onClick={onBack}>{translate('boardView.t82')}</Button>
           <Button
             type="primary"
             size="middle"
             onClick={() => handleSubmit()}
             disabled={!title.trim() || !project}
           >
-            {isEdit ? '保存修改' : '创建任务'}
+            {isEdit ? translate('boardView.t23') : translate('boardView.t22')}
           </Button>
         </div>
       </div>
@@ -775,31 +776,31 @@ function TaskFormPage({
         <div className="tfp-main">
           {/* Project */}
           <div className="tfp-field">
-            <label className="tfp-label">项目</label>
-            <ProjectSelect value={project} onChange={setProject} invalid={!project} placeholder="选择项目" />
+            <label className="tfp-label">{translate('boardView.t83')}</label>
+            <ProjectSelect value={project} onChange={setProject} invalid={!project} placeholder={translate('boardView.t58')} />
           </div>
 
           {/* Title */}
           <div className="tfp-field">
-            <label className="tfp-label">标题</label>
+            <label className="tfp-label">{translate('boardView.t84')}</label>
             <LobeInput
               ref={titleRef}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="输入任务标题…"
+              placeholder={translate('boardView.t59')}
               className="tfp-input"
             />
           </div>
 
           {/* Description */}
           <div className="tfp-field">
-            <label className="tfp-label">描述</label>
+            <label className="tfp-label">{translate('boardView.t85')}</label>
             <LobeTextArea
               ref={textareaRef}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               onPaste={handlePaste}
-              placeholder="输入任务描述（可选），支持 Ctrl+V 粘贴图片…"
+              placeholder={translate('boardView.t60Desc')}
               rows={6}
               className="tfp-textarea"
             />
@@ -808,7 +809,7 @@ function TaskFormPage({
           {/* Attachments */}
           {attachments.length > 0 && (
             <div className="tfp-field">
-              <label className="tfp-label">附件 ({attachments.length})</label>
+              <label className="tfp-label">{translate('boardView.tpl29Desc', { count: attachments.length })}</label>
               <div className="tfp-attachments">
                 {imageAttachments.length > 0 && (
                   <div className="tfp-attachment-gallery">
@@ -847,21 +848,21 @@ function TaskFormPage({
 
           {/* Upload toolbar */}
           <div className="tfp-upload-bar">
-            <button className="tfp-upload-btn" onClick={handleUploadFile} title="上传图片或文件">
+            <button className="tfp-upload-btn" onClick={handleUploadFile} title={translate('boardView.t61')}>
               <Icons.Upload size={14} />
-              <span>上传图片/文件</span>
+              <span>{translate('boardView.t86')}</span>
             </button>
-            <span className="tfp-upload-hint">支持在描述区域 Ctrl+V 粘贴图片</span>
+            <span className="tfp-upload-hint">{translate('boardView.t87Desc')}</span>
           </div>
 
           {/* Status + Priority row */}
           <div className="tfp-row">
             <div className="tfp-field tfp-field-half">
-              <label className="tfp-label">状态</label>
+              <label className="tfp-label">{translate('boardView.t88')}</label>
               <LobeSelect value={status} onChange={(value) => setStatus(value as TaskStatus)} className="tfp-select" options={COLUMNS.map(c => ({ label: `${c.icon} ${c.label}`, value: c.key }))} />
             </div>
             <div className="tfp-field tfp-field-half">
-              <label className="tfp-label">优先级</label>
+              <label className="tfp-label">{translate('boardView.t89')}</label>
               <LobeSelect value={priority} onChange={(value) => setPriority(value as Priority)} className="tfp-select" options={(Object.keys(PRIORITY_CONFIG) as Priority[]).map((p) => {
                   const cfg = PRIORITY_CONFIG[p]
                   return { label: `${cfg.icon} ${cfg.label}`, value: p }
@@ -872,15 +873,15 @@ function TaskFormPage({
           {/* Assignee + Due date row */}
           <div className="tfp-row">
             <div className="tfp-field tfp-field-half">
-              <label className="tfp-label">负责人</label>
-              <LobeSelect value={assignee} onChange={(value) => setAssignee(value as string)} placeholder="选择负责人" className="tfp-select" allowClear showSearch options={agents.map(a => ({ label: a.name, value: a.name }))} />
+              <label className="tfp-label">{translate('boardView.t90')}</label>
+              <LobeSelect value={assignee} onChange={(value) => setAssignee(value as string)} placeholder={translate('boardView.t62')} className="tfp-select" allowClear showSearch options={agents.map(a => ({ label: a.name, value: a.name }))} />
             </div>
             <div className="tfp-field tfp-field-half">
-              <label className="tfp-label">截止日期</label>
+              <label className="tfp-label">{translate('boardView.t91')}</label>
               <DatePicker
                 {...(dueDate ? { value: dueDate } : {})}
                 onChange={(dateString) => setDueDate(dateString ?? '')}
-                placeholder="年/月/日"
+                placeholder={translate('boardView.t63')}
                 style={{ width: '100%' }}
                 allowClear
               />
@@ -890,28 +891,28 @@ function TaskFormPage({
           {/* Processing Agent + Test Agent row */}
           <div className="tfp-row">
             <div className="tfp-field tfp-field-half">
-              <label className="tfp-label">处理 Agent</label>
-              <LobeSelect value={processingAgent} onChange={(value) => setProcessingAgent(value as string)} placeholder="选择处理 Agent" className="tfp-select" allowClear showSearch options={[
+              <label className="tfp-label">{translate('boardView.t92')}</label>
+              <LobeSelect value={processingAgent} onChange={(value) => setProcessingAgent(value as string)} placeholder={translate('boardView.t64')} className="tfp-select" allowClear showSearch options={[
                   ...agents.map(a => ({ label: a.name, value: a.name })),
-                  ...teamDefs.map(t => ({ label: `[团队] ${t.name}`, value: `team:${t.name}` })),
+                  ...teamDefs.map(t => ({ label: translate('boardView.tpl30Desc', { name: t.name }), value: `team:${t.name}` })),
                 ]} />
             </div>
             <div className="tfp-field tfp-field-half">
-              <label className="tfp-label">测试 Agent（可选）</label>
-              <LobeSelect value={testAgent} onChange={(value) => setTestAgent(value as string)} placeholder="选择测试 Agent" className="tfp-select" allowClear showSearch options={[
+              <label className="tfp-label">{translate('boardView.t93')}</label>
+              <LobeSelect value={testAgent} onChange={(value) => setTestAgent(value as string)} placeholder={translate('boardView.t65')} className="tfp-select" allowClear showSearch options={[
                   ...agents.map(a => ({ label: a.name, value: a.name })),
-                  ...teamDefs.map(t => ({ label: `[团队] ${t.name}`, value: `team:${t.name}` })),
+                  ...teamDefs.map(t => ({ label: translate('boardView.tpl30Desc', { name: t.name }), value: `team:${t.name}` })),
                 ]} />
             </div>
           </div>
 
           {/* Acceptance Criteria */}
           <div className="tfp-field">
-            <label className="tfp-label">验收条件</label>
+            <label className="tfp-label">{translate('boardView.t94')}</label>
             <LobeTextArea
               value={acceptanceCriteria}
               onChange={(e) => setAcceptanceCriteria(e.target.value)}
-              placeholder="输入任务完成后的验收标准（可选）…"
+              placeholder={translate('boardView.t66Desc')}
               rows={3}
               className="tfp-textarea"
             />
@@ -919,8 +920,8 @@ function TaskFormPage({
 
           {/* Tags */}
           <div className="tfp-field" style={{paddingBottom: 20}}>
-            <label className="tfp-label">标签</label>
-            <LobeInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder="用逗号分隔多个标签" className="tfp-input" />
+            <label className="tfp-label">{translate('boardView.t95')}</label>
+            <LobeInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder={translate('boardView.t67')} className="tfp-input" />
           </div>
 
           {/* Tags preview */}
@@ -935,8 +936,8 @@ function TaskFormPage({
           {/* Meta info for edit mode */}
           {isEdit && card && (
             <div className="tfp-meta">
-              <span>创建于 {formatDate(card.createdAt)}</span>
-              <span>更新于 {formatDate(card.updatedAt)}</span>
+              <span>{translate('boardView.tpl24Desc', { date: formatDate(card.createdAt) })}</span>
+              <span>{translate('boardView.tpl25Desc', { date: formatDate(card.updatedAt) })}</span>
             </div>
           )}
         </div>
@@ -956,7 +957,7 @@ function TaskFormPage({
       {previewImage && (
         <div className="tfp-preview-overlay" onClick={() => setPreviewImage(null)}>
           <div className="tfp-preview-content" onClick={(e) => e.stopPropagation()}>
-            <img src={previewImage} alt="预览" />
+            <img src={previewImage} alt={translate('boardView.t68')} />
             <button className="tfp-preview-close" onClick={() => setPreviewImage(null)}>
               <Icons.X size={16} />
             </button>
@@ -1017,20 +1018,20 @@ function TaskCommentsPanel({
 
   return (
     <div className="tfp-comments">
-      <label className="tfp-label">评论 ({card.comments?.length ?? 0})</label>
+      <label className="tfp-label">{translate('boardView.tpl26Desc', { count: card.comments?.length ?? 0 })}</label>
       <div className="tfp-comment-list">
         {(card.comments ?? []).map((c) => (
           <div key={c.id} className="tfp-comment">
             <div className="tfp-comment-head">
-              <span className="tfp-comment-author">{c.author || '用户'}</span>
+              <span className="tfp-comment-author">{c.author || translate('boardView.t24')}</span>
               <span className="tfp-comment-time">{formatDate(c.createdAt)}</span>
             </div>
             {editingId === c.id ? (
               <div className="tfp-comment-edit">
                 <LobeTextArea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={2} className="tfp-comment-edit-input" />
                 <div className="tfp-comment-edit-actions">
-                  <Button size="middle" type="primary" onClick={() => handleSaveEdit(c.id)} disabled={!editContent.trim()}>保存</Button>
-                  <Button size="middle" type="text" onClick={() => { setEditingId(null); setEditContent('') }}>取消</Button>
+                  <Button size="middle" type="primary" onClick={() => handleSaveEdit(c.id)} disabled={!editContent.trim()}>{translate('boardView.t96')}</Button>
+                  <Button size="middle" type="text" onClick={() => { setEditingId(null); setEditContent('') }}>{translate('boardView.t82')}</Button>
                 </div>
               </div>
             ) : (
@@ -1038,11 +1039,11 @@ function TaskCommentsPanel({
             )}
             {editingId !== c.id && (
               <div className="tfp-comment-actions">
-                <Button size="middle" type="text" onClick={() => { setEditingId(c.id); setEditContent(c.content) }}>编辑</Button>
+                <Button size="middle" type="text" onClick={() => { setEditingId(c.id); setEditContent(c.content) }}>{translate('boardView.t97')}</Button>
                 <Button size="middle" type="text" danger onClick={async () => {
-                  if (!window.confirm('确定删除该评论？')) return
+                  if (!window.confirm(translate('boardView.t25'))) return
                   await deleteComment(card.id, c.id)
-                }}>删除</Button>
+                }}>{translate('boardView.t28')}</Button>
               </div>
             )}
           </div>
@@ -1052,13 +1053,13 @@ function TaskCommentsPanel({
             <div className="tfp-comment-empty-icon">
               <Icons.Chat size={32} />
             </div>
-            <div className="tfp-comment-empty-text">暂无评论</div>
+            <div className="tfp-comment-empty-text">{translate('boardView.t98')}</div>
           </div>
         )}
       </div>
       <div className="tfp-comment-input-row">
         <LobeTextArea
-          placeholder="输入评论…（Ctrl+Enter 发送）"
+          placeholder={translate('boardView.t69Desc')}
           className="tfp-comment-input"
           rows={2}
           value={newComment}
@@ -1067,7 +1068,7 @@ function TaskCommentsPanel({
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && newComment.trim()) handleAdd()
           }}
         />
-        <Button size="middle" type="primary" disabled={!newComment.trim()} onClick={handleAdd}>发送</Button>
+        <Button size="middle" type="primary" disabled={!newComment.trim()} onClick={handleAdd}>{translate('boardView.t99')}</Button>
       </div>
     </div>
   )
@@ -1101,7 +1102,7 @@ function RecycleBinPanel({
       <div className="board-recycle-panel" onClick={(e) => e.stopPropagation()}>
         <div className="brp-header">
           <div className="brp-title">
-            <Icons.Trash size={16} /> 回收站
+            <Icons.Trash size={16} /> {translate('boardView.t76')}
           </div>
           <button className="board-icon-btn" onClick={onClose}><Icons.X size={16} /></button>
         </div>
@@ -1109,7 +1110,7 @@ function RecycleBinPanel({
           {cards.length === 0 ? (
             <div className="empty-compact">
               <div className="empty-icon"><Icons.Archive size={18} /></div>
-              <div className="empty-title">回收站为空</div>
+              <div className="empty-title">{translate('boardView.t100')}</div>
             </div>
           ) : (
             <div className="brp-list">
@@ -1118,12 +1119,12 @@ function RecycleBinPanel({
                   <div className="brp-item-info">
                     <div className="brp-item-title">{card.title}</div>
                     <div className="brp-item-meta">
-                      删除于 {formatDate(card.deletedAt ?? card.updatedAt)}
+                      {translate('boardView.tpl15Desc', { date: formatDate(card.deletedAt ?? card.updatedAt) })}
                     </div>
                   </div>
                   <div className="brp-item-actions">
-                    <Button type='text' size='small' onClick={() => onRestore(card.id)}>恢复</Button>
-                    <Button type='text' size='small' danger  onClick={() => onPermanentDelete(card.id)}>彻底删除</Button>
+                    <Button type='text' size='small' onClick={() => onRestore(card.id)}>{translate('boardView.t101')}</Button>
+                    <Button type='text' size='small' danger  onClick={() => onPermanentDelete(card.id)}>{translate('boardView.t29')}</Button>
                   </div>
                 </div>
               ))}
@@ -1160,17 +1161,17 @@ function CardContextMenu({
       <div className="board-ctx-backdrop" onClick={onClose} />
       <div className="board-ctx-menu" style={{ top: menu.y, left: menu.x }}>
         <button className="board-ctx-item" onClick={() => { onOpenDetail(menu.card); onClose() }}>
-          <Icons.Eye size={14} /> 打开详情
+          <Icons.Eye size={14} /> {translate('boardView.t102')}
         </button>
         <button className="board-ctx-item" onClick={() => { onRunNow(menu.card); onClose() }}>
-          <Icons.Play size={14} /> 立即执行
+          <Icons.Play size={14} /> {translate('boardView.t81')}
         </button>
         <button className="board-ctx-item" onClick={() => { onCopy(menu.card); onClose() }}>
-          <Icons.Copy size={14} /> 复制任务
+          <Icons.Copy size={14} /> {translate('boardView.t103')}
         </button>
         <div className="board-ctx-divider" />
         <button className="board-ctx-item board-ctx-danger" onClick={() => { onDelete(menu.card.id); onClose() }}>
-          <Icons.Trash size={14} /> 删除
+          <Icons.Trash size={14} /> {translate('boardView.t28')}
         </button>
       </div>
     </>
@@ -1249,7 +1250,7 @@ function KanbanCard({
           {pCfg.icon} {pCfg.label}
         </span>
         {card.tags.length > 0 && (
-          <span className="bc-tag-count">{card.tags.length} 标签</span>
+          <span className="bc-tag-count">{translate('boardView.tpl16Desc', { count: card.tags.length })}</span>
         )}
       </div>
 
@@ -1275,7 +1276,7 @@ function KanbanCard({
           ))}
           {card.attachments.filter(a => a.type === 'file').length > 0 && (
             <span className="bc-file-count">
-              <Icons.File size={10} /> {card.attachments.filter(a => a.type === 'file').length} 文件
+              <Icons.File size={10} /> {translate('boardView.tpl17Desc', { count: card.attachments.filter((a) => a.type === 'file').length })}
             </span>
           )}
           {card.attachments.length > 2 && (
@@ -1322,10 +1323,10 @@ function KanbanCard({
           {card.status === 'done' && (
             <button
               className="bc-accept-btn"
-              title="标记为已验收"
+              title={translate('boardView.t70')}
               onClick={(e) => { e.stopPropagation(); onAccept(card) }}
             >
-              🎯 验收
+              {translate('boardView.t104')}
             </button>
           )}
           <span className="bc-status-dot" style={{ background: colCfg?.color }} title={colCfg?.label} />
@@ -1360,6 +1361,8 @@ function formatShortDate(iso: string): string {
 /* ------------------------------------------------------------------ */
 
 export function BoardView() {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const { requestConfirm, setTweak } = useApp()
   const sessionCtx = useSessionSidebar()
   const { invoke: listAgents } = useIpcInvoke('agent:list')
@@ -1706,7 +1709,7 @@ export function BoardView() {
   const projectOptions = useMemo(() => {
     return sessionCtx.projectGroups
       .map(g => g.workspace)
-      .filter(w => w.name && w.name !== '不使用项目' && w.name !== 'No project')
+      .filter(w => w.name && w.name !== translate('boardView.t11') && w.name !== 'No project')
       .map(w => ({ value: w.name, label: w.name }))
   }, [sessionCtx.projectGroups])
 
@@ -1723,8 +1726,8 @@ export function BoardView() {
   const columnSelectorContent = (
     <div className="board-column-selector">
       <div className="bcs-header">
-        <span>显示状态面板</span>
-        <button className="bcs-select-all" onClick={handleSelectAllColumns}>全选</button>
+        <span>{translate('boardView.t105')}</span>
+        <button className="bcs-select-all" onClick={handleSelectAllColumns}>{translate('boardView.t106')}</button>
       </div>
       <div className="bcs-list">
         {COLUMNS.map(col => {
@@ -1797,7 +1800,7 @@ export function BoardView() {
   }, [runTaskNow])
 
   const handleSoftDelete = useCallback(async (id: string) => {
-    const ok = await requestConfirm({ title: '删除任务', description: '任务将移至回收站，可以恢复。', confirmText: '删除', danger: true })
+    const ok = await requestConfirm({ title: translate('boardView.t26'), description: translate('boardView.t27Desc'), confirmText: translate('boardView.t28'), danger: true })
     if (!ok) return
     await ipcDeleteTask(id)
     setTasks(prev => prev.map(t => t.id === id ? { ...t, deletedAt: now(), updatedAt: now() } : t))
@@ -1810,14 +1813,14 @@ export function BoardView() {
   }, [])
 
   const handlePermanentDelete = useCallback(async (id: string) => {
-    const ok = await requestConfirm({ title: '彻底删除', description: '此操作不可撤销，任务将被永久删除。', confirmText: '彻底删除', danger: true })
+    const ok = await requestConfirm({ title: translate('boardView.t29'), description: translate('boardView.t30Desc'), confirmText: translate('boardView.t29'), danger: true })
     if (!ok) return
     await ipcPermanentDeleteTask(id)
     setTasks(prev => prev.filter(t => t.id !== id))
   }, [requestConfirm])
 
   const handleCopy = useCallback(async (card: TaskCard) => {
-    const created = await ipcCreateTask({ ...card, title: `${card.title} (副本)` })
+    const created = await ipcCreateTask({ ...card, title: translate('boardView.tpl18Desc', { title: card.title }) })
     setTasks(prev => [...prev, created])
   }, [])
 
@@ -1829,7 +1832,7 @@ export function BoardView() {
         : activeTasks
 
       if (tasksToExport.length === 0) {
-        window.alert('没有可导出的任务')
+        window.alert(translate('boardView.t31'))
         return
       }
 
@@ -1853,7 +1856,7 @@ export function BoardView() {
 
       const jsonStr = JSON.stringify(exportData, null, 2)
       const result = await window.spark.invoke('dialog:save-file', {
-        title: '导出任务',
+        title: translate('boardView.t32'),
         defaultPath: `tasks-${new Date().toISOString().slice(0, 10)}.json`,
         filters: [{ name: 'JSON', extensions: ['json'] }],
       })
@@ -1871,8 +1874,8 @@ export function BoardView() {
         setSelectedTaskIds(new Set())
       }
     } catch (err) {
-      console.error('导出任务失败', err)
-      window.alert('导出失败: ' + (err instanceof Error ? err.message : String(err)))
+      console.error(translate('boardView.t33'), err)
+      window.alert(translate('boardView.t34') + (err instanceof Error ? err.message : String(err)))
     }
   }, [activeTasks, selectedTaskIds])
 
@@ -1880,7 +1883,7 @@ export function BoardView() {
   const handleImport = useCallback(async () => {
     try {
       const result = await window.spark.invoke('dialog:open-file', {
-        title: '导入任务',
+        title: translate('boardView.t35'),
         filters: [{ name: 'JSON', extensions: ['json'] }],
       })
 
@@ -1894,7 +1897,7 @@ export function BoardView() {
 
       // Validate structure
       if (!data.tasks || !Array.isArray(data.tasks)) {
-        window.alert('无效的任务文件格式')
+        window.alert(translate('boardView.t36'))
         return
       }
 
@@ -1915,9 +1918,9 @@ export function BoardView() {
         .filter(c => (importedStatusCounts[c.key] ?? 0) > 0)
         .map(c => `${c.label} ${importedStatusCounts[c.key]}`)
         .join('、')
-      const breakdownSuffix = breakdown ? `\n\n状态分布：${breakdown}` : ''
-      const fallbackSuffix = invalidStatusCount > 0 ? `\n（${invalidStatusCount} 个无法识别的状态将按"待办"导入）` : ''
-      const confirmImport = window.confirm(`确定导入 ${count} 个任务？${breakdownSuffix}${fallbackSuffix}`)
+      const breakdownSuffix = breakdown ? translate('boardView.tpl11Desc', { breakdown }) : ''
+      const fallbackSuffix = invalidStatusCount > 0 ? translate('boardView.tpl12LongDesc', { count: invalidStatusCount }) : ''
+      const confirmImport = window.confirm(translate('boardView.tpl13Desc', { count, breakdown: breakdownSuffix, fallback: fallbackSuffix }))
       if (!confirmImport) return
 
       // Batch create tasks — preserve original status from file, fallback to 'todo'
@@ -1928,7 +1931,7 @@ export function BoardView() {
           ? (rawStatus as TaskStatus)
           : 'todo'
         const created = await ipcCreateTask({
-          title: t.title || '未命名任务',
+          title: t.title || translate('boardView.t37'),
           description: t.description || '',
           status,
           priority: (t.priority || 'medium') as Priority,
@@ -1947,10 +1950,10 @@ export function BoardView() {
       }
 
       setTasks(prev => [...prev, ...createdTasks])
-      window.alert(`成功导入 ${createdTasks.length} 个任务`)
+      window.alert(translate('boardView.tpl14Desc', { count: createdTasks.length }))
     } catch (err) {
-      console.error('导入任务失败', err)
-      window.alert('导入失败: ' + (err instanceof Error ? err.message : String(err)))
+      console.error(translate('boardView.t38'), err)
+      window.alert(translate('boardView.t39') + (err instanceof Error ? err.message : String(err)))
     }
   }, [])
 
@@ -1993,9 +1996,9 @@ export function BoardView() {
     if (selectedTaskIds.size === 0) return
     const count = selectedTaskIds.size
     const ok = await requestConfirm({
-      title: '批量删除任务',
-      description: `将把 ${count} 个任务移至回收站，可在回收站中恢复。`,
-      confirmText: '删除',
+      title: translate('boardView.t40'),
+      description: translate('boardView.tpl19Desc', { count }),
+      confirmText: translate('boardView.t28'),
       danger: true,
     })
     if (!ok) return
@@ -2196,7 +2199,7 @@ export function BoardView() {
             icon={<Icons.Trash size={13} />}
             onClick={() => handleSoftDelete(freshCard.id)}
           >
-            删除任务
+            {translate('boardView.t26')}
           </Button>
         </div>
       </div>
@@ -2209,16 +2212,16 @@ export function BoardView() {
       {/* Header */}
       <div className="board-header">
         <div className="board-header-left">
-          <h1 className="board-title">任务看板</h1>
-          <span className="board-count">{totalActive} 个任务</span>
+          <h1 className="board-title">{translate('boardView.t107')}</h1>
+          <span className="board-count">{translate('boardView.tpl20Desc', { count: totalActive })}</span>
         </div>
-        <div className="board-header-right" aria-label="任务筛选和操作">
+        <div className="board-header-right" aria-label={translate('boardView.t71')}>
           <div className="board-toolbar">
             <Tooltip
               title={
                 autoExecute
-                  ? `自动执行已开启：最多并行 ${AUTO_MAX_CONCURRENCY} 个待办任务，完成一个就继续取下一个；执行中被中断或卡死的任务会自动重新开发，直到全部完成或关闭开关`
-                  : '开启自动执行：并行执行待办任务，完成一个继续取下一个；执行中中断/卡死的任务会自动重启，直到全部完成或关闭开关（不会干扰手动启动的任务）'
+                  ? translate('boardView.tpl21LongDesc', { count: AUTO_MAX_CONCURRENCY })
+                  : translate('boardView.t41LongDesc')
               }
             >
               <div className="board-auto-execute-toggle">
@@ -2228,7 +2231,7 @@ export function BoardView() {
                   onChange={handleAutoExecuteToggle}
                 />
                 <span className={`board-auto-execute-label ${autoExecute ? 'active' : ''}`}>
-                  {autoExecute && autoActiveCount > 0 ? `执行中（${autoActiveCount}）…` : '自动执行'}
+                  {autoExecute && autoActiveCount > 0 ? translate('boardView.tpl22Desc', { count: autoActiveCount }) : translate('boardView.t42')}
                 </span>
               </div>
             </Tooltip>
@@ -2236,7 +2239,7 @@ export function BoardView() {
               size='middle'
               type='text'
               onClick={triggerRefresh}
-              title="刷新 (Ctrl+R)"
+              title={translate('boardView.t72')}
             >
               <Icons.Refresh size={14} />
             </Button>
@@ -2244,7 +2247,7 @@ export function BoardView() {
               <LobeInput
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="搜索任务…"
+                placeholder={translate('boardView.t73')}
                 className="board-search-input"
                 prefix={<Icons.Search size={14} />}
                 allowClear
@@ -2260,24 +2263,24 @@ export function BoardView() {
                 <div className="board-filter-popover-content">
                   <div className="board-filter-popover-row">
                     <LobeSelect value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select" size="middle" style={{ width: 130 }} options={[
-                      { label: '全部优先级', value: 'all' },
-                      { label: '🔴 紧急', value: 'urgent' },
-                      { label: '🟡 高', value: 'high' },
-                      { label: '🔵 中', value: 'medium' },
-                      { label: '⚪ 低', value: 'low' },
+                      { label: translate('boardView.t43'), value: 'all' },
+                      { label: translate('boardView.t44'), value: 'urgent' },
+                      { label: translate('boardView.t45'), value: 'high' },
+                      { label: translate('boardView.t46'), value: 'medium' },
+                      { label: translate('boardView.t47'), value: 'low' },
                     ]} />
                     <LobeSelect value={filterStatus} onChange={(value) => setFilterStatus(value as TaskStatus | 'all')} className="board-filter-select" size="middle" style={{ width: 130 }} options={[
-                      { label: '全部状态', value: 'all' },
-                      { label: '📋 待办', value: 'todo' },
-                      { label: '🔄 进行中', value: 'in-progress' },
-                      { label: '🐛 Bug 修复', value: 'bug-fix' },
-                      { label: '✅ 已完成', value: 'done' },
-                      { label: '🎯 已验收', value: 'accepted' },
-                      { label: '📦 已关闭', value: 'closed' },
+                      { label: translate('boardView.t48'), value: 'all' },
+                      { label: translate('boardView.t49'), value: 'todo' },
+                      { label: translate('boardView.t50'), value: 'in-progress' },
+                      { label: translate('boardView.t51'), value: 'bug-fix' },
+                      { label: translate('boardView.t52'), value: 'done' },
+                      { label: translate('boardView.t53'), value: 'accepted' },
+                      { label: translate('boardView.t54'), value: 'closed' },
                     ]} />
                     {projectOptions.length > 0 && (
                       <LobeSelect value={filterProject} onChange={(value) => setFilterProject(value as string)} className="board-filter-select" size="middle" style={{ width: 130 }} options={[
-                        { label: '全部项目', value: 'all' },
+                        { label: translate('boardView.t55'), value: 'all' },
                         ...projectOptions.map(p => ({ label: p.label, value: p.value })),
                       ]} />
                     )}
@@ -2285,9 +2288,9 @@ export function BoardView() {
                 </div>
               )}
             >
-              <Button type='text' title="筛选条件">
+              <Button type='text' title={translate('boardView.t74')}>
                 <Icons.Filter size={14} />
-                <span>筛选</span>
+                <span>{translate('boardView.t108')}</span>
                 {(filterPriority !== 'all' || filterStatus !== 'all' || filterProject !== 'all') && (
                   <span className="board-filter-active-dot" />
                 )}
@@ -2303,13 +2306,13 @@ export function BoardView() {
                 placement="bottom"
                 popupRender={() => columnSelectorContent}
               >
-                <Button type='text' title="选择显示的状态面板">
+                <Button type='text' title={translate('boardView.t75')}>
                   <Icons.Board size={14} />
-                  <span>面板</span>
+                  <span>{translate('boardView.t109')}</span>
                   <Icons.ChevronDown size={12} />
                 </Button>
               </Dropdown>
-              <Button type='text' size="middle" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
+              <Button type='text' size="middle" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title={translate('boardView.t76')} />
               {/* Import/Export dropdown button */}
               {!selectionMode && (
                 <Dropdown
@@ -2318,15 +2321,15 @@ export function BoardView() {
                     <div className="board-import-export-dropdown">
                       <button className="board-dropdown-item" onClick={handleImport}>
                         <Icons.Download size={14} />
-                        <span>导入任务</span>
+                        <span>{translate('boardView.t35')}</span>
                       </button>
                       <button className="board-dropdown-item" onClick={() => { handleExport(false); }}>
                         <Icons.Layers size={14} />
-                        <span>导出全部任务</span>
+                        <span>{translate('boardView.t110')}</span>
                       </button>
                       <button className="board-dropdown-item" onClick={() => { setSelectionMode(true); setSelectedTaskIds(new Set()); }}>
                         <Icons.CheckSquare size={14} />
-                        <span>选择导出…</span>
+                        <span>{translate('boardView.t111')}</span>
                       </button>
                     </div>
                   )}
@@ -2336,14 +2339,14 @@ export function BoardView() {
                   <Button size="middle" type="text">
                     <span className="board-btn-inner">
                       <Icons.File size={14} />
-                      <span>导入导出</span>
+                      <span>{translate('boardView.t112')}</span>
                       <Icons.ChevronDown size={12} />
                     </span>
                   </Button>
                 </Dropdown>
               )}
               <Button type="primary" size="middle" icon={<Icons.Plus size={14} />} onClick={() => setPage({ view: 'create', defaultStatus: 'todo' })}>
-                新建任务
+                {translate('boardView.t113')}
               </Button>
             </Space>
           </div>
@@ -2354,29 +2357,29 @@ export function BoardView() {
       {selectionMode && (
         <div className="board-selection-toolbar">
           <span className="board-selection-count">
-            已选 {selectedTaskIds.size} 项
+            {translate('boardView.tpl23Desc', { count: selectedTaskIds.size })}
           </span>
           <div className="board-selection-actions">
-            <Button size="middle" type="text" onClick={handleSelectAll} title="全选当前筛选结果">
-              全选
+            <Button size="middle" type="text" onClick={handleSelectAll} title={translate('boardView.t77')}>
+              {translate('boardView.t106')}
             </Button>
             <Button size="middle" type="text" onClick={handleClearSelection} disabled={selectedTaskIds.size === 0}>
-              取消选择
+              {translate('boardView.t114')}
             </Button>
             <Button
               size="middle"
               danger
               onClick={handleBatchDelete}
               disabled={selectedTaskIds.size === 0}
-              title="将所选任务移至回收站"
+              title={translate('boardView.t78')}
             >
-              删除选中
+              {translate('boardView.t115')}
             </Button>
             <Button size="middle" type="primary" onClick={() => handleExport(true)} disabled={selectedTaskIds.size === 0}>
-              导出选中
+              {translate('boardView.t116')}
             </Button>
             <Button size="middle" type="text" onClick={handleExitSelectionMode}>
-              退出选择
+              {translate('boardView.t117')}
             </Button>
           </div>
         </div>
@@ -2403,7 +2406,7 @@ export function BoardView() {
                   title={(() => {
                     const colIds = columnTasks[col.key].map(t => t.id)
                     const allSelected = colIds.length > 0 && colIds.every(id => selectedTaskIds.has(id))
-                    return allSelected ? '取消全选本面板' : '全选本面板'
+                    return allSelected ? translate('boardView.t56') : translate('boardView.t57')
                   })()}
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -2425,7 +2428,7 @@ export function BoardView() {
                   />
                 </label>
               )}
-              <button className="board-icon-btn board-icon-btn-xs" title={`在"${col.label}"中新建`} onClick={() => setPage({ view: 'create', defaultStatus: col.key })}>
+              <button className="board-icon-btn board-icon-btn-xs" title={translate('boardView.tpl1Desc', { label: col.label })} onClick={() => setPage({ view: 'create', defaultStatus: col.key })}>
                 <Icons.Plus size={13} />
               </button>
             </div>
@@ -2437,7 +2440,7 @@ export function BoardView() {
             >
               {columnTasks[col.key].length === 0 ? (
                 <div className="board-col-empty">
-                  <span>拖拽或创建任务到此处</span>
+                  <span>{translate('boardView.t118')}</span>
                 </div>
               ) : (
                 columnTasks[col.key].map(card => (

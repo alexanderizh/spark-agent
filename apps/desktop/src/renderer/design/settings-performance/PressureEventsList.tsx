@@ -6,12 +6,14 @@
  */
 
 import { useMemo } from 'react'
-import type { ResourcePressureEventRecord } from '@spark/protocol'
+import type { PressureIndicatorKey, PressureLevel, ResourcePressureEventRecord } from '@spark/protocol'
+import { useI18n, type TranslateFn } from '../i18n'
 import {
   formatClock,
   formatIndicatorValue,
-  INDICATOR_LABELS,
-  PRESSURE_LEVEL_META,
+  getIndicatorLabels,
+  getPressureLevelMeta,
+  type PressureLevelMeta,
 } from './performance-format'
 
 interface PressureEventsListProps {
@@ -19,33 +21,45 @@ interface PressureEventsListProps {
   loading: boolean
 }
 
-function migrationLabel(from: string, to: string): string {
-  const fromMeta = PRESSURE_LEVEL_META[from as keyof typeof PRESSURE_LEVEL_META]
-  const toMeta = PRESSURE_LEVEL_META[to as keyof typeof PRESSURE_LEVEL_META]
+type LevelMetaMap = Record<PressureLevel, PressureLevelMeta>
+
+function migrationLabel(from: string, to: string, levels: LevelMetaMap, t: TranslateFn): string {
+  const fromMeta = levels[from as PressureLevel]
+  const toMeta = levels[to as PressureLevel]
   if (fromMeta == null || toMeta == null) return `${from} → ${to}`
   const upgraded = toMeta.rank > fromMeta.rank
-  return upgraded ? `升入 ${toMeta.name}` : `恢复至 ${toMeta.name}`
+  return upgraded
+    ? t('perf.events.upgraded', { name: toMeta.name })
+    : t('perf.events.recovered', { name: toMeta.name })
 }
 
 /** 事件原因：越线指标明细（取该轮评估中达到目标级别的指标）。 */
-function eventReason(event: ResourcePressureEventRecord): string {
-  const toMeta = PRESSURE_LEVEL_META[event.toLevel as keyof typeof PRESSURE_LEVEL_META]
+function eventReason(
+  event: ResourcePressureEventRecord,
+  levels: LevelMetaMap,
+  indicatorLabels: Record<PressureIndicatorKey, string>,
+  t: TranslateFn,
+): string {
+  const toMeta = levels[event.toLevel as PressureLevel]
   const rank = toMeta?.rank ?? 0
   const triggers = event.indicators.filter((indicator) => {
-    const indicatorMeta = PRESSURE_LEVEL_META[indicator.level as keyof typeof PRESSURE_LEVEL_META]
+    const indicatorMeta = levels[indicator.level as PressureLevel]
     return indicatorMeta != null && indicatorMeta.rank >= rank && rank > 0
   })
   if (triggers.length === 0) {
     return event.indicators.length > 0
       ? event.indicators
-          .map((i) => `${INDICATOR_LABELS[i.key] ?? i.key} ${formatIndicatorValue(i.key, i.value)}`)
+          .map(
+            (i) =>
+              `${indicatorLabels[i.key] ?? i.key} ${formatIndicatorValue(i.key, i.value, t)}`,
+          )
           .join(' · ')
       : '—'
   }
   return triggers
     .map(
       (indicator) =>
-        `${INDICATOR_LABELS[indicator.key] ?? indicator.key} ${formatIndicatorValue(indicator.key, indicator.value)}` +
+        `${indicatorLabels[indicator.key] ?? indicator.key} ${formatIndicatorValue(indicator.key, indicator.value, t)}` +
         (indicator.thresholdPct != null
           ? indicator.key === 'event-loop-delay-ms'
             ? ` ≥ ${Math.round(indicator.thresholdPct)} ms`
@@ -56,20 +70,24 @@ function eventReason(event: ResourcePressureEventRecord): string {
 }
 
 export function PressureEventsList({ events, loading }: PressureEventsListProps) {
+  const { t } = useI18n()
+  const levels = useMemo(() => getPressureLevelMeta(t), [t])
+  const indicatorLabels = useMemo(() => getIndicatorLabels(t), [t])
+
   const rows = useMemo(
     () =>
       events.map((event) => {
-        const toMeta = PRESSURE_LEVEL_META[event.toLevel as keyof typeof PRESSURE_LEVEL_META]
+        const toMeta = levels[event.toLevel as PressureLevel]
         return {
           key: event.id,
           time: formatClock(event.occurredAt),
           levelName: toMeta?.name ?? event.toLevel,
           levelColor: toMeta?.colorVar ?? 'var(--text-faint)',
-          action: migrationLabel(event.fromLevel, event.toLevel),
-          reason: eventReason(event),
+          action: migrationLabel(event.fromLevel, event.toLevel, levels, t),
+          reason: eventReason(event, levels, indicatorLabels, t),
         }
       }),
-    [events],
+    [events, levels, indicatorLabels, t],
   )
 
   if (loading) {
@@ -88,7 +106,7 @@ export function PressureEventsList({ events, loading }: PressureEventsListProps)
   if (rows.length === 0) {
     return (
       <div className="card">
-        <div className="ev-empty">暂无降级事件 · 运行平稳</div>
+        <div className="ev-empty">{t('perf.events.empty')}</div>
       </div>
     )
   }

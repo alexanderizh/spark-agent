@@ -15,6 +15,7 @@ import { Checkbox, Modal, Spin, message } from 'antd'
 import { Button, Dropdown, Tag, Tooltip } from '@lobehub/ui'
 import { Pin, PinOff } from 'lucide-react'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { canvasApi } from './canvas.api'
 import type { CanvasAsset, CanvasAssetType, CanvasProject } from './canvas.types'
 
@@ -149,6 +150,8 @@ export function CanvasProjectDetail({
   onUploadCover,
   onSetCoverFromAsset,
 }: CanvasProjectDetailProps) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const coverInputRef = useRef<HTMLInputElement | null>(null)
   const [coverPreviewOpen, setCoverPreviewOpen] = useState(false)
   const [coverFailed, setCoverFailed] = useState(false)
@@ -174,15 +177,15 @@ export function CanvasProjectDetail({
     [onUploadCover],
   )
   const stats = [
-    { label: '节点', value: project.nodeCount, icon: <Icons.Canvas size={15} /> },
-    { label: '任务', value: project.taskCount, icon: <Icons.Clock size={15} /> },
-    { label: '资产', value: project.assetCount, icon: <Icons.Image size={15} /> },
+    { label: translate('canvasProjectDetail.t1'), value: project.nodeCount, icon: <Icons.Canvas size={15} /> },
+    { label: translate('canvasProjectDetail.t2'), value: project.taskCount, icon: <Icons.Clock size={15} /> },
+    { label: translate('canvasProjectDetail.t3'), value: project.assetCount, icon: <Icons.Image size={15} /> },
   ]
   const times = [
-    { label: '创建时间', value: formatDate(project.createdAt), icon: <Icons.Calendar size={13} /> },
-    { label: '更新时间', value: formatDate(project.updatedAt), icon: <Icons.Clock size={13} /> },
+    { label: translate('canvasProjectDetail.t4'), value: formatDate(project.createdAt), icon: <Icons.Calendar size={13} /> },
+    { label: translate('canvasProjectDetail.t5'), value: formatDate(project.updatedAt), icon: <Icons.Clock size={13} /> },
     {
-      label: '最后打开',
+      label: translate('canvasProjectDetail.t6'),
       value: formatDate(project.lastOpenedAt),
       icon: <Icons.ExternalLink size={13} />,
     },
@@ -235,14 +238,14 @@ export function CanvasProjectDetail({
 
   const handleRequestDeleteAsset = useCallback(
     (asset: CanvasAsset) => {
-      const label = asset.title ?? '未命名资源'
+      const label = asset.title ?? translate('canvasProjectDetail.t7')
       Modal.confirm({
-        title: `删除「${label}」？`,
+        title: translate('canvasProjectDetail.tpl1Desc', { name: label }),
         content:
-          '该资源会从项目资源库移除，并删除其源文件（本地文件与已上传的平台文件），此操作不可撤销。',
-        okText: '删除',
+          translate('canvasProjectDetail.t8LongDesc'),
+        okText: translate('canvasProjectDetail.t9'),
         okButtonProps: { danger: true },
-        cancelText: '取消',
+        cancelText: translate('canvasProjectDetail.t10'),
         onOk: async () => {
           // 乐观更新：先把被删条目从本地列表移除
           setAssets((current) => current.filter((item) => item.id !== asset.id))
@@ -250,9 +253,9 @@ export function CanvasProjectDetail({
             // hardDelete=true 表示管理入口的删除要连源文件一起清理；
             // 仅画布节点/Agent 的治理删除保留不动磁盘与 Provider 文件的语义。
             await canvasApi.deleteFilmAsset(project.id, asset.id, { hardDelete: true })
-            message.success('已删除资源')
+            message.success(translate('canvasProjectDetail.t11'))
           } catch (error) {
-            message.error(error instanceof Error ? error.message : '删除失败')
+            message.error(error instanceof Error ? error.message : translate('canvasProjectDetail.t12'))
           } finally {
             // 触发后台同步一次完整 snapshot，避免本地乐观更新与 DB 长期漂移
             setAssetRev((value) => value + 1)
@@ -274,12 +277,12 @@ export function CanvasProjectDetail({
       const targets = assetIds.slice(0, MAX_ASSET_SELECTION)
       const targetCount = targets.length
       Modal.confirm({
-        title: `删除 ${targetCount} 个资源？`,
+        title: translate('canvasProjectDetail.tpl2Desc', { count: targetCount }),
         content:
-          '所选资源会从项目资源库移除，并删除其源文件（本地文件与已上传的平台文件），此操作不可撤销。',
-        okText: `删除 ${targetCount} 个`,
+          translate('canvasProjectDetail.t13LongDesc'),
+        okText: translate('canvasProjectDetail.tpl3Desc', { count: targetCount }),
         okButtonProps: { danger: true },
-        cancelText: '取消',
+        cancelText: translate('canvasProjectDetail.t10'),
         onOk: async () => {
           // 乐观更新：一次性从本地列表移除所选条目
           const removeSet = new Set(targets)
@@ -287,7 +290,7 @@ export function CanvasProjectDetail({
           setBatchDeleting(true)
           try {
             await canvasApi.batchDeleteFilmAssets(project.id, targets, { hardDelete: true })
-            message.success(`已删除 ${targetCount} 个资源`)
+            message.success(translate('canvasProjectDetail.tpl4Desc', { count: targetCount }))
             setSelectedIds((current) => {
               if (current.size === 0) return current
               const next = new Set(current)
@@ -295,8 +298,8 @@ export function CanvasProjectDetail({
               return next.size === current.size ? current : next
             })
           } catch (error) {
-            message.error(error instanceof Error ? error.message : '删除失败')
-            message.warning(`${targetCount} 个资源删除失败，可重新点击「批量删除」重试`)
+            message.error(error instanceof Error ? error.message : translate('canvasProjectDetail.t12'))
+            message.warning(translate('canvasProjectDetail.tpl5Desc', { count: targetCount }))
           } finally {
             setBatchDeleting(false)
             // 只触发一次重拉，把列表与 DB 对齐
@@ -317,7 +320,7 @@ export function CanvasProjectDetail({
         return next
       }
       if (next.size >= MAX_ASSET_SELECTION) {
-        message.warning(`为避免误删，最多同时选择 ${MAX_ASSET_SELECTION} 个资源`)
+        message.warning(translate('canvasProjectDetail.tpl6Desc', { max: MAX_ASSET_SELECTION }))
         return prev
       }
       next.add(assetId)
@@ -361,7 +364,7 @@ export function CanvasProjectDetail({
         : filteredAssets.map((a) => a.id)
     setSelectedIds(new Set(next))
     if (filteredAssets.length > MAX_ASSET_SELECTION) {
-      message.info(`已选前 ${MAX_ASSET_SELECTION} 个（最多 ${MAX_ASSET_SELECTION}）`)
+      message.info(translate('canvasProjectDetail.tpl7Desc', { max: MAX_ASSET_SELECTION }))
     }
   }, [allFilteredSelected, filteredAssets])
 
@@ -372,7 +375,7 @@ export function CanvasProjectDetail({
   }, [])
 
   const assetFilterLabel = (f: 'all' | CanvasAssetType) =>
-    f === 'all' ? '全部' : f === 'image' ? '图片' : f === 'video' ? '视频' : null
+    f === 'all' ? translate('canvasProjectDetail.t14') : f === 'image' ? translate('canvasProjectDetail.t15') : f === 'video' ? translate('canvasProjectDetail.t16') : null
   const filterTabs: Array<'all' | CanvasAssetType> = ['all', 'image', 'video']
 
   // ── 资源预览 + 右键复制 ──────────────────────────────────────────────────
@@ -420,7 +423,7 @@ export function CanvasProjectDetail({
   const handleCopyImage = useCallback(async (asset: CanvasAsset) => {
     const url = asset.url ?? asset.thumbnailUrl
     if (!url) {
-      message.warning('该资源无可复制的地址')
+      message.warning(translate('canvasProjectDetail.t17'))
       return
     }
     try {
@@ -428,7 +431,7 @@ export function CanvasProjectDetail({
       const blob = await response.blob()
       if (blob.size > 0 && blob.type.startsWith('image/')) {
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
-        message.success('已复制图片到剪贴板')
+        message.success(translate('canvasProjectDetail.t18'))
         return
       }
     } catch {
@@ -436,23 +439,23 @@ export function CanvasProjectDetail({
     }
     try {
       await navigator.clipboard.writeText(url)
-      message.success('已复制资源链接')
+      message.success(translate('canvasProjectDetail.t19'))
     } catch {
-      message.error('复制失败')
+      message.error(translate('canvasProjectDetail.t20'))
     }
   }, [])
 
   const handleCopyUrl = useCallback(async (asset: CanvasAsset) => {
     const url = asset.url ?? asset.thumbnailUrl
     if (!url) {
-      message.warning('该资源无可复制的地址')
+      message.warning(translate('canvasProjectDetail.t17'))
       return
     }
     try {
       await navigator.clipboard.writeText(url)
-      message.success('已复制链接')
+      message.success(translate('canvasProjectDetail.t21'))
     } catch {
-      message.error('复制失败')
+      message.error(translate('canvasProjectDetail.t20'))
     }
   }, [])
 
@@ -465,7 +468,7 @@ export function CanvasProjectDetail({
             <button
               type="button"
               className="canvas-detail-cover-preview-trigger"
-              aria-label={`查看项目封面：${project.title}`}
+              aria-label={translate('canvasProjectDetail.tpl8Desc', { title: project.title })}
               onClick={openCoverPreview}
             >
               <img
@@ -488,20 +491,20 @@ export function CanvasProjectDetail({
                 type="button"
                 className="canvas-detail-cover-tool"
                 onClick={openCoverPreview}
-                aria-label="查看封面大图"
+                aria-label={translate('canvasProjectDetail.t48')}
               >
                 <Icons.Maximize size={14} />
-                <span>查看大图</span>
+                <span>{translate('canvasProjectDetail.t59')}</span>
               </button>
               {onUploadCover && (
                 <button
                   type="button"
                   className="canvas-detail-cover-tool"
                   onClick={openCoverPicker}
-                  aria-label="更换项目封面"
+                  aria-label={translate('canvasProjectDetail.t49')}
                 >
                   <Icons.Edit size={14} />
-                  <span>更换封面</span>
+                  <span>{translate('canvasProjectDetail.t60')}</span>
                 </button>
               )}
             </div>
@@ -511,15 +514,15 @@ export function CanvasProjectDetail({
             type="button"
             className="canvas-detail-cover-empty"
             onClick={openCoverPicker}
-            aria-label="上传项目封面"
+            aria-label={translate('canvasProjectDetail.t50')}
           >
             <Icons.Canvas size={36} />
-            <span>{coverFailed ? '封面加载失败，点击重新上传' : '暂无封面，点击上传'}</span>
+            <span>{coverFailed ? translate('canvasProjectDetail.t22Desc') : translate('canvasProjectDetail.t23')}</span>
           </button>
         ) : (
           <div className="canvas-detail-cover-empty">
             <Icons.Canvas size={36} />
-            <span>{coverFailed ? '封面加载失败' : '暂无封面，进入项目开始创作'}</span>
+            <span>{coverFailed ? translate('canvasProjectDetail.t24') : translate('canvasProjectDetail.t25Desc')}</span>
           </div>
         )}
         <input
@@ -538,20 +541,20 @@ export function CanvasProjectDetail({
             {project.title}
           </h1>
           <Tag color={project.status === 'archived' ? 'default' : 'green'}>
-            {project.status === 'archived' ? '已归档' : '进行中'}
+            {project.status === 'archived' ? translate('canvasProjectDetail.t26') : translate('canvasProjectDetail.t27')}
           </Tag>
           {project.pinned && (
-            <Tooltip title="已置顶">
+            <Tooltip title={translate('canvasProjectDetail.t51')}>
               <Pin size={13} fill="currentColor" className="canvas-detail-title-pin" />
             </Tooltip>
           )}
         </div>
         <div className="canvas-detail-header-right">
-          <Tooltip title={project.pinned ? '取消置顶' : '置顶'}>
+          <Tooltip title={project.pinned ? translate('canvasProjectDetail.t28') : translate('canvasProjectDetail.t29')}>
             <button
               type="button"
               className={`canvas-detail-pin-btn${project.pinned ? ' is-pinned' : ''}`}
-              aria-label={project.pinned ? '取消置顶' : '置顶'}
+              aria-label={project.pinned ? translate('canvasProjectDetail.t28') : translate('canvasProjectDetail.t29')}
               onClick={() => onTogglePin(project.id)}
             >
               {project.pinned ? <Pin size={14} fill="currentColor" /> : <PinOff size={14} />}
@@ -565,39 +568,39 @@ export function CanvasProjectDetail({
                 {
                   key: 'edit',
                   icon: <Icons.Edit size={14} />,
-                  label: '基础信息',
+                  label: translate('canvasProjectDetail.t30'),
                   onClick: () => onEdit(project.id),
                 },
                 {
                   key: 'open-folder',
                   icon: <Icons.Folder size={14} />,
-                  label: '打开文件夹',
+                  label: translate('canvasProjectDetail.t31'),
                   onClick: () => onOpenFolder(project.id),
                 },
                 {
                   key: 'export',
                   icon: <Icons.Download size={14} />,
-                  label: '导出',
+                  label: translate('canvasProjectDetail.t32'),
                   onClick: () => onExport(project.id),
                 },
                 { type: 'divider' as const },
                 {
                   key: 'archive',
                   icon: <Icons.Archive size={14} />,
-                  label: project.status === 'archived' ? '恢复' : '归档',
+                  label: project.status === 'archived' ? translate('canvasProjectDetail.t33') : translate('canvasProjectDetail.t34'),
                   onClick: () => onArchive(project.id),
                 },
                 {
                   key: 'delete',
                   icon: <Icons.Trash size={14} />,
-                  label: '删除',
+                  label: translate('canvasProjectDetail.t9'),
                   onClick: () => onDelete(project.id),
                 },
               ],
             }}
           >
-            <Tooltip title="更多操作">
-              <button type="button" className="canvas-detail-icon-btn" aria-label="更多项目操作">
+            <Tooltip title={translate('canvasProjectDetail.t52')}>
+              <button type="button" className="canvas-detail-icon-btn" aria-label={translate('canvasProjectDetail.t53')}>
                 <Icons.More size={15} />
               </button>
             </Tooltip>
@@ -609,24 +612,28 @@ export function CanvasProjectDetail({
             disabled={opening}
             icon={<Icons.ExternalLink size={14} />}
             onClick={() => onOpen(project.id)}
-            aria-label={opening ? `正在打开画布：${project.title}` : `打开画布：${project.title}`}
+            aria-label={
+                  opening
+                    ? translate('canvasProjectDetail.tpl9Desc', { title: project.title })
+                    : translate('canvasProjectDetail.tpl10Desc', { title: project.title })
+                }
           >
-            {opening ? '打开中' : '打开画布'}
+            {opening ? translate('canvasProjectDetail.t35') : translate('canvasProjectDetail.t36')}
           </Button>
         </div>
       </div>
 
       {/* 描述 */}
       <p className="canvas-detail-description">
-        {project.description || '暂无描述，点击「编辑」补充项目说明。'}
+        {project.description || translate('canvasProjectDetail.t37Desc')}
       </p>
 
       {/* 项目资源（图片/视频）——首批 20 个，支持筛选。
-          从 snapshot.assets 拉取，只展示有视觉预览的 image/video 类型。 */}
+          从 snapshot.assets 拉取，只展示有视觉预览的 image/video 类型。 // i18n-exempt-line: JSX 注释块内说明 */}
       <section className="canvas-detail-assets">
         <div className="canvas-detail-assets-header">
-          <h3>项目资源</h3>
-          <div className="canvas-detail-asset-filters" role="tablist" aria-label="资源类型筛选">
+          <h3>{translate('canvasProjectDetail.t61')}</h3>
+          <div className="canvas-detail-asset-filters" role="tablist" aria-label={translate('canvasProjectDetail.t54')}>
             {filterTabs.map((f) => (
               <button
                 key={f}
@@ -643,13 +650,18 @@ export function CanvasProjectDetail({
         </div>
 
         {assetsLoading ? (
-          <div className="canvas-detail-assets-loading" role="status" aria-label="正在加载资源">
+          <div className="canvas-detail-assets-loading" role="status" aria-label={translate('canvasProjectDetail.t55')}>
             <Spin size="small" />
           </div>
         ) : visibleAssets.length === 0 ? (
           <div className="canvas-detail-assets-empty">
-            暂无{assetFilter === 'image' ? '图片' : assetFilter === 'video' ? '视频' : '图片/视频'}
-            资源
+            {translate('canvasProjectDetail.tpl11Desc', {
+              type: assetFilter === 'image'
+                ? translate('canvasProjectDetail.t15')
+                : assetFilter === 'video'
+                  ? translate('canvasProjectDetail.t16')
+                  : translate('canvasProjectDetail.t38'),
+            })}
           </div>
         ) : (
           <>
@@ -657,12 +669,12 @@ export function CanvasProjectDetail({
               <div
                 className="canvas-detail-asset-batchbar"
                 role="toolbar"
-                aria-label="资源批量操作"
+                aria-label={translate('canvasProjectDetail.t56')}
               >
                 <span className="canvas-detail-asset-batchbar-count">
-                  已选 {selectedIds.size}
+                  {translate('canvasProjectDetail.tpl12Desc', { count: selectedIds.size })}
                   {filteredAssets.length > MAX_ASSET_SELECTION
-                    ? ` / 上限 ${MAX_ASSET_SELECTION}`
+                    ? translate('canvasProjectDetail.tpl13Desc', { max: MAX_ASSET_SELECTION })
                     : ''}
                 </span>
                 <div className="canvas-detail-asset-batchbar-actions">
@@ -673,10 +685,10 @@ export function CanvasProjectDetail({
                     disabled={batchDeleting}
                   >
                     {allFilteredSelected
-                      ? '取消全选'
+                      ? translate('canvasProjectDetail.t39')
                       : filteredAssets.length > MAX_ASSET_SELECTION
-                        ? `全选前 ${MAX_ASSET_SELECTION} 个`
-                        : '全选'}
+                        ? translate('canvasProjectDetail.tpl14Desc', { max: MAX_ASSET_SELECTION })
+                        : translate('canvasProjectDetail.t40')}
                   </Button>
                   <Button
                     size="small"
@@ -685,7 +697,7 @@ export function CanvasProjectDetail({
                     loading={batchDeleting}
                     onClick={() => handleRequestDeleteAssets(Array.from(selectedIds))}
                   >
-                    批量删除 ({Math.min(selectedIds.size, MAX_ASSET_SELECTION)})
+                    {translate('canvasProjectDetail.tpl15Desc', { count: Math.min(selectedIds.size, MAX_ASSET_SELECTION) })}
                   </Button>
                   <Button
                     size="small"
@@ -693,7 +705,7 @@ export function CanvasProjectDetail({
                     onClick={clearSelection}
                     disabled={batchDeleting}
                   >
-                    取消
+                    {translate('canvasProjectDetail.t10')}
                   </Button>
                 </div>
               </div>
@@ -712,7 +724,7 @@ export function CanvasProjectDetail({
                       items: [
                         {
                           key: 'preview',
-                          label: '预览',
+                          label: translate('canvasProjectDetail.t41'),
                           onClick: () => setPreviewAsset(asset),
                         },
                         ...(onSetCoverFromAsset && assetCoverUrl
@@ -720,7 +732,7 @@ export function CanvasProjectDetail({
                               {
                                 key: 'set-cover',
                                 icon: <Icons.Image size={14} />,
-                                label: isCurrentCover ? '当前封面' : '设为封面',
+                                label: isCurrentCover ? translate('canvasProjectDetail.t42') : translate('canvasProjectDetail.t43'),
                                 disabled: isCurrentCover,
                                 onClick: () => onSetCoverFromAsset(asset),
                               },
@@ -729,19 +741,19 @@ export function CanvasProjectDetail({
                         { type: 'divider' as const },
                         {
                           key: 'copy-image',
-                          label: '复制图片',
+                          label: translate('canvasProjectDetail.t44'),
                           onClick: () => void handleCopyImage(asset),
                         },
                         {
                           key: 'copy-url',
-                          label: '复制链接',
+                          label: translate('canvasProjectDetail.t45'),
                           onClick: () => void handleCopyUrl(asset),
                         },
                         { type: 'divider' as const },
                         {
                           key: 'delete',
                           icon: <Icons.Trash size={14} />,
-                          label: inSelectionMode ? `删除 (${selectedIds.size})` : '删除',
+                          label: inSelectionMode ? translate('canvasProjectDetail.tpl16Desc', { count: selectedIds.size }) : translate('canvasProjectDetail.t9'),
                           danger: true,
                           onClick: () => {
                             if (inSelectionMode) {
@@ -767,13 +779,13 @@ export function CanvasProjectDetail({
                     >
                       <AssetThumbnail asset={asset} />
                       {asset.type === 'video' && (
-                        <span className="canvas-detail-asset-badge" aria-label="视频">
+                        <span className="canvas-detail-asset-badge" aria-label={translate('canvasProjectDetail.t16')}>
                           <Icons.Play size={10} />
                         </span>
                       )}
                       {/* checkbox 单独 span 包一层，stopPropagation 避免和 tile
-                          onClick 互相触发（tile 在 selectionMode 下会切换选中，
-                          否则预览；checkbox 永远只切换选中） */}
+                          onClick 互相触发（tile 在 selectionMode 下会切换选中， // i18n-exempt-line: JSX 注释块内说明
+                          否则预览；checkbox 永远只切换选中） // i18n-exempt-line: JSX 注释块内说明 */}
                       <span
                         className="canvas-detail-asset-tile-checkbox"
                         onClick={(event) => event.stopPropagation()}
@@ -784,8 +796,8 @@ export function CanvasProjectDetail({
                           onChange={() => toggleSelect(asset.id)}
                           aria-label={
                             isSelected
-                              ? `取消选择 ${asset.title ?? '未命名资源'}`
-                              : `选择 ${asset.title ?? '未命名资源'}`
+                              ? translate('canvasProjectDetail.tpl17Desc', { title: asset.title ?? translate('canvasProjectDetail.t7') })
+                              : translate('canvasProjectDetail.tpl18Desc', { title: asset.title ?? translate('canvasProjectDetail.t7') })
                           }
                         />
                       </span>
@@ -804,7 +816,7 @@ export function CanvasProjectDetail({
             className="canvas-detail-load-more"
             onClick={() => setAssetPage((p) => p + 1)}
           >
-            加载更多（剩余 {filteredAssets.length - visibleAssets.length} 个）
+            {translate('canvasProjectDetail.tpl19Desc', { count: filteredAssets.length - visibleAssets.length })}
           </Button>
         )}
       </section>
@@ -827,14 +839,14 @@ export function CanvasProjectDetail({
         footer={null}
         width="min(92vw, 1200px)"
         centered
-        title={`${project.title} · 项目封面`}
+        title={translate('canvasProjectDetail.tpl20Desc', { title: project.title })}
         className="canvas-detail-cover-preview-modal"
         destroyOnHidden
       >
         {project.coverUrl && (
           <img
             src={project.coverUrl}
-            alt={`${project.title} · 项目封面`}
+            alt={translate('canvasProjectDetail.tpl20Desc', { title: project.title })}
             className="canvas-detail-cover-preview-image"
           />
         )}
@@ -847,7 +859,7 @@ export function CanvasProjectDetail({
         footer={null}
         width="auto"
         centered
-        title={previewAsset?.title || (previewAsset?.type === 'video' ? '视频预览' : '图片预览')}
+        title={previewAsset?.title || (previewAsset?.type === 'video' ? translate('canvasProjectDetail.t46') : translate('canvasProjectDetail.t47'))}
         className="canvas-detail-preview-modal"
         destroyOnHidden
       >
@@ -870,9 +882,9 @@ export function CanvasProjectDetail({
       </Modal>
 
       {/* 翻页按钮 portal 到 body：和 Modal 同在根 stacking context，
-          fixed 定位真正相对视口，z-index 1002 可盖过 Modal wrap(1000)。
-          不放 canvas-project-detail 内是因为 DOM 祖先链可能创建 stacking
-          context 导致按钮无论 z-index 多大都盖不过 Modal。 */}
+          fixed 定位真正相对视口，z-index 1002 可盖过 Modal wrap(1000)。 // i18n-exempt-line: JSX 注释块内说明
+          不放 canvas-project-detail 内是因为 DOM 祖先链可能创建 stacking // i18n-exempt-line: JSX 注释块内说明
+          context 导致按钮无论 z-index 多大都盖不过 Modal。 // i18n-exempt-line: JSX 注释块内说明 */}
       {previewAsset &&
         createPortal(
           <>
@@ -881,7 +893,7 @@ export function CanvasProjectDetail({
                 type="button"
                 className="canvas-detail-preview-nav prev"
                 onClick={goPreviewPrev}
-                aria-label="上一张"
+                aria-label={translate('canvasProjectDetail.t57')}
               >
                 <Icons.ChevronRight size={20} style={{ transform: 'rotate(180deg)' }} />
               </button>
@@ -891,7 +903,7 @@ export function CanvasProjectDetail({
                 type="button"
                 className="canvas-detail-preview-nav next"
                 onClick={goPreviewNext}
-                aria-label="下一张"
+                aria-label={translate('canvasProjectDetail.t58')}
               >
                 <Icons.ChevronRight size={20} />
               </button>

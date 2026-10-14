@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import type { Stage3DActor } from './stage3d.types'
 import {
   BODY_METRICS,
-  JOINT_LABEL,
+  jointLabel,
   clampJointEuler,
   type BodyMetrics,
   type JointId,
@@ -642,7 +642,7 @@ export function PoseGizmo({
         <group ref={labelGroupRef}>
           <Html center distanceFactor={6} zIndexRange={[30, 0]} pointerEvents="none" occlude={false}>
             <div className="stage3d-pose-anglelabel">
-              {JOINT_LABEL[selected]} {dragLabel}
+              {jointLabel(selected)} {dragLabel}
             </div>
           </Html>
         </group>
@@ -659,7 +659,7 @@ export function PoseGizmo({
             onPointerUp={(e) => e.stopPropagation()}
           >
             <div className="stage3d-pose-controller-head">
-              <span>{JOINT_LABEL[selected]}</span>
+              <span>{jointLabel(selected)}</span>
               <button
                 type="button"
                 className="stage3d-pose-controller-close"

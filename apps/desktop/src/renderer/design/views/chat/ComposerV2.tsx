@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import './ComposerInlineMenus.less'
 import './ComposerAttachments.less'
 import { useVoiceIntegrity } from '../../voice/useVoiceIntegrity'
+// 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+import { translate } from '../../i18n'
 import { useVoiceInput } from '../../voice/useVoiceInput'
 import { VoiceMicButton } from '../../voice/VoiceMicButton'
 import { VoiceInstallToast } from '../../voice/VoiceInstallToast'
@@ -375,27 +377,27 @@ function TextEditContextMenu({
       result.push(
         {
           key: 'cut',
-          label: '剪切',
+          label: translate('composerV2.t1'),
           icon: <Icons.Edit size={14} />,
           disabled: !hasSelection,
           onClick: () => void editTextSelection(target, 'cut'),
         },
         {
           key: 'copy',
-          label: '复制',
+          label: translate('composerV2.t2'),
           icon: <Icons.Copy size={14} />,
           disabled: !hasSelection,
           onClick: () => void editTextSelection(target, 'copy'),
         },
         {
           key: 'paste-as-text',
-          label: '粘贴为文本',
+          label: translate('composerV2.t3'),
           icon: <Icons.FilePlus size={14} />,
           onClick: () => onPasteAsText(target),
         },
         {
           key: 'paste-as-resource',
-          label: '粘贴为资源',
+          label: translate('composerV2.t4'),
           icon: <Icons.FileText size={14} />,
           onClick: onPasteAsResource,
         },
@@ -403,14 +405,14 @@ function TextEditContextMenu({
     } else if (hasSelection) {
       result.push({
         key: 'copy',
-        label: '复制',
+        label: translate('composerV2.t2'),
         icon: <Icons.Copy size={14} />,
         onClick: () => void editTextSelection(target, 'copy'),
       })
     }
     result.push({
       key: 'select-all',
-      label: '全选',
+      label: translate('composerV2.t5'),
       icon: <Icons.CheckSquare size={14} />,
       onClick: () => {
         target.focus()
@@ -433,18 +435,21 @@ function FileChipIcon({ path, size }: { path: string; size: number }) {
  * 后端 label 见 session.service.ts 的 ledgerSections（英文）。
  */
 const CONTEXT_LEDGER_SECTION_META: Record<string, { label: string; color: string }> = {
-  'System Prompt': { label: '系统提示', color: '#8a8f98' },
-  'Skill Prompt': { label: '技能', color: '#d99a2b' },
-  'Project Context': { label: '项目上下文', color: '#2f9e6b' },
-  'Conversation History': { label: '对话历史', color: '#3f7d8c' },
+  'System Prompt': { label: translate('composerV2.t6'), color: '#8a8f98' },
+  'Skill Prompt': { label: translate('composerV2.t7'), color: '#d99a2b' },
+  'Project Context': { label: translate('composerV2.t8'), color: '#2f9e6b' },
+  'Conversation History': { label: translate('composerV2.t9'), color: '#3f7d8c' },
   // 原生 resume：历史由 runtime 内部维护，规模取自上一轮真实请求，用橙色区分
   // 「本地逐字估算」与「runtime 维护的真实规模」两种口径。
-  'Conversation History (native resume)': { label: '对话历史（原生续会）', color: '#e07b39' },
+  'Conversation History (native resume)': { label: translate('composerV2.t10'), color: '#e07b39' },
   // W1.1b 联动：SDK resume 路径下 history 是 fallback（recent entries），实际 SDK 内部
   // 维持完整 history。用橙色提示用户 token 显示远低于实际占用。
-  'Conversation History (SDK resume fallback)': { label: '对话历史 (SDK 兜底)', color: '#e07b39' },
-  'User Message': { label: '用户消息', color: '#7c5cd6' },
-  Attachments: { label: '附件', color: '#c2569b' },
+  'Conversation History (SDK resume fallback)': {
+    label: translate('composerV2.t11Desc'),
+    color: '#e07b39',
+  },
+  'User Message': { label: translate('composerV2.t12'), color: '#7c5cd6' },
+  Attachments: { label: translate('composerV2.t13'), color: '#c2569b' },
 }
 
 function describeLedgerSection(label: string): { label: string; color: string } {
@@ -512,7 +517,7 @@ function ContextMeterWithPopup({
       let sid = sessionId
       if (sid == null) {
         if (runtimePatchSnapshot.providerProfileId == null) {
-          toast.warning('请先选择 Provider 再执行压缩。')
+          toast.warning(translate('composerV2.t14Desc'))
           return
         }
         sid = await onCreateSession({
@@ -543,7 +548,7 @@ function ContextMeterWithPopup({
             : {}),
         })
         if (sid == null) {
-          toast.error('创建会话失败。')
+          toast.error(translate('composerV2.t15'))
           return
         }
       }
@@ -553,11 +558,13 @@ function ContextMeterWithPopup({
         ...runtimePatchSnapshot,
       })
       if (res.success) {
-        toast.success('上下文已压缩。')
+        toast.success(translate('composerV2.t16'))
         onSent(sid)
       }
     } catch (err) {
-      toast.error('压缩上下文失败: ' + (err instanceof Error ? err.message : String(err)))
+      toast.error(
+        translate('composerV2.tpl3Desc') + (err instanceof Error ? err.message : String(err)),
+      )
     } finally {
       setCompressing(false)
       setPopupVisible(false)
@@ -604,10 +611,7 @@ function ContextMeterWithPopup({
           style={{ '--context-pct': `${contextRatio}%` } as React.CSSProperties}
         />
         {compactedThisTurn && (
-          <span
-            className="context-compacted-badge"
-            title="已自动裁剪较早的 tool_result 内容以释放上下文"
-          >
+          <span className="context-compacted-badge" title={translate('composerV2.t123Desc')}>
             <Icons.Layers size={10} />
           </span>
         )}
@@ -617,12 +621,12 @@ function ContextMeterWithPopup({
           <div className="context-popup-header">
             <div className="context-popup-title">
               <Icons.Database size={13} />
-              <span>上下文用量</span>
+              <span>{translate('composerV2.t135')}</span>
             </div>
             <span
               className={`context-popup-pct ${isCritical ? 'pct-critical' : isWarning ? 'pct-warn' : ''}`}
             >
-              {contextRatio}% 已用
+              {translate('composerV2.tpl16Desc', { ratio: contextRatio })}
             </span>
           </div>
 
@@ -636,28 +640,28 @@ function ContextMeterWithPopup({
           </div>
 
           <div className="context-popup-row">
-            <span className="row-label">数据来源</span>
+            <span className="row-label">{translate('composerV2.t136')}</span>
             <span className="row-value">
-              {runtimeMeasured ? 'Codex Runtime · 最近一次请求' : 'Spark 估算'}
+              {runtimeMeasured ? translate('composerV2.t18Desc') : translate('composerV2.t19')}
             </span>
           </div>
           {runtimeMeasured && ledgerSections.length > 0 && (
             <div className="context-popup-row">
-              <span className="row-label">分类明细</span>
-              <span className="row-value">Spark 估算</span>
+              <span className="row-label">{translate('composerV2.t137')}</span>
+              <span className="row-value">{translate('composerV2.t19')}</span>
             </div>
           )}
 
           {isCritical && (
             <div className="context-popup-alert alert-critical">
               <Icons.AlertTriangle size={11} />
-              <span>上下文窗口即将满，建议压缩或开启新会话</span>
+              <span>{translate('composerV2.t138Desc')}</span>
             </div>
           )}
           {!isCritical && isWarning && (
             <div className="context-popup-alert alert-warn">
               <Icons.AlertTriangle size={11} />
-              <span>上下文使用率较高，请注意</span>
+              <span>{translate('composerV2.t139')}</span>
             </div>
           )}
 
@@ -689,7 +693,7 @@ function ContextMeterWithPopup({
               ))}
               <div className="context-popup-seg-row context-popup-seg-total">
                 <span className="context-popup-seg-dot is-transparent" />
-                <span className="context-popup-seg-label">剩余</span>
+                <span className="context-popup-seg-label">{translate('composerV2.t140')}</span>
                 <span className="context-popup-seg-value">
                   {formatTokenCount(Math.max(0, contextWindow - contextUsedTokens))}
                 </span>
@@ -698,15 +702,15 @@ function ContextMeterWithPopup({
           ) : (
             <div className="context-popup-details">
               <div className="context-popup-row">
-                <span className="row-label">已使用</span>
+                <span className="row-label">{translate('composerV2.t141')}</span>
                 <span className="row-value">{formatTokenCount(contextUsedTokens)}</span>
               </div>
               <div className="context-popup-row">
-                <span className="row-label">总容量</span>
+                <span className="row-label">{translate('composerV2.t142')}</span>
                 <span className="row-value">{formatTokenCount(contextWindow)}</span>
               </div>
               <div className="context-popup-row">
-                <span className="row-label">剩余</span>
+                <span className="row-label">{translate('composerV2.t140')}</span>
                 <span className="row-value">
                   {formatTokenCount(Math.max(0, contextWindow - contextUsedTokens))}
                 </span>
@@ -924,10 +928,10 @@ export function ComposerV2({
       (branchState.gitState.kind === 'ready' && branchState.gitState.repositoryKind === 'worktree'))
   const worktreeUnavailableHint =
     branchState.gitState?.kind === 'runtime_unavailable'
-      ? 'Git 运行环境不可用，请在“设置 → 完整性”中重新检测'
+      ? translate('composerV2.t20Desc')
       : branchState.gitState?.kind === 'failed'
         ? branchState.gitState.message
-        : '当前项目不是 Git 仓库'
+        : translate('composerV2.t21Desc')
   // 无活跃会话（hero）或活跃会话尚无消息（如从项目「+」新建的空会话）时，
   // 允许勾选 worktree——worktree 必须在会话产生消息前绑定。
   const isNewSessionComposer = canShowComposerWorktreeToggle({
@@ -1234,7 +1238,7 @@ export function ComposerV2({
           return { mode: 'override', workflowId: binding.workflowId }
         }
       } catch (cause) {
-        console.warn('[ComposerV2] 读取会话工作流挂载失败，本次发送将不跟随工作流', cause)
+        console.warn(translate('composerV2.t22Desc'), cause)
       }
       return null
     }, [canReuseCurrentSession, createWorktree, getWorkflowBinding, session?.id])
@@ -1318,8 +1322,8 @@ export function ComposerV2({
       : 0
   const isBusy = sending || isWorking
   const composerPlaceholder = teamConfig.enabled
-    ? '描述任务，Host 会协调团队成员分工完成…  ↵ 发送'
-    : '询问、修改、运行任务…  ↵ 发送'
+    ? translate('composerV2.t23Desc')
+    : translate('composerV2.t24Desc')
   // 发送前置条件：用户输入了内容、供应商 + 模型已选好。
   // session / workspace 不在这里卡—— handleNewSession 内部对 null 做了 no-project fallback，
   // 真正发送时再做详细校验（toast 提示）
@@ -1387,7 +1391,7 @@ export function ComposerV2({
   useEffect(() => {
     const writer = createComposerDraftWriter({
       onPersistError: () => {
-        toast.warning('本地存储空间不足，输入草稿暂时无法保存，请先发送或清理已有草稿')
+        toast.warning(translate('composerV2.t25Desc'))
       },
     })
     draftWriterRef.current = writer
@@ -1503,15 +1507,15 @@ export function ComposerV2({
       status?: string
     }) => {
       if (candidate.sessionId === session?.id) {
-        toast.warning('不能把当前会话添加为自身参考')
+        toast.warning(translate('composerV2.t26Desc'))
         return
       }
       if (knownReferenceItems.some((item) => item.sourceSessionId === candidate.sessionId)) {
-        toast.info('这个会话已经添加为参考')
+        toast.info(translate('composerV2.t27'))
         return
       }
       if (knownReferenceItems.length >= 10) {
-        toast.warning('每个会话最多添加 10 个参考会话')
+        toast.warning(translate('composerV2.t28Desc'))
         return
       }
       setSessionReferences((current) => [
@@ -1527,7 +1531,11 @@ export function ComposerV2({
           status: 'active',
         },
       ])
-      toast.success(`已添加参考：${candidate.title || '未命名会话'}`)
+      toast.success(
+        translate('composerV2.tpl17Desc', {
+          title: candidate.title || translate('composerV2.t29'),
+        }),
+      )
     },
     [knownReferenceItems, session?.id, setSessionReferences, toast],
   )
@@ -2045,18 +2053,18 @@ export function ComposerV2({
         if (isLocalCopySlashCommand(text)) {
           const markdown = getLastAssistantMessageMarkdown(messages)
           if (markdown == null) {
-            toast.error('没有可复制的上一条 Assistant 消息。')
+            toast.error(translate('composerV2.t30Desc'))
             restoreSentDraft(draftBucketKey)
             return
           }
           setSending(true)
           try {
             await writeClipboardText({ text: markdown })
-            toast.success('已复制上一条 Assistant 消息。')
+            toast.success(translate('composerV2.t31Desc'))
             clearSentDraft([draftBucketKey, session?.id, NEW_SESSION_DRAFT_BUCKET])
           } catch (err) {
-            console.error('复制上一条 Assistant 消息失败', err)
-            toast.error(err instanceof Error ? err.message : '复制失败')
+            console.error(translate('composerV2.t32Desc'), err)
+            toast.error(err instanceof Error ? err.message : translate('composerV2.t33'))
             restoreSentDraft(draftBucketKey)
           } finally {
             setSending(false)
@@ -2073,7 +2081,7 @@ export function ComposerV2({
           // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
           if (commandSessionId == null) {
             if (selectedProvider == null) {
-              toast.warning('请先选择 Provider 再执行命令。')
+              toast.warning(translate('composerV2.t34Desc'))
               restoreSentDraft(draftBucketKey)
               return
             }
@@ -2102,7 +2110,7 @@ export function ComposerV2({
                 : {}),
             })
             if (commandSessionId == null) {
-              toast.error('创建会话失败，无法执行命令。')
+              toast.error(translate('composerV2.t35Desc'))
               restoreSentDraft(draftBucketKey)
               return
             }
@@ -2192,8 +2200,8 @@ export function ComposerV2({
           await refreshQueueState(commandSessionId)
         } catch (err) {
           optimisticSend?.fail(err instanceof Error ? err.message : String(err))
-          console.error('命令执行失败', err)
-          toast.error(err instanceof Error ? err.message : '命令执行失败')
+          console.error(translate('composerV2.t36'), err)
+          toast.error(err instanceof Error ? err.message : translate('composerV2.t36'))
           restoreSentDraft(commandSessionId ?? draftBucketKey)
         } finally {
           setSending(false)
@@ -2237,7 +2245,7 @@ export function ComposerV2({
               : {}),
           })
         }
-        if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
+        if (targetSessionId == null) throw new Error(translate('composerV2.t37'))
         optimisticSend = startOptimisticUserSend(
           {
             sessionId: targetSessionId,
@@ -2289,8 +2297,8 @@ export function ComposerV2({
         clearSentDraft([draftBucketKey, targetSessionId, NEW_SESSION_DRAFT_BUCKET])
       } catch (err) {
         optimisticSend?.fail(err instanceof Error ? err.message : String(err))
-        console.error('发送失败', err)
-        toast.error(err instanceof Error ? err.message : '发送消息失败')
+        console.error(translate('composerV2.t38'), err)
+        toast.error(err instanceof Error ? err.message : translate('composerV2.t39'))
         restoreSentDraft(targetSessionId ?? draftBucketKey)
       } finally {
         setSending(false)
@@ -2353,7 +2361,7 @@ export function ComposerV2({
         }
         return Array.from(byPath.values())
       })
-      if (truncated) toast.info('单轮最多添加 20 个附件。')
+      if (truncated) toast.info(translate('composerV2.t40Desc'))
       return added
     },
     [setAttachments, toast],
@@ -2376,7 +2384,7 @@ export function ComposerV2({
   const handleAddAttachments = useCallback(async () => {
     try {
       const selected = await openFileDialog({
-        title: '添加文件或图片',
+        title: translate('composerV2.t41'),
         multiple: true,
       })
       const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
@@ -2387,8 +2395,8 @@ export function ComposerV2({
       })
       appendAttachments(newAttachments)
     } catch (err) {
-      console.error('添加附件失败', err)
-      toast.error(err instanceof Error ? err.message : '添加附件失败')
+      console.error(translate('composerV2.t42'), err)
+      toast.error(err instanceof Error ? err.message : translate('composerV2.t42'))
     }
   }, [appendAttachments, openFileDialog, prepareImagePreview, toast])
 
@@ -2403,8 +2411,8 @@ export function ComposerV2({
         })
         appendAttachments(newAttachments)
       } catch (err) {
-        console.error('拖拽添加附件失败', err)
-        toast.error(err instanceof Error ? err.message : '拖拽添加附件失败')
+        console.error(translate('composerV2.t43'), err)
+        toast.error(err instanceof Error ? err.message : translate('composerV2.t43'))
       }
     },
     [appendAttachments, prepareImagePreview, statFileKind, toast],
@@ -2426,7 +2434,7 @@ export function ComposerV2({
   const handleAddContextFiles = useCallback(async () => {
     try {
       const selected = await openFileDialog({
-        title: '添加相关文件或目录',
+        title: translate('composerV2.t44'),
         multiple: true,
         allowDirectories: true,
       })
@@ -2439,8 +2447,8 @@ export function ComposerV2({
       })
       appendAttachments(newAttachments)
     } catch (err) {
-      console.error('添加相关文件或目录失败', err)
-      toast.error(err instanceof Error ? err.message : '添加相关文件或目录失败')
+      console.error(translate('composerV2.t45'), err)
+      toast.error(err instanceof Error ? err.message : translate('composerV2.t45'))
     }
   }, [appendAttachments, openFileDialog, prepareImagePreview, statFileKind, toast])
 
@@ -2568,7 +2576,7 @@ export function ComposerV2({
       if (unresolvable) {
         // 拖进来了文件却一个路径都解析不出来：几乎只可能是 webUtils 通道失效。
         // 绝不能静默——用户会以为附件已加上。
-        toast.error('无法读取拖入文件的路径，请改用「添加文件或图片」按钮')
+        toast.error(translate('composerV2.t46Desc'))
         return
       }
       void handleDropFilePaths(filePaths)
@@ -2600,16 +2608,16 @@ export function ComposerV2({
         if (!shouldConvertPastedTextToResource(text)) return
         event.preventDefault()
         if (attachments.length >= COMPOSER_ATTACHMENT_LIMIT) {
-          toast.info(`单轮最多添加 ${COMPOSER_ATTACHMENT_LIMIT} 个附件。`)
+          toast.info(translate('composerV2.tpl7Desc', { limit: COMPOSER_ATTACHMENT_LIMIT }))
           return
         }
         try {
           const attachment = await buildPastedTextAttachment(text, { savePastedText })
           const added = appendAttachments([attachment])
-          if (added > 0) toast.info('长文本已转为引用资源')
+          if (added > 0) toast.info(translate('composerV2.t47'))
         } catch (err) {
-          console.error('粘贴长文本失败', err)
-          toast.error(err instanceof Error ? err.message : '粘贴长文本失败')
+          console.error(translate('composerV2.t48'), err)
+          toast.error(err instanceof Error ? err.message : translate('composerV2.t48'))
         }
         return
       }
@@ -2642,10 +2650,10 @@ export function ComposerV2({
         )
 
         const added = appendAttachments(pastedAttachments)
-        if (added > 0) toast.success(`已粘贴 ${added} 张图片`)
+        if (added > 0) toast.success(translate('composerV2.tpl6Desc', { count: added }))
       } catch (err) {
-        console.error('粘贴图片失败', err)
-        toast.error(err instanceof Error ? err.message : '粘贴图片失败')
+        console.error(translate('composerV2.t49'), err)
+        toast.error(err instanceof Error ? err.message : translate('composerV2.t49'))
       }
     },
     [appendAttachments, attachments.length, savePastedImage, savePastedText, toast],
@@ -2659,15 +2667,15 @@ export function ComposerV2({
           pasteNativelyWithThresholdBypass: () => {
             pasteAsTextThresholdBypassRef.current = true
             try {
-              if (!document.execCommand('paste')) throw new Error('无法读取剪贴板文本')
+              if (!document.execCommand('paste')) throw new Error(translate('composerV2.t50'))
             } finally {
               pasteAsTextThresholdBypassRef.current = false
             }
           },
         })
       } catch (err) {
-        console.error('粘贴为文本失败', err)
-        toast.error(err instanceof Error ? err.message : '粘贴为文本失败')
+        console.error(translate('composerV2.t51'), err)
+        toast.error(err instanceof Error ? err.message : translate('composerV2.t51'))
       }
     },
     [toast],
@@ -2676,21 +2684,21 @@ export function ComposerV2({
   /** 输入框右键「粘贴为资源」：主动选择，跳过长度阈值，短文本也转为引用附件。 */
   const handlePasteAsResource = useCallback(async () => {
     if (attachments.length >= COMPOSER_ATTACHMENT_LIMIT) {
-      toast.info(`单轮最多添加 ${COMPOSER_ATTACHMENT_LIMIT} 个附件。`)
+      toast.info(translate('composerV2.tpl7Desc', { limit: COMPOSER_ATTACHMENT_LIMIT }))
       return
     }
     try {
       const text = await navigator.clipboard.readText()
       if (text.trim().length === 0) {
-        toast.info('剪贴板中没有可粘贴的文本')
+        toast.info(translate('composerV2.t52'))
         return
       }
       const attachment = await buildPastedTextAttachment(text, { savePastedText })
       const added = appendAttachments([attachment])
-      if (added > 0) toast.success('已粘贴为引用资源')
+      if (added > 0) toast.success(translate('composerV2.t53'))
     } catch (err) {
-      console.error('粘贴为资源失败', err)
-      toast.error(err instanceof Error ? err.message : '粘贴为资源失败')
+      console.error(translate('composerV2.t54'), err)
+      toast.error(err instanceof Error ? err.message : translate('composerV2.t54'))
     }
   }, [appendAttachments, attachments.length, savePastedText, toast])
 
@@ -2711,9 +2719,9 @@ export function ComposerV2({
       (attachments.length > 0
         ? EMPTY_TEXT_FALLBACK
         : browserReferences.length > 0
-          ? '请操作引用的浏览器元素。'
+          ? translate('composerV2.t55')
           : sessionReferences.length > 0
-            ? '请结合已添加的会话参考。'
+            ? translate('composerV2.t56')
             : EMPTY_TEXT_FALLBACK)
     const turnAttachments = attachments
     // Prepend reply context if quoting a message
@@ -2722,7 +2730,7 @@ export function ComposerV2({
     if (replySnapshot != null) {
       const quotedLine = replySnapshot.contentPreview.replace(/\n/g, ' ')
       const who = replySnapshot.role === 'assistant' ? (replySnapshot.agentName ?? 'Agent') : 'You'
-      text = `[回复 ${who}: ${quotedLine}]\n${rawText}`
+      text = translate('composerV2.tpl8Desc', { who, quoted: quotedLine, text: rawText })
     }
     // 引用类内容统一按 appendComposerReferenceBlock 的规则拼进正文：用户没写正文时替换
     // fallback 占位（含 reply 包裹的场景），写了正文则追加到末尾。
@@ -2836,7 +2844,11 @@ export function ComposerV2({
         res.queuedTurns.map((turn) => turn.turnId),
       )
     } catch (err) {
-      toast.error(`清空队列失败：${err instanceof Error ? err.message : String(err)}`)
+      toast.error(
+        translate('composerV2.tpl18Desc', {
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      )
     } finally {
       setClearingQueue(false)
     }
@@ -2864,7 +2876,11 @@ export function ComposerV2({
       })
     } catch (err) {
       setQueuedMessages(previousMessages)
-      toast.error(`调整队列顺序失败：${err instanceof Error ? err.message : String(err)}`)
+      toast.error(
+        translate('composerV2.tpl9Desc', {
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      )
     } finally {
       setReorderingQueue(false)
     }
@@ -2962,21 +2978,21 @@ export function ComposerV2({
   })
 
   const SLASH_GROUP_LABELS: Record<string, string> = {
-    app: '子应用',
-    session: '会话',
-    model: '模型',
-    context: '上下文',
-    permission: '权限',
+    app: translate('composerV2.t57'),
+    session: translate('composerV2.t58'),
+    model: translate('composerV2.t59'),
+    context: translate('composerV2.t60'),
+    permission: translate('composerV2.t61'),
     git: 'Git',
-    workflow: '工作流',
+    workflow: translate('composerV2.t62'),
     agent: 'Agent',
     mcp: 'MCP',
-    skill: '技能',
-    'project-skill': '项目技能',
-    resource: '资源',
-    team: '团队',
-    utility: '工具',
-    system: '系统',
+    skill: translate('composerV2.t7'),
+    'project-skill': translate('composerV2.t63'),
+    resource: translate('composerV2.t64'),
+    team: translate('composerV2.t65'),
+    utility: translate('composerV2.t66'),
+    system: translate('composerV2.t67'),
   }
   const SLASH_GROUP_ORDER = [
     'app',
@@ -3027,8 +3043,10 @@ export function ComposerV2({
     })
 
     const groups: Array<{ key: string; label: string; cmds: CommandListItem[] }> = []
-    if (pinnedCmds.length > 0) groups.push({ key: 'pinned', label: '已置顶', cmds: pinnedCmds })
-    if (commonCmds.length > 0) groups.push({ key: 'common', label: '常用', cmds: commonCmds })
+    if (pinnedCmds.length > 0)
+      groups.push({ key: 'pinned', label: translate('composerV2.t68'), cmds: pinnedCmds })
+    if (commonCmds.length > 0)
+      groups.push({ key: 'common', label: translate('composerV2.t69'), cmds: commonCmds })
     groups.push(...restGroups)
     return groups
   })()
@@ -3380,7 +3398,7 @@ export function ComposerV2({
     if (voice.status === 'stopping' || voice.status === 'refining') return
     const st = voiceIntegrity.status
     if (!st.supported) {
-      toast.warning(st.unsupportedReason ?? '当前平台不支持语音输入')
+      toast.warning(st.unsupportedReason ?? translate('composerV2.t70'))
       return
     }
     if (!st.ready) {
@@ -3612,7 +3630,7 @@ export function ComposerV2({
         writeComposerPrefs({ permissionMode: nextMode })
         writeAgentRuntimePrefs(effectiveAgentId, { permissionMode: nextMode })
         if (session != null) void persistRuntimePatch({ permissionMode: nextMode })
-        toast.info(`权限模式: ${nextOption.label}`)
+        toast.info(translate('composerV2.tpl19Desc', { label: nextOption.label }))
       }
       return
     }
@@ -3694,7 +3712,7 @@ export function ComposerV2({
           // First press — show confirmation hint
           setEscapeConfirm(true)
           escapeTimestampRef.current = now
-          toast.info('再按一次 Escape 中断生成')
+          toast.info(translate('composerV2.t71Desc'))
         }
         event.preventDefault()
         return
@@ -4240,16 +4258,16 @@ export function ComposerV2({
             <span className="composer-file-drop-icon" aria-hidden="true">
               <Icons.FilePlus size={42} strokeWidth={1.6} />
             </span>
-            <strong>松开即可添加到会话</strong>
-            <span>支持文件和文件夹</span>
+            <strong>{translate('composerV2.t143')}</strong>
+            <span>{translate('composerV2.t144')}</span>
           </div>
         </ComposerDropOverlay>
         {sessionReferenceDropActive && (
           <div className="composer-session-ref-drop-overlay" aria-live="polite">
             <div className="composer-session-ref-drop-target">
               <Icons.MessageSquarePlus size={32} />
-              <strong>松开即可添加会话参考</strong>
-              <span>模型将按需只读访问该会话</span>
+              <strong>{translate('composerV2.t145')}</strong>
+              <span>{translate('composerV2.t146')}</span>
             </div>
           </div>
         )}
@@ -4275,12 +4293,12 @@ export function ComposerV2({
           {slashOpen && flatSlashList.length > 0 && (
             <div className="slash-cmd-popup" ref={slashListRef}>
               <div className="slash-cmd-toolbar">
-                <span className="slash-cmd-toolbar-hint">↑↓ 选择 · Enter 插入 · Esc 关闭</span>
+                <span className="slash-cmd-toolbar-hint">{translate('composerV2.t147Desc')}</span>
                 <button
                   type="button"
                   className="slash-cmd-close"
-                  title="关闭命令面板"
-                  aria-label="关闭命令面板"
+                  title={translate('composerV2.t124')}
+                  aria-label={translate('composerV2.t124')}
                   onMouseDown={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
@@ -4314,11 +4332,11 @@ export function ComposerV2({
                               ? 'SDK'
                               : cmd.layer === 'skill'
                                 ? cmd.group === 'project-skill'
-                                  ? '项目'
-                                  : '技能'
+                                  ? translate('composerV2.t72')
+                                  : translate('composerV2.t7')
                                 : cmd.layer === 'custom'
-                                  ? '自定义'
-                                  : '内置'}
+                                  ? translate('composerV2.t73')
+                                  : translate('composerV2.t74')}
                           </span>
                           <span className="slash-cmd-name">/{cmd.name}</span>
                           {cmd.aliases.length > 0 && (
@@ -4327,14 +4345,22 @@ export function ComposerV2({
                             </span>
                           )}
                           <span className="slash-cmd-desc">{cmd.description}</span>
-                          {cmd.risk === 'high' && <span className="slash-cmd-risk high">危险</span>}
+                          {cmd.risk === 'high' && (
+                            <span className="slash-cmd-risk high">
+                              {translate('composerV2.t148')}
+                            </span>
+                          )}
                           {cmd.risk === 'medium' && (
-                            <span className="slash-cmd-risk medium">注意</span>
+                            <span className="slash-cmd-risk medium">
+                              {translate('composerV2.t149')}
+                            </span>
                           )}
                           <button
                             type="button"
                             className={`slash-cmd-pin${isPinned ? ' is-pinned' : ''}`}
-                            title={isPinned ? '取消置顶' : '置顶'}
+                            title={
+                              isPinned ? translate('composerV2.t75') : translate('composerV2.t76')
+                            }
                             onMouseDown={(e) => {
                               e.preventDefault()
                               e.stopPropagation()
@@ -4354,10 +4380,12 @@ export function ComposerV2({
           {teamConfig.enabled && (
             <div className="composer-team-banner">
               <span className="composer-team-banner-badge">
-                <Icons.Team size={12} /> 团队模式
+                <Icons.Team size={12} /> {translate('composerV2.t96')}
               </span>
               <span className="composer-team-banner-text">
-                Host：{activeAgent?.name ?? 'Spark助手'} · 成员{' '}
+                {translate('composerV2.tpl20Desc')}
+                {activeAgent?.name ?? translate('composerV2.t77')}
+                {translate('composerV2.tpl21Desc')}{' '}
                 {countExistingMembers(teamConfig.memberAgentIds, agents)}
               </span>
               <button
@@ -4366,7 +4394,7 @@ export function ComposerV2({
                 onClick={onOpenTeamInspector}
                 disabled={isBusy}
               >
-                管理成员
+                {translate('composerV2.t150')}
               </button>
             </div>
           )}
@@ -4376,7 +4404,7 @@ export function ComposerV2({
                 <button
                   type="button"
                   className="composer-reply-quote-close"
-                  title="取消回复"
+                  title={translate('composerV2.t125')}
                   onClick={onClearReply}
                 >
                   <Icons.X size={12} />
@@ -4397,7 +4425,7 @@ export function ComposerV2({
               {browserReferences.length > 0 && (
                 <div
                   className="composer-attachment-strip composer-browser-ref-strip"
-                  aria-label="浏览器元素引用"
+                  aria-label={translate('composerV2.t126')}
                 >
                   {browserReferences.map((reference) => (
                     <Tooltip
@@ -4413,8 +4441,8 @@ export function ComposerV2({
                         </div>
                         <button
                           type="button"
-                          title="移除浏览器元素引用"
-                          aria-label={`移除 ${reference.label} 引用`}
+                          title={translate('composerV2.t127')}
+                          aria-label={translate('composerV2.tpl22Desc', { name: reference.label })}
                           onClick={() =>
                             setBrowserReferences((current) =>
                               current.filter((item) => item.id !== reference.id),
@@ -4431,10 +4459,10 @@ export function ComposerV2({
               {sessionReferences.length > 0 && (
                 <div
                   className="composer-attachment-strip composer-session-ref-strip"
-                  aria-label="会话参考"
+                  aria-label={translate('composerV2.t128')}
                 >
                   {sessionReferences.map((reference) => {
-                    const referenceTitle = reference.title || '未命名会话'
+                    const referenceTitle = reference.title || translate('composerV2.t29')
                     return (
                       <Tooltip
                         key={reference.sourceSessionId}
@@ -4451,8 +4479,8 @@ export function ComposerV2({
                           </div>
                           <button
                             type="button"
-                            title="移除会话参考"
-                            aria-label={`移除 ${referenceTitle} 参考`}
+                            title={translate('composerV2.t129')}
+                            aria-label={translate('composerV2.tpl23Desc', { name: referenceTitle })}
                             onClick={() => removeSessionReference(reference.sourceSessionId)}
                           >
                             <Icons.X size={12} />
@@ -4482,8 +4510,8 @@ export function ComposerV2({
                         </div>
                         <button
                           type="button"
-                          title="移除引用"
-                          aria-label={`移除 ${ref.name} 引用`}
+                          title={translate('composerV2.t130')}
+                          aria-label={translate('composerV2.tpl22Desc', { name: ref.name })}
                           onClick={() => handleRemoveCodeReference(refKey)}
                         >
                           <Icons.X size={12} />
@@ -4521,8 +4549,8 @@ export function ComposerV2({
                       <span>{attachment.name}</span>
                       <button
                         type="button"
-                        title="移除附件"
-                        aria-label={`移除 ${attachment.name}`}
+                        title={translate('composerV2.t131')}
+                        aria-label={translate('composerV2.tpl24Desc', { name: attachment.name })}
                         onClick={() => handleRemoveAttachment(attachment.id)}
                       >
                         <Icons.X size={12} />
@@ -4543,8 +4571,8 @@ export function ComposerV2({
                       <span>{attachment.name}</span>
                       <button
                         type="button"
-                        title="移除引用"
-                        aria-label={`移除 ${attachment.name}`}
+                        title={translate('composerV2.t130')}
+                        aria-label={translate('composerV2.tpl24Desc', { name: attachment.name })}
                         onClick={() => handleRemoveAttachment(attachment.id)}
                       >
                         <Icons.X size={12} />
@@ -4563,12 +4591,14 @@ export function ComposerV2({
                   className="composer-running-agent-tag"
                   color="blue"
                   size="small"
-                  title={`${agent.name} 执行中...`}
+                  title={translate('composerV2.tpl10Desc', { name: agent.name })}
                   onClick={() => handleRunningAgentTagClick(agent.id)}
                 >
                   <span className="composer-running-agent-dot" aria-hidden="true" />
                   <span className="composer-running-agent-name">{agent.name}</span>
-                  <span className="composer-running-agent-state">执行中...</span>
+                  <span className="composer-running-agent-state">
+                    {translate('composerV2.t151')}
+                  </span>
                 </LobeTag>
               ))}
               {hiddenRunningTeamAgentCount > 0 && (
@@ -4583,7 +4613,7 @@ export function ComposerV2({
             </div>
           )}
           {effectiveDebugMode && session != null && (
-            <div className="composer-debug-quickreplies" aria-label="调试快捷回复">
+            <div className="composer-debug-quickreplies" aria-label={translate('composerV2.t132')}>
               <span className="composer-debug-quickreplies-label">
                 <Icons.Bug size={12} style={{ marginTop: 2 }} />
               </span>
@@ -4591,32 +4621,28 @@ export function ComposerV2({
                 type="button"
                 className="composer-debug-chip"
                 disabled={isBusy}
-                onClick={() =>
-                  void dispatchMessage('我已经复现了，请读取本轮调试日志并分析。', [], null)
-                }
+                onClick={() => void dispatchMessage(translate('composerV2.t78Desc'), [], null)}
               >
                 <Icons.Check size={13} />
-                已复现
+                {translate('composerV2.t152')}
               </button>
               <button
                 type="button"
                 className="composer-debug-chip"
                 disabled={isBusy}
-                onClick={() => void dispatchMessage('还没解决，请继续排查。', [], null)}
+                onClick={() => void dispatchMessage(translate('composerV2.t79'), [], null)}
               >
                 <Icons.RotateCw size={13} />
-                没解决
+                {translate('composerV2.t153')}
               </button>
               <button
                 type="button"
                 className="composer-debug-chip"
                 disabled={isBusy}
-                onClick={() =>
-                  void dispatchMessage('问题已经解决了，请清除所有调试日志并交付成果。', [], null)
-                }
+                onClick={() => void dispatchMessage(translate('composerV2.t80Desc'), [], null)}
               >
                 <Icons.CheckCircle size={13} />
-                已解决
+                {translate('composerV2.t154')}
               </button>
             </div>
           )}
@@ -4666,7 +4692,7 @@ export function ComposerV2({
           />
           <button
             className="composer-expand-btn"
-            title={manualExpanded ? '折叠输入框' : '展开输入框'}
+            title={manualExpanded ? translate('composerV2.t81') : translate('composerV2.t82')}
             onClick={() => setManualExpanded((prev) => !prev)}
           >
             {manualExpanded ? (
@@ -4857,8 +4883,8 @@ export function ComposerV2({
           <ComposerMenuSelect
             icon={activePermissionOption?.icon ?? <Icons.Shield size={14} />}
             value={effectivePermissionMode}
-            label={activePermissionOption?.label ?? '默认权限'}
-            title="权限模式"
+            label={activePermissionOption?.label ?? translate('composerV2.t83')}
+            title={translate('composerV2.t120')}
             // menuHeading={`应如何批准 ${adapter === 'codex' ? 'Codex' : 'Claude'} 操作?`}
             variant="permission"
             animated
@@ -4918,10 +4944,11 @@ export function ComposerV2({
             <button
               type="button"
               className="queued-chip"
-              title={queueVisible ? '隐藏队列' : '显示队列'}
+              title={queueVisible ? translate('composerV2.t84') : translate('composerV2.t85')}
               onClick={() => setQueueVisible((prev) => !prev)}
             >
-              {queueVisible ? '隐藏队列' : '显示队列'} · {queuedMessages.length}
+              {queueVisible ? translate('composerV2.t84') : translate('composerV2.t85')} ·{' '}
+              {queuedMessages.length}
             </button>
           )}
           <div className="spacer" />
@@ -4931,8 +4958,8 @@ export function ComposerV2({
               className={`composer-debug-toggle ${effectiveDebugMode ? 'is-active' : ''}`}
               title={
                 effectiveDebugMode
-                  ? '调试模式已开启：agent 可插桩、收集复现日志并迭代修复。点击关闭'
-                  : '开启调试模式：假设驱动 + 人在回路的 bug 排查'
+                  ? translate('composerV2.t86Desc')
+                  : translate('composerV2.t87Desc')
               }
               onClick={() => void handleToggleDebugMode()}
             >
@@ -4942,7 +4969,7 @@ export function ComposerV2({
               <div className="composer-worktree-controls">
                 <label
                   className={`composer-worktree-toggle ${createWorktree ? 'is-active' : ''}`}
-                  title={isGitWorkspace ? '在隔离 worktree 中运行本会话' : worktreeUnavailableHint}
+                  title={isGitWorkspace ? translate('composerV2.t88Desc') : worktreeUnavailableHint}
                 >
                   <input
                     type="checkbox"
@@ -4957,7 +4984,7 @@ export function ComposerV2({
                   <input
                     className="form-input composer-worktree-branch-input"
                     type="text"
-                    placeholder="留空自动生成"
+                    placeholder={translate('composerV2.t121')}
                     value={worktreeBranch}
                     onChange={(e) => setWorktreeBranch(e.target.value)}
                   />
@@ -4965,8 +4992,10 @@ export function ComposerV2({
               </div>
             )}
             <span className="composer-hint">
-              <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧↵</span> 换行 &nbsp;
-              <span className="kbd">⇧Tab</span> 权限 &nbsp;<span className="kbd">↑↓</span> 历史
+              <span className="kbd">↵</span> {translate('composerV2.t155')}
+              <span className="kbd">⇧↵</span> {translate('composerV2.t156')}
+              <span className="kbd">⇧Tab</span> {translate('composerV2.t157')}
+              <span className="kbd">↑↓</span> {translate('composerV2.t158')}
             </span>
             <button
               className="btn primary sm composer-send-btn"
@@ -4980,7 +5009,7 @@ export function ComposerV2({
               ) : (
                 <Icons.Send size={12} />
               )}
-              {isBusy ? '排队' : '发送'}
+              {isBusy ? translate('composerV2.t89') : translate('composerV2.t90')}
             </button>
           </div>
         </div>
@@ -5051,20 +5080,20 @@ function ComposerMenuSelect({
     <div
       ref={rootRef}
       className={`composer-select composer-menu-select variant-${variant} tone-${tone} ${align === 'right' ? 'right' : ''}${disabled ? ' is-disabled' : ''}${open ? ' is-open' : ''}`}
-      title={disabled ? '会话运行中不可切换' : title}
+      title={disabled ? translate('composerV2.t91') : title}
     >
       <span className="composer-select-icon">{icon}</span>
       <button
         type="button"
         className="composer-select-trigger"
         disabled={disabled || options.length === 0}
-        title={disabled ? '会话运行中不可切换' : undefined}
+        title={disabled ? translate('composerV2.t91') : undefined}
         onClick={() => setOpen((prev) => !prev)}
       >
         {useTicker ? (
-          <ComposerSelectLabelTicker label={label || '未配置'} />
+          <ComposerSelectLabelTicker label={label || translate('composerV2.t92')} />
         ) : (
-          <span>{label || '未配置'}</span>
+          <span>{label || translate('composerV2.t92')}</span>
         )}
         <Icons.ChevronDown size={12} />
       </button>
@@ -5132,13 +5161,13 @@ function ComposerMenuSelect({
  * ProjectPicker — 项目选择器（下拉）
  * 位置：输入框内部右下角，靠近发送按钮
  * 下拉内容：
- *   - "项目"分组：用户的全部普通项目，当前选中的打勾
- *   - "选择新项目"：从文件夹选择
- *   - "不需要项目"：使用临时会话目录（"不使用项目" workspace）
+ *   - translate('composerV2.t72')分组：用户的全部普通项目，当前选中的打勾
+ *   - translate('composerV2.t159')：从文件夹选择
+ *   - translate('composerV2.t160')：使用临时会话目录（"不使用项目" workspace）
  * 显示：
  *   - 选中某项目：显示该项目名（带文件夹图标）
- *   - 选中"不需要项目"：显示"不需要项目"（带叉号图标）
- *   - 没选：显示"选择项目"（带加号图标）
+ *   - 选中translate('composerV2.t160')：显示translate('composerV2.t160')（带叉号图标）
+ *   - 没选：显示translate('composerV2.t94')（带加号图标）
  */
 function ProjectPicker({
   workspaces,
@@ -5186,7 +5215,9 @@ function ProjectPicker({
       ? (workspaces.find((w) => w.id === rawSelected.worktreeMeta?.baseWorkspaceId) ?? rawSelected)
       : rawSelected
 
-  const triggerLabel = selectedProject?.name ?? (isNoProject ? '临时会话' : '选择项目')
+  const triggerLabel =
+    selectedProject?.name ??
+    (isNoProject ? translate('composerV2.t93') : translate('composerV2.t94'))
   const triggerIcon = selectedProject ? (
     <Icons.Folder size={13} />
   ) : isNoProject ? (
@@ -5195,10 +5226,13 @@ function ProjectPicker({
     <Icons.Plus size={13} />
   )
   const triggerTitle = selectedProject
-    ? `项目：${selectedProject.name}\n${selectedProject.rootPath}`
+    ? translate('composerV2.tpl25Desc', {
+        name: selectedProject.name,
+        path: selectedProject.rootPath,
+      })
     : isNoProject
-      ? '当前使用「临时会话」，session 数据走临时目录'
-      : '选择项目'
+      ? translate('composerV2.t95Desc')
+      : translate('composerV2.t94')
 
   return (
     <div ref={rootRef} className="composer-select composer-project-picker" title={triggerTitle}>
@@ -5216,7 +5250,7 @@ function ProjectPicker({
           <div className="composer-project-list">
             {projects.length > 0 && (
               <>
-                <div className="composer-project-group-header">项目</div>
+                <div className="composer-project-group-header">{translate('composerV2.t72')}</div>
                 {projects.map((w) => (
                   <button
                     key={w.id}
@@ -5251,7 +5285,7 @@ function ProjectPicker({
               <span className="composer-menu-item-copy">
                 <span className="composer-menu-item-label">
                   <Icons.FolderPlus size={13} />
-                  <span>选择新项目</span>
+                  <span>{translate('composerV2.t159')}</span>
                 </span>
               </span>
             </button>
@@ -5266,7 +5300,7 @@ function ProjectPicker({
               <span className="composer-menu-item-copy">
                 <span className="composer-menu-item-label">
                   <Icons.FolderX size={13} />
-                  <span>不需要项目</span>
+                  <span>{translate('composerV2.t160')}</span>
                 </span>
               </span>
               {isNoProject && <Icons.Check size={14} />}
@@ -5381,7 +5415,7 @@ function AgentPicker({
         ? {
             id: activeTeam?.id ?? teamConfig.teamId,
             metadata: activeTeam?.metadata,
-            name: activeTeamName ?? activeTeam?.name ?? '团队',
+            name: activeTeamName ?? activeTeam?.name ?? translate('composerV2.t65'),
           }
         : null
     }
@@ -5399,7 +5433,9 @@ function AgentPicker({
     <div
       ref={rootRef}
       className={`composer-select composer-agent-picker${teamMode ? ' is-team' : ''}${disabled ? ' is-disabled' : ''}`}
-      title={disabled ? '会话运行中不可切换' : teamMode ? '团队模式' : 'Agent'}
+      title={
+        disabled ? translate('composerV2.t91') : teamMode ? translate('composerV2.t96') : 'Agent'
+      }
     >
       <span className={`composer-select-icon${showTeamBadge ? ' is-team-badge' : ''}`}>
         {showTriggerAvatar && triggerAvatarTarget ? (
@@ -5414,7 +5450,7 @@ function AgentPicker({
             )}
             seed={triggerAvatarTarget.id}
             name={triggerAvatarTarget.name}
-            alt={`${triggerAvatarTarget.name} 头像`}
+            alt={`{translate('composerV2.tpl11Desc', { name: triggerAvatarTarget.name })}`}
           />
         ) : teamMode ? (
           <Icons.Team size={13} />
@@ -5430,19 +5466,24 @@ function AgentPicker({
         disabled={disabled || agents.length === 0}
         title={
           disabled
-            ? '会话运行中不可切换'
+            ? translate('composerV2.t91')
             : teamMode
               ? teamConfig.teamId != null
-                ? `团队：${activeTeamName ?? '团队'}（主持：${selected?.name ?? 'Spark助手'}）`
-                : `团队模式（当前对话：${selected?.name ?? 'Spark助手'}）`
-              : (selected?.name ?? 'Spark助手')
+                ? translate('composerV2.tpl12Desc', {
+                    team: activeTeamName ?? translate('composerV2.t65'),
+                    host: selected?.name ?? translate('composerV2.t77'),
+                  })
+                : translate('composerV2.tpl13Desc', {
+                    name: selected?.name ?? translate('composerV2.t77'),
+                  })
+              : (selected?.name ?? translate('composerV2.t77'))
         }
         onClick={() => setOpen((prev) => !prev)}
       >
         <span>
           {teamMode && teamConfig.teamId != null && activeTeamName
             ? activeTeamName
-            : (selected?.name ?? 'Spark助手')}
+            : (selected?.name ?? translate('composerV2.t77'))}
         </span>
         <Icons.ChevronDown size={12} />
       </button>
@@ -5451,7 +5492,9 @@ function AgentPicker({
           {lockedTeam ? (
             <div className="composer-roster-readonly">
               <div className="composer-menu-group-title">
-                {teamConfig.teamId != null ? '当前团队' : '当前团队（临时）'}
+                {teamConfig.teamId != null
+                  ? translate('composerV2.t97')
+                  : translate('composerV2.t98')}
               </div>
               <div className="composer-roster-team-row">
                 {teamConfig.teamId != null &&
@@ -5464,7 +5507,7 @@ function AgentPicker({
                     )}
                     seed={activeTeam.id}
                     name={activeTeam.name}
-                    alt={`${activeTeam.name} 头像`}
+                    alt={`{translate('composerV2.tpl11Desc', { name: activeTeam.name })}`}
                   />
                 ) : (
                   <span className="composer-roster-team-icon">
@@ -5473,13 +5516,16 @@ function AgentPicker({
                 )}
                 <span className="composer-roster-team-name">
                   {teamConfig.teamId != null
-                    ? (activeTeamName ?? activeTeam?.name ?? '团队')
-                    : '临时团队'}
+                    ? (activeTeamName ?? activeTeam?.name ?? translate('composerV2.t65'))
+                    : translate('composerV2.t99')}
                 </span>
-                {activeTeam?.builtIn && <span className="composer-menu-item-tag">内置</span>}
+                {activeTeam?.builtIn && (
+                  <span className="composer-menu-item-tag">{translate('composerV2.t74')}</span>
+                )}
               </div>
               <div className="composer-menu-group-title">
-                成员 · {rosterMembers.length + (hostAgent ? 1 : 0)}
+                {translate('composerV2.tpl21Desc')}
+                {rosterMembers.length + (hostAgent ? 1 : 0)}
               </div>
               {[hostAgent, ...rosterMembers]
                 .filter((a): a is ManagedAgent => a != null)
@@ -5491,7 +5537,7 @@ function AgentPicker({
                       key={agent.id}
                       type="button"
                       className={`composer-menu-item${isHost ? ' active' : ''}`}
-                      title={isHost ? '当前主持人' : '设为主持人'}
+                      title={isHost ? translate('composerV2.t100') : translate('composerV2.t101')}
                       onClick={() => {
                         setOpen(false)
                         if (!isHost) onChangeHost(agent.id)
@@ -5507,7 +5553,7 @@ function AgentPicker({
                               )}
                               seed={agent.id}
                               name={agent.name}
-                              alt={`${agent.name} 头像`}
+                              alt={`{translate('composerV2.tpl11Desc', { name: agent.name })}`}
                             />
                           ) : agent.builtIn ? (
                             <Icons.Code size={13} />
@@ -5515,7 +5561,11 @@ function AgentPicker({
                             <Icons.Bot size={13} />
                           )}
                           <span>{agent.name}</span>
-                          {isHost && <span className="composer-roster-host-badge">主持人</span>}
+                          {isHost && (
+                            <span className="composer-roster-host-badge">
+                              {translate('composerV2.t161')}
+                            </span>
+                          )}
                         </span>
                         <span className="composer-menu-item-desc">{agent.description || '-'}</span>
                       </span>
@@ -5524,12 +5574,12 @@ function AgentPicker({
                   )
                 })}
               <div className="composer-roster-locked-hint">
-                <Icons.Lock size={11} /> 会话进行中，团队成员已锁定，仅可切换主持人或退出团队
+                <Icons.Lock size={11} /> {translate('composerV2.t162Desc')}
               </div>
               <button
                 type="button"
                 className="composer-menu-item team-mode-entry team-mode-exit"
-                title="退出团队模式：当前主持人将作为单 agent 接续本会话，历史不会丢失"
+                title={translate('composerV2.t133Desc')}
                 onClick={() => {
                   setOpen(false)
                   onDisableTeamMode()
@@ -5538,10 +5588,10 @@ function AgentPicker({
                 <span className="composer-menu-item-copy">
                   <span className="composer-menu-item-label">
                     <Icons.X size={14} />
-                    <span>退出团队模式（切回单 Agent）</span>
+                    <span>{translate('composerV2.t163Desc')}</span>
                   </span>
                   <span className="composer-menu-item-desc">
-                    保留对话历史，由主持人接续后续对话
+                    {translate('composerV2.t164Desc')}
                   </span>
                 </span>
               </button>
@@ -5560,7 +5610,7 @@ function AgentPicker({
                   <span className="composer-menu-item-copy">
                     <span className="composer-menu-item-label">
                       <Icons.X size={14} />
-                      <span>退出团队模式</span>
+                      <span>{translate('composerV2.t165')}</span>
                     </span>
                   </span>
                 </button>
@@ -5576,17 +5626,17 @@ function AgentPicker({
                   <span className="composer-menu-item-copy">
                     <span className="composer-menu-item-label">
                       <Icons.Team size={13} />
-                      <span>团队模式（多 Agent 协作）</span>
+                      <span>{translate('composerV2.t166Desc')}</span>
                     </span>
                     <span className="composer-menu-item-desc">
-                      让当前对话 Agent 调用其他成员协作
+                      {translate('composerV2.t167Desc')}
                     </span>
                   </span>
                 </button>
               )}
               {teams.length > 0 && (
                 <>
-                  <div className="composer-menu-group-title">已保存团队</div>
+                  <div className="composer-menu-group-title">{translate('composerV2.t168')}</div>
                   {teams.map((team) => {
                     const host = agents.find((a) => a.id === team.hostAgentId)
                     const teamMemberCount = countExistingMembers(team.memberAgentIds, agents)
@@ -5612,18 +5662,24 @@ function AgentPicker({
                                 )}
                                 seed={team.id}
                                 name={team.name}
-                                alt={`${team.name} 头像`}
+                                alt={`{translate('composerV2.tpl11Desc', { name: team.name })}`}
                               />
                             ) : (
                               <Icons.Team size={13} />
                             )}
                             <span>{team.name}</span>
-                            {team.builtIn && <span className="composer-menu-item-tag">内置</span>}
+                            {team.builtIn && (
+                              <span className="composer-menu-item-tag">
+                                {translate('composerV2.t74')}
+                              </span>
+                            )}
                           </span>
                           <span className="composer-menu-item-desc">
-                            {host ? `主持：${host.name}` : ''}
+                            {host ? `{translate('composerV2.tpl14Desc', { name: host.name })}` : ''}
                             {host && teamMemberCount > 0 ? ' · ' : ''}
-                            {teamMemberCount > 0 ? `${teamMemberCount} 成员` : ''}
+                            {teamMemberCount > 0
+                              ? `{translate('composerV2.tpl15Desc', { count: teamMemberCount })}`
+                              : ''}
                           </span>
                         </span>
                         {active && <Icons.Check size={14} className="composer-menu-check" />}
@@ -5633,7 +5689,7 @@ function AgentPicker({
                 </>
               )}
               <div className="composer-menu-group-title">
-                {teamMode ? '主持人 Agent' : '选择 Agent'}
+                {teamMode ? translate('composerV2.t102') : translate('composerV2.t103')}
               </div>
               {agents.map((agent) => {
                 const agentHasAvatar = hasCustomAvatar(agent.metadata)
@@ -5658,7 +5714,7 @@ function AgentPicker({
                             )}
                             seed={agent.id}
                             name={agent.name}
-                            alt={`${agent.name} 头像`}
+                            alt={translate('composerV2.tpl11Desc', { name: agent.name })}
                           />
                         ) : agent.builtIn ? (
                           <Icons.Code size={13} />
@@ -6001,22 +6057,22 @@ export function ProviderModelPicker({
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="搜索模型或供应商"
+                  placeholder={translate('composerV2.t134')}
                   autoFocus
                 />
               </div>
             )}
             <div className="composer-model-list">
               {conversationalProviders.length === 0 && autoRouterProviders.length === 0 && (
-                <div className="composer-menu-empty">未配置</div>
+                <div className="composer-menu-empty">{translate('composerV2.t92')}</div>
               )}
               {conversationalProviders.length > 0 && filteredProviderGroups.length === 0 && (
                 <div className="composer-menu-empty">
                   {normalizedSearch !== ''
-                    ? '没有匹配结果'
+                    ? translate('composerV2.t104')
                     : hiddenModelKeys.size > 0
-                      ? '全部模型已在「模型设置」中隐藏'
-                      : '没有匹配结果'}
+                      ? translate('composerV2.t105Desc')
+                      : translate('composerV2.t104')}
                 </div>
               )}
               {pinnedEntries.length > 0 && (
@@ -6025,7 +6081,7 @@ export function ProviderModelPicker({
                     <span className="composer-model-group-icon">
                       <Icons.PinFill size={12} />
                     </span>
-                    <span>常用</span>
+                    <span>{translate('composerV2.t69')}</span>
                   </div>
                   {pinnedEntries.map(({ provider, modelId }) => {
                     const vendor = resolveProviderVendor(provider)
@@ -6065,7 +6121,7 @@ export function ProviderModelPicker({
                     <span className="composer-model-group-icon">
                       <Icons.Shuffle size={12} />
                     </span>
-                    <span>智能路由</span>
+                    <span>{translate('composerV2.t169')}</span>
                   </div>
                   {autoRouterProviders.map((router) => {
                     const config = router.autoRouterConfig
@@ -6247,7 +6303,7 @@ export function ProviderModelPicker({
               }}
             >
               <Icons.Settings size={13} />
-              <span>模型设置</span>
+              <span>{translate('composerV2.t170')}</span>
             </button>
           </div>
         )}
@@ -6255,7 +6311,7 @@ export function ProviderModelPicker({
         <div
           ref={rootRef}
           className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`}
-          title={disabled ? '会话运行中不可切换' : label}
+          title={disabled ? translate('composerV2.t91') : label}
         >
           <span className="composer-select-icon">
             {selectedVendor ? (
@@ -6268,7 +6324,7 @@ export function ProviderModelPicker({
             type="button"
             className="composer-select-trigger"
             disabled={disabled || conversationalProviders.length === 0}
-            title={disabled ? '会话运行中不可切换' : undefined}
+            title={disabled ? translate('composerV2.t91') : undefined}
           >
             <span>{label}</span>
             <Icons.ChevronDown size={12} />
@@ -6450,33 +6506,33 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
   [
     {
       value: 'claude-ask',
-      label: '请求批准',
-      description: '每次工具执行前确认',
+      label: translate('composerV2.t106'),
+      description: translate('composerV2.t107'),
       icon: <Icons.Hand size={18} />,
     },
     {
       value: 'claude-plan',
-      label: '计划模式',
-      description: '先产出计划，再批准执行',
+      label: translate('composerV2.t108'),
+      description: translate('composerV2.t109'),
       icon: <Icons.FileText size={18} />,
     },
     {
       value: 'claude-auto-edits',
-      label: '自动编辑',
-      description: '自动批准文件编辑',
+      label: translate('composerV2.t110'),
+      description: translate('composerV2.t111'),
       icon: <Icons.Wand size={18} />,
     },
     {
       value: 'claude-auto',
-      label: '自动审批',
-      description: '使用自动权限策略',
+      label: translate('composerV2.t112'),
+      description: translate('composerV2.t113'),
       icon: <Icons.Shield size={18} />,
       tone: 'auto',
     },
     {
       value: 'claude-bypass',
-      label: '完全访问',
-      description: '完全由 agent 执行',
+      label: translate('composerV2.t114'),
+      description: translate('composerV2.t115'),
       icon: <Icons.AlertTriangle size={18} />,
       tone: 'danger',
     },
@@ -6588,7 +6644,7 @@ function ComposerImageCard({
       <button
         type="button"
         className="composer-image-card-remove"
-        title="移除图片"
+        title={translate('composerV2.t118')}
         onClick={onRemove}
       >
         <Icons.X size={12} />
@@ -6601,13 +6657,13 @@ function ComposerImageCard({
           items={[
             {
               key: 'preview',
-              label: '预览图片',
+              label: translate('composerV2.t116'),
               icon: <Icons.Maximize size={14} />,
               onClick: onPreview,
             },
             {
               key: 'copy',
-              label: '复制图片',
+              label: translate('composerV2.t117'),
               icon: <Icons.Copy size={14} />,
               onClick: () => {
                 void copyImageFromSrc(resolvedSrc).catch(() => {})
@@ -6615,7 +6671,7 @@ function ComposerImageCard({
             },
             {
               key: 'remove',
-              label: '移除图片',
+              label: translate('composerV2.t118'),
               icon: <Icons.Trash size={14} />,
               danger: true,
               onClick: onRemove,
@@ -6641,12 +6697,12 @@ function readBlobAsDataUrl(blob: Blob): Promise<string> {
 
 export async function copyImageFromSrc(src: string): Promise<void> {
   const response = await fetch(src)
-  if (!response.ok) throw new Error('无法读取图片数据')
+  if (!response.ok) throw new Error(translate('composerV2.t119'))
   const blob = await response.blob()
   const ClipboardItemCtor = (window as unknown as { ClipboardItem?: typeof ClipboardItem })
     .ClipboardItem
   if (typeof ClipboardItemCtor !== 'function') {
-    throw new Error('当前环境不支持复制图片')
+    throw new Error(translate('composerV2.tpl4Desc'))
   }
   await navigator.clipboard.write([new ClipboardItemCtor({ [blob.type || 'image/png']: blob })])
 }
@@ -6858,7 +6914,7 @@ export function isLocalCliProvider(provider: ProviderProfile | null | undefined)
  */
 const LOCAL_CLAUDE_CLI_VENDOR: VendorMeta = {
   id: 'local-claude-cli',
-  name: '本地 Claude CLI',
+  name: translate('composerV2.tpl5Desc'),
   emoji: 'CC',
   color: '#d97757',
   desc: '',
@@ -6867,7 +6923,7 @@ const LOCAL_CLAUDE_CLI_VENDOR: VendorMeta = {
 
 const LOCAL_CODEX_CLI_VENDOR: VendorMeta = {
   id: 'local-codex-cli',
-  name: '本地 Codex CLI',
+  name: translate('composerV2.t122'),
   emoji: 'CX',
   color: '#10a37f',
   desc: '',
@@ -6959,7 +7015,7 @@ function getModelDisplayLabel(
   if (provider?.id === LOCAL_CLI_PROVIDER_ID) {
     return modelId && modelId !== LOCAL_CLI_DEFAULT_MODEL ? modelId : LOCAL_CLI_MODEL_DISPLAY
   }
-  return modelId || provider?.defaultModel || provider?.name || '未配置'
+  return modelId || provider?.defaultModel || provider?.name || translate('composerV2.t92')
 }
 
 function getPickerModelDisplayLabel(

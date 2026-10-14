@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import './AgentsView.less'
 import { Icons } from '../Icons'
+import { translate, useI18n } from '../i18n'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
@@ -88,20 +89,20 @@ const AGENT_NAME_MAX = 30
 const AGENT_DESC_MAX = 200
 
 const FILTER_TABS: Array<{ value: AgentFilterTab; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'mine', label: '我创建的' },
+  { value: 'all', label: translate('agentsView.t1') },
+  { value: 'mine', label: translate('agentsView.t2') },
 ]
 
 const STATUS_FILTER_OPTIONS: Array<{ value: AgentStatusFilter; label: string }> = [
-  { value: 'all', label: '全部状态' },
-  { value: 'enabled', label: '已启用' },
-  { value: 'disabled', label: '已停用' },
+  { value: 'all', label: translate('agentsView.t3') },
+  { value: 'enabled', label: translate('agentsView.t4') },
+  { value: 'disabled', label: translate('agentsView.t5') },
 ]
 
 const SORT_OPTIONS: Array<{ value: AgentSortKey; label: string }> = [
-  { value: 'updated-desc', label: '按更新时间' },
-  { value: 'created-desc', label: '按创建时间' },
-  { value: 'name-asc', label: '按名称' },
+  { value: 'updated-desc', label: translate('agentsView.t6') },
+  { value: 'created-desc', label: translate('agentsView.t7') },
+  { value: 'name-asc', label: translate('agentsView.t8') },
 ]
 
 const adapterOptions = [
@@ -112,21 +113,21 @@ const adapterOptions = [
 
 const reasoningOptions = [
   { label: 'minimal', value: 'minimal' },
-  { label: '低 · 更快、更省资源', value: 'low' },
+  { label: translate('agentsView.t9'), value: 'low' },
   { label: 'medium', value: 'medium' },
-  { label: '高 · 更强的推理与输出质量', value: 'high' },
+  { label: translate('agentsView.t10Desc'), value: 'high' },
   { label: 'xhigh', value: 'xhigh' },
   { label: 'max', value: 'max' },
 ]
 
 /** 推理强度当前值的提示文案（控件下方灰色辅助说明） */
 const REASONING_HINT: Record<SessionReasoningEffort, string> = {
-  minimal: '最少推理，适合简单直接的任务',
-  low: '较少推理，更快且更省资源',
-  medium: '标准模式，速度优先',
-  high: '更强的推理与输出质量',
-  xhigh: '深度推理，适合复杂任务',
-  max: '极限推理，最长思考时间',
+  minimal: translate('agentsView.t11Desc'),
+  low: translate('agentsView.t12'),
+  medium: translate('agentsView.t13'),
+  high: translate('agentsView.t14'),
+  xhigh: translate('agentsView.t15'),
+  max: translate('agentsView.t16'),
 }
 
 function normalizeReasoningEffort(value: unknown): SessionReasoningEffort {
@@ -176,7 +177,7 @@ type AgentHookConfig = {
 type AgentHookNode = 'permission_request' | 'ask_user_question' | 'session_end' | 'session_fail'
 
 const EMPTY_DRAFT: AgentDraft = {
-  name: '新 Agent',
+  name: translate('agentsView.t17'),
   description: '',
   enabled: true,
   isDefault: false,
@@ -217,6 +218,8 @@ const EMPTY_DRAFT: AgentDraft = {
  * Agents Tab 渲染 AgentsTabContent，Teams Tab 渲染 TeamsPanel。
  */
 export function AgentsView() {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const [tab, setTab] = useState<AgentsTargetTab>(readAgentsTargetTab)
   const [agentsForTeams, setAgentsForTeams] = useState<ManagedAgent[]>([])
   useEffect(() => {
@@ -402,9 +405,9 @@ function AgentsTabContent({
     registerNavGuard(async () => {
       if (!dirtyRef.current) return true
       return requestConfirm({
-        title: '放弃未保存的 Agent 修改？',
-        description: '离开后，当前 Agent 编辑内容会恢复到上次保存的状态。',
-        confirmText: '离开',
+        title: translate('agentsView.t18Desc'),
+        description: translate('agentsView.t19Desc'),
+        confirmText: translate('agentsView.t20'),
       })
     })
     return () => registerNavGuard(null)
@@ -456,7 +459,7 @@ function AgentsTabContent({
           ? prev
           : { ...prev, ruleIds: [...prev.ruleIds, res.rule.id] },
       )
-      toast.success(`规则「${res.rule.name}」已创建并勾选`)
+      toast.success(translate('agentsView.tpl1Desc', { name: res.rule.name }))
       setShowRuleCreator(false)
     },
     [createRule, listRules, toast],
@@ -525,9 +528,9 @@ function AgentsTabContent({
   const showList = async () => {
     if (dirtyRef.current) {
       const confirmed = await requestConfirm({
-        title: '放弃未保存的修改？',
-        description: '返回列表后，当前编辑内容会恢复到上次保存的状态。',
-        confirmText: '返回',
+        title: translate('agentsView.t21'),
+        description: translate('agentsView.t22Desc'),
+        confirmText: translate('agentsView.t23'),
       })
       if (!confirmed) return
     }
@@ -563,9 +566,9 @@ function AgentsTabContent({
   const handleNew = async () => {
     if (dirty) {
       const confirmed = await requestConfirm({
-        title: '放弃未保存的修改？',
-        description: '新建 Agent 会清空当前编辑区的未保存内容。',
-        confirmText: '新建',
+        title: translate('agentsView.t21'),
+        description: translate('agentsView.t24Desc'),
+        confirmText: translate('agentsView.t25'),
       })
       if (!confirmed) return
     }
@@ -578,20 +581,20 @@ function AgentsTabContent({
       normalizeReasoningBudgetTokens(draft.reasoningBudgetTokens) == null
     ) {
       toast.warning(
-        `推理 Token 预算必须是 ${MIN_REASONING_BUDGET_TOKENS}–${MAX_REASONING_BUDGET_TOKENS} 的整数`,
+        translate('agentsView.tpl2Desc', { min: MIN_REASONING_BUDGET_TOKENS, max: MAX_REASONING_BUDGET_TOKENS }),
       )
       return
     }
     const payload = draftToPayload(draft, selectedProvider)
     if (!payload.name.trim()) {
-      toast.warning('Agent 名称不能为空')
+      toast.warning(translate('agentsView.t26'))
       return
     }
     const saved =
       draft.id != null
         ? (await updateAgent({ id: draft.id, ...payload })).agent
         : (await createAgent(payload)).agent
-    toast.success('Agent 配置已保存')
+    toast.success(translate('agentsView.t27'))
     selectedIdRef.current = saved.id
     pendingNewRef.current = false
     setSelectedId(saved.id)
@@ -608,18 +611,18 @@ function AgentsTabContent({
   const handleDelete = async () => {
     if (draft.id == null || draft.builtIn) return
     const confirmed = await requestConfirm({
-      title: `删除 Agent「${draft.name}」？`,
-      description: '此操作不可撤销，删除后该 Agent 将从会话选择器中移除。',
-      confirmText: '删除',
+      title: translate('agentsView.tpl3Desc', { name: draft.name }),
+      description: translate('agentsView.t28Desc'),
+      confirmText: translate('agentsView.t29'),
       danger: true,
     })
     if (!confirmed || draft.id == null) return
     const res = await deleteAgent({ id: draft.id })
     if (!res.deleted) {
-      toast.warning('内置 Agent 或不存在的 Agent 不能删除')
+      toast.warning(translate('agentsView.t30Desc'))
       return
     }
-    toast.success('Agent 已删除')
+    toast.success(translate('agentsView.t31'))
     selectedIdRef.current = null
     screenRef.current = 'list'
     pendingNewRef.current = false
@@ -634,46 +637,46 @@ function AgentsTabContent({
       const provider = providers.find((item) => item.id === (agent.providerProfileId ?? ''))
       const cloned = normalizeDraftForProvider(agentToDraft(agent), provider)
       const payload = draftToPayload(
-        { ...cloned, name: `${agent.name} 副本`, isDefault: false },
+        { ...cloned, name: translate('agentsView.tpl4Desc', { name: agent.name }), isDefault: false },
         provider,
       )
       await createAgent(payload)
-      toast.success(`已复制「${agent.name}」`)
+      toast.success(translate('agentsView.tpl5Desc', { name: agent.name }))
       await refresh()
     } catch {
-      toast.error(`复制「${agent.name}」失败`)
+      toast.error(translate('agentsView.tpl6Desc', { name: agent.name }))
     }
   }
 
   const handleCardDelete = async (agent: ManagedAgent) => {
     if (agent.builtIn) return
     const confirmed = await requestConfirm({
-      title: `删除 Agent「${agent.name}」？`,
-      description: '此操作不可撤销，删除后该 Agent 将从会话选择器中移除。',
-      confirmText: '删除',
+      title: translate('agentsView.tpl3Desc', { name: agent.name }),
+      description: translate('agentsView.t28Desc'),
+      confirmText: translate('agentsView.t29'),
       danger: true,
     })
     if (!confirmed) return
     try {
       const res = await deleteAgent({ id: agent.id })
       if (!res.deleted) {
-        toast.warning('删除失败')
+        toast.warning(translate('agentsView.t32'))
         return
       }
-      toast.success('Agent 已删除')
+      toast.success(translate('agentsView.t31'))
       await refresh()
     } catch {
-      toast.error(`删除「${agent.name}」失败`)
+      toast.error(translate('agentsView.tpl7Desc', { name: agent.name }))
     }
   }
 
   const handleCardToggle = async (agent: ManagedAgent) => {
     try {
       await updateAgent({ id: agent.id, enabled: !agent.enabled })
-      toast.success(agent.enabled ? `已停用「${agent.name}」` : `已启用「${agent.name}」`)
+      toast.success(agent.enabled ? translate('agentsView.tpl8Desc', { name: agent.name }) : translate('agentsView.tpl9Desc', { name: agent.name }))
       await refresh()
     } catch {
-      toast.error(agent.enabled ? `停用「${agent.name}」失败` : `启用「${agent.name}」失败`)
+      toast.error(agent.enabled ? translate('agentsView.tpl10Desc', { name: agent.name }) : translate('agentsView.tpl11Desc', { name: agent.name }))
     }
   }
 
@@ -693,10 +696,10 @@ function AgentsTabContent({
         }
         throw new Error('set-default-failed')
       }
-      toast.success(`已将「${agent.name}」设为默认`)
+      toast.success(translate('agentsView.tpl12Desc', { name: agent.name }))
       await refresh()
     } catch {
-      toast.error(`设为默认失败`)
+      toast.error(translate('agentsView.tpl13Desc'))
     }
   }
 
@@ -704,10 +707,10 @@ function AgentsTabContent({
     try {
       const res = await exportAgentsToFile({ ids: [agent.id] })
       if (res.filePath) {
-        toast.success(`已导出「${agent.name}」到 ${res.filePath}`)
+        toast.success(translate('agentsView.tpl14Desc', { name: agent.name, path: res.filePath }))
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '导出失败')
+      toast.error(err instanceof Error ? err.message : translate('agentsView.t33'))
     }
   }
 
@@ -731,10 +734,10 @@ function AgentsTabContent({
           setQuickChatAgent(null)
           setQuickChatProjectName('')
           setQuickChatProjectPath('')
-          toast.success(`已进入「${agent.name}」的新会话`)
+          toast.success(translate('agentsView.tpl15Desc', { name: agent.name }))
         }
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '创建会话失败')
+        toast.error(err instanceof Error ? err.message : translate('agentsView.t34'))
       } finally {
         setQuickChatBusy(false)
       }
@@ -744,13 +747,13 @@ function AgentsTabContent({
 
   const handleQuickChatPickPath = useCallback(async () => {
     try {
-      const selected = await openDirectoryDialog({ title: '选择项目文件夹' })
+      const selected = await openDirectoryDialog({ title: translate('agentsView.t35') })
       if (selected.canceled || selected.filePath == null) return
       const filePath = selected.filePath
       setQuickChatProjectPath(filePath)
       setQuickChatProjectName((prev) => prev.trim() || getPathBasename(filePath))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '选择项目文件夹失败')
+      toast.error(err instanceof Error ? err.message : translate('agentsView.t36'))
     }
   }, [openDirectoryDialog, toast])
 
@@ -758,7 +761,7 @@ function AgentsTabContent({
     if (quickChatAgent == null) return
     const name = quickChatProjectName.trim() || getPathBasename(quickChatProjectPath.trim())
     if (!name) {
-      toast.warning('请先输入项目名称')
+      toast.warning(translate('agentsView.t37'))
       return
     }
     setQuickChatBusy(true)
@@ -781,10 +784,10 @@ function AgentsTabContent({
         setQuickChatAgent(null)
         setQuickChatProjectName('')
         setQuickChatProjectPath('')
-        toast.success(`已在新项目中启动「${quickChatAgent.name}」`)
+        toast.success(translate('agentsView.tpl16Desc', { name: quickChatAgent.name }))
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '创建项目失败')
+      toast.error(err instanceof Error ? err.message : translate('agentsView.t38'))
     } finally {
       setQuickChatBusy(false)
     }
@@ -805,45 +808,45 @@ function AgentsTabContent({
     try {
       const res = await exportAgentsToFile({ ids: [] })
       if (res.filePath) {
-        toast.success(`已导出 ${res.count} 个 Agent 到 ${res.filePath}`)
+        toast.success(translate('agentsView.tpl17Desc', { count: res.count, path: res.filePath }))
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '导出失败')
+      toast.error(err instanceof Error ? err.message : translate('agentsView.t33'))
     }
   }
 
   const handleExportSelected = async () => {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) {
-      toast.warning('请先选择要导出的 Agent')
+      toast.warning(translate('agentsView.t39Desc'))
       return
     }
     try {
       const res = await exportAgentsToFile({ ids })
       if (res.filePath) {
-        toast.success(`已导出 ${res.count} 个 Agent 到 ${res.filePath}`)
+        toast.success(translate('agentsView.tpl17Desc', { count: res.count, path: res.filePath }))
         setSelectedIds(new Set())
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '导出失败')
+      toast.error(err instanceof Error ? err.message : translate('agentsView.t33'))
     }
   }
 
   const handleDeleteSelected = async () => {
     if (selectedIds.size === 0) {
-      toast.warning('请先选择要删除的 Agent')
+      toast.warning(translate('agentsView.t40Desc'))
       return
     }
     // 内置 Agent 不可删除，过滤掉
     const deletable = agents.filter((a) => selectedIds.has(a.id) && !a.builtIn)
     if (deletable.length === 0) {
-      toast.warning('选中的均为内置 Agent，无法删除')
+      toast.warning(translate('agentsView.t41Desc'))
       return
     }
     const confirmed = await requestConfirm({
-      title: `删除 ${deletable.length} 个 Agent？`,
-      description: '此操作不可撤销，选中的 Agent 将从会话选择器中移除。',
-      confirmText: '批量删除',
+      title: translate('agentsView.tpl18Desc', { count: deletable.length }),
+      description: translate('agentsView.t42Desc'),
+      confirmText: translate('agentsView.t43'),
       danger: true,
     })
     if (!confirmed) return
@@ -858,9 +861,9 @@ function AgentsTabContent({
         errs.push(agent.name)
       }
     }
-    if (ok > 0) toast.success(`已删除 ${ok} 个 Agent`)
+    if (ok > 0) toast.success(translate('agentsView.tpl19Desc', { count: ok }))
     if (errs.length > 0) {
-      toast.error(`${errs.length} 个删除失败：${errs.slice(0, 2).join('；')}`)
+      toast.error(translate('agentsView.tpl20Desc', { count: errs.length, detail: errs.slice(0, 2).join('; ') }))
     }
     setSelectedIds(new Set())
     await refresh()
@@ -922,14 +925,14 @@ function AgentsTabContent({
 
       if (imported > 0) {
         toast.success(
-          `已导入 ${imported} 个 Agent${skipped > 0 ? `，跳过 ${skipped} 个同名 Agent` : ''}`,
+          translate('agentsView.tpl21Desc', { count: imported, skipped: skipped > 0 ? translate('agentsView.tpl21bDesc', { count: skipped }) : '' }),
         )
         await refresh()
       } else if (skipped > 0) {
-        toast.warning(`所有 ${skipped} 个 Agent 名称已存在，已跳过`)
+        toast.warning(translate('agentsView.tpl22Desc', { count: skipped }))
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '导入失败')
+      toast.error(err instanceof Error ? err.message : translate('agentsView.t44'))
     }
   }
 
@@ -1022,16 +1025,16 @@ function AgentsTabContent({
           <div className="agents-home-head">
             <div className="agents-home-title-block">
               <div className="agents-home-title-row">
-                <h1 className="agents-home-title">Agent 管理</h1>
+                <h1 className="agents-home-title">{translate('agentsView.t125')}</h1>
               </div>
-              <div className="agents-home-subtitle">管理和配置你的智能体，让 AI 更好地为你服务</div>
+              <div className="agents-home-subtitle">{translate('agentsView.t126Desc')}</div>
             </div>
             <div className="agents-home-tools">
               <LobeInput
                 size="middle"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="搜索 Agent..."
+                placeholder={translate('agentsView.t89')}
                 prefix={<Icons.Search size={14} />}
                 allowClear
                 className="agents-home-search"
@@ -1043,7 +1046,7 @@ function AgentsTabContent({
                 onClick={() => void handleNew()}
                 icon={<Icons.Plus size={12} />}
               >
-                创建 Agent
+                {translate('agentsView.t127')}
               </Button>
             </div>
           </div>
@@ -1082,7 +1085,7 @@ function AgentsTabContent({
                 <button type="button" className="agents-home-sort">
                   <Icons.ArrowDown size={12} />
                   <span>
-                    {SORT_OPTIONS.find((o) => o.value === sortKey)?.label ?? '按更新时间'}
+                    {SORT_OPTIONS.find((o) => o.value === sortKey)?.label ?? translate('agentsView.t6')}
                   </span>
                   <Icons.ChevronDown size={12} />
                 </button>
@@ -1101,7 +1104,7 @@ function AgentsTabContent({
                   <Icons.CheckCircle size={12} />
                   <span>
                     {STATUS_FILTER_OPTIONS.find((o) => o.value === statusFilter)?.label ??
-                      '全部状态'}
+                      translate('agentsView.t3')}
                   </span>
                   <Icons.ChevronDown size={12} />
                 </button>
@@ -1111,7 +1114,7 @@ function AgentsTabContent({
                 type="text"
                 onClick={() => void refresh()}
                 disabled={loading}
-                title="刷新"
+                title={translate('agentsView.t90')}
                 icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />}
               />
               {visibleAgents.length > 0 && (
@@ -1121,7 +1124,7 @@ function AgentsTabContent({
                   onClick={selectionMode ? exitSelectionMode : enterSelectionMode}
                   icon={<Icons.CheckSquare size={12} />}
                 >
-                  {selectionMode ? '退出选择' : '选择'}
+                  {selectionMode ? translate('agentsView.t45') : translate('agentsView.t46')}
                 </Button>
               )}
               <Button
@@ -1130,7 +1133,7 @@ function AgentsTabContent({
                 onClick={() => void handleImport()}
                 icon={<Icons.Upload size={12} />}
               >
-                导入
+                {translate('agentsView.t128')}
               </Button>
               <Button
                 size="middle"
@@ -1138,7 +1141,7 @@ function AgentsTabContent({
                 onClick={() => void handleExportAll()}
                 icon={<Icons.Download size={12} />}
               >
-                导出全部
+                {translate('agentsView.t129')}
               </Button>
             </div>
           </div>
@@ -1146,14 +1149,14 @@ function AgentsTabContent({
           {loading && visibleAgents.length === 0 ? (
             <div className="agents-loading-state" role="status" aria-live="polite">
               <Icons.Spinner size={24} />
-              <div className="agents-loading-title">正在加载 Agent…</div>
-              <div className="agents-loading-desc">同步模型、工具、技能和工作流配置</div>
+              <div className="agents-loading-title">{translate('agentsView.t130')}</div>
+              <div className="agents-loading-desc">{translate('agentsView.t131Desc')}</div>
             </div>
           ) : visibleAgents.length > 0 ? (
             <>
               {selectionMode && selectedIds.size > 0 && (
-                <div className="agents-selectbar" role="region" aria-label="批量操作">
-                  <span className="agents-selectbar-count">已选 {selectedIds.size} 个</span>
+                <div className="agents-selectbar" role="region" aria-label={translate('agentsView.t91')}>
+                  <span className="agents-selectbar-count">{translate('agentsView.tpl23Desc', { count: selectedIds.size })}</span>
                   <span className="agents-selectbar-spacer" />
                   <Button
                     size="middle"
@@ -1162,10 +1165,10 @@ function AgentsTabContent({
                       selectedIds.size === visibleAgents.length ? clearSelection : selectAllVisible
                     }
                   >
-                    {selectedIds.size === visibleAgents.length ? '取消全选' : '全选当前'}
+                    {selectedIds.size === visibleAgents.length ? translate('agentsView.t47') : translate('agentsView.t48')}
                   </Button>
                   <Button size="middle" type="text" onClick={clearSelection}>
-                    清空选择
+                    {translate('agentsView.t132')}
                   </Button>
                   <Button
                     size="middle"
@@ -1174,7 +1177,7 @@ function AgentsTabContent({
                     onClick={() => void handleDeleteSelected()}
                     icon={<Icons.Trash size={12} />}
                   >
-                    删除选中
+                    {translate('agentsView.t133')}
                   </Button>
                   <Button
                     size="middle"
@@ -1182,7 +1185,7 @@ function AgentsTabContent({
                     onClick={() => void handleExportSelected()}
                     icon={<Icons.Download size={12} />}
                   >
-                    导出选中
+                    {translate('agentsView.t134')}
                   </Button>
                 </div>
               )}
@@ -1219,15 +1222,15 @@ function AgentsTabContent({
                 </div>
                 <div className="agents-empty-title">
                   {searchQuery
-                    ? `没有匹配「${searchQuery}」的 Agent`
+                    ? translate('agentsView.tpl24Desc', { query: searchQuery })
                     : filterTab === 'mine'
-                      ? '还没有创建过 Agent'
-                      : '创建第一个 Agent'}
+                      ? translate('agentsView.t49')
+                      : translate('agentsView.t50')}
                 </div>
                 <div className="agents-empty-desc">
                   {searchQuery
-                    ? '试试更换关键词，或切换到「全部」标签'
-                    : '智能体可在对话中选择，配置独立的模型、提示词、工具和工作流。'}
+                    ? translate('agentsView.t51Desc')
+                    : translate('agentsView.t52Desc')}
                 </div>
                 {!searchQuery && (
                   <div style={{ marginTop: 8 }}>
@@ -1236,7 +1239,7 @@ function AgentsTabContent({
                       onClick={() => void handleNew()}
                       icon={<Icons.Plus size={12} />}
                     >
-                      创建 Agent
+                      {translate('agentsView.t127')}
                     </Button>
                   </div>
                 )}
@@ -1276,14 +1279,14 @@ function AgentsTabContent({
           size="middle"
           type="text"
           onClick={() => void showList()}
-          title="返回列表"
+          title={translate('agentsView.t92')}
           icon={<Icons.ArrowLeft size={12} />}
         >
-          列表
+          {translate('agentsView.t135')}
         </Button>
         <div className="agents-detail-title">
-          {draft.id ? draft.name : '新建 Agent'}
-          {dirty && <span className="agent-dirty-badge">已编辑未保存</span>}
+          {draft.id ? draft.name : translate('agentsView.t53')}
+          {dirty && <span className="agent-dirty-badge">{translate('agentsView.t136')}</span>}
         </div>
         <div className="agents-detail-spacer" />
         {draft.id != null && !draft.builtIn && (
@@ -1294,7 +1297,7 @@ function AgentsTabContent({
             onClick={() => void handleDelete()}
             icon={<Icons.Trash size={12} />}
           >
-            删除
+            {translate('agentsView.t29')}
           </Button>
         )}
         <Button
@@ -1303,7 +1306,7 @@ function AgentsTabContent({
           onClick={() => void handleSave()}
           icon={<Icons.Check size={12} />}
         >
-          保存
+          {translate('agentsView.t137')}
         </Button>
       </div>
 
@@ -1311,11 +1314,11 @@ function AgentsTabContent({
         <section className="agent-editor-main">
           {/* ── Section: 基本信息 ── */}
           <SectionHeader
-            title="基本信息"
+            title={translate('agentsView.t93')}
             desc={
               draft.builtIn
-                ? '内置 Agent 可调整提示词和运行配置，但不可删除。'
-                : '自定义 Agent 会出现在对话输入栏的 Agent 选择器中。'
+                ? translate('agentsView.t54Desc')
+                : translate('agentsView.t55Desc')
             }
           />
 
@@ -1333,31 +1336,31 @@ function AgentsTabContent({
             </div>
 
             <Field
-              label="名称"
+              label={translate('agentsView.t94')}
               required
               counter={{ current: draft.name.length, max: AGENT_NAME_MAX }}
             >
               <LobeInput
                 value={draft.name}
                 maxLength={AGENT_NAME_MAX}
-                placeholder="为这个 Agent 起个名字"
+                placeholder={translate('agentsView.t95Desc')}
                 onChange={(e) => updateDraft('name', e.target.value)}
               />
             </Field>
 
-            <Field label="状态">
+            <Field label={translate('agentsView.t96')}>
               <div className="agent-status-row">
                 <Switch
                   checked={draft.enabled}
                   onChange={(checked: boolean) => updateDraft('enabled', checked)}
                 />
-                <span className="agent-status-text">{draft.enabled ? '启用' : '停用'}</span>
+                <span className="agent-status-text">{draft.enabled ? translate('agentsView.t56') : translate('agentsView.t57')}</span>
               </div>
-              <div className="agent-field-hint">禁用后，Agent 将无法被选择和使用</div>
+              <div className="agent-field-hint">{translate('agentsView.t138Desc')}</div>
             </Field>
 
             <Field
-              label="描述"
+              label={translate('agentsView.t97')}
               required
               wide
               counter={{ current: draft.description.length, max: AGENT_DESC_MAX }}
@@ -1366,23 +1369,23 @@ function AgentsTabContent({
                 value={draft.description}
                 maxLength={AGENT_DESC_MAX}
                 rows={3}
-                placeholder="用一句话描述这个 Agent 的能力和使用场景"
+                placeholder={translate('agentsView.t98Desc')}
                 onChange={(e) => updateDraft('description', e.target.value)}
               />
             </Field>
 
-            <Field label="默认 Agent">
+            <Field label={translate('agentsView.t99')}>
               <div className="agent-status-row">
                 <Switch
                   checked={draft.isDefault}
                   onChange={(checked: boolean) => updateDraft('isDefault', checked)}
                 />
                 <span className="agent-status-text">
-                  {draft.isDefault ? '已设为默认' : '设为默认'}
+                  {draft.isDefault ? translate('agentsView.t58') : translate('agentsView.t59')}
                 </span>
               </div>
               <div className="agent-field-hint">
-                {draft.isDefault ? '新会话默认选择此 Agent' : '未设为默认'}
+                {draft.isDefault ? translate('agentsView.t60Desc') : translate('agentsView.t61')}
               </div>
             </Field>
           </div>
@@ -1390,8 +1393,8 @@ function AgentsTabContent({
           {/* ── Section: 执行配置 ── */}
           <div className="agent-section-divider" />
           <SectionHeader
-            title="执行配置"
-            desc="模型、执行器、权限、推理强度与工作流，决定 Agent 怎么运行。"
+            title={translate('agentsView.t100')}
+            desc={translate('agentsView.t101Desc')}
           />
 
           <div className="agent-form-grid">
@@ -1413,7 +1416,7 @@ function AgentsTabContent({
                   )
                 }}
                 options={[
-                  { label: '跟随会话', value: '' },
+                  { label: translate('agentsView.t62'), value: '' },
                   ...providers.map((p) => ({
                     // router 行加 ⚙ 前缀标识（选中后模型由分流器逐轮决定）
                     label: p.providerType === 'auto-router' ? `⚙ ${p.name}` : p.name,
@@ -1424,10 +1427,10 @@ function AgentsTabContent({
               />
             </Field>
             <Field
-              label="执行器 (SDK)"
+              label={translate('agentsView.t102')}
               badge={
                 effectiveAgentAdapter === 'claude-sdk' ? (
-                  <span className="agent-badge-soft">推荐</span>
+                  <span className="agent-badge-soft">{translate('agentsView.t139')}</span>
                 ) : null
               }
             >
@@ -1447,12 +1450,12 @@ function AgentsTabContent({
               )}
             </Field>
             <Field
-              label="默认模型"
+              label={translate('agentsView.t103')}
               hint={
                 selectedProvider && !allowModelOverride
                   ? selectedProvider.providerType === 'auto-router'
-                    ? '智能路由已选中：每轮由分流器分析任务强度后自动决定执行模型。'
-                    : '本地 CLI 直接沿用宿主机实际配置，这里不再单独覆盖模型。'
+                    ? translate('agentsView.t63Desc')
+                    : translate('agentsView.t64Desc')
                   : undefined
               }
             >
@@ -1460,8 +1463,8 @@ function AgentsTabContent({
                 <LobeInput
                   value={
                     selectedProvider.providerType === 'auto-router'
-                      ? '由智能路由分流决定'
-                      : '跟随本地 CLI'
+                      ? translate('agentsView.t65')
+                      : translate('agentsView.t66')
                   }
                   readOnly
                   disabled
@@ -1470,12 +1473,12 @@ function AgentsTabContent({
                 <LobeSelect
                   value={draft.modelId}
                   onChange={(value) => updateDraft('modelId', String(value))}
-                  options={[{ label: 'Provider 默认', value: '' }, ...modelOptions]}
+                  options={[{ label: translate('agentsView.t67'), value: '' }, ...modelOptions]}
                   style={agentSelectStyle}
                 />
               )}
             </Field>
-            <Field label="权限">
+            <Field label={translate('agentsView.t104')}>
               <LobeSelect
                 value={draft.permissionMode}
                 onChange={(value) => updateDraft('permissionMode', value as SessionPermissionMode)}
@@ -1486,7 +1489,7 @@ function AgentsTabContent({
                 style={agentSelectStyle}
               />
             </Field>
-            <Field label="推理强度" hint={REASONING_HINT[draft.reasoningEffort]}>
+            <Field label={translate('agentsView.t105')} hint={REASONING_HINT[draft.reasoningEffort]}>
               <LobeSelect
                 value={draft.reasoningEffort}
                 onChange={(value) =>
@@ -1497,8 +1500,8 @@ function AgentsTabContent({
               />
             </Field>
             <Field
-              label="推理 Token 预算"
-              hint="可选；仅 Claude SDK 显式 extended thinking 使用。留空则由 SDK/模型自动决定。"
+              label={translate('agentsView.t106')}
+              hint={translate('agentsView.t107LongDesc')}
             >
               <LobeInput
                 type="number"
@@ -1507,23 +1510,23 @@ function AgentsTabContent({
                 step={1024}
                 value={draft.reasoningBudgetTokens}
                 disabled={effectiveAgentAdapter !== 'claude-sdk'}
-                placeholder="自动"
+                placeholder={translate('agentsView.t108')}
                 onChange={(event) => updateDraft('reasoningBudgetTokens', event.target.value)}
               />
             </Field>
             <Field
-              label="工作流"
+              label={translate('agentsView.t109')}
               hint={
                 activeWorkflow
-                  ? `已绑定：${activeWorkflow.name} · ${activeWorkflow.graph.nodes.length} 节点 · ${activeWorkflow.status}`
-                  : '未绑定工作流，Agent 会按普通编码流程执行'
+                  ? translate('agentsView.tpl25Desc', { name: activeWorkflow.name, count: activeWorkflow.graph.nodes.length, status: activeWorkflow.status })
+                  : translate('agentsView.t68Desc')
               }
             >
               <LobeSelect
                 value={draft.workflowId}
                 onChange={(value) => updateDraft('workflowId', String(value))}
                 options={[
-                  { label: '不使用工作流', value: '' },
+                  { label: translate('agentsView.t69'), value: '' },
                   ...workflows.map((w) => ({ label: w.name, value: w.id })),
                 ]}
                 style={agentSelectStyle}
@@ -1539,14 +1542,14 @@ function AgentsTabContent({
           <ConfigSection
             title="Skills"
             count={countExistingRefs(draft.skillIds, skills)}
-            description="配置该 Agent 可使用的 Skills"
+            description={translate('agentsView.t110Desc')}
             footer={
               <button
                 type="button"
                 className="agent-config-link"
                 onClick={() => setShowSkillPicker(true)}
               >
-                <Icons.Skills size={12} /> 管理 Skills
+                <Icons.Skills size={12} /> {translate('agentsView.t140')}
               </button>
             }
           >
@@ -1564,26 +1567,26 @@ function AgentsTabContent({
                   )}
                 </div>
               ) : (
-                <div className="agent-config-empty">尚未选择 Skill</div>
+                <div className="agent-config-empty">{translate('agentsView.t141')}</div>
               )
             })()}
           </ConfigSection>
 
           <ConfigSection
-            title="MCP 服务"
+            title={translate('agentsView.t111')}
             count={
               draft.mcpServerIds.length > 0
                 ? draft.mcpServerIds.length
                 : mcpServers.filter((server) => server.enabled).length
             }
-            description="按需选择该 Agent 可用的 MCP；未选择 = 全部可用（默认）"
+            description={translate('agentsView.t112Desc')}
             footer={
               <button
                 type="button"
                 className="agent-config-link"
                 onClick={() => setShowMcpPicker(true)}
               >
-                <Icons.Skills size={12} /> 管理 MCP 服务
+                <Icons.Skills size={12} /> {translate('agentsView.t142')}
               </button>
             }
           >
@@ -1591,8 +1594,8 @@ function AgentsTabContent({
               if (draft.mcpServerIds.length === 0) {
                 return (
                   <div className="agent-config-empty">
-                    全部 MCP 服务（默认）
-                    <span className="mcp-default-hint">含全部已启用服务与内置能力</span>
+                    {translate('agentsView.t143Desc')}
+                    <span className="mcp-default-hint">{translate('agentsView.t144Desc')}</span>
                   </div>
                 )
               }
@@ -1612,16 +1615,16 @@ function AgentsTabContent({
           </ConfigSection>
 
           <ConfigSection
-            title="规则"
+            title={translate('agentsView.t113')}
             count={countExistingRefs(draft.ruleIds, rules)}
-            description="约束 Agent 的行为与输出"
+            description={translate('agentsView.t114Desc')}
             actions={
               <button
                 type="button"
                 className="agent-config-action-btn"
                 onClick={() => setShowRuleCreator(true)}
               >
-                <Icons.Plus size={12} /> 新增规则
+                <Icons.Plus size={12} /> {translate('agentsView.t145')}
               </button>
             }
             footer={
@@ -1629,9 +1632,9 @@ function AgentsTabContent({
                 type="button"
                 className="agent-config-link"
                 onClick={openRulesSettings}
-                title="打开 设置 → 规则（可编辑、启停、删除全部作用域的规则）"
+                title={translate('agentsView.t115Desc')}
               >
-                <Icons.ListTodo size={12} /> 管理规则
+                <Icons.ListTodo size={12} /> {translate('agentsView.t146')}
               </button>
             }
           >
@@ -1643,12 +1646,12 @@ function AgentsTabContent({
               />
             ) : (
               <div className="agent-config-empty">
-                暂无可用规则，点右上角「新增规则」创建，或前往 设置 → 规则 管理
+                {translate('agentsView.t147Desc')}
               </div>
             )}
           </ConfigSection>
 
-          <ConfigSection title="Hook" description="Agent 专属 Hook 覆盖（来源与授权状态可见）">
+          <ConfigSection title="Hook" description={translate('agentsView.t116Desc')}>
             <AgentHooksSection agentId={draft.id ?? null} />
           </ConfigSection>
         </aside>
@@ -1748,14 +1751,14 @@ function QuickChatProjectModal({
     })),
     {
       value: QUICKCHAT_TEMP_VALUE,
-      displayName: '临时会话',
+      displayName: translate('agentsView.t70'),
       label: (
         <div className="agents-quickchat-option">
           <span className="agents-quickchat-option-name">
             <Icons.Chat size={13} />
-            <span>临时会话</span>
+            <span>{translate('agentsView.t70')}</span>
           </span>
-          <span className="agents-quickchat-option-path">不切到已有项目，直接进入临时目录会话</span>
+          <span className="agents-quickchat-option-path">{translate('agentsView.t148Desc')}</span>
         </div>
       ),
     },
@@ -1781,15 +1784,15 @@ function QuickChatProjectModal({
       <div className="agents-quickchat-modal" onMouseDown={(event) => event.stopPropagation()}>
         <div className="agents-quickchat-head">
           <div>
-            <div className="agents-quickchat-kicker">快速对话</div>
-            <div className="agents-quickchat-title">先选项目，再进入「{agent.name}」</div>
+            <div className="agents-quickchat-kicker">{translate('agentsView.t149')}</div>
+            <div className="agents-quickchat-title">{translate('agentsView.tpl26Desc', { name: agent.name })}</div>
           </div>
           <button
             type="button"
             className="agents-quickchat-close"
             onClick={onClose}
             disabled={busy}
-            aria-label="关闭快速对话项目选择器"
+            aria-label={translate('agentsView.t117')}
           >
             <Icons.X size={14} />
           </button>
@@ -1797,23 +1800,23 @@ function QuickChatProjectModal({
 
         <div className="agents-quickchat-body">
           <div className="agents-quickchat-section">
-            <div className="agents-quickchat-section-title">选择工作区</div>
+            <div className="agents-quickchat-section-title">{translate('agentsView.t150')}</div>
             <Select
               className="agents-quickchat-select"
               value={selectedValue}
               onChange={handleSelectChange}
               disabled={busy}
-              placeholder="选择已有项目或使用临时会话"
+              placeholder={translate('agentsView.t118Desc')}
               optionLabelProp="displayName"
               optionFilterProp="displayName"
               showSearch
               options={selectOptions}
-              notFoundContent={projects.length === 0 ? '还没有可用项目，可直接新建' : '没有匹配项'}
+              notFoundContent={projects.length === 0 ? translate('agentsView.t71Desc') : translate('agentsView.t72')}
               popupMatchSelectWidth
             />
             {projects.length === 0 && (
               <div className="agents-quickchat-empty">
-                还没有可用项目，可以直接使用下方「新建项目」表单。
+                {translate('agentsView.t151Desc')}
               </div>
             )}
           </div>
@@ -1821,27 +1824,27 @@ function QuickChatProjectModal({
           <div className="agents-quickchat-divider" />
 
           <div className="agents-quickchat-section">
-            <div className="agents-quickchat-section-title">新建项目后进入会话</div>
+            <div className="agents-quickchat-section-title">{translate('agentsView.t152')}</div>
             <label className="agents-quickchat-field">
-              <span>项目名称</span>
+              <span>{translate('agentsView.t153')}</span>
               <LobeInput
                 value={projectName}
-                placeholder="输入项目名称"
+                placeholder={translate('agentsView.t119')}
                 onChange={(event) => onProjectNameChange(event.target.value)}
                 disabled={busy}
               />
             </label>
             <label className="agents-quickchat-field">
-              <span>项目目录（可选）</span>
+              <span>{translate('agentsView.t154')}</span>
               <div className="agents-quickchat-path-row">
                 <LobeInput
                   value={projectPath}
-                  placeholder="留空则自动使用临时目录"
+                  placeholder={translate('agentsView.t120')}
                   onChange={(event) => onProjectPathChange(event.target.value)}
                   disabled={busy}
                 />
                 <Button size="middle" type="text" onClick={onPickProjectPath} disabled={busy}>
-                  选择目录
+                  {translate('agentsView.t155')}
                 </Button>
               </div>
             </label>
@@ -1850,10 +1853,10 @@ function QuickChatProjectModal({
 
         <div className="agents-quickchat-actions">
           <Button size="middle" type="text" onClick={onClose} disabled={busy}>
-            取消
+            {translate('agentsView.t156')}
           </Button>
           <Button size="middle" type="primary" onClick={onCreateProject} loading={busy}>
-            创建项目并进入
+            {translate('agentsView.t157')}
           </Button>
         </div>
       </div>
@@ -1926,7 +1929,7 @@ function AgentCard({
         key: 'chat',
         label: (
           <span className="agent-context-menu-item">
-            <Icons.Chat size={14} /> 快速对话
+            <Icons.Chat size={14} /> {translate('agentsView.t149')}
           </span>
         ),
         onClick: () => onQuickChat(),
@@ -1935,7 +1938,7 @@ function AgentCard({
         key: 'export',
         label: (
           <span className="agent-context-menu-item">
-            <Icons.Download size={14} /> 导出
+            <Icons.Download size={14} /> {translate('agentsView.t121')}
           </span>
         ),
         onClick: () => onExport(),
@@ -1946,7 +1949,7 @@ function AgentCard({
               key: 'team-publish',
               label: (
                 <span className="agent-context-menu-item">
-                  <Icons.Users size={14} /> 发布到团队
+                  <Icons.Users size={14} /> {translate('agentsView.t158')}
                 </span>
               ),
               onClick: () => onPublishToTeam(),
@@ -1957,7 +1960,7 @@ function AgentCard({
         key: 'copy',
         label: (
           <span className="agent-context-menu-item">
-            <Icons.Copy size={14} /> 复制
+            <Icons.Copy size={14} /> {translate('agentsView.t122')}
           </span>
         ),
         onClick: () => onCopy(),
@@ -1966,7 +1969,7 @@ function AgentCard({
         key: 'edit',
         label: (
           <span className="agent-context-menu-item">
-            <Icons.Edit size={14} /> 编辑
+            <Icons.Edit size={14} /> {translate('agentsView.t159')}
           </span>
         ),
         onClick: () => onEdit(),
@@ -1977,7 +1980,7 @@ function AgentCard({
               key: 'delete',
               label: (
                 <span className="agent-context-menu-item danger">
-                  <Icons.Trash size={14} /> 删除
+                  <Icons.Trash size={14} /> {translate('agentsView.t29')}
                 </span>
               ),
               onClick: () => onDelete(),
@@ -1995,7 +1998,7 @@ function AgentCard({
         <label
           className="agents-card-check"
           onClick={(e) => e.stopPropagation()}
-          title={selected ? '取消选择' : '选择'}
+          title={selected ? translate('agentsView.t73') : translate('agentsView.t46')}
         >
           <input type="checkbox" checked={selected} onChange={onToggleSelect} />
         </label>
@@ -2027,17 +2030,17 @@ function AgentCard({
               <span className="agents-card-name">{agent.name}</span>
             </div>
             <span className={`agents-card-status ${agent.enabled ? 'enabled' : 'disabled'}`}>
-              {agent.enabled ? '启用' : '停用'}
+              {agent.enabled ? translate('agentsView.t56') : translate('agentsView.t57')}
             </span>
           </div>
           <div className="agents-card-desc">
-            {agent.description || (agent.builtIn ? '内置 Agent' : '自定义 Agent')}
+            {agent.description || (agent.builtIn ? translate('agentsView.t74') : translate('agentsView.t75'))}
           </div>
         </div>
         {hasMetaTags && (
           <div className="agents-card-meta">
             <div className="agents-card-tags">
-              {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
+              {agent.isDefault && <span className="agents-card-tag default-tag">{translate('agentsView.t160')}</span>}
               {skillCount > 0 && (
                 <span className="agents-card-tag" title="Skills">
                   <Icons.Skills size={10} />
@@ -2047,13 +2050,13 @@ function AgentCard({
               {workflow && (
                 <span className="agents-card-tag" title={workflow.name}>
                   <Icons.Workflow size={10} />
-                  工作流
+                  {translate('agentsView.t109')}
                 </span>
               )}
               {ruleCount > 0 && (
-                <span className="agents-card-tag" title="规则">
+                <span className="agents-card-tag" title={translate('agentsView.t113')}>
                   <Icons.Filter size={10} />
-                  {ruleCount} 规则
+                  {translate('agentsView.tpl27Desc', { count: ruleCount })}
                 </span>
               )}
             </div>
@@ -2070,7 +2073,7 @@ function AgentCard({
             icon={agent.enabled ? Icons.XCircle : Icons.CheckCircle}
             size="small"
             variant="borderless"
-            title={agent.enabled ? '停用' : '启用'}
+            title={agent.enabled ? translate('agentsView.t57') : translate('agentsView.t56')}
             onClick={onToggle}
           />
           {!agent.isDefault && (
@@ -2078,7 +2081,7 @@ function AgentCard({
               icon={Icons.Star}
               size="small"
               variant="borderless"
-              title="设为默认"
+              title={translate('agentsView.t59')}
               onClick={onSetDefault}
             />
           )}
@@ -2086,14 +2089,14 @@ function AgentCard({
             icon={Icons.Download}
             size="small"
             variant="borderless"
-            title="导出"
+            title={translate('agentsView.t121')}
             onClick={onExport}
           />
           <ActionIcon
             icon={Icons.Copy}
             size="small"
             variant="borderless"
-            title="复制"
+            title={translate('agentsView.t122')}
             onClick={onCopy}
           />
           {!agent.builtIn && (
@@ -2102,7 +2105,7 @@ function AgentCard({
               size="small"
               variant="borderless"
               danger
-              title="删除"
+              title={translate('agentsView.t29')}
               onClick={onDelete}
             />
           )}
@@ -2140,14 +2143,14 @@ function Field({
   children: ReactNode
 }) {
   // 不用 <label> 包 children：label 元素会拦截内部 click，
-  // 在一些 select / popover / date-picker 控件里会导致下拉/弹窗"点不出来"。
+  // 在一些 select / popover / date-picker 控件里会导致下拉/弹窗"{translate('agentsView.tpl28Desc')}"。
   return (
     <div className={`agent-field ${wide ? 'wide' : ''}`}>
       <div className="agent-field-label-row">
         <span className="agent-field-label">
           {label}
           {required && (
-            <span className="agent-field-required" aria-label="必填">
+            <span className="agent-field-required" aria-label={translate('agentsView.t123')}>
               *
             </span>
           )}
@@ -2193,7 +2196,7 @@ function PromptEditor({ value, onChange }: { value: string; onChange: (next: str
     <div className={`agent-prompt-editor${fullscreen ? ' is-fullscreen' : ''}`}>
       <div className="agent-prompt-toolbar">
         <div className="agent-prompt-toolbar-title">
-          <span>提示词</span>
+          <span>{translate('agentsView.t161')}</span>
           <span className="agent-prompt-toolbar-sub">System Prompt</span>
         </div>
         <div className="agent-prompt-toolbar-actions">
@@ -2201,9 +2204,9 @@ function PromptEditor({ value, onChange }: { value: string; onChange: (next: str
             type="button"
             className="agent-prompt-toolbar-btn"
             onClick={() => setFullscreen((v) => !v)}
-            title={fullscreen ? '退出全屏' : '全屏编辑'}
+            title={fullscreen ? translate('agentsView.t76') : translate('agentsView.t77')}
           >
-            <Icons.Maximize size={12} /> {fullscreen ? '退出' : '全屏'}
+            <Icons.Maximize size={12} /> {fullscreen ? translate('agentsView.t78') : translate('agentsView.t79')}
           </button>
         </div>
       </div>
@@ -2221,7 +2224,7 @@ function PromptEditor({ value, onChange }: { value: string; onChange: (next: str
           onChange={(e) => onChange(e.target.value)}
           onScroll={handleScroll}
           spellCheck={false}
-          placeholder="为这个 Agent 写一份系统提示词…"
+          placeholder={translate('agentsView.t124Desc')}
         />
       </div>
     </div>
@@ -2278,7 +2281,7 @@ function PickList({
 }) {
   const selectedSet = useMemo(() => new Set(selected), [selected])
   const disabledSet = useMemo(() => new Set(disabledIds ?? []), [disabledIds])
-  if (items.length === 0) return <div className="agents-empty-mini">暂无可选项</div>
+  if (items.length === 0) return <div className="agents-empty-mini">{translate('agentsView.t162')}</div>
   return (
     <div className="agent-pick-list">
       {items.map((item) => {
@@ -2293,7 +2296,7 @@ function PickList({
             key={item.id}
             className={cls.join(' ')}
             disabled={blocked}
-            title={blocked ? '已在互斥列表中配置' : undefined}
+            title={blocked ? translate('agentsView.t80') : undefined}
             onClick={() =>
               onChange(active ? selected.filter((id) => id !== item.id) : [...selected, item.id])
             }
@@ -2424,17 +2427,17 @@ function normalizeAgentHookConfig(value: Record<string, unknown>): AgentHookConf
 }
 
 const HOOK_NODES: Array<{ node: AgentHookNode; label: string }> = [
-  { node: 'permission_request', label: '权限请求' },
-  { node: 'ask_user_question', label: '用户提问' },
-  { node: 'session_end', label: '任务完成' },
-  { node: 'session_fail', label: '任务失败' },
+  { node: 'permission_request', label: translate('agentsView.t81') },
+  { node: 'ask_user_question', label: translate('agentsView.t82') },
+  { node: 'session_end', label: translate('agentsView.t83') },
+  { node: 'session_fail', label: translate('agentsView.t84') },
 ]
 
 const PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }> = [
-  { value: 'claude-ask', label: '请求批准' },
-  { value: 'claude-plan', label: '计划模式' },
-  { value: 'claude-auto', label: '自动审批' },
-  { value: 'claude-bypass', label: '完全访问' },
+  { value: 'claude-ask', label: translate('agentsView.t85') },
+  { value: 'claude-plan', label: translate('agentsView.t86') },
+  { value: 'claude-auto', label: translate('agentsView.t87') },
+  { value: 'claude-bypass', label: translate('agentsView.t88') },
 ]
 
 const CODEX_PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }> =

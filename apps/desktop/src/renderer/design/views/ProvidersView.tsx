@@ -17,6 +17,7 @@ import {
 } from '@lobehub/ui'
 // TODO(lobe-migration): @lobehub/ui 没有 Badge/Switch 命名导出;临时从 antd 引用,与 SparkOverlays 行为一致
 import { Badge, Switch, Tooltip } from 'antd'
+import { translate, useI18n } from '../i18n'
 import { Icons } from '../Icons'
 import { ProviderModelCatalog } from '../components/ProviderModelCatalog'
 import { ProviderConversationProtocolFields } from './provider/ProviderConversationProtocolFields'
@@ -260,24 +261,24 @@ function buildRequestEndpointPreview(
   const baseUrl = (form.endpoint.trim() || getProviderBaseUrlPlaceholder(form)).replace(/\/+$/, '')
   // 「完整 URL」开启：所填地址即主调用最终地址，文本与图片/语音/视频一律原样展示。
   if (form.endpointFullUrl) {
-    return { label: '实际请求地址（原样请求）', url: baseUrl }
+    return { label: translate('providersView.t1'), url: baseUrl }
   }
   if (isMediaProviderModelType(form.modelType)) {
     const mediaProvider = form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)
-    return { label: '实际请求地址', url: getMediaRequestPreviewUrl(baseUrl, form, mediaProvider) }
+    return { label: translate('providersView.t2'), url: getMediaRequestPreviewUrl(baseUrl, form, mediaProvider) }
   }
   if (form.provider === 'anthropic') {
-    return { label: '实际请求地址', url: getAnthropicMessagesPreviewUrl(baseUrl) }
+    return { label: translate('providersView.t2'), url: getAnthropicMessagesPreviewUrl(baseUrl) }
   }
 
   // codexApiKind 选 embedding 时显示 embeddings 端点（自动按 baseURL 是否带 /v\d+ 决定拼 /embeddings 还是 /v1/embeddings）
   return {
     label:
       form.codexApiKind === 'responses'
-        ? '实际请求地址'
+        ? translate('providersView.t2')
         : form.codexApiKind === 'embedding'
-          ? 'Embeddings 地址'
-          : 'Chat 地址',
+          ? translate('providersView.t3Desc')
+          : translate('providersView.t4'),
     url:
       form.codexApiKind === 'responses'
         ? getOpenAiCompatibleResponsesPreviewUrl(baseUrl)
@@ -802,7 +803,7 @@ function vendorForMediaProvider(kind: string | undefined): VendorMeta | null {
 }
 
 function mediaProviderDisplayName(kind: string | undefined): string {
-  if (!kind) return '多媒体适配器'
+  if (!kind) return translate('providersView.t5')
   return MEDIA_PROVIDER_LABELS[kind as MediaProviderKind] ?? kind
 }
 
@@ -822,13 +823,13 @@ const VOICE_CATALOG_TEMPLATE_VENDORS: readonly MediaProviderKind[] = [
 /** 音色获取行的 ⓘ 说明：讲清「从哪拿、怎么拿、缺省行为」，行内不再平铺长句。 */
 const VOICE_CATALOG_TIPS: Partial<Record<MediaProviderKind, string>> = {
   zhipu:
-    '从智谱开放平台同步系统音色与复刻音色（GET /voice/list）；画布与快速创作的音色候选会自动继承。',
+    translate('providersView.t6LongDesc'),
   'minimax-hailuo':
-    '从 MiniMax 同步系统音色与账号私有音色（复刻 / 文生音色）；画布与快速创作的音色候选会自动继承。',
+    translate('providersView.t7LongDesc'),
   'volcengine-speech':
-    '使用应用内置的官方「豆包语音合成模型 2.0」音色表，离线可用（官方音色列表接口需火山 OpenAPI AK/SK 签名，渠道的 API Key 无法直接调用）；需要按账号实时拉取时可改为自定义请求。',
+    translate('providersView.t8LongDesc'),
   custom:
-    '按「音色获取设置」里配置的接口与字段映射拉取音色候选；渠道按「完整 URL」配置时，在这里填写完整音色接口地址即可同步。',
+    translate('providersView.t9LongDesc'),
 }
 
 /**
@@ -843,22 +844,22 @@ const CARD_KIND_META: Record<
   { label: string; icon: ComponentType<{ size?: number }>; kindClass: string }
 > = {
   cli: { label: 'CLI', icon: Icons.Terminal, kindClass: 'pv_kind--cli' },
-  image: { label: '图片', icon: Icons.Image, kindClass: 'pv_kind--image' },
-  video: { label: '视频', icon: Icons.Film, kindClass: 'pv_kind--video' },
-  voice: { label: '语音', icon: Icons.Mic, kindClass: 'pv_kind--voice' },
-  text: { label: '通用模型', icon: Icons.Chat, kindClass: 'pv_kind--text' },
+  image: { label: translate('providersView.t10'), icon: Icons.Image, kindClass: 'pv_kind--image' },
+  video: { label: translate('providersView.t11'), icon: Icons.Film, kindClass: 'pv_kind--video' },
+  voice: { label: translate('providersView.t12'), icon: Icons.Mic, kindClass: 'pv_kind--voice' },
+  text: { label: translate('providersView.t13'), icon: Icons.Chat, kindClass: 'pv_kind--text' },
   // 复用旧「路由」分类的紫色胶囊配色（kind 值本身已更名 auto-router）
-  'auto-router': { label: '自动路由', icon: Icons.Shuffle, kindClass: 'pv_kind--router' },
+  'auto-router': { label: translate('providersView.t14'), icon: Icons.Shuffle, kindClass: 'pv_kind--router' },
 }
 
 /** 筛选下拉里与 CARD_KIND_META 对齐的类别选项（不含 'all'） */
 const CARD_KIND_FILTER_OPTIONS: Array<{ value: ProviderCardKind; label: string }> = [
-  { value: 'text', label: '通用模型' },
-  { value: 'image', label: '图片' },
-  { value: 'video', label: '视频' },
-  { value: 'voice', label: '语音' },
+  { value: 'text', label: translate('providersView.t13') },
+  { value: 'image', label: translate('providersView.t10') },
+  { value: 'video', label: translate('providersView.t11') },
+  { value: 'voice', label: translate('providersView.t12') },
   { value: 'cli', label: 'CLI' },
-  { value: 'auto-router', label: '自动路由' },
+  { value: 'auto-router', label: translate('providersView.t14') },
 ]
 
 /** 名称排序用的中文 collator（模块级单例，避免每次排序重新构造） */
@@ -910,7 +911,7 @@ export function resolveProviderCardKind(profile: ProviderProfile): ProviderCardK
  */
 const AUTO_ROUTER_VENDOR_META: VendorMeta = {
   id: 'auto-router',
-  name: '自动路由',
+  name: translate('providersView.t14'),
   emoji: '⇄',
   color: '#a855f7',
   desc: '',
@@ -920,10 +921,10 @@ const AUTO_ROUTER_VENDOR_META: VendorMeta = {
 /** 自动路由卡片描述行：引擎 · 分流器模型 · 启用的执行模型数 */
 function autoRouterCardDesc(profile: ProviderProfile): string {
   const config = profile.autoRouterConfig
-  if (config == null) return '自动路由 · 未配置'
-  const adapterLabel = config.adapter === 'codex' ? 'Codex 引擎' : 'Claude 引擎'
+  if (config == null) return translate('providersView.t15')
+  const adapterLabel = config.adapter === 'codex' ? translate('providersView.t16') : translate('providersView.t17')
   const enabledCount = config.executors.filter((entry) => entry.enabled).length
-  return `${adapterLabel} · 分流器 ${config.dispatcher.modelId || '未配置'} · ${enabledCount} 个执行模型`
+  return translate('providersView.tpl1Desc', { adapter: adapterLabel, dispatcher: config.dispatcher.modelId || translate('providersView.t18'), count: enabledCount })
 }
 
 /** 自动路由卡片模型 chips：启用的执行模型（去重，同模型多档强度只显示一次） */
@@ -963,24 +964,24 @@ const IMAGE_PROVIDER_OPTIONS: Array<{
   },
   {
     value: 'seeddance',
-    label: '火山方舟 Seedream / Seedance',
+    label: translate('providersView.t19Desc'),
     endpoint: 'https://ark.cn-beijing.volces.com/api/v3',
     mode: 'sync',
   },
   {
     value: 'bailian',
-    label: '阿里百炼',
+    label: translate('providersView.t20'),
     endpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
     mode: 'async',
   },
   {
     value: 'zhipu',
-    label: '智谱 GLM Image',
+    label: translate('providersView.t21'),
     endpoint: 'https://open.bigmodel.cn/api/paas/v4',
     mode: 'sync',
   },
   { value: 'xai', label: 'xAI Imagine', endpoint: 'https://api.x.ai/v1', mode: 'sync' },
-  { value: 'custom', label: '自定义兼容接口', endpoint: '', mode: 'sync' },
+  { value: 'custom', label: translate('providersView.t22'), endpoint: '', mode: 'sync' },
 ]
 
 function normalizeImageProvider(value: unknown): ImageProviderKind {
@@ -1090,18 +1091,18 @@ function ProvidersView() {
 
   const handleDelete = async (id: string) => {
     const confirmed = await requestConfirm({
-      title: '删除 Provider？',
-      description: '删除后该模型供应商配置会从本地移除。',
-      confirmText: '删除',
+      title: translate('providersView.t23'),
+      description: translate('providersView.t24Desc'),
+      confirmText: translate('providersView.t25'),
       danger: true,
     })
     if (!confirmed) return
     try {
       await deleteProvider({ id })
-      toast.success('Provider 已删除')
+      toast.success(translate('providersView.t26'))
       refresh()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除失败')
+      toast.error(err instanceof Error ? err.message : translate('providersView.t27'))
     }
   }
 
@@ -1112,13 +1113,13 @@ function ProvidersView() {
       // 健康检查成功后顺带刷新该渠道限额，保持卡片数据新鲜
       void refreshQuota(id)
       if (r.healthy) {
-        toast.success(`连接成功${r.latencyMs != null ? ` · 延迟 ${r.latencyMs}ms` : ''}`)
+        toast.success(translate('providersView.tpl2Desc', { latency: r.latencyMs != null ? translate('providersView.tpl2bDesc', { ms: r.latencyMs }) : '' }))
       } else {
-        toast.error('连接失败：Provider 返回不健康状态')
+        toast.error(translate('providersView.t28Desc'))
       }
     } catch (err) {
       setHealthMap((prev) => ({ ...prev, [id]: { healthy: false } }))
-      toast.error(err instanceof Error ? err.message : '连接测试失败')
+      toast.error(err instanceof Error ? err.message : translate('providersView.t29'))
     }
   }
 
@@ -1155,9 +1156,9 @@ function ProvidersView() {
   const handleDeleteSelected = useCallback(async () => {
     if (selectedIds.size === 0) return
     const confirmed = await requestConfirm({
-      title: `删除 ${selectedIds.size} 个 Provider？`,
-      description: '此操作不可撤销，选中的模型供应商配置会从本地移除。',
-      confirmText: '批量删除',
+      title: translate('providersView.tpl3Desc', { count: selectedIds.size }),
+      description: translate('providersView.t30Desc'),
+      confirmText: translate('providersView.t31'),
       danger: true,
     })
     if (!confirmed) return
@@ -1173,8 +1174,8 @@ function ProvidersView() {
         errs.push(`${name}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
-    if (ok > 0) toast.success(`已删除 ${ok} 个 Provider`)
-    if (errs.length > 0) toast.error(`${errs.length} 个删除失败：${errs.slice(0, 2).join('；')}`)
+    if (ok > 0) toast.success(translate('providersView.tpl4Desc', { count: ok }))
+    if (errs.length > 0) toast.error(translate('providersView.tpl5Desc', { count: errs.length, detail: errs.slice(0, 2).join('; ') }))
     clearSelection()
     refresh()
   }, [selectedIds, requestConfirm, deleteProvider, profiles, toast, clearSelection, refresh])
@@ -1191,9 +1192,9 @@ function ProvidersView() {
           // 用户取消
           return
         }
-        toast.success(`已导出 ${result.count} 个 Provider`)
+        toast.success(translate('providersView.tpl6Desc', { count: result.count }))
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '导出失败')
+        toast.error(err instanceof Error ? err.message : translate('providersView.t32'))
       }
     },
     [exportProvidersToFile, toast],
@@ -1216,9 +1217,9 @@ function ProvidersView() {
         const { payload } = await exportProviders({ ids })
         const json = JSON.stringify(payload, null, 2)
         await navigator.clipboard.writeText(json)
-        toast.success(`已复制 ${payload.profiles.length} 个 Provider 到剪贴板`)
+        toast.success(translate('providersView.tpl7Desc', { count: payload.profiles.length }))
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '复制失败')
+        toast.error(err instanceof Error ? err.message : translate('providersView.t33'))
       }
     },
     [exportProviders, toast],
@@ -1237,7 +1238,7 @@ function ProvidersView() {
       }
       setImportPreview({ payload, filePath })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '导入失败')
+      toast.error(err instanceof Error ? err.message : translate('providersView.t34'))
     }
   }, [importProvidersFromFile, toast])
 
@@ -1248,7 +1249,7 @@ function ProvidersView() {
     try {
       const text = await navigator.clipboard.readText()
       if (!text.trim()) {
-        toast.warning('剪贴板为空')
+        toast.warning(translate('providersView.t35'))
         return
       }
       let json: unknown
@@ -1256,16 +1257,16 @@ function ProvidersView() {
         json = JSON.parse(text)
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        toast.error(`剪贴板 JSON 解析失败：${message}`)
+        toast.error(translate('providersView.tpl8Desc', { message }))
         return
       }
       // 走与 file 相同的预览流程
       const { ProviderExportPayloadSchema } = await import('@spark/protocol')
       const parsed = ProviderExportPayloadSchema.parse(json)
-      setImportPreview({ payload: parsed, filePath: '从剪贴板' })
+      setImportPreview({ payload: parsed, filePath: translate('providersView.t36') })
     } catch (err) {
       // Zod 校验失败
-      toast.error(err instanceof Error ? err.message : '剪贴板内容不是有效的导出文件')
+      toast.error(err instanceof Error ? err.message : translate('providersView.t37Desc'))
     }
   }, [toast])
 
@@ -1278,22 +1279,22 @@ function ProvidersView() {
       try {
         const result = await importProviders({ payload, mode })
         const parts: string[] = []
-        if (result.imported > 0) parts.push(`导入 ${result.imported}`)
-        if (result.skipped > 0) parts.push(`跳过 ${result.skipped}`)
+        if (result.imported > 0) parts.push(translate('providersView.tpl9Desc', { count: result.imported }))
+        if (result.skipped > 0) parts.push(translate('providersView.tpl10Desc', { count: result.skipped }))
         if (parts.length > 0) {
           toast.success(parts.join('，'))
         } else if (result.errors.length === 0) {
-          toast.info('无 profile 被导入')
+          toast.info(translate('providersView.t38Desc'))
         }
         if (result.errors.length > 0) {
-          toast.error(`${result.errors.length} 个失败：${result.errors.slice(0, 2).join('；')}`)
+          toast.error(translate('providersView.tpl11Desc', { count: result.errors.length, detail: result.errors.slice(0, 2).join('; ') }))
         }
         setImportPreview(null)
         // 关闭预览后焦点回到导入按钮（无障碍）
         requestAnimationFrame(() => importButtonRef.current?.focus())
         refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '导入失败')
+        toast.error(err instanceof Error ? err.message : translate('providersView.t34'))
       } finally {
         setImporting(false)
       }
@@ -1374,8 +1375,8 @@ function ProvidersView() {
               type="text"
               icon={loading ? <Icons.Spinner size={12} /> : <Icons.Refresh />}
               onClick={refresh}
-              title="刷新 (Ctrl+R)"
-              aria-label="刷新"
+              title={translate('providersView.t130')}
+              aria-label={translate('providersView.t131')}
             />
             <Button
               ref={importButtonRef as any}
@@ -1384,9 +1385,9 @@ function ProvidersView() {
               icon={<Icons.Upload />}
               onClick={() => void handleImportFromFile()}
               disabled={importing}
-              title="从 .json 导入 Provider 配置"
+              title={translate('providersView.t132Desc')}
             >
-              导入
+              {translate('providersView.t177')}
             </Button>
             {/* <Button
               size="middle"
@@ -1394,9 +1395,9 @@ function ProvidersView() {
               icon={<Icons.Copy />}
               onClick={() => void handleImportFromClipboard()}
               disabled={importing}
-              title="从剪贴板 JSON 字符串导入"
+              title={translate('providersView.t247Desc')}
             >
-              从剪贴板
+              {translate('providersView.t36')}
             </Button> */}
             <Button
               size="small"
@@ -1404,9 +1405,9 @@ function ProvidersView() {
               icon={<Icons.Download />}
               onClick={handleExportVisibleScope}
               disabled={profiles.length === 0 || (multiSelect && selectedIds.size === 0)}
-              title={multiSelect ? '导出选中的 Provider 到 .json' : '导出全部 Provider 到 .json'}
+              title={multiSelect ? translate('providersView.t39Desc') : translate('providersView.t40Desc')}
             >
-              {multiSelect ? '导出选中' : '导出'}
+              {multiSelect ? translate('providersView.t41') : translate('providersView.t42')}
             </Button>
             {/* <Button
               size="middle"
@@ -1414,7 +1415,7 @@ function ProvidersView() {
               icon={<Icons.Copy />}
               onClick={() => void handleCopyToClipboard([])}
               disabled={profiles.length === 0}
-              title="复制全部 Provider JSON 到剪贴板"
+              title={translate('providersView.t248Desc')}
             >
               复制
             </Button> */}
@@ -1425,9 +1426,9 @@ function ProvidersView() {
                 icon={<Icons.CheckSquare />}
                 onClick={enterMultiSelect}
                 disabled={uiProfiles.length === 0}
-                title="进入多选模式"
+                title={translate('providersView.t133')}
               >
-                批量
+                {translate('providersView.t178')}
               </Button>
             )}
             <Button
@@ -1439,7 +1440,7 @@ function ProvidersView() {
                 setShowPresetCatalog(true)
               }}
             >
-              从模板添加
+              {translate('providersView.t179')}
             </Button>
             <Button
               size="small"
@@ -1448,9 +1449,9 @@ function ProvidersView() {
                 setAutoRouterFocusId(null)
                 setShowAutoRouterManager(true)
               }}
-              title="创建与管理自动路由（分流器 + 强度分级执行模型）"
+              title={translate('providersView.t134Desc')}
             >
-              自动路由
+              {translate('providersView.t14')}
             </Button>
             <Button
               size="small"
@@ -1462,7 +1463,7 @@ function ProvidersView() {
                 setTweak('showProviderEdit', true)
               }}
             >
-              自定义添加
+              {translate('providersView.t180')}
             </Button>
           </div>
         </div>
@@ -1492,7 +1493,7 @@ function ProvidersView() {
             <Input
               className="pv_filters_search"
               size="middle"
-              placeholder="搜索 Provider 名称…"
+              placeholder={translate('providersView.t135Desc')}
               value={cardSearch}
               onChange={(e) => updateCardFilters({ search: e.target.value })}
               prefix={<Icons.Search size={14} />}
@@ -1503,7 +1504,7 @@ function ProvidersView() {
               size="middle"
               value={cardKindFilter}
               onChange={(v) => updateCardFilters({ kind: v as ProviderCardKindFilter })}
-              options={[{ value: 'all', label: '全部类型' }, ...CARD_KIND_FILTER_OPTIONS]}
+              options={[{ value: 'all', label: translate('providersView.t43') }, ...CARD_KIND_FILTER_OPTIONS]}
             />
             <Select
               className="pv_filters_select"
@@ -1511,9 +1512,9 @@ function ProvidersView() {
               value={cardEnabledFilter}
               onChange={(v) => updateCardFilters({ enabled: v as ProviderCardEnabledFilter })}
               options={[
-                { value: 'all', label: '全部状态' },
-                { value: 'enabled', label: '已启用' },
-                { value: 'disabled', label: '已禁用' },
+                { value: 'all', label: translate('providersView.t44') },
+                { value: 'enabled', label: translate('providersView.t45') },
+                { value: 'disabled', label: translate('providersView.t46') },
               ]}
             />
             <Select
@@ -1522,9 +1523,9 @@ function ProvidersView() {
               value={cardSortBy}
               onChange={(v) => updateCardFilters({ sortBy: v as ProviderCardSortBy })}
               options={[
-                { value: 'default', label: '默认排序' },
-                { value: 'nameAsc', label: '名称 A→Z' },
-                { value: 'nameDesc', label: '名称 Z→A' },
+                { value: 'default', label: translate('providersView.t47') },
+                { value: 'nameAsc', label: translate('providersView.t48') },
+                { value: 'nameDesc', label: translate('providersView.t49') },
               ]}
             />
             <span className="pv_filters_count">
@@ -1539,15 +1540,15 @@ function ProvidersView() {
             loading ? (
               <div className="pv_loading">
                 <Icons.Spinner size={24} />
-                <span>正在加载 Provider…</span>
+                <span>{translate('providersView.t181Desc')}</span>
               </div>
             ) : (
               <div className="pv_empty">
-                尚未配置 Provider — 点击「从模板添加」快速开始，或「自定义添加」手动配置
+                {translate('providersView.t182LongDesc')}
               </div>
             )
           ) : visibleProfiles.length === 0 ? (
-            <div className="pv_empty">没有匹配的 Provider — 调整搜索关键字或类型筛选试试</div>
+            <div className="pv_empty">{translate('providersView.t183Desc')}</div>
           ) : (
             <div className="pv_grid">
               {visibleProfiles.map((p) => {
@@ -1564,8 +1565,8 @@ function ProvidersView() {
                     (p.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META))
                 const builtin = isBuiltInLocalCliProvider(p)
                 const builtinDesc = isLocalCodexCliProvider(p)
-                  ? '内置 · 沿用宿主机本地 Codex CLI 配'
-                  : '内置 · 沿用宿主机本地 Claude CLI 配置'
+                  ? translate('providersView.t50Desc')
+                  : translate('providersView.t51Desc')
                 // 媒体 Provider 卡片应展示真正配置的 mediaModelRefs，而非旧版/模板预填的 modelIds。
                 const profileModelType = normalizeLegacyModelType(p.modelType)
                 const isMediaProvider = hasConfiguredMediaStack(
@@ -1592,12 +1593,12 @@ function ProvidersView() {
                       isAutoRouter
                         ? autoRouterCardDesc(p)
                         : p.managed
-                          ? `平台官方 · 默认 ${p.defaultModel} · 与第三方 Provider 并存`
+                          ? translate('providersView.tpl12Desc', { model: p.defaultModel })
                           : builtin
                             ? builtinDesc
                             : isMediaProvider
-                              ? `${mediaProviderDisplayName(p.mediaProvider ?? p.imageProvider ?? undefined)} · 默认 ${p.defaultModel}`
-                              : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
+                              ? translate('providersView.tpl13Desc', { name: mediaProviderDisplayName(p.mediaProvider ?? p.imageProvider ?? undefined), model: p.defaultModel })
+                              : translate('providersView.tpl14Desc', { format: p.provider === 'anthropic' ? translate('providersView.t52') : translate('providersView.t53'), model: p.defaultModel })
                     }
                     status={p.enabled !== false ? (isAutoRouter ? 'unknown' : status) : 'off'}
                     modelIds={
@@ -1656,7 +1657,7 @@ function ProvidersView() {
         title={
           <div className="pv_catalog_title">
             <Icons.Database size={16} />
-            <span>从模板添加 Provider</span>
+            <span>{translate('providersView.t184Desc')}</span>
           </div>
         }
         onCancel={() => setShowPresetCatalog(false)}
@@ -1666,12 +1667,12 @@ function ProvidersView() {
       >
         <div className="pv_catalog pv_catalog_modal">
           <div className="pv_catalog_hint">
-            选择供应商模板快速配置，选择后会打开新建面板，所有字段都可以继续自定义。
+            {translate('providersView.t185Desc')}
           </div>
           <Input
             className="pv_catalog_search"
             size="middle"
-            placeholder="搜索模板厂商..."
+            placeholder={translate('providersView.t136')}
             value={presetCatalogSearch}
             onChange={(event) => setPresetCatalogSearch(event.target.value)}
             prefix={<Icons.Search size={14} />}
@@ -1688,7 +1689,7 @@ function ProvidersView() {
               ))}
             </div>
           ) : (
-            <div className="pv_catalog_empty">没有找到匹配的模板厂商</div>
+            <div className="pv_catalog_empty">{translate('providersView.t186')}</div>
           )}
         </div>
       </Modal>
@@ -1782,7 +1783,7 @@ function guessVendorByName(
  */
 const LOCAL_CLAUDE_CLI_VENDOR: VendorMeta = {
   id: 'local-claude-cli',
-  name: '本地 Claude CLI',
+  name: translate('providersView.t54Desc'),
   emoji: 'CC',
   color: '#d97757',
   desc: '',
@@ -1791,7 +1792,7 @@ const LOCAL_CLAUDE_CLI_VENDOR: VendorMeta = {
 
 const LOCAL_CODEX_CLI_VENDOR: VendorMeta = {
   id: 'local-codex-cli',
-  name: '本地 Codex CLI',
+  name: translate('providersView.t55'),
   emoji: 'CX',
   color: '#10a37f',
   desc: '',
@@ -1800,7 +1801,7 @@ const LOCAL_CODEX_CLI_VENDOR: VendorMeta = {
 
 const SPARK_PLATFORM_VENDOR: VendorMeta = {
   id: 'spark-platform',
-  name: 'Spark 平台模型',
+  name: translate('providersView.t56'),
   emoji: 'SP',
   color: '#ffffff',
   desc: '',
@@ -1901,8 +1902,8 @@ function VendorPresetCard({
           href={vendor.purchaseUrl}
           target="_blank"
           rel="noreferrer"
-          title={`访问 ${vendor.name} 购买 / 充值`}
-          aria-label={`访问 ${vendor.name} 购买 / 充值`}
+          title={translate('providersView.tpl15Desc', { name: vendor.name })}
+          aria-label={translate('providersView.tpl15Desc', { name: vendor.name })}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
@@ -2015,14 +2016,14 @@ function ProviderCardX({
           : 'gray'
   const statusLabel =
     status === 'ok'
-      ? '在线'
+      ? translate('providersView.t57')
       : status === 'warning'
-        ? '需注意'
+        ? translate('providersView.t58')
         : status === 'error'
-          ? '错误'
+          ? translate('providersView.t59')
           : status === 'off'
-            ? '未启用'
-            : '未验证'
+            ? translate('providersView.t60')
+            : translate('providersView.t61')
 
   return (
     <div
@@ -2048,12 +2049,12 @@ function ProviderCardX({
           <div
             className="pv_card_checkbox"
             onClick={(e) => e.stopPropagation()}
-            title={selected ? '取消选择' : '选择'}
+            title={selected ? translate('providersView.t62') : translate('providersView.t63')}
           >
             <Checkbox
               checked={selected}
               onChange={() => onToggleSelect?.()}
-              aria-label={`选择 Provider ${name}`}
+              aria-label={translate('providersView.tpl16Desc', { name })}
             />
           </div>
         )}
@@ -2070,19 +2071,19 @@ function ProviderCardX({
             <span className="pv_card_name">{name}</span>
             {isBuiltin && (
               <Tag size="middle" color="gray">
-                内置
+                {translate('providersView.t187')}
               </Tag>
             )}
             {isManaged && (
               <Tag size="middle" color="arcoblue">
-                平台官方
+                {translate('providersView.t188')}
               </Tag>
             )}
           </div>
           <div className="pv_card_tags_row">
             {isDefault && (
               <Tag size="middle" color="arcoblue" icon={<Icons.StarFill />}>
-                默认 Provider
+                {translate('providersView.t189')}
               </Tag>
             )}
             <Tag size="middle" color={statusColor as any}>
@@ -2100,7 +2101,7 @@ function ProviderCardX({
               <span className="ml-1">{statusLabel}</span>
             </Tag>
             {quota?.planLabel != null && (
-              <span className="pv_quota_plan" title={`套餐档位：${quota.planLabel}`}>
+              <span className="pv_quota_plan" title={translate('providersView.tpl17Desc', { plan: quota.planLabel })}>
                 {quota.planLabel}
               </span>
             )}
@@ -2137,7 +2138,7 @@ function ProviderCardX({
               <span
                 className="pv_model_pill pv_model_pill_more"
                 title={hiddenModelIds.join('\n')}
-                aria-label={`还有 ${hiddenModelIds.length} 个模型`}
+                aria-label={translate('providersView.tpl18Desc', { count: hiddenModelIds.length })}
               >
                 …
               </span>
@@ -2145,11 +2146,11 @@ function ProviderCardX({
             {scheduledBlockedCount > 0 && (
               <span
                 className="pv_model_pill pv_model_pill_blocked"
-                title="当前处于定时禁用时段内，模型已在全局隐藏；时段结束自动恢复"
-                aria-label={`${scheduledBlockedCount} 个模型定时禁用中`}
+                title={translate('providersView.t137Desc')}
+                aria-label={translate('providersView.tpl19Desc', { count: scheduledBlockedCount })}
               >
                 <Icons.Clock size={9} />
-                <span className="pv_model_pill_label">{scheduledBlockedCount} 个定时禁用中</span>
+                <span className="pv_model_pill_label">{translate('providersView.tpl20Desc', { count: scheduledBlockedCount })}</span>
               </span>
             )}
           </div>
@@ -2180,8 +2181,8 @@ function ProviderCardX({
                   variant="borderless"
                   danger
                   onClick={onDelete}
-                  title="删除"
-                  aria-label="删除"
+                  title={translate('providersView.t25')}
+                  aria-label={translate('providersView.t25')}
                 />
               )}
               {canHealthCheck && (
@@ -2190,8 +2191,8 @@ function ProviderCardX({
                   size="small"
                   variant="borderless"
                   onClick={onHealthCheck}
-                  title="健康检查"
-                  aria-label="健康检查"
+                  title={translate('providersView.t138')}
+                  aria-label={translate('providersView.t138')}
                 />
               )}
               {!isBuiltin && (
@@ -2199,7 +2200,7 @@ function ProviderCardX({
                   icon={Icons.Edit}
                   size="small"
                   variant="borderless"
-                  title={isManaged ? '设置本机启用模型' : '编辑'}
+                  title={isManaged ? translate('providersView.t64') : translate('providersView.t65')}
                   onClick={onEdit}
                 />
               )}
@@ -2223,6 +2224,8 @@ export function ProviderEditPanel({
   initialPresetId?: string | null
   onClose: () => void
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const { toast } = useToast()
   // 删除复刻音色是不可逆的厂商侧操作，必须走全局确认弹窗
   //（GLOBAL_DIALOG_Z_INDEX 保证它盖在音色复刻弹窗之上）。
@@ -2270,9 +2273,9 @@ export function ProviderEditPanel({
     useState<CanvasMediaPreviewTemplateInvocationResponse | null>(null)
   const [invocationPreviewError, setInvocationPreviewError] = useState('')
   const [invocationPreviewLoading, setInvocationPreviewLoading] = useState(false)
-  // 自定义上下文窗口的"意图"状态：与 form.contextWindow 数值解耦，
+  // 自定义上下文窗口的translate('providersView.t249')状态：与 form.contextWindow 数值解耦，
   // 标记滑块切换到了数字输入（范围外数值 / 用户点「自定义」），
-  // 避免用户清空输入框时滑块跳回"默认"并卸载输入框。
+  // 避免用户清空输入框时滑块跳回translate('providersView.t224')并卸载输入框。
   const [isCustomContextWindow, setIsCustomContextWindow] = useState(false)
   const [fetchedModels, setFetchedModels] = useState<ProviderFetchedModel[]>([])
   const [fetchingModels, setFetchingModels] = useState(false)
@@ -2516,8 +2519,8 @@ export function ProviderEditPanel({
           if (apiKeyError) {
             setError(
               apiKeyError instanceof Error
-                ? `API Key 读取失败：${apiKeyError.message}`
-                : 'API Key 读取失败',
+                ? translate('providersView.tpl21Desc', { message: apiKeyError.message })
+                : translate('providersView.t66'),
             )
           }
         }
@@ -2954,7 +2957,7 @@ export function ProviderEditPanel({
       setCustomManifestDraft('')
       setCustomManifestError('')
     } catch (err) {
-      setCustomManifestError(err instanceof Error ? err.message : 'Manifest JSON 格式错误')
+      setCustomManifestError(err instanceof Error ? err.message : translate('providersView.t67Desc'))
     }
   }
 
@@ -2974,12 +2977,12 @@ export function ProviderEditPanel({
       manifestObj = JSON.parse(customManifestDraft) as MediaModelManifest
     } catch (err) {
       setDryRunError(
-        err instanceof Error ? `manifest JSON 解析失败：${err.message}` : 'manifest JSON 解析失败',
+        err instanceof Error ? translate('providersView.tpl22Desc', { message: err.message }) : translate('providersView.t68Desc'),
       )
       return
     }
     if (!Array.isArray(manifestObj.capabilities) || manifestObj.capabilities.length === 0) {
-      setDryRunError('manifest 缺少 capabilities，无法 dry-run')
+      setDryRunError(translate('providersView.t69Desc'))
       return
     }
     let paramsObj: Record<string, unknown>
@@ -2988,14 +2991,14 @@ export function ProviderEditPanel({
     } catch (err) {
       setDryRunError(
         err instanceof Error
-          ? `modelParams JSON 解析失败：${err.message}`
-          : 'modelParams JSON 解析失败',
+          ? translate('providersView.tpl23Desc', { message: err.message })
+          : translate('providersView.t70Desc'),
       )
       return
     }
     const capabilityId = manifestObj.capabilities[0]?.id
     if (!capabilityId) {
-      setDryRunError('manifest 第一个 capability 缺少 id')
+      setDryRunError(translate('providersView.t71Desc'))
       return
     }
     setDryRunLoading(true)
@@ -3011,7 +3014,7 @@ export function ProviderEditPanel({
       )) as CanvasMediaPruneModelParamsByInlineManifestResponse
       setDryRunResult(res)
     } catch (err) {
-      setDryRunError(err instanceof Error ? err.message : 'dry-run 调用失败')
+      setDryRunError(err instanceof Error ? err.message : translate('providersView.t72'))
     } finally {
       setDryRunLoading(false)
     }
@@ -3025,13 +3028,13 @@ export function ProviderEditPanel({
       manifestObj = JSON.parse(customManifestDraft) as MediaModelManifest
     } catch (err) {
       setInvocationPreviewError(
-        err instanceof Error ? `manifest JSON 解析失败：${err.message}` : 'manifest JSON 解析失败',
+        err instanceof Error ? translate('providersView.tpl22Desc', { message: err.message }) : translate('providersView.t68Desc'),
       )
       return
     }
     const capabilityId = manifestObj.capabilities?.[0]?.id
     if (!capabilityId) {
-      setInvocationPreviewError('manifest 第一个 capability 缺少 id')
+      setInvocationPreviewError(translate('providersView.t71Desc'))
       return
     }
     let paramsObj: Record<string, unknown>
@@ -3040,8 +3043,8 @@ export function ProviderEditPanel({
     } catch (err) {
       setInvocationPreviewError(
         err instanceof Error
-          ? `modelParams JSON 解析失败：${err.message}`
-          : 'modelParams JSON 解析失败',
+          ? translate('providersView.tpl23Desc', { message: err.message })
+          : translate('providersView.t70Desc'),
       )
       return
     }
@@ -3060,7 +3063,7 @@ export function ProviderEditPanel({
       )) as CanvasMediaPreviewTemplateInvocationResponse
       setInvocationPreview(result)
     } catch (err) {
-      setInvocationPreviewError(err instanceof Error ? err.message : '请求预览失败')
+      setInvocationPreviewError(err instanceof Error ? err.message : translate('providersView.t73'))
     } finally {
       setInvocationPreviewLoading(false)
     }
@@ -3129,11 +3132,11 @@ export function ProviderEditPanel({
     const mediaFormForSave = { ...form, mediaModelRefs: mediaModelRefsForSave }
 
     if (!form.name.trim() || !effectiveDefaultModel) {
-      setError('名称和默认模型 ID 不能为空')
+      setError(translate('providersView.t74Desc'))
       return
     }
     if (!profileId && !form.apiKey.trim()) {
-      setError('新建 Provider 需要填写 API Key')
+      setError(translate('providersView.t75Desc'))
       return
     }
     setSaving(true)
@@ -3213,14 +3216,14 @@ export function ProviderEditPanel({
       onClose()
       toast.success(
         ensuredDefaultRef?.added === true
-          ? `Provider 已保存，并已把「${typedDefault}」加入模型清单`
+          ? translate('providersView.tpl24Desc', { model: typedDefault })
           : profileId
-            ? 'Provider 已更新'
-            : 'Provider 已创建',
+            ? translate('providersView.t76')
+            : translate('providersView.t77'),
       )
     } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败')
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      setError(e instanceof Error ? e.message : translate('providersView.t78'))
+      toast.error(e instanceof Error ? e.message : translate('providersView.t78'))
     } finally {
       setSaving(false)
     }
@@ -3352,12 +3355,12 @@ export function ProviderEditPanel({
   const handleTestConnection = async () => {
     if (!form.defaultModel.trim()) {
       setConnectionFeedback(null)
-      setError('请先填写默认模型 ID')
+      setError(translate('providersView.t79'))
       return
     }
     if (!profileId && !form.apiKey.trim()) {
       setConnectionFeedback(null)
-      setError('测试连接需要先填写 API Key')
+      setError(translate('providersView.t80Desc'))
       return
     }
     setTestingConnection(true)
@@ -3368,14 +3371,14 @@ export function ProviderEditPanel({
       if (result.healthy) {
         setConnectionFeedback({
           tone: 'success',
-          message: `连接成功${result.latencyMs != null ? ` · 延迟 ${result.latencyMs}ms` : ''}`,
+          message: translate('providersView.tpl25Desc', { latency: result.latencyMs != null ? translate('providersView.tpl25bDesc', { ms: result.latencyMs }) : '' }),
         })
       } else {
-        const message = result.errorMessage ?? '连接失败'
+        const message = result.errorMessage ?? translate('providersView.t81')
         setConnectionFeedback({ tone: 'error', message })
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : '连接测试失败'
+      const message = e instanceof Error ? e.message : translate('providersView.t29')
       setConnectionFeedback({ tone: 'error', message })
     } finally {
       setTestingConnection(false)
@@ -3391,7 +3394,7 @@ export function ProviderEditPanel({
   // 画布 / 快速创作通过共享 manifest 解析自动继承，因此必须已有 profileId。
   const handleSyncVoices = async () => {
     if (!profileId) {
-      toast.warning('请先保存渠道，再同步音色目录')
+      toast.warning(translate('providersView.t82Desc'))
       return
     }
     setSyncingVoices(true)
@@ -3400,11 +3403,11 @@ export function ProviderEditPanel({
       setClonedVoices(result.privateVoices)
       // 同步写的是 profile 的动态参数候选，刷新一次让「参数默认值 → 音色」立即用上新目录。
       void reloadProfileMediaModels()
-      const summary = `已同步 ${result.options.length} 个音色（系统 ${result.officialCount} · 私有 ${result.privateCount}）`
+      const summary = translate('providersView.tpl26Desc', { total: result.options.length, official: result.officialCount, private: result.privateCount })
       setVoiceCatalogMeta(summary)
       toast.success(summary)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '同步音色失败')
+      toast.error(e instanceof Error ? e.message : translate('providersView.t83'))
     } finally {
       setSyncingVoices(false)
     }
@@ -3421,14 +3424,14 @@ export function ProviderEditPanel({
     setForm((prev) => ({ ...prev, mediaVoiceCatalog: next }))
     setVoiceCatalogModalOpen(false)
     if (!profileId) {
-      toast.warning('音色获取配置已记录，保存渠道后生效')
+      toast.warning(translate('providersView.t84Desc'))
       return
     }
     try {
       await updateProvider({ id: profileId, mediaVoiceCatalog: next })
       await handleSyncVoices()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存音色获取配置失败')
+      toast.error(e instanceof Error ? e.message : translate('providersView.t85'))
     }
   }
 
@@ -3457,9 +3460,9 @@ export function ProviderEditPanel({
 
   const handlePickVoiceSample = async () => {
     const picked = await window.spark.invoke('dialog:open-file', {
-      title: '选择音色复刻示例音频',
+      title: translate('providersView.t86'),
       multiple: false,
-      filters: [{ name: '音频', extensions: ['mp3', 'wav'] }],
+      filters: [{ name: translate('providersView.t87'), extensions: ['mp3', 'wav'] }],
     })
     const pickedPath = picked.filePaths?.[0] ?? picked.filePath
     if (pickedPath) setSamplePath(pickedPath)
@@ -3467,15 +3470,15 @@ export function ProviderEditPanel({
 
   const handleCloneVoice = async () => {
     if (!profileId) {
-      toast.warning('请先保存渠道，再复刻音色')
+      toast.warning(translate('providersView.t88'))
       return
     }
     if (!samplePath) {
-      toast.warning('请选择示例音频文件')
+      toast.warning(translate('providersView.t89'))
       return
     }
     if (!voiceName.trim()) {
-      toast.warning('请填写音色名称')
+      toast.warning(translate('providersView.t90'))
       return
     }
     setCloningVoice(true)
@@ -3494,9 +3497,9 @@ export function ProviderEditPanel({
       setVoiceName('')
       setSampleText('')
       setPreviewText('')
-      toast.success(`音色「${result.voiceName}」复刻完成，已加入音色候选`)
+      toast.success(translate('providersView.tpl27Desc', { name: result.voiceName }))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '音色复刻失败')
+      toast.error(e instanceof Error ? e.message : translate('providersView.t91'))
     } finally {
       setCloningVoice(false)
     }
@@ -3506,9 +3509,9 @@ export function ProviderEditPanel({
     if (!profileId) return
     // 厂商侧删除不可逆（本地无从恢复，只能重新上传示例音频复刻），先确认再动手。
     const confirmed = await requestConfirm({
-      title: '删除该复刻音色？',
-      description: '将从厂商账号中删除，删除后无法恢复，只能重新上传示例音频复刻。',
-      confirmText: '删除',
+      title: translate('providersView.t92'),
+      description: translate('providersView.t93Desc'),
+      confirmText: translate('providersView.t25'),
       danger: true,
     })
     if (!confirmed) return
@@ -3517,9 +3520,9 @@ export function ProviderEditPanel({
       const result = await deleteMediaVoice({ providerId: profileId, voice })
       setClonedVoices(result.privateVoices)
       void reloadProfileMediaModels()
-      toast.success('已删除该复刻音色')
+      toast.success(translate('providersView.t94'))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除音色失败')
+      toast.error(e instanceof Error ? e.message : translate('providersView.t95'))
     } finally {
       setDeletingVoice(null)
     }
@@ -3534,7 +3537,7 @@ export function ProviderEditPanel({
    */
   const loadClonedVoices = async () => {
     if (!profileId) {
-      setClonedVoicesError('请先保存渠道，再查看已复刻音色')
+      setClonedVoicesError(translate('providersView.t96Desc'))
       return
     }
     setLoadingClonedVoices(true)
@@ -3545,7 +3548,7 @@ export function ProviderEditPanel({
       void reloadProfileMediaModels()
     } catch (e) {
       // 预取失败不弹 toast（用户没主动点同步，打断不合理），在列表区就地说明。
-      setClonedVoicesError(e instanceof Error ? e.message : '已复刻音色加载失败')
+      setClonedVoicesError(e instanceof Error ? e.message : translate('providersView.t97'))
     } finally {
       setLoadingClonedVoices(false)
     }
@@ -3559,7 +3562,7 @@ export function ProviderEditPanel({
 
   const handleFetchModels = async () => {
     if (!profileId && !form.apiKey.trim()) {
-      setError('获取模型列表需要先填写 API Key')
+      setError(translate('providersView.t98Desc'))
       return
     }
     setFetchingModels(true)
@@ -3567,12 +3570,12 @@ export function ProviderEditPanel({
     try {
       const count = await fetchAndApplyProviderModels()
       if (count === 0) {
-        toast.info('供应商返回的模型列表为空')
+        toast.info(translate('providersView.t99'))
         return
       }
-      toast.success(`已获取 ${count} 个模型，请点选需要全局可用的模型`)
+      toast.success(translate('providersView.tpl28Desc', { count }))
     } catch (e) {
-      const message = e instanceof Error ? e.message : '获取模型列表失败'
+      const message = e instanceof Error ? e.message : translate('providersView.t100')
       setError(message)
       toast.error(message)
     } finally {
@@ -3655,14 +3658,14 @@ export function ProviderEditPanel({
       onClose={onClose}
       maskClosable={!saving}
       width={800}
-      title={profileId ? '编辑 Provider' : '添加 Provider'}
+      title={profileId ? translate('providersView.t101') : translate('providersView.t102')}
       footer={
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Button type="text" onClick={onClose} disabled={saving}>
-            取消
+            {translate('providersView.t173')}
           </Button>
           <Button type="primary" loading={saving} onClick={() => void handleSave()}>
-            保存
+            {translate('providersView.t190')}
           </Button>
         </div>
       }
@@ -3685,11 +3688,11 @@ export function ProviderEditPanel({
             <span className="pv_section_icon">
               <Icons.Server size={11} />
             </span>
-            <span className="pv_section_title">服务商配置信息</span>
+            <span className="pv_section_title">{translate('providersView.t191')}</span>
           </div>
           <div className="pv_section_body">
             <div className="pv_form_grid">
-              <label className="pv_form_label">模型类型</label>
+              <label className="pv_form_label">{translate('providersView.t192')}</label>
               <Select
                 value={form.modelType}
                 onChange={(v) => {
@@ -3756,16 +3759,16 @@ export function ProviderEditPanel({
                   })
                 }}
                 options={[
-                  { label: '对话模型', value: 'multimodal' },
-                  { label: '生图模型', value: 'image' },
-                  { label: '语音模型', value: 'voice' },
-                  { label: '视频模型', value: 'video' },
+                  { label: translate('providersView.t103'), value: 'multimodal' },
+                  { label: translate('providersView.t104'), value: 'image' },
+                  { label: translate('providersView.t105'), value: 'voice' },
+                  { label: translate('providersView.t106'), value: 'video' },
                 ]}
               />
 
               {isChatModel && (
                 <>
-                  <label className="pv_form_label">API 协议格式</label>
+                  <label className="pv_form_label">{translate('providersView.t193')}</label>
                   <Select
                     value={form.provider}
                     onChange={(v) => {
@@ -3787,8 +3790,8 @@ export function ProviderEditPanel({
                       }))
                     }}
                     options={[
-                      { label: 'Anthropic 格式', value: 'anthropic' },
-                      { label: 'OpenAI 格式', value: 'openai' },
+                      { label: translate('providersView.t52'), value: 'anthropic' },
+                      { label: translate('providersView.t53'), value: 'openai' },
                     ]}
                   />
                   {form.provider === 'openai' && form.codexApiKind !== 'embedding' && (
@@ -3800,8 +3803,8 @@ export function ProviderEditPanel({
               {availablePresets.length > 0 && (
                 <>
                   <label className="pv_form_label">
-                    供应商模板
-                    <span className="pv_form_sub">基于官方公开文档预填，后续仍可修改</span>
+                    {translate('providersView.t194')}
+                    <span className="pv_form_sub">{translate('providersView.t195Desc')}</span>
                   </label>
                   <div className="pv_form_select_row">
                     <Select
@@ -3819,7 +3822,7 @@ export function ProviderEditPanel({
                         if (preset) applyPreset(preset)
                       }}
                       options={[
-                        { label: '自定义', value: 'custom' },
+                        { label: translate('providersView.t107'), value: 'custom' },
                         ...availablePresets.map((preset) => {
                           const meta = getVendorMeta(preset.vendorId)
                           const baseName = preset.name || meta?.name || preset.vendorId
@@ -3831,12 +3834,12 @@ export function ProviderEditPanel({
                 </>
               )}
 
-              <label className="pv_form_label">模型配置图标</label>
+              <label className="pv_form_label">{translate('providersView.t196')}</label>
               <button
                 type="button"
                 className="pv_icon_picker_trigger pv_form_select_preview"
-                aria-label="修改模型配置图标"
-                title="修改模型配置图标"
+                aria-label={translate('providersView.t139')}
+                title={translate('providersView.t139')}
                 onClick={() => {
                   setIconPickerStyle(form.providerIcon.style)
                   setIconPickerSearch('')
@@ -3851,17 +3854,17 @@ export function ProviderEditPanel({
                 />
               </button>
 
-              <label className="pv_form_label">显示名称</label>
+              <label className="pv_form_label">{translate('providersView.t197')}</label>
               <Input
                 value={form.name}
                 onChange={(e) => set('name', e.target.value)}
-                placeholder="例：Anthropic · Claude"
+                placeholder={translate('providersView.t140Desc')}
               />
 
               <div className="pv_form_label">
                 BaseURL
                 <span className="pv_form_sub">
-                  {form.endpointFullUrl ? '完整请求地址，调用时原样发送' : '服务基础地址'}
+                  {form.endpointFullUrl ? translate('providersView.t108Desc') : translate('providersView.t109')}
                 </span>
               </div>
               <div className="pv_field_stack">
@@ -3873,14 +3876,14 @@ export function ProviderEditPanel({
                   />
                   <span
                     className="pv_endpoint_full_url_toggle"
-                    title="开启后所填地址视为完整请求地址，主调用原样发送，不再自动拼裁（补 /v1、接 images/generations 等）"
+                    title={translate('providersView.t141LongDesc')}
                   >
                     <Switch
                       size="small"
                       checked={form.endpointFullUrl}
                       onChange={(checked: boolean) => set('endpointFullUrl', checked)}
                     />
-                    <span className="pv_endpoint_full_url_toggle_text">完整 URL</span>
+                    <span className="pv_endpoint_full_url_toggle_text">{translate('providersView.t198')}</span>
                   </span>
                 </div>
                 {requestEndpointPreview && (
@@ -3897,15 +3900,12 @@ export function ProviderEditPanel({
                   form.provider === 'anthropic' &&
                   !form.useSparkExecutor && (
                     <div className="pv_endpoint_full_url_warning" role="note">
-                      Claude 适配器（SDK）会固定追加 /v1/messages：地址需以 /v1/messages
-                      结尾才能自洽；非标准尾缀（如
-                      …/v3/messages）请开启「执行引擎（Spark）」以原样直连。
+                      {translate('providersView.tpl36LongDesc')}
                     </div>
                   )}
                 {form.endpointFullUrl && isMediaProviderModelType(form.modelType) && (
                   <div className="pv_endpoint_full_url_warning" role="note">
-                    生成/提交请求按所填地址原样发送；上传、下载与异步任务轮询仍基于该地址派生路径。
-                    视频等异步渠道开启后可能查不到任务结果，同步渠道（图片、语音合成）不受影响。
+                    {translate('providersView.tpl37LongDesc')}
                   </div>
                 )}
               </div>
@@ -3941,9 +3941,9 @@ export function ProviderEditPanel({
                         href={apiKeyUrl}
                         target="_blank"
                         rel="noreferrer"
-                        title={`前往 ${apiKeyUrl} 获取密钥`}
+                        title={translate('providersView.tpl29Desc', { url: apiKeyUrl })}
                       >
-                        获取密钥
+                        {translate('providersView.t199')}
                         <Icons.ExternalLink size={11} />
                       </a>
                     ) : null
@@ -3958,9 +3958,9 @@ export function ProviderEditPanel({
                 }}
                 placeholder={
                   profileId
-                    ? '已读取保存的 Key；修改后保存才会更新'
+                    ? translate('providersView.t110Desc')
                     : isDedicatedMediaType
-                      ? '媒体平台 API Key'
+                      ? translate('providersView.t111')
                       : 'sk-ant-...'
                 }
                 autoComplete="new-password"
@@ -3968,7 +3968,7 @@ export function ProviderEditPanel({
 
               {isChatModel && (
                 <>
-                  <label className="pv_form_label">连接与模型</label>
+                  <label className="pv_form_label">{translate('providersView.t200')}</label>
                   <div className="pv_connection_actions">
                     <div className="pv_form_control_inline">
                       <Button
@@ -3979,7 +3979,7 @@ export function ProviderEditPanel({
                         disabled={saving || fetchingModels}
                         onClick={() => void handleTestConnection()}
                       >
-                        测试连接
+                        {translate('providersView.t201')}
                       </Button>
                     </div>
                     {connectionFeedback && (
@@ -3998,7 +3998,7 @@ export function ProviderEditPanel({
 
               {defaultProviderEligible && (
                 <>
-                  <label className="pv_form_label">默认 Provider</label>
+                  <label className="pv_form_label">{translate('providersView.t189')}</label>
                   <div className="pv_form_control_inline">
                     <Switch
                       size="middle"
@@ -4018,11 +4018,11 @@ export function ProviderEditPanel({
             <span className="pv_section_icon">
               <Icons.Cpu size={11} />
             </span>
-            <span className="pv_section_title">模型配置信息</span>
+            <span className="pv_section_title">{translate('providersView.t202')}</span>
           </div>
           <div className="pv_section_body">
             <div className="pv_form_grid">
-              <label className="pv_form_label">默认模型 ID</label>
+              <label className="pv_form_label">{translate('providersView.t203')}</label>
               <div className="pv_field_stack">
                 <div className="pv_form_control_inline pv_form_control_inline-wrap">
                   <Input
@@ -4034,7 +4034,7 @@ export function ProviderEditPanel({
                       // modelIds 防抖更新（避免每个字符都往列表里加模型）
                       debouncedUpdateModelIds(next)
                     }}
-                    placeholder="例：claude-sonnet-4-20250514"
+                    placeholder={translate('providersView.t142Desc')}
                   />
                   {(isChatModel || isCustomMediaChannel) &&
                     (fetchedModelIds.length > 0 ? (
@@ -4054,7 +4054,7 @@ export function ProviderEditPanel({
                               <input
                                 value={modelPickerSearch}
                                 onChange={(e) => setModelPickerSearch(e.target.value)}
-                                placeholder="搜索模型"
+                                placeholder={translate('providersView.t143')}
                                 autoFocus
                               />
                             </div>
@@ -4068,10 +4068,10 @@ export function ProviderEditPanel({
                                   void handleFetchModels()
                                 }}
                               >
-                                <span>重新获取模型列表</span>
+                                <span>{translate('providersView.t204')}</span>
                               </button>
                               {filteredFetchedModelIds.length === 0 ? (
-                                <div className="pv_model_dropdown_empty">没有匹配结果</div>
+                                <div className="pv_model_dropdown_empty">{translate('providersView.t205')}</div>
                               ) : (
                                 filteredFetchedModelIds.map((id) => {
                                   const active = form.defaultModel.trim() === id
@@ -4102,7 +4102,7 @@ export function ProviderEditPanel({
                           icon={<Icons.ChevronDown size={12} />}
                           loading={fetchingModels}
                           disabled={saving || testingConnection}
-                          title="从已获取模型中选择默认模型"
+                          title={translate('providersView.t144Desc')}
                         />
                       </Dropdown>
                     ) : (
@@ -4113,24 +4113,24 @@ export function ProviderEditPanel({
                         disabled={saving || testingConnection}
                         onClick={() => void handleFetchModels()}
                       >
-                        获取模型
+                        {translate('providersView.t206')}
                       </Button>
                     ))}
                 </div>
                 {(isChatModel || isCustomMediaChannel) && (
                   <span className="pv_form_hint">
                     {fetchingModels
-                      ? '正在获取模型列表…'
+                      ? translate('providersView.t112')
                       : fetchedModelIds.length > 0
-                        ? `已从渠道 /models 获取 ${fetchedModelIds.length} 个模型${isChatModel ? '；可在下方候选模型目录中勾选启用' : '；可在下方模型清单中添加'}`
-                        : '支持手动输入模型 ID，或点击右侧按钮调用渠道 /models'}
+                        ? translate('providersView.tpl30Desc', { count: fetchedModelIds.length, suffix: isChatModel ? translate('providersView.t113Desc') : translate('providersView.t114') })
+                        : translate('providersView.t115Desc')}
                   </span>
                 )}
               </div>
 
               {isChatModel && (
                 <>
-                  <label className="pv_form_label">上下文窗口</label>
+                  <label className="pv_form_label">{translate('providersView.t207')}</label>
                   <ProviderContextWindowSlider
                     value={form.contextWindow}
                     supportsMillionContext={form.supportsMillionContext}
@@ -4184,7 +4184,7 @@ export function ProviderEditPanel({
 
               {isChatModel && (
                 <>
-                  <label className="pv_form_label">附加生成能力</label>
+                  <label className="pv_form_label">{translate('providersView.t208')}</label>
                   <div className="pv_form_control_inline">
                     <Switch
                       size="middle"
@@ -4231,7 +4231,7 @@ export function ProviderEditPanel({
                     }
                     voiceCatalogTip={
                       VOICE_CATALOG_TIPS[effectiveMediaProvider] ??
-                      '按配置的接口拉取渠道音色候选，画布与快速创作的音色候选会自动继承。'
+                      translate('providersView.t116Desc')
                     }
                     voiceCatalogMeta={voiceCatalogMeta}
                     syncingVoices={syncingVoices}
@@ -4255,58 +4255,58 @@ export function ProviderEditPanel({
 
                   <Modal
                     open={clonePanelOpen}
-                    title="音色复刻"
+                    title={translate('providersView.t145')}
                     footer={null}
                     width={520}
                     onCancel={() => setClonePanelOpen(false)}
                   >
                     <div className="pv_voice_clone">
                       <label className="pv_form_label">
-                        示例音频
+                        {translate('providersView.t209')}
                         <span className="pv_voice_clone_path" title={samplePath}>
-                          {samplePath || '尚未选择文件'}
+                          {samplePath || translate('providersView.t117')}
                         </span>
                       </label>
                       <div className="pv_voice_clone_row">
-                        <Button onClick={() => void handlePickVoiceSample()}>选择文件</Button>
+                        <Button onClick={() => void handlePickVoiceSample()}>{translate('providersView.t210')}</Button>
                         {samplePath && (
                           <Button type="text" size="small" onClick={() => setSamplePath('')}>
-                            清除
+                            {translate('providersView.t211')}
                           </Button>
                         )}
-                        <small>支持 mp3 / wav，≤10MB，建议时长 3–30 秒</small>
+                        <small>{translate('providersView.t212Desc')}</small>
                       </div>
 
                       <label className="pv_form_label">
-                        音色名称
+                        {translate('providersView.t.voiceNameLabel')}
                         {/* maxLength 与协议上限（provider-media-voices.ts）保持一致：
                             否则超限会走 zod 分支，用户看到的是英文内部报错。 */}
                         <Input
                           value={voiceName}
                           maxLength={120}
-                          placeholder="例如：我的播报音色"
+                          placeholder={translate('providersView.t146')}
                           onChange={(event) => setVoiceName(event.target.value)}
                           onPressEnter={() => void handleCloneVoice()}
                         />
                       </label>
 
                       <label className="pv_form_label">
-                        示例音频文本（选填）
+                        {translate('providersView.t213')}
                         <Input
                           value={sampleText}
                           maxLength={2000}
-                          placeholder="示例音频里朗读的内容，填写可提升复刻质量"
+                          placeholder={translate('providersView.t147Desc')}
                           onChange={(event) => setSampleText(event.target.value)}
                           onPressEnter={() => void handleCloneVoice()}
                         />
                       </label>
 
                       <label className="pv_form_label">
-                        试听文本（选填）
+                        {translate('providersView.t214')}
                         <Input
                           value={previewText}
                           maxLength={400}
-                          placeholder="留空使用平台默认试听句"
+                          placeholder={translate('providersView.t148')}
                           onChange={(event) => setPreviewText(event.target.value)}
                           onPressEnter={() => void handleCloneVoice()}
                         />
@@ -4319,20 +4319,20 @@ export function ProviderEditPanel({
                         disabled={!samplePath || !voiceName.trim()}
                         onClick={() => void handleCloneVoice()}
                       >
-                        开始复刻
+                        {translate('providersView.t215')}
                       </Button>
 
                       {/* 三态常显：只按 length>0 渲染时，首次打开弹窗是一片空白，
                           用户分不清「没有音色」还是「没加载」，也找不到删除入口。 */}
                       <div className="pv_voice_clone_list">
-                        <label className="pv_form_label">已复刻音色</label>
+                        <label className="pv_form_label">{translate('providersView.t216')}</label>
                         {loadingClonedVoices ? (
-                          <div className="pv_voice_clone_hint">正在获取已复刻音色…</div>
+                          <div className="pv_voice_clone_hint">{translate('providersView.t217')}</div>
                         ) : clonedVoicesError ? (
                           <div className="pv_voice_clone_hint">{clonedVoicesError}</div>
                         ) : clonedVoices.length === 0 ? (
                           <div className="pv_voice_clone_hint">
-                            暂无复刻音色，上传示例音频即可创建第一个
+                            {translate('providersView.t218Desc')}
                           </div>
                         ) : (
                           clonedVoices.map((voice) => (
@@ -4348,10 +4348,10 @@ export function ProviderEditPanel({
                                 // 否则并发删除会互相清掉 loading 指示。
                                 disabled={deletingVoice != null && deletingVoice !== voice.value}
                                 loading={deletingVoice === voice.value}
-                                aria-label={`删除音色 ${voice.label || voice.value}`}
+                                aria-label={translate('providersView.tpl31Desc', { name: voice.label || voice.value })}
                                 onClick={() => void handleDeleteVoice(voice.value)}
                               >
-                                删除
+                                {translate('providersView.t25')}
                               </Button>
                             </div>
                           ))
@@ -4360,7 +4360,7 @@ export function ProviderEditPanel({
                     </div>
                   </Modal>
 
-                  <label className="pv_form_label">模型清单</label>
+                  <label className="pv_form_label">{translate('providersView.t219')}</label>
                   <div className="pv_media_model_refs">
                     <ProviderMediaModelCatalog
                       models={mediaCatalogForForm}
@@ -4375,7 +4375,7 @@ export function ProviderEditPanel({
                     {isCustomMediaChannel && fetchedModels.length > 0 && (
                       <div className="pv_media_manifest_list">
                         <div className="pv_form_hint" style={{ marginBottom: 6 }}>
-                          渠道 /models 返回的模型（添加后可编辑协议）
+                          {translate('providersView.t220Desc')}
                         </div>
                         {fetchedModels.map((model) => {
                           const added = customModelRefs.some(
@@ -4390,7 +4390,7 @@ export function ProviderEditPanel({
                                 <div className="pv_media_manifest_title">
                                   <span>{model.id}</span>
                                   <Tag size="small" color="blue">
-                                    渠道返回
+                                    {translate('providersView.t221')}
                                   </Tag>
                                 </div>
                                 {model.ownedBy && (
@@ -4405,7 +4405,7 @@ export function ProviderEditPanel({
                                 disabled={added}
                                 onClick={() => addCustomMediaModel(model.id)}
                               >
-                                {added ? '已添加' : '添加'}
+                                {added ? translate('providersView.t118') : translate('providersView.t119')}
                               </Button>
                             </div>
                           )
@@ -4425,11 +4425,11 @@ export function ProviderEditPanel({
                               <div className="pv_media_manifest_title">
                                 <span>{ref.modelId}</span>
                                 <Tag size="small" color="purple">
-                                  自定义
+                                  {translate('providersView.t107')}
                                 </Tag>
                                 {ref.manifest && (
                                   <Tag size="small" color="green">
-                                    协议已配置
+                                    {translate('providersView.t222')}
                                   </Tag>
                                 )}
                                 <Tag size="small" color="gray">
@@ -4438,7 +4438,7 @@ export function ProviderEditPanel({
                               </div>
                               <div className="pv_media_manifest_meta">
                                 {form.defaultModel.trim() === ref.modelId?.trim()
-                                  ? `${ref.modelId} · 当前默认`
+                                  ? translate('providersView.tpl32Desc', { model: ref.modelId })
                                   : ref.modelId}
                               </div>
                             </div>
@@ -4452,12 +4452,12 @@ export function ProviderEditPanel({
                                   icon={<Icons.Settings size={12} />}
                                   onClick={() => openCustomManifestEditor(ref)}
                                 >
-                                  编辑协议
+                                  {translate('providersView.t223')}
                                 </Button>
                               )}
                               {form.defaultModel.trim() === ref.modelId?.trim() ? (
                                 <Tag size="small" color="green">
-                                  默认
+                                  {translate('providersView.t224')}
                                 </Tag>
                               ) : (
                                 <Button
@@ -4465,10 +4465,10 @@ export function ProviderEditPanel({
                                   type="text"
                                   icon={<Icons.Star size={12} />}
                                   onClick={() => setMediaDefaultModel(ref.modelId ?? '')}
-                                  title="设为默认调用模型"
-                                  aria-label={`将 ${ref.modelId} 设为默认`}
+                                  title={translate('providersView.t149')}
+                                  aria-label={translate('providersView.tpl33Desc', { model: ref.modelId })}
                                 >
-                                  设为默认
+                                  {translate('providersView.t225')}
                                 </Button>
                               )}
                               <Button
@@ -4477,8 +4477,8 @@ export function ProviderEditPanel({
                                 danger
                                 icon={<Icons.X />}
                                 onClick={() => removeMediaModelRef(ref.manifestId)}
-                                title="移除自定义模型"
-                                aria-label={`移除自定义模型 ${ref.modelId}`}
+                                title={translate('providersView.t150')}
+                                aria-label={translate('providersView.tpl34Desc', { model: ref.modelId })}
                               />
                             </div>
                           </div>
@@ -4490,9 +4490,9 @@ export function ProviderEditPanel({
                   {showCustomMediaModelInput && (
                     <>
                       <label className="pv_form_label">
-                        自定义模型 / 适配器
+                        {translate('providersView.t226')}
                         <span className="pv_form_sub">
-                          输入模型 ID 添加后，点击「编辑协议」配置请求模板
+                          {translate('providersView.t227Desc')}
                         </span>
                       </label>
                       <div className="pv_custom_model_add">
@@ -4508,7 +4508,7 @@ export function ProviderEditPanel({
                               }
                             }
                           }}
-                          placeholder="输入模型 ID 后按 Enter 添加"
+                          placeholder={translate('providersView.t151Desc')}
                         />
                         <Button
                           type="primary"
@@ -4521,7 +4521,7 @@ export function ProviderEditPanel({
                             }
                           }}
                         >
-                          添加
+                          {translate('providersView.t119')}
                         </Button>
                       </div>
                     </>
@@ -4532,10 +4532,10 @@ export function ProviderEditPanel({
                       <label className="pv_form_label">
                         <span className="pv_form_label_row">
                           <span className="pv_form_label_title">
-                            支持能力
+                            {translate('providersView.tpl39Desc')}
                             {form.modelType === 'voice' && (
                               <Tooltip
-                                title="勾选决定「自定义模型」生成的协议：语音合成 → /audio/speech，语音识别 → /audio/transcriptions，音乐生成 → 完全自定义 JSON 合同；添加模型后仍可在「编辑协议」里改写。"
+                                title={translate('providersView.t152LongDesc')}
                                 overlayStyle={{ maxWidth: 340 }}
                               >
                                 <Icons.HelpCircle className="pv_form_label_help" size={13} />
@@ -4567,7 +4567,7 @@ export function ProviderEditPanel({
 
                   {showMediaDefaults && (
                     <>
-                      <label className="pv_form_label">参数默认值</label>
+                      <label className="pv_form_label">{translate('providersView.t228')}</label>
                       <div className="pv_media_defaults">
                         {form.modelType === 'image' && (
                           <>
@@ -4579,21 +4579,21 @@ export function ProviderEditPanel({
                                   onChange={(value) =>
                                     set('mediaImageSize', value == null ? '' : String(value))
                                   }
-                                  placeholder="图片尺寸 / 比例"
+                                  placeholder={translate('providersView.t153')}
                                   options={mediaDefaultOptionSets.imageSize}
                                 />
                               ) : (
                                 <Input
                                   value={form.mediaImageSize}
                                   onChange={(e) => set('mediaImageSize', e.target.value)}
-                                  placeholder="图片尺寸 (1024x1024 / 16:9)"
+                                  placeholder={translate('providersView.t154Desc')}
                                 />
                               ))}
                             {(mediaDefaultOptionSets.imageSize.length > 0 || form.mediaImageN) && (
                               <Input
                                 value={form.mediaImageN}
                                 onChange={(e) => set('mediaImageN', e.target.value)}
-                                placeholder="图片数量 n"
+                                placeholder={translate('providersView.t155')}
                               />
                             )}
                             {(mediaDefaultOptionSets.imageQuality.length > 0 ||
@@ -4605,14 +4605,14 @@ export function ProviderEditPanel({
                                   onChange={(value) =>
                                     set('mediaImageQuality', value == null ? '' : String(value))
                                   }
-                                  placeholder="图片质量"
+                                  placeholder={translate('providersView.t156')}
                                   options={mediaDefaultOptionSets.imageQuality}
                                 />
                               ) : (
                                 <Input
                                   value={form.mediaImageQuality}
                                   onChange={(e) => set('mediaImageQuality', e.target.value)}
-                                  placeholder="图片质量 (hd / standard)"
+                                  placeholder={translate('providersView.t157Desc')}
                                 />
                               ))}
                           </>
@@ -4629,7 +4629,7 @@ export function ProviderEditPanel({
                                 onChange={(value) =>
                                   set('mediaAudioVoice', value == null ? '' : String(value))
                                 }
-                                placeholder="语音音色（可选可输入）"
+                                placeholder={translate('providersView.t158')}
                                 filterOption={createEchoTolerantFilterOption(
                                   () => form.mediaAudioVoice,
                                   matchesValueOrLabel,
@@ -4639,7 +4639,7 @@ export function ProviderEditPanel({
                               <Input
                                 value={form.mediaAudioVoice}
                                 onChange={(e) => set('mediaAudioVoice', e.target.value)}
-                                placeholder="语音 voice (alloy / nova)"
+                                placeholder={translate('providersView.t159Desc')}
                               />
                             )}
                             {(mediaDefaultOptionSets.audioFormat.length > 0 ||
@@ -4651,14 +4651,14 @@ export function ProviderEditPanel({
                                   onChange={(value) =>
                                     set('mediaAudioFormat', value == null ? '' : String(value))
                                   }
-                                  placeholder="语音格式 / 输出格式"
+                                  placeholder={translate('providersView.t160')}
                                   options={mediaDefaultOptionSets.audioFormat}
                                 />
                               ) : (
                                 <Input
                                   value={form.mediaAudioFormat}
                                   onChange={(e) => set('mediaAudioFormat', e.target.value)}
-                                  placeholder="语音格式 (mp3 / wav)"
+                                  placeholder={translate('providersView.t161Desc')}
                                 />
                               ))}
                           </>
@@ -4674,14 +4674,14 @@ export function ProviderEditPanel({
                                   onChange={(value) =>
                                     set('mediaVideoAspectRatio', value == null ? '' : String(value))
                                   }
-                                  placeholder="视频比例"
+                                  placeholder={translate('providersView.t162')}
                                   options={mediaDefaultOptionSets.videoAspectRatio}
                                 />
                               ) : (
                                 <Input
                                   value={form.mediaVideoAspectRatio}
                                   onChange={(e) => set('mediaVideoAspectRatio', e.target.value)}
-                                  placeholder="视频比例 (16:9)"
+                                  placeholder={translate('providersView.t163')}
                                 />
                               ))}
                             {(mediaDefaultOptionSets.videoDuration.length > 0 ||
@@ -4693,14 +4693,14 @@ export function ProviderEditPanel({
                                   onChange={(value) =>
                                     set('mediaVideoDuration', value == null ? '' : String(value))
                                   }
-                                  placeholder="视频时长 (秒)"
+                                  placeholder={translate('providersView.t164')}
                                   options={mediaDefaultOptionSets.videoDuration}
                                 />
                               ) : (
                                 <Input
                                   value={form.mediaVideoDuration}
                                   onChange={(e) => set('mediaVideoDuration', e.target.value)}
-                                  placeholder="视频时长 (秒)"
+                                  placeholder={translate('providersView.t164')}
                                 />
                               ))}
                             {(mediaDefaultOptionSets.videoQuality.length > 0 ||
@@ -4712,14 +4712,14 @@ export function ProviderEditPanel({
                                   onChange={(value) =>
                                     set('mediaVideoQuality', value == null ? '' : String(value))
                                   }
-                                  placeholder="视频质量 / 分辨率"
+                                  placeholder={translate('providersView.t165')}
                                   options={mediaDefaultOptionSets.videoQuality}
                                 />
                               ) : (
                                 <Input
                                   value={form.mediaVideoQuality}
                                   onChange={(e) => set('mediaVideoQuality', e.target.value)}
-                                  placeholder="视频质量 (hd)"
+                                  placeholder={translate('providersView.t166')}
                                 />
                               ))}
                           </>
@@ -4728,14 +4728,14 @@ export function ProviderEditPanel({
                           <Input
                             value={form.mediaPollInterval}
                             onChange={(e) => set('mediaPollInterval', e.target.value)}
-                            placeholder="轮询间隔 ms"
+                            placeholder={translate('providersView.t167')}
                           />
                         )}
                         {(isDedicatedMediaType || form.mediaGenerationEnabled) && (
                           <Input
                             value={form.mediaTimeout}
                             onChange={(e) => set('mediaTimeout', e.target.value)}
-                            placeholder="接口超时 ms"
+                            placeholder={translate('providersView.t168')}
                           />
                         )}
                       </div>
@@ -4765,47 +4765,47 @@ export function ProviderEditPanel({
                   <span className="pv_section_icon">
                     <Icons.Settings size={11} />
                   </span>
-                  <span className="pv_section_title">Claude 档位映射</span>
-                  <span className="pv_section_hint">可选；留空则该档自动回落「默认模型 ID」</span>
+                  <span className="pv_section_title">{translate('providersView.t229')}</span>
+                  <span className="pv_section_hint">{translate('providersView.t230Desc')}</span>
                 </div>
                 <div className="pv_section_body">
                   <div className="pv_tier_grid">
                     <div className="pv_tier_cell">
                       <label className="pv_form_label">
-                        Haiku 档
-                        <span className="pv_form_sub">SDK 派生子 agent / Task 工具默认走此档</span>
+                        {translate('providersView.t231')}
+                        <span className="pv_form_sub">{translate('providersView.t232Desc')}</span>
                       </label>
                       <Input
                         value={form.haikuModel}
                         onChange={(e) => set('haikuModel', e.target.value)}
                         placeholder={
-                          form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'
+                          form.defaultModel ? translate('providersView.tpl35Desc', { model: form.defaultModel }) : translate('providersView.t120')
                         }
                       />
                     </div>
                     <div className="pv_tier_cell">
                       <label className="pv_form_label">
-                        Sonnet 档
-                        <span className="pv_form_sub">主对话默认档；通常等同于默认模型</span>
+                        {translate('providersView.t233')}
+                        <span className="pv_form_sub">{translate('providersView.t234Desc')}</span>
                       </label>
                       <Input
                         value={form.sonnetModel}
                         onChange={(e) => set('sonnetModel', e.target.value)}
                         placeholder={
-                          form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'
+                          form.defaultModel ? translate('providersView.tpl35Desc', { model: form.defaultModel }) : translate('providersView.t120')
                         }
                       />
                     </div>
                     <div className="pv_tier_cell">
                       <label className="pv_form_label">
-                        Opus 档
-                        <span className="pv_form_sub">Plan / Review 等高能力 agent 使用</span>
+                        {translate('providersView.t235')}
+                        <span className="pv_form_sub">{translate('providersView.t236Desc')}</span>
                       </label>
                       <Input
                         value={form.opusModel}
                         onChange={(e) => set('opusModel', e.target.value)}
                         placeholder={
-                          form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'
+                          form.defaultModel ? translate('providersView.tpl35Desc', { model: form.defaultModel }) : translate('providersView.t120')
                         }
                       />
                     </div>
@@ -4818,7 +4818,7 @@ export function ProviderEditPanel({
       </div>
       <Modal
         open={iconPickerOpen}
-        title="选择模型配置图标"
+        title={translate('providersView.t169')}
         footer={null}
         width={720}
         onCancel={() => setIconPickerOpen(false)}
@@ -4828,7 +4828,7 @@ export function ProviderEditPanel({
             <Input
               value={iconPickerSearch}
               onChange={(event) => setIconPickerSearch(event.target.value)}
-              placeholder="搜索模型、厂商或关键词..."
+              placeholder={translate('providersView.t170Desc')}
               prefix={<Icons.Search size={14} />}
               allowClear
             />
@@ -4862,15 +4862,15 @@ export function ProviderEditPanel({
             })}
           </div>
           {filteredProviderIcons.length === 0 && (
-            <div className="pv_icon_picker_empty">没有找到匹配的图标</div>
+            <div className="pv_icon_picker_empty">{translate('providersView.t237')}</div>
           )}
         </div>
       </Modal>
       <Modal
         open={editingCustomManifestId != null}
-        title="自定义多媒体适配器编辑器"
-        okText="检查并保存"
-        cancelText="取消"
+        title={translate('providersView.t171')}
+        okText={translate('providersView.t172')}
+        cancelText={translate('providersView.t173')}
         width={1180}
         centered
         className="pv_custom_adapter_modal"
@@ -4901,7 +4901,7 @@ export function ProviderEditPanel({
             return parsedManifest ? (
               <details open style={{ marginBottom: 12 }}>
                 <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-                  Contract V2 结构化编辑（修改会同步回 JSON）
+                  {translate('providersView.t238Desc')}
                 </summary>
                 <div style={{ marginTop: 8 }}>
                   <ProviderManifestContractEditor
@@ -4914,31 +4914,30 @@ export function ProviderEditPanel({
           })()}
           <details style={{ marginTop: 12 }}>
             <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-              高级 Manifest JSON（可导入 / 导出 / 手动修复）
+              {translate('providersView.t239Desc')}
             </summary>
             <textarea
               className="pv_manifest_editor"
               value={customManifestDraft}
               onChange={(event) => setCustomManifestDraft(event.target.value)}
               spellCheck={false}
-              aria-label="自定义模型 Manifest JSON"
+              aria-label={translate('providersView.t174Desc')}
             />
           </details>
           {customManifestError && (
             <Alert
               type="error"
-              message="协议校验失败"
+              message={translate('providersView.t175')}
               description={<pre className="pv_manifest_error">{customManifestError}</pre>}
             />
           )}
           <details style={{ marginTop: 12 }}>
             <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-              请求预览：只编译，不发起网络调用
+              {translate('providersView.t240Desc')}
             </summary>
             <div style={{ marginTop: 8 }}>
               <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>
-                使用上方 Dry-run 的示例参数，在主进程内编译最终 URL、鉴权和请求体。API Key
-                仅以占位符参与编译，不会显示真实密钥，也不会请求 Provider。
+                {translate('providersView.tpl38LongDesc')}
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button
@@ -4947,7 +4946,7 @@ export function ProviderEditPanel({
                   disabled={invocationPreviewLoading}
                   style={{ padding: '4px 12px', fontSize: 12 }}
                 >
-                  {invocationPreviewLoading ? '编译中…' : '编译请求预览'}
+                  {invocationPreviewLoading ? translate('providersView.t121') : translate('providersView.t122')}
                 </button>
                 {invocationPreviewError && (
                   <span style={{ color: 'var(--danger)', fontSize: 12 }}>
@@ -4958,7 +4957,7 @@ export function ProviderEditPanel({
               {invocationPreview && (
                 <div style={{ marginTop: 8 }}>
                   <Tag color={invocationPreview.valid ? 'green' : 'red'}>
-                    {invocationPreview.valid ? '请求结构有效' : '请求结构无效'}
+                    {invocationPreview.valid ? translate('providersView.t123') : translate('providersView.t124')}
                   </Tag>
                   <pre className="pv_manifest_error" style={{ maxHeight: 260, marginTop: 6 }}>
                     {JSON.stringify(
@@ -4978,28 +4977,28 @@ export function ProviderEditPanel({
           </details>
           <details style={{ marginTop: 12 }}>
             <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-              Dry-run 预览：用当前 manifest 裁剪一段示例 modelParams（不需要先保存）
+              {translate('providersView.t241LongDesc')}
             </summary>
             <div style={{ marginTop: 8 }}>
               <div style={{ marginBottom: 4, fontSize: 12, opacity: 0.75 }}>
-                对 manifest 的第一个 capability（id:{' '}
+                {translate('providersView.tpl40Desc')}{' '}
                 <code>
                   {(() => {
                     try {
                       const m = JSON.parse(customManifestDraft) as MediaModelManifest
-                      return m?.capabilities?.[0]?.id ?? '(未解析)'
+                      return m?.capabilities?.[0]?.id ?? translate('providersView.t125')
                     } catch {
-                      return '(manifest JSON 无效)'
+                      return translate('providersView.t126Desc')
                     }
                   })()}
                 </code>
-                ）执行裁剪；可观察 strict / passthrough / forbidden 的实际效果。
+                {translate('providersView.t242LongDesc')}
               </div>
               <textarea
                 value={dryRunInput}
                 onChange={(event) => setDryRunInput(event.target.value)}
                 rows={6}
-                placeholder='例如 {"prompt": "...", "size": "1024x1024", "watermark": true}'
+                placeholder={translate('providersView.t127LongDesc')}
                 spellCheck={false}
                 style={{ width: '100%', fontFamily: 'inherit', fontSize: 12 }}
               />
@@ -5010,7 +5009,7 @@ export function ProviderEditPanel({
                   disabled={dryRunLoading}
                   style={{ padding: '4px 12px', fontSize: 12 }}
                 >
-                  {dryRunLoading ? '运行中…' : '运行裁剪'}
+                  {dryRunLoading ? translate('providersView.t128') : translate('providersView.t129')}
                 </button>
                 {dryRunError && (
                   <span style={{ color: 'var(--danger)', fontSize: 12 }}>{dryRunError}</span>
@@ -5021,14 +5020,14 @@ export function ProviderEditPanel({
                   {dryRunResult.fallbackReason && (
                     <Alert
                       type="warning"
-                      message="跳过裁剪（fallback）"
+                      message={translate('providersView.t176Desc')}
                       description={
                         <pre className="pv_manifest_error">{dryRunResult.fallbackReason}</pre>
                       }
                     />
                   )}
                   <div style={{ marginBottom: 4, marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-                    裁剪后 modelParams（实际下发给 provider 的内容）
+                    {translate('providersView.t243Desc')}
                   </div>
                   <pre className="pv_manifest_error" style={{ maxHeight: 220 }}>
                     {JSON.stringify(dryRunResult.prunedModelParams, null, 2)}
@@ -5036,7 +5035,7 @@ export function ProviderEditPanel({
                   {dryRunResult.droppedParams.length > 0 && (
                     <>
                       <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-                        被丢弃的参数（droppedParams）
+                        {translate('providersView.t244Desc')}
                       </div>
                       <pre className="pv_manifest_error" style={{ maxHeight: 180 }}>
                         {JSON.stringify(dryRunResult.droppedParams, null, 2)}
@@ -5046,7 +5045,7 @@ export function ProviderEditPanel({
                   {dryRunResult.warnings.length > 0 && (
                     <>
                       <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-                        警告（warnings）
+                        {translate('providersView.t245')}
                       </div>
                       <pre className="pv_manifest_error" style={{ maxHeight: 160 }}>
                         {JSON.stringify(dryRunResult.warnings, null, 2)}
@@ -5056,7 +5055,7 @@ export function ProviderEditPanel({
                   {dryRunResult.validationIssues.length > 0 && (
                     <>
                       <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-                        校验问题（validationIssues，包含 forbidden_param / type_mismatch 等）
+                        {translate('providersView.t246LongDesc')}
                       </div>
                       <pre className="pv_manifest_error" style={{ maxHeight: 180 }}>
                         {JSON.stringify(dryRunResult.validationIssues, null, 2)}

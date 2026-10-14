@@ -15,6 +15,7 @@ import type {
   CreateCanvasTaskRequest,
   ShotScriptConfig,
 } from './canvas.types'
+import { translate } from '../../i18n'
 import { getCanvasCapability, isOperationNode } from './canvas.capabilities'
 import { resolveDepthRenderPreference } from './canvasDepthRenderPreference'
 import { inferCanvasConnectionType } from './canvasConnectionSemantics'
@@ -183,10 +184,10 @@ const USER_ID = 0
 const CANVAS_TASK_VALIDATION_TOKEN = Symbol('canvas-task-validation')
 
 const MANUSCRIPT_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
-  heading: '按标题',
-  length: '按长度分片',
-  single: '不分章',
-  'multi-file': '多文件（一文件一章）',
+  heading: translate('canvasApi.t1'),
+  length: translate('canvasApi.t2'),
+  single: translate('canvasApi.t3'),
+  'multi-file': translate('canvasApi.t4'),
 }
 
 function readCanvasTextNodeContent(node: CanvasNode, assets: CanvasAsset[]): string {
@@ -198,17 +199,17 @@ function readCanvasTextNodeContent(node: CanvasNode, assets: CanvasAsset[]): str
 }
 
 function canvasTextNodeContextKind(node: CanvasNode, content: string): string {
-  if (node.data.pipelineRole === 'shot') return '分镜脚本'
-  if (node.data.pipelineRole === 'screenplay') return '剧本'
-  if (node.type === 'prompt') return '提示词节点'
-  if (content.includes('| 镜号 |') || content.includes('|镜号|')) return '分镜脚本'
-  return '文本节点'
+  if (node.data.pipelineRole === 'shot') return translate('canvasApi.t5')
+  if (node.data.pipelineRole === 'screenplay') return translate('canvasApi.t6')
+  if (node.type === 'prompt') return translate('canvasApi.t7')
+  if (content.includes('| 镜号 |') || content.includes('|镜号|')) return translate('canvasApi.t5') // i18n-exempt-line: 分镜表 Markdown 表头识别，非 UI 文案
+  return translate('canvasApi.t8')
 }
 
 function formatCanvasTextNodeContext(node: CanvasNode, assets: CanvasAsset[]): string {
   const content = readCanvasTextNodeContent(node, assets)
   if (!content) return ''
-  const name = node.title?.trim() || '未命名'
+  const name = node.title?.trim() || translate('canvasApi.t9')
   return `【${canvasTextNodeContextKind(node, content)}｜${name}】\n${content}`
 }
 
@@ -234,7 +235,7 @@ function mergeCanvasPromptWithInputTextContext(
   if (!trimmedContext) return trimmedPrompt || undefined
   if (!trimmedPrompt) return trimmedContext
   if (trimmedPrompt.includes(trimmedContext)) return trimmedPrompt
-  return `${trimmedPrompt}\n\n画布节点内容：\n${trimmedContext}`
+  return translate('canvasApi.tpl1Instruction', { prompt: trimmedPrompt, context: trimmedContext })
 }
 
 function syncOperationPromptDocumentFromConnections(db: CanvasDb, target: CanvasNode): void {
@@ -515,7 +516,7 @@ export function isCanvasDirty(projectId: string): boolean {
 export async function flushCanvasTaskRuntimeWrites(projectId: string): Promise<void> {
   await runtimePersistGate.flushPending(projectId)
   if (runtimePersistGate.isPending(projectId)) {
-    throw new Error('任务状态尚未完成持久化，请稍后重试删除')
+    throw new Error(translate('canvasApi.t10Desc'))
   }
 }
 
@@ -1173,7 +1174,7 @@ function cloneImportedSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
     ...next.project,
     id: projectId,
     userId: USER_ID,
-    title: `${next.project.title || 'Canvas Project'}（导入）`,
+    title: translate('canvasApi.tpl11Desc', { title: next.project.title || 'Canvas Project' }),
     status: 'active',
     rootPath: null,
     lastOpenedAt: at,
@@ -1260,7 +1261,7 @@ function parseCanvasProjectExport(raw: string): CanvasSnapshot {
     !Array.isArray(snapshot.assets) ||
     !Array.isArray(snapshot.tasks)
   ) {
-    throw new Error('无效的 Canvas 项目文件')
+    throw new Error(translate('canvasApi.t11Desc'))
   }
   // 归一化：缺 board 时从 boards[] 推导激活板，保证下游统一能读 snapshot.board
   const normalized = snapshot as CanvasSnapshot
@@ -1571,8 +1572,8 @@ function applyGroupLayout(groupNode: CanvasNode, members: GroupMemberLayout[], a
     groupNode.height = Math.max(groupNode.height, 220)
     groupNode.data = {
       ...groupNode.data,
-      text: '包含 0 个节点',
-      message: '拖入或选择节点后可加入此组',
+      text: translate('canvasApi.t12'),
+      message: translate('canvasApi.t13Desc'),
     }
     groupNode.updatedAt = at
     return
@@ -1594,7 +1595,7 @@ function applyGroupLayout(groupNode: CanvasNode, members: GroupMemberLayout[], a
   groupNode.height = layout.height
   groupNode.data = {
     ...groupNode.data,
-    text: `包含 ${members.length} 个节点`,
+    text: translate('canvasApi.tpl4Desc', { count: members.length }),
     message: members.map((item) => item.node.title ?? item.node.type).join(' / '),
   }
   groupNode.updatedAt = at
@@ -1687,7 +1688,7 @@ export function readAssetTextForNode(asset: CanvasAsset): string {
  * 解析媒体节点的本地文件路径：优先 node.data.filePath，回退 url 反解、关联 asset.storageKey。
  *
  * 供音频截取/变速、视频尺寸压缩等本地 ffmpeg 链路使用；非本地（http(s) URL）资源
- * 不进入这些链路，调用方收到 null 时应当走"放弃"分支（toast 友好提示）。
+ * 不进入这些链路，调用方收到 null 时应当走translate('canvasApi.t80')分支（toast 友好提示）。
  *
  * 注意：asset 回退依赖 db 参数；调用方（含视频/音频弹窗入口）应使用
  * canvasApi.readMediaNodeLocalFilePath 以带上当前热存储 db。
@@ -1931,7 +1932,7 @@ export const canvasApi = {
       snapshot: portableSnapshot,
     }
     const result = await window.spark.invoke('dialog:save-file', {
-      title: '导出 Canvas 项目',
+      title: translate('canvasApi.t14'),
       defaultPath: `${sanitizeFileName(snapshot.project.title)}.spark-canvas.json`,
       filters: [{ name: 'Spark Canvas Project', extensions: ['json'] }],
     })
@@ -1960,7 +1961,7 @@ export const canvasApi = {
     }
     if (!snapshot) throw new Error('Canvas project not found')
     const result = await window.spark.invoke('dialog:open-directory', {
-      title: '选择 Canvas 项目包导出位置',
+      title: translate('canvasApi.t15Desc'),
       ...(snapshot.project.rootPath ? { defaultPath: snapshot.project.rootPath } : {}),
     })
     if (result.canceled || !result.filePath) return { exported: false }
@@ -2006,7 +2007,7 @@ export const canvasApi = {
 
   async importProjectFromFile(parentDirectory?: string): Promise<CanvasSnapshot | null> {
     const result = await window.spark.invoke('dialog:open-file', {
-      title: '导入 Canvas 项目',
+      title: translate('canvasApi.t16'),
       filters: [{ name: 'Spark Canvas Project', extensions: ['json'] }],
     })
     if (result.canceled || !result.filePath) return null
@@ -2098,7 +2099,7 @@ export const canvasApi = {
   async deleteProject(projectId: string): Promise<void> {
     const persisted = await flushPersist()
     if (!persisted) {
-      throw new Error('项目尚未成功保存，无法安全删除；请稍后重试')
+      throw new Error(translate('canvasApi.t17Desc'))
     }
     await window.spark.invoke('canvas:project:delete', { projectId })
     const db = readDb()
@@ -2378,7 +2379,7 @@ export const canvasApi = {
     const boards = db.boards.filter((item) => item.projectId === projectId)
     // 守卫：最后一个 board 不允许删除（文档 §7.1 注意点）
     if (boards.length <= 1) {
-      throw new Error('项目至少保留一个画布，无法删除')
+      throw new Error(translate('canvasApi.t18Desc'))
     }
     const target = boards.find((item) => item.id === boardId)
     if (!target) return this.openSnapshot(projectId)
@@ -2434,7 +2435,7 @@ export const canvasApi = {
     const newBoard: CanvasBoard = {
       ...sourceBoard,
       id: newBoardId,
-      name: name?.trim() || `${sourceBoard.name} 副本`,
+      name: name?.trim() || translate('canvasApi.tpl12Desc', { name: sourceBoard.name }),
       viewport: { x: 0, y: 0, zoom: 1 },
       settings: {
         ...sourceBoard.settings,
@@ -2510,7 +2511,7 @@ export const canvasApi = {
         progress: 0,
         completedAt: null,
         errorMsg: 'duplicate_of_origin',
-        errorDetail: '由复制画布生成，需手动重跑',
+        errorDetail: translate('canvasApi.t19Desc'),
         inputNodeIds: task.inputNodeIds
           .map((id) => idMap.get(id))
           .filter((id): id is string => Boolean(id)),
@@ -2525,7 +2526,12 @@ export const canvasApi = {
       )
       for (const tn of clonedTaskNodes) {
         tn.taskId = newTaskId
-        tn.data = { ...tn.data, status: 'cancelled', progress: 0, message: '复制任务，需手动重跑' }
+        tn.data = {
+          ...tn.data,
+          status: 'cancelled',
+          progress: 0,
+          message: translate('canvasApi.t20'),
+        }
       }
       db.tasks.push(clone)
     }
@@ -2644,7 +2650,7 @@ export const canvasApi = {
               ...node.data,
               status: 'pending' as const,
               progress: 0,
-              message: '复制任务，需确认配置后重新提交',
+              message: translate('canvasApi.t21Desc'),
             },
           }
         : {}
@@ -2776,7 +2782,7 @@ export const canvasApi = {
           ? {
               status: 'pending',
               progress: 0,
-              message: remappedData.message ?? '工作流已添加到画布，配置后可运行',
+              message: remappedData.message ?? translate('canvasApi.t22Desc'),
             }
           : {}),
         origin: 'template',
@@ -3077,9 +3083,10 @@ export const canvasApi = {
       type: manuscriptType,
       source: 'manual',
       title: input.title,
-      contentText: `共 ${input.chapters.length} 章 · 导入方式：${
-        MANUSCRIPT_SPLIT_MODE_LABELS[input.mode]
-      }`,
+      contentText: translate('canvasApi.tpl13Desc', {
+        count: input.chapters.length,
+        mode: MANUSCRIPT_SPLIT_MODE_LABELS[input.mode],
+      }),
       metadata: {
         kind: 'manuscript',
         references: [],
@@ -3092,7 +3099,7 @@ export const canvasApi = {
     db.assets.push(manuscriptAsset)
 
     const chapterRefs: ManuscriptChapterRef[] = []
-    const chapterTag = `文稿:${input.title}`
+    const chapterTag = `文稿:${input.title}` // i18n-exempt-line: 手稿归属 tag 格式，属存储契约
     for (const chapter of input.chapters) {
       const chapterAsset: CanvasAsset = {
         id: filmUid('canvas_asset'),
@@ -3152,7 +3159,7 @@ export const canvasApi = {
       (item) => item.id === manuscriptAssetId && item.projectId === projectId,
     )
     const title = typeof manuscript?.title === 'string' ? manuscript.title : null
-    const legacyTag = title ? `文稿:${title}` : null
+    const legacyTag = title ? `文稿:${title}` : null // i18n-exempt-line: 手稿归属 tag 格式，属存储契约
 
     const isOwnedChapter = (asset: CanvasAsset): boolean => {
       if (asset.projectId !== projectId) return false
@@ -3499,9 +3506,13 @@ export const canvasApi = {
           if (charIds.includes(assetId) || sceneId === assetId || propIds.includes(assetId)) {
             shotSegments.push({
               groupId: typeof g['id'] === 'string' ? (g['id'] as string) : '',
-              groupName: typeof g['name'] === 'string' ? (g['name'] as string) : '未命名分组',
+              groupName:
+                typeof g['name'] === 'string' ? (g['name'] as string) : translate('canvasApi.t23'),
               segmentId: typeof s['id'] === 'string' ? (s['id'] as string) : '',
-              segmentTitle: typeof s['title'] === 'string' ? (s['title'] as string) : '未命名片段',
+              segmentTitle:
+                typeof s['title'] === 'string'
+                  ? (s['title'] as string)
+                  : translate('canvasApi.t24'),
               segmentIndex: typeof s['index'] === 'number' ? (s['index'] as number) : 0,
             })
           }
@@ -4087,7 +4098,7 @@ export const canvasApi = {
     const result = (response as { success: boolean; result?: { path?: string }; error?: string })
       ?.result
     if (!(response as { success: boolean })?.success || !result?.path) {
-      const err = (response as { error?: string })?.error ?? '音频截取失败'
+      const err = (response as { error?: string })?.error ?? translate('canvasApi.t25')
       throw new Error(err)
     }
 
@@ -4098,20 +4109,20 @@ export const canvasApi = {
         projectId: input.projectId,
         sourcePath: result.path,
         type: 'audio',
-        suggestedBaseName: `${input.fileName} 截取`,
+        suggestedBaseName: translate('canvasApi.tpl2Desc', { name: input.fileName }),
       })) ?? result.path
 
     const newNode = await this.createMediaNode({
       projectId: input.projectId,
       boardId: input.boardId,
       kind: 'audio',
-      fileName: `${input.fileName} 截取`,
+      fileName: translate('canvasApi.tpl2Desc', { name: input.fileName }),
       ...(input.mimeType ? { fileMimeType: input.mimeType } : {}),
       filePath: persistedPath,
       x: parent.x + parent.width + 48,
       y: parent.y,
     })
-    if (!newNode) throw new Error('截取产物节点创建失败')
+    if (!newNode) throw new Error(translate('canvasApi.t26'))
 
     db.edges.push({
       id: uid('canvas_edge'),
@@ -4156,7 +4167,7 @@ export const canvasApi = {
     const result = (response as { success: boolean; result?: { path?: string }; error?: string })
       ?.result
     if (!(response as { success: boolean })?.success || !result?.path) {
-      const err = (response as { error?: string })?.error ?? '音频变速失败'
+      const err = (response as { error?: string })?.error ?? translate('canvasApi.t27')
       throw new Error(err)
     }
 
@@ -4180,7 +4191,7 @@ export const canvasApi = {
       x: parent.x + parent.width + 48,
       y: parent.y,
     })
-    if (!newNode) throw new Error('变速产物节点创建失败')
+    if (!newNode) throw new Error(translate('canvasApi.t28'))
 
     db.edges.push({
       id: uid('canvas_edge'),
@@ -4224,7 +4235,7 @@ export const canvasApi = {
     const db = readDb()
     const parentNodeId = input.anchorNodeId ?? input.parentNodeId
     const parent = db.nodes.find((n) => n.id === parentNodeId && n.projectId === input.projectId)
-    if (!parent) throw new Error('未找到源视频节点，无法生成压缩副本')
+    if (!parent) throw new Error(translate('canvasApi.t29Desc'))
 
     const requestId = `video_scale_compress_${input.parentNodeId}_${Date.now()}`
     // 进度订阅放在本函数内：requestId 在这里生成，只有这里能正确过滤
@@ -4250,7 +4261,7 @@ export const canvasApi = {
         }
       )?.result
       if (!(response as { success: boolean })?.success || !result?.path) {
-        throw new Error((response as { error?: string })?.error ?? '视频处理失败')
+        throw new Error((response as { error?: string })?.error ?? translate('canvasApi.t30'))
       }
 
       // 产物从全局产物目录复制进项目 assets/videos/，保证项目目录可找到全部工程产物；
@@ -4260,14 +4271,14 @@ export const canvasApi = {
           projectId: input.projectId,
           sourcePath: result.path,
           type: 'video',
-          suggestedBaseName: `${input.fileName} 尺寸压缩`,
+          suggestedBaseName: translate('canvasApi.tpl3Desc', { name: input.fileName }),
         })) ?? result.path
 
       const newNode = await this.createMediaNode({
         projectId: input.projectId,
         boardId: input.boardId,
         kind: 'video',
-        fileName: `${input.fileName} 尺寸压缩`,
+        fileName: translate('canvasApi.tpl3Desc', { name: input.fileName }),
         ...(input.mimeType ? { fileMimeType: input.mimeType } : {}),
         filePath: persistedPath,
         x: parent.x + parent.width + 48,
@@ -4282,7 +4293,7 @@ export const canvasApi = {
           ? { durationMs: Math.round(result.durationSec * 1000) }
           : {}),
       })
-      if (!newNode) throw new Error('尺寸压缩产物节点创建失败')
+      if (!newNode) throw new Error(translate('canvasApi.t31'))
 
       db.edges.push(
         createCanvasScaleCompressDerivationEdge({
@@ -4321,7 +4332,7 @@ export const canvasApi = {
     const db = readDb()
     const parentNodeId = input.anchorNodeId ?? input.parentNodeId
     const parent = db.nodes.find((n) => n.id === parentNodeId && n.projectId === input.projectId)
-    if (!parent) throw new Error('未找到源图片节点，无法生成压缩副本')
+    if (!parent) throw new Error(translate('canvasApi.t32Desc'))
 
     return materializeCanvasImageScaleCompress(input, {
       parent,
@@ -4442,7 +4453,7 @@ export const canvasApi = {
       width: GROUP_NODE_DEFAULT_SIZE.width,
       height: GROUP_NODE_DEFAULT_SIZE.height,
       data: {
-        text: `包含 ${sourceNodes.length} 个节点`,
+        text: translate('canvasApi.tpl4Desc', { count: sourceNodes.length }),
         message: sourceNodes.map((node) => node.title ?? node.type).join(' / '),
       },
       at,
@@ -4965,7 +4976,7 @@ export const canvasApi = {
               ...node.data,
               status: 'pending' as const,
               progress: 0,
-              message: '复制任务，需确认配置后重新提交',
+              message: translate('canvasApi.t21Desc'),
             },
           }
         : {}
@@ -5111,7 +5122,7 @@ export const canvasApi = {
       operation: request.operation,
       status: 'pending',
       progress: 12,
-      message: '任务已创建，等待 agent/provider 接入',
+      message: translate('canvasApi.t33Desc'),
       ...(request.taskPipelineRole != null ? { pipelineRole: request.taskPipelineRole } : {}),
       ...(request.outputPipelineRole != null
         ? { outputPipelineRole: request.outputPipelineRole }
@@ -5230,7 +5241,7 @@ export const canvasApi = {
       ...(autoPlacementSource ? { preservePreferredPosition: true } : {}),
     })
     const progress = request.progress ?? 8
-    const messageText = request.message ?? '本地画布工作流执行中'
+    const messageText = request.message ?? translate('canvasApi.t34')
     const taskNodeData: CanvasNode['data'] = {
       operation,
       status: 'running',
@@ -5332,7 +5343,7 @@ export const canvasApi = {
       taskPipelineRole: request.taskPipelineRole ?? null,
       outputPipelineRole: request.outputPipelineRole ?? null,
       shotScriptConfig: request.shotScriptConfig ?? null,
-      runtimeEvents: initialCanvasTaskRuntimeEvents(at, '本地工作流任务创建'),
+      runtimeEvents: initialCanvasTaskRuntimeEvents(at, translate('canvasApi.t35')),
       ...pickCanvasPromptTaskFields(request),
       createdAt: at,
       updatedAt: at,
@@ -5397,19 +5408,21 @@ export const canvasApi = {
       kind: status === 'completed' ? 'completed' : status === 'cancelled' ? 'cancelled' : 'failed',
       label:
         status === 'completed'
-          ? '本地工作流完成'
+          ? translate('canvasApi.t36')
           : status === 'cancelled'
-            ? '本地工作流已取消'
-            : '本地工作流失败',
+            ? translate('canvasApi.t37')
+            : translate('canvasApi.t38'),
       ...(task.errorDetail ? { detail: task.errorDetail } : {}),
     })
 
     const defaultMessage =
       status === 'completed'
-        ? '本地画布工作流已完成'
+        ? translate('canvasApi.t39')
         : status === 'cancelled'
-          ? '任务已取消'
-          : `失败：${task.errorDetail ?? task.errorMsg ?? '本地画布工作流失败'}`
+          ? translate('canvasApi.t40')
+          : translate('canvasApi.tpl5Desc', {
+              reason: task.errorDetail ?? task.errorMsg ?? translate('canvasApi.t41'),
+            })
     if (patchTaskNode) {
       taskNode.data = {
         ...taskNode.data,
@@ -5640,7 +5653,7 @@ export const canvasApi = {
         operation: input.operation,
         status: 'pending',
         progress: 0,
-        message: input.message ?? '点击下方编辑面板调整参数后运行',
+        message: input.message ?? translate('canvasApi.t42Desc'),
         ...(explicitPrompt ? { prompt: explicitPrompt } : {}),
         promptDocument,
         ...(inputBindings.length > 0 ? { inputBindings } : {}),
@@ -5692,7 +5705,7 @@ export const canvasApi = {
       taskPipelineRole: taskPipelineRole ?? null,
       outputPipelineRole: input.outputPipelineRole ?? null,
       shotScriptConfig: input.shotScriptConfig ?? null,
-      runtimeEvents: initialCanvasTaskRuntimeEvents(at, '操作节点草稿创建'),
+      runtimeEvents: initialCanvasTaskRuntimeEvents(at, translate('canvasApi.t43')),
       promptDocument,
       ...(inputBindings.length > 0 ? { inputBindings } : {}),
       ...(systemPrompt ? { systemPrompt } : {}),
@@ -5735,10 +5748,11 @@ export const canvasApi = {
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const node = db.nodes.find((n) => n.id === nodeId && n.projectId === projectId && !n.hidden)
-    if (!node || (!node.taskId && !options?.sourceTaskId)) throw new Error('操作节点未关联任务')
+    if (!node || (!node.taskId && !options?.sourceTaskId))
+      throw new Error(translate('canvasApi.t44'))
     const sourceTaskId = options?.sourceTaskId ?? node.taskId
     const oldTask = db.tasks.find((t) => t.id === sourceTaskId && t.projectId === projectId)
-    if (!oldTask) throw new Error('未找到原任务')
+    if (!oldTask) throw new Error(translate('canvasApi.t45'))
     const useCurrentRuntime = options?.runtimeSource !== 'original-task'
     // B8: retry 同样走 capability → operation 反向映射，让统一图片节点（容器 operation + capabilityId）
     // 重试时按冻结的参考图数量还原出 image_edit / image_compose / text_to_image，而不是直接复用容器 operation。
@@ -5885,7 +5899,7 @@ export const canvasApi = {
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const node = db.nodes.find((n) => n.id === nodeId && n.projectId === projectId && !n.hidden)
-    if (!node) throw new Error('操作节点不存在')
+    if (!node) throw new Error(translate('canvasApi.t46'))
     const project = db.projects.find((item) => item.id === projectId)
     // 取输入节点（used_as_input edge 的 source）
     const existingInputNodeIds = db.edges
@@ -6103,21 +6117,21 @@ export const canvasApi = {
     task.status = 'cancelled'
     task.progress = 100
     task.errorMsg = 'cancelled_by_user'
-    task.errorDetail = '任务已由用户在画布任务队列中取消。'
+    task.errorDetail = translate('canvasApi.t47Desc')
     task.updatedAt = at
     task.completedAt = at
     appendCanvasTaskRuntimeEvent(task, {
       at,
       kind: 'cancelled',
-      label: '任务已由用户取消',
-      detail: task.errorDetail,
+      label: translate('canvasApi.t48'),
+      detail: task.errorDetail ?? undefined,
     })
     if (taskNode && patchTaskNode) {
       taskNode.data = {
         ...taskNode.data,
         status: 'cancelled',
         progress: 100,
-        message: '任务已取消',
+        message: translate('canvasApi.t40'),
       }
       taskNode.updatedAt = at
     }
@@ -6165,7 +6179,7 @@ export const canvasApi = {
     const request = validateCanvasLocalTaskSubmission(requestInput)
     const inputFile = request.inputFiles?.[0]
     const inputPath = inputFile?.path?.trim()
-    if (!inputPath) throw new Error('深度视频转换需要可读取的本地视频路径')
+    if (!inputPath) throw new Error(translate('canvasApi.t49Desc'))
 
     // 主进程侧同时只允许一个深度任务在跑；提交前先探测，占用时直接提示，
     // 避免先创建任务节点再失败。探测失败不阻断提交，由 create IPC 的主进程硬校验兜底。
@@ -6177,13 +6191,13 @@ export const canvasApi = {
       depthBusy = false
     }
     if (depthBusy) {
-      throw new Error('已有深度视频转换任务正在运行，请等待完成或先取消当前任务')
+      throw new Error(translate('canvasApi.t50Desc'))
     }
 
     const started = await this.startWorkflowTask(projectId, {
       boardId: request.boardId,
       operation: 'video_depth_map',
-      title: request.taskTitle ?? '深度视频转换',
+      title: request.taskTitle ?? translate('canvasApi.t51'),
       prompt: '',
       inputNodeIds: request.inputNodeIds ?? [],
       inputAssetIds: request.inputAssetIds ?? [],
@@ -6193,7 +6207,7 @@ export const canvasApi = {
       modelId: 'depth-anything-v2-small-int8',
       modelParams: request.modelParams ?? {},
       progress: 1,
-      message: '准备本地深度模型',
+      message: translate('canvasApi.t52'),
     })
 
     let response: CanvasMediaTaskCreateResponse
@@ -6241,7 +6255,7 @@ export const canvasApi = {
         ...taskNode.data,
         status: 'running',
         progress: response.progress ?? 1,
-        message: response.message ?? '本地深度任务已创建',
+        message: response.message ?? translate('canvasApi.t53'),
       }
       taskNode.updatedAt = now()
     }
@@ -6266,12 +6280,12 @@ export const canvasApi = {
     const request = validateCanvasLocalTaskSubmission(requestInput)
     const inputFile = request.inputFiles?.[0]
     const inputPath = inputFile?.path?.trim()
-    if (!inputPath) throw new Error('分离音频需要可读取的本地视频路径')
+    if (!inputPath) throw new Error(translate('canvasApi.t54Desc'))
 
     const started = await this.startWorkflowTask(projectId, {
       boardId: request.boardId,
       operation: 'extract_audio',
-      title: request.taskTitle ?? '分离音频',
+      title: request.taskTitle ?? translate('canvasApi.t55'),
       prompt: '',
       inputNodeIds: request.inputNodeIds ?? [],
       inputAssetIds: request.inputAssetIds ?? [],
@@ -6281,7 +6295,7 @@ export const canvasApi = {
       modelId: 'ffmpeg-extract-audio',
       modelParams: request.modelParams ?? {},
       progress: 1,
-      message: '准备本地 ffmpeg 音频分离',
+      message: translate('canvasApi.t56Desc'),
     })
 
     let response: CanvasMediaTaskCreateResponse
@@ -6330,7 +6344,7 @@ export const canvasApi = {
         ...taskNode.data,
         status: 'running',
         progress: response.progress ?? 1,
-        message: response.message ?? '本地音频分离任务已创建',
+        message: response.message ?? translate('canvasApi.t57'),
       }
       taskNode.updatedAt = now()
     }
@@ -6356,12 +6370,12 @@ export const canvasApi = {
     const request = validateCanvasLocalTaskSubmission(requestInput)
     const inputFile = request.inputFiles?.[0]
     const inputPath = inputFile?.path?.trim()
-    if (!inputPath) throw new Error('提取首尾帧需要可读取的本地视频路径或视频 URL')
+    if (!inputPath) throw new Error(translate('canvasApi.t58Desc'))
 
     const started = await this.startWorkflowTask(projectId, {
       boardId: request.boardId,
       operation: 'extract_first_last_frames',
-      title: request.taskTitle ?? '提取首尾帧',
+      title: request.taskTitle ?? translate('canvasApi.t59'),
       prompt: '',
       inputNodeIds: request.inputNodeIds ?? [],
       inputAssetIds: request.inputAssetIds ?? [],
@@ -6371,7 +6385,7 @@ export const canvasApi = {
       modelId: 'ffmpeg-extract-frames',
       modelParams: request.modelParams ?? {},
       progress: 1,
-      message: '准备本地 ffmpeg 提取首尾帧',
+      message: translate('canvasApi.t60Desc'),
     })
 
     let response: CanvasMediaTaskCreateResponse
@@ -6419,7 +6433,7 @@ export const canvasApi = {
         ...taskNode.data,
         status: 'running',
         progress: response.progress ?? 1,
-        message: response.message ?? '本地提取首尾帧任务已创建',
+        message: response.message ?? translate('canvasApi.t61'),
       }
       taskNode.updatedAt = now()
     }
@@ -6507,7 +6521,7 @@ export const canvasApi = {
       operation: request.operation,
       status: 'running',
       progress: 24,
-      message: '调用平台 adapter 中…',
+      message: translate('canvasApi.t62Desc'),
     }
     syncCanvasNodeRuntimeData(taskNodeData, request)
     const requestPromptWithContext = request.promptDocument
@@ -6631,7 +6645,7 @@ export const canvasApi = {
       taskPipelineRole: request.taskPipelineRole ?? null,
       outputPipelineRole: request.outputPipelineRole ?? null,
       shotScriptConfig: request.shotScriptConfig ?? null,
-      runtimeEvents: initialCanvasTaskRuntimeEvents(at, '媒体任务创建并提交'),
+      runtimeEvents: initialCanvasTaskRuntimeEvents(at, translate('canvasApi.t63')),
       ...pickCanvasPromptTaskFields(request),
       createdAt: at,
       updatedAt: at,
@@ -6703,12 +6717,12 @@ export const canvasApi = {
   async repollMediaTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
     const db = readDb()
     const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
-    if (!task) throw new Error('未找到画布任务')
-    if (task.status !== 'failed') throw new Error('只有轮询失败的任务可以重新轮询')
+    if (!task) throw new Error(translate('canvasApi.t64'))
+    if (task.status !== 'failed') throw new Error(translate('canvasApi.t65Desc'))
     const providerProfileId = task.providerProfileId?.trim()
     const providerTaskId = (task.providerTaskId ?? task.requestId)?.trim()
     if (!providerProfileId || !providerTaskId) {
-      throw new Error('该任务没有可恢复的 Provider Task ID')
+      throw new Error(translate('canvasApi.t66Desc'))
     }
     const response = await window.spark.invoke('canvas:task:repoll-media', {
       projectId,
@@ -6780,7 +6794,7 @@ export const canvasApi = {
       operation: request.operation,
       status: 'running',
       progress: 30,
-      message: '调用文本模型中…',
+      message: translate('canvasApi.t67'),
     }
     syncCanvasNodeRuntimeData(taskNodeData, request)
     const requestPrompt = request.promptDocument
@@ -6881,7 +6895,7 @@ export const canvasApi = {
       taskPipelineRole: request.taskPipelineRole ?? null,
       outputPipelineRole: request.outputPipelineRole ?? null,
       shotScriptConfig: request.shotScriptConfig ?? null,
-      runtimeEvents: initialCanvasTaskRuntimeEvents(at, '文本任务创建并提交'),
+      runtimeEvents: initialCanvasTaskRuntimeEvents(at, translate('canvasApi.t68')),
       ...pickCanvasPromptTaskFields(request),
       createdAt: at,
       updatedAt: at,
@@ -6971,7 +6985,7 @@ export const canvasApi = {
       task.errorMsg = response.error?.code ?? 'text_generation_failed'
       task.errorDetail = canvasTaskErrorMessage(
         response.error?.code,
-        response.error?.message ?? '文本生成失败',
+        response.error?.message ?? translate('canvasApi.t69'),
       )
       task.providerProfileId = response.providerProfileId || task.providerProfileId || null
       task.provider = response.provider || task.provider || null
@@ -6989,7 +7003,7 @@ export const canvasApi = {
           response,
           text: response.text,
           errorCode: task.errorMsg,
-          errorMessage: task.errorDetail ?? '文本生成失败',
+          errorMessage: task.errorDetail ?? translate('canvasApi.t69'),
           at,
           uid,
           createNode: createNodeBase,
@@ -7001,7 +7015,7 @@ export const canvasApi = {
       appendCanvasTaskRuntimeEvent(task, {
         at,
         kind: 'failed',
-        label: '文本模型调用失败',
+        label: translate('canvasApi.t70'),
         detail: task.errorDetail ?? undefined,
       })
       if (patchTaskNode) {
@@ -7009,7 +7023,7 @@ export const canvasApi = {
           ...taskNode.data,
           status: 'failed',
           progress: 100,
-          message: `失败：${task.errorDetail}`,
+          message: translate('canvasApi.tpl5Desc', { reason: task.errorDetail }),
         }
         syncCanvasTaskRuntimeToNode(task, taskNode.data)
         taskNode.updatedAt = at
@@ -7062,7 +7076,7 @@ export const canvasApi = {
       appendCanvasTaskRuntimeEvent(task, {
         at,
         kind: 'validation',
-        label: '模型已返回文本，但业务结构解析失败',
+        label: translate('canvasApi.t71Desc'),
         detail: semanticValidation.message,
       })
       if (patchTaskNode) {
@@ -7070,7 +7084,7 @@ export const canvasApi = {
           ...taskNode.data,
           status: 'failed',
           progress: 100,
-          message: `失败：${semanticValidation.message}`,
+          message: translate('canvasApi.tpl5Desc', { reason: semanticValidation.message }),
         }
         syncCanvasTaskRuntimeToNode(task, taskNode.data)
         taskNode.updatedAt = at
@@ -7082,7 +7096,7 @@ export const canvasApi = {
 
     const outputText = semanticValidation.text
     const storyboardPartialNotice = semanticValidation.partial
-      ? `模型输出被截断，已抢救恢复前 ${semanticValidation.partial.recoveredShotCount} 镜；建议缩短剧本或分批生成分镜`
+      ? translate('canvasApi.tpl6Desc', { count: semanticValidation.partial.recoveredShotCount })
       : null
     let materializedShotGroups: ShotGroup[] = []
     if (outputRole === 'shot' && semanticValidation.storyboardRows?.length) {
@@ -7090,7 +7104,7 @@ export const canvasApi = {
       if (project) {
         const materialized = materializeStoryboardRows({
           metadata: project.metadata,
-          defaultGroupName: taskNode.data.outputTitle ?? task.title ?? '分镜脚本',
+          defaultGroupName: taskNode.data.outputTitle ?? task.title ?? translate('canvasApi.t5'),
           assets: db.assets,
           rows: semanticValidation.storyboardRows,
         })
@@ -7133,14 +7147,14 @@ export const canvasApi = {
       appendCanvasTaskRuntimeEvent(task, {
         at,
         kind: 'completed',
-        label: `文本生成与业务解析完成，已按 ${splitEpisodeCount} 集拆分为独立剧本节点`,
+        label: translate('canvasApi.tpl7Desc', { count: splitEpisodeCount }),
       })
       if (patchTaskNode) {
         taskNode.data = {
           ...taskNode.data,
           status: 'completed',
           progress: 100,
-          message: `已按 ${splitEpisodeCount} 集拆分输出`,
+          message: translate('canvasApi.tpl8Desc', { count: splitEpisodeCount }),
         }
         syncCanvasTaskRuntimeToNode(task, taskNode.data)
         syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)
@@ -7234,8 +7248,8 @@ export const canvasApi = {
       at,
       kind: 'completed',
       label: storyboardPartialNotice
-        ? `文本生成与业务解析完成（${storyboardPartialNotice}）`
-        : '文本生成与业务解析完成',
+        ? translate('canvasApi.tpl9Desc', { notice: storyboardPartialNotice })
+        : translate('canvasApi.t72'),
       ...(storyboardPartialNotice ? { detail: storyboardPartialNotice } : {}),
     })
     task.outputAssetIds.push(asset.id)
@@ -7245,7 +7259,7 @@ export const canvasApi = {
         ...taskNode.data,
         status: 'completed',
         progress: 100,
-        message: storyboardPartialNotice ?? '文本已生成',
+        message: storyboardPartialNotice ?? translate('canvasApi.t73'),
       }
       syncCanvasTaskRuntimeToNode(task, taskNode.data)
       syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)
@@ -7312,7 +7326,7 @@ export const canvasApi = {
       appendCanvasTaskRuntimeEvent(task, {
         at,
         kind: 'submitted',
-        label: response.message ?? 'Provider 已接受后台任务',
+        label: response.message ?? translate('canvasApi.t74Desc'),
         ...(task.providerTaskId || task.requestId
           ? { detail: `Provider Task ${task.providerTaskId ?? task.requestId}` }
           : {}),
@@ -7323,7 +7337,7 @@ export const canvasApi = {
         ...taskNode.data,
         status: 'running',
         progress: task.progress,
-        message: response.message ?? '后台任务已提交，等待 provider 返回产物',
+        message: response.message ?? translate('canvasApi.t75Desc'),
       }
       syncCanvasTaskRuntimeToNode(task, taskNode.data)
       taskNode.updatedAt = at
@@ -7373,7 +7387,8 @@ export const canvasApi = {
       task.errorMsg = response.error?.code ?? (isCancelled ? 'cancelled' : 'provider_task_failed')
       task.errorDetail = canvasTaskErrorMessage(
         response.error?.code,
-        response.error?.message ?? (isCancelled ? '任务已取消' : 'Provider task failed'),
+        response.error?.message ??
+          (isCancelled ? translate('canvasApi.t40') : 'Provider task failed'),
       )
       task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
       task.providerTaskId = responseProviderTaskId ?? task.providerTaskId ?? null
@@ -7393,7 +7408,7 @@ export const canvasApi = {
       appendCanvasTaskRuntimeEvent(task, {
         at,
         kind: isCancelled ? 'cancelled' : 'failed',
-        label: isCancelled ? 'Provider 任务已取消' : 'Provider 任务失败',
+        label: isCancelled ? translate('canvasApi.t76Desc') : translate('canvasApi.t77Desc'),
         detail: task.errorDetail ?? undefined,
       })
       if (patchTaskNode) {
@@ -7401,7 +7416,9 @@ export const canvasApi = {
           ...taskNode.data,
           status: task.status,
           progress: 100,
-          message: isCancelled ? '任务已取消' : `失败：${task.errorDetail}`,
+          message: isCancelled
+            ? translate('canvasApi.t40')
+            : translate('canvasApi.tpl5Desc', { reason: task.errorDetail }),
         }
         syncCanvasTaskRuntimeToNode(task, taskNode.data)
         taskNode.updatedAt = at
@@ -7435,7 +7452,7 @@ export const canvasApi = {
     appendCanvasTaskRuntimeEvent(task, {
       at,
       kind: 'completed',
-      label: 'Provider 任务完成并返回产物',
+      label: translate('canvasApi.t78Desc'),
     })
     const preparedOutputs: CanvasAsset[] = []
     const explicitFilmOwner =
@@ -7566,7 +7583,7 @@ export const canvasApi = {
           ...(!filmOwner && isPanorama360
             ? {
                 kind: 'scene',
-                tags: ['360全景图'],
+                tags: [translate('canvasApi.t79')],
               }
             : {}),
           ...(isPanorama360
@@ -7626,7 +7643,7 @@ export const canvasApi = {
         ...taskNode.data,
         status: 'completed',
         progress: 100,
-        message: `${response.assets.length} 个产物已写回画布`,
+        message: translate('canvasApi.tpl10Desc', { count: response.assets.length }),
       }
       syncCanvasTaskRuntimeToNode(task, taskNode.data)
       syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)

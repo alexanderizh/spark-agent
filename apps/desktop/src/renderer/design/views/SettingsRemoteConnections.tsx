@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Button, Input, Modal, Select, Tag, TextArea } from '@lobehub/ui'
 import { Switch } from 'antd'
 import { QRCodeSVG } from '@rc-component/qrcode'
@@ -14,6 +14,7 @@ import type {
   RemoteWechatLoginStatus,
   SessionListResponse,
 } from '@spark/protocol'
+import { useI18n, type TranslateFn } from '../i18n'
 import { Icons } from '../Icons'
 import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu, type ContextMenuEntry } from '../components/contextMenuModel'
@@ -34,12 +35,24 @@ function deferEffect(task: () => void | Promise<void>): () => void {
   return () => window.clearTimeout(id)
 }
 
-const REMOTE_CHANNEL_LABELS: Record<RemoteChannelType, string> = {
-  telegram: 'Telegram',
-  feishu: '飞书机器人',
-  qq: 'QQ 机器人',
-  wechat: '微信机器人',
-  'wechat-claw': '微信 Claw',
+/** 全部渠道类型（用于「上次渠道」合法性判断，勿与对外可选渠道白名单混用）。 */
+const REMOTE_CHANNEL_TYPES: readonly RemoteChannelType[] = [
+  'telegram',
+  'feishu',
+  'qq',
+  'wechat',
+  'wechat-claw',
+]
+
+/** 渠道显示名（按语言生成）。 */
+function getRemoteChannelLabels(t: TranslateFn): Record<RemoteChannelType, string> {
+  return {
+    telegram: 'Telegram',
+    feishu: t('settings.remote.channel.feishu'),
+    qq: t('settings.remote.channel.qq'),
+    wechat: t('settings.remote.channel.wechat'),
+    'wechat-claw': t('settings.remote.channel.wechatClaw'),
+  }
 }
 
 /**
@@ -49,12 +62,16 @@ const REMOTE_CHANNEL_LABELS: Record<RemoteChannelType, string> = {
  */
 const AVAILABLE_REMOTE_CHANNELS: RemoteChannelType[] = ['telegram', 'feishu', 'qq', 'wechat']
 
-const REMOTE_STATUS_LABELS: Record<RemoteConnectionConfig['status'], string> = {
-  disabled: '已停用',
-  draft: '草稿',
-  'pending-pairing': '等待配对',
-  connected: '已连接',
-  error: '错误',
+function getRemoteStatusLabels(
+  t: TranslateFn,
+): Record<RemoteConnectionConfig['status'], string> {
+  return {
+    disabled: t('settings.remote.status.disabled'),
+    draft: t('settings.remote.status.draft'),
+    'pending-pairing': t('settings.remote.status.pendingPairing'),
+    connected: t('settings.remote.status.connected'),
+    error: t('settings.remote.status.error'),
+  }
 }
 
 const REMOTE_STATUS_TONES: Record<RemoteConnectionConfig['status'], string> = {
@@ -65,52 +82,53 @@ const REMOTE_STATUS_TONES: Record<RemoteConnectionConfig['status'], string> = {
   error: 'red',
 }
 
-const REMOTE_CHANNEL_META: Record<
-  RemoteChannelType,
-  {
-    label: string
-    short: string
-    icon: string
-    consoleLabel: string
-    setupHint: string
+interface RemoteChannelMeta {
+  label: string
+  short: string
+  icon: string
+  consoleLabel: string
+  setupHint: string
+}
+
+/** 渠道元数据（图标与品牌名固定，文案按语言生成）。 */
+function getRemoteChannelMeta(t: TranslateFn): Record<RemoteChannelType, RemoteChannelMeta> {
+  return {
+    telegram: {
+      label: 'Telegram',
+      short: 'Telegram',
+      icon: telegramLogo,
+      consoleLabel: 'BotFather',
+      setupHint: t('settings.remote.meta.telegramHint'),
+    },
+    feishu: {
+      label: t('settings.remote.meta.feishuLabel'),
+      short: t('settings.remote.meta.feishuShort'),
+      icon: feishuLogo,
+      consoleLabel: t('settings.remote.meta.feishuConsole'),
+      setupHint: t('settings.remote.meta.feishuHint'),
+    },
+    qq: {
+      label: t('settings.remote.meta.qqLabel'),
+      short: 'QQ',
+      icon: qqLogo,
+      consoleLabel: t('settings.remote.meta.qqConsole'),
+      setupHint: t('settings.remote.meta.qqHint'),
+    },
+    wechat: {
+      label: t('settings.remote.meta.wechatLabel'),
+      short: t('settings.remote.meta.wechatShort'),
+      icon: wechatLogo,
+      consoleLabel: t('settings.remote.meta.wechatConsole'),
+      setupHint: t('settings.remote.meta.wechatHint'),
+    },
+    'wechat-claw': {
+      label: t('settings.remote.meta.wechatClawLabel'),
+      short: t('settings.remote.meta.wechatClawShort'),
+      icon: wechatLogo,
+      consoleLabel: t('settings.remote.meta.wechatClawConsole'),
+      setupHint: t('settings.remote.meta.wechatClawHint'),
+    },
   }
-> = {
-  telegram: {
-    label: 'Telegram',
-    short: 'Telegram',
-    icon: telegramLogo,
-    consoleLabel: 'BotFather',
-    setupHint: '填写 Bot Token 后保存并启用，系统会自动启动 polling。',
-  },
-  feishu: {
-    label: '飞书机器人',
-    short: '飞书',
-    icon: feishuLogo,
-    consoleLabel: '飞书开放平台',
-    setupHint: '填写 App ID / App Secret 后保存并启用，系统会自动启动长连接。',
-  },
-  qq: {
-    label: 'QQ 机器人',
-    short: 'QQ',
-    icon: qqLogo,
-    consoleLabel: 'QQ 开放平台',
-    setupHint:
-      '填写机器人 AppID / App Secret 后保存并启用，系统会自动启动 WebSocket 长连接；单聊加好友直接私聊，群聊需 @机器人。',
-  },
-  wechat: {
-    label: '微信机器人',
-    short: '微信',
-    icon: wechatLogo,
-    consoleLabel: '微信扫码授权',
-    setupHint: '通过微信 ClawBot 扫码授权，保存并启用后会自动启动消息长轮询。',
-  },
-  'wechat-claw': {
-    label: '微信 Claw（旧网关）',
-    short: '微信',
-    icon: wechatLogo,
-    consoleLabel: 'Claw 服务',
-    setupHint: '填写 Claw Endpoint 和 Access Token，用本地 webhook 对接微信侧服务。',
-  },
 }
 
 /* ───────── REMOTE CONNECTIONS ───────── */
@@ -141,12 +159,12 @@ function joinCsv(value: string[] | undefined): string {
   return (value ?? []).join(', ')
 }
 
-function createRemoteDraft(channel: RemoteChannelType): RemoteConnectionConfig {
+function createRemoteDraft(channel: RemoteChannelType, t: TranslateFn): RemoteConnectionConfig {
   const now = new Date().toISOString()
   return {
     id: '',
     channel,
-    name: REMOTE_CHANNEL_LABELS[channel],
+    name: getRemoteChannelLabels(t)[channel],
     enabled: false,
     status: 'draft',
     credentials: {},
@@ -172,6 +190,7 @@ type WechatQrSession = {
 }
 
 export function RemoteConnectionsSection() {
+  const { t } = useI18n()
   const { toast } = useToast()
   const { invoke: getSetting } = useIpcInvoke('settings:get')
   const { invoke: setSetting } = useIpcInvoke('settings:set')
@@ -187,7 +206,9 @@ export function RemoteConnectionsSection() {
   })
   const [selectedId, setSelectedId] = useState<string>('')
   const [lastChannel, setLastChannel] = useState<RemoteChannelType>('telegram')
-  const [draft, setDraft] = useState<RemoteConnectionConfig>(() => createRemoteDraft('telegram'))
+  const [draft, setDraft] = useState<RemoteConnectionConfig>(() =>
+    createRemoteDraft('telegram', t),
+  )
   const [editorOpen, setEditorOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
@@ -196,6 +217,9 @@ export function RemoteConnectionsSection() {
   const [wechatQrSession, setWechatQrSession] = useState<WechatQrSession | null>(null)
   const [wechatVerifyCode, setWechatVerifyCode] = useState('')
   const connectionMenu = useContextMenu<RemoteConnectionConfig>()
+
+  const statusLabels = useMemo(() => getRemoteStatusLabels(t), [t])
+  const channelMeta = useMemo(() => getRemoteChannelMeta(t), [t])
 
   const statusWhenEnabled = (
     connection: RemoteConnectionConfig,
@@ -212,7 +236,11 @@ export function RemoteConnectionsSection() {
     getSetting({ category: REMOTE_LAST_CHANNEL_CATEGORY, key: REMOTE_LAST_CHANNEL_KEY })
       .then((res) => {
         if (cancelled) return
-        if (res && typeof res.value === 'string' && res.value in REMOTE_CHANNEL_LABELS) {
+        if (
+          res &&
+          typeof res.value === 'string' &&
+          REMOTE_CHANNEL_TYPES.includes(res.value as RemoteChannelType)
+        ) {
           setLastChannel(res.value as RemoteChannelType)
         }
       })
@@ -258,12 +286,12 @@ export function RemoteConnectionsSection() {
           setDraft(next)
         }
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '加载远程连接失败')
+        toast.error(err instanceof Error ? err.message : t('settings.remote.loadFailed'))
       } finally {
         setLoading(false)
       }
     },
-    [selectedId, toast],
+    [selectedId, toast, t],
   )
 
   useEffect(() => {
@@ -325,7 +353,7 @@ export function RemoteConnectionsSection() {
             ? {
                 ...current,
                 status: 'expired',
-                message: `授权状态无法继续查询，请刷新二维码重试：${detail}`,
+                message: t('settings.remote.authPollFailedDesc', { detail }),
               }
             : current,
         )
@@ -340,6 +368,7 @@ export function RemoteConnectionsSection() {
     draft.channel,
     draft.id,
     editorOpen,
+    t,
     wechatQrSession?.connectionId,
     wechatQrSession?.loginId,
     wechatQrSession?.status,
@@ -440,7 +469,7 @@ export function RemoteConnectionsSection() {
     )
     if (response.connection != null) updateConnection(response.connection)
     if (response.status === 'confirmed' && response.connection != null) {
-      toast.success('微信机器人授权成功；保存并启用后即可接收消息')
+      toast.success(t('settings.remote.wechatAuthorizedToast'))
       void refreshRuntime()
     }
   }
@@ -455,12 +484,12 @@ export function RemoteConnectionsSection() {
         connectionId: id,
         ...result,
         status: 'wait',
-        message: '请用手机微信扫描二维码，并在微信中确认授权。',
+        message: t('settings.remote.wechatScanHintDesc'),
       })
       setWechatVerifyCode('')
       return true
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '生成微信授权二维码失败')
+      toast.error(err instanceof Error ? err.message : t('settings.remote.wechatQrFailed'))
       return false
     } finally {
       setBusy(null)
@@ -486,11 +515,11 @@ export function RemoteConnectionsSection() {
           ? {
               ...current,
               status: 'expired',
-              message: `验证码提交失败，请刷新二维码重试：${detail}`,
+              message: t('settings.remote.verifySubmitFailedDesc', { detail }),
             }
           : current,
       )
-      toast.error(err instanceof Error ? err.message : '微信验证码验证失败')
+      toast.error(err instanceof Error ? err.message : t('settings.remote.wechatVerifyFailed'))
     } finally {
       setBusy(null)
     }
@@ -501,9 +530,9 @@ export function RemoteConnectionsSection() {
     try {
       await persistDraft()
       setEditorOpen(true)
-      toast.success('远程连接已保存')
+      toast.success(t('settings.remote.saved'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '保存失败')
+      toast.error(err instanceof Error ? err.message : t('settings.remote.saveFailed'))
     } finally {
       setBusy(null)
     }
@@ -526,10 +555,12 @@ export function RemoteConnectionsSection() {
       if (channel === 'wechat') {
         await startWechatQrLogin(res.connection.id)
       } else {
-        toast.success(`已创建 ${REMOTE_CHANNEL_LABELS[channel]} 草稿并打开平台入口`)
+        toast.success(
+          t('settings.remote.draftCreatedDesc', { channel: getRemoteChannelLabels(t)[channel] }),
+        )
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '创建草稿失败')
+      toast.error(err instanceof Error ? err.message : t('settings.remote.draftCreateFailed'))
     } finally {
       setBusy(null)
     }
@@ -545,7 +576,7 @@ export function RemoteConnectionsSection() {
       toast[res.ok ? 'success' : 'error'](res.message)
       await refresh()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '测试失败')
+      toast.error(err instanceof Error ? err.message : t('settings.remote.testFailed'))
     } finally {
       setBusy(null)
     }
@@ -553,7 +584,7 @@ export function RemoteConnectionsSection() {
 
   const generatePairing = async (mode: RemotePairingMode) => {
     if (!draft.id) {
-      toast.error('请先保存连接')
+      toast.error(t('settings.remote.saveFirst'))
       return
     }
     setBusy(`pair:${mode}`)
@@ -564,9 +595,13 @@ export function RemoteConnectionsSection() {
       )
       setDraft(res.connection)
       await refreshRuntime()
-      toast.success(mode === 'qr' ? '二维码配对负载已生成' : '配对码已生成')
+      toast.success(
+        mode === 'qr'
+          ? t('settings.remote.qrPairingGenerated')
+          : t('settings.remote.pairingGenerated'),
+      )
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '生成配对失败')
+      toast.error(err instanceof Error ? err.message : t('settings.remote.pairingFailed'))
     } finally {
       setBusy(null)
     }
@@ -575,18 +610,18 @@ export function RemoteConnectionsSection() {
   const copyPairingCommand = async () => {
     if (draft.pairing == null) return
     try {
-      if (navigator.clipboard == null) throw new Error('当前环境不支持剪贴板')
+      if (navigator.clipboard == null) throw new Error(t('settings.remote.clipboardUnsupported'))
       await navigator.clipboard.writeText(`/bind ${draft.pairing.code}`)
-      toast.success('配对命令已复制')
+      toast.success(t('settings.remote.pairCommandCopied'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '复制配对命令失败')
+      toast.error(err instanceof Error ? err.message : t('settings.remote.copyPairCommandFailed'))
     }
   }
 
   const confirmPairing = async () => {
     if (!draft.id || draft.pairing == null) return
     if (manualPairUser.trim().length === 0) {
-      toast.error('请输入远程用户 ID')
+      toast.error(t('settings.remote.userIdRequired'))
       return
     }
     setBusy('confirm-pair')
@@ -602,9 +637,9 @@ export function RemoteConnectionsSection() {
       )
       setDraft(res.connection)
       await refreshRuntime()
-      toast.success('配对已确认')
+      toast.success(t('settings.remote.pairingConfirmed'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '确认配对失败')
+      toast.error(err instanceof Error ? err.message : t('settings.remote.confirmPairingFailed'))
     } finally {
       setBusy(null)
     }
@@ -613,7 +648,7 @@ export function RemoteConnectionsSection() {
   const deleteConnection = async (id = draft.id) => {
     if (!id) {
       clearWechatQrSession()
-      setDraft(createRemoteDraft(draft.channel))
+      setDraft(createRemoteDraft(draft.channel, t))
       return
     }
     if (wechatQrSession?.connectionId === id) clearWechatQrSession()
@@ -626,13 +661,13 @@ export function RemoteConnectionsSection() {
       if (selectedId === id || draft.id === id) {
         const fallback = next[0]
         setSelectedId(fallback?.id ?? '')
-        setDraft(fallback ?? createRemoteDraft(removed?.channel ?? 'telegram'))
+        setDraft(fallback ?? createRemoteDraft(removed?.channel ?? 'telegram', t))
         setEditorOpen(false)
       }
       await refreshRuntime()
-      toast.success('连接已删除')
+      toast.success(t('settings.remote.deleted'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除失败')
+      toast.error(err instanceof Error ? err.message : t('settings.remote.deleteFailed'))
     } finally {
       setBusy(null)
     }
@@ -665,9 +700,17 @@ export function RemoteConnectionsSection() {
       })
       updateConnection(res.connection)
       await refreshRuntime()
-      toast.success(enabled ? '连接已开启' : '连接已关闭')
+      toast.success(
+        enabled ? t('settings.remote.enabledToast') : t('settings.remote.disabledToast'),
+      )
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : enabled ? '开启连接失败' : '关闭连接失败')
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : enabled
+            ? t('settings.remote.enableFailed')
+            : t('settings.remote.disableFailed'),
+      )
     } finally {
       setBusy(null)
     }
@@ -692,9 +735,9 @@ export function RemoteConnectionsSection() {
       })
       updateConnection(restarted.connection)
       await refreshRuntime()
-      toast.success('连接已重启')
+      toast.success(t('settings.remote.restarted'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '重启连接失败')
+      toast.error(err instanceof Error ? err.message : t('settings.remote.restartFailed'))
     } finally {
       setBusy(null)
     }
@@ -717,7 +760,7 @@ export function RemoteConnectionsSection() {
         )
   const enabledCount = connections.filter((item) => item.enabled).length
   const connectedCount = connections.filter((item) => item.status === 'connected').length
-  const draftChannelMeta = REMOTE_CHANNEL_META[draft.channel]
+  const draftChannelMeta = channelMeta[draft.channel]
   const menuTargetSnapshot = connectionMenu.menu?.target
   const menuTarget =
     menuTargetSnapshot == null
@@ -729,7 +772,7 @@ export function RemoteConnectionsSection() {
       : [
           {
             key: 'configure',
-            label: '配置',
+            label: t('settings.remote.menuConfigure'),
             icon: <Icons.Settings size={14} />,
             disabled: busy != null,
             onClick: () => openConnectionEditor(menuTarget),
@@ -737,21 +780,21 @@ export function RemoteConnectionsSection() {
           { type: 'divider' },
           {
             key: 'restart',
-            label: '重启',
+            label: t('settings.remote.menuRestart'),
             icon: <Icons.Refresh size={14} />,
             disabled: busy != null || !menuTarget.enabled,
             onClick: () => void restartConnection(menuTarget),
           },
           {
             key: 'close',
-            label: '关闭',
+            label: t('settings.remote.menuDisable'),
             icon: <Icons.Pause size={14} />,
             disabled: busy != null || !menuTarget.enabled,
             onClick: () => void setConnectionEnabled(menuTarget, false),
           },
           {
             key: 'enable',
-            label: '开启',
+            label: t('settings.remote.menuEnable'),
             icon: <Icons.Play size={14} />,
             disabled: busy != null || menuTarget.enabled,
             onClick: () => void setConnectionEnabled(menuTarget, true),
@@ -759,7 +802,7 @@ export function RemoteConnectionsSection() {
           { type: 'divider' },
           {
             key: 'delete',
-            label: '删除',
+            label: t('settings.remote.menuDelete'),
             icon: <Icons.Trash size={14} />,
             danger: true,
             disabled: busy != null,
@@ -767,33 +810,46 @@ export function RemoteConnectionsSection() {
           },
         ]
 
+  const editorNavItems = [
+    [t('settings.remote.navBasic'), t('settings.remote.navBasicDesc')],
+    [
+      t('settings.remote.navCredentials'),
+      t('settings.remote.navCredentialsDesc', { name: draftChannelMeta.short }),
+    ],
+    [t('settings.remote.navAuth'), t('settings.remote.navAuthDesc')],
+    [t('settings.remote.navPairing'), t('settings.remote.navPairingDesc')],
+    [t('settings.remote.navCommands'), t('settings.remote.navCommandsDesc')],
+  ] as const
+
   return (
     <div className="settings-section remote-settings">
       <div className="remote-settings-hero">
         <div>
-          <h2>远程连接</h2>
-          <div className="lede">
-            通过 Telegram、飞书、QQ、微信从远程桌面或移动端与 SparkWork 通信。
-          </div>
+          <h2>{t('settings.remote.title')}</h2>
+          <div className="lede">{t('settings.remote.ledeDesc')}</div>
         </div>
         <div className="remote-runtime-summary">
           <span className={runtimeStatus.running ? 'live' : ''}>
-            {runtimeStatus.running ? '运行中' : '未运行'}
+            {runtimeStatus.running
+              ? t('settings.remote.running')
+              : t('settings.remote.notRunning')}
           </span>
           <strong>
             {connectedCount}/{connections.length}
           </strong>
-          <em>已连接</em>
+          <em>{t('settings.remote.connectedLabel')}</em>
         </div>
       </div>
 
       <div className="remote-runtime-bar">
         <div>
-          <strong>{runtimeStatus.localBaseUrl ?? '本地 webhook 服务未启动'}</strong>
+          <strong>
+            {runtimeStatus.localBaseUrl ?? t('settings.remote.webhookNotStarted')}
+          </strong>
           <span>
             {enabledCount > 0
-              ? `${enabledCount} 个渠道已启用，远程消息会进入各聊天独立绑定的会话`
-              : '启用任一渠道后，远程消息才会被接收'}
+              ? t('settings.remote.enabledChannelsDesc', { count: enabledCount })
+              : t('settings.remote.noneEnabledDesc')}
           </span>
         </div>
         <Button
@@ -801,13 +857,13 @@ export function RemoteConnectionsSection() {
           icon={<Icons.Refresh size={13} />}
           onClick={() => void refreshRuntime()}
         >
-          刷新
+          {t('settings.remote.refreshBtn')}
         </Button>
       </div>
 
       <div className="remote-platform-strip">
         {AVAILABLE_REMOTE_CHANNELS.map((channel) => {
-          const meta = REMOTE_CHANNEL_META[channel]
+          const meta = channelMeta[channel]
           return (
             <button
               key={channel}
@@ -820,7 +876,9 @@ export function RemoteConnectionsSection() {
               </span>
               <span>
                 <strong>{meta.label}</strong>
-                <em>{busy === `create:${channel}` ? '创建中...' : meta.consoleLabel}</em>
+                <em>
+                  {busy === `create:${channel}` ? t('settings.remote.creating') : meta.consoleLabel}
+                </em>
               </span>
               <Icons.Plus size={14} />
             </button>
@@ -834,7 +892,7 @@ export function RemoteConnectionsSection() {
           onClick={() => {
             clearWechatQrSession()
             setSelectedId('')
-            setDraft(createRemoteDraft(lastChannel))
+            setDraft(createRemoteDraft(lastChannel, t))
             setEditorOpen(true)
           }}
         >
@@ -842,15 +900,15 @@ export function RemoteConnectionsSection() {
             <Icons.Plus size={18} />
           </span>
           <span className="remote-card-main">
-            <span className="remote-card-title">新建连接</span>
+            <span className="remote-card-title">{t('settings.remote.newConnection')}</span>
             <span className="remote-card-desc">
-              默认平台：{REMOTE_CHANNEL_META[lastChannel].label}
+              {t('settings.remote.defaultPlatformDesc', { platform: channelMeta[lastChannel].label })}
             </span>
           </span>
         </button>
-        {loading && <div className="remote-muted-box">加载中...</div>}
+        {loading && <div className="remote-muted-box">{t('settings.remote.loading')}</div>}
         {connections.map((item) => {
-          const meta = REMOTE_CHANNEL_META[item.channel]
+          const meta = channelMeta[item.channel]
           const session = sessions.find((entry) => entry.id === item.defaultSessionId)
           return (
             <button
@@ -868,13 +926,19 @@ export function RemoteConnectionsSection() {
                   <span className="remote-card-desc">{meta.label}</span>
                 </span>
                 <Tag size="middle" color={REMOTE_STATUS_TONES[item.status]}>
-                  {REMOTE_STATUS_LABELS[item.status]}
+                  {statusLabels[item.status]}
                 </Tag>
               </span>
               <span className="remote-card-meta">
-                <span>{item.enabled ? '已启用' : '未启用'}</span>
-                <span>{item.pairedDevices.length} 个设备</span>
-                <span>{session?.title || item.defaultSessionId || '未选会话'}</span>
+                <span>
+                  {item.enabled
+                    ? t('settings.remote.enabledLabel')
+                    : t('settings.remote.notEnabledLabel')}
+                </span>
+                <span>{t('settings.remote.deviceCount', { count: item.pairedDevices.length })}</span>
+                <span>
+                  {session?.title || item.defaultSessionId || t('settings.remote.noSession')}
+                </span>
               </span>
             </button>
           )
@@ -887,7 +951,9 @@ export function RemoteConnectionsSection() {
           y={connectionMenu.menu.y}
           items={connectionMenuItems}
           onClose={connectionMenu.close}
-          ariaLabel={`${connectionMenu.menu.target.name}连接操作`}
+          ariaLabel={t('settings.remote.connectionActionsAria', {
+            name: connectionMenu.menu.target.name,
+          })}
         />
       )}
 
@@ -899,11 +965,15 @@ export function RemoteConnectionsSection() {
               <img src={draftChannelMeta.icon} alt="" />
             </span>
             <span className="remote-editor-title-copy">
-              <strong>{draft.id ? draft.name : `新建 ${draftChannelMeta.label}`}</strong>
+              <strong>
+                {draft.id
+                  ? draft.name
+                  : t('settings.remote.newNamedTitle', { name: draftChannelMeta.label })}
+              </strong>
               <span>{draftChannelMeta.setupHint}</span>
             </span>
             <Tag size="middle" color={REMOTE_STATUS_TONES[draft.status]}>
-              {REMOTE_STATUS_LABELS[draft.status]}
+              {statusLabels[draft.status]}
             </Tag>
           </div>
         }
@@ -917,7 +987,7 @@ export function RemoteConnectionsSection() {
               icon={<Icons.Trash size={14} />}
               onClick={() => void deleteConnection()}
             >
-              删除
+              {t('settings.remote.deleteBtn')}
             </Button>
             <span className="remote-actions-spacer" />
             <Button
@@ -927,7 +997,7 @@ export function RemoteConnectionsSection() {
                 setEditorOpen(false)
               }}
             >
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               size="middle"
@@ -936,7 +1006,7 @@ export function RemoteConnectionsSection() {
               icon={<Icons.Refresh size={13} />}
               onClick={() => void testConnection()}
             >
-              测试配置
+              {t('settings.remote.testBtn')}
             </Button>
             <Button
               size="middle"
@@ -945,7 +1015,7 @@ export function RemoteConnectionsSection() {
               icon={<Icons.Check size={14} />}
               onClick={() => void saveDraft()}
             >
-              保存连接
+              {t('settings.remote.saveBtn')}
             </Button>
           </div>
         }
@@ -962,13 +1032,7 @@ export function RemoteConnectionsSection() {
       >
         <div className="remote-editor-body">
           <aside className="remote-editor-nav">
-            {[
-              ['基础', '连接名称 / 平台 / 默认会话'],
-              ['凭证', draftChannelMeta.short + ' 机器人凭证'],
-              ['授权', '允许名单 / 能力开关'],
-              ['配对', '配对码 / webhook / 已绑定设备'],
-              ['命令', '内置命令目录'],
-            ].map(([title, desc]) => (
+            {editorNavItems.map(([title, desc]) => (
               <span key={title}>
                 <strong>{title}</strong>
                 <em>{desc}</em>
@@ -978,10 +1042,10 @@ export function RemoteConnectionsSection() {
 
           <div className="remote-editor-scroll">
             <section className="remote-editor-section">
-              <div className="subsec-h">基础</div>
+              <div className="subsec-h">{t('settings.remote.navBasic')}</div>
               <div className="remote-channel-picker">
                 {AVAILABLE_REMOTE_CHANNELS.map((channel) => {
-                  const meta = REMOTE_CHANNEL_META[channel]
+                  const meta = channelMeta[channel]
                   return (
                     <button
                       key={channel}
@@ -1001,11 +1065,12 @@ export function RemoteConnectionsSection() {
                 })}
               </div>
               <div className="form-grid remote-form-grid">
-                <label>连接名称</label>
+                <label>{t('settings.remote.connectionNameLabel')}</label>
                 <Input value={draft.name} onChange={(e) => updateDraft({ name: e.target.value })} />
 
                 <label>
-                  启用连接<span className="sub">停用后不会接收远程消息</span>
+                  {t('settings.remote.enableLabel')}
+                  <span className="sub">{t('settings.remote.enableHint')}</span>
                 </label>
                 <Switch
                   size="middle"
@@ -1014,7 +1079,8 @@ export function RemoteConnectionsSection() {
                 />
 
                 <label>
-                  命令前缀<span className="sub">Telegram 可同步为 bot command</span>
+                  {t('settings.remote.prefixLabel')}
+                  <span className="sub">{t('settings.remote.prefixHint')}</span>
                 </label>
                 <Input
                   value={draft.commandPrefix}
@@ -1022,10 +1088,8 @@ export function RemoteConnectionsSection() {
                 />
 
                 <label>
-                  默认会话
-                  <span className="sub">
-                    仅供新的、唯一可识别的聊天首次绑定；已有聊天使用各自的会话
-                  </span>
+                  {t('settings.remote.defaultSessionLabel')}
+                  <span className="sub">{t('settings.remote.defaultSessionHintDesc')}</span>
                 </label>
                 <Select
                   value={draft.defaultSessionId ?? ''}
@@ -1039,17 +1103,17 @@ export function RemoteConnectionsSection() {
                     })
                   }}
                   options={[
-                    { label: '未选择', value: '' },
+                    { label: t('settings.remote.noSelection'), value: '' },
                     ...sessions.map((session) => ({
-                      label: `${session.title || '新会话'} · ${session.id}`,
+                      label: `${session.title || t('settings.remote.newSessionFallback')} · ${session.id}`,
                       value: session.id,
                     })),
                   ]}
                 />
 
                 <label>
-                  跨连接共享会话
-                  <span className="sub">默认关闭；开启会共享对话历史和会话运行配置</span>
+                  {t('settings.remote.shareSession')}
+                  <span className="sub">{t('settings.remote.shareSessionHint')}</span>
                 </label>
                 <Switch
                   size="middle"
@@ -1059,19 +1123,20 @@ export function RemoteConnectionsSection() {
               </div>
               {sessionBindingConflicts.length > 0 && (
                 <div className="remote-muted-box">
-                  该会话也绑定到：{sessionBindingConflicts.map((item) => item.name).join('、')}。
-                  只有所有相关连接都开启“跨连接共享会话”后才会共享；否则下一条远程消息会自动创建独立会话。
+                  {t('settings.remote.conflictNoticeLongDesc', {
+                    names: sessionBindingConflicts.map((item) => item.name).join(', '),
+                  })}
                 </div>
               )}
               {selectedSession == null && draft.defaultSessionId != null && (
                 <div className="remote-muted-box">
-                  当前默认会话未在最近会话列表中找到：{draft.defaultSessionId}
+                  {t('settings.remote.sessionNotFoundDesc', { id: draft.defaultSessionId })}
                 </div>
               )}
             </section>
 
             <section className="remote-editor-section">
-              <div className="subsec-h">凭证</div>
+              <div className="subsec-h">{t('settings.remote.navCredentials')}</div>
               <div className="form-grid remote-form-grid">
                 <RemoteCredentialFields draft={draft} updateCredential={updateCredential} />
               </div>
@@ -1079,8 +1144,12 @@ export function RemoteConnectionsSection() {
                 <div className="remote-muted-box">
                   <strong>
                     {draft.credentials.wechatBotToken
-                      ? `微信已授权${draft.credentials.wechatBotId ? ` · ${draft.credentials.wechatBotId}` : ''}`
-                      : '需要授权微信机器人'}
+                      ? t('settings.remote.wechatAuthorized', {
+                          suffix: draft.credentials.wechatBotId
+                            ? ` · ${draft.credentials.wechatBotId}`
+                            : '',
+                        })
+                      : t('settings.remote.wechatNeedAuth')}
                   </strong>
                   {wechatQrSession?.connectionId === draft.id && (
                     <div className="remote-wechat-login">
@@ -1102,79 +1171,79 @@ export function RemoteConnectionsSection() {
                           <Input
                             value={wechatVerifyCode}
                             onChange={(event) => setWechatVerifyCode(event.target.value)}
-                            placeholder="微信客户端显示的数字验证码"
+                            placeholder={t('settings.remote.wechatCodePlaceholder')}
                           />
                           <Button
                             size="middle"
                             loading={busy === 'wechat-verify'}
                             onClick={() => void submitWechatVerifyCode()}
                           >
-                            提交验证码
+                            {t('settings.remote.submitCodeBtn')}
                           </Button>
                         </div>
                       )}
                       <small>
-                        二维码过期时间：{new Date(wechatQrSession.expiresAt).toLocaleString()}
+                        {t('settings.remote.qrExpires', {
+                          time: new Date(wechatQrSession.expiresAt).toLocaleString(),
+                        })}
                       </small>
                     </div>
                   )}
                   {polling?.running ? (
-                    <span>微信 iLink 长轮询已启动，可在微信 ClawBot 对话中发送 /bind 配对码。</span>
+                    <span>{t('settings.remote.wechatPollingOnDesc')}</span>
                   ) : polling?.lastError != null ? (
-                    <span>微信长轮询未启动：{polling.lastError}</span>
-                  ) : draft.credentials.wechatBotToken ? (
                     <span>
-                      保存并启用连接后会启动长轮询；生成配对码后在微信中发送 /bind 配对码。
+                      {t('settings.remote.wechatPollingOffDesc', { error: polling.lastError })}
                     </span>
+                  ) : draft.credentials.wechatBotToken ? (
+                    <span>{t('settings.remote.wechatPollingHintDesc')}</span>
                   ) : null}
                   <Button
                     size="middle"
                     loading={busy === 'wechat-login'}
                     onClick={() => void startWechatQrLogin()}
                   >
-                    {draft.credentials.wechatBotToken ? '重新扫码授权' : '扫码授权微信'}
+                    {draft.credentials.wechatBotToken
+                      ? t('settings.remote.wechatReauthBtn')
+                      : t('settings.remote.wechatAuthBtn')}
                   </Button>
                 </div>
               )}
               {draft.channel === 'telegram' && (
                 <div className="remote-muted-box">
                   {polling?.running
-                    ? 'Telegram polling 已启动，无需公网 webhook；发送 /bind 配对码 后即可使用。'
+                    ? t('settings.remote.telegramPollingOnDesc')
                     : polling?.lastError != null
-                      ? `Telegram polling 未启动：${polling.lastError}`
-                      : '保存并启用 Telegram Bot Token 后会自动启动 polling。'}
+                      ? t('settings.remote.telegramPollingOffDesc', { error: polling.lastError })
+                      : t('settings.remote.telegramPollingHintDesc')}
                 </div>
               )}
               {draft.channel === 'feishu' && (
                 <div className="remote-muted-box">
                   {longConnection?.running
-                    ? '飞书 WebSocket 长连接已启动，无需公网 webhook；在飞书里发送 /bind 配对码 后即可使用。'
+                    ? t('settings.remote.feishuConnOnDesc')
                     : longConnection?.lastError != null
-                      ? `飞书长连接未启动：${longConnection.lastError}`
-                      : '保存并启用 App ID / App Secret 后会自动启动飞书长连接。'}
+                      ? t('settings.remote.feishuConnOffDesc', { error: longConnection.lastError })
+                      : t('settings.remote.feishuConnHintDesc')}
                 </div>
               )}
               {draft.channel === 'qq' && (
                 <div className="remote-muted-box">
                   {longConnection?.running
-                    ? 'QQ WebSocket 长连接已启动，无需公网 webhook；在 QQ 里发送 /bind 配对码 后即可使用（单聊直接私聊，群聊需 @机器人）。'
+                    ? t('settings.remote.qqConnOnLongDesc')
                     : longConnection?.lastError != null
-                      ? `QQ 长连接未启动：${longConnection.lastError}`
-                      : '保存并启用 AppID / AppSecret 后会自动启动 QQ 长连接；建议在 QQ 开放平台配置好群聊与单聊消息能力。'}
+                      ? t('settings.remote.qqConnOffDesc', { error: longConnection.lastError })
+                      : t('settings.remote.qqConnHintLongDesc')}
                   {/(op:9|code=40(13|14)|code=49(14|15))/.test(longConnection?.lastError ?? '') && (
                     <div className="remote-muted-hint">
-                      该报错只影响当前这条连接对应的机器人（多条 QQ 连接相互独立）。常见原因与处理：
-                      机器人未开通「群聊与单聊消息」能力（op:9 /
-                      code=4014）——连接会自动降低事件订阅重试，
-                      开通后重新启用本连接即可恢复全量订阅；机器人未上线时仅允许连接沙箱环境（code=4914）——
-                      请到 QQ 开放平台 → 机器人管理核对消息能力与沙箱/上线配置。
+                      {t('settings.remote.qqErrorHintLongDesc')}
                     </div>
                   )}
                 </div>
               )}
             </section>
             <section className="remote-editor-section">
-              <div className="subsec-h">配对</div>
+              <div className="subsec-h">{t('settings.remote.navPairing')}</div>
               <div className="remote-pairing-panel">
                 {webhookUrl && draft.channel === 'wechat-claw' && (
                   <div className="remote-webhook-box">
@@ -1184,7 +1253,7 @@ export function RemoteConnectionsSection() {
                       icon={<Icons.Copy size={13} />}
                       onClick={() => void navigator.clipboard?.writeText(webhookUrl)}
                     >
-                      复制
+                      {t('settings.remote.copyBtn')}
                     </Button>
                   </div>
                 )}
@@ -1195,7 +1264,7 @@ export function RemoteConnectionsSection() {
                     loading={busy === 'pair:code'}
                     onClick={() => void generatePairing('code')}
                   >
-                    生成配对码
+                    {t('settings.remote.generateCodeBtn')}
                   </Button>
                   <Button
                     size="middle"
@@ -1203,7 +1272,7 @@ export function RemoteConnectionsSection() {
                     loading={busy === 'pair:qr'}
                     onClick={() => void generatePairing('qr')}
                   >
-                    生成二维码配对
+                    {t('settings.remote.generateQrBtn')}
                   </Button>
                 </div>
                 {draft.pairing != null ? (
@@ -1211,50 +1280,52 @@ export function RemoteConnectionsSection() {
                     <div>
                       <div className="remote-pair-code">{draft.pairing.code}</div>
                       <div className="remote-pair-tip">
-                        在 {REMOTE_CHANNEL_META[draft.channel].label} 中发送{' '}
+                        {t('settings.remote.pairTipPrefix', {
+                          channel: channelMeta[draft.channel].label,
+                        })}{' '}
                         <span className="remote-pair-command">
                           <code>/bind {draft.pairing.code}</code>
                           <button
                             type="button"
                             className="remote-pair-command-copy"
-                            title="复制配对命令"
-                            aria-label="复制配对命令"
+                            title={t('settings.remote.copyPairCommand')}
+                            aria-label={t('settings.remote.copyPairCommand')}
                             onClick={() => void copyPairingCommand()}
                           >
                             <Icons.Copy size={13} />
                           </button>
                         </span>{' '}
-                        完成配对。
+                        {t('settings.remote.pairTipSuffix')}
                       </div>
                       <div className="muted text-xs-12">
-                        过期时间：{new Date(draft.pairing.expiresAt).toLocaleString()}
+                        {t('settings.remote.pairExpires', {
+                          time: new Date(draft.pairing.expiresAt).toLocaleString(),
+                        })}
                       </div>
                       <div className="remote-manual-pair">
                         <Input
                           value={manualPairUser}
                           onChange={(e) => setManualPairUser(e.target.value)}
-                          placeholder="远程用户 ID"
+                          placeholder={t('settings.remote.remoteUserIdPlaceholder')}
                         />
                         <Input
                           value={manualPairName}
                           onChange={(e) => setManualPairName(e.target.value)}
-                          placeholder="显示名称（可选）"
+                          placeholder={t('settings.remote.displayNamePlaceholder')}
                         />
                         <Button
                           size="middle"
                           loading={busy === 'confirm-pair'}
                           onClick={() => void confirmPairing()}
                         >
-                          手动确认
+                          {t('settings.remote.confirmManualBtn')}
                         </Button>
                       </div>
                     </div>
                     <QrPayloadPreview payload={draft.pairing.qrPayload} />
                   </div>
                 ) : (
-                  <div className="remote-muted-box">
-                    连接保存后生成一次性配对码，然后在远程聊天里发送 /bind 配对码 完成绑定。
-                  </div>
+                  <div className="remote-muted-box">{t('settings.remote.pairingHintDesc')}</div>
                 )}
                 {draft.pairedDevices.length > 0 && (
                   <div className="remote-paired-list">
@@ -1269,10 +1340,11 @@ export function RemoteConnectionsSection() {
             </section>
 
             <section className="remote-editor-section">
-              <div className="subsec-h">授权</div>
+              <div className="subsec-h">{t('settings.remote.navAuth')}</div>
               <div className="form-grid remote-form-grid">
                 <label>
-                  允许用户 ID<span className="sub">英文逗号或换行分隔，留空表示配对后允许</span>
+                  {t('settings.remote.allowedUsersLabel')}
+                  <span className="sub">{t('settings.remote.allowedUsersHint')}</span>
                 </label>
                 <TextArea
                   value={joinCsv(draft.allowedUserIds)}
@@ -1281,7 +1353,8 @@ export function RemoteConnectionsSection() {
                 />
 
                 <label>
-                  允许会话/群 ID<span className="sub">用于群聊、频道或飞书群限制</span>
+                  {t('settings.remote.allowedChatsLabel')}
+                  <span className="sub">{t('settings.remote.allowedChatsHint')}</span>
                 </label>
                 <TextArea
                   value={joinCsv(draft.allowedChatIds)}
@@ -1290,32 +1363,16 @@ export function RemoteConnectionsSection() {
                 />
               </div>
               <div className="remote-cap-grid">
-                {(
-                  Object.entries(draft.capabilities) as Array<
-                    [keyof RemoteConnectionCapabilities, boolean]
-                  >
-                )
-                  .filter(([key]) => draft.channel !== 'wechat' || key !== 'transferFiles')
-                  .map(([key, value]) => (
-                    <div key={key} className="settings-card-row">
-                      <div className="flex1 min-w-0">
-                        <div className="row-title">{REMOTE_CAPABILITY_LABELS[key]}</div>
-                        <div className="row-desc">{REMOTE_CAPABILITY_DESCS[key]}</div>
-                      </div>
-                      <div className="row-action">
-                        <Switch
-                          size="middle"
-                          checked={value}
-                          onChange={(v) => updateCapability(key, v)}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                <RemoteCapabilityGrid
+                  capabilities={draft.capabilities}
+                  channel={draft.channel}
+                  onChange={updateCapability}
+                />
               </div>
             </section>
 
             <section className="remote-editor-section">
-              <div className="subsec-h">命令</div>
+              <div className="subsec-h">{t('settings.remote.navCommands')}</div>
               {draft.channel === 'telegram' && (
                 <TextArea
                   value={draft.telegramCommands.join('\n')}
@@ -1333,8 +1390,7 @@ export function RemoteConnectionsSection() {
                     placeholder="help&#10;sessions&#10;models&#10;agents"
                   />
                   <div className="remote-muted-box">
-                    保存并启用后自动注册为 QQ「指令面板」，单聊/群聊输入框上方可快捷点击；
-                    命令名超出 14 字符的面板项会被跳过。
+                    {t('settings.remote.qqPanelHintLongDesc')}
                   </div>
                 </>
               )}
@@ -1354,38 +1410,81 @@ export function RemoteConnectionsSection() {
   )
 }
 
-const REMOTE_CAPABILITY_LABELS: Record<keyof RemoteConnectionCapabilities, string> = {
-  sendMessages: '发送消息到会话',
-  switchModel: '切换模型 / Provider',
-  switchSession: '切换会话',
-  switchAgent: '切换 Agent',
-  manageWorkspace: '查看工作区',
-  runCommands: '运行内置命令',
-  approvePermissions: '远程审批权限',
-  observeDesktop: '观察桌面',
-  controlDesktop: '控制桌面',
-  useInternalBrowser: '使用内置浏览器窗口',
-  transferFiles: '传输文件',
-  manageRuntime: '管理运行时',
-  dangerousActions: '高危动作确认',
+function getRemoteCapabilityLabels(
+  t: TranslateFn,
+): Record<keyof RemoteConnectionCapabilities, string> {
+  return {
+    sendMessages: t('settings.remote.cap.sendMessagesTitle'),
+    switchModel: t('settings.remote.cap.switchModelTitle'),
+    switchSession: t('settings.remote.cap.switchSessionTitle'),
+    switchAgent: t('settings.remote.cap.switchAgentTitle'),
+    manageWorkspace: t('settings.remote.cap.manageWorkspaceTitle'),
+    runCommands: t('settings.remote.cap.runCommandsTitle'),
+    approvePermissions: t('settings.remote.cap.approvePermissionsTitle'),
+    observeDesktop: t('settings.remote.cap.observeDesktopTitle'),
+    controlDesktop: t('settings.remote.cap.controlDesktopTitle'),
+    useInternalBrowser: t('settings.remote.cap.useInternalBrowserTitle'),
+    transferFiles: t('settings.remote.cap.transferFilesTitle'),
+    manageRuntime: t('settings.remote.cap.manageRuntimeTitle'),
+    dangerousActions: t('settings.remote.cap.dangerousActionsTitle'),
+  }
 }
 
-const REMOTE_CAPABILITY_DESCS: Record<keyof RemoteConnectionCapabilities, string> = {
-  sendMessages: '允许远程端向当前聊天绑定的会话提交 /send 或普通消息',
-  switchModel: '允许 /models、/providers、/use-model、/use-provider、/reasoning',
-  switchSession: '允许 /sessions 与 /use-session',
-  switchAgent: '允许 /agents 与 /use-agent',
-  manageWorkspace: '允许 /workspaces 查看项目入口',
-  runCommands: '允许解析命令前缀并执行命令目录',
-  approvePermissions: '将待审批的权限请求发回本聊天；/approve 只对本次授权，/deny 拒绝',
-  observeDesktop: '允许 /screen、/windows 查看桌面与窗口概览',
-  controlDesktop: '允许 /focus、/click、/type、/hotkey 等桌面控制命令，默认关闭',
-  useInternalBrowser:
-    '允许远程会话打开本机可见的 spark_browser 窗口，并读取控制台 / 网络元信息，默认关闭',
-  transferFiles:
-    '允许 Telegram、飞书和 QQ 双向传输图片：入站图片进入当前会话识别；QQ 大图及 Telegram 发送失败时可使用 Spark 临时存储中转',
-  manageRuntime: '允许 /progress、/queue、/history、/cancel 管理远程任务',
-  dangerousActions: '允许 /confirm 确认高危动作，仍需二次确认',
+function getRemoteCapabilityDescs(
+  t: TranslateFn,
+): Record<keyof RemoteConnectionCapabilities, string> {
+  return {
+    sendMessages: t('settings.remote.cap.sendMessagesDesc'),
+    switchModel: t('settings.remote.cap.switchModelDesc'),
+    switchSession: t('settings.remote.cap.switchSessionDesc'),
+    switchAgent: t('settings.remote.cap.switchAgentDesc'),
+    manageWorkspace: t('settings.remote.cap.manageWorkspaceDesc'),
+    runCommands: t('settings.remote.cap.runCommandsDesc'),
+    approvePermissions: t('settings.remote.cap.approvePermissionsDesc'),
+    observeDesktop: t('settings.remote.cap.observeDesktopDesc'),
+    controlDesktop: t('settings.remote.cap.controlDesktopDesc'),
+    useInternalBrowser: t('settings.remote.cap.useInternalBrowserLongDesc'),
+    transferFiles: t('settings.remote.cap.transferFilesLongDesc'),
+    manageRuntime: t('settings.remote.cap.manageRuntimeDesc'),
+    dangerousActions: t('settings.remote.cap.dangerousActionsDesc'),
+  }
+}
+
+function RemoteCapabilityGrid({
+  capabilities,
+  channel,
+  onChange,
+}: {
+  capabilities: RemoteConnectionCapabilities
+  channel: RemoteChannelType
+  onChange: (key: keyof RemoteConnectionCapabilities, value: boolean) => void
+}) {
+  const { t } = useI18n()
+  const labels = useMemo(() => getRemoteCapabilityLabels(t), [t])
+  const descs = useMemo(() => getRemoteCapabilityDescs(t), [t])
+  return (
+    <>
+      {(
+        Object.entries(capabilities) as Array<[keyof RemoteConnectionCapabilities, boolean]>
+      )
+        .filter(([key]) => channel !== 'wechat' || key !== 'transferFiles')
+        .map(([key, value]) => (
+          <div key={key} className="settings-card-row">
+            <div className="flex1 min-w-0">
+              <div className="row-title">{labels[key]}</div>
+              <div className="row-desc">{descs[key]}</div>
+            </div>
+            <div className="row-action">
+              <Switch
+                size="middle"
+                checked={value}
+                onChange={(v) => onChange(key, v)}
+              />
+            </div>
+          </div>
+        ))}
+    </>
+  )
 }
 
 function RemoteCredentialFields({
@@ -1395,6 +1494,7 @@ function RemoteCredentialFields({
   draft: RemoteConnectionConfig
   updateCredential: (key: keyof RemoteConnectionConfig['credentials'], value: string) => void
 }) {
+  const { t } = useI18n()
   if (draft.channel === 'telegram') {
     return (
       <>
@@ -1426,12 +1526,12 @@ function RemoteCredentialFields({
   if (draft.channel === 'qq') {
     return (
       <>
-        <label>机器人 AppID</label>
+        <label>{t('settings.remote.cred.appIdLabel')}</label>
         <Input
           value={draft.credentials.qqBotAppId ?? ''}
           onChange={(e) => updateCredential('qqBotAppId', e.target.value)}
         />
-        <label>机器人 AppSecret</label>
+        <label>{t('settings.remote.cred.appSecretLabel')}</label>
         <Input
           value={draft.credentials.qqBotSecret ?? ''}
           onChange={(e) => updateCredential('qqBotSecret', e.target.value)}
@@ -1442,8 +1542,8 @@ function RemoteCredentialFields({
   if (draft.channel === 'wechat') {
     return (
       <>
-        <label>授权方式</label>
-        <span>使用微信 ClawBot 扫码授权，访问凭证由 SparkWork 保存在本机设置中。</span>
+        <label>{t('settings.remote.cred.authModeLabel')}</label>
+        <span>{t('settings.remote.cred.wechatAuthDesc')}</span>
       </>
     )
   }
@@ -1465,6 +1565,7 @@ function RemoteCredentialFields({
 }
 
 function QrPayloadPreview({ payload }: { payload: string }) {
+  const { t } = useI18n()
   return (
     <button
       className="remote-qr"
@@ -1479,7 +1580,7 @@ function QrPayloadPreview({ payload }: { payload: string }) {
         bgColor="transparent"
         fgColor="currentColor"
       />
-      <small>点击复制二维码负载</small>
+      <small>{t('settings.remote.qrPayloadHint')}</small>
     </button>
   )
 }

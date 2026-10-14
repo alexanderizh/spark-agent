@@ -20,11 +20,12 @@ import {
   getStage3DActorModel,
   normalizeStage3DActorModelId,
 } from './actorModelRegistry'
+import { MANNEQUIN_RESOURCE } from '../../../i18n/resources/mannequin'
 import {
   BODY_METRICS,
   JOINT_GROUPS,
   JOINT_IDS,
-  JOINT_LABEL,
+  JOINT_LABEL_KEYS,
   JOINT_LIMITS,
   POSE_PRESETS,
   clampJointEuler,
@@ -445,12 +446,12 @@ describe('mannequin', () => {
     }
   })
 
-  it('关节分组恰好覆盖全部关节各一次，且都有中文标签', () => {
+  it('关节分组恰好覆盖全部关节各一次，且都配了 i18n key', () => {
     const grouped = JOINT_GROUPS.flatMap((g) => g.joints)
     expect(grouped.slice().sort()).toEqual([...JOINT_IDS].sort())
     expect(new Set(grouped).size).toBe(JOINT_IDS.length)
     for (const jointId of JOINT_IDS) {
-      expect(JOINT_LABEL[jointId]?.length).toBeGreaterThan(0)
+      expect(JOINT_LABEL_KEYS[jointId]?.length).toBeGreaterThan(0)
     }
   })
 })
@@ -458,14 +459,16 @@ describe('mannequin', () => {
 // ─────────────────────────── 关节加密 / 限位 / 镜像 / 合成 ───────────────────────────
 
 describe('mannequin 关节加密', () => {
-  it('新增手指关节 thumb/fingers 并入左右臂分组，且腕标签为「左腕/右腕」', () => {
+  it('新增手指关节 thumb/fingers 并入左右臂分组，且腕标签 key 指向「左腕/右腕」', () => {
     for (const id of ['thumbL', 'fingersL', 'thumbR', 'fingersR'] as const) {
       expect(JOINT_IDS).toContain(id)
-      expect(JOINT_LABEL[id]?.length).toBeGreaterThan(0)
+      expect(JOINT_LABEL_KEYS[id]?.length).toBeGreaterThan(0)
     }
-    expect(JOINT_LABEL.handL).toBe('左腕')
-    expect(JOINT_LABEL.handR).toBe('右腕')
-    const leftArm = JOINT_GROUPS.find((g) => g.label === '左臂')!
+    expect(JOINT_LABEL_KEYS.handL).toBe('mannequin.t9')
+    expect(JOINT_LABEL_KEYS.handR).toBe('mannequin.t15')
+    expect(MANNEQUIN_RESOURCE.zh['mannequin.t9']).toBe('左腕')
+    expect(MANNEQUIN_RESOURCE.zh['mannequin.t15']).toBe('右腕')
+    const leftArm = JOINT_GROUPS.find((g) => g.labelKey === 'mannequin.t25')!
     expect(leftArm.joints).toContain('thumbL')
     expect(leftArm.joints).toContain('fingersL')
   })
@@ -597,9 +600,9 @@ describe('poseEditorMath', () => {
 describe('mannequin 武打预设', () => {
   it('新增 5 个武打预设并带 group 字段', () => {
     for (const p of POSE_PRESETS) {
-      expect(p.group === '基础' || p.group === '武打', `${p.id} 缺少合法 group`).toBe(true)
+      expect(p.group === 'basic' || p.group === 'martial', `${p.id} 缺少合法 group`).toBe(true)
     }
-    const martial = POSE_PRESETS.filter((p) => p.group === '武打').map((p) => p.id)
+    const martial = POSE_PRESETS.filter((p) => p.group === 'martial').map((p) => p.id)
     for (const id of ['punch', 'kick', 'block', 'horse-stance', 'flying-kick']) {
       expect(martial).toContain(id)
     }

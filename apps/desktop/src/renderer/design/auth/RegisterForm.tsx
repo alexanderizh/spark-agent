@@ -17,11 +17,13 @@ import { rememberEmail } from './recentEmails'
 import { matchFieldError } from './errorMapping'
 import { EMAIL_RE, inferIdentifierKind, normalizeVerificationTarget, PHONE_RE } from './identifier'
 import { useVerificationCodeTimer } from './useVerificationCodeTimer'
+import { useI18n } from '../i18n'
 import { Icons } from '../Icons'
 
 export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): React.ReactElement {
   const auth = useAuth()
   const { toast } = useToast()
+  const { t } = useI18n()
   const [form] = Form.useForm()
   const captchaRef = useRef<CaptchaFieldHandle>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -75,8 +77,8 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
   useEffect(() => {
     if (!isExpired || !sentTarget) return
     const field = PHONE_RE.test(sentTarget) ? 'smsCode' : 'emailCode'
-    form.setFields([{ name: field, errors: ['验证码已过期，请重新获取'] }])
-  }, [form, isExpired, sentTarget])
+    form.setFields([{ name: field, errors: [t('auth.common.codeExpired')] }])
+  }, [form, isExpired, sentTarget, t])
 
   const setFieldError = (name: string, message: string): void => {
     form.setFields([{ name, errors: [message] }])
@@ -94,7 +96,7 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
     try {
       const values = await form.validateFields(['account', 'captchaId', 'captchaText'])
       if (!values.captchaId || !String(values.captchaText ?? '').trim()) {
-        setFieldError('captchaText', '请填写图片验证码')
+        setFieldError('captchaText', t('auth.common.captchaRequired'))
         return
       }
       const requestedAt = Date.now()
@@ -113,10 +115,12 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
         form.setFields([{ name: 'emailCode', value: '', errors: [] }])
       }
       toast.success(
-        isStillCurrentTarget ? '验证码已发送到邮箱' : '验证码已发送到原邮箱，请重新获取',
+        isStillCurrentTarget
+          ? t('auth.common.emailCodeSent')
+          : t('auth.common.emailCodeSentStale'),
       )
     } catch (e) {
-      const msg = (e as Error).message ?? '发送失败'
+      const msg = (e as Error).message ?? t('auth.common.sendFailed')
       const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
         if (target === 'captchaText') await setCaptchaError(msg)
@@ -139,15 +143,15 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
       const values = await form.validateFields(['account', 'captchaId', 'captchaText'])
       const phone = (values.account ?? '').trim()
       if (!phone) {
-        setFieldError('account', '请填写手机号')
+        setFieldError('account', t('auth.common.phoneRequired'))
         return
       }
       if (!PHONE_RE.test(phone)) {
-        setFieldError('account', '请填写有效的手机号')
+        setFieldError('account', t('auth.common.validPhone'))
         return
       }
       if (!values.captchaId || !String(values.captchaText ?? '').trim()) {
-        setFieldError('captchaText', '请填写图片验证码')
+        setFieldError('captchaText', t('auth.common.captchaRequired'))
         return
       }
       const requestedAt = Date.now()
@@ -165,10 +169,10 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
         form.setFields([{ name: 'smsCode', value: '', errors: [] }])
       }
       toast.success(
-        isStillCurrentTarget ? '短信验证码已发送' : '验证码已发送到原手机号，请重新获取',
+        isStillCurrentTarget ? t('auth.common.smsSent') : t('auth.common.smsSentStale'),
       )
     } catch (e) {
-      const msg = (e as Error).message ?? '发送失败'
+      const msg = (e as Error).message ?? t('auth.common.sendFailed')
       const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
         if (target === 'captchaText') await setCaptchaError(msg)
@@ -190,7 +194,7 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
       const values = await form.validateFields()
 
       if (!hasActiveCode || !isActiveNow()) {
-        setFieldError(usesPhone ? 'smsCode' : 'emailCode', '请先获取有效验证码')
+        setFieldError(usesPhone ? 'smsCode' : 'emailCode', t('auth.common.codeRequired'))
         return
       }
 
@@ -200,7 +204,7 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
           phone: (values.account ?? '').trim(),
           smsCode: values.smsCode,
         })
-        toast.success('注册成功，已自动登录')
+        toast.success(t('auth.register.success'))
         return
       }
 
@@ -214,9 +218,9 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
       if (EMAIL_RE.test(normalizedAccount)) {
         rememberEmail(normalizedAccount)
       }
-      toast.success('注册成功，已自动登录')
+      toast.success(t('auth.register.success'))
     } catch (e) {
-      const msg = (e as Error).message ?? '注册失败'
+      const msg = (e as Error).message ?? t('auth.register.failed')
       const candidates: Array<
         'account' | 'emailCode' | 'password' | 'captchaText' | 'phone' | 'smsCode'
       > = usesPhone
@@ -238,8 +242,8 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
   return (
     <div className="auth-form">
       <div className="auth-form-head">
-        <h2 className="auth-form-title">创建账号</h2>
-        <p className="auth-form-greet">输入邮箱或手机号，系统会自动选择注册方式</p>
+        <h2 className="auth-form-title">{t('auth.register.title')}</h2>
+        <p className="auth-form-greet">{t('auth.register.subtitle')}</p>
       </div>
 
       <Form
@@ -257,9 +261,11 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
               required: true,
               validator: async (_rule, value: string) => {
                 const normalized = (value ?? '').trim()
-                if (!normalized) throw new Error('请填写邮箱或手机号')
+                if (!normalized) throw new Error(t('auth.register.accountRequired'))
                 if (usesPhone ? PHONE_RE.test(normalized) : EMAIL_RE.test(normalized)) return
-                throw new Error(usesPhone ? '请填写有效的手机号' : '请填写有效邮箱')
+                throw new Error(
+                  usesPhone ? t('auth.common.validPhone') : t('auth.login.validEmail'),
+                )
               },
             },
           ]}
@@ -279,10 +285,10 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
             <Form.Item
               name="smsCode"
               className="auth-field-row"
-              rules={[{ required: true, message: '请填写短信验证码' }]}
+              rules={[{ required: true, message: t('auth.common.smsCodeRequired') }]}
             >
               <CodeInput
-                placeholder="6 位短信验证码"
+                placeholder={t('auth.login.smsCodePlaceholder')}
                 countdown={countdown}
                 sending={sendingCode}
                 onSend={() => void handleSendSms()}
@@ -290,7 +296,7 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
             </Form.Item>
 
             <div className="auth-sms-hint">
-              {hasActiveCode ? '验证码已发送，请在有效期内完成验证' : '输入手机号验证后即完成注册'}
+              {hasActiveCode ? t('auth.register.smsHintActive') : t('auth.register.smsHintIdle')}
             </div>
           </>
         ) : (
@@ -305,10 +311,10 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
             <Form.Item
               name="emailCode"
               className="auth-field-row"
-              rules={[{ required: true, message: '请填写邮箱验证码' }]}
+              rules={[{ required: true, message: t('auth.common.emailCodeRequired') }]}
             >
               <CodeInput
-                placeholder="邮箱验证码"
+                placeholder={t('auth.register.emailCodePlaceholder')}
                 countdown={countdown}
                 sending={sendingCode}
                 onSend={() => void handleSendCode()}
@@ -318,9 +324,12 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
             <Form.Item
               name="password"
               className="auth-field-row"
-              rules={[{ required: true, min: 6, message: '至少 6 位' }]}
+              rules={[{ required: true, min: 6, message: t('auth.common.minPasswordHint') }]}
             >
-              <PasswordInput placeholder="设置登录密码" autoComplete="new-password" />
+              <PasswordInput
+                placeholder={t('auth.register.passwordPlaceholder')}
+                autoComplete="new-password"
+              />
             </Form.Item>
 
             <Form.Item
@@ -328,16 +337,19 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
               className="auth-field-row"
               dependencies={['password']}
               rules={[
-                { required: true, message: '请再次输入登录密码' },
+                { required: true, message: t('auth.register.confirmRequired') },
                 ({ getFieldValue }) => ({
                   validator: async (_rule, value: string) => {
                     if (!value || getFieldValue('password') === value) return
-                    throw new Error('两次输入的密码不一致')
+                    throw new Error(t('auth.register.passwordMismatch'))
                   },
                 }),
               ]}
             >
-              <PasswordInput placeholder="再次输入登录密码" autoComplete="new-password" />
+              <PasswordInput
+                placeholder={t('auth.register.confirmPlaceholder')}
+                autoComplete="new-password"
+              />
             </Form.Item>
 
             {/* <Form.Item name="inviteCode" className="auth-field-row">
@@ -354,7 +366,7 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
             loading={submitting}
             disabled={!canSubmit || submitting}
           >
-            {submitting ? '处理中' : '注册并登录'}
+            {submitting ? t('auth.register.submitLoading') : t('auth.register.submitBtn')}
             {!submitting && <Icons.ArrowRight size={18} />}
           </Button>
         </Form.Item>
@@ -376,6 +388,7 @@ function AccountInput({
   onChange,
   onAccountChange,
 }: ControlledInputProps & { onAccountChange?: (value: string) => void }): React.ReactElement {
+  const { t } = useI18n()
   return (
     <div className="auth-input auth-input--flat">
       <Icons.Mail size={17} className="auth-input-icon" />
@@ -385,7 +398,7 @@ function AccountInput({
           onAccountChange?.(event.target.value)
           onChange?.(event)
         }}
-        placeholder="邮箱或手机号"
+        placeholder={t('auth.common.emailOrPhone')}
         allowClear
         autoComplete="username"
       />
@@ -394,10 +407,16 @@ function AccountInput({
 }
 
 function InviteCodeInput({ value, onChange }: ControlledInputProps): React.ReactElement {
+  const { t } = useI18n()
   return (
     <div className="auth-input auth-input--flat">
       <Icons.Sparkles size={17} className="auth-input-icon" />
-      <Input value={value} onChange={onChange} placeholder="邀请码（选填）" autoComplete="off" />
+      <Input
+        value={value}
+        onChange={onChange}
+        placeholder={t('auth.register.inviteCodePlaceholder')}
+        autoComplete="off"
+      />
     </div>
   )
 }
@@ -411,6 +430,7 @@ function PasswordInput({
   placeholder: string
   autoComplete?: string
 } & ControlledInputProps): React.ReactElement {
+  const { t } = useI18n()
   const [visible, setVisible] = useState(false)
   return (
     <div className="auth-input auth-input--flat">
@@ -426,7 +446,7 @@ function PasswordInput({
         type="button"
         className="auth-input-action"
         onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? '隐藏密码' : '显示密码'}
+        aria-label={visible ? t('auth.common.hidePassword') : t('auth.common.showPassword')}
       >
         {visible ? <Icons.EyeOff size={16} /> : <Icons.Eye size={16} />}
       </button>
@@ -447,6 +467,7 @@ function CodeInput({
   sending: boolean
   onSend: () => void
 } & ControlledInputProps): React.ReactElement {
+  const { t } = useI18n()
   return (
     <div className="auth-input auth-input--flat auth-input--with-action">
       <Input value={value} onChange={onChange} placeholder={placeholder} maxLength={6} />
@@ -456,7 +477,7 @@ function CodeInput({
         onClick={() => countdown <= 0 && !sending && onSend()}
         disabled={countdown > 0 || sending}
       >
-        {sending ? '发送中' : countdown > 0 ? `${countdown}s` : '发送'}
+        {sending ? t('auth.common.sending') : countdown > 0 ? `${countdown}s` : t('auth.common.sendBtn')}
       </button>
     </div>
   )

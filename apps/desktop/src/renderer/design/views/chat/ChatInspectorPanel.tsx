@@ -5,6 +5,7 @@ import { CheckCircle, Save } from 'lucide-react'
 import { Popover } from '@lobehub/ui'
 import { Switch } from 'antd'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { TeamInspectorSection } from '../../components/TeamInspectorSection'
 import { ChatInspectorPerf } from './ChatInspectorPerf'
 import { OutcomeRoomContainer } from '../../outcome-room/OutcomeRoomContainer'
@@ -74,9 +75,9 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
   return (
     <div className="runtime-env-row">
       <label className="session-env-field session-env-field--key">
-        <span>键名</span>
+        <span>{translate('chatInspector.t59')}</span>
         <input
-          aria-label="环境变量键名"
+          aria-label={translate('chatInspector.t44')}
           className="form-input runtime-env-key"
           placeholder="KEY"
           value={item.key}
@@ -85,9 +86,9 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
         />
       </label>
       <label className="session-env-field session-env-field--value">
-        <span>值</span>
+        <span>{translate('chatInspector.t60')}</span>
         <input
-          aria-label={`${item.key.trim() || '环境变量'}的值`}
+          aria-label={translate('chatInspector.tpl24Desc', { name: item.key.trim() || translate('chatInspector.t1') })}
           className="form-input runtime-env-value"
           placeholder="VALUE"
           value={item.value}
@@ -96,11 +97,11 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
         />
       </label>
       <label className="session-env-field session-env-field--description">
-        <span>说明 · 可选</span>
+        <span>{translate('chatInspector.t61')}</span>
         <input
-          aria-label={`${item.key.trim() || '环境变量'}的说明`}
+          aria-label={translate('chatInspector.tpl25Desc', { name: item.key.trim() || translate('chatInspector.t1') })}
           className="form-input runtime-env-description"
-          placeholder="说明（可选）"
+          placeholder={translate('chatInspector.t45')}
           value={item.description ?? ''}
           onChange={(event) => onUpdate({ description: event.target.value })}
           onBlur={onBlurPersist}
@@ -110,8 +111,8 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
         type="button"
         className="btn ghost sm runtime-env-remove"
         onClick={onRemove}
-        aria-label={`删除${item.key.trim() || '该环境变量'}`}
-        title="删除"
+        aria-label={translate('chatInspector.tpl26Desc', { name: item.key.trim() || translate('chatInspector.t2') })}
+        title={translate('chatInspector.t46')}
       >
         <Icons.Trash size={12} />
       </button>
@@ -185,6 +186,8 @@ export function ChatConfigPanel({
   agentId?: string
   embedded?: boolean
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const { toast } = useToast()
   const [promptsCollapsed, setPromptsCollapsed] = useState(false)
@@ -268,9 +271,9 @@ export function ChatConfigPanel({
         allowedAgentIds: allowedAgentDrafts.size > 0 ? Array.from(allowedAgentDrafts) : null,
       })
       await sessionCtx.refreshData()
-      toast.success('项目 Agent 设置已保存')
+      toast.success(translate('chatInspector.t3Desc'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '项目 Agent 设置保存失败')
+      toast.error(err instanceof Error ? err.message : translate('chatInspector.t4Desc'))
     } finally {
       setSavingAgentScope(false)
     }
@@ -293,9 +296,9 @@ export function ChatConfigPanel({
           value: { enabled: content.trim().length > 0, content },
         })
         await loadRuntimeConfig()
-        toast.success(`${scope === 'project' ? '项目' : '会话'}提示词已保存`)
+        toast.success(translate('chatInspector.tpl27Desc', { scope: scope === 'project' ? translate('chatInspector.t5') : translate('chatInspector.t6') }))
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '提示词保存失败')
+        toast.error(err instanceof Error ? err.message : translate('chatInspector.t7'))
       } finally {
         setSavingRuntime(false)
       }
@@ -332,7 +335,7 @@ export function ChatConfigPanel({
         if (!options?.silent) {
           await loadRuntimeConfig()
           toast.success(
-            options?.successMessage ?? `${scope === 'project' ? '项目' : '会话'}环境变量已保存`,
+            options?.successMessage ?? translate('chatInspector.tpl28Desc', { scope: scope === 'project' ? translate('chatInspector.t5') : translate('chatInspector.t6') }),
           )
         }
         return true
@@ -342,7 +345,7 @@ export function ChatConfigPanel({
         if (options?.silent) {
           console.warn('[env] silent save failed', err)
         } else {
-          toast.error(err instanceof Error ? err.message : '环境变量保存失败')
+          toast.error(err instanceof Error ? err.message : translate('chatInspector.t8'))
         }
         return false
       } finally {
@@ -358,9 +361,9 @@ export function ChatConfigPanel({
         const json = serializeEnvVarsJson(vars)
         await navigator.clipboard.writeText(json)
         const count = parseEnvVarsJson(json).length
-        toast.success(`已复制 ${count} 个${scope === 'project' ? '项目' : '会话'}环境变量`)
+        toast.success(translate('chatInspector.tpl29Desc', { count, scope: scope === 'project' ? translate('chatInspector.t5') : translate('chatInspector.t6') }))
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '复制环境变量失败')
+        toast.error(err instanceof Error ? err.message : translate('chatInspector.t9'))
       }
     },
     [toast],
@@ -376,12 +379,12 @@ export function ChatConfigPanel({
       try {
         text = await navigator.clipboard.readText()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '读取剪贴板失败')
+        toast.error(err instanceof Error ? err.message : translate('chatInspector.t10'))
         return
       }
 
       if (text.trim().length === 0) {
-        toast.warning('剪贴板为空')
+        toast.warning(translate('chatInspector.t11'))
         return
       }
 
@@ -389,13 +392,13 @@ export function ChatConfigPanel({
       try {
         imported = parseEnvVarsJson(text)
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '环境变量 JSON 导入失败')
+        toast.error(err instanceof Error ? err.message : translate('chatInspector.t12Desc'))
         return
       }
 
-      const scopeLabel = scope === 'project' ? '项目' : '会话'
+      const scopeLabel = scope === 'project' ? translate('chatInspector.t5') : translate('chatInspector.t6')
       const saved = await saveEnvLayer(scope, scopeRef, imported, {
-        successMessage: `已导入并保存 ${imported.length} 个${scopeLabel}环境变量`,
+        successMessage: translate('chatInspector.tpl30Desc', { count: imported.length, scope: scopeLabel }),
       })
       if (saved) setVars(imported)
     },
@@ -449,10 +452,10 @@ export function ChatConfigPanel({
       <div className="runtime-prompt-block">
         <div className="runtime-prompt-title">
           {label}
-          <span className="session-panel-count">{vars.length} 项</span>
+          <span className="session-panel-count">{translate('chatInspector.tpl17Desc', { count: vars.length })}</span>
         </div>
         <div className="session-panel-caption">
-          {scope === 'project' ? '项目内所有会话共享' : '仅当前会话生效，覆盖同名项目变量'}
+          {scope === 'project' ? translate('chatInspector.t13') : translate('chatInspector.t14Desc')}
         </div>
         {vars.length === 0 && <div className="runtime-env-empty">{placeholder}</div>}
         {vars.map((item, index) => (
@@ -466,14 +469,14 @@ export function ChatConfigPanel({
         ))}
         <div className="runtime-env-actions">
           <button type="button" className="btn ghost sm runtime-env-add" onClick={addVar}>
-            <Icons.Plus size={12} /> 添加变量
+            <Icons.Plus size={12} /> {translate('chatInspector.t62')}
           </button>
           <div className="runtime-env-transfer-actions">
             <button
               type="button"
               className="icon-btn"
-              aria-label={`复制${label} JSON`}
-              title={`复制${label}明文 JSON`}
+              aria-label={translate('chatInspector.tpl18Desc', { label })}
+              title={translate('chatInspector.tpl19Desc', { label })}
               onClick={() => void copyEnvJson(scope, vars)}
             >
               <Icons.Copy size={12} />
@@ -481,9 +484,9 @@ export function ChatConfigPanel({
             <button
               type="button"
               className="icon-btn"
-              aria-label={`粘贴${label} JSON`}
+              aria-label={translate('chatInspector.tpl20Desc', { label })}
               disabled={savingRuntime}
-              title={`从剪贴板导入并保存${label}`}
+              title={translate('chatInspector.tpl21Desc', { label })}
               onClick={() => void pasteEnvJson(scope, scopeRef, setVars)}
             >
               <Icons.Clipboard size={12} />
@@ -495,7 +498,7 @@ export function ChatConfigPanel({
               onClick={() => void saveEnvLayer(scope, scopeRef, vars)}
             >
               <Save size={12} />
-              {scope === 'project' ? '保存项目' : '保存会话'}
+              {scope === 'project' ? translate('chatInspector.t15') : translate('chatInspector.t16')}
             </button>
           </div>
         </div>
@@ -515,7 +518,7 @@ export function ChatConfigPanel({
       {!embedded && (
         <div
           className="inspector-resize-handle"
-          title="拖拽调整侧边栏宽度"
+          title={translate('chatInspector.t47')}
           onPointerDown={handleResizeStart}
           onPointerMove={handleResizeMove}
           onPointerUp={handleResizeEnd}
@@ -524,8 +527,8 @@ export function ChatConfigPanel({
       )}
       <div className="inspector scroll">
         <header className="session-panel-heading">
-          <strong>配置面板</strong>
-          <span>管理项目与当前会话的运行配置</span>
+          <strong>{translate('chatInspector.t63')}</strong>
+          <span>{translate('chatInspector.t64Desc')}</span>
         </header>
         {/* 环境变量 */}
         {hasChatConfigScope(sessionId, workspaceId) && envConfig != null && (
@@ -538,7 +541,7 @@ export function ChatConfigPanel({
                 onClick={() => setEnvCollapsed(!envCollapsed)}
               >
                 <Icons.Lock size={11} />
-                环境变量
+                {translate('chatInspector.t1')}
                 <span className="spacer" />
                 <Icons.ChevronRight
                   size={10}
@@ -549,13 +552,13 @@ export function ChatConfigPanel({
             {!envCollapsed && (
               <>
                 <div className="runtime-env-hint">
-                  修改后失焦自动保存。变量值仅保存在本机并注入运行环境，提示词只包含键名与说明。
-                  复制 JSON 会将当前层级的明文值写入系统剪贴板，请妥善保管。
+                  {translate('chatInspector.tpl22LongDesc')}
+                  {translate('chatInspector.tpl23LongDesc')}
                 </div>
                 {workspaceId != null &&
                   renderEnvBlock(
-                    '项目环境变量',
-                    '当前项目所有会话共享，例如 API_KEY、TOKEN…',
+                    translate('chatInspector.t17'),
+                    translate('chatInspector.t18Desc'),
                     'project',
                     workspaceId,
                     projectEnvDraft,
@@ -563,8 +566,8 @@ export function ChatConfigPanel({
                   )}
                 {sessionId != null &&
                   renderEnvBlock(
-                    '会话环境变量',
-                    '仅对当前会话生效，覆盖同名的项目变量…',
+                    translate('chatInspector.t19'),
+                    translate('chatInspector.t20Desc'),
                     'session',
                     sessionId,
                     sessionEnvDraft,
@@ -586,7 +589,7 @@ export function ChatConfigPanel({
                 onClick={() => setPromptsCollapsed(!promptsCollapsed)}
               >
                 <Icons.Edit size={11} />
-                提示词
+                {translate('chatInspector.t65')}
                 <span className="spacer" />
                 <Icons.ChevronRight
                   size={10}
@@ -598,13 +601,13 @@ export function ChatConfigPanel({
               <>
                 {workspaceId != null && (
                   <div className="runtime-prompt-block">
-                    <div className="runtime-prompt-title">项目提示词</div>
+                    <div className="runtime-prompt-title">{translate('chatInspector.t48')}</div>
                     <textarea
                       className="spark-textarea inspector-textarea"
-                      aria-label="项目提示词"
+                      aria-label={translate('chatInspector.t48')}
                       value={projectPromptDraft}
                       onChange={(event) => setProjectPromptDraft(event.target.value)}
-                      placeholder="当前项目会话通用提示词..."
+                      placeholder={translate('chatInspector.t49Desc')}
                     />
                     <button
                       type="button"
@@ -615,19 +618,19 @@ export function ChatConfigPanel({
                       }
                     >
                       <Save size={12} />
-                      保存项目
+                      {translate('chatInspector.t15')}
                     </button>
                   </div>
                 )}
                 {sessionId != null && (
                   <div className="runtime-prompt-block">
-                    <div className="runtime-prompt-title">会话提示词</div>
+                    <div className="runtime-prompt-title">{translate('chatInspector.t50')}</div>
                     <textarea
                       className="spark-textarea inspector-textarea"
-                      aria-label="会话提示词"
+                      aria-label={translate('chatInspector.t50')}
                       value={sessionPromptDraft}
                       onChange={(event) => setSessionPromptDraft(event.target.value)}
-                      placeholder="仅对当前会话生效..."
+                      placeholder={translate('chatInspector.t51')}
                     />
                     <button
                       type="button"
@@ -636,7 +639,7 @@ export function ChatConfigPanel({
                       onClick={() => void savePromptLayer('session', sessionId, sessionPromptDraft)}
                     >
                       <Save size={12} />
-                      保存会话
+                      {translate('chatInspector.t16')}
                     </button>
                   </div>
                 )}
@@ -656,7 +659,7 @@ export function ChatConfigPanel({
                 onClick={() => setAgentScopeCollapsed(!agentScopeCollapsed)}
               >
                 <Icons.Bot size={11} />
-                项目 Agent
+                {translate('chatInspector.t66')}
                 <span className="spacer" />
                 <Icons.ChevronRight
                   size={10}
@@ -666,32 +669,32 @@ export function ChatConfigPanel({
             </h4>
             {!agentScopeCollapsed && (
               <div className="runtime-prompt-block project-agent-block">
-                <div className="runtime-prompt-title">项目默认 Agent</div>
+                <div className="runtime-prompt-title">{translate('chatInspector.t52')}</div>
                 <div className="session-panel-caption">
-                  在本项目内新建会话时优先使用；清除后回落全局「上次使用」与平台默认助手。
+                  {translate('chatInspector.t67Desc')}
                 </div>
                 <select
                   className="project-agent-select"
-                  aria-label="项目默认 Agent"
+                  aria-label={translate('chatInspector.t52')}
                   value={projectDefaultAgentDraft}
                   onChange={(event) => setProjectDefaultAgentDraft(event.target.value)}
                 >
-                  <option value="">（未设置）</option>
+                  <option value="">{translate('chatInspector.t68')}</option>
                   {allAgents.map((agent) => (
                     <option key={agent.id} value={agent.id}>
                       {agent.name}
                     </option>
                   ))}
                 </select>
-                <div className="runtime-prompt-title project-agent-list-title">项目可用 Agent</div>
+                <div className="runtime-prompt-title project-agent-list-title">{translate('chatInspector.t69')}</div>
                 <div className="project-agent-toolbar">
                   <input
                     className="project-agent-search"
                     type="text"
                     value={agentFilter}
                     onChange={(event) => setAgentFilter(event.target.value)}
-                    placeholder={`搜索 ${allAgents.length} 个 Agent…`}
-                    aria-label="搜索 Agent"
+                    placeholder={translate('chatInspector.tpl1Desc', { count: allAgents.length })}
+                    aria-label={translate('chatInspector.t53')}
                   />
                   {allowedAgentDrafts.size > 0 ? (
                     <button
@@ -699,14 +702,14 @@ export function ChatConfigPanel({
                       className="project-agent-clear"
                       onClick={() => setAllowedAgentDrafts(new Set())}
                     >
-                      清空已选
+                      {translate('chatInspector.t70')}
                     </button>
                   ) : null}
                 </div>
                 <div className="session-panel-caption project-agent-count">
                   {allowedAgentDrafts.size > 0
-                    ? `已选 ${allowedAgentDrafts.size}/${allAgents.length}，本项目聊天选择器只显示勾选项（平台默认助手始终保留）`
-                    : `未限制，显示全部 ${allAgents.length} 个 Agent；勾选后聊天选择器只显示勾选项`}
+                    ? translate('chatInspector.tpl2LongDesc', { selected: allowedAgentDrafts.size, total: allAgents.length })
+                    : translate('chatInspector.tpl3LongDesc', { total: allAgents.length })}
                 </div>
                 {visibleAgents.length > 0 ? (
                   <div className="project-agent-list">
@@ -731,7 +734,7 @@ export function ChatConfigPanel({
                           />
                           <span className="project-agent-option-name">{agent.name}</span>
                           {agent.builtIn ? (
-                            <span className="project-agent-option-tag">内置</span>
+                            <span className="project-agent-option-tag">{translate('chatInspector.t71')}</span>
                           ) : null}
                         </label>
                       )
@@ -739,7 +742,7 @@ export function ChatConfigPanel({
                   </div>
                 ) : (
                   <div className="project-agent-empty">
-                    没有匹配「{agentFilter.trim()}」的 Agent
+                    {translate('chatInspector.tpl4Desc', { query: agentFilter.trim() })}
                   </div>
                 )}
                 <button
@@ -749,7 +752,7 @@ export function ChatConfigPanel({
                   onClick={() => void saveAgentScope()}
                 >
                   <Save size={12} />
-                  保存项目
+                  {translate('chatInspector.t15')}
                 </button>
               </div>
             )}
@@ -936,7 +939,7 @@ export function ChatInspector({
     >
       <div
         className="inspector-resize-handle"
-        title="拖拽调整侧边栏宽度"
+        title={translate('chatInspector.t47')}
         onPointerDown={handleResizeStart}
         onPointerMove={handleResizeMove}
         onPointerUp={handleResizeEnd}
@@ -944,19 +947,19 @@ export function ChatInspector({
       />
       <div className="inspector scroll">
         <header className="session-panel-heading">
-          <strong>会话检查器</strong>
-          <span>查看执行状态、用量与上下文</span>
+          <strong>{translate('chatInspector.t72')}</strong>
+          <span>{translate('chatInspector.t73Desc')}</span>
         </header>
         {teamConfig.enabled && (
           <>
             <div className="inspector-section team-log-visibility-section">
               <h4>
-                <span>显示思考与执行日志</span>
+                <span>{translate('chatInspector.t74')}</span>
                 <Switch
                   size="small"
                   checked={showTeamActivityLogs}
                   onChange={setTeamActivityLogsVisible}
-                  aria-label="显示团队思考、命令和工具日志"
+                  aria-label={translate('chatInspector.t54Desc')}
                 />
               </h4>
             </div>
@@ -994,16 +997,16 @@ export function ChatInspector({
           </>
         )}
         <div className="inspector-section">
-          <h4>会话信息</h4>
+          <h4>{translate('chatInspector.t75')}</h4>
           {session ? (
             <>
               <div className="kv-row">
-                <span className="k">消息数</span>
+                <span className="k">{translate('chatInspector.t76')}</span>
                 <span className="v">{session.messageCount}</span>
               </div>
               {workspace && (
                 <div className="kv-row">
-                  <span className="k">路径</span>
+                  <span className="k">{translate('chatInspector.t77')}</span>
                   <span className="v mono-sm truncate inspector-path" title={workspace.rootPath}>
                     {workspace.rootPath}
                   </span>
@@ -1015,26 +1018,26 @@ export function ChatInspector({
                   onClick={onOpenProjectFolder}
                 >
                   <Icons.Folder size={12} />
-                  <span>打开文件夹</span>
+                  <span>{translate('chatInspector.t78')}</span>
                 </button>
               )}
               <div className="kv-row">
-                <span className="k">创建时间</span>
+                <span className="k">{translate('chatInspector.t79')}</span>
                 <span className="v">{new Date(session.createdAt).toLocaleString()}</span>
               </div>
               <div className="kv-row">
-                <span className="k">更新时间</span>
+                <span className="k">{translate('chatInspector.t80')}</span>
                 <span className="v">{new Date(session.updatedAt).toLocaleString()}</span>
               </div>
             </>
           ) : (
-            <div className="inspector-muted">未选择会话</div>
+            <div className="inspector-muted">{translate('chatInspector.t81')}</div>
           )}
         </div>
 
         {/* Token Usage Section */}
         <div className="inspector-section">
-          <h4>Token 用量</h4>
+          <h4>{translate('chatInspector.t82')}</h4>
           <TokenUsagePanel
             inputTokens={usageData.inputTokens}
             outputTokens={usageData.outputTokens}
@@ -1062,7 +1065,7 @@ export function ChatInspector({
         {subagents.length > 0 && (
           <div className="inspector-section">
             <h4>
-              子 Agent
+              {translate('chatInspector.t83')}
               <span className="inspector-count">{subagents.length}</span>
             </h4>
             <div className="runtime-skill-list">
@@ -1070,7 +1073,7 @@ export function ChatInspector({
                 <div
                   className={`runtime-skill-row${sa.status === 'running' ? ' running' : ''}`}
                   key={`${sa.toolCallId}-${idx}`}
-                  title={sa.output ? '点击查看输出' : undefined}
+                  title={sa.output ? translate('chatInspector.t21') : undefined}
                   style={sa.output ? { cursor: 'pointer' } : undefined}
                 >
                   <div className="runtime-skill-main min-w-0">
@@ -1097,12 +1100,12 @@ export function ChatInspector({
         {contextWindow > 0 && !hideContextBudget && (
           <div className="inspector-section">
             <h4>
-              上下文窗口
+              {translate('chatInspector.tpl5Desc')}
               {isContextCritical && (
-                <span className="badge danger dot usage-warning-badge">即将满</span>
+                <span className="badge danger dot usage-warning-badge">{translate('chatInspector.t84')}</span>
               )}
               {!isContextCritical && isContextWarning && (
-                <span className="badge warning dot usage-warning-badge">接近满</span>
+                <span className="badge warning dot usage-warning-badge">{translate('chatInspector.t85')}</span>
               )}
             </h4>
             <ContextWindowVisualization
@@ -1120,8 +1123,8 @@ export function ChatInspector({
         {turnUsage.rows.length > 0 && (
           <div className="inspector-section">
             <h4>
-              轮次用量
-              <span className="inspector-count">{turnUsage.totalTurns} 轮</span>
+              {translate('chatInspector.t86')}
+              <span className="inspector-count">{translate('chatInspector.tpl6Desc', { count: turnUsage.totalTurns })}</span>
             </h4>
             <TurnUsageChart rows={turnUsage.rows} />
           </div>
@@ -1132,11 +1135,11 @@ export function ChatInspector({
 
         {session != null && projectContext != null && (
           <InspectorCollapsibleSection
-            title="项目上下文"
+            title={translate('chatInspector.t55')}
             summary={<span className="inspector-count">{projectContextSources.length}</span>}
           >
             <div className="kv-row">
-              <span className="k">规则</span>
+              <span className="k">{translate('chatInspector.t87')}</span>
               <span className="v">{projectContext.counts.rules}</span>
             </div>
             <div className="kv-row">
@@ -1150,11 +1153,11 @@ export function ChatInspector({
             {projectContext.budget != null && (
               <>
                 <div className="kv-row">
-                  <span className="k">模式</span>
+                  <span className="k">{translate('chatInspector.t88')}</span>
                   <span className="v">{projectContext.budget.mode}</span>
                 </div>
                 <div className="kv-row">
-                  <span className="k">预算</span>
+                  <span className="k">{translate('chatInspector.t89')}</span>
                   <span className="v">
                     {formatTokenCount(projectContext.budget.usedTokens)} /{' '}
                     {formatTokenCount(projectContext.budget.budgetTokens)}
@@ -1185,30 +1188,30 @@ export function ChatInspector({
                 ))}
               </div>
             ) : (
-              <div className="inspector-muted">本轮未发现项目级规则、skills 或 agents。</div>
+              <div className="inspector-muted">{translate('chatInspector.t90Desc')}</div>
             )}
           </InspectorCollapsibleSection>
         )}
 
         {checkpointAvailable && (
           <InspectorCollapsibleSection
-            title="工作区快照"
+            title={translate('chatInspector.t56')}
             summary={
-              checkpointEnabled ? <span className="badge success dot">已开启</span> : undefined
+              checkpointEnabled ? <span className="badge success dot">{translate('chatInspector.t91')}</span> : undefined
             }
           >
             <div className="checkpoint-card">
               <p className="checkpoint-desc">
                 {checkpointEnabled
-                  ? '已按轮记录工作区文件状态，可在时间线中预览并还原文件。'
-                  : '本轮未开启记录；打开时间线后可手动开启。'}
+                  ? translate('chatInspector.tpl7Desc')
+                  : translate('chatInspector.t23Desc')}
               </p>
               <button
                 type="button"
                 className="btn primary sm checkpoint-open-btn"
                 onClick={onOpenCheckpointTimeline}
               >
-                打开时间线
+                {translate('chatInspector.t92')}
               </button>
             </div>
           </InspectorCollapsibleSection>
@@ -1228,10 +1231,10 @@ export function ChatInspector({
 /** 相对时间格式化 */
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
-  if (diff < 60_000) return '刚刚'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}分钟前`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}小时前`
-  return `${Math.floor(diff / 86_400_000)}天前`
+  if (diff < 60_000) return translate('chatInspector.t24')
+  if (diff < 3_600_000) return translate('chatInspector.tpl8Desc', { value: Math.floor(diff / 60_000) })
+  if (diff < 86_400_000) return translate('chatInspector.tpl9Desc', { value: Math.floor(diff / 3_600_000) })
+  return translate('chatInspector.tpl10Desc', { value: Math.floor(diff / 86_400_000) })
 }
 
 /** 截断文本 */
@@ -1285,7 +1288,7 @@ function useRuntimeLogEnabled(): {
         await setSetting({ category: 'telemetry', key: 'data', value: next })
       } catch (err) {
         setEnabled(prev)
-        toast.error(err instanceof Error ? err.message : '切换运行时日志失败')
+        toast.error(err instanceof Error ? err.message : translate('chatInspector.t25'))
       }
     },
     [enabled, getSetting, setSetting, toast],
@@ -1299,14 +1302,14 @@ function PromptInspectorSection({ snapshots }: { snapshots: TurnPromptSnapshotEv
   const { enabled: runtimeLogEnabled, toggle: setRuntimeLogEnabled } = useRuntimeLogEnabled()
   return (
     <InspectorCollapsibleSection
-      title="运行时日志"
-      summary={<span className="inspector-count">{snapshots.length} 轮</span>}
+      title={translate('chatInspector.t57')}
+      summary={<span className="inspector-count">{translate('chatInspector.tpl6Desc', { count: snapshots.length })}</span>}
       headerAction={
         <Switch
           size="small"
           checked={runtimeLogEnabled}
           onChange={(v) => void setRuntimeLogEnabled(v)}
-          aria-label="启用运行时日志"
+          aria-label={translate('chatInspector.t58')}
         />
       }
     >
@@ -1319,7 +1322,7 @@ function PromptInspectorSection({ snapshots }: { snapshots: TurnPromptSnapshotEv
             lineHeight: 1.5,
           }}
         >
-          运行时日志已关闭：仍记录 token、缓存与延迟指标，但不保存或展示提示词正文。
+          {translate('chatInspector.t93Desc')}
         </div>
       )}
       <div className="prompt-snapshot-list">
@@ -1366,7 +1369,7 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
   const promptSummary =
     snapshot.runtimeMetrics?.sparkPromptEstimatedTokens != null
       ? `Spark Prompt ≈ ${formatTokenCount(snapshot.runtimeMetrics.sparkPromptEstimatedTokens)} tokens`
-      : `${snapshot.systemPromptSections.length} 段 · ${formatCharCount(totalPromptChars)} 字符`
+      : translate('chatInspector.tpl11Desc', { sections: snapshot.systemPromptSections.length, chars: formatCharCount(totalPromptChars) })
 
   return (
     <div className={`prompt-turn-row ${expanded ? 'expanded' : ''}`}>
@@ -1392,7 +1395,7 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
       </div>
       <div className="prompt-turn-summary">
         <span className="prompt-turn-user" title={visibleUserMessage || undefined}>
-          {userPreview || '提示词正文未记录'}
+          {userPreview || translate('chatInspector.t26')}
         </span>
         <span className="prompt-turn-meta">{promptSummary}</span>
       </div>
@@ -1414,7 +1417,7 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
             <>
               {/* 用户消息 */}
               <div className="prompt-section-block">
-                <div className="prompt-section-label">用户消息</div>
+                <div className="prompt-section-label">{translate('chatInspector.t94')}</div>
                 <pre className="prompt-section-content">{visibleUserMessage}</pre>
               </div>
 
@@ -1439,28 +1442,28 @@ function TurnRuntimeMetricsBlock({ metrics }: { metrics: TurnRuntimeMetrics | un
     if (value != null) rows.push({ label, value: `${value.toLocaleString()} ms` })
   }
 
-  addTokens('Spark Prompt 估算', metrics?.sparkPromptEstimatedTokens)
-  addTokens('Provider 输入', metrics?.providerInputTokens)
-  addTokens('缓存读取', metrics?.cacheReadTokens)
-  addTokens('缓存写入', metrics?.cacheWriteTokens)
-  addDuration('MCP 配置', metrics?.mcpConfigurationMs)
-  addDuration('请求 → MCP ready', metrics?.requestToMcpReadyMs)
-  addDuration('请求 → 首输出', metrics?.requestToFirstOutputMs)
+  addTokens(translate('chatInspector.t27Desc'), metrics?.sparkPromptEstimatedTokens)
+  addTokens(translate('chatInspector.t28'), metrics?.providerInputTokens)
+  addTokens(translate('chatInspector.t29'), metrics?.cacheReadTokens)
+  addTokens(translate('chatInspector.t30'), metrics?.cacheWriteTokens)
+  addDuration(translate('chatInspector.t31'), metrics?.mcpConfigurationMs)
+  addDuration(translate('chatInspector.t32Desc'), metrics?.requestToMcpReadyMs)
+  addDuration(translate('chatInspector.t33'), metrics?.requestToFirstOutputMs)
   if (metrics?.mcpServerCount != null) {
     rows.push({ label: 'MCP servers', value: String(metrics.mcpServerCount) })
   }
   if (metrics?.availableToolCount != null) {
-    rows.push({ label: '运行时可用工具', value: String(metrics.availableToolCount) })
+    rows.push({ label: translate('chatInspector.t34'), value: String(metrics.availableToolCount) })
   }
 
   const declared = metrics?.toolSchemas?.declared
   if (declared != null) {
     const coverageLabel =
       declared.coverage === 'complete'
-        ? '完整'
+        ? translate('chatInspector.t35')
         : declared.coverage === 'partial'
-          ? '部分'
-          : '不可观测'
+          ? translate('chatInspector.t36')
+          : translate('chatInspector.t37')
     const measuredParts = [
       `${coverageLabel} · ${declared.measuredServerCount}/${declared.serverCount} servers`,
     ]
@@ -1468,21 +1471,21 @@ function TurnRuntimeMetricsBlock({ metrics }: { metrics: TurnRuntimeMetrics | un
     if (declared.estimatedTokens != null) {
       measuredParts.push(`≈ ${formatTokenCount(declared.estimatedTokens)} tokens`)
     }
-    rows.push({ label: '声明 schema', value: measuredParts.join(' · ') })
+    rows.push({ label: translate('chatInspector.t38'), value: measuredParts.join(' · ') })
   }
   if (metrics?.toolSchemas != null) {
     rows.push({
-      label: '延迟 / 实际载入 schema',
+      label: translate('chatInspector.t39Desc'),
       value:
         metrics.toolSchemas.deferred == null && metrics.toolSchemas.loaded == null
-          ? '当前 adapter 未回报'
-          : '已由 adapter 回报',
+          ? translate('chatInspector.t40Desc')
+          : translate('chatInspector.t41Desc'),
     })
   }
 
   return (
     <div className="prompt-runtime-metrics">
-      <div className="prompt-runtime-metrics-title">运行时观测</div>
+      <div className="prompt-runtime-metrics-title">{translate('chatInspector.t95')}</div>
       {rows.length > 0 ? (
         <dl>
           {rows.map((row) => (
@@ -1493,7 +1496,7 @@ function TurnRuntimeMetricsBlock({ metrics }: { metrics: TurnRuntimeMetrics | un
           ))}
         </dl>
       ) : (
-        <div className="prompt-runtime-metrics-empty">当前轮次暂无可观测指标</div>
+        <div className="prompt-runtime-metrics-empty">{translate('chatInspector.t96')}</div>
       )}
     </div>
   )
@@ -1529,7 +1532,7 @@ const PromptSectionBlock = React.memo(function PromptSectionBlock({
         </span>
         <span>{section.label}</span>
         {section.charCount > 0 && (
-          <span className="prompt-section-chars">{section.charCount} 字符</span>
+          <span className="prompt-section-chars">{translate('chatInspector.tpl12Desc', { count: section.charCount })}</span>
         )}
       </div>
       {sectionExpanded && !isPlaceholder && (
@@ -1649,52 +1652,52 @@ function TokenUsagePanel({
 
   return (
     <div className="token-usage-panel">
-      <div className="token-usage-scope">本轮</div>
+      <div className="token-usage-scope">{translate('chatInspector.t97')}</div>
       <div className="token-usage-stats">
         <div className="token-stat">
-          <span className="token-stat-label">输入</span>
+          <span className="token-stat-label">{translate('chatInspector.t98')}</span>
           <span className="token-stat-value">{formatTokenCount(inputTokens)}</span>
         </div>
         <div className="token-stat">
-          <span className="token-stat-label">输出</span>
+          <span className="token-stat-label">{translate('chatInspector.t99')}</span>
           <span className="token-stat-value">{formatTokenCount(outputTokens)}</span>
         </div>
         <div className="token-stat token-stat-total">
-          <span className="token-stat-label">合计</span>
+          <span className="token-stat-label">{translate('chatInspector.t100')}</span>
           <span className="token-stat-value">{formatTokenCount(totalTokens)}</span>
         </div>
       </div>
       {cacheHitTokens > 0 && (
         <div className="token-usage-row">
-          <span className="token-row-label">缓存命中</span>
+          <span className="token-row-label">{translate('chatInspector.t101')}</span>
           <span className="token-row-value">{formatTokenCount(cacheHitTokens)}</span>
         </div>
       )}
       {cacheHitRate != null && (
         <div className="token-usage-row">
-          <span className="token-row-label">缓存命中率</span>
+          <span className="token-row-label">{translate('chatInspector.t102')}</span>
           <span className="token-row-value">{(cacheHitRate * 100).toFixed(1)}%</span>
         </div>
       )}
       {reasoningOutputTokens > 0 && (
         <div className="token-usage-row">
-          <span className="token-row-label">推理输出</span>
+          <span className="token-row-label">{translate('chatInspector.t103')}</span>
           <span className="token-row-value">{formatTokenCount(reasoningOutputTokens)}</span>
         </div>
       )}
       {cacheWriteTokens > 0 && (
         <div className="token-usage-row">
-          <span className="token-row-label">缓存写入</span>
+          <span className="token-row-label">{translate('chatInspector.t30')}</span>
           <span className="token-row-value">{formatTokenCount(cacheWriteTokens)}</span>
         </div>
       )}
-      {!hasUsage && !hasSessionTotal && <div className="inspector-muted">暂无用量数据</div>}
+      {!hasUsage && !hasSessionTotal && <div className="inspector-muted">{translate('chatInspector.t104')}</div>}
 
       {hasSessionTotal && (
         <>
-          <div className="token-usage-scope token-usage-scope-divider">会话累计</div>
+          <div className="token-usage-scope token-usage-scope-divider">{translate('chatInspector.t105')}</div>
           <div className="token-usage-row">
-            <span className="token-row-label">Token 总计</span>
+            <span className="token-row-label">{translate('chatInspector.t106')}</span>
             <span className="token-row-value">{formatTokenCount(sessionTotalTokens)}</span>
           </div>
         </>
@@ -1734,13 +1737,13 @@ function ContextWindowVisualization({
       {isCritical && (
         <div className="context-warning-msg context-warning-critical">
           <Icons.AlertTriangle size={11} />
-          <span>上下文窗口即将满 ({ratio}%)，建议开启新会话</span>
+          <span>{translate('chatInspector.tpl13Desc', { ratio })}</span>
         </div>
       )}
       {!isCritical && isWarning && (
         <div className="context-warning-msg context-warning-warn">
           <Icons.AlertTriangle size={11} />
-          <span>上下文窗口使用超过 {ratio}%，请注意</span>
+          <span>{translate('chatInspector.tpl14Desc', { ratio })}</span>
         </div>
       )}
       <div className="context-usage-bar">
@@ -1764,33 +1767,33 @@ function ContextWindowVisualization({
       </div>
       <div className="context-usage-labels">
         {runtimeMeasured ? (
-          <span className="context-label context-label-history">最近请求上下文</span>
+          <span className="context-label context-label-history">{translate('chatInspector.t107')}</span>
         ) : (
           <>
-            <span className="context-label context-label-system">系统提示</span>
-            <span className="context-label context-label-tools">工具定义</span>
-            <span className="context-label context-label-history">对话历史</span>
+            <span className="context-label context-label-system">{translate('chatInspector.t108')}</span>
+            <span className="context-label context-label-tools">{translate('chatInspector.t109')}</span>
+            <span className="context-label context-label-history">{translate('chatInspector.t110')}</span>
           </>
         )}
-        <span className="context-label context-label-remaining">剩余</span>
+        <span className="context-label context-label-remaining">{translate('chatInspector.t111')}</span>
       </div>
       <div className="context-usage-detail">
         <div className="kv-row">
-          <span className="k">来源</span>
+          <span className="k">{translate('chatInspector.t112')}</span>
           <span className="v">
-            {runtimeMeasured ? 'Codex Runtime · 最近一次请求' : 'Spark 估算'}
+            {runtimeMeasured ? translate('chatInspector.t42Desc') : translate('chatInspector.t43')}
           </span>
         </div>
         <div className="kv-row">
-          <span className="k">已用</span>
+          <span className="k">{translate('chatInspector.t113')}</span>
           <span className="v">{formatTokenCount(usedTokens)}</span>
         </div>
         <div className="kv-row">
-          <span className="k">总量</span>
+          <span className="k">{translate('chatInspector.t114')}</span>
           <span className="v">{formatTokenCount(totalTokens)}</span>
         </div>
         <div className="kv-row">
-          <span className="k">使用率</span>
+          <span className="k">{translate('chatInspector.t115')}</span>
           <span
             className={`v ${isCritical ? 'token-cost-critical' : isWarning ? 'token-cost-warn' : ''}`}
           >
@@ -1824,7 +1827,7 @@ function TurnUsageChart({ rows }: { rows: TurnUsageRow[] }) {
           <div
             key={snapshot.turnId}
             className="turn-usage-bar-group"
-            title={`第 ${turnNumber} 轮: 输入 ${formatTokenCount(snapshot.inputTokens)}, 输出 ${formatTokenCount(snapshot.outputTokens)}, 推理 ${formatTokenCount(snapshot.reasoningOutputTokens)}`}
+            title={`${translate('chatInspector.tpl15Desc', { round: turnNumber, input: formatTokenCount(snapshot.inputTokens), output: formatTokenCount(snapshot.outputTokens) })}${translate('chatInspector.tpl16Desc', { value: formatTokenCount(snapshot.reasoningOutputTokens) })}`}
           >
             <span className="turn-usage-index">{turnNumber}</span>
             <div className="turn-usage-bar-track">

@@ -19,6 +19,7 @@ import type {
   SkillItem,
 } from '@spark/protocol'
 import { Icons } from '../Icons'
+import { translate, useI18n } from '../i18n'
 import { ActionIcon, Button, Empty, Input, SearchBar, Select, Tag, TextArea } from '@lobehub/ui'
 import { useApp } from '../AppContext'
 import { AgentsPickerModal } from '../components/AgentsPickerModal'
@@ -79,6 +80,8 @@ function readInitialSkillStoreTab(): TabType {
 }
 
 export function SkillStoreView() {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const [activeTab, setActiveTab] = useState<TabType>(readInitialSkillStoreTab)
   const [refreshKey, setRefreshKey] = useState(0)
   const [installProgress, setInstallProgress] = useState<Record<string, SkillInstallProgress>>({})
@@ -231,7 +234,7 @@ export function SkillStoreView() {
     if (skill == null) return
     if ((skill.extraCount ?? 0) > 0) {
       setActiveTab('installed')
-      toast.info(`已就绪 ${(skill.extraCount ?? 0) + 1} 个 Skill,请在「已安装」中逐个分配给 Agent`)
+      toast.info(translate('skillStore.tpl1LongDesc', { count: (skill.extraCount ?? 0) + 1 }))
       return
     }
     openAssignPicker({ id: skill.id, name: skill.name })
@@ -289,9 +292,9 @@ export function SkillStoreView() {
       }
     }
     if (fail > 0) {
-      toast.warning(`已更新 ${ok} 个 Agent,${fail} 个失败`)
+      toast.warning(translate('skillStore.tpl2Desc', { ok, fail }))
     } else {
-      toast.success(`已将「${skillName}」更新到 ${ok} 个 Agent`)
+      toast.success(translate('skillStore.tpl3Desc', { name: skillName, ok }))
     }
     await refreshAgents()
   }, [assignSkill, assignSnapshot, pickerSelected, updateAgent, refreshAgents, toast])
@@ -350,12 +353,12 @@ export function SkillStoreView() {
                 }}
               >
                 {tab === 'installed'
-                  ? '已安装'
+                  ? translate('skillStore.t1')
                   : tab === 'installable'
-                    ? '精选推荐'
+                    ? translate('skillStore.t2')
                     : tab === 'skillhub'
-                      ? '在线市场'
-                      : '创建'}
+                      ? translate('skillStore.t3')
+                      : translate('skillStore.t4')}
               </button>
             ))}
           </div>
@@ -485,7 +488,7 @@ function InstalledTab({
     const local = filteredSkills.filter((skill) => !skill.id.startsWith('builtin:'))
     return [
       // { id: 'builtin', title: 'Built-in Skills', skills: builtin },
-      { id: 'local', title: '已安装', skills: local },
+      { id: 'local', title: translate('skillStore.t1'), skills: local },
     ].filter((section) => section.skills.length > 0)
   }, [filteredSkills])
 
@@ -506,7 +509,7 @@ function InstalledTab({
         setDetailState({
           skillId: activeSkillId,
           detail: res.detail,
-          error: res.detail == null ? '未找到该 Skill 的详情。' : '',
+          error: res.detail == null ? translate('skillStore.t5Desc') : '',
         })
       })
       .catch((err) => {
@@ -514,7 +517,7 @@ function InstalledTab({
         setDetailState({
           skillId: activeSkillId,
           detail: null,
-          error: err instanceof Error ? err.message : '加载 Skill 详情失败',
+          error: err instanceof Error ? err.message : translate('skillStore.t6Desc'),
         })
       })
 
@@ -553,14 +556,14 @@ function InstalledTab({
   const handleDeleteSkill = useCallback(
     async (id: string) => {
       const confirmed = await requestConfirm({
-        title: '删除 Skill？',
-        description: '删除后该 Skill 将从本地移除，相关能力将不再可用。',
-        confirmText: '删除',
+        title: translate('skillStore.t7'),
+        description: translate('skillStore.t8Desc'),
+        confirmText: translate('skillStore.t9'),
         danger: true,
       })
       if (!confirmed) return
       await deleteSkill(id)
-      toast.success('已删除 Skill')
+      toast.success(translate('skillStore.t10'))
     },
     [requestConfirm, deleteSkill, toast],
   )
@@ -568,9 +571,9 @@ function InstalledTab({
   const handleBatchDelete = useCallback(async () => {
     if (selectedDeleteIds.size === 0) return
     const confirmed = await requestConfirm({
-      title: `批量删除 ${selectedDeleteIds.size} 个 Skill？`,
-      description: '删除后所选 Skill 将从本地移除，相关能力将不再可用。',
-      confirmText: '全部删除',
+      title: translate('skillStore.tpl4Desc', { count: selectedDeleteIds.size }),
+      description: translate('skillStore.t11Desc'),
+      confirmText: translate('skillStore.t12'),
       danger: true,
     })
     if (!confirmed) return
@@ -587,9 +590,9 @@ function InstalledTab({
         }
       }
       if (failCount > 0) {
-        toast.warning(`已删除 ${successCount} 个，${failCount} 个失败`)
+        toast.warning(translate('skillStore.tpl5Desc', { ok: successCount, fail: failCount }))
       } else {
-        toast.success(`已批量删除 ${successCount} 个 Skill`)
+        toast.success(translate('skillStore.tpl6Desc', { count: successCount }))
       }
       exitManagement()
     } finally {
@@ -651,7 +654,7 @@ function InstalledTab({
                   })
                 }}
               >
-                卸载
+                {translate('skillStore.t25')}
               </Button>
             )}
           </div>
@@ -662,7 +665,7 @@ function InstalledTab({
                 icon={<Icons.Users size={14} />}
                 onClick={() => selectedSkill && setPublishSkill(selectedSkill)}
               >
-                发布到团队
+                {translate('skillStore.t95')}
               </Button>
             )}
             <Button
@@ -674,7 +677,7 @@ function InstalledTab({
                   onAssignToAgents({ id: selectedSkill.id, name: selectedSkill.name })
               }}
             >
-              安装给 Agent
+              {translate('skillStore.t96')}
             </Button>
           </div>
         </div>
@@ -705,7 +708,7 @@ function InstalledTab({
               fallback={
                 <div className="skill-store-loading">
                   <Spin />
-                  <span>正在打开技能…</span>
+                  <span>{translate('skillStore.t14')}</span>
                 </div>
               }
             >
@@ -727,14 +730,14 @@ function InstalledTab({
           ) : (
             <div className="skill-store-loading">
               {!detailMissing && <Spin />}
-              <span>{detailMissing ? '未找到该 Skill，可能已被删除。' : '正在打开技能…'}</span>
+              <span>{detailMissing ? translate('skillStore.t13Desc') : translate('skillStore.t14')}</span>
               <Button
                 size="small"
                 type="text"
                 icon={<Icons.ArrowLeft size={14} />}
                 onClick={onCloseDetail}
               >
-                返回列表
+                {translate('skillStore.t97')}
               </Button>
             </div>
           )}
@@ -756,12 +759,12 @@ function InstalledTab({
           <div>
             <div className="strong text-base font-semibold">Skills</div>
             <div className="muted text-xs mt-0.5">
-              {total} 个已安装 · {enabledCount} 个已启用
+              {translate('skillStore.tpl7Desc', { total, enabled: enabledCount })}
             </div>
           </div>
           <div className="skill-store-actions">
             <SearchBar
-              placeholder="搜索技能"
+              placeholder={translate('skillStore.t75')}
               value={search}
               onInputChange={(value) => setSearch(value)}
               allowClear
@@ -769,7 +772,7 @@ function InstalledTab({
             />
             {/* 创建入口：搜索框右侧的主题色按钮 */}
             <Button size="small" type="primary" onClick={onCreate} icon={<Icons.Plus size={14} />}>
-              创建
+              {translate('skillStore.t4')}
             </Button>
             {!managementMode ? (
               <Button
@@ -779,7 +782,7 @@ function InstalledTab({
                 disabled={total === 0}
                 icon={<Icons.Settings size={14} />}
               >
-                管理
+                {translate('skillStore.t98')}
               </Button>
             ) : (
               <Button
@@ -789,7 +792,7 @@ function InstalledTab({
                 disabled={deleting}
                 icon={<Icons.X size={14} />}
               >
-                退出管理
+                {translate('skillStore.t99')}
               </Button>
             )}
             <ActionIcon
@@ -797,7 +800,7 @@ function InstalledTab({
               size="small"
               variant="borderless"
               onClick={onRefresh}
-              title="刷新 (Ctrl+R)"
+              title={translate('skillStore.t76')}
             />
           </div>
         </div>
@@ -806,10 +809,10 @@ function InstalledTab({
           <div className="skill-store-mgmt-bar">
             <Icons.CheckSquare size={13} />
             <span>
-              已选择 <span className="mgmt-count">{selectedDeleteIds.size}</span> 个
+              {translate('skillStore.t100')} <span className="mgmt-count">{selectedDeleteIds.size}</span> {translate('skillStore.t101')}
             </span>
             <Button size="small" type="text" onClick={toggleDeleteSelectAll} disabled={deleting}>
-              {selectedDeleteIds.size === filteredSkills.length ? '取消全选' : '全选'}
+              {selectedDeleteIds.size === filteredSkills.length ? translate('skillStore.t15') : translate('skillStore.t16')}
             </Button>
             <Button
               size="small"
@@ -818,7 +821,7 @@ function InstalledTab({
               onClick={() => void handleBatchDelete()}
               disabled={selectedDeleteIds.size === 0 || deleting}
             >
-              {deleting ? '删除中...' : `删除所选 (${selectedDeleteIds.size})`}
+              {deleting ? translate('skillStore.t17') : translate('skillStore.tpl8Desc', { count: selectedDeleteIds.size })}
             </Button>
           </div>
         )}
@@ -828,15 +831,15 @@ function InstalledTab({
         {loading ? (
           <div className="skill-store-loading">
             <Spin />
-            <span>正在加载 Skills...</span>
+            <span>{translate('skillStore.t102Desc')}</span>
           </div>
         ) : total === 0 ? (
           <div className="skill-store-empty">
-            <Empty description='暂无已安装的 Skill，前往"创建"页手动创建或导入。' />
+            <Empty description={translate('skillStore.t18Desc')} />
           </div>
         ) : filteredSkills.length === 0 ? (
           <div className="skill-store-empty">
-            <Empty description="没有找到匹配的 Skill，换个关键词试试。" />
+            <Empty description={translate('skillStore.t77Desc')} />
           </div>
         ) : (
           <div className="skill-store-list">
@@ -865,7 +868,7 @@ function InstalledTab({
         )}
 
         <div className="skill-store-stats">
-          {total} 个已安装 · {enabledCount} 个已启用
+          {translate('skillStore.tpl7Desc', { total, enabled: enabledCount })}
         </div>
       </div>
       <PublishSkillToTeamModal
@@ -963,7 +966,7 @@ function SkillDetailPanel({
   if (skill == null) {
     return (
       <div className="skill-store-detail-empty">
-        <Empty description="未选择 Skill。" />
+        <Empty description={translate('skillStore.t78')} />
       </div>
     )
   }
@@ -972,7 +975,7 @@ function SkillDetailPanel({
     return (
       <div className="skill-store-detail-loading">
         <Spin />
-        <span>正在加载详情...</span>
+        <span>{translate('skillStore.t103')}</span>
       </div>
     )
   }
@@ -1016,7 +1019,7 @@ function SkillDetailPanel({
         {assignedAgents.length > 0 ? (
           <>
             <div className="skill-store-detail-assigned-label">
-              已分发 {assignedAgents.length} 个 Agent
+              {translate('skillStore.tpl9Desc', { count: assignedAgents.length })}
             </div>
             <div className="skill-store-detail-assigned-chips">
               {assignedAgents.map((a) => (
@@ -1025,7 +1028,7 @@ function SkillDetailPanel({
                   type="button"
                   className="skill-store-detail-assigned-chip"
                   onClick={() => onJumpToAgent?.(a.id)}
-                  title={onJumpToAgent ? `查看 Agent「${a.name}」` : a.name}
+                  title={onJumpToAgent ? translate('skillStore.tpl10Desc', { name: a.name }) : a.name}
                 >
                   <span className="skill-store-detail-assigned-avatar">
                     {a.name.charAt(0).toUpperCase()}
@@ -1037,19 +1040,19 @@ function SkillDetailPanel({
           </>
         ) : (
           <div className="skill-store-detail-assigned-empty">
-            尚未分发给任何 Agent · 点击「安装给 Agent」配置
+            {translate('skillStore.t104Desc')}
           </div>
         )}
       </div>
 
       <div className="skill-store-detail-meta">
-        <DetailStat label="来源" value={manifestMeta.source} />
-        <DetailStat label="版本" value={skill.version} />
+        <DetailStat label={translate('skillStore.t79')} value={manifestMeta.source} />
+        <DetailStat label={translate('skillStore.t80')} value={skill.version} />
         <DetailStat
-          label="分类"
-          value={definition?.category || manifestMeta.category || '未分类'}
+          label={translate('skillStore.t81')}
+          value={definition?.category || manifestMeta.category || translate('skillStore.t19')}
         />
-        <DetailStat label="作者" value={definition?.author || manifestMeta.author || '未知'} />
+        <DetailStat label={translate('skillStore.t82')} value={definition?.author || manifestMeta.author || translate('skillStore.t20')} />
       </div>
 
       <DetailSection title="Skill ID">
@@ -1091,7 +1094,7 @@ function SkillDetailPanel({
                   {parameter.label} <span>{parameter.type}</span>
                 </div>
                 <div className="skill-store-parameter-desc">
-                  {parameter.description || '未提供参数说明'}
+                  {parameter.description || translate('skillStore.t21')}
                 </div>
               </div>
             ))}
@@ -1109,7 +1112,7 @@ function SkillDetailPanel({
               icon={<Icons.Maximize size={14} />}
               onClick={() => setPreviewOpen(true)}
             >
-              打开预览
+              {translate('skillStore.t105')}
             </Button>
           }
         >
@@ -1238,10 +1241,10 @@ function InstallableTab({
     async (item: InstallableSkillCatalogItem) => {
       const progressKey = skillInstallProgressKey('catalog', item.slug)
       setProgress((prev) => ({ ...prev, [progressKey]: { downloaded: 0, total: 0 } }))
-      const sourceName = item.source.type === 'artifact' ? 'Spark 自建源' : '外部源'
+      const sourceName = item.source.type === 'artifact' ? translate('skillStore.t22') : translate('skillStore.t23')
       try {
         const res = await installCatalog({ slug: item.slug })
-        toast.success(`已通过 ${sourceName} 安装「${res.skill.name}」`)
+        toast.success(translate('skillStore.tpl11Desc', { source: sourceName, name: res.skill.name }))
         if (res.postInstallHint) {
           // 依赖提示单独再弹一条，避免被 success 吞掉
           toast.info(res.postInstallHint)
@@ -1250,7 +1253,7 @@ function InstallableTab({
         onInstalled()
         onSkillReady({ id: res.skill.id, name: res.skill.name })
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : `安装「${item.name}」失败`)
+        toast.error(err instanceof Error ? err.message : translate('skillStore.tpl12Desc', { name: item.name }))
       } finally {
         setProgress((prev) => {
           const next = { ...prev }
@@ -1265,19 +1268,19 @@ function InstallableTab({
   const handleUninstall = useCallback(
     async (item: InstallableSkillCatalogItem) => {
       const ok = await requestConfirm({
-        title: `卸载「${item.name}」`,
-        description: '卸载后会删除磁盘上的技能目录，可随时重新安装。',
-        confirmText: '卸载',
+        title: translate('skillStore.tpl13Desc', { name: item.name }),
+        description: translate('skillStore.t24Desc'),
+        confirmText: translate('skillStore.t25'),
         danger: true,
       })
       if (!ok) return
       try {
         await uninstallCatalog({ slug: item.slug })
-        toast.success(`已卸载「${item.name}」`)
+        toast.success(translate('skillStore.tpl14Desc', { name: item.name }))
         refresh()
         onInstalled()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : `卸载「${item.name}」失败`)
+        toast.error(err instanceof Error ? err.message : translate('skillStore.tpl15Desc', { name: item.name }))
       }
     },
     [uninstallCatalog, refresh, onInstalled, requestConfirm, toast],
@@ -1293,17 +1296,17 @@ function InstallableTab({
         {/* 原装精选（开箱可见，GitHub tarball + 国内镜像回退） */}
         <section className="skill-store-section skill-store-section--installable">
           <div className="skill-store-section-title">
-            <span>原装精选</span>
+            <span>{translate('skillStore.t106')}</span>
             <span>{items.length}</span>
           </div>
           {loading ? (
             <div className="skill-store-loading">
               <Spin />
-              <span>正在加载精选技能...</span>
+              <span>{translate('skillStore.t107')}</span>
             </div>
           ) : items.length === 0 ? (
             <div className="skill-store-empty">
-              <Empty description="暂无可安装的原装精选技能。" />
+              <Empty description={translate('skillStore.t83Desc')} />
             </div>
           ) : (
             <div className="skill-store-cards">
@@ -1398,12 +1401,12 @@ function SkillHubMarketTab({
       setProgress((prev) => ({ ...prev, [progressKey]: { downloaded: 0, total: 0 } }))
       try {
         const res = await installRemote({ registryId: skill.registryId, slug })
-        toast.success(`已安装「${skill.name}」`)
+        toast.success(translate('skillStore.tpl16Desc', { name: skill.name }))
         refreshMarketplace()
         onInstalled()
         onSkillReady({ id: res.skill.id, name: res.skill.name })
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : `安装「${skill.name}」失败`)
+        toast.error(err instanceof Error ? err.message : translate('skillStore.tpl12Desc', { name: skill.name }))
       } finally {
         setProgress((prev) => {
           const next = { ...prev }
@@ -1419,19 +1422,19 @@ function SkillHubMarketTab({
     async (skill: RemoteSkillItem) => {
       if (!skill.localId) return
       const ok = await requestConfirm({
-        title: `卸载「${skill.name}」`,
-        description: '卸载后会删除磁盘上的技能目录，可随时重新安装。',
-        confirmText: '卸载',
+        title: translate('skillStore.tpl13Desc', { name: skill.name }),
+        description: translate('skillStore.t24Desc'),
+        confirmText: translate('skillStore.t25'),
         danger: true,
       })
       if (!ok) return
       try {
         await uninstallRemote({ localSkillId: skill.localId })
-        toast.success(`已卸载「${skill.name}」`)
+        toast.success(translate('skillStore.tpl14Desc', { name: skill.name }))
         refreshMarketplace()
         onInstalled()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : `卸载「${skill.name}」失败`)
+        toast.error(err instanceof Error ? err.message : translate('skillStore.tpl15Desc', { name: skill.name }))
       }
     },
     [uninstallRemote, refreshMarketplace, onInstalled, requestConfirm, toast],
@@ -1454,8 +1457,8 @@ function SkillHubMarketTab({
   }, [])
 
   const HUB_TABS: Array<{ key: SkillHubShowcaseSection; label: string }> = [
-    { key: 'recommended', label: '推荐精选' },
-    { key: 'hot_downloads', label: '下载热榜' },
+    { key: 'recommended', label: translate('skillStore.t26') },
+    { key: 'hot_downloads', label: translate('skillStore.t27') },
   ]
 
   return (
@@ -1466,15 +1469,15 @@ function SkillHubMarketTab({
         <div className="skill-store-section-title skill-store-section-title--with-tools">
           <span>
             {hubSearching
-              ? `搜索结果「${hubQuery.trim()}」`
+              ? translate('skillStore.tpl17Desc', { query: hubQuery.trim() })
               : hubSection === 'recommended'
-                ? 'SkillHub 推荐精选'
-                : 'SkillHub 下载热榜'}
+                ? translate('skillStore.t28Desc')
+                : translate('skillStore.t29Desc')}
           </span>
           <span>{hubTotal}</span>
           <div className="skill-store-section-tools">
             <SearchBar
-              placeholder="搜索 SkillHub 技能..."
+              placeholder={translate('skillStore.t84Desc')}
               value={hubQuery}
               onInputChange={(value) => {
                 setHubQuery(value)
@@ -1490,12 +1493,12 @@ function SkillHubMarketTab({
                 featured.shuffle()
                 setHubPage(1)
               }}
-              title="换一批"
+              title={translate('skillStore.t85')}
             />
           </div>
         </div>
 
-        <div className="skill-store-hub-subtabs" role="tablist" aria-label="SkillHub 榜单">
+        <div className="skill-store-hub-subtabs" role="tablist" aria-label={translate('skillStore.t86')}>
           {HUB_TABS.map((t) => (
             <button
               key={t.key}
@@ -1510,7 +1513,7 @@ function SkillHubMarketTab({
           ))}
         </div>
 
-        <div className="skill-store-category-chips" role="tablist" aria-label="SkillHub 分类">
+        <div className="skill-store-category-chips" role="tablist" aria-label={translate('skillStore.t87')}>
           {hubCategories.categories.map((cat) => (
             <button
               key={cat.key}
@@ -1532,10 +1535,10 @@ function SkillHubMarketTab({
             <Spin />
             <span>
               {hubSearching
-                ? '正在搜索 SkillHub 技能...'
+                ? translate('skillStore.t30Desc')
                 : hubSection === 'recommended'
-                  ? '正在加载 SkillHub 推荐精选...'
-                  : '正在加载 SkillHub 下载热榜...'}
+                  ? translate('skillStore.t31Desc')
+                  : translate('skillStore.t32Desc')}
             </span>
           </div>
         ) : hubTotal === 0 ? (
@@ -1543,10 +1546,10 @@ function SkillHubMarketTab({
             <Empty
               description={
                 hubSearching
-                  ? '没有匹配的 SkillHub 技能，换个关键词试试。'
+                  ? translate('skillStore.t33Desc')
                   : selectedCategoryKey !== 'all'
-                    ? `「${hubCategories.categories.find((c) => c.key === selectedCategoryKey)?.name ?? selectedCategoryKey}」分类下暂无${hubSection === 'hot_downloads' ? '热榜' : '推荐'}数据。`
-                    : '未能加载 SkillHub 榜单，请检查网络后刷新。'
+                    ? translate('skillStore.tpl38Desc', { category: hubCategories.categories.find((c) => c.key === selectedCategoryKey)?.name ?? selectedCategoryKey, kind: hubSection === 'hot_downloads' ? translate('skillStore.t34') : translate('skillStore.t35') })
+                    : translate('skillStore.t36Desc')
               }
             />
           </div>
@@ -1635,24 +1638,24 @@ function SkillHubSkillCard({
         {skill.homepageUrl && (
           <div className="skill-store-card-link">
             <a href={skill.homepageUrl} target="_blank" rel="noreferrer">
-              查看来源 ↗
+              {translate('skillStore.t108')}
             </a>
           </div>
         )}
         {installing ? (
           <span className="skill-store-card-progress">
-            {pct != null ? `下载中 ${pct}%` : '下载中...'}
+            {pct != null ? translate('skillStore.tpl19Desc', { pct }) : translate('skillStore.t37')}
           </span>
         ) : skill.installed ? (
           <>
-            <span className="skill-store-card-progress">已安装</span>
+            <span className="skill-store-card-progress">{translate('skillStore.t1')}</span>
             <Button size="small" type="text" danger onClick={onUninstall}>
-              卸载
+              {translate('skillStore.t25')}
             </Button>
           </>
         ) : (
           <Button size="small" type="text" onClick={onInstall} icon={<Icons.Download size={14} />}>
-            安装
+            {translate('skillStore.t38')}
           </Button>
         )}
       </div>
@@ -1663,7 +1666,7 @@ function SkillHubSkillCard({
 /** 下载量格式化：1234 → 1.2k，32900 → 3.3万 */
 function formatDownloadCount(n: number): string {
   if (!n || n <= 0) return ''
-  if (n >= 10000) return `${(n / 10000).toFixed(1).replace(/\.0$/, '')}万`
+  if (n >= 10000) return translate('skillStore.tpl20Desc', { value: (n / 10000).toFixed(1).replace(/\.0$/, '') })
   if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
   return String(n)
 }
@@ -1686,8 +1689,8 @@ function InstallableSkillCard({
     item.source.type === 'artifact'
       ? `Spark· ${item.source.artifactId ?? 'artifact'} `
       : `GitHub · ${item.source.repo}`
-  const installButtonLabel = '安装'
-  const progressLabel = '下载中'
+  const installButtonLabel = translate('skillStore.t38')
+  const progressLabel = translate('skillStore.t39')
   return (
     <div className="skill-store-card skill-store-card--installable">
       <div className="skill-store-card-top">
@@ -1720,7 +1723,7 @@ function InstallableSkillCard({
               target="_blank"
               rel="noreferrer"
             >
-              查看来源 ↗
+              {translate('skillStore.t108')}
             </a>
           )}
           {installing ? (
@@ -1729,9 +1732,9 @@ function InstallableSkillCard({
             </span>
           ) : item.installed ? (
             <>
-              <span className="skill-store-card-progress">已安装</span>
+              <span className="skill-store-card-progress">{translate('skillStore.t1')}</span>
               <Button size="small" type="text" danger onClick={onUninstall}>
-                卸载
+                {translate('skillStore.t25')}
               </Button>
             </>
           ) : (
@@ -1825,11 +1828,11 @@ function CreateTab({
   // ── Manual creation ──
   const handleCreate = useCallback(async () => {
     if (!name.trim()) {
-      toast.error('请输入 Skill 名称')
+      toast.error(translate('skillStore.t40'))
       return
     }
     if (!content.trim() && !description.trim()) {
-      toast.error('请输入 Skill 描述或详细内容')
+      toast.error(translate('skillStore.t41Desc'))
       return
     }
 
@@ -1846,12 +1849,12 @@ function CreateTab({
       const id = `user:${name
         .trim()
         .toLowerCase()
-        .replace(/[^a-z0-9一-龥]+/g, '-')}`
+        .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')}`
 
       const manifest = {
         desc: description.trim() || content.trim().slice(0, 100),
         description: description.trim(),
-        source: '用户创建',
+        source: translate('skillStore.t42'),
         author: author.trim() || 'User',
         category,
         tags,
@@ -1870,13 +1873,13 @@ function CreateTab({
         enabled: true,
       })
 
-      toast.success(`Skill「${name.trim()}」创建成功`)
+      toast.success(translate('skillStore.tpl21Desc', { name: name.trim() }))
       resetForm()
       onCreated()
       onPreviewSkill(res.skill.id)
       onSkillReady({ id: res.skill.id, name: res.skill.name })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '创建失败')
+      toast.error(err instanceof Error ? err.message : translate('skillStore.t43'))
     } finally {
       setCreating(false)
     }
@@ -1901,7 +1904,7 @@ function CreateTab({
   const handleImportFile = useCallback(async () => {
     try {
       const picked = await openFileDialog({
-        title: '选择 Skill 文件（SKILL.md 或 .md）',
+        title: translate('skillStore.t44Desc'),
         filters: [{ name: 'Markdown', extensions: ['md'] }],
       })
       if (picked.canceled || picked.filePath == null) return
@@ -1909,12 +1912,12 @@ function CreateTab({
       setCreating(true)
       try {
         const res = await importFile({ filePath: picked.filePath })
-        toast.success(`已导入 Skill：${res.skill.name}`)
+        toast.success(translate('skillStore.tpl22Desc', { name: res.skill.name }))
         onCreated()
         onPreviewSkill(res.skill.id)
         onSkillReady({ id: res.skill.id, name: res.skill.name })
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '导入文件失败')
+        toast.error(err instanceof Error ? err.message : translate('skillStore.t45'))
       } finally {
         setCreating(false)
       }
@@ -1927,7 +1930,7 @@ function CreateTab({
   const handleImportDirectory = useCallback(async () => {
     try {
       const picked = await openDirectoryDialog({
-        title: '选择包含 SKILL.md 的 Skill 目录',
+        title: translate('skillStore.t46'),
       })
       if (picked.canceled || picked.filePath == null) return
 
@@ -1935,7 +1938,7 @@ function CreateTab({
       try {
         const res = await importDirectory({ directoryPath: picked.filePath, source: 'custom' })
         toast.success(
-          res.skills.length > 1 ? `已导入 ${res.skills.length} 个 Skill` : '已导入本地 Skill 目录',
+          res.skills.length > 1 ? translate('skillStore.tpl23Desc', { count: res.skills.length }) : translate('skillStore.t47Desc'),
         )
         onCreated()
         // 多 skill 场景:第一个 skill 作为 hint 主角,其余以 extraCount 形式告知,
@@ -1953,7 +1956,7 @@ function CreateTab({
           }
         }
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '导入目录失败')
+        toast.error(err instanceof Error ? err.message : translate('skillStore.t48'))
       } finally {
         setCreating(false)
       }
@@ -1971,12 +1974,12 @@ function CreateTab({
       const res = await detectLocalSkills({})
       setLocalCandidates(res.candidates)
       if (res.candidates.length > 0) {
-        toast.success(`检测到 ${res.candidates.length} 个本地 Skill`)
+        toast.success(translate('skillStore.tpl24Desc', { count: res.candidates.length }))
       } else {
-        toast.info('未检测到本地 Skill')
+        toast.info(translate('skillStore.t49'))
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '检测本地 Skill 失败')
+      toast.error(err instanceof Error ? err.message : translate('skillStore.t50'))
     } finally {
       setDetecting(false)
     }
@@ -2015,7 +2018,7 @@ function CreateTab({
           const res = await installToApp({ sourcePath: candidate.rootPath })
           readySkill = { id: res.skill.id, name: res.skill.name }
         }
-        toast.success(`已安装 ${candidate.name}`)
+        toast.success(translate('skillStore.tpl25Desc', { name: candidate.name }))
         onCreated()
         if (readySkill) {
           onSkillReady(readySkill)
@@ -2023,7 +2026,7 @@ function CreateTab({
         }
         await refreshCandidates()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '安装 Skill 失败')
+        toast.error(err instanceof Error ? err.message : translate('skillStore.t51'))
       } finally {
         setImportingIds((prev) => {
           const next = new Set(prev)
@@ -2056,12 +2059,12 @@ function CreateTab({
         candidates: toImport.map((c) => ({ rootPath: c.rootPath, source: c.source })),
       })
       if (result.failed > 0) {
-        toast.warning(`已导入 ${result.skills.length} 个，${result.failed} 个失败`)
+        toast.warning(translate('skillStore.tpl26Desc', { ok: result.skills.length, fail: result.failed }))
         for (const e of result.errors) {
           console.error('Import error:', e)
         }
       } else {
-        toast.success(`已批量导入 ${result.skills.length} 个 Skill`)
+        toast.success(translate('skillStore.tpl27Desc', { count: result.skills.length }))
       }
       // 批量场景:第一个 skill 作为 hint 主角,其余以 extraCount 形式告知
       if (result.skills.length >= 1) {
@@ -2078,7 +2081,7 @@ function CreateTab({
       onCreated()
       await refreshCandidates()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '批量导入失败')
+      toast.error(err instanceof Error ? err.message : translate('skillStore.t52'))
     } finally {
       setImportingIds((prev) => {
         const next = new Set(prev)
@@ -2122,28 +2125,28 @@ function CreateTab({
           onClick={() => setImportMode('detect')}
         >
           <Icons.Refresh size={13} />
-          检测导入
+          {translate('skillStore.t109')}
         </button>
         <button
           className={`store-tab ${importMode === 'import' ? 'active' : ''}`}
           onClick={() => setImportMode('import')}
         >
           <Icons.Upload size={13} />
-          文件/目录导入
+          {translate('skillStore.t110')}
         </button>
         <button
           className={`store-tab ${importMode === 'link' ? 'active' : ''}`}
           onClick={() => setImportMode('link')}
         >
           <Icons.ExternalLink size={13} />
-          软链接
+          {translate('skillStore.t111')}
         </button>
         <button
           className={`store-tab ${importMode === 'none' ? 'active' : ''}`}
           onClick={() => setImportMode('none')}
         >
           <Icons.Edit size={13} />
-          手动创建
+          {translate('skillStore.t112')}
         </button>
       </div>
 
@@ -2156,9 +2159,9 @@ function CreateTab({
                 <Icons.FileText size={15} />
               </span>
               <div className="create-panel-headings">
-                <div className="create-panel-title">基本信息</div>
+                <div className="create-panel-title">{translate('skillStore.t113')}</div>
                 <div className="create-panel-desc">
-                  名称、版本、作者与分类，用于在技能列表中标识这个 Skill。
+                  {translate('skillStore.t114Desc')}
                 </div>
               </div>
             </div>
@@ -2166,16 +2169,16 @@ function CreateTab({
               <div className="create-form-grid">
                 <div className="form-field">
                   <label className="form-label">
-                    名称 <span className="required">*</span>
+                    {translate('skillStore.t115')} <span className="required">*</span>
                   </label>
                   <Input
-                    placeholder="例如：代码审查助手"
+                    placeholder={translate('skillStore.t88')}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
                 </div>
                 <div className="form-field">
-                  <label className="form-label">版本</label>
+                  <label className="form-label">{translate('skillStore.t80')}</label>
                   <Input
                     placeholder="1.0.0"
                     value={version}
@@ -2183,34 +2186,34 @@ function CreateTab({
                   />
                 </div>
                 <div className="form-field">
-                  <label className="form-label">作者</label>
+                  <label className="form-label">{translate('skillStore.t82')}</label>
                   <Input
-                    placeholder="作者名称"
+                    placeholder={translate('skillStore.t89')}
                     value={author}
                     onChange={(e) => setAuthor(e.target.value)}
                   />
                 </div>
                 <div className="form-field">
-                  <label className="form-label">分类</label>
+                  <label className="form-label">{translate('skillStore.t81')}</label>
                   <Select
                     value={category}
                     onChange={(v) => setCategory(v)}
                     options={[
-                      { label: '通用', value: 'utility' },
-                      { label: '代码生成', value: 'code-generation' },
-                      { label: '代码审查', value: 'code-review' },
-                      { label: '测试', value: 'testing' },
-                      { label: '文档', value: 'documentation' },
-                      { label: '数据分析', value: 'data-analysis' },
-                      { label: 'Web 开发', value: 'web-development' },
-                      { label: 'API 开发', value: 'api-development' },
+                      { label: translate('skillStore.t53'), value: 'utility' },
+                      { label: translate('skillStore.t54'), value: 'code-generation' },
+                      { label: translate('skillStore.t55'), value: 'code-review' },
+                      { label: translate('skillStore.t56'), value: 'testing' },
+                      { label: translate('skillStore.t57'), value: 'documentation' },
+                      { label: translate('skillStore.t58'), value: 'data-analysis' },
+                      { label: translate('skillStore.t59'), value: 'web-development' },
+                      { label: translate('skillStore.t60'), value: 'api-development' },
                       { label: 'DevOps', value: 'devops' },
-                      { label: '安全', value: 'security' },
+                      { label: translate('skillStore.t61'), value: 'security' },
                       { label: 'AI/ML', value: 'ai-ml' },
-                      { label: '自动化', value: 'automation' },
-                      { label: '数据库', value: 'database' },
-                      { label: '前端', value: 'frontend' },
-                      { label: '后端', value: 'backend' },
+                      { label: translate('skillStore.t62'), value: 'automation' },
+                      { label: translate('skillStore.t63'), value: 'database' },
+                      { label: translate('skillStore.t64'), value: 'frontend' },
+                      { label: translate('skillStore.t65'), value: 'backend' },
                     ]}
                   />
                 </div>
@@ -2224,26 +2227,26 @@ function CreateTab({
                 <Icons.Tag size={15} />
               </span>
               <div className="create-panel-headings">
-                <div className="create-panel-title">描述与标签</div>
+                <div className="create-panel-title">{translate('skillStore.t116')}</div>
                 <div className="create-panel-desc">
-                  描述决定 Agent 何时会选用这个 Skill，标签与所需工具用于检索与权限提示。
+                  {translate('skillStore.t117LongDesc')}
                 </div>
               </div>
             </div>
             <div className="create-panel-body">
               <div className="form-field">
                 <label className="form-label">
-                  简短描述 <span className="required">*</span>
+                  {translate('skillStore.t118')} <span className="required">*</span>
                 </label>
                 <TextArea
                   rows={3}
-                  placeholder="一句话描述 Skill 的功能，例如：自动化代码审查，检测潜在 Bug 和安全问题"
+                  placeholder={translate('skillStore.t90LongDesc')}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                 />
               </div>
               <div className="form-field">
-                <label className="form-label">标签（逗号分隔）</label>
+                <label className="form-label">{translate('skillStore.t119')}</label>
                 <Input
                   placeholder="code-review, security, quality"
                   value={tagsInput}
@@ -2251,9 +2254,9 @@ function CreateTab({
                 />
               </div>
               <div className="form-field">
-                <label className="form-label">所需工具（逗号分隔）</label>
+                <label className="form-label">{translate('skillStore.t120')}</label>
                 <Input
-                  placeholder="例如：Bash, Read, Edit"
+                  placeholder={translate('skillStore.t91Desc')}
                   value={requiredTools}
                   onChange={(e) => setRequiredTools(e.target.value)}
                 />
@@ -2267,19 +2270,19 @@ function CreateTab({
                 <Icons.Edit size={15} />
               </span>
               <div className="create-panel-headings">
-                <div className="create-panel-title">Skill 详细内容</div>
+                <div className="create-panel-title">{translate('skillStore.t121')}</div>
                 <div className="create-panel-desc">
-                  支持 Markdown。此内容会作为 System Prompt 在 Agent 运行时注入。
+                  {translate('skillStore.t122LongDesc')}
                 </div>
               </div>
             </div>
             <div className="create-panel-body">
               <div className="form-field">
                 <label className="form-label">
-                  System Prompt / 指令内容 <span className="required">*</span>
+                  {translate('skillStore.t123Desc')} <span className="required">*</span>
                 </label>
                 {/* 编辑 / 预览 分段控件：写完指令立即看渲染效果，与详情页「预览|源码」同一范式 */}
-                <div className="create-content-mode" role="tablist" aria-label="内容查看方式">
+                <div className="create-content-mode" role="tablist" aria-label={translate('skillStore.t92')}>
                   <button
                     type="button"
                     role="tab"
@@ -2288,7 +2291,7 @@ function CreateTab({
                     onClick={() => setContentPreview(false)}
                   >
                     <Icons.Edit size={12} />
-                    编辑
+                    {translate('skillStore.t124')}
                   </button>
                   <button
                     type="button"
@@ -2298,11 +2301,11 @@ function CreateTab({
                     onClick={() => setContentPreview(true)}
                     disabled={content.trim().length === 0}
                     title={
-                      content.trim().length === 0 ? '先输入内容再预览' : '预览 Markdown 渲染效果'
+                      content.trim().length === 0 ? translate('skillStore.t66') : translate('skillStore.t67Desc')
                     }
                   >
                     <Icons.Eye size={12} />
-                    预览
+                    {translate('skillStore.t125')}
                   </button>
                 </div>
                 {contentPreview ? (
@@ -2313,7 +2316,7 @@ function CreateTab({
                   <TextArea
                     className="form-textarea-lg"
                     rows={12}
-                    placeholder={`在此编写 Skill 的完整指令内容，支持 Markdown 格式。\n\n例如：\n# 代码审查助手\n\n你是一个专业的代码审查助手。请对提供的代码进行以下方面的审查：\n\n1. **代码质量**：检查代码是否清晰、可读\n2. **安全漏洞**：检测潜在的安全问题\n3. **性能优化**：发现性能瓶颈\n4. **最佳实践**：建议改进方向`}
+                    placeholder={translate('skillStore.tpl39Instruction')}
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                   />
@@ -2325,7 +2328,7 @@ function CreateTab({
           <section className="create-panel">
             <div className="create-panel-actions">
               <Button type="text" onClick={resetForm}>
-                重置
+                {translate('skillStore.t126')}
               </Button>
               <Button
                 type="primary"
@@ -2333,7 +2336,7 @@ function CreateTab({
                 loading={creating}
                 onClick={() => void handleCreate()}
               >
-                创建 Skill
+                {translate('skillStore.t127')}
               </Button>
             </div>
           </section>
@@ -2346,36 +2349,23 @@ function CreateTab({
               <Icons.Upload size={15} />
             </span>
             <div className="create-panel-headings">
-              <div className="create-panel-title">导入 Skill（文件或目录）</div>
+              <div className="create-panel-title">{translate('skillStore.t128Desc')}</div>
               <div className="create-panel-desc">
-                选择一个 <b>SKILL.md / Markdown 文件</b>，或一个 <b>包含 SKILL.md 的目录</b>
-                。系统会自动解析 frontmatter（名称、描述、版本等）与内容，创建为本地
-                Skill；目录导入会一并纳入子目录中的脚本、模板等附属文件。导入完成后可直接进入详情页预览与编辑。
+                {translate('skillStore.t129')} <b>{translate('skillStore.t130Desc')}</b>{translate('skillStore.t131')} <b>{translate('skillStore.t132Desc')}</b>
+                {translate('skillStore.tpl28LongDesc')}
               </div>
               <div className="create-panel-badges">
                 <span className="badge">SKILL.md</span>
                 <span className="badge">.md</span>
-                <span className="badge">目录</span>
+                <span className="badge">{translate('skillStore.t133')}</span>
               </div>
             </div>
           </div>
 
           <div className="create-panel-body">
             <div>
-              <div className="create-panel-field-title">文件格式 / 目录结构示例</div>
-              <pre className="create-panel-code">{`# 单文件
----
-name: 我的 Skill
-description: 描述文字
-version: 1.0.0
----
-# Skill 指令内容...
-
-# 目录
-my-skill/
-├── SKILL.md          ← 必须包含
-├── scripts/helper.ts ← 辅助脚本
-└── templates/out.md  ← 模板文件`}</pre>
+              <div className="create-panel-field-title">{translate('skillStore.t134Desc')}</div>
+              <pre className="create-panel-code">{translate('skillStore.tpl29Instruction')}</pre>
             </div>
           </div>
 
@@ -2388,7 +2378,7 @@ my-skill/
               icon={<Icons.FolderOpen size={14} />}
               onClick={() => void handleImportDirectory()}
             >
-              选择目录
+              {translate('skillStore.t135')}
             </Button>
             <Button
               type="primary"
@@ -2398,7 +2388,7 @@ my-skill/
               icon={<Icons.File size={14} />}
               onClick={() => void handleImportFile()}
             >
-              选择文件
+              {translate('skillStore.t136')}
             </Button>
           </div>
         </section>
@@ -2411,16 +2401,15 @@ my-skill/
                 <Icons.Refresh size={15} />
               </span>
               <div className="create-panel-headings">
-                <div className="create-panel-title">检测本地 Skill</div>
+                <div className="create-panel-title">{translate('skillStore.t137')}</div>
                 <div className="create-panel-desc">
-                  扫描宿主机 ~/.claude/skills、~/.codex/skills 等目录中包含 SKILL.md
-                  的技能，可单个或批量导入。
+                  {translate('skillStore.tpl30LongDesc')}
                 </div>
               </div>
               <div className="create-panel-head-actions">
                 {dedupedCandidates.length > 0 && (
                   <span className="create-panel-hint-text">
-                    已检测到 {dedupedCandidates.length} 个
+                    {translate('skillStore.tpl31Desc', { count: dedupedCandidates.length })}
                   </span>
                 )}
                 <Button
@@ -2431,7 +2420,7 @@ my-skill/
                   loading={detecting}
                   icon={<Icons.Refresh size={12} />}
                 >
-                  {dedupedCandidates.length > 0 ? '重新检测' : '开始检测'}
+                  {dedupedCandidates.length > 0 ? translate('skillStore.t68') : translate('skillStore.t69')}
                 </Button>
               </div>
             </div>
@@ -2445,11 +2434,11 @@ my-skill/
                 </span>
                 <div className="create-panel-headings">
                   <div className="create-panel-title">
-                    本地可导入 Skill
+                    {translate('skillStore.t138')}
                     <span className="badge">{dedupedCandidates.length}</span>
                   </div>
                   <div className="create-panel-desc">
-                    勾选后批量导入；已导入的技能可直接「预览」查看与编辑其文件。
+                    {translate('skillStore.t139Desc')}
                   </div>
                 </div>
                 {importableCandidates.length > 0 && (
@@ -2460,7 +2449,7 @@ my-skill/
                       onClick={toggleSelectAll}
                       disabled={isImporting}
                     >
-                      {selectedIds.size === importableCandidates.length ? '取消全选' : '全选'}
+                      {selectedIds.size === importableCandidates.length ? translate('skillStore.t15') : translate('skillStore.t16')}
                     </Button>
                     <Button
                       size="middle"
@@ -2469,7 +2458,7 @@ my-skill/
                       onClick={() => void handleBatchImport()}
                       disabled={selectedIds.size === 0 || isImporting}
                     >
-                      {`导入所选 (${selectedIds.size})`}
+                      {translate('skillStore.tpl32Desc', { count: selectedIds.size })}
                     </Button>
                   </div>
                 )}
@@ -2479,7 +2468,7 @@ my-skill/
                 {/* Search */}
                 <div className="local-skill-filter-bar">
                   <SearchBar
-                    placeholder="搜索本地 Skill..."
+                    placeholder={translate('skillStore.t93Desc')}
                     value={candidateSearch}
                     onInputChange={(value) => setCandidateSearch(value)}
                     allowClear
@@ -2489,7 +2478,7 @@ my-skill/
 
                 <div className="local-skill-list">
                   {searchFiltered.length === 0 ? (
-                    <div className="create-panel-empty">未找到匹配的本地 Skill</div>
+                    <div className="create-panel-empty">{translate('skillStore.t140Desc')}</div>
                   ) : (
                     searchFiltered.map((candidate) => {
                       const importing = importingIds.has(candidate.id)
@@ -2535,7 +2524,7 @@ my-skill/
                             <span className="badge">{candidate.source}</span>
                             {candidate.installed ? (
                               <>
-                                <span className="badge success">已导入</span>
+                                <span className="badge success">{translate('skillStore.t141')}</span>
                                 {candidate.localSkillId != null && (
                                   <Button
                                     size="middle"
@@ -2543,7 +2532,7 @@ my-skill/
                                     icon={<Icons.Eye size={13} />}
                                     onClick={() => onPreviewSkill(candidate.localSkillId as string)}
                                   >
-                                    预览
+                                    {translate('skillStore.t125')}
                                   </Button>
                                 )}
                               </>
@@ -2555,7 +2544,7 @@ my-skill/
                                 disabled={importing}
                                 loading={importing}
                               >
-                                导入
+                                {translate('skillStore.t142')}
                               </Button>
                             )}
                           </div>
@@ -2573,8 +2562,8 @@ my-skill/
               <div className="empty-icon">
                 <Icons.Refresh />
               </div>
-              <div className="empty-title">点击上方「开始检测」扫描本地 Skill</div>
-              <div className="empty-desc">扫描本地目录中包含 SKILL.md 的 Skill，一键批量导入</div>
+              <div className="empty-title">{translate('skillStore.t143Desc')}</div>
+              <div className="empty-desc">{translate('skillStore.t144Desc')}</div>
             </div>
           )}
         </div>
@@ -2623,7 +2612,7 @@ function LinkSkillPanel({
 
   const handleLink = useCallback(async () => {
     if (!linkTarget.trim()) {
-      toast.error('请输入或选择技能目录路径')
+      toast.error(translate('skillStore.t70'))
       return
     }
     setLinking(true)
@@ -2632,7 +2621,7 @@ function LinkSkillPanel({
         targetPath: linkTarget.trim(),
         ...(linkName.trim() ? { name: linkName.trim() } : {}),
       })
-      toast.success('已创建软链接')
+      toast.success(translate('skillStore.t71'))
       setLinkTarget('')
       setLinkName('')
       onCreated()
@@ -2643,7 +2632,7 @@ function LinkSkillPanel({
         .then(setAppPaths)
         .catch(() => {})
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '创建软链接失败')
+      toast.error(err instanceof Error ? err.message : translate('skillStore.t72'))
     } finally {
       setLinking(false)
     }
@@ -2652,7 +2641,7 @@ function LinkSkillPanel({
   const handleBrowse = useCallback(async () => {
     try {
       const picked = await openDirectoryDialog({
-        title: '选择要链接的技能目录（需包含 SKILL.md）',
+        title: translate('skillStore.t73Desc'),
       })
       if (!picked.canceled && picked.filePath) {
         setLinkTarget(picked.filePath)
@@ -2669,13 +2658,13 @@ function LinkSkillPanel({
     async (name: string) => {
       try {
         await unlinkSkill({ name })
-        toast.success(`已取消链接 ${name}`)
+        toast.success(translate('skillStore.tpl33Desc', { name }))
         onCreated()
         getAppPaths({})
           .then(setAppPaths)
           .catch(() => {})
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '取消链接失败')
+        toast.error(err instanceof Error ? err.message : translate('skillStore.t74'))
       }
     },
     [unlinkSkill, onCreated, getAppPaths, toast],
@@ -2689,25 +2678,25 @@ function LinkSkillPanel({
             <Icons.ExternalLink size={15} />
           </span>
           <div className="create-panel-headings">
-            <div className="create-panel-title">软链接技能目录</div>
+            <div className="create-panel-title">{translate('skillStore.t145')}</div>
             <div className="create-panel-desc">
-              将宿主机上的技能目录通过软链接引入应用。链接后技能文件保持原位，应用自动读取最新内容。适用于开发中的技能，无需每次手动复制。
+              {translate('skillStore.tpl34LongDesc')}
             </div>
             <div className="create-panel-badges">
-              <span className="badge">软链接</span>
+              <span className="badge">{translate('skillStore.t111')}</span>
               <span className="badge">SKILL.md</span>
-              <span className="badge">实时同步</span>
+              <span className="badge">{translate('skillStore.t147')}</span>
             </div>
           </div>
         </div>
 
         <div className="create-panel-body">
           <div className="form-field">
-            <label className="form-label">技能目录路径 *</label>
+            <label className="form-label">{translate('skillStore.t148')}</label>
             <div className="create-panel-input-row">
               <div className="create-panel-input">
                 <Input
-                  placeholder="例如：/Users/you/.claude/skills/my-skill"
+                  placeholder={translate('skillStore.t94Desc')}
                   value={linkTarget}
                   onChange={(e) => setLinkTarget(e.target.value)}
                 />
@@ -2717,12 +2706,12 @@ function LinkSkillPanel({
                 icon={<Icons.FolderOpen size={14} />}
                 onClick={() => void handleBrowse()}
               >
-                浏览
+                {translate('skillStore.t149')}
               </Button>
             </div>
           </div>
           <div className="form-field">
-            <label className="form-label">链接名称（可选，默认使用目录名）</label>
+            <label className="form-label">{translate('skillStore.t150Desc')}</label>
             <Input
               placeholder="my-skill"
               value={linkName}
@@ -2740,7 +2729,7 @@ function LinkSkillPanel({
             icon={<Icons.ExternalLink size={14} />}
             onClick={() => void handleLink()}
           >
-            创建软链接
+            {translate('skillStore.t151')}
           </Button>
         </div>
       </section>
@@ -2752,11 +2741,11 @@ function LinkSkillPanel({
           </span>
           <div className="create-panel-headings">
             <div className="create-panel-title">
-              已链接的技能
+              {translate('skillStore.tpl35Desc')}
               {appPaths != null && <span className="badge">{appPaths.linkedSkills.length}</span>}
             </div>
             <div className="create-panel-desc">
-              链接指向宿主机原始目录，取消链接只移除引用，不会删除源文件。
+              {translate('skillStore.t152Desc')}
             </div>
           </div>
         </div>
@@ -2772,27 +2761,27 @@ function LinkSkillPanel({
                       {name}
                     </div>
                     <div className="local-skill-desc truncate" title={name}>
-                      宿主软链目录 · 文件实时同步
+                      {translate('skillStore.t153Desc')}
                     </div>
                   </div>
                   <div className="local-skill-actions">
-                    <span className="badge">链接</span>
+                    <span className="badge">{translate('skillStore.t154')}</span>
                     <Button size="middle" type="text" onClick={() => void handleUnlink(name)}>
-                      取消链接
+                      {translate('skillStore.t155')}
                     </Button>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="create-panel-empty">暂无已链接的技能</div>
+            <div className="create-panel-empty">{translate('skillStore.t156')}</div>
           )}
         </div>
 
         {appPaths != null && (
           <div className="create-panel-footnote">
-            <span>链接目录：{appPaths.linksDir}</span>
-            <span>应用技能目录：{appPaths.userDir}</span>
+            <span>{translate('skillStore.tpl36Desc', { path: appPaths.linksDir })}</span>
+            <span>{translate('skillStore.tpl37Desc', { path: appPaths.userDir })}</span>
           </div>
         )}
       </section>

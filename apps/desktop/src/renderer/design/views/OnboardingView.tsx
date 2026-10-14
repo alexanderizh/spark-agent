@@ -19,6 +19,7 @@ import { useToast } from '../components/Toast'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { ProviderPromoBanner } from '../components/ProviderPromoBanner'
 import { Icons } from '../Icons'
+import { useI18n, type TranslateFn } from '../i18n'
 import { OnboardingPlatformFunding } from './platform-model/OnboardingPlatformFunding'
 import {
   getVendorMeta,
@@ -82,21 +83,23 @@ type Action =
   | { type: 'set-template'; templateId: TemplateId }
   | { type: 'set-first-prompt'; firstPrompt: string }
 
-const initialState: OnboardingState = {
-  step: 'welcome',
-  useCase: 'daily',
-  modelSource: null,
-  providerProfileId: null,
-  modelId: null,
-  agentId: null,
-  templateId: 'general',
-  firstPrompt: '帮我写一段简短的工作总结，语气自然、清楚。',
-  localAdapter: null,
-  localPermissionMode: null,
-  localCliKind: null,
+function createInitialState(t: TranslateFn): OnboardingState {
+  return {
+    step: 'welcome',
+    useCase: 'daily',
+    modelSource: null,
+    providerProfileId: null,
+    modelId: null,
+    agentId: null,
+    templateId: 'general',
+    firstPrompt: t('onboarding.firstPrompt.summary'),
+    localAdapter: null,
+    localPermissionMode: null,
+    localCliKind: null,
+  }
 }
 
-function reducer(state: OnboardingState, action: Action): OnboardingState {
+function reducer(state: OnboardingState, action: Action, t: TranslateFn): OnboardingState {
   switch (action.type) {
     case 'back':
       return { ...state, step: previousStep(state) }
@@ -112,10 +115,10 @@ function reducer(state: OnboardingState, action: Action): OnboardingState {
           state.useCase === action.useCase
             ? state.firstPrompt
             : {
-                general: '帮我写一封简洁、友好的邮件，同步本周工作进展。',
-                document: '帮我设计一份阅读笔记模板，包含核心观点、关键证据和待确认的问题。',
-                work: '帮我制定本周工作计划，按优先级拆解并预留复盘时间。',
-                developer: '帮我梳理新项目的启动清单，包含目标、技术选型和第一阶段任务。',
+                general: t('onboarding.useCasePrompt.general'),
+                document: t('onboarding.useCasePrompt.document'),
+                work: t('onboarding.useCasePrompt.work'),
+                developer: t('onboarding.useCasePrompt.developer'),
               }[action.templateId],
       }
     case 'set-model-source':
@@ -183,53 +186,51 @@ function previousStep(state: OnboardingState): OnboardingStep {
   return 'first-session'
 }
 
-const templates: Record<
-  TemplateId,
-  {
-    title: string
-    name: string
-    desc: string
-    prompt: string
-    permissionMode: SessionPermissionMode
-    adapter: SessionAgentAdapter
+type AssistantTemplate = {
+  title: string
+  name: string
+  desc: string
+  prompt: string
+  permissionMode: SessionPermissionMode
+  adapter: SessionAgentAdapter
+}
+
+/** 助手模板按当前语言生成（模块级常量无法随语言切换更新，故改为函数）。 */
+function getTemplates(t: TranslateFn): Record<TemplateId, AssistantTemplate> {
+  return {
+    general: {
+      title: t('onboarding.template.generalTitle'),
+      name: t('onboarding.template.generalName'),
+      desc: t('onboarding.template.generalDesc'),
+      permissionMode: 'claude-auto-edits',
+      adapter: 'claude-sdk',
+      prompt: t('onboarding.template.generalPrompt'),
+    },
+    document: {
+      title: t('onboarding.template.documentTitle'),
+      name: t('onboarding.template.documentName'),
+      desc: t('onboarding.template.documentDesc'),
+      permissionMode: 'claude-auto-edits',
+      adapter: 'claude-sdk',
+      prompt: t('onboarding.template.documentPrompt'),
+    },
+    work: {
+      title: t('onboarding.template.workTitle'),
+      name: t('onboarding.template.workName'),
+      desc: t('onboarding.template.workDesc'),
+      permissionMode: 'claude-auto-edits',
+      adapter: 'claude-sdk',
+      prompt: t('onboarding.template.workPrompt'),
+    },
+    developer: {
+      title: t('onboarding.template.developerTitle'),
+      name: t('onboarding.template.developerName'),
+      desc: t('onboarding.template.developerDesc'),
+      permissionMode: 'claude-auto-edits',
+      adapter: 'claude-sdk',
+      prompt: t('onboarding.template.developerPrompt'),
+    },
   }
-> = {
-  general: {
-    title: '通用助手',
-    name: '我的通用助手',
-    desc: '适合日常问答、写作、总结和信息整理。',
-    permissionMode: 'claude-auto-edits',
-    adapter: 'claude-sdk',
-    prompt:
-      '你是一个耐心、清楚、适合非技术用户的 AI 助手。回答时先给结论，再给步骤。避免使用不必要的技术术语；如果必须使用，请用生活化例子解释。',
-  },
-  document: {
-    title: '文档助手',
-    name: '我的文档助手',
-    desc: '适合阅读、总结、改写和整理资料。',
-    permissionMode: 'claude-auto-edits',
-    adapter: 'claude-sdk',
-    prompt:
-      '你是一个文档整理助手。帮助用户阅读、总结、提炼重点、改写文本，并用简明标题和清晰条目输出。用户不是技术人员时，避免技术行话。',
-  },
-  work: {
-    title: '工作助理',
-    name: '我的工作助理',
-    desc: '适合计划、待办、复盘和工作沟通。',
-    permissionMode: 'claude-auto-edits',
-    adapter: 'claude-sdk',
-    prompt:
-      '你是一个可靠的工作助理。帮助用户拆解任务、制定计划、整理待办、起草沟通内容。输出要可执行、简短、清楚。',
-  },
-  developer: {
-    title: '开发助手',
-    name: '我的开发助手',
-    desc: '适合代码、项目、自动化与工程任务。',
-    permissionMode: 'claude-auto-edits',
-    adapter: 'claude-sdk',
-    prompt:
-      '你是一个严谨的开发助手。帮助用户理解项目、修改代码、解释技术方案。遇到风险时先说明影响，再执行。',
-  },
 }
 
 const providerPresets = PROVIDER_PRESETS.filter(
@@ -245,11 +246,13 @@ const defaultProviderPreset =
   providerPresets[0] ??
   PROVIDER_PRESETS[0]!
 
-const firstPrompts = [
-  '帮我写一段简短的工作总结，语气自然、清楚。',
-  '请把这段话整理得更清楚，并列出重点。',
-  '帮我规划今天的 3 个重要任务，并给出执行顺序。',
-]
+function getFirstPrompts(t: TranslateFn): string[] {
+  return [
+    t('onboarding.firstPrompt.summary'),
+    t('onboarding.firstPrompt.cleanup'),
+    t('onboarding.firstPrompt.plan'),
+  ]
+}
 
 function getActiveStepIndex(step: OnboardingStep): number {
   if (step === 'welcome') return 0
@@ -279,7 +282,13 @@ function dismissOnboarding(): void {
 }
 
 export function OnboardingView(): React.ReactElement {
-  const [state, dispatch] = useReducer(reducer, initialState)
+  const { t } = useI18n()
+  // reducer 需要 t 来本地化「由用例派生的示例提示词」；包装后语义不变。
+  const reducerWithT = useCallback(
+    (prev: OnboardingState, action: Action) => reducer(prev, action, t),
+    [t],
+  )
+  const [state, dispatch] = useReducer(reducerWithT, t, createInitialState)
   const [providerPresetId, setProviderPresetIdState] = useState(defaultProviderPreset.id)
   const [apiKey, setApiKey] = useState('')
   const [customEndpoint, setCustomEndpoint] = useState(defaultProviderPreset.apiEndpoint)
@@ -331,16 +340,16 @@ export function OnboardingView(): React.ReactElement {
 
   const skip = useCallback(() => {
     dismissOnboarding()
-    toast.info('已跳过新手引导，可稍后从设置中重新打开。')
+    toast.info(t('onboarding.skipToast'))
     goChat()
-  }, [goChat, toast])
+  }, [goChat, toast, t])
 
   const handleFetchProviderModels = useCallback(async () => {
     const preset =
       providerPresets.find((item) => item.id === providerPresetId) ?? defaultProviderPreset
     const key = apiKey.trim()
     if (!key) {
-      setError('获取模型列表需要先填写 API Key。')
+      setError(t('onboarding.fetchModelsNoKey'))
       return
     }
 
@@ -360,17 +369,17 @@ export function OnboardingView(): React.ReactElement {
       )
       setFetchedProviderModelIds(ids)
       if (ids.length === 0) {
-        setError('没有获取到可用模型，请检查服务商地址或稍后重试。')
+        setError(t('onboarding.fetchModelsEmpty'))
         return
       }
-      toast.success(`已获取 ${ids.length} 个模型，可在模型 ID 中选择。`)
+      toast.success(t('onboarding.fetchModelsSuccess', { count: ids.length }))
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      setError(`获取模型失败：${message}`)
+      setError(t('onboarding.fetchModelsFailed', { message }))
     } finally {
       setFetchingProviderModels(false)
     }
-  }, [apiKey, customEndpoint, fetchProviderModels, providerPresetId, setError, toast])
+  }, [apiKey, customEndpoint, fetchProviderModels, providerPresetId, setError, toast, t])
 
   // 用户在引导页关闭窗口 / 刷新时，若尚未主动结束引导，视为跳过 —
   // 否则下次启动还会再次自动打开。
@@ -398,14 +407,14 @@ export function OnboardingView(): React.ReactElement {
     const endpoint = customEndpoint.trim() || preset.apiEndpoint
     const key = apiKey.trim()
     if (!key) {
-      setError('请粘贴模型服务商提供的密钥。')
+      setError(t('onboarding.providerApiKeyRequired'))
       return
     }
     setBusy(true)
     setError('')
     try {
       const res = await createProvider({
-        name: `${preset.name} · 新手引导`,
+        name: t('onboarding.providerDefaultName', { name: preset.name }),
         provider: preset.provider,
         defaultModel: model,
         modelIds: Array.from(new Set([model, ...preset.modelIds])),
@@ -416,24 +425,31 @@ export function OnboardingView(): React.ReactElement {
       } as Parameters<typeof createProvider>[0])
       const profile = (res as { profile: ProviderProfile }).profile
       dispatch({ type: 'set-provider', providerProfileId: profile.id, modelId: model })
-      setConnectionTestOutput('正在发送“你好”测试模型连接…')
+      setConnectionTestOutput(t('onboarding.providerTesting'))
       try {
         const test = await healthCheck({ id: profile.id })
         setConnectionTestOutput(
           test.healthy
-            ? `测试通过：模型已响应。${test.latencyMs != null ? `延迟 ${test.latencyMs}ms。` : ''}`
-            : '测试未通过：Provider 返回不健康状态，请返回检查配置。',
+            ? t('onboarding.providerTestOk', {
+                latency:
+                  test.latencyMs != null
+                    ? t('onboarding.providerTestLatency', { ms: test.latencyMs })
+                    : '',
+              })
+            : t('onboarding.providerUnhealthyError'),
         )
       } catch (testErr) {
         setConnectionTestOutput(
-          `测试失败：${testErr instanceof Error ? testErr.message : String(testErr)}`,
+          t('onboarding.providerTestFailed', {
+            message: testErr instanceof Error ? testErr.message : String(testErr),
+          }),
         )
       }
-      toast.success('模型连接信息已保存。')
+      toast.success(t('onboarding.providerSaved'))
       void sessionCtx.refreshData()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      setError(`保存失败：${message}`)
+      setError(t('onboarding.providerSaveFailed', { message }))
     } finally {
       setBusy(false)
     }
@@ -447,6 +463,7 @@ export function OnboardingView(): React.ReactElement {
     setError,
     sessionCtx,
     toast,
+    t,
   ])
 
   const handleSelectLocalCli = useCallback(
@@ -455,7 +472,7 @@ export function OnboardingView(): React.ReactElement {
       const label = kind === 'codex' ? 'Codex' : 'Claude Code'
       setBusy(true)
       setError('')
-      setConnectionTestOutput(`正在检测本机 ${label} …`)
+      setConnectionTestOutput(t('onboarding.localCliCheckingLabel', { label }))
       try {
         // 本地 CLI provider 的可见性由 listProviders 内的 CLI 可用性检测把关：
         // 能看到对应 id 就说明宿主机真的装了该 CLI。这里带 includeDisabled，
@@ -465,9 +482,11 @@ export function OnboardingView(): React.ReactElement {
         const profile = profiles.find((p) => p.id === providerId)
         if (!profile) {
           throw new Error(
-            `未检测到本机 ${label}。请先安装${kind === 'codex' ? ' Codex CLI' : ' Claude Code'}（${
-              kind === 'codex' ? 'npm i -g @openai/codex' : 'npm i -g @anthropic-ai/claude-code'
-            }）并完成一次登录。`,
+            t('onboarding.localCliNotFoundError', {
+              label,
+              cli: kind === 'codex' ? 'Codex CLI' : 'Claude Code',
+              cmd: kind === 'codex' ? 'npm i -g @openai/codex' : 'npm i -g @anthropic-ai/claude-code',
+            }),
           )
         }
         // 引导页里明确选择连接本机 CLI，等价于要求该内置 Provider 可用；
@@ -478,7 +497,7 @@ export function OnboardingView(): React.ReactElement {
         // 二次确认：本地 CLI 的 healthCheck 就是检查可执行文件存在，无副作用。
         const test = await healthCheck({ id: profile.id })
         if (!test.healthy) {
-          throw new Error(test.errorMessage || `本机 ${label} 不可用`)
+          throw new Error(test.errorMessage || t('onboarding.localCliUnavailableError', { label }))
         }
         dispatch({
           type: 'set-local-cli',
@@ -486,10 +505,8 @@ export function OnboardingView(): React.ReactElement {
           providerProfileId: profile.id,
           modelId: profile.defaultModel,
         })
-        setConnectionTestOutput(
-          `已检测到本机 ${label}，可直接复用你已登录的凭证，无需填写 API Key。`,
-        )
-        toast.success(`已连接本机 ${label}。`)
+        setConnectionTestOutput(t('onboarding.localCliConnectedDesc', { label }))
+        toast.success(t('onboarding.localCliConnected', { label }))
         void sessionCtx.refreshData()
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
@@ -499,11 +516,11 @@ export function OnboardingView(): React.ReactElement {
         setBusy(false)
       }
     },
-    [healthCheck, listProviders, sessionCtx, setError, toast, updateProvider],
+    [healthCheck, listProviders, sessionCtx, setError, toast, updateProvider, t],
   )
 
   const handleCreateAgent = useCallback(async () => {
-    const template = templates[state.templateId]
+    const template = getTemplates(t)[state.templateId]
     setBusy(true)
     setError('')
     try {
@@ -540,7 +557,7 @@ export function OnboardingView(): React.ReactElement {
       return agent.id
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      setError(`创建助手失败：${message}`)
+      setError(t('onboarding.createAgentFailed', { message }))
     } finally {
       setBusy(false)
     }
@@ -556,12 +573,13 @@ export function OnboardingView(): React.ReactElement {
     state.templateId,
     setError,
     toast,
+    t,
   ])
 
   const handleStartFirstSession = useCallback(async () => {
     const prompt = state.firstPrompt.trim()
     if (!prompt) {
-      setError('请先输入或选择一句想让助手完成的话。')
+      setError(t('onboarding.firstSessionNoPrompt'))
       return
     }
     setBusy(true)
@@ -575,15 +593,15 @@ export function OnboardingView(): React.ReactElement {
         providerProfileId: state.providerProfileId ?? undefined,
         modelId: state.modelId ?? undefined,
       })
-      if (!sessionId) throw new Error('没有可用的模型配置，请先完成模型连接。')
+      if (!sessionId) throw new Error(t('onboarding.firstSessionNoModel'))
       // 用户聊天输入显式声明来源：auto-router 故障切换重派发仅对 'user' 轮次武装
       await sendTurn({ sessionId, message: prompt, turnSource: 'user' })
-      toast.success('第一次会话已创建。')
+      toast.success(t('onboarding.firstSessionCreated'))
       completeOnboarding()
       goChat()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      setError(`发送失败：${message}`)
+      setError(t('onboarding.firstSessionFailed', { message }))
     } finally {
       setBusy(false)
     }
@@ -598,6 +616,7 @@ export function OnboardingView(): React.ReactElement {
     state.providerProfileId,
     setError,
     toast,
+    t,
   ])
 
   return (
@@ -624,10 +643,10 @@ export function OnboardingView(): React.ReactElement {
                 disabled={busy || state.step === 'welcome'}
                 onClick={() => dispatch({ type: 'back' })}
               >
-                <Icons.ArrowLeft size={14} /> 上一步
+                <Icons.ArrowLeft size={14} /> {t('onboarding.backBtn')}
               </button>
               <button type="button" disabled={busy} onClick={skip}>
-                稍后再说
+                {t('onboarding.laterBtn')}
               </button>
             </div>
             <AnimatePresence mode="wait">
@@ -719,10 +738,11 @@ function WelcomeStep({
   dispatch: React.Dispatch<Action>
   useCase: UseCaseId | null
 }) {
+  const { t } = useI18n()
   return (
     <>
-      <h1>你想先做些什么？</h1>
-      <p className="lead">选一个最贴近你的场景，我们为你准备一个好的开始。</p>
+      <h1>{t('onboarding.welcomeTitle')}</h1>
+      <p className="lead">{t('onboarding.welcomeLead')}</p>
       <div className="experience-choices">
         {EXPERIENCE_CASES.map((item) => (
           <button
@@ -737,8 +757,8 @@ function WelcomeStep({
             <span className="experience-icon">
               <item.icon size={21} strokeWidth={1.7} />
             </span>
-            <strong>{item.title}</strong>
-            <small>{item.desc}</small>
+            <strong>{t(item.titleKey)}</strong>
+            <small>{t(item.descKey)}</small>
             {useCase === item.id && (
               <span className="experience-check" aria-hidden="true">
                 <Icons.Check size={12} />
@@ -747,10 +767,10 @@ function WelcomeStep({
           </button>
         ))}
       </div>
-      <p className="experience-hint">随时可以尝试其他用途，这不会限制你的助手。</p>
+      <p className="experience-hint">{t('onboarding.welcomeHint')}</p>
       <div className="button-row experience-continue">
         <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}>
-          继续 <Icons.ArrowRight size={16} />
+          {t('onboarding.continueBtn')} <Icons.ArrowRight size={16} />
         </Button>
       </div>
     </>
@@ -765,22 +785,26 @@ function WelcomeStep({
 function SkipStepButton({
   dispatch,
   target,
-  label = '跳过本步',
+  label,
 }: {
   dispatch: React.Dispatch<Action>
   target: OnboardingStep
   label?: string
 }) {
-  return <Button onClick={() => dispatch({ type: 'set-step', step: target })}>{label}</Button>
+  const { t } = useI18n()
+  return (
+    <Button onClick={() => dispatch({ type: 'set-step', step: target })}>
+      {label ?? t('onboarding.skipStepBtn')}
+    </Button>
+  )
 }
 
 function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
+  const { t } = useI18n()
   return (
     <>
-      <h1>选择你的 AI 模型</h1>
-      <p className="lead">
-        推荐使用已有的第三方模型 API Key，也可以登录 Spark 账号或连接本机工具。
-      </p>
+      <h1>{t('onboarding.modelSourceTitle')}</h1>
+      <p className="lead">{t('onboarding.modelSourceLead')}</p>
       <div className="experience-choices source-options">
         <div className="experience-choice source-choice-primary">
           <span className="experience-icon">
@@ -788,10 +812,10 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
           </span>
           <div className="source-primary-copy">
             <div className="source-primary-title">
-              <strong>第三方模型</strong>
-              <em>推荐</em>
+              <strong>{t('onboarding.modelSourceThirdParty')}</strong>
+              <em>{t('onboarding.modelSourceRecommended')}</em>
             </div>
-            <span>使用已有 API Key，密钥只保存在本机</span>
+            <span>{t('onboarding.modelSourceThirdPartyDesc')}</span>
           </div>
           <Button
             type="primary"
@@ -803,7 +827,7 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
               })
             }
           >
-            填写 API Key
+            {t('onboarding.modelSourceThirdPartyBtn')}
           </Button>
         </div>
         <button
@@ -820,8 +844,8 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
           <span className="experience-icon">
             <Icons.User size={21} strokeWidth={1.7} />
           </span>
-          <strong>Spark 账号</strong>
-          <small>登录即可使用，无需配置</small>
+          <strong>{t('onboarding.modelSourceSparkAccount')}</strong>
+          <small>{t('onboarding.modelSourceSparkAccountDesc')}</small>
           <span className="source-choice-arrow" aria-hidden="true">
             <Icons.ArrowRight size={16} strokeWidth={1.7} />
           </span>
@@ -836,8 +860,8 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
           <span className="experience-icon">
             <Icons.Terminal size={21} strokeWidth={1.7} />
           </span>
-          <strong>本机 AI 工具</strong>
-          <small>连接 Claude Code 或 Codex</small>
+          <strong>{t('onboarding.modelSourceLocalCli')}</strong>
+          <small>{t('onboarding.modelSourceLocalCliDesc')}</small>
           <span className="source-choice-arrow" aria-hidden="true">
             <Icons.ArrowRight size={16} strokeWidth={1.7} />
           </span>
@@ -848,7 +872,7 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
         className="source-skip"
         onClick={() => dispatch({ type: 'set-step', step: 'agent-template' })}
       >
-        暂时跳过
+        {t('onboarding.modelSourceSkipBtn')}
       </button>
     </>
   )
@@ -863,12 +887,11 @@ function SparkAccountStep({
   account: string
   dispatch: React.Dispatch<Action>
 }) {
+  const { t } = useI18n()
   return (
     <>
-      <h1>使用 Spark 平台模型</h1>
-      <p className="lead">
-        不必申请或配置 API Key。平台模型作为一个可选 Provider，与你的第三方模型配置并存。
-      </p>
+      <h1>{t('onboarding.sparkAccountTitle')}</h1>
+      <p className="lead">{t('onboarding.sparkAccountLead')}</p>
       {!isAuthenticated ? (
         <div className="onboarding-auth-embed">
           <AuthGate variant="embed" />
@@ -897,20 +920,22 @@ type LocalCliOption = {
   installHint: string
 }
 
-const LOCAL_CLI_OPTIONS: Array<LocalCliOption> = [
-  {
-    kind: 'claude',
-    title: 'Claude Code（本机）',
-    desc: '复用宿主机已登录的 Claude Code。',
-    installHint: '未检测到，可运行 npm i -g @anthropic-ai/claude-code 安装。',
-  },
-  {
-    kind: 'codex',
-    title: 'Codex（本机）',
-    desc: '复用宿主机已登录的 Codex CLI。',
-    installHint: '未检测到，可运行 npm i -g @openai/codex 安装。',
-  },
-]
+function getLocalCliOptions(t: TranslateFn): Array<LocalCliOption> {
+  return [
+    {
+      kind: 'claude',
+      title: t('onboarding.localCliClaudeTitle'),
+      desc: t('onboarding.localCliClaudeDesc'),
+      installHint: t('onboarding.localCliClaudeHint'),
+    },
+    {
+      kind: 'codex',
+      title: t('onboarding.localCliCodexTitle'),
+      desc: t('onboarding.localCliCodexDesc'),
+      installHint: t('onboarding.localCliCodexHint'),
+    },
+  ]
+}
 
 function LocalCliStep({
   dispatch,
@@ -921,6 +946,7 @@ function LocalCliStep({
   onSelect: (kind: LocalCliKind) => void | Promise<void>
   busy: boolean
 }) {
+  const { t } = useI18n()
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const [status, setStatus] = useState<Record<LocalCliKind, LocalCliStatus>>({
     claude: 'checking',
@@ -966,13 +992,10 @@ function LocalCliStep({
 
   return (
     <>
-      <h1>连接本机的 Claude Code 或 Codex</h1>
-      <p className="lead">
-        选中后会直接复用你本机已登录的 Claude Code / Codex 配置，不需要再填写 API Key。
-        如果两个都还没装，可以改用第三方模型路径。
-      </p>
+      <h1>{t('onboarding.localCliTitle')}</h1>
+      <p className="lead">{t('onboarding.localCliLead')}</p>
       <div className="source-list">
-        {LOCAL_CLI_OPTIONS.map((option) => {
+        {getLocalCliOptions(t).map((option) => {
           const current = status[option.kind]
           return (
             <button
@@ -989,18 +1012,18 @@ function LocalCliStep({
                 <strong>{option.title}</strong>
                 <span>
                   {current === 'checking'
-                    ? '正在检测本机是否已安装…'
+                    ? t('onboarding.localCliDetecting')
                     : current === 'available'
                       ? option.desc
                       : option.installHint}
                 </span>
               </div>
               {current === 'checking' ? (
-                <em className="local-cli-badge checking">检测中</em>
+                <em className="local-cli-badge checking">{t('onboarding.localCliCheckingBadge')}</em>
               ) : current === 'available' ? (
-                <em className="local-cli-badge ok">可用</em>
+                <em className="local-cli-badge ok">{t('onboarding.localCliAvailableBadge')}</em>
               ) : (
-                <em className="local-cli-badge no">未安装</em>
+                <em className="local-cli-badge no">{t('onboarding.localCliUnavailableBadge')}</em>
               )}
             </button>
           )
@@ -1008,7 +1031,7 @@ function LocalCliStep({
       </div>
       <div className="button-row">
         <Button onClick={handleRedetect} disabled={busy}>
-          重新检测
+          {t('onboarding.localCliRecheckBtn')}
         </Button>
         <SkipStepButton dispatch={dispatch} target="agent-template" />
         {!anyAvailable && (
@@ -1022,7 +1045,7 @@ function LocalCliStep({
               })
             }
           >
-            改用第三方模型
+            {t('onboarding.localCliFallbackBtn')}
           </Button>
         )}
       </div>
@@ -1046,12 +1069,11 @@ function ProviderStep(props: {
   busy: boolean
   dispatch?: React.Dispatch<Action>
 }) {
+  const { t } = useI18n()
   return (
     <>
-      <h1>填写你的模型服务信息</h1>
-      <p className="lead">
-        “密钥”就是模型服务商给你的使用凭证。SparkWork 会把它安全保存在你的电脑里。
-      </p>
+      <h1>{t('onboarding.providerTitle')}</h1>
+      <p className="lead">{t('onboarding.providerLead')}</p>
       <ProviderPromoBanner
         className="onboarding-promo-banner"
         onSelectPreset={props.setProviderPresetId}
@@ -1059,8 +1081,8 @@ function ProviderStep(props: {
       <div className="onboarding-form">
         <label>
           <span className="onboarding-field-head">
-            服务商
-            <small className="onboarding-field-hint">已内置接口地址与默认模型</small>
+            {t('onboarding.providerVendorLabel')}
+            <small className="onboarding-field-hint">{t('onboarding.providerVendorHint')}</small>
           </span>
           <LobeSelect
             value={props.providerPresetId}
@@ -1091,7 +1113,7 @@ function ProviderStep(props: {
         </label>
         <label>
           <span className="onboarding-field-head">
-            密钥
+            {t('onboarding.providerKeyLabel')}
             {(() => {
               // 仅已知渠道（VendorMeta.apiKeyUrl）显示「获取密钥」快捷入口，未知渠道不渲染
               const preset = providerPresets.find((p) => p.id === props.providerPresetId)
@@ -1102,9 +1124,9 @@ function ProviderStep(props: {
                   href={apiKeyUrl}
                   target="_blank"
                   rel="noreferrer"
-                  title={`前往 ${apiKeyUrl} 获取密钥`}
+                  title={t('onboarding.providerGetKeyTitle', { url: apiKeyUrl })}
                 >
-                  获取密钥
+                  {t('onboarding.providerGetKey')}
                   <Icons.ExternalLink size={11} />
                 </a>
               ) : null
@@ -1113,14 +1135,14 @@ function ProviderStep(props: {
           <InputPassword
             value={props.apiKey}
             onChange={(e) => props.setApiKey(e.target.value)}
-            placeholder="粘贴 API Key"
+            placeholder={t('onboarding.providerKeyPlaceholder')}
           />
-          <small className="onboarding-field-hint">只保存在本机，不会上传到任何服务器</small>
+          <small className="onboarding-field-hint">{t('onboarding.providerKeyHint')}</small>
         </label>
         <label>
           <span className="onboarding-field-head">
-            模型 ID
-            <small className="onboarding-field-hint">点右侧按钮可从服务商读取可用模型</small>
+            {t('onboarding.providerModelLabel')}
+            <small className="onboarding-field-hint">{t('onboarding.providerModelHint')}</small>
           </span>
           <div className="provider-model-row">
             {props.fetchedModelIds.length > 0 ? (
@@ -1128,14 +1150,14 @@ function ProviderStep(props: {
                 showSearch
                 value={props.customModel || undefined}
                 onChange={(value) => props.setCustomModel(String(value))}
-                placeholder="选择模型"
+                placeholder={t('onboarding.providerModelSelectPlaceholder')}
                 options={props.fetchedModelIds.map((id) => ({ label: id, value: id }))}
               />
             ) : (
               <LobeInput
                 value={props.customModel}
                 onChange={(e) => props.setCustomModel(e.target.value)}
-                placeholder="填写 Model ID"
+                placeholder={t('onboarding.providerModelPlaceholder')}
               />
             )}
             <Button
@@ -1144,26 +1166,26 @@ function ProviderStep(props: {
               loading={props.fetchingModels}
               disabled={props.busy}
             >
-              {props.fetchedModelIds.length > 0 ? '重新获取' : '获取模型'}
+              {props.fetchedModelIds.length > 0
+                ? t('onboarding.providerRefetchModelsBtn')
+                : t('onboarding.providerFetchModelsBtn')}
             </Button>
           </div>
         </label>
         <label>
-          API URL
+          {t('onboarding.providerUrlLabel')}
           <LobeInput
             value={props.customEndpoint}
             onChange={(e) => props.setCustomEndpoint(e.target.value)}
-            placeholder="默认可留空"
+            placeholder={t('onboarding.providerUrlPlaceholder')}
           />
-          <small className="onboarding-field-hint">
-            仅在使用自建或代理接口时填写，需兼容 OpenAI 接口格式
-          </small>
+          <small className="onboarding-field-hint">{t('onboarding.providerUrlHint')}</small>
         </label>
       </div>
       <div className="button-row">
         {props.dispatch && <SkipStepButton dispatch={props.dispatch} target="agent-template" />}
         <Button type="primary" size="middle" onClick={props.onSubmit} loading={props.busy}>
-          {props.busy ? '正在测试并保存…' : '测试并保存'}
+          {props.busy ? t('onboarding.providerSubmittingBtn') : t('onboarding.providerSubmitBtn')}
         </Button>
       </div>
     </>
@@ -1185,12 +1207,16 @@ function FirstSessionStep({
   onSubmit: () => void
   busy: boolean
 }) {
+  const { t } = useI18n()
+  const templates = getTemplates(t)
   return (
     <>
-      <h1>从第一件小事开始。</h1>
-      <p className="experience-assistant">已为你匹配：{templates[templateId].title}</p>
+      <h1>{t('onboarding.firstSessionTitle')}</h1>
+      <p className="experience-assistant">
+        {t('onboarding.firstSessionMatched', { name: templates[templateId].title })}
+      </p>
       <details className="experience-template-options">
-        <summary>调整助手类型</summary>
+        <summary>{t('onboarding.firstSessionAdjust')}</summary>
         <div className="choice-grid templates">
           {Object.entries(templates).map(([id, item]) => (
             <button
@@ -1206,9 +1232,9 @@ function FirstSessionStep({
           ))}
         </div>
       </details>
-      <p className="lead">修改下面的内容，开始你的第一项任务。发送成功后将进入工作台。</p>
+      <p className="lead">{t('onboarding.firstSessionLead')}</p>
       <div className="prompt-list">
-        {firstPrompts.map((item) => (
+        {getFirstPrompts(t).map((item) => (
           <button
             key={item}
             type="button"
@@ -1222,21 +1248,21 @@ function FirstSessionStep({
         value={prompt}
         onChange={(e) => dispatch({ type: 'set-first-prompt', firstPrompt: e.target.value })}
         rows={4}
-        aria-label="第一项任务"
+        aria-label={t('onboarding.firstSessionPromptAria')}
         disabled={busy}
       />
       <div className="button-row">
         <Button disabled={busy} onClick={onSkip}>
-          稍后开始，进入工作台
+          {t('onboarding.firstSessionSkipBtn')}
         </Button>
         <Button
           disabled={busy}
           onClick={() => dispatch({ type: 'set-step', step: 'workflows-guide' })}
         >
-          了解更多功能
+          {t('onboarding.firstSessionMoreBtn')}
         </Button>
         <Button type="primary" onClick={onSubmit} loading={busy}>
-          {busy ? '正在发送…' : '开始第一项任务'}
+          {busy ? t('onboarding.firstSessionSubmittingBtn') : t('onboarding.firstSessionSubmitBtn')}
         </Button>
       </div>
     </>
@@ -1255,44 +1281,38 @@ function CanvasGuideStep({
   dispatch: React.Dispatch<Action>
   onFinish: () => void
 }) {
+  const { t } = useI18n()
   return (
     <>
-      <h1>画布是你的多媒体创作工作台</h1>
-      <p className="lead">
-        画布是按"项目"组织的多媒体创作空间，把剧本、角色、场景、分镜、参考图、提示词和生成结果都摆在一张可平移、可缩放的画布上。它不是聊天窗口的延伸，而是真正动手做东西的地方。
-      </p>
+      <h1>{t('onboarding.canvasGuideTitle')}</h1>
+      <p className="lead">{t('onboarding.canvasGuideLead')}</p>
       <div className="guide-panel">
         <div className="guide-item">
           <Icons.Film size={22} />
           <div>
-            <strong>多模态节点 + 创作链路</strong>
-            <span>
-              文本、图片、视频、音频、镜头都能作为节点摆放，节点之间用线串起"先有剧本 → 再做分镜 →
-              跑图生视频"的创作链路。
-            </span>
+            <strong>{t('onboarding.canvasGuideItem1Title')}</strong>
+            <span>{t('onboarding.canvasGuideItem1Desc')}</span>
           </div>
         </div>
         <div className="guide-item">
           <Icons.Folder size={22} />
           <div>
-            <strong>按项目组织，不会丢</strong>
-            <span>
-              每个画布对应一个项目，角色设定、首帧、迭代版本都在画布里保留，跨会话也能继续。
-            </span>
+            <strong>{t('onboarding.canvasGuideItem2Title')}</strong>
+            <span>{t('onboarding.canvasGuideItem2Desc')}</span>
           </div>
         </div>
         <div className="guide-item">
           <Icons.Image size={22} />
           <div>
-            <strong>生成结果直接回写画布</strong>
-            <span>图片、视频、语音的产出自动落成新节点，AI 操作在画布上跑，过程清楚可见。</span>
+            <strong>{t('onboarding.canvasGuideItem3Title')}</strong>
+            <span>{t('onboarding.canvasGuideItem3Desc')}</span>
           </div>
         </div>
       </div>
       <div className="button-row">
-        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
+        <Button onClick={() => finishGuide(onFinish)}>{t('onboarding.skipGuideBtn')}</Button>
         <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'media-guide' })}>
-          继续了解多媒体模型
+          {t('onboarding.canvasGuideNextBtn')}
         </Button>
       </div>
     </>
@@ -1306,33 +1326,31 @@ function MediaGuideStep({
   dispatch: React.Dispatch<Action>
   onFinish: () => void
 }) {
+  const { t } = useI18n()
   return (
     <>
-      <h1>图片、视频、语音也可以进入对话</h1>
-      <p className="lead">
-        当你配置的服务商支持多媒体模型时，SparkWork
-        会按模型类型组织能力。你可以在对话里描述要生成的画面，也可以把参考素材带进画布继续加工。
-      </p>
+      <h1>{t('onboarding.mediaGuideTitle')}</h1>
+      <p className="lead">{t('onboarding.mediaGuideLead')}</p>
       <div className="guide-panel">
         <div className="guide-item">
           <Icons.Image size={22} />
           <div>
-            <strong>参考素材要说清楚</strong>
-            <span>例如“用这张图做首帧”“保持角色一致”“生成 16:9 封面”。</span>
+            <strong>{t('onboarding.mediaGuideItem1Title')}</strong>
+            <span>{t('onboarding.mediaGuideItem1Desc')}</span>
           </div>
         </div>
         <div className="guide-item">
           <Icons.Play size={22} />
           <div>
-            <strong>生成结果可继续迭代</strong>
-            <span>把图片或视频结果放回上下文，继续改提示词、做分镜或转成下一步素材。</span>
+            <strong>{t('onboarding.mediaGuideItem2Title')}</strong>
+            <span>{t('onboarding.mediaGuideItem2Desc')}</span>
           </div>
         </div>
       </div>
       <div className="button-row">
-        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
+        <Button onClick={() => finishGuide(onFinish)}>{t('onboarding.skipGuideBtn')}</Button>
         <Button onClick={() => dispatch({ type: 'set-step', step: 'canvas-guide' })}>
-          返回画布
+          {t('onboarding.canvasGuideBackBtn')}
         </Button>
         <Button
           type="primary"
@@ -1341,7 +1359,7 @@ function MediaGuideStep({
             dispatch({ type: 'set-step', step: 'done' })
           }}
         >
-          完成引导
+          {t('onboarding.mediaGuideFinishBtn')}
         </Button>
       </div>
     </>
@@ -1355,51 +1373,41 @@ function WorkflowsGuideStep({
   dispatch: React.Dispatch<Action>
   onFinish: () => void
 }) {
+  const { t } = useI18n()
   return (
     <>
-      <h1>把多步任务编排成工作流</h1>
-      <p className="lead">
-        工作流是一张节点 + 边的 DAG 图：把"先做 A、再做 B、最后做 C"这种多步任务可视化、可复用。
-        适合可重复、可追溯的复杂流程。
-      </p>
+      <h1>{t('onboarding.workflowsGuideTitle')}</h1>
+      <p className="lead">{t('onboarding.workflowsGuideLead')}</p>
       <div className="guide-panel">
         <div className="guide-item">
           <Icons.Workflow size={22} />
           <div>
-            <strong>节点 + 边的图编辑器</strong>
-            <span>
-              节点代表一个步骤（Agent
-              调用、Skill、工具、条件分支），用边表示执行顺序；中间面板负责调参。
-            </span>
+            <strong>{t('onboarding.workflowsGuideItem1Title')}</strong>
+            <span>{t('onboarding.workflowsGuideItem1Desc')}</span>
           </div>
         </div>
         <div className="guide-item">
           <Icons.Brain size={22} />
           <div>
-            <strong>绑定到 Agent 自动跑</strong>
-            <span>
-              把工作流绑定到某个助手，Agent
-              收到匹配任务时会按流程自动跑完所有节点，结果回写到原位置。
-            </span>
+            <strong>{t('onboarding.workflowsGuideItem2Title')}</strong>
+            <span>{t('onboarding.workflowsGuideItem2Desc')}</span>
           </div>
         </div>
         <div className="guide-item">
           <Icons.Branch size={22} />
           <div>
-            <strong>模板、版本与还原点</strong>
-            <span>
-              可保存为模板复用；如果工作流里的代码步骤跑偏，能结合代码还原点回到上一个稳定状态后继续推进。
-            </span>
+            <strong>{t('onboarding.workflowsGuideItem3Title')}</strong>
+            <span>{t('onboarding.workflowsGuideItem3Desc')}</span>
           </div>
         </div>
       </div>
       <div className="button-row">
-        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
+        <Button onClick={() => finishGuide(onFinish)}>{t('onboarding.skipGuideBtn')}</Button>
         <Button onClick={() => dispatch({ type: 'set-step', step: 'first-session' })}>
-          返回第一项任务
+          {t('onboarding.workflowsGuideBackBtn')}
         </Button>
         <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'canvas-guide' })}>
-          继续了解画布
+          {t('onboarding.workflowsGuideNextBtn')}
         </Button>
       </div>
     </>
@@ -1413,19 +1421,22 @@ function ConnectionTestStep({
   output: string
   dispatch: React.Dispatch<Action>
 }) {
+  const { t } = useI18n()
   return (
     <>
-      <h1>已用"你好"测试模型</h1>
-      <p className="lead">下面是本次模型连接测试结果。若失败，可以返回重新选择方案或修改密钥。</p>
-      <pre className="test-output">{output || '等待测试结果…'}</pre>
+      <h1>{t('onboarding.connectionTestTitle')}</h1>
+      <p className="lead">{t('onboarding.connectionTestLead')}</p>
+      <pre className="test-output">{output || t('onboarding.connectionTestWaiting')}</pre>
       <div className="button-row">
-        <Button onClick={() => dispatch({ type: 'back' })}>返回修改模型</Button>
+        <Button onClick={() => dispatch({ type: 'back' })}>
+          {t('onboarding.connectionTestBackBtn')}
+        </Button>
         <SkipStepButton dispatch={dispatch} target="agent-template" />
         <Button
           type="primary"
           onClick={() => dispatch({ type: 'set-step', step: 'agent-template' })}
         >
-          继续
+          {t('onboarding.continueBtn')}
         </Button>
       </div>
     </>
@@ -1433,19 +1444,17 @@ function ConnectionTestStep({
 }
 
 function DoneStep({ onDone }: { onDone: () => void }) {
+  const { t } = useI18n()
   return (
     <>
-      <h1>设置完成！</h1>
-      <p className="lead">以后你可以直接从左侧新建会话开始使用，也可以继续添加更多模型和助手。</p>
+      <h1>{t('onboarding.doneTitle')}</h1>
+      <p className="lead">{t('onboarding.doneLead')}</p>
       <div className="guide-panel">
         <div className="guide-item">
           <Icons.Terminal size={22} />
           <div>
-            <strong>运行环境缺失？交给 Agent</strong>
-            <span>
-              使用某些能力时可能会提示缺少 Python、Node.js 等运行环境——不必手动折腾，直接让 Agent
-              帮你安装配置即可，装好就能继续用。
-            </span>
+            <strong>{t('onboarding.doneItem1Title')}</strong>
+            <span>{t('onboarding.doneItem1Desc')}</span>
           </div>
         </div>
       </div>
@@ -1456,7 +1465,7 @@ function DoneStep({ onDone }: { onDone: () => void }) {
           onDone()
         }}
       >
-        进入会话
+        {t('onboarding.doneEnterBtn')}
       </Button>
     </>
   )

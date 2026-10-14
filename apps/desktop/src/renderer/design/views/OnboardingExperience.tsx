@@ -1,46 +1,53 @@
 import { Feather, Files, CalendarCheck2, SquareTerminal } from 'lucide-react'
+import { useI18n } from '../i18n'
 import { SparkRibbon } from '../components/brand/SparkRibbon'
 import logo from '../../assets/spark-logo.png'
 
+/**
+ * 用途卡片。文案以 i18n key 形式存放（而非字面量），由使用方在渲染时翻译：
+ * 这样语言切换后能正确更新，同时 `as const` 的字面量类型（id / templateId）保持不变。
+ */
 export const EXPERIENCE_CASES = [
   {
     id: 'daily',
     templateId: 'general',
-    title: '写作与表达',
-    desc: '写文章、润色邮件、整理思路',
+    titleKey: 'onboarding.useCase.dailyTitle',
+    descKey: 'onboarding.useCase.dailyDesc',
     icon: Feather,
-    headline: ['让表达，', '更进一步。'],
-    caption: '邮件、文章与灵感，都有一个好的开始。',
+    headlineKeys: ['onboarding.useCase.dailyHeadline1', 'onboarding.useCase.dailyHeadline2'],
+    captionKey: 'onboarding.useCase.dailyCaption',
   },
   {
     id: 'document',
     templateId: 'document',
-    title: '资料与文件',
-    desc: '读文档、提炼重点、整理信息',
+    titleKey: 'onboarding.useCase.documentTitle',
+    descKey: 'onboarding.useCase.documentDesc',
     icon: Files,
-    headline: ['让信息，', '清晰起来。'],
-    caption: '从繁杂资料中，找到真正重要的内容。',
+    headlineKeys: ['onboarding.useCase.documentHeadline1', 'onboarding.useCase.documentHeadline2'],
+    captionKey: 'onboarding.useCase.documentCaption',
   },
   {
     id: 'work',
     templateId: 'work',
-    title: '日常工作',
-    desc: '做计划、写总结、拆解任务',
+    titleKey: 'onboarding.useCase.workTitle',
+    descKey: 'onboarding.useCase.workDesc',
     icon: CalendarCheck2,
-    headline: ['让每天，', '从容一些。'],
-    caption: '理清优先级，为重要的事情留出时间。',
+    headlineKeys: ['onboarding.useCase.workHeadline1', 'onboarding.useCase.workHeadline2'],
+    captionKey: 'onboarding.useCase.workCaption',
   },
   {
     id: 'developer',
     templateId: 'developer',
-    title: '代码与创造',
-    desc: '理解项目、开发功能、自动化',
+    titleKey: 'onboarding.useCase.developerTitle',
+    descKey: 'onboarding.useCase.developerDesc',
     icon: SquareTerminal,
-    headline: ['让创造，', '发生得更快。'],
-    caption: '从第一行代码，到下一次突破。',
+    headlineKeys: ['onboarding.useCase.developerHeadline1', 'onboarding.useCase.developerHeadline2'],
+    captionKey: 'onboarding.useCase.developerCaption',
   },
 ] as const
+
 export function OnboardingBanner({ useCase }: { useCase: string | null }) {
+  const { t } = useI18n()
   const item = EXPERIENCE_CASES.find((item) => item.id === useCase) ?? EXPERIENCE_CASES[0]
   return (
     <aside className="experience-banner">
@@ -53,22 +60,29 @@ export function OnboardingBanner({ useCase }: { useCase: string | null }) {
       </div>
       <div className="experience-story">
         <h2>
-          {item.headline[0]}
+          {t(item.headlineKeys[0])}
           <br />
-          {item.headline[1]}
+          {t(item.headlineKeys[1])}
         </h2>
-        <p>{item.caption}</p>
+        <p>{t(item.captionKey)}</p>
       </div>
       <footer>
-        SPARKWORK <span>一点灵感，无限可能</span>
+        SPARKWORK <span>{t('onboarding.bannerTagline')}</span>
       </footer>
     </aside>
   )
 }
+
 export function OnboardingProgress({ phase }: { phase: number }) {
+  const { t } = useI18n()
+  const labels = [
+    t('onboarding.progressStep1'),
+    t('onboarding.progressStep2'),
+    t('onboarding.progressStep3'),
+  ]
   return (
-    <ol className="experience-progress" aria-label="新手引导进度">
-      {['选择用途', '连接 AI', '开始创作'].map((label, index) => (
+    <ol className="experience-progress" aria-label={t('onboarding.progressAria')}>
+      {labels.map((label, index) => (
         <li
           key={label}
           aria-current={index === phase ? 'step' : undefined}

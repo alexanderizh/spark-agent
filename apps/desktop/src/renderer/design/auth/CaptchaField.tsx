@@ -21,6 +21,7 @@ import React, {
 } from 'react'
 import { Form, Input, Spin } from 'antd'
 import { useAuth } from './AuthContext'
+import { useI18n } from '../i18n'
 import { Icons } from '../Icons'
 
 interface CaptchaFieldProps {
@@ -42,6 +43,7 @@ export const CaptchaField = forwardRef<CaptchaFieldHandle, CaptchaFieldProps>(fu
   ref,
 ): React.ReactElement {
   const auth = useAuth()
+  const { t } = useI18n()
   const [svg, setSvg] = useState('')
   const [loading, setLoading] = useState(false)
   const refreshingRef = useRef(false)
@@ -89,12 +91,12 @@ export const CaptchaField = forwardRef<CaptchaFieldHandle, CaptchaFieldProps>(fu
       </Form.Item>
       <Form.Item
         name="captchaText"
-        label="图片验证码"
+        label={t('auth.captcha.label')}
         className="auth-field-row"
-        rules={required ? [{ required: true, message: '请填写图片验证码' }] : []}
+        rules={required ? [{ required: true, message: t('auth.common.captchaRequired') }] : []}
       >
         <Input
-          placeholder="请输入验证码"
+          placeholder={t('auth.captcha.placeholder')}
           maxLength={8}
           className="captcha-btn-box"
           addonAfter={
@@ -107,14 +109,14 @@ export const CaptchaField = forwardRef<CaptchaFieldHandle, CaptchaFieldProps>(fu
                 if (!disabled) void refresh()
               }}
               aria-disabled={loading || disabled}
-              aria-label="刷新图片验证码"
+              aria-label={t('auth.captcha.refresh')}
             >
               {loading ? (
                 <Spin size="middle" />
               ) : svg ? (
                 <span className="captcha-visual">
                   {isDataImage ? (
-                    <img className="captcha-image" src={svg} alt="图片验证码" />
+                    <img className="captcha-image" src={svg} alt={t('auth.captcha.alt')} />
                   ) : (
                     <span
                       className="captcha-inline-svg"

@@ -16,6 +16,9 @@ import { Button, Dropdown, Segmented, message } from 'antd'
 import type { MenuProps } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { encodeToSafeFileUrl } from '../canvas-safe-file'
+import { translate, useI18n } from '../../../i18n'
+
+const VIDEO_WORKBENCH_TITLE_PREFIX = /^视频工作台\s*[—-]?\s*/ // i18n-exempt-line: 匹配节点标题前缀，非 UI 文案
 import { resolveVideoWorkbenchDiskPath as resolveDiskPath } from './videoWorkbenchPath'
 import type { FfmpegInstallProgress, VideoProcessRequest } from '@spark/protocol'
 import { Icons } from '../../../Icons'
@@ -229,6 +232,8 @@ export function CanvasVideoWorkbenchModal({
   onMaterializeOutput,
   taskStatusByNodeId,
 }: Props): ReactElement | null {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   // V2 是唯一编辑与持久化状态源；旧面板只消费 session 暴露的兼容视图。
   // Modal 在父级用 key={node.id} 绑定节点，切换节点会完整 remount。
   const projectSession = useVideoWorkbenchProjectSession({
@@ -236,7 +241,7 @@ export function CanvasVideoWorkbenchModal({
     open,
     onSave,
     onSaveError: (error) => {
-      message.error(error instanceof Error ? error.message : '自动保存视频工作台失败')
+      message.error(error instanceof Error ? error.message : translate('canvasVideoWorkbench.t1'))
     },
   })
   const {
@@ -489,10 +494,10 @@ export function CanvasVideoWorkbenchModal({
     try {
       const result = await window.spark.invoke('ffmpeg:install', {})
       setFfmpegReady(result.success)
-      if (result.success) message.success(result.message ?? 'FFmpeg 安装成功，视频能力已就绪')
-      else message.error(result.message ?? 'FFmpeg 安装失败')
+      if (result.success) message.success(result.message ?? translate('canvasVideoWorkbench.t2Desc'))
+      else message.error(result.message ?? translate('canvasVideoWorkbench.t3'))
     } catch (error) {
-      message.error(`FFmpeg 安装失败：${error instanceof Error ? error.message : String(error)}`)
+      message.error(translate('canvasVideoWorkbench.tpl18Desc', { reason: error instanceof Error ? error.message : String(error) }))
     } finally {
       setFfmpegInstalling(false)
     }
@@ -517,7 +522,7 @@ export function CanvasVideoWorkbenchModal({
     async (n: CanvasNode) => {
       if (probingRef.current) return
       const sourcePath = resolveDiskPath((n.data as { url?: string }).url ?? '')
-      if (!sourcePath) return // 未关联视频文件，跳过探测（预览区已展示"未关联视频"）
+      if (!sourcePath) return // 未关联视频文件，跳过探测（预览区已展示translate('canvasVideoWorkbench.t79')）
       probingRef.current = true
       setBusy(true)
       setProgress(null)
@@ -604,14 +609,14 @@ export function CanvasVideoWorkbenchModal({
         // 按钮只按 ffmpeg 就绪禁用；probe 缺失时静默 return 会让用户觉得"点了没反应"。
         message.warning(
           probeFailed
-            ? '视频信息探测失败，无法提取关键帧；请先确认源视频文件可访问后重开工作台'
-            : '视频信息尚未就绪，请稍候再试',
+            ? translate('canvasVideoWorkbench.t4Desc')
+            : translate('canvasVideoWorkbench.t5Desc'),
         )
         return
       }
       setBusy(true)
       setProgress(0)
-      setProgressStage('准备提取关键帧')
+      setProgressStage(translate('canvasVideoWorkbench.t6'))
       try {
         const reqId = shortId()
         const res = await window.spark.invoke('video:process', {
@@ -636,13 +641,13 @@ export function CanvasVideoWorkbenchModal({
             index: f.index,
           }))
           updateDraft((d) => ({ ...d, keyframes: frames }))
-          message.success(`提取了 ${frames.length} 个关键帧`)
+          message.success(translate('canvasVideoWorkbench.tpl19Desc', { count: frames.length }))
         } else {
           console.error('[video-workbench] extractKeyframes failed:', res.error)
-          message.error(res.error ?? '关键帧提取失败')
+          message.error(res.error ?? translate('canvasVideoWorkbench.t7'))
         }
       } catch (err) {
-        message.error(`关键帧提取失败: ${err instanceof Error ? err.message : String(err)}`)
+        message.error(translate('canvasVideoWorkbench.tpl20Desc', { reason: err instanceof Error ? err.message : String(err) }))
       } finally {
         setBusy(false)
         setProgress(null)
@@ -666,7 +671,7 @@ export function CanvasVideoWorkbenchModal({
         : ((node?.data as { url?: string } | undefined)?.url ?? '')
     const inputPath = previewResourceUrl ? resolveDiskPath(previewResourceUrl) : ''
     if (!inputPath) {
-      message.error('无法解析当前预览源路径')
+      message.error(translate('canvasVideoWorkbench.t8'))
       return
     }
     setBusy(true)
@@ -685,7 +690,7 @@ export function CanvasVideoWorkbenchModal({
         }>
         const frame = frames[0]
         if (!frame) {
-          message.warning('未能提取当前帧，可稍偏移播放头后重试')
+          message.warning(translate('canvasVideoWorkbench.t9Desc'))
           return
         }
         updateDraft((d) => {
@@ -701,13 +706,13 @@ export function CanvasVideoWorkbenchModal({
             keyframes: [...d.keyframes, keyframe].sort((a, b) => a.timestampSec - b.timestampSec),
           }
         })
-        message.success('已截取当前帧到关键帧列表')
+        message.success(translate('canvasVideoWorkbench.t10'))
       } else {
         console.error('[video-workbench] captureFrame failed:', res.error)
-        message.error(res.error ?? '截取当前帧失败')
+        message.error(res.error ?? translate('canvasVideoWorkbench.t11'))
       }
     } catch (err) {
-      message.error(`截取当前帧失败: ${err instanceof Error ? err.message : String(err)}`)
+      message.error(translate('canvasVideoWorkbench.tpl16Desc', { reason: err instanceof Error ? err.message : String(err) }))
     } finally {
       setBusy(false)
     }
@@ -812,7 +817,7 @@ export function CanvasVideoWorkbenchModal({
           }))
         }
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '关键帧导入画布失败')
+        message.error(error instanceof Error ? error.message : translate('canvasVideoWorkbench.t12'))
       } finally {
         setBusy(false)
       }
@@ -826,9 +831,9 @@ export function CanvasVideoWorkbenchModal({
       operation: string,
       params: Record<string, unknown>,
     ): Promise<{ success: boolean; result?: unknown; error?: string }> => {
-      if (!node) return { success: false, error: '未关联视频节点' }
+      if (!node) return { success: false, error: translate('canvasVideoWorkbench.t13') }
       const sourcePath = resolveDiskPath((node.data as { url?: string }).url ?? '')
-      if (!sourcePath) return { success: false, error: '源视频路径缺失' }
+      if (!sourcePath) return { success: false, error: translate('canvasVideoWorkbench.t14') }
       setBusy(true)
       setProgress(null)
       try {
@@ -888,7 +893,7 @@ export function CanvasVideoWorkbenchModal({
 
   const handleStartCrop = useCallback(() => {
     if (!sourceVideoUrl || previewKind !== 'video') {
-      message.info('请先准备一个可播放的视频源')
+      message.info(translate('canvasVideoWorkbench.t15Desc'))
       return
     }
     playbackExit()
@@ -914,7 +919,7 @@ export function CanvasVideoWorkbenchModal({
         sourceWidth < 2 ||
         sourceHeight < 2
       ) {
-        message.error('视频尺寸尚未读取完成，请稍后再试')
+        message.error(translate('canvasVideoWorkbench.t16Desc'))
         return
       }
       const crop = videoCropRectToPixels(selection, sourceWidth, sourceHeight)
@@ -922,16 +927,16 @@ export function CanvasVideoWorkbenchModal({
       setCropMediaBounds(null)
       const result = await handleProcess('crop', { ...crop })
       if (!result.success || !result.result) {
-        message.error(result.error ?? '画面裁剪失败')
+        message.error(result.error ?? translate('canvasVideoWorkbench.t17'))
         return
       }
       const outputPath = (result.result as { path?: string }).path ?? ''
       if (!outputPath) {
-        message.error('画面裁剪完成，但没有返回产物文件')
+        message.error(translate('canvasVideoWorkbench.t18Desc'))
         return
       }
-      recordOutput(`画面裁剪 ${crop.w}×${crop.h}`, outputPath, 'effect')
-      message.success(`已裁剪画面为 ${crop.w}×${crop.h}`)
+      recordOutput(translate('canvasVideoWorkbench.tpl17Desc', { w: crop.w, h: crop.h }), outputPath, 'effect')
+      message.success(translate('canvasVideoWorkbench.tpl1Desc', { w: crop.w, h: crop.h }))
     },
     [handleProcess, probe?.height, probe?.width, recordOutput],
   )
@@ -946,10 +951,10 @@ export function CanvasVideoWorkbenchModal({
       for (const clip of sortedTrack) {
         const resource = resourcesById.get(clip.resourceId)
         if (!resource || resource.kind !== 'video') {
-          throw new Error('当前轨道含有无法导出的图片或缺失资源')
+          throw new Error(translate('canvasVideoWorkbench.t19Desc'))
         }
         const sourcePath = resolveDiskPath(resource.originPath || resource.url)
-        if (!sourcePath) throw new Error(`无法读取分段“${resource.title}”的文件路径`)
+        if (!sourcePath) throw new Error(translate('canvasVideoWorkbench.tpl2Desc', { title: resource.title }))
 
         let clipPath = sourcePath
         if (clip.range) {
@@ -960,10 +965,10 @@ export function CanvasVideoWorkbenchModal({
             requestId: shortId(),
           })
           if (!trimResult.success || !trimResult.result) {
-            throw new Error(trimResult.error ?? `分段“${resource.title}”导出失败`)
+            throw new Error(trimResult.error ?? translate('canvasVideoWorkbench.tpl3Desc', { title: resource.title }))
           }
           clipPath = (trimResult.result as { path?: string }).path ?? ''
-          if (!clipPath) throw new Error(`分段“${resource.title}”没有生成文件`)
+          if (!clipPath) throw new Error(translate('canvasVideoWorkbench.tpl4Desc', { title: resource.title }))
         }
         inputPaths.push(clipPath)
       }
@@ -979,18 +984,18 @@ export function CanvasVideoWorkbenchModal({
           requestId: shortId(),
         })
         if (!concatResult.success || !concatResult.result) {
-          throw new Error(concatResult.error ?? '轨道合成失败')
+          throw new Error(concatResult.error ?? translate('canvasVideoWorkbench.t20'))
         }
         outputPath = (concatResult.result as { path?: string }).path ?? ''
       }
-      if (!outputPath) throw new Error('轨道没有生成可用产物')
+      if (!outputPath) throw new Error(translate('canvasVideoWorkbench.t21'))
       return {
         id: shortId(),
         type: inputPaths.length > 1 ? 'concat' : 'segment',
         outputPath,
         outputUrl: encodeToSafeFileUrl(outputPath),
         createdAt: Date.now(),
-        summary: `轨道合成（${sortedTrack.length} 段）`,
+        summary: translate('canvasVideoWorkbench.tpl5Desc', { count: sortedTrack.length }),
       }
     },
     [draft.resourcePanel],
@@ -1004,7 +1009,7 @@ export function CanvasVideoWorkbenchModal({
       const output = await exportTrackOutput(draft.track)
       if (!output) return
       appendOutput(output)
-      message.success('当前轨道已导出到产物面板')
+      message.success(translate('canvasVideoWorkbench.t22'))
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -1033,7 +1038,7 @@ export function CanvasVideoWorkbenchModal({
             item.id === output.id ? { ...item, ...nextOutput } : item,
           ),
         }))
-        message.success(mode === 'add' ? '产物已添加到画布' : '当前视频节点已替换')
+        message.success(mode === 'add' ? translate('canvasVideoWorkbench.t23') : translate('canvasVideoWorkbench.t24'))
       } catch (error) {
         message.error(error instanceof Error ? error.message : String(error))
       } finally {
@@ -1048,12 +1053,12 @@ export function CanvasVideoWorkbenchModal({
       if (!onMaterializeOutput) return
       const resource = draft.resourcePanel.find((item) => item.id === clip.resourceId)
       if (!resource || resource.kind !== 'video') {
-        message.error('当前分段不是可落地的视频资源')
+        message.error(translate('canvasVideoWorkbench.t25Desc'))
         return
       }
       const sourcePath = resolveDiskPath(resource.originPath || resource.url)
       if (!sourcePath) {
-        message.error(`无法读取分段“${resource.title}”的文件路径`)
+        message.error(translate('canvasVideoWorkbench.tpl2Desc', { title: resource.title }))
         return
       }
 
@@ -1068,10 +1073,10 @@ export function CanvasVideoWorkbenchModal({
             requestId: shortId(),
           })
           if (!trimResult.success || !trimResult.result) {
-            throw new Error(trimResult.error ?? `分段“${resource.title}”导出失败`)
+            throw new Error(trimResult.error ?? translate('canvasVideoWorkbench.tpl3Desc', { title: resource.title }))
           }
           outputPath = (trimResult.result as { path?: string }).path ?? ''
-          if (!outputPath) throw new Error(`分段“${resource.title}”没有生成文件`)
+          if (!outputPath) throw new Error(translate('canvasVideoWorkbench.tpl4Desc', { title: resource.title }))
         }
 
         const startSec = clip.range?.startSec ?? 0
@@ -1084,8 +1089,8 @@ export function CanvasVideoWorkbenchModal({
           createdAt: Date.now(),
           summary:
             endSec !== undefined
-              ? `分段：${resource.title}（${formatTimestamp(startSec)}-${formatTimestamp(endSec)}）`
-              : `分段：${resource.title}`,
+              ? translate('canvasVideoWorkbench.tpl6Desc', { title: resource.title, start: formatTimestamp(startSec), end: formatTimestamp(endSec) })
+              : translate('canvasVideoWorkbench.tpl7Desc', { title: resource.title }),
         }
         const materialized = await onMaterializeOutput(output, mode)
         const nextOutput = materialized
@@ -1097,7 +1102,7 @@ export function CanvasVideoWorkbenchModal({
             }
           : output
         updateDraft((current) => prependWorkbenchOutput(current, nextOutput))
-        message.success(mode === 'add' ? '分段已添加到画布' : '当前视频节点已替换为该分段')
+        message.success(mode === 'add' ? translate('canvasVideoWorkbench.t26') : translate('canvasVideoWorkbench.t27Desc'))
       } catch (error) {
         message.error(error instanceof Error ? error.message : String(error))
       } finally {
@@ -1131,7 +1136,7 @@ export function CanvasVideoWorkbenchModal({
         id: resourceId,
         source: 'canvas',
         kind: 'video',
-        title: node?.title?.replace(/^视频工作台\s*[—-]?\s*/, '') || '源视频',
+        title: node?.title?.replace(VIDEO_WORKBENCH_TITLE_PREFIX, '') || translate('canvasVideoWorkbench.t28'),
         url: sourceVideoUrl,
         originPath: resolveDiskPath(sourceVideoUrl) || sourceVideoUrl,
         importedAt: persistedSource?.importedAt ?? Date.now(),
@@ -1211,7 +1216,7 @@ export function CanvasVideoWorkbenchModal({
       // 连播中删除当前片段会让播放状态机失去 currentClip 而停摆，先退出连播。
       if (playback.currentClipId === clipId) playbackExit()
       const result = applyProjectCommand({ type: 'clip/remove', clipId })
-      if (!result.applied) message.warning('轨道已锁定，无法删除片段')
+      if (!result.applied) message.warning(translate('canvasVideoWorkbench.t29'))
     },
     [applyProjectCommand, playback.currentClipId, playbackExit],
   )
@@ -1322,23 +1327,23 @@ export function CanvasVideoWorkbenchModal({
 
   const handleCollectUpstream = useCallback(async () => {
     if (!onCollectUpstream) {
-      message.info('当前画布上下文未提供「按上级连线收集」能力，仅支持手动添加资源')
+      message.info(translate('canvasVideoWorkbench.t30Desc'))
       return
     }
     setBusy(true)
     try {
       const collected = await onCollectUpstream()
       if (!Array.isArray(collected) || collected.length === 0) {
-        message.info('未找到上级连线节点或没有可收集的产物')
+        message.info(translate('canvasVideoWorkbench.t31Desc'))
         return
       }
       const incoming: WorkbenchResource[] = collected.map((r) =>
         canvasResourceOptionToWorkbenchResource(r, 'upstream'),
       )
       updateDraft((d) => ({ ...d, resourcePanel: mergeResources(d.resourcePanel, incoming) }))
-      message.success(`已收集 ${incoming.length} 个上游产物`)
+      message.success(translate('canvasVideoWorkbench.tpl8Desc', { count: incoming.length }))
     } catch (err) {
-      message.error(`自动收集上游失败：${err instanceof Error ? err.message : String(err)}`)
+      message.error(translate('canvasVideoWorkbench.tpl9Desc', { reason: err instanceof Error ? err.message : String(err) }))
     } finally {
       setBusy(false)
     }
@@ -1381,7 +1386,7 @@ export function CanvasVideoWorkbenchModal({
     try {
       handleAddLocalResourcesFromProps(await onAddLocalResources())
     } catch (err) {
-      message.error(`打开本机资源失败：${err instanceof Error ? err.message : String(err)}`)
+      message.error(translate('canvasVideoWorkbench.tpl10Desc', { reason: err instanceof Error ? err.message : String(err) }))
     }
   }, [handleAddLocalResourcesFromProps, onAddLocalResources])
 
@@ -1394,7 +1399,7 @@ export function CanvasVideoWorkbenchModal({
       setCanvasPickerCandidates(candidates)
       setCanvasPickerOpen(true)
     } catch (err) {
-      message.error(`打开画布选择失败：${err instanceof Error ? err.message : String(err)}`)
+      message.error(translate('canvasVideoWorkbench.tpl11Desc', { reason: err instanceof Error ? err.message : String(err) }))
     }
   }, [onPickCanvasResources])
 
@@ -1419,7 +1424,7 @@ export function CanvasVideoWorkbenchModal({
         if (source && onSelectVideo) {
           void onSelectVideo(source.url).catch((error) => {
             message.error(
-              `切换源视频失败：${error instanceof Error ? error.message : String(error)}`,
+              translate('canvasVideoWorkbench.tpl12Desc', { reason: error instanceof Error ? error.message : String(error) }),
             )
           })
         }
@@ -1442,7 +1447,7 @@ export function CanvasVideoWorkbenchModal({
       items.push({
         key: 'resource-from-file',
         icon: <Icons.FolderPlus size={14} />,
-        label: '从本机添加资源',
+        label: translate('canvasVideoWorkbench.t32'),
         onClick: () => {
           setActiveTab('resources')
           void handlePickLocal()
@@ -1453,7 +1458,7 @@ export function CanvasVideoWorkbenchModal({
       items.push({
         key: 'resource-from-canvas',
         icon: <Icons.Canvas size={14} />,
-        label: '从画布选择资源',
+        label: translate('canvasVideoWorkbench.t33'),
         onClick: () => {
           setActiveTab('resources')
           void handlePickCanvas()
@@ -1465,7 +1470,7 @@ export function CanvasVideoWorkbenchModal({
       items.push({
         key: 'resource-collect-upstream',
         icon: <Icons.Link size={14} />,
-        label: '按上级连线自动收集',
+        label: translate('canvasVideoWorkbench.t34'),
         onClick: () => {
           setActiveTab('resources')
           void handleCollectUpstream()
@@ -1478,7 +1483,7 @@ export function CanvasVideoWorkbenchModal({
         items.push({
           key: 'video-from-file',
           icon: <Icons.Film size={14} />,
-          label: '从本机设置主视频',
+          label: translate('canvasVideoWorkbench.t35'),
           onClick: () => void onAddVideo(),
         })
       }
@@ -1486,7 +1491,7 @@ export function CanvasVideoWorkbenchModal({
         items.push({
           key: 'video-source-from-canvas',
           icon: <Icons.Film size={14} />,
-          label: '从画布设置主视频…',
+          label: translate('canvasVideoWorkbench.t36'),
           onClick: handlePickSourceVideo,
         })
       }
@@ -1571,7 +1576,7 @@ export function CanvasVideoWorkbenchModal({
 
   const handleSaveAndClose = useCallback(async () => {
     if (projectReadOnly) {
-      message.error('该工程来自更高版本，当前版本不能覆盖保存')
+      message.error(translate('canvasVideoWorkbench.t37Desc'))
       return
     }
     setSavingDraft(true)
@@ -1582,7 +1587,7 @@ export function CanvasVideoWorkbenchModal({
       await saveProjectNow(project)
       onClose()
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存视频工作台失败')
+      message.error(error instanceof Error ? error.message : translate('canvasVideoWorkbench.t38'))
     } finally {
       setSavingDraft(false)
     }
@@ -1597,7 +1602,7 @@ export function CanvasVideoWorkbenchModal({
         <div className={`vwb-topbar${isPlatformDarwin ? ' darwin' : ''}`}>
           <div className="vwb-titlebox">
             <div className="vwb-kicker">Video Workbench</div>
-            <div className="vwb-title">{node?.title ?? '视频工作台'}</div>
+            <div className="vwb-title">{node?.title ?? translate('canvasVideoWorkbench.t39')}</div>
           </div>
           <div className="vwb-topbar-info">
             {probe && (
@@ -1629,7 +1634,7 @@ export function CanvasVideoWorkbenchModal({
                   icon={<Icons.Video size={14} />}
                   disabled={projectReadOnly}
                 >
-                  添加资源
+                  {translate('canvasVideoWorkbench.t75')}
                 </Button>
               </Dropdown>
             )}
@@ -1641,10 +1646,10 @@ export function CanvasVideoWorkbenchModal({
               onClick={() => void handleSaveAndClose()}
               icon={<Icons.Check size={14} />}
             >
-              保存并关闭
+              {translate('canvasVideoWorkbench.t76')}
             </Button>
             <Button size="small" type="text" onClick={onClose} icon={<Icons.X size={16} />}>
-              关闭
+              {translate('canvasVideoWorkbench.t77')}
             </Button>
           </div>
         </div>
@@ -1654,7 +1659,7 @@ export function CanvasVideoWorkbenchModal({
           <div className="vwb-ffmpeg-warning">
             <Icons.AlertTriangle size={16} />
             <span>
-              {ffmpegInstallProgress?.message ?? 'FFmpeg 未安装，关键帧提取和本地剪辑暂不可用。'}
+              {ffmpegInstallProgress?.message ?? translate('canvasVideoWorkbench.t40Desc')}
               {ffmpegInstallProgress?.percent != null
                 ? ` ${Math.round(ffmpegInstallProgress.percent)}%`
                 : ''}
@@ -1666,7 +1671,7 @@ export function CanvasVideoWorkbenchModal({
               onClick={() => void installFfmpeg()}
               icon={<Icons.Download size={14} />}
             >
-              {ffmpegInstalling ? '正在安装' : '下载并安装'}
+              {ffmpegInstalling ? translate('canvasVideoWorkbench.t41') : translate('canvasVideoWorkbench.t42')}
             </Button>
           </div>
         )}
@@ -1679,8 +1684,8 @@ export function CanvasVideoWorkbenchModal({
             <Icons.AlertTriangle size={15} />
             <span>
               {projectReadOnly
-                ? '该工程版本高于当前客户端，已进入只读保护，避免覆盖新格式数据。'
-                : `工程读取时发现 ${projectIssues.length} 处异常引用，数据已保留并可继续修复。`}
+                ? translate('canvasVideoWorkbench.t43Desc')
+                : translate('canvasVideoWorkbench.tpl13Desc', { count: projectIssues.length })}
             </span>
           </div>
         )}
@@ -1693,9 +1698,9 @@ export function CanvasVideoWorkbenchModal({
               {selectedResource && (
                 <div className="vwb-preview-meta">
                   <Icons.Eye size={12} />
-                  <span>预览资源：{selectedResource.title}</span>
+                  <span>{translate('canvasVideoWorkbench.tpl14Desc', { title: selectedResource.title })}</span>
                   <Button size="small" type="text" onClick={() => setSelectedResourceId(null)}>
-                    返回主源
+                    {translate('canvasVideoWorkbench.t78')}
                   </Button>
                 </div>
               )}
@@ -1753,13 +1758,13 @@ export function CanvasVideoWorkbenchModal({
               ) : previewUrl && previewKind === 'audio' ? (
                 <div className="vwb-audio-preview">
                   <Icons.AudioLines size={42} />
-                  <strong>{selectedResource?.title ?? '音频素材'}</strong>
+                  <strong>{selectedResource?.title ?? translate('canvasVideoWorkbench.t44')}</strong>
                   <audio src={previewUrl} controls preload="metadata" />
                 </div>
               ) : (
                 <div className="vwb-video-empty">
                   <Icons.Film size={48} />
-                  <span>未关联视频</span>
+                  <span>{translate('canvasVideoWorkbench.t79')}</span>
                 </div>
               )}
               {cropMode && cropMediaBounds && previewKind === 'video' && !isPlayback && (
@@ -1782,8 +1787,8 @@ export function CanvasVideoWorkbenchModal({
                   className="vwb-player-btn"
                   onClick={() => stepFrame(-1)}
                   disabled={previewKind !== 'video'}
-                  aria-label="上一帧"
-                  title="上一帧（←）"
+                  aria-label={translate('canvasVideoWorkbench.t57')}
+                  title={translate('canvasVideoWorkbench.t58')}
                 >
                   <Icons.ChevronLeft size={16} />
                 </button>
@@ -1791,8 +1796,8 @@ export function CanvasVideoWorkbenchModal({
                   className="vwb-player-btn vwb-player-play"
                   onClick={handlePlayToggle}
                   disabled={!isPlayback && previewKind !== 'video'}
-                  aria-label={playbackPlaying ? '暂停' : '播放'}
-                  title={playbackPlaying ? '暂停（空格）' : '播放（空格）'}
+                  aria-label={playbackPlaying ? translate('canvasVideoWorkbench.t45') : translate('canvasVideoWorkbench.t46')}
+                  title={playbackPlaying ? translate('canvasVideoWorkbench.t47') : translate('canvasVideoWorkbench.t48')}
                 >
                   {playbackPlaying ? <Icons.Pause size={18} /> : <Icons.Play size={18} />}
                 </button>
@@ -1800,8 +1805,8 @@ export function CanvasVideoWorkbenchModal({
                   className="vwb-player-btn"
                   onClick={() => stepFrame(1)}
                   disabled={previewKind !== 'video'}
-                  aria-label="下一帧"
-                  title="下一帧（→）"
+                  aria-label={translate('canvasVideoWorkbench.t59')}
+                  title={translate('canvasVideoWorkbench.t60')}
                 >
                   <Icons.ChevronRight size={16} />
                 </button>
@@ -1809,8 +1814,8 @@ export function CanvasVideoWorkbenchModal({
                   className="vwb-player-btn"
                   onClick={() => void handleCaptureCurrentFrame()}
                   disabled={previewKind !== 'video' || busy || ffmpegReady !== true}
-                  aria-label="截取当前帧"
-                  title="截取当前帧到关键帧列表"
+                  aria-label={translate('canvasVideoWorkbench.t61')}
+                  title={translate('canvasVideoWorkbench.t62')}
                 >
                   <Icons.Camera size={15} />
                 </button>
@@ -1834,18 +1839,18 @@ export function CanvasVideoWorkbenchModal({
                 >
                   <button
                     className="vwb-player-btn vwb-player-rate"
-                    aria-label="播放速率"
-                    title="播放速率（含慢放）"
+                    aria-label={translate('canvasVideoWorkbench.t63')}
+                    title={translate('canvasVideoWorkbench.t64')}
                   >
                     {formatPlaybackRate(playbackRate)}
                   </button>
                 </Dropdown>
                 {selectedClip ? (
-                  <div className="vwb-player-clip-actions" aria-label="分段操作">
+                  <div className="vwb-player-clip-actions" aria-label={translate('canvasVideoWorkbench.t65')}>
                     <span className="vwb-player-clip-label">
                       {selectedClipIds.length > 1
-                        ? `主选分段 · 共 ${selectedClipIds.length} 段`
-                        : '已选分段'}
+                        ? translate('canvasVideoWorkbench.tpl15Desc', { count: selectedClipIds.length })
+                        : translate('canvasVideoWorkbench.t49')}
                     </span>
                     <button
                       className="vwb-player-btn"
@@ -1854,11 +1859,11 @@ export function CanvasVideoWorkbenchModal({
                         handleDuplicateClip(selectedClip.id)
                       }}
                       disabled={busy || projectReadOnly}
-                      aria-label="复制选中的分段"
-                      title="复制选中的分段"
+                      aria-label={translate('canvasVideoWorkbench.t66')}
+                      title={translate('canvasVideoWorkbench.t66')}
                     >
                       <Icons.Copy size={14} />
-                      <span>复制</span>
+                      <span>{translate('canvasVideoWorkbench.t80')}</span>
                     </button>
                     <button
                       className="vwb-player-btn"
@@ -1867,11 +1872,11 @@ export function CanvasVideoWorkbenchModal({
                         void handleMaterializeClip(selectedClip, 'add')
                       }}
                       disabled={busy || !onMaterializeOutput}
-                      aria-label="将选中的分段添加到画布"
-                      title="将选中的分段添加为新的画布视频节点"
+                      aria-label={translate('canvasVideoWorkbench.t67')}
+                      title={translate('canvasVideoWorkbench.t68Desc')}
                     >
                       <Icons.Plus size={14} />
-                      <span>添加到画布</span>
+                      <span>{translate('canvasVideoWorkbench.t81')}</span>
                     </button>
                     <button
                       className="vwb-player-btn"
@@ -1880,11 +1885,11 @@ export function CanvasVideoWorkbenchModal({
                         void handleMaterializeClip(selectedClip, 'replace')
                       }}
                       disabled={busy || !onMaterializeOutput}
-                      aria-label="用选中的分段替换当前视频"
-                      title="用选中的分段替换当前视频节点"
+                      aria-label={translate('canvasVideoWorkbench.t69')}
+                      title={translate('canvasVideoWorkbench.t70Desc')}
                     >
                       <Icons.Refresh size={14} />
-                      <span>替换当前</span>
+                      <span>{translate('canvasVideoWorkbench.t82')}</span>
                     </button>
                     <button
                       className="vwb-player-btn vwb-player-btn-danger"
@@ -1893,11 +1898,11 @@ export function CanvasVideoWorkbenchModal({
                         handleRemoveClip(selectedClip.id)
                       }}
                       disabled={busy || projectReadOnly}
-                      aria-label="删除选中的分段"
-                      title="删除选中的分段"
+                      aria-label={translate('canvasVideoWorkbench.t71')}
+                      title={translate('canvasVideoWorkbench.t71')}
                     >
                       <Icons.Trash size={14} />
-                      <span>删除</span>
+                      <span>{translate('canvasVideoWorkbench.t83')}</span>
                     </button>
                   </div>
                 ) : null}
@@ -1905,8 +1910,8 @@ export function CanvasVideoWorkbenchModal({
                 <button
                   className="vwb-player-btn"
                   onClick={handleToStart}
-                  aria-label="回到开头"
-                  title="回到开头（Home）"
+                  aria-label={translate('canvasVideoWorkbench.t72')}
+                  title={translate('canvasVideoWorkbench.t73')}
                 >
                   <Icons.RotateCcw size={14} />
                 </button>
@@ -1937,23 +1942,23 @@ export function CanvasVideoWorkbenchModal({
 
           {/* 右侧：Tab 面板 */}
           <div className="vwb-side-pane">
-            <div className="vwb-workflow-strip" aria-label="视频工作流">
-              <span className={activeTab === 'resources' ? 'is-active' : ''}>00 资源</span>
+            <div className="vwb-workflow-strip" aria-label={translate('canvasVideoWorkbench.t74')}>
+              <span className={activeTab === 'resources' ? 'is-active' : ''}>{translate('canvasVideoWorkbench.t84')}</span>
               <Icons.ChevronRight size={13} />
-              <span className={activeTab === 'frames' ? 'is-active' : ''}>01 素材分析</span>
+              <span className={activeTab === 'frames' ? 'is-active' : ''}>{translate('canvasVideoWorkbench.t85')}</span>
               <Icons.ChevronRight size={13} />
-              <span className={activeTab === 'edit' ? 'is-active' : ''}>02 剪辑处理</span>
+              <span className={activeTab === 'edit' ? 'is-active' : ''}>{translate('canvasVideoWorkbench.t86')}</span>
               <Icons.ChevronRight size={13} />
-              <span className={activeTab === 'output' ? 'is-active' : ''}>03 产物检查</span>
+              <span className={activeTab === 'output' ? 'is-active' : ''}>{translate('canvasVideoWorkbench.t87')}</span>
             </div>
             <Segmented
               value={activeTab}
               onChange={(v) => setActiveTab(v as 'resources' | 'frames' | 'edit' | 'output')}
               options={[
-                { label: '资源', value: 'resources' },
-                { label: '关键帧', value: 'frames' },
-                { label: '剪辑', value: 'edit' },
-                { label: '产物', value: 'output' },
+                { label: translate('canvasVideoWorkbench.t50'), value: 'resources' },
+                { label: translate('canvasVideoWorkbench.t51'), value: 'frames' },
+                { label: translate('canvasVideoWorkbench.t52'), value: 'edit' },
+                { label: translate('canvasVideoWorkbench.t53'), value: 'output' },
               ]}
               block
               size="small"
@@ -2035,8 +2040,8 @@ export function CanvasVideoWorkbenchModal({
           open
           candidates={canvasPickerCandidates}
           selectionMode={canvasPickerPurpose === 'source' ? 'single' : 'multiple'}
-          title={canvasPickerPurpose === 'source' ? '从画布设置主视频' : '从画布选择资源'}
-          confirmLabel={canvasPickerPurpose === 'source' ? '设为主视频' : '加入资源面板'}
+          title={canvasPickerPurpose === 'source' ? translate('canvasVideoWorkbench.t54') : translate('canvasVideoWorkbench.t33')}
+          confirmLabel={canvasPickerPurpose === 'source' ? translate('canvasVideoWorkbench.t55') : translate('canvasVideoWorkbench.t56')}
           onConfirm={handlePickerConfirm}
           onCancel={handlePickerCancel}
         />

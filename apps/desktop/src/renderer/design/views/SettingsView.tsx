@@ -57,7 +57,7 @@ import { SdkInstallProgressView } from '../components/SdkInstallProgress'
 import { clearOnboardingState } from './onboarding-state'
 import { clearUsageHeatmapCache } from './usageHeatmapCache'
 import { canvasApi } from './canvas/canvas.api'
-import { resolveSupportedLanguage, SUPPORTED_LANGUAGES, useI18n } from '../i18n'
+import { resolveSupportedLanguage, SUPPORTED_LANGUAGES, translate, useI18n } from '../i18n'
 // Provider 相关 UI 已抽到 ProvidersView；保留 ProviderEditPanel 的 re-export
 // 以便现有测试（apps/desktop/src/renderer/tests/renderer.test.ts）等其他消费者
 // 仍能通过原路径 import。
@@ -127,9 +127,9 @@ const RELEASES_URL = 'https://github.com/alexanderizh/spark-agent/releases'
 function getUpdateSourceLabel(
   source?: UpdateStatus['updateSource'] | UpdateStatus['downloadSource'],
 ): string {
-  if (source === 'version-center') return '官网版本中心'
+  if (source === 'version-center') return translate('settingsView.t1')
   if (source === 'github') return 'GitHub Releases'
-  return '尚未确定'
+  return translate('settingsView.t2')
 }
 
 /* ─── Category mapping (localStorage key → IPC category) ─── */
@@ -260,6 +260,8 @@ function writeStoredJson<T>(key: string, value: T) {
 }
 
 export function SettingsView({ initialSection }: { initialSection?: string } = {}) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const { t, setTweak } = useApp()
   // 外部直达（如从侧栏/命令面板以 'memory' 路由进入）→ 优先用 initialSection
   const section = initialSection ?? t.settingsSection ?? 'general'
@@ -273,67 +275,67 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
   // 仅调整归属与顺序，各 section 的 id 与实现保持不变。
   const nav = [
     {
-      group: '通用',
+      group: translate('settingsView.t3'),
       items: [
         {
           id: 'general',
           icon: <Icons.Settings size={13} />,
-          label: '通用',
-          keywords: ['语言', '启动', '开机自启', '通知', '默认会话'],
+          label: translate('settingsView.t3'),
+          keywords: [translate('settingsView.t4'), translate('settingsView.t5'), translate('settingsView.t6'), translate('settingsView.t7'), translate('settingsView.t8')],
         },
         {
           id: 'appearance',
           icon: <Icons.Sparkles size={13} />,
-          label: '外观',
-          keywords: ['主题', '暗黑', '深色', '浅色', '字体', '字号', '强调色', '动画'],
+          label: translate('settingsView.t9'),
+          keywords: [translate('settingsView.t10'), translate('settingsView.t11'), translate('settingsView.t12'), translate('settingsView.t13'), translate('settingsView.t14'), translate('settingsView.t15'), translate('settingsView.t16'), translate('settingsView.t17')],
         },
         {
           id: 'account-sync',
           icon: <Icons.Refresh size={13} />,
-          label: '账号同步',
-          keywords: ['云同步', '手动同步', '账号', '备份', '跨设备'],
+          label: translate('settingsView.t18'),
+          keywords: [translate('settingsView.t19'), translate('settingsView.t20'), translate('settingsView.t21'), translate('settingsView.t22'), translate('settingsView.t23')],
         },
         {
           id: 'memory',
           icon: <Icons.Brain size={13} />,
-          label: '记忆',
-          keywords: ['长期记忆', '记忆库', '记住'],
+          label: translate('settingsView.t24'),
+          keywords: [translate('settingsView.t25'), translate('settingsView.t26'), translate('settingsView.t27')],
         },
         {
           id: 'wiki',
           icon: <Icons.Book size={13} />,
-          label: '知识库',
-          keywords: ['wiki', '知识库', '知识', '沉淀', '检索', '上下文预算'],
+          label: translate('settingsView.t28'),
+          keywords: ['wiki', translate('settingsView.t28'), translate('settingsView.t29'), translate('settingsView.t30'), translate('settingsView.t31'), translate('settingsView.t32')],
         },
         {
           id: 'remote-connections',
           icon: <Icons.Globe size={13} />,
-          label: '远程连接',
-          keywords: ['API Key', '供应商', 'Provider', '模型', '密钥', '渠道'],
+          label: translate('settingsView.t33'),
+          keywords: ['API Key', translate('settingsView.t34'), 'Provider', translate('settingsView.t35'), translate('settingsView.t36'), translate('settingsView.t37')],
         },
         {
           id: 'voice-assistant',
           icon: <Icons.Monitor size={13} />,
-          label: '语音助手',
-          keywords: ['语音', '唤醒', '快捷键', 'TTS', '播报', '麦克风', '语音对话'],
+          label: translate('settingsView.t38'),
+          keywords: [translate('settingsView.t39'), translate('settingsView.t40'), translate('settingsView.t41'), 'TTS', translate('settingsView.t42'), translate('settingsView.t43'), translate('settingsView.t44')],
         },
         {
           id: 'performance',
           icon: <Icons.Activity size={13} />,
-          label: '性能',
-          keywords: ['性能监控', '内存', '压力', '并发', '降级', '阈值', '资源占用', 'performance'],
+          label: translate('settingsView.t45'),
+          keywords: [translate('settingsView.t46'), translate('settingsView.t47'), translate('settingsView.t48'), translate('settingsView.t49'), translate('settingsView.t50'), translate('settingsView.t51'), translate('settingsView.t52'), 'performance'],
         },
         {
           id: 'integrity',
           icon: <Icons.Shield size={13} />,
-          label: '完整性',
-          keywords: ['校验', '修复', 'Chromium', '下载', '完整性'],
+          label: translate('settingsView.t53'),
+          keywords: [translate('settingsView.t54'), translate('settingsView.t55'), 'Chromium', translate('settingsView.t56'), translate('settingsView.t53')],
         },
         {
           id: 'hooks',
           icon: <Icons.Bell size={13} />,
           label: 'Hooks',
-          keywords: ['钩子', '回调', '事件', '钩子函数'],
+          keywords: [translate('settingsView.t57'), translate('settingsView.t58'), translate('settingsView.t59'), translate('settingsView.t60')],
         },
       ],
     },
@@ -343,75 +345,75 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
         {
           id: 'rules',
           icon: <Icons.Beaker size={13} />,
-          label: '规则',
-          keywords: ['项目规则', 'AGENTS', 'CLAUDE', '约定'],
+          label: translate('settingsView.t61'),
+          keywords: [translate('settingsView.t62'), 'AGENTS', 'CLAUDE', translate('settingsView.t63')],
         },
         {
           id: 'custom-commands',
           icon: <Icons.Command size={13} />,
-          label: '自定义命令',
-          keywords: ['斜杠命令', 'slash', '/命令', '指令'],
+          label: translate('settingsView.t64'),
+          keywords: [translate('settingsView.t65'), 'slash', translate('settingsView.t66'), translate('settingsView.t67')],
         },
         {
           id: 'permissions',
           icon: <Icons.Shield size={13} />,
-          label: '权限策略',
-          keywords: ['自动执行', '允许', '拒绝', '审批', '权限'],
+          label: translate('settingsView.t68'),
+          keywords: [translate('settingsView.t69'), translate('settingsView.t70'), translate('settingsView.t71'), translate('settingsView.t72'), translate('settingsView.t73')],
         },
         {
           id: 'session-workflow',
           icon: <Icons.Workflow size={13} />,
-          label: '会话工作流',
-          keywords: ['工作流', '挂载', '编排', '灰度', '会话工作流'],
+          label: translate('settingsView.t74'),
+          keywords: [translate('settingsView.t75'), translate('settingsView.t76'), translate('settingsView.t77'), translate('settingsView.t78'), translate('settingsView.t74')],
         },
         {
           id: 'toolchain',
           icon: <Icons.Puzzle size={13} />,
-          label: '工具链',
-          keywords: ['工具', 'toolchain', 'MCP', '自定义工具', '工具包', '权限', '内置工具'],
+          label: translate('settingsView.t79'),
+          keywords: [translate('settingsView.t80'), 'toolchain', 'MCP', translate('settingsView.t81'), translate('settingsView.t82'), translate('settingsView.t73'), translate('settingsView.t83')],
         },
       ],
     },
     {
-      group: '生态',
+      group: translate('settingsView.t84'),
       items: [
         {
           id: 'playwright',
           icon: <Icons.Globe size={13} />,
-          label: '浏览器自动化',
-          keywords: ['Playwright', '自动化', '网页', '爬虫', 'E2E'],
+          label: translate('settingsView.t85'),
+          keywords: ['Playwright', translate('settingsView.t86'), translate('settingsView.t87'), translate('settingsView.t88'), 'E2E'],
         },
         {
           id: 'usage',
           icon: <Icons.Activity size={13} />,
-          label: '用量统计',
-          keywords: ['token', '额度', '统计', '消耗'],
+          label: translate('settingsView.t89'),
+          keywords: ['token', translate('settingsView.t90'), translate('settingsView.t91'), translate('settingsView.t92')],
         },
         {
           id: 'storage',
           icon: <Icons.Database size={13} />,
-          label: '存储与备份',
-          keywords: ['导出', '备份', '恢复', '清理', '缓存', '数据'],
+          label: translate('settingsView.t93'),
+          keywords: [translate('settingsView.t94'), translate('settingsView.t22'), translate('settingsView.t95'), translate('settingsView.t96'), translate('settingsView.t97'), translate('settingsView.t98')],
         },
         // MCP 设置暂未完全实现，隐藏导航项
         // { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
         {
           id: 'team-registry',
           icon: <Icons.Users size={13} />,
-          label: '团队注册中心',
-          keywords: ['Nacos', '团队', '共享', '技能市场', '团队源', '团队注册中心'],
+          label: translate('settingsView.t99'),
+          keywords: ['Nacos', translate('settingsView.t100'), translate('settingsView.t101'), translate('settingsView.t102'), translate('settingsView.t103'), translate('settingsView.t99')],
         },
         {
           id: 'system-prompt',
           icon: <Icons.Chat size={13} />,
-          label: '系统提示词',
-          keywords: ['身份', 'prompt', '提示词', '人设'],
+          label: translate('settingsView.t104'),
+          keywords: [translate('settingsView.t105'), 'prompt', translate('settingsView.t106'), translate('settingsView.t107')],
         },
         {
           id: 'sub-app',
           icon: <Icons.Sparkles size={13} />,
-          label: '子应用',
-          keywords: ['sub-app', '子应用', '沙箱', 'CSP', '外部网络', 'eval', '小工具'],
+          label: translate('settingsView.t108'),
+          keywords: ['sub-app', translate('settingsView.t108'), translate('settingsView.t109'), 'CSP', translate('settingsView.t110'), 'eval', translate('settingsView.t111')],
         },
         {
           id: 'mobile-bridge',
@@ -422,43 +424,43 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
       ],
     },
     {
-      group: '系统',
+      group: translate('settingsView.t112'),
       items: [
         {
           id: 'shortcuts',
           icon: <Icons.Command size={13} />,
-          label: '快捷键',
-          keywords: ['键盘', '绑定', '热键', 'shortcut'],
+          label: translate('settingsView.t41'),
+          keywords: [translate('settingsView.t113'), translate('settingsView.t114'), translate('settingsView.t115'), 'shortcut'],
         },
         {
           id: 'computer-use',
           icon: <Icons.Monitor size={13} />,
-          label: '电脑操作',
-          keywords: ['辅助功能', '屏幕录制', '输入控制', '系统权限', 'computer use'],
+          label: translate('settingsView.t116'),
+          keywords: [translate('settingsView.t117'), translate('settingsView.t118'), translate('settingsView.t119'), translate('settingsView.t120'), 'computer use'],
         },
         {
           id: 'telemetry',
           icon: <Icons.Activity size={13} />,
-          label: '本地日志',
-          keywords: ['日志', '调试', 'telemetry'],
+          label: translate('settingsView.t121'),
+          keywords: [translate('settingsView.t122'), translate('settingsView.t123'), 'telemetry'],
         },
         {
           id: 'archived',
           icon: <Icons.Archive size={13} />,
-          label: '已归档',
-          keywords: ['归档', '历史', '会话'],
+          label: translate('settingsView.t124'),
+          keywords: [translate('settingsView.t125'), translate('settingsView.t126'), translate('settingsView.t127')],
         },
         {
           id: 'updates',
           icon: <Icons.Refresh size={13} />,
-          label: '更新',
-          keywords: ['版本', '升级', '检查更新', 'release'],
+          label: translate('settingsView.t128'),
+          keywords: [translate('settingsView.t129'), translate('settingsView.t130'), translate('settingsView.t131'), 'release'],
         },
         {
           id: 'about',
           icon: <Icons.Sparkles size={13} />,
-          label: '关于',
-          keywords: ['版本号', '信息', '关于本机', '应用'],
+          label: translate('settingsView.t132'),
+          keywords: [translate('settingsView.t133'), translate('settingsView.t134'), translate('settingsView.t135'), translate('settingsView.t136')],
         },
       ],
     },
@@ -537,7 +539,7 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
             }}
           >
             <Icons.ArrowLeft size={16} />
-            <span>返回工作台</span>
+            <span>{translate('settingsView.t360')}</span>
           </button>
           <Input
             className="settings-nav-search"
@@ -546,12 +548,12 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
             prefix={<Icons.Search size={14} />}
             value={navQuery}
             onChange={(e) => setNavQuery(e.target.value)}
-            placeholder="搜索设置..."
+            placeholder={translate('settingsView.t291')}
           />
         </div>
         <div className="settings-nav-list scroll">
           {navGroups.length === 0 ? (
-            <div className="settings-nav-empty">没有匹配的设置</div>
+            <div className="settings-nav-empty">{translate('settingsView.t361')}</div>
           ) : (
             navGroups.map((g) => (
               <div key={g.group}>
@@ -638,13 +640,13 @@ function GeneralSection() {
 
   return (
     <div className="settings-section">
-      <h2>通用</h2>
-      <div className="lede">应用启动、语言、默认行为。</div>
+      <h2>{translate('settingsView.t3')}</h2>
+      <div className="lede">{translate('settingsView.t362Desc')}</div>
 
       <div className="settings-card" style={{ marginBottom: 10 }}>
         <SettingsRow
-          title="新手引导"
-          desc="重新打开安装后的图文引导，配置模型、助手并发起第一次会话。"
+          title={translate('settingsView.t292')}
+          desc={translate('settingsView.t293Desc')}
           right={
             <button
               className="btn"
@@ -657,7 +659,7 @@ function GeneralSection() {
                 setTweak('view', 'onboarding')
               }}
             >
-              重新打开
+              {translate('settingsView.t363')}
             </button>
           }
         />
@@ -669,7 +671,7 @@ function GeneralSection() {
 
       <div className="form-grid">
         <label>
-          语言<span className="sub">界面文案语言</span>
+          {translate('settingsView.t4')}<span className="sub">{translate('settingsView.t364')}</span>
         </label>
         <Select
           value={resolveSupportedLanguage(s.language)}
@@ -685,9 +687,9 @@ function GeneralSection() {
         />
 
         <label>
-          开机自启动
+          {translate('settingsView.t365')}
           <span className="sub">
-            {autoStartSupported ? '登录系统后自动启动 SparkWork' : '当前系统环境不支持读取登录项'}
+            {autoStartSupported ? translate('settingsView.t137Desc') : translate('settingsView.t138Desc')}
           </span>
         </label>
         <Switch
@@ -699,10 +701,10 @@ function GeneralSection() {
         />
       </div>
 
-      <div className="subsec-h">通知</div>
+      <div className="subsec-h">{translate('settingsView.t7')}</div>
       <div className="settings-card">
         <SettingsRow
-          title="新版本可用"
+          title={translate('settingsView.t294')}
           right={
             <Switch
               size="middle"
@@ -726,9 +728,9 @@ function AppearanceSection() {
 
   const resetAppearance = useCallback(async () => {
     const ok = await requestConfirm({
-      title: '重置外观设置？',
-      description: '主题、主色、密度、字体、字号、缩放、圆角等将恢复为默认值，不可撤销。',
-      confirmText: '重置',
+      title: translate('settingsView.t139'),
+      description: translate('settingsView.t140Desc'),
+      confirmText: translate('settingsView.t141'),
       danger: true,
     })
     if (!ok) return
@@ -741,8 +743,8 @@ function AppearanceSection() {
 
   return (
     <div className="settings-section">
-      <h2>外观</h2>
-      <div className="lede">主题、密度、字体、布局。这些设置实时生效。</div>
+      <h2>{translate('settingsView.t9')}</h2>
+      <div className="lede">{translate('settingsView.t366Desc')}</div>
       <div className="row row-mb-sm" style={{ justifyContent: 'flex-end' }}>
         <Button
           size="middle"
@@ -750,11 +752,11 @@ function AppearanceSection() {
           icon={<Icons.Refresh size={13} />}
           onClick={resetAppearance}
         >
-          重置为默认
+          {translate('settingsView.t367')}
         </Button>
       </div>
 
-      <div className="subsec-h">主题</div>
+      <div className="subsec-h">{translate('settingsView.t10')}</div>
       <div className="theme-grid">
         <ThemePreview
           kind="light"
@@ -773,7 +775,7 @@ function AppearanceSection() {
         />
       </div>
 
-      <div className="subsec-h">主色</div>
+      <div className="subsec-h">{translate('settingsView.t368')}</div>
       <div className="color-swatch-row">
         {Object.entries(PRIMARIES).map(([color, info]) => (
           <button key={color} onClick={() => setTweak('primary', color)} className="color-swatch">
@@ -793,22 +795,22 @@ function AppearanceSection() {
         ))}
       </div>
 
-      <div className="subsec-h">布局与字体</div>
+      <div className="subsec-h">{translate('settingsView.t369')}</div>
       <div className="form-grid">
         <label>
-          密度<span className="sub">界面元素紧凑度</span>
+          {translate('settingsView.t370')}<span className="sub">{translate('settingsView.t371')}</span>
         </label>
         <Segmented
           value={t.density}
           onChange={(v) => setTweak('density', v as typeof t.density)}
           options={[
-            { label: '紧凑', value: 'compact' },
-            { label: '常规', value: 'regular' },
-            { label: '宽松', value: 'comfy' },
+            { label: translate('settingsView.t142'), value: 'compact' },
+            { label: translate('settingsView.t143'), value: 'regular' },
+            { label: translate('settingsView.t144'), value: 'comfy' },
           ]}
         />
 
-        <label>字体</label>
+        <label>{translate('settingsView.t14')}</label>
         {/* height:auto 覆盖 .form-grid > .control 的 height:36px：
             本行纵向堆叠 Select + 字体资产控件，36px 会裁切内容并侵入下一行 */}
         <div className="control" style={{ display: 'block', height: 'auto' }}>
@@ -824,7 +826,7 @@ function AppearanceSection() {
         </div>
 
         <label>
-          字号<span className="sub">基础字号，其他字号按比例缩放</span>
+          {translate('settingsView.t15')}<span className="sub">{translate('settingsView.t372Desc')}</span>
         </label>
         <div className="control">
           <Space.Compact>
@@ -841,9 +843,9 @@ function AppearanceSection() {
         </div>
 
         <label>
-          界面缩放
+          {translate('settingsView.t373')}
           <span className="sub">
-            当前 {a.uiZoom ?? 100}% · {modSymbol()}+ / {modSymbol()}-
+            {translate('settingsView.tpl35Desc', { zoom: a.uiZoom ?? 100, plus: modSymbol(), minus: modSymbol() })}
           </span>
         </label>
         <div className="control ui-zoom-control">
@@ -868,7 +870,7 @@ function AppearanceSection() {
         </div>
 
         <label>
-          代码字体连字<span className="sub">Geist Mono ligature 例如 =&gt; → ⇒</span>
+          {translate('settingsView.t374')}<span className="sub">{translate('settingsView.t375Desc')}</span>
         </label>
         <Switch
           size="middle"
@@ -876,19 +878,19 @@ function AppearanceSection() {
           onChange={(v) => setA({ codeLigature: v })}
         />
 
-        <label>窗口圆角</label>
+        <label>{translate('settingsView.t376')}</label>
         <Segmented
           value={a.windowCorners}
           onChange={(v) => setA({ windowCorners: v as 'sharp' | 'soft' | 'round' })}
           options={[
-            { label: '直角', value: 'sharp' },
-            { label: '柔和', value: 'soft' },
-            { label: '圆润', value: 'round' },
+            { label: translate('settingsView.t145'), value: 'sharp' },
+            { label: translate('settingsView.t146'), value: 'soft' },
+            { label: translate('settingsView.t147'), value: 'round' },
           ]}
         />
 
         <label>
-          背景毛玻璃<span className="sub">macOS 半透明背景（性能略低）</span>
+          {translate('settingsView.t377')}<span className="sub">{translate('settingsView.t378Desc')}</span>
         </label>
         <Switch
           size="middle"
@@ -897,11 +899,11 @@ function AppearanceSection() {
         />
       </div>
 
-      <div className="subsec-h">聊天显示</div>
+      <div className="subsec-h">{translate('settingsView.t379')}</div>
       <div className="settings-card">
         <SettingsRow
-          title="自动折叠工具调用"
-          desc="超过 200 行的工具结果默认折叠"
+          title={translate('settingsView.t295')}
+          desc={translate('settingsView.t296Desc')}
           right={
             <Switch
               size="middle"
@@ -911,7 +913,7 @@ function AppearanceSection() {
           }
         />
         <SettingsRow
-          title="语法高亮代码块"
+          title={translate('settingsView.t297')}
           right={
             <Switch
               size="middle"
@@ -921,14 +923,14 @@ function AppearanceSection() {
           }
         />
         <SettingsRow
-          title="时间戳格式"
+          title={translate('settingsView.t298')}
           right={
             <Select
               value={a.timestampFormat}
               onChange={(v) => setA({ timestampFormat: v })}
               options={[
-                { label: '相对时间', value: 'rel' },
-                { label: '绝对时间', value: 'abs' },
+                { label: translate('settingsView.t148'), value: 'rel' },
+                { label: translate('settingsView.t149'), value: 'abs' },
               ]}
             />
           }
@@ -1003,7 +1005,7 @@ function ThemePreview({
         </div>
       </div>
       <div className="theme-preview-foot">
-        <span>{kind === 'light' ? '浅色' : kind === 'dark' ? '深色' : '跟随系统'}</span>
+        <span>{kind === 'light' ? translate('settingsView.t13') : kind === 'dark' ? translate('settingsView.t12') : translate('settingsView.t150')}</span>
         {active && <Icons.Check size={13} className="color-primary" />}
       </div>
     </button>
@@ -1057,16 +1059,16 @@ function ShortcutsSection() {
   )
 
   const groups: { id: ShortcutBinding['group']; name: string }[] = [
-    { id: 'action', name: '全局动作' },
-    { id: 'navigation', name: '视图切换' },
-    { id: 'settings', name: '设置' },
+    { id: 'action', name: translate('settingsView.t151') },
+    { id: 'navigation', name: translate('settingsView.t152') },
+    { id: 'settings', name: translate('settingsView.t153') },
   ]
 
   return (
     <div className="settings-section section-wider">
-      <h2>快捷键</h2>
+      <h2>{translate('settingsView.t41')}</h2>
       <div className="lede">
-        下方仅展示已接入全局快捷键处理器的动作；可搜索、修改主按键或一键恢复默认。
+        {translate('settingsView.t380Desc')}
       </div>
 
       <div className="row row-mb-sm">
@@ -1077,7 +1079,7 @@ function ShortcutsSection() {
           prefix={<Icons.Search size={14} />}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索动作或按键..."
+          placeholder={translate('settingsView.t299')}
         />
         <Button
           size="middle"
@@ -1085,7 +1087,7 @@ function ShortcutsSection() {
           icon={<Icons.Refresh size={13} />}
           onClick={resetShortcuts}
         >
-          重置全部
+          {translate('settingsView.t381')}
         </Button>
       </div>
 
@@ -1109,7 +1111,7 @@ function ShortcutsSection() {
                       className="shortcut-key-input"
                       value={shortcut.key === 'Escape' ? 'Esc' : shortcut.key.toUpperCase()}
                       onChange={(e) => updateShortcutKey(shortcut.id, e.target.value)}
-                      aria-label={`修改${shortcut.label}快捷键`}
+                      aria-label={translate('settingsView.tpl1Desc', { label: shortcut.label })}
                     />
                   </div>
                 </div>
@@ -1120,7 +1122,7 @@ function ShortcutsSection() {
       })}
 
       {groups.every((group) => groupedShortcuts[group.id].length === 0) && (
-        <div className="empty-hint">没有找到匹配的快捷键。</div>
+        <div className="empty-hint">{translate('settingsView.t382')}</div>
       )}
     </div>
   )
@@ -1151,7 +1153,7 @@ function ModelsSection() {
         setModels(mRes.models.filter((model) => visibleProviderIds.has(model.providerId)))
         setProviders(visibleProviders)
       })
-      .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
+      .catch((err) => setError(err instanceof Error ? err.message : translate('settingsView.t154')))
       .finally(() => setLoading(false))
   }, [listModels, listProviders])
 
@@ -1166,9 +1168,9 @@ function ModelsSection() {
 
   const handleDelete = async (id: string) => {
     const confirmed = await requestConfirm({
-      title: '删除模型？',
-      description: '该自定义模型会从当前 Provider 下移除。',
-      confirmText: '删除',
+      title: translate('settingsView.t155'),
+      description: translate('settingsView.t156Desc'),
+      confirmText: translate('settingsView.t157'),
       danger: true,
     })
     if (!confirmed) return
@@ -1195,20 +1197,20 @@ function ModelsSection() {
     <div className="settings-section">
       <div className="row section-header-row">
         <div className="flex1">
-          <h2 className="section-h2">模型管理</h2>
+          <h2 className="section-h2">{translate('settingsView.t383')}</h2>
           <div className="lede section-lede">
-            按 Provider 分组管理可用模型，可启用/禁用或添加自定义模型。
+            {translate('settingsView.t384Desc')}
           </div>
         </div>
-        <span className="badge primary dot">共 {models.length} 个</span>
+        <span className="badge primary dot">{translate('settingsView.tpl36Desc', { count: models.length })}</span>
       </div>
 
       {error && <div className="alert-banner">{error}</div>}
 
-      {loading && <div className="card loading-card">正在加载...</div>}
+      {loading && <div className="card loading-card">{translate('settingsView.t385')}</div>}
 
       {!loading && providers.length === 0 && (
-        <div className="card loading-card">暂无 Provider。请先在 Provider 页面添加。</div>
+        <div className="card loading-card">{translate('settingsView.t386Desc')}</div>
       )}
 
       {!loading &&
@@ -1227,7 +1229,7 @@ function ModelsSection() {
                   setNewModelName('')
                 }}
               >
-                添加
+                {translate('settingsView.t387')}
               </Button>
             </div>
 
@@ -1235,7 +1237,7 @@ function ModelsSection() {
               <div className="row row-gap-sm mb-sm">
                 <Input
                   className="flex1 model-name-sm"
-                  placeholder="模型名称，如 gpt-4o"
+                  placeholder={translate('settingsView.t300Desc')}
                   value={newModelName}
                   onChange={(e) => setNewModelName(e.target.value)}
                   onKeyDown={(e) => {
@@ -1245,15 +1247,15 @@ function ModelsSection() {
                   autoFocus
                 />
                 <Button size="middle" type="primary" onClick={() => void handleAdd(provider.id)}>
-                  确认
+                  {translate('settingsView.t388')}
                 </Button>
                 <Button size="middle" type="text" onClick={() => setAddingForProvider(null)}>
-                  取消
+                  {translate('settingsView.t389')}
                 </Button>
               </div>
             )}
 
-            {pModels.length === 0 && <div className="model-card-empty">暂无模型</div>}
+            {pModels.length === 0 && <div className="model-card-empty">{translate('settingsView.t390')}</div>}
 
             {pModels.map((m) => {
               const cap = ModelCapabilityRegistry.getCapabilities(m.name)
@@ -1275,7 +1277,7 @@ function ModelsSection() {
                     </div>
                   )}
                   <Switch size="middle" checked={m.enabled} onChange={() => void handleToggle(m)} />
-                  <button className="icon-btn" title="删除" onClick={() => void handleDelete(m.id)}>
+                  <button className="icon-btn" title={translate('settingsView.t157')} onClick={() => void handleDelete(m.id)}>
                     <Icons.X size={13} />
                   </button>
                 </div>
@@ -1300,23 +1302,23 @@ const RULE_LAYER_META: Array<{
     label: 'System',
     badge: 'SYS',
     badgeColor: '#94a3b8',
-    desc: '应用内置 · 不可删除',
+    desc: translate('settingsView.t158'),
   },
-  { scope: 'team', label: 'Team', badge: 'TEAM', badgeColor: '#8b5cf6', desc: '团队管理员发布' },
-  { scope: 'user', label: 'User', badge: 'USER', badgeColor: '#10b981', desc: '用户全局偏好' },
+  { scope: 'team', label: 'Team', badge: 'TEAM', badgeColor: '#8b5cf6', desc: translate('settingsView.t159') },
+  { scope: 'user', label: 'User', badge: 'USER', badgeColor: '#10b981', desc: translate('settingsView.t160') },
   {
     scope: 'project',
     label: 'Project',
     badge: 'PROJ',
     badgeColor: '#f97316',
-    desc: '.spark/rules · 当前工作区',
+    desc: translate('settingsView.t161Desc'),
   },
   {
     scope: 'session',
     label: 'Session',
     badge: 'SESS',
     badgeColor: '#f43f5e',
-    desc: '本次会话临时规则',
+    desc: translate('settingsView.t162'),
   },
 ]
 
@@ -1337,7 +1339,7 @@ function RulesSection() {
     setError('')
     listRules({})
       .then((res) => setRules(res.rules))
-      .catch((err) => setError(err instanceof Error ? err.message : '加载规则失败'))
+      .catch((err) => setError(err instanceof Error ? err.message : translate('settingsView.t163')))
       .finally(() => setLoading(false))
   }, [listRules])
 
@@ -1362,9 +1364,9 @@ function RulesSection() {
 
   const handleDelete = async (id: string) => {
     const confirmed = await requestConfirm({
-      title: '删除规则？',
-      description: '该规则会从本地规则列表中移除。',
-      confirmText: '删除',
+      title: translate('settingsView.t164'),
+      description: translate('settingsView.t165Desc'),
+      confirmText: translate('settingsView.t157'),
       danger: true,
     })
     if (!confirmed) return
@@ -1401,26 +1403,25 @@ function RulesSection() {
   return (
     <>
       <div className="settings-section">
-        <h2>规则</h2>
+        <h2>{translate('settingsView.t61')}</h2>
         <div className="lede">
-          多层规则按优先级合成为有效 prompt 注入。下方按层级展示来源，并显示冲突与覆盖。
+          {translate('settingsView.t391LongDesc')}
         </div>
 
         <div className="row info-banner">
           <Icons.Brain size={14} className="color-primary flex-shrink-0" />
           <div className="flex1 info-banner-text">
-            <strong>当前生效</strong> · {activeCount} 条启用规则来自 {RULE_LAYER_META.length}{' '}
-            个作用域
+            <strong>{translate('settingsView.t392')}</strong> · {translate('settingsView.tpl37Desc', { count: activeCount, scopes: RULE_LAYER_META.length })}
           </div>
           <Button size="middle" type="primary" icon={<Icons.Refresh size={11} />} onClick={refresh}>
-            刷新
+            {translate('settingsView.t393')}
           </Button>
         </div>
 
         {error && <div className="alert-banner">{error}</div>}
 
         {loading ? (
-          <div className="card loading-card">正在加载规则...</div>
+          <div className="card loading-card">{translate('settingsView.t394')}</div>
         ) : (
           RULE_LAYER_META.map((meta) => (
             <RuleLayer
@@ -1428,7 +1429,7 @@ function RulesSection() {
               scope={meta.label}
               badge={meta.badge}
               badgeColor={meta.badgeColor}
-              desc={`${meta.desc} · ${grouped[meta.scope].length} 条`}
+              desc={translate('settingsView.tpl2Desc', { desc: meta.desc, count: grouped[meta.scope].length })}
               rules={grouped[meta.scope]}
               readOnly={meta.scope === 'system'}
               onToggle={handleToggle}
@@ -1489,9 +1490,9 @@ function RuleLayer({
           <span className="desc"> · {desc}</span>
         </div>
         <div className="flex1" />
-        {readOnly && <span className="badge rule-readonly-badge">只读</span>}
+        {readOnly && <span className="badge rule-readonly-badge">{translate('settingsView.t395')}</span>}
         {!readOnly && (
-          <button className="icon-btn" title="新增规则" onClick={onAdd}>
+          <button className="icon-btn" title={translate('settingsView.t168')} onClick={onAdd}>
             <Icons.Plus size={13} />
           </button>
         )}
@@ -1500,7 +1501,7 @@ function RuleLayer({
         {rules.length === 0 && (
           <div className="rule-line">
             <span className="src">empty</span>
-            <span className="txt">暂无规则</span>
+            <span className="txt">{translate('settingsView.t396')}</span>
           </div>
         )}
         {rules.map((rule) => (
@@ -1508,14 +1509,14 @@ function RuleLayer({
             <span className="src">{rule.name}</span>
             <span className="txt">{rule.content}</span>
             <span className="marker win">P{rule.priority}</span>
-            {!rule.enabled && <span className="marker lose">禁用</span>}
+            {!rule.enabled && <span className="marker lose">{translate('settingsView.t397')}</span>}
             <Switch size="middle" checked={rule.enabled} onChange={(v) => onToggle(rule.id, v)} />
             {!readOnly && (
               <>
-                <button className="icon-btn" title="编辑" onClick={() => onEdit(rule)}>
+                <button className="icon-btn" title={translate('settingsView.t301')} onClick={() => onEdit(rule)}>
                   <Icons.Edit size={13} />
                 </button>
-                <button className="icon-btn" title="删除" onClick={() => onDelete(rule.id)}>
+                <button className="icon-btn" title={translate('settingsView.t157')} onClick={() => onDelete(rule.id)}>
                   <Icons.X size={13} />
                 </button>
               </>
@@ -1552,7 +1553,7 @@ function RuleEditPanel({
 
   const handleSave = async () => {
     if (!name.trim() || !content.trim()) {
-      setError('名称和内容不能为空')
+      setError(translate('settingsView.t166'))
       return
     }
 
@@ -1567,7 +1568,7 @@ function RuleEditPanel({
         priority,
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存规则失败')
+      setError(err instanceof Error ? err.message : translate('settingsView.t167'))
     } finally {
       setSaving(false)
     }
@@ -1579,8 +1580,8 @@ function RuleEditPanel({
         <div className="slide-panel-h">
           <div className="h-icon">{scope.slice(0, 1).toUpperCase()}</div>
           <div className="flex1">
-            <div className="h-title">{rule === null ? '新增规则' : '编辑规则'}</div>
-            <div className="h-sub">{scope} scope · prompt 片段</div>
+            <div className="h-title">{rule === null ? translate('settingsView.t168') : translate('settingsView.t169')}</div>
+            <div className="h-sub">{translate('settingsView.tpl38Desc', { scope })}</div>
           </div>
           <button className="icon-btn" onClick={onClose}>
             <Icons.X />
@@ -1590,17 +1591,17 @@ function RuleEditPanel({
         <div className="slide-panel-body">
           {error && <div className="alert-banner">{error}</div>}
 
-          <div className="subsec-h">规则</div>
+          <div className="subsec-h">{translate('settingsView.t61')}</div>
           <div className="form-grid">
-            <label>名称</label>
+            <label>{translate('settingsView.t398')}</label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="例：代码风格"
+              placeholder={translate('settingsView.t302')}
             />
 
             <label>
-              优先级<span className="sub">数字越大越优先</span>
+              {translate('settingsView.t399')}<span className="sub">{translate('settingsView.t400')}</span>
             </label>
             <Input
               type="number"
@@ -1608,11 +1609,11 @@ function RuleEditPanel({
               onChange={(e) => setPriority(Number(e.target.value))}
             />
 
-            <label>内容</label>
+            <label>{translate('settingsView.t401')}</label>
             <TextArea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="输入要注入到 Agent prompt 的规则内容"
+              placeholder={translate('settingsView.t303Desc')}
               className="rule-textarea"
               rows={8}
               resize
@@ -1623,7 +1624,7 @@ function RuleEditPanel({
         <div className="slide-panel-foot">
           <span className="flex1" />
           <Button size="middle" type="text" onClick={onClose}>
-            取消
+            {translate('settingsView.t389')}
           </Button>
           <Button
             size="middle"
@@ -1633,7 +1634,7 @@ function RuleEditPanel({
             onClick={handleSave}
             disabled={saving}
           >
-            保存
+            {translate('settingsView.t402')}
           </Button>
         </div>
       </div>
@@ -1730,7 +1731,7 @@ function McpSection() {
             .catch(() => {})
         })
       })
-      .catch((err) => setError(err instanceof Error ? err.message : '加载 MCP 服务器失败'))
+      .catch((err) => setError(err instanceof Error ? err.message : translate('settingsView.t170')))
   }, [listMcp, getServerStatus])
 
   useEffect(() => {
@@ -1763,20 +1764,20 @@ function McpSection() {
     try {
       const res = await startServer({ serverId })
       if (res.started) {
-        toast.success('MCP 服务器已启动')
+        toast.success(translate('settingsView.t171'))
         setStatusMap((prev) => ({
           ...prev,
           [serverId]: { connected: true, toolCount: res.toolCount },
         }))
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '启动失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t172'))
       setStatusMap((prev) => ({
         ...prev,
         [serverId]: {
           connected: false,
           toolCount: 0,
-          error: err instanceof Error ? err.message : '启动失败',
+          error: err instanceof Error ? err.message : translate('settingsView.t172'),
         },
       }))
     } finally {
@@ -1789,11 +1790,11 @@ function McpSection() {
     try {
       const res = await stopServer({ serverId })
       if (res.stopped) {
-        toast.success('MCP 服务器已停止')
+        toast.success(translate('settingsView.t173'))
         setStatusMap((prev) => ({ ...prev, [serverId]: { connected: false, toolCount: 0 } }))
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '停止失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t174'))
     } finally {
       setActionLoading((prev) => ({ ...prev, [serverId]: false }))
     }
@@ -1812,11 +1813,11 @@ function McpSection() {
         }
       }
       await deleteMcp({ id: serverId })
-      toast.success('MCP 服务器已删除')
+      toast.success(translate('settingsView.t175'))
       setDeleteConfirmId(null)
       refresh()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t176'))
     } finally {
       setActionLoading((prev) => ({ ...prev, [serverId]: false }))
     }
@@ -1859,15 +1860,15 @@ function McpSection() {
   const handleFormSave = async () => {
     const name = draft.name.trim()
     if (!name) {
-      setFormError('名称不能为空')
+      setFormError(translate('settingsView.t177'))
       return
     }
     if (draft.type === 'stdio' && !draft.command.trim()) {
-      setFormError('stdio 类型需要填写启动命令')
+      setFormError(translate('settingsView.t178Desc'))
       return
     }
     if (draft.type === 'sse' && !draft.url.trim()) {
-      setFormError('SSE 类型需要填写 URL')
+      setFormError(translate('settingsView.t179Desc'))
       return
     }
 
@@ -1902,7 +1903,7 @@ function McpSection() {
           name,
           configJson: JSON.stringify(config),
         })
-        toast.success('MCP 服务器已更新')
+        toast.success(translate('settingsView.t180'))
       } else {
         await createMcp({
           name,
@@ -1910,13 +1911,13 @@ function McpSection() {
           configJson: JSON.stringify(config),
           enabled: true,
         })
-        toast.success('MCP 服务器已创建')
+        toast.success(translate('settingsView.t181'))
       }
       closeForm()
       refresh()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : '保存失败')
-      toast.error(err instanceof Error ? err.message : '保存失败')
+      setFormError(err instanceof Error ? err.message : translate('settingsView.t182'))
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t182'))
     } finally {
       setFormSaving(false)
     }
@@ -1943,13 +1944,13 @@ function McpSection() {
     <div className="settings-section">
       <div className="row section-header-row">
         <div className="flex1">
-          <h2 className="section-h2">MCP 服务器</h2>
+          <h2 className="section-h2">{translate('settingsView.t403')}</h2>
           <div className="lede section-lede">
-            配置 Model Context Protocol 服务器，为 Agent 提供外部工具和数据源。
+            {translate('settingsView.t404LongDesc')}
           </div>
         </div>
         <span className="badge primary dot">
-          {runningCount} / {servers.length} 运行中
+          {translate('settingsView.tpl39Desc', { running: runningCount, total: servers.length })}
         </span>
         <Button
           type="primary"
@@ -1957,19 +1958,19 @@ function McpSection() {
           onClick={openAddForm}
           style={{ marginLeft: 10 }} /* dynamic */
         >
-          添加
+          {translate('settingsView.t387')}
         </Button>
       </div>
 
       {error && <div className="alert-banner">{error}</div>}
 
       {loading ? (
-        <div className="card loading-card">正在加载 MCP 服务器...</div>
+        <div className="card loading-card">{translate('settingsView.t405Desc')}</div>
       ) : servers.length === 0 ? (
         <div className="mcp-empty-state">
           <Icons.MCP size={24} />
-          <div className="strong mcp-empty-title">暂无 MCP 服务器</div>
-          <div className="mcp-empty-desc">添加 MCP 服务器以扩展 Agent 的工具能力</div>
+          <div className="strong mcp-empty-title">{translate('settingsView.t406')}</div>
+          <div className="mcp-empty-desc">{translate('settingsView.t407Desc')}</div>
         </div>
       ) : (
         <div className="mcp-server-list">
@@ -2000,7 +2001,7 @@ function McpSection() {
                       <span className="mcp-desc-sep">·</span>
                       <span>{server.scope}</span>
                       <span className="mcp-desc-sep">·</span>
-                      <span>{toolCount} 个工具</span>
+                      <span>{translate('settingsView.tpl40Desc', { count: toolCount })}</span>
                     </div>
                   </div>
                   <div
@@ -2017,9 +2018,9 @@ function McpSection() {
                         type="text"
                         icon={<Icons.Stop size={11} />}
                         onClick={() => void handleStop(server.id)}
-                        title="停止"
+                        title={translate('settingsView.t304')}
                       >
-                        停止
+                        {translate('settingsView.t304')}
                       </Button>
                     ) : (
                       <Button
@@ -2027,17 +2028,17 @@ function McpSection() {
                         type="text"
                         icon={<Icons.Play size={11} />}
                         onClick={() => void handleStart(server.id)}
-                        title="启动"
+                        title={translate('settingsView.t5')}
                       >
-                        启动
+                        {translate('settingsView.t5')}
                       </Button>
                     )}
-                    <button className="icon-btn" title="编辑" onClick={() => openEditForm(server)}>
+                    <button className="icon-btn" title={translate('settingsView.t301')} onClick={() => openEditForm(server)}>
                       <Icons.Edit size={13} />
                     </button>
                     <button
                       className="icon-btn"
-                      title="删除"
+                      title={translate('settingsView.t157')}
                       onClick={() => setDeleteConfirmId(server.id)}
                     >
                       <Icons.Trash size={11} />
@@ -2053,27 +2054,27 @@ function McpSection() {
                   <div className="mcp-server-detail">
                     <div className="mcp-detail-grid">
                       <div className="mcp-detail-col">
-                        <div className="mcp-detail-label">连接状态</div>
+                        <div className="mcp-detail-label">{translate('settingsView.t408')}</div>
                         <div className="mcp-detail-value">
                           <span
                             className={`badge ${isConnected ? 'success' : hasError ? 'danger' : ''} dot`}
                           >
-                            {isConnected ? '已连接' : hasError ? '错误' : '已停止'}
+                            {isConnected ? translate('settingsView.t183') : hasError ? translate('settingsView.t184') : translate('settingsView.t185')}
                           </span>
                         </div>
                       </div>
                       <div className="mcp-detail-col">
-                        <div className="mcp-detail-label">传输类型</div>
+                        <div className="mcp-detail-label">{translate('settingsView.t409')}</div>
                         <div className="mcp-detail-value">
                           {transport === 'stdio' ? 'Stdio' : 'SSE'}
                         </div>
                       </div>
                       <div className="mcp-detail-col">
-                        <div className="mcp-detail-label">工具数量</div>
+                        <div className="mcp-detail-label">{translate('settingsView.t410')}</div>
                         <div className="mcp-detail-value">{toolCount}</div>
                       </div>
                       <div className="mcp-detail-col">
-                        <div className="mcp-detail-label">作用域</div>
+                        <div className="mcp-detail-label">{translate('settingsView.t411')}</div>
                         <div className="mcp-detail-value">{server.scope}</div>
                       </div>
                     </div>
@@ -2085,20 +2086,20 @@ function McpSection() {
                       </div>
                     )}
 
-                    <div className="mcp-detail-tools-h">可用工具</div>
+                    <div className="mcp-detail-tools-h">{translate('settingsView.t412')}</div>
                     {(() => {
                       const tools = toolsMap[server.id]
                       if (tools == null) {
                         return (
                           <div className="mcp-detail-loading">
-                            <Icons.Spinner size={13} /> 加载工具列表...
+                            <Icons.Spinner size={13} /> {translate('settingsView.t413')}
                           </div>
                         )
                       }
                       if (tools.length === 0) {
                         return (
                           <div className="mcp-detail-empty">
-                            暂无工具（服务器未运行或未提供工具）
+                            {translate('settingsView.t414Desc')}
                           </div>
                         )
                       }
@@ -2133,10 +2134,10 @@ function McpSection() {
               </div>
               <div className="flex1">
                 <div className="modal-title">
-                  {editingId ? '编辑 MCP 服务器' : '添加 MCP 服务器'}
+                  {editingId ? translate('settingsView.t186') : translate('settingsView.t187')}
                 </div>
                 <div className="modal-subtitle">
-                  {draft.type === 'stdio' ? 'Stdio 传输' : 'SSE 传输'}
+                  {draft.type === 'stdio' ? translate('settingsView.t188') : translate('settingsView.t189')}
                 </div>
               </div>
               <button className="icon-btn" onClick={closeForm}>
@@ -2147,19 +2148,19 @@ function McpSection() {
             <div className="modal-body modal-body-scroll">
               {formError && <div className="alert-banner">{formError}</div>}
 
-              <div className="subsec-h">基础配置</div>
+              <div className="subsec-h">{translate('settingsView.t415')}</div>
               <div className="form-grid">
                 <label>
-                  名称<span className="sub">服务器唯一标识名称</span>
+                  {translate('settingsView.t398')}<span className="sub">{translate('settingsView.t416')}</span>
                 </label>
                 <Input
                   value={draft.name}
                   onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="例：filesystem"
+                  placeholder={translate('settingsView.t305')}
                 />
 
                 <label>
-                  作用域<span className="sub">配置生效范围</span>
+                  {translate('settingsView.t411')}<span className="sub">{translate('settingsView.t417')}</span>
                 </label>
                 <Select
                   value={draft.scope}
@@ -2174,7 +2175,7 @@ function McpSection() {
                 />
 
                 <label>
-                  传输类型<span className="sub">与 MCP 服务器的通信方式</span>
+                  {translate('settingsView.t409')}<span className="sub">{translate('settingsView.t418Desc')}</span>
                 </label>
                 <Select
                   value={draft.type}
@@ -2186,18 +2187,18 @@ function McpSection() {
                   }
                   disabled={!!editingId}
                   options={[
-                    { label: 'Stdio（本地进程）', value: 'stdio' },
-                    { label: 'SSE（HTTP 流）', value: 'sse' },
+                    { label: translate('settingsView.t190'), value: 'stdio' },
+                    { label: translate('settingsView.t191'), value: 'sse' },
                   ]}
                 />
               </div>
 
               {draft.type === 'stdio' ? (
                 <>
-                  <div className="subsec-h mt-lg">Stdio 配置</div>
+                  <div className="subsec-h mt-lg">{translate('settingsView.t419')}</div>
                   <div className="form-grid">
                     <label>
-                      启动命令<span className="sub">可执行文件路径</span>
+                      {translate('settingsView.t420')}<span className="sub">{translate('settingsView.t421')}</span>
                     </label>
                     <Input
                       className="mono-sm"
@@ -2207,7 +2208,7 @@ function McpSection() {
                     />
 
                     <label>
-                      参数<span className="sub">空格分隔的命令行参数</span>
+                      {translate('settingsView.t422')}<span className="sub">{translate('settingsView.t423')}</span>
                     </label>
                     <Input
                       className="mono-sm"
@@ -2219,10 +2220,10 @@ function McpSection() {
                 </>
               ) : (
                 <>
-                  <div className="subsec-h mt-lg">SSE 配置</div>
+                  <div className="subsec-h mt-lg">{translate('settingsView.t424')}</div>
                   <div className="form-grid">
                     <label>
-                      URL<span className="sub">SSE 端点地址</span>
+                      URL<span className="sub">{translate('settingsView.t425')}</span>
                     </label>
                     <Input
                       className="mono-sm"
@@ -2235,7 +2236,7 @@ function McpSection() {
               )}
 
               <div className="subsec-h mt-lg">
-                环境变量
+                {translate('settingsView.t426')}
                 <Button
                   className="mcp-env-add-btn"
                   size="middle"
@@ -2243,11 +2244,11 @@ function McpSection() {
                   icon={<Icons.Plus size={11} />}
                   onClick={addEnvPair}
                 >
-                  添加
+                  {translate('settingsView.t387')}
                 </Button>
               </div>
               {draft.envPairs.length === 0 ? (
-                <div className="mcp-env-empty">未配置环境变量</div>
+                <div className="mcp-env-empty">{translate('settingsView.t427')}</div>
               ) : (
                 <div className="mcp-env-list">
                   {draft.envPairs.map((pair, idx) => (
@@ -2268,7 +2269,7 @@ function McpSection() {
                       <button
                         className="icon-btn mcp-env-del"
                         onClick={() => removeEnvPair(idx)}
-                        title="删除"
+                        title={translate('settingsView.t157')}
                       >
                         <Icons.X size={13} />
                       </button>
@@ -2281,7 +2282,7 @@ function McpSection() {
             <div className="modal-foot">
               <span className="flex1" />
               <Button size="middle" type="text" onClick={closeForm}>
-                取消
+                {translate('settingsView.t389')}
               </Button>
               <Button
                 size="middle"
@@ -2291,7 +2292,7 @@ function McpSection() {
                 onClick={() => void handleFormSave()}
                 disabled={formSaving}
               >
-                保存
+                {translate('settingsView.t402')}
               </Button>
             </div>
           </div>
@@ -2313,7 +2314,7 @@ function McpSection() {
                 <Icons.AlertTriangle size={18} />
               </div>
               <div>
-                <div className="modal-title">删除 MCP 服务器</div>
+                <div className="modal-title">{translate('settingsView.t428')}</div>
                 <div className="modal-subtitle">
                   {servers.find((s) => s.id === deleteConfirmId)?.name ?? ''}
                 </div>
@@ -2321,15 +2322,15 @@ function McpSection() {
             </div>
             <div className="modal-body">
               <div className="mcp-delete-warning">
-                确认删除此 MCP 服务器？
-                {statusMap[deleteConfirmId]?.connected ? '该服务器正在运行，将自动停止。' : ''}
-                此操作无法撤销。
+                {translate('settingsView.tpl41Desc')}
+                {statusMap[deleteConfirmId]?.connected ? translate('settingsView.t192Desc') : ''}
+                {translate('settingsView.tpl42Desc')}
               </div>
             </div>
             <div className="modal-foot">
               <span className="flex1" />
               <Button size="middle" type="text" onClick={() => setDeleteConfirmId(null)}>
-                取消
+                {translate('settingsView.t389')}
               </Button>
               <Button
                 size="middle"
@@ -2339,7 +2340,7 @@ function McpSection() {
                 onClick={() => void handleDelete(deleteConfirmId)}
                 disabled={actionLoading[deleteConfirmId] ?? false}
               >
-                确认删除
+                {translate('settingsView.t429')}
               </Button>
             </div>
           </div>
@@ -2380,9 +2381,9 @@ function SystemPromptSection() {
       })
       setSystemPrompt(res.system.content)
       setSavedPrompt(res.system.content)
-      toast.success('系统提示词已保存')
+      toast.success(translate('settingsView.t193'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '保存系统提示词失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t194'))
     } finally {
       setSavingPrompt(false)
     }
@@ -2399,36 +2400,36 @@ function SystemPromptSection() {
     <div className="settings-section">
       <div className="row section-header-row">
         <div className="flex1">
-          <h2 className="section-h2">系统提示词</h2>
-          <div className="lede section-lede">配置全局系统级提示词，作为所有 Agent 的基础指令。</div>
+          <h2 className="section-h2">{translate('settingsView.t104')}</h2>
+          <div className="lede section-lede">{translate('settingsView.t430Desc')}</div>
         </div>
-        {isDirty && <span className="badge warning dot">未保存</span>}
+        {isDirty && <span className="badge warning dot">{translate('settingsView.t431')}</span>}
       </div>
 
       <TextArea
         className="prompt-textarea"
         value={systemPrompt}
         onChange={(event) => setSystemPrompt(event.target.value)}
-        placeholder="输入全局系统提示词...&#10;&#10;例如：你是一个专业的编程助手，请用中文回复。"
+        placeholder={translate('settingsView.t306LongDesc')}
         rows={14}
       />
 
       <div className="prompt-editor-footer">
         <div className="prompt-editor-stats">
-          <span>{charCount} 字符</span>
+          <span>{translate('settingsView.tpl43Desc', { count: charCount })}</span>
           <span className="prompt-stats-sep">·</span>
-          <span>约 {estimatedTokenCount} tokens</span>
+          <span>{translate('settingsView.tpl44Desc', { count: estimatedTokenCount })}</span>
           {charCount > 10000 && (
             <>
               <span className="prompt-stats-sep">·</span>
-              <span className="prompt-stats-warn">内容较长</span>
+              <span className="prompt-stats-warn">{translate('settingsView.t432')}</span>
             </>
           )}
         </div>
         <div className="row row-gap-xs">
           {isDirty && (
             <Button size="middle" type="text" onClick={handleReset}>
-              撤销修改
+              {translate('settingsView.t433')}
             </Button>
           )}
           <Button
@@ -2439,7 +2440,7 @@ function SystemPromptSection() {
             onClick={() => void saveSystemPrompt()}
             disabled={savingPrompt || !isDirty}
           >
-            保存
+            {translate('settingsView.t402')}
           </Button>
         </div>
       </div>
@@ -2450,6 +2451,7 @@ function SystemPromptSection() {
 /* ───────── WORKFLOW TEMPLATES ───────── */
 /* ───────── PERMISSIONS ───────── */
 export function PermissionsSection() {
+  useI18n()
   const [profiles, setProfiles] = useState<PermissionProfileItem[]>([])
   const [activeProfileId, setActiveProfileId] = useState('project-standard')
   const [loading, setLoading] = useState(true)
@@ -2545,11 +2547,11 @@ export function PermissionsSection() {
         const codex = result.sdks.find((sdk) => sdk.packageName === '@openai/codex-sdk')
         if (codex?.runtime?.installed !== false) return
         AntdModal.confirm({
-          title: '需要下载 Codex 运行时',
+          title: translate('settingsView.t195Desc'),
           content:
-            'Codex JS SDK 已随应用安装，但当前平台的 native runtime 尚未下载。现在下载后即可使用；稍后也可以在“设置 → 完整性”中安装或升级。',
-          okText: '下载运行时',
-          cancelText: '稍后处理',
+            translate('settingsView.t196LongDesc'),
+          okText: translate('settingsView.t197'),
+          cancelText: translate('settingsView.t198'),
           onOk: async () => {
             const installed = await window.spark.invoke('sdk:integrity-install', {
               packageName: '@openai/codex-sdk',
@@ -2564,7 +2566,7 @@ export function PermissionsSection() {
       })
       .catch((error: unknown) => {
         toast.error(
-          `Codex 运行时检测失败：${error instanceof Error ? error.message : String(error)}`,
+          translate('settingsView.tpl3Desc', { message: error instanceof Error ? error.message : String(error) }),
         )
       })
   }
@@ -2578,66 +2580,65 @@ export function PermissionsSection() {
     {
       action: 'file_read',
       icon: <Icons.File />,
-      name: '读取文件',
-      hint: 'Read / Glob / Grep 等读取类工具',
+      name: translate('settingsView.t199'),
+      hint: translate('settingsView.t200Desc'),
     },
     {
       action: 'file_write',
       icon: <Icons.Edit />,
-      name: '编辑文件',
-      hint: 'Write / Edit 等写入类工具',
+      name: translate('settingsView.t201'),
+      hint: translate('settingsView.t202Desc'),
     },
     {
       action: 'command_exec',
       icon: <Icons.Terminal />,
-      name: '执行 shell 命令',
-      hint: '非破坏性命令',
+      name: translate('settingsView.t203'),
+      hint: translate('settingsView.t204'),
     },
     {
       action: 'command_dangerous',
       icon: <Icons.AlertTriangle />,
-      name: '高风险命令',
-      hint: 'rm -rf、git reset --hard、sudo 等',
+      name: translate('settingsView.t205'),
+      hint: translate('settingsView.t206Desc'),
     },
     {
       action: 'network_known',
       icon: <Icons.Globe />,
-      name: '搜索网络',
-      hint: 'WebSearch 等已知安全入口',
+      name: translate('settingsView.t207'),
+      hint: translate('settingsView.t208Desc'),
     },
     {
       action: 'network_unknown',
       icon: <Icons.Globe />,
-      name: '访问任意网页',
-      hint: 'WebFetch 抓取任意 URL',
+      name: translate('settingsView.t209'),
+      hint: translate('settingsView.t210Desc'),
     },
     {
       action: 'mcp_tool',
       icon: <Icons.MCP />,
-      name: '调用 MCP 工具',
-      hint: '所有 mcp__ 前缀的第三方工具',
+      name: translate('settingsView.t211'),
+      hint: translate('settingsView.t212Desc'),
     },
   ]
 
   const PROFILE_META: Record<string, { icon: ReactNode; desc: string }> = {
-    strict: { icon: <Icons.Lock />, desc: '一切都问' },
-    'project-standard': { icon: <Icons.Shield />, desc: '工作区写入自动允许' },
-    trusted: { icon: <Icons.CheckCircle />, desc: '自动允许大多数' },
+    strict: { icon: <Icons.Lock />, desc: translate('settingsView.t213') },
+    'project-standard': { icon: <Icons.Shield />, desc: translate('settingsView.t214') },
+    trusted: { icon: <Icons.CheckCircle />, desc: translate('settingsView.t215') },
   }
 
   return (
     <div className="settings-section">
-      <h2>权限策略</h2>
+      <h2>{translate('settingsView.t68')}</h2>
       <div className="lede">
-        控制 Agent 能做什么、何时需要审批。会话权限模式决定 SDK 层门槛；下方 Profile
-        规则决定工具升级审批时自动放行还是拦截。
+        {translate('settingsView.tpl45LongDesc')}
       </div>
 
-      <div className="subsec-h">SDK 执行默认策略</div>
+      <div className="subsec-h">{translate('settingsView.t434')}</div>
       <div className="card runtime-permission-card">
         <SettingsRow
-          title="默认执行器"
-          desc="影响新会话与无会话输入区；已有会话保留自己的运行时策略"
+          title={translate('settingsView.t307')}
+          desc={translate('settingsView.t308Desc')}
           right={
             <div className="select-sm">
               <Select
@@ -2652,7 +2653,7 @@ export function PermissionsSection() {
             </div>
           }
         />
-        <SettingsRow title="默认权限策略" desc="新建会话时将优先使用此权限策略" />
+        <SettingsRow title={translate('settingsView.t309')} desc={translate('settingsView.t310Desc')} />
         <div className="runtime-permission-grid p-[10px]">
           {runtimeOptions.map((option) => (
             <button
@@ -2681,15 +2682,15 @@ export function PermissionsSection() {
           <div className="runtime-permission-warning">
             <Icons.AlertTriangle />
             <span>
-              当前默认策略会跳过人工审批，agent 的工具调用将被直接执行。仅在完全可信工作区使用。
+              {translate('settingsView.t435LongDesc')}
             </span>
           </div>
         )}
       </div>
 
-      <div className="subsec-h">权限 Profile</div>
+      <div className="subsec-h">{translate('settingsView.t436')}</div>
       {loading ? (
-        <div className="loading-sm">加载中…</div>
+        <div className="loading-sm">{translate('settingsView.t437')}</div>
       ) : (
         <div className="row perm-profile-row">
           {profiles.map((p) => {
@@ -2710,7 +2711,7 @@ export function PermissionsSection() {
 
       {activeProfile && (
         <>
-          <div className="subsec-h">具体权限 · {activeProfile.name}</div>
+          <div className="subsec-h">{translate('settingsView.tpl46Desc', { name: activeProfile.name })}</div>
           <div className="card">
             {RULE_META.map(({ action, icon, name, hint }) => {
               const rule = activeProfile.rules.find((r) => r.action === action)
@@ -2782,10 +2783,10 @@ function PermRule({
           value={mode}
           onChange={(v) => onModeChange?.(v as PermissionMode)}
           options={[
-            { label: '允许', value: 'allow' },
-            { label: '询问', value: 'ask' },
-            { label: '双重确认', value: 'ask-twice' },
-            { label: '拒绝', value: 'deny' },
+            { label: translate('settingsView.t70'), value: 'allow' },
+            { label: translate('settingsView.t216'), value: 'ask' },
+            { label: translate('settingsView.t217'), value: 'ask-twice' },
+            { label: translate('settingsView.t71'), value: 'deny' },
           ]}
         />
       </div>
@@ -2799,14 +2800,14 @@ function TelemetrySection() {
 
   return (
     <div className="settings-section settings-section--fill">
-      <h2>本地日志</h2>
+      <h2>{translate('settingsView.t121')}</h2>
       <div className="lede">
-        运行时日志会写入本地文件，可在此查看最近内容。所有日志仅保留在本地，不会上传。
+        {translate('settingsView.t438Desc')}
       </div>
 
       {/* ── 本地日志级别 ── */}
       <div className="form-grid">
-        <label>本地日志级别</label>
+        <label>{translate('settingsView.t439')}</label>
         <Select
           value={s.logLevel}
           onChange={(v) => set({ logLevel: v as TelemetrySettings['logLevel'] })}
@@ -2822,9 +2823,9 @@ function TelemetrySection() {
       {/* ── 运行时日志开关 ── */}
       <div className="form-grid">
         <label>
-          记录运行时日志
+          {translate('settingsView.t440')}
           <span className="sub">
-            每轮保存白盒提示词快照（侧栏「运行时日志」面板），关闭可显著节省存储
+            {translate('settingsView.t441Desc')}
           </span>
         </label>
         <Switch
@@ -2926,34 +2927,34 @@ function UsageSection() {
 
   return (
     <div className="settings-section">
-      <h2>用量统计</h2>
-      <div className="lede">追踪每次对话的 token 消耗。数据仅保存在本地。</div>
+      <h2>{translate('settingsView.t89')}</h2>
+      <div className="lede">{translate('settingsView.t442Desc')}</div>
 
       {error && <div className="card usage-error-card">{error}</div>}
 
       {/* ── Overview Cards ── */}
-      <div className="subsec-h">本月概览</div>
+      <div className="subsec-h">{translate('settingsView.t443')}</div>
       <div className="usage-overview-grid">
         <div className="usage-stat-card">
-          <div className="usage-stat-label">输入 Token</div>
+          <div className="usage-stat-label">{translate('settingsView.t444')}</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(month?.totalInputTokens ?? 0)}
           </div>
         </div>
         <div className="usage-stat-card">
-          <div className="usage-stat-label">输出 Token</div>
+          <div className="usage-stat-label">{translate('settingsView.t445')}</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(month?.totalOutputTokens ?? 0)}
           </div>
         </div>
         <div className="usage-stat-card">
-          <div className="usage-stat-label">缓存命中</div>
+          <div className="usage-stat-label">{translate('settingsView.t446')}</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(month?.totalCacheReadTokens ?? 0)}
           </div>
         </div>
         <div className="usage-stat-card">
-          <div className="usage-stat-label">缓存写入</div>
+          <div className="usage-stat-label">{translate('settingsView.t447')}</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(month?.totalCacheWriteTokens ?? 0)}
           </div>
@@ -2961,20 +2962,20 @@ function UsageSection() {
       </div>
 
       {/* ── All-time summary ── */}
-      <div className="subsec-h">累计统计</div>
+      <div className="subsec-h">{translate('settingsView.t448')}</div>
       <div className="usage-alltime-grid">
         <div className="usage-stat-card with-icon">
           <div className="usage-stat-icon">
             <Icons.Hash size={14} />
           </div>
-          <div className="usage-stat-label">总请求数</div>
+          <div className="usage-stat-label">{translate('settingsView.t449')}</div>
           <div className="usage-stat-value">{loading ? '—' : String(total?.recordCount ?? 0)}</div>
         </div>
         <div className="usage-stat-card with-icon">
           <div className="usage-stat-icon">
             <Icons.ArrowUp size={14} />
           </div>
-          <div className="usage-stat-label">总输入 Token</div>
+          <div className="usage-stat-label">{translate('settingsView.t450')}</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(total?.totalInputTokens ?? 0)}
           </div>
@@ -2983,7 +2984,7 @@ function UsageSection() {
           <div className="usage-stat-icon">
             <Icons.ArrowDown size={14} />
           </div>
-          <div className="usage-stat-label">总输出 Token</div>
+          <div className="usage-stat-label">{translate('settingsView.t451')}</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(total?.totalOutputTokens ?? 0)}
           </div>
@@ -2992,7 +2993,7 @@ function UsageSection() {
           <div className="usage-stat-icon">
             <Icons.Database size={14} />
           </div>
-          <div className="usage-stat-label">总缓存命中</div>
+          <div className="usage-stat-label">{translate('settingsView.t452')}</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(total?.totalCacheReadTokens ?? 0)}
           </div>
@@ -3001,7 +3002,7 @@ function UsageSection() {
           <div className="usage-stat-icon">
             <Icons.Zap size={14} />
           </div>
-          <div className="usage-stat-label">总缓存写入</div>
+          <div className="usage-stat-label">{translate('settingsView.t453')}</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(total?.totalCacheWriteTokens ?? 0)}
           </div>
@@ -3012,10 +3013,10 @@ function UsageSection() {
       <UsageRankingCard />
 
       {/* ── Recent Records ── */}
-      <div className="subsec-h">最近请求</div>
+      <div className="subsec-h">{translate('settingsView.t454')}</div>
       <div className="card usage-records-card">
         {records.length === 0 && !loading && (
-          <div className="settings-card-row usage-empty">暂无记录</div>
+          <div className="settings-card-row usage-empty">{translate('settingsView.t455')}</div>
         )}
         <div className="usage-records-table">
           {records.map((r) => (
@@ -3024,8 +3025,8 @@ function UsageSection() {
               <span className="usage-rec-model">{r.model_id}</span>
               <span className="usage-rec-tokens mono-sm">
                 ↑{fmt(r.input_tokens)} ↓{fmt(r.output_tokens)}
-                {r.cache_read_tokens > 0 && ` ·缓存读${fmt(r.cache_read_tokens)}`}
-                {r.cache_write_tokens > 0 && ` ·缓存写${fmt(r.cache_write_tokens)}`}
+                {r.cache_read_tokens > 0 && translate('settingsView.tpl4Desc', { value: fmt(r.cache_read_tokens) })}
+                {r.cache_write_tokens > 0 && translate('settingsView.tpl5Desc', { value: fmt(r.cache_write_tokens) })}
               </span>
             </div>
           ))}
@@ -3033,11 +3034,11 @@ function UsageSection() {
       </div>
 
       {/* ── Actions ── */}
-      <div className="subsec-h">数据管理</div>
+      <div className="subsec-h">{translate('settingsView.t456')}</div>
       <div className="card">
         <SettingsRow
-          title="刷新数据"
-          desc="重新从数据库加载用量统计"
+          title={translate('settingsView.t311')}
+          desc={translate('settingsView.t312')}
           right={
             <Button
               size="middle"
@@ -3047,13 +3048,13 @@ function UsageSection() {
               onClick={loadDashboard}
               disabled={loading}
             >
-              刷新
+              {translate('settingsView.t393')}
             </Button>
           }
         />
         <SettingsRow
-          title="清理旧记录"
-          desc="删除 90 天以前的本地用量明细，保留近期统计"
+          title={translate('settingsView.t313')}
+          desc={translate('settingsView.t314Desc')}
           right={
             <Button
               size="middle"
@@ -3063,7 +3064,7 @@ function UsageSection() {
               onClick={purgeOldRecords}
               disabled={loading || purging}
             >
-              清理
+              {translate('settingsView.t96')}
             </Button>
           }
         />
@@ -3125,7 +3126,7 @@ function StorageSection() {
       })
       .catch(() => {
         if (!cancelled) {
-          setInheritInfo({ available: false, currentIsDev: false, reason: '查询失败' })
+          setInheritInfo({ available: false, currentIsDev: false, reason: translate('settingsView.t218') })
         }
       })
     return () => {
@@ -3135,10 +3136,10 @@ function StorageSection() {
 
   const handleInheritProductionDb = useCallback(async () => {
     const confirmed = await requestConfirm({
-      title: '继承安装版数据？',
+      title: translate('settingsView.t219'),
       description:
-        '将把安装版 SparkWork 的数据库快照导入当前开发实例（会话 / Provider / 设置），当前开发数据会先自动备份，导入后应用自动重启。安装版数据不受影响；云端登录态需重新登录。',
-      confirmText: '继承并重启',
+        translate('settingsView.t220LongDesc'),
+      confirmText: translate('settingsView.t221'),
       danger: true,
     })
     if (!confirmed) return
@@ -3146,11 +3147,11 @@ function StorageSection() {
     try {
       const res = await inheritProductionDb({})
       toast.success(
-        `已继承安装版数据（快照 ${formatBytes(res.incomingBytes ?? 0)}），应用即将重启…`,
+        translate('settingsView.tpl6Desc', { size: formatBytes(res.incomingBytes ?? 0) }),
       )
       // 不复位 loading：应用马上重启
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '继承安装版数据失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t222'))
       setInheriting(false)
     }
   }, [inheritProductionDb, requestConfirm, toast])
@@ -3167,7 +3168,7 @@ function StorageSection() {
       setStats(res)
       setCanvasProjectsRoot((current) => current || res.canvasProjectsRoot)
     } catch (err) {
-      console.error('加载存储统计失败', err)
+      console.error(translate('settingsView.t223'), err)
     } finally {
       setStatsLoading(false)
     }
@@ -3192,26 +3193,26 @@ function StorageSection() {
     try {
       await openDataDir({})
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '打开数据目录失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t224'))
     }
   }
 
   const handleClearCache = async (pruneOrphan: boolean) => {
-    const label = pruneOrphan ? '清空缓存并清理孤儿项目目录' : '清空全部缓存'
+    const label = pruneOrphan ? translate('settingsView.t225Desc') : translate('settingsView.t226')
     const confirmed = await requestConfirm({
       title: `${label}？`,
-      description: '该操作不会影响会话、消息、规则等业务数据。',
-      confirmText: '清空',
+      description: translate('settingsView.t227Desc'),
+      confirmText: translate('settingsView.t228'),
       danger: true,
     })
     if (!confirmed) return
     setClearing(true)
     try {
       const res = await clearCache({ pruneOrphanProjects: pruneOrphan })
-      toast.success(`已清理 ${formatBytes(res.clearedBytes)}`)
+      toast.success(translate('settingsView.tpl7Desc', { size: formatBytes(res.clearedBytes) }))
       await refreshStats()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '清空缓存失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t229'))
     } finally {
       setClearing(false)
     }
@@ -3219,9 +3220,9 @@ function StorageSection() {
 
   const handleClearLogs = async () => {
     const confirmed = await requestConfirm({
-      title: '清空文件日志？',
-      description: '将清空 main.log 及轮转文件内容，不影响会话与业务数据。',
-      confirmText: '清空',
+      title: translate('settingsView.t230'),
+      description: translate('settingsView.t231Desc'),
+      confirmText: translate('settingsView.t228'),
       danger: true,
     })
     if (!confirmed) return
@@ -3229,13 +3230,13 @@ function StorageSection() {
     try {
       const res = await clearCache({ clearLogs: true })
       if (res.clearedLogs) {
-        toast.success('文件日志已清空')
+        toast.success(translate('settingsView.t232'))
       } else {
-        toast.error('清空文件日志失败')
+        toast.error(translate('settingsView.t233'))
       }
       await refreshStats()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '清空文件日志失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t233'))
     } finally {
       setClearingLogs(false)
     }
@@ -3243,10 +3244,10 @@ function StorageSection() {
 
   const handleClearRuntimeSnapshots = async () => {
     const confirmed = await requestConfirm({
-      title: '清除历史运行时快照？',
+      title: translate('settingsView.t234'),
       description:
-        '将清除已累积的每轮提示词快照大文本（保留会话续接所需元数据），并执行 VACUUM 压缩数据库。大库可能阻塞数秒。',
-      confirmText: '清除',
+        translate('settingsView.t235LongDesc'),
+      confirmText: translate('settingsView.t236'),
       danger: true,
     })
     if (!confirmed) return
@@ -3254,13 +3255,13 @@ function StorageSection() {
     try {
       const res = await clearCache({ clearRuntimeSnapshots: true })
       if (res.prunedSnapshotRows > 0) {
-        toast.success(`已清除 ${res.prunedSnapshotRows} 条历史运行时快照`)
+        toast.success(translate('settingsView.tpl8Desc', { count: res.prunedSnapshotRows }))
       } else {
-        toast.info('没有可清除的历史快照')
+        toast.info(translate('settingsView.t237'))
       }
       await refreshStats()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '清除运行时快照失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t238'))
     } finally {
       setClearingSnapshots(false)
     }
@@ -3268,7 +3269,7 @@ function StorageSection() {
 
   const handleOpenWorkspace = async () => {
     try {
-      const selected = await openDirectory({ title: '选择默认工作区' })
+      const selected = await openDirectory({ title: translate('settingsView.t239') })
       if (selected.canceled || selected.filePath === undefined) {
         return
       }
@@ -3283,7 +3284,7 @@ function StorageSection() {
   const handleChooseCanvasRoot = async () => {
     try {
       const selected = await openDirectory({
-        title: '选择 Canvas 项目默认保存位置',
+        title: translate('settingsView.t240Desc'),
         ...(canvasProjectsRoot ? { defaultPath: canvasProjectsRoot } : {}),
       })
       if (selected.canceled || selected.filePath === undefined) return
@@ -3298,18 +3299,18 @@ function StorageSection() {
         value: { ...currentValue, projectsRootPath: selected.filePath },
       })
       setCanvasProjectsRoot(selected.filePath)
-      toast.success('已更新 Canvas 项目默认位置')
+      toast.success(translate('settingsView.t241Desc'))
       await refreshStats()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '更新 Canvas 项目位置失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t242Desc'))
     }
   }
 
   const handleMigrateCanvasAssets = async () => {
     const confirmed = await requestConfirm({
-      title: '迁移旧画布资源？',
-      description: '会把旧全局目录里的画布图片/视频复制到各自项目目录，并更新项目快照。',
-      confirmText: '迁移',
+      title: translate('settingsView.t243'),
+      description: translate('settingsView.t244Desc'),
+      confirmText: translate('settingsView.t245'),
     })
     if (!confirmed) return
     setCanvasMaintaining(true)
@@ -3324,11 +3325,11 @@ function StorageSection() {
         skipped += result.skippedAssets
       }
       toast.success(
-        `迁移完成：${moved} 个资源已归档到项目目录${skipped > 0 ? `，${skipped} 个跳过` : ''}`,
+        translate('settingsView.tpl9Desc', { moved, skipped: skipped > 0 ? translate('settingsView.tpl9bDesc', { count: skipped }) : '' }),
       )
       await refreshStats()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '迁移画布资源失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t246'))
     } finally {
       setCanvasMaintaining(false)
     }
@@ -3336,19 +3337,19 @@ function StorageSection() {
 
   const handleCleanupCanvasAssets = async () => {
     const confirmed = await requestConfirm({
-      title: '清理旧画布资源？',
-      description: '只清理旧全局画布资源目录中不再被快照引用的文件，项目目录内资源不会删除。',
-      confirmText: '清理',
+      title: translate('settingsView.t247'),
+      description: translate('settingsView.t248Desc'),
+      confirmText: translate('settingsView.t96'),
       danger: true,
     })
     if (!confirmed) return
     setCanvasMaintaining(true)
     try {
       const result = await canvasApi.cleanupLegacyCanvasAssets()
-      toast.success(`已清理 ${result.deletedFiles} 个文件，共 ${formatBytes(result.deletedBytes)}`)
+      toast.success(translate('settingsView.tpl10Desc', { count: result.deletedFiles, size: formatBytes(result.deletedBytes) }))
       await refreshStats()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '清理旧画布资源失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t249'))
     } finally {
       setCanvasMaintaining(false)
     }
@@ -3362,16 +3363,16 @@ function StorageSection() {
 
   return (
     <div className="settings-section">
-      <h2>存储与备份</h2>
-      <div className="lede">所有会话、规则、工作流与审计日志默认存在本地 SQLite。</div>
+      <h2>{translate('settingsView.t93')}</h2>
+      <div className="lede">{translate('settingsView.t457Desc')}</div>
 
       <div className="form-grid">
-        <label>数据目录</label>
+        <label>{translate('settingsView.t458')}</label>
         <div className="control">
           <Input
             className="flex1"
             size="middle"
-            value={stats?.userDataPath ?? '加载中...'}
+            value={stats?.userDataPath ?? translate('settingsView.t250')}
             readOnly
           />
           <Button
@@ -3380,18 +3381,18 @@ function StorageSection() {
             icon={<Icons.Folder size={13} />}
             onClick={handleOpenDataDir}
           >
-            打开
+            {translate('settingsView.t459')}
           </Button>
         </div>
 
         <label>
-          当前工作区<span className="sub">Agent 文件工具的根目录</span>
+          {translate('settingsView.t460')}<span className="sub">{translate('settingsView.t461Desc')}</span>
         </label>
         <div className="control">
           <Input
             className="flex1"
             size="middle"
-            value={workspace?.rootPath ?? '未打开工作区'}
+            value={workspace?.rootPath ?? translate('settingsView.t251')}
             readOnly
           />
           <Button
@@ -3400,7 +3401,7 @@ function StorageSection() {
             icon={<Icons.Folder size={13} />}
             onClick={handleOpenWorkspace}
           >
-            选择
+            {translate('settingsView.t462')}
           </Button>
           <Button
             size="middle"
@@ -3408,18 +3409,18 @@ function StorageSection() {
             onClick={handleCloseWorkspace}
             disabled={workspace === null}
           >
-            关闭
+            {translate('settingsView.t463')}
           </Button>
         </div>
 
         <label>
-          Canvas 项目根目录<span className="sub">新建画布项目默认保存位置</span>
+          {translate('settingsView.t464')}<span className="sub">{translate('settingsView.t465')}</span>
         </label>
         <div className="control">
           <Input
             className="flex1"
             size="middle"
-            value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'}
+            value={canvasProjectsRoot || stats?.canvasProjectsRoot || translate('settingsView.t250')}
             readOnly
           />
           <Button
@@ -3428,7 +3429,7 @@ function StorageSection() {
             icon={<Icons.Folder size={13} />}
             onClick={() => void handleChooseCanvasRoot()}
           >
-            选择
+            {translate('settingsView.t462')}
           </Button>
         </div>
       </div>
@@ -3439,7 +3440,7 @@ function StorageSection() {
         className="subsec-h"
         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end' }}
       >
-        存储用量
+        {translate('settingsView.t466')}
         <Button
           size="small"
           type="text"
@@ -3448,62 +3449,62 @@ function StorageSection() {
           disabled={statsLoading}
           style={{ marginLeft: 8, fontSize: 12 }}
         >
-          刷新
+          {translate('settingsView.t393')}
         </Button>
       </div>
       <div className="card">
         {stats === null ? (
           <div className="empty-compact">
-            <div className="empty-desc">{statsLoading ? '正在统计...' : '暂无数据'}</div>
+            <div className="empty-desc">{statsLoading ? translate('settingsView.t252') : translate('settingsView.t253')}</div>
           </div>
         ) : (
           <>
             <UsageRow
-              label="业务数据库 (spark.db)"
+              label={translate('settingsView.t315Desc')}
               used={formatBytes(stats.databaseBytes)}
               pct={percent(stats.databaseBytes, stats.totalBytes)}
             />
             <UsageRow
-              label="项目工作目录 (projects/)"
+              label={translate('settingsView.t316Desc')}
               used={formatBytes(stats.projectsBytes)}
               pct={percent(stats.projectsBytes, stats.totalBytes)}
             />
             <UsageRow
-              label="会话附件 (attachments/)"
+              label={translate('settingsView.t317Desc')}
               used={formatBytes(stats.attachmentsBytes)}
               pct={percent(stats.attachmentsBytes, stats.totalBytes)}
             />
             <UsageRow
-              label="Canvas 项目目录"
+              label={translate('settingsView.t318')}
               used={formatBytes(stats.canvasProjectsBytes)}
               pct={percent(stats.canvasProjectsBytes, stats.totalBytes)}
             />
             <UsageRow
-              label="浏览器缓存 (Cache / GPU / 共享词典)"
+              label={translate('settingsView.t319Desc')}
               used={formatBytes(stats.cacheBytes)}
               pct={percent(stats.cacheBytes, stats.totalBytes)}
             />
             <UsageRow
-              label="文件日志 (logs/)"
+              label={translate('settingsView.t320')}
               used={formatBytes(stats.logsBytes)}
               pct={percent(stats.logsBytes, stats.totalBytes)}
             />
             <div className="usage-total-hint">
-              合计：{formatBytes(stats.totalBytes)} · 数据库位置：{stats.databasePath}
+              {translate('settingsView.tpl47Desc', { total: formatBytes(stats.totalBytes), path: stats.databasePath })}
             </div>
           </>
         )}
       </div>
 
-      <div className="subsec-h">导入与恢复</div>
+      <div className="subsec-h">{translate('settingsView.t467')}</div>
       <div className="card">
         <SettingsRow
-          title="升级前自动恢复点"
-          desc="每个新版本首次启动、执行数据库迁移前自动保留恢复点；迁移失败会立即还原并安全退出"
+          title={translate('settingsView.t321')}
+          desc={translate('settingsView.t322Desc')}
         />
         <SettingsRow
           title={tr('app.sidebar.importHistory')}
-          desc="检测并导入宿主机 Claude Code / Codex / ZCode / WorkBuddy / Qoder 对话历史"
+          desc={translate('settingsView.t323LongDesc')}
           right={
             <Button
               size="middle"
@@ -3511,16 +3512,14 @@ function StorageSection() {
               icon={<Icons.Upload size={11} />}
               onClick={() => setHistoryImportOpen(true)}
             >
-              导入
+              {translate('settingsView.t468')}
             </Button>
           }
         />
         {inheritInfo?.available && (
           <SettingsRow
-            title="继承安装版数据"
-            desc={`把安装版 SparkWork 的数据库快照导入当前开发实例（会话 / Provider / 设置），当前开发数据会先自动备份，导入后自动重启。安装版运行中也可执行。${
-              inheritInfo.productionDbPath ? `来源：${inheritInfo.productionDbPath}` : ''
-            }`}
+            title={translate('settingsView.t324')}
+            desc={`${translate('settingsView.tpl48LongDesc')}${inheritInfo.productionDbPath ? translate('settingsView.tpl48bDesc', { path: inheritInfo.productionDbPath }) : ''}`}
             right={
               <Button
                 size="middle"
@@ -3530,18 +3529,18 @@ function StorageSection() {
                 disabled={inheriting}
                 onClick={() => void handleInheritProductionDb()}
               >
-                继承并重启
+                {translate('settingsView.t221')}
               </Button>
             }
           />
         )}
       </div>
 
-      <div className="subsec-h">清理</div>
+      <div className="subsec-h">{translate('settingsView.t96')}</div>
       <div className="card">
         <SettingsRow
-          title="清空浏览器与渲染缓存"
-          desc={`清理 Electron / Chromium 的 Cache、Code Cache、GPUCache 等${stats ? `（当前占用 ${formatBytes(stats.cacheBytes)}）` : ''}。下次启动会自动重建，不影响会话与设置。`}
+          title={translate('settingsView.t325')}
+          desc={`${translate('settingsView.tpl49LongDesc')}${stats ? translate('settingsView.tpl49bDesc', { size: formatBytes(stats.cacheBytes) }) : ''}${translate('settingsView.tpl49cDesc')}`}
           right={
             <Button
               size="middle"
@@ -3551,13 +3550,13 @@ function StorageSection() {
               onClick={() => void handleClearCache(false)}
               disabled={clearing}
             >
-              清空
+              {translate('settingsView.t228')}
             </Button>
           }
         />
         <SettingsRow
-          title="清理孤儿项目目录"
-          desc="删除 projects/ 下不再被任何项目引用的临时目录。同时清空浏览器缓存。"
+          title={translate('settingsView.t326')}
+          desc={translate('settingsView.t327Desc')}
           right={
             <Button
               size="middle"
@@ -3567,15 +3566,13 @@ function StorageSection() {
               onClick={() => void handleClearCache(true)}
               disabled={clearing}
             >
-              清空
+              {translate('settingsView.t228')}
             </Button>
           }
         />
         <SettingsRow
-          title="清空文件日志"
-          desc={`清空 main.log 及轮转文件内容${
-            stats ? `（当前占用 ${formatBytes(stats.logsBytes)}）` : ''
-          }。不影响会话与业务数据。`}
+          title={translate('settingsView.t328')}
+          desc={`${translate('settingsView.tpl50LongDesc')}${stats ? translate('settingsView.tpl50bDesc', { size: formatBytes(stats.logsBytes) }) : ''}${translate('settingsView.tpl50cDesc')}`}
           right={
             <Button
               size="middle"
@@ -3585,13 +3582,13 @@ function StorageSection() {
               onClick={() => void handleClearLogs()}
               disabled={clearingLogs}
             >
-              清空
+              {translate('settingsView.t228')}
             </Button>
           }
         />
         <SettingsRow
-          title="清除历史运行时快照"
-          desc="清除已累积的每轮提示词快照大文本（保留会话续接所需元数据），并 VACUUM 压缩数据库。关闭运行时日志后建议执行一次以回收空间。"
+          title={translate('settingsView.t329')}
+          desc={translate('settingsView.t330LongDesc')}
           right={
             <Button
               size="middle"
@@ -3601,13 +3598,13 @@ function StorageSection() {
               onClick={() => void handleClearRuntimeSnapshots()}
               disabled={clearingSnapshots}
             >
-              清除
+              {translate('settingsView.t236')}
             </Button>
           }
         />
         <SettingsRow
-          title="迁移旧画布资源到项目目录"
-          desc="将旧全局 media 目录中的画布资源复制进对应 Canvas 项目文件夹，并重写快照引用。"
+          title={translate('settingsView.t331')}
+          desc={translate('settingsView.t332LongDesc')}
           right={
             <Button
               size="middle"
@@ -3616,13 +3613,13 @@ function StorageSection() {
               onClick={() => void handleMigrateCanvasAssets()}
               disabled={canvasMaintaining}
             >
-              迁移
+              {translate('settingsView.t245')}
             </Button>
           }
         />
         <SettingsRow
-          title="清理旧画布孤儿资源"
-          desc="清理旧全局画布资源目录中不再被任何快照引用的图片、音频或视频文件。"
+          title={translate('settingsView.t333')}
+          desc={translate('settingsView.t334Desc')}
           right={
             <Button
               size="middle"
@@ -3632,7 +3629,7 @@ function StorageSection() {
               onClick={() => void handleCleanupCanvasAssets()}
               disabled={canvasMaintaining}
             >
-              清理
+              {translate('settingsView.t96')}
             </Button>
           }
         />
@@ -3686,54 +3683,54 @@ function ArchivedSection() {
   const handleRestoreWorkspace = async (workspace: WorkspaceInfo) => {
     try {
       await updateWorkspace({ workspaceId: workspace.id, archived: false })
-      toast.success(`项目「${workspace.name}」已恢复`)
+      toast.success(translate('settingsView.tpl14Desc', { name: workspace.name }))
       await Promise.all([refresh(), refreshData()])
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '恢复项目失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t254'))
     }
   }
 
   const handleRestoreSession = async (session: SessionListResponse['sessions'][number]) => {
     try {
       await updateSession({ sessionId: session.id, archived: false })
-      toast.success(`会话「${session.title || '新会话'}」已恢复`)
+      toast.success(translate('settingsView.tpl15Desc', { title: session.title || translate('settingsView.t255') }))
       await Promise.all([refresh(), refreshData()])
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '恢复会话失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t256'))
     }
   }
 
   const handleDeleteWorkspace = async (workspace: WorkspaceInfo) => {
     const confirmed = await requestConfirm({
-      title: `永久删除项目「${workspace.name}」？`,
-      description: '此操作不可撤销。',
-      confirmText: '永久删除',
+      title: translate('settingsView.tpl16Desc', { name: workspace.name }),
+      description: translate('settingsView.t257'),
+      confirmText: translate('settingsView.t258'),
       danger: true,
     })
     if (!confirmed) return
     try {
       await deleteWorkspace({ workspaceId: workspace.id })
-      toast.success(`项目「${workspace.name}」已删除`)
+      toast.success(translate('settingsView.tpl17Desc', { name: workspace.name }))
       refresh()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除项目失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t259'))
     }
   }
 
   const handleDeleteSession = async (session: SessionListResponse['sessions'][number]) => {
     const confirmed = await requestConfirm({
-      title: `永久删除会话？`,
-      description: '此操作不可撤销。',
-      confirmText: '永久删除',
+      title: translate('settingsView.tpl18Desc'),
+      description: translate('settingsView.t257'),
+      confirmText: translate('settingsView.t258'),
       danger: true,
     })
     if (!confirmed) return
     try {
       await deleteSession({ sessionId: session.id })
-      toast.success(`会话「${session.title || '新会话'}」已删除`)
+      toast.success(translate('settingsView.tpl19Desc', { title: session.title || translate('settingsView.t255') }))
       refresh()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除会话失败')
+      toast.error(err instanceof Error ? err.message : translate('settingsView.t260'))
     }
   }
 
@@ -3757,9 +3754,9 @@ function ArchivedSection() {
     const ids = Array.from(selectedSessionIds)
     if (ids.length === 0) return
     const confirmed = await requestConfirm({
-      title: `永久删除选中的 ${ids.length} 个会话？`,
-      description: '此操作不可撤销。',
-      confirmText: '永久删除',
+      title: translate('settingsView.tpl20Desc', { count: ids.length }),
+      description: translate('settingsView.t257'),
+      confirmText: translate('settingsView.t258'),
       danger: true,
     })
     if (!confirmed) return
@@ -3778,9 +3775,9 @@ function ArchivedSection() {
         }
       }
       if (fail === 0) {
-        toast.success(`已删除 ${ok} 个会话`)
+        toast.success(translate('settingsView.tpl21Desc', { ok }))
       } else {
-        toast.warning(`已删除 ${ok} 个会话，${fail} 个失败`)
+        toast.warning(translate('settingsView.tpl22Desc', { ok, fail }))
       }
     } finally {
       setBatchDeleting(false)
@@ -3796,17 +3793,17 @@ function ArchivedSection() {
 
   return (
     <div className="settings-section">
-      <h2>已归档</h2>
-      <div className="lede">归档后的项目和会话会从主列表隐藏，但仍可在此查看、恢复或永久删除。</div>
+      <h2>{translate('settingsView.t124')}</h2>
+      <div className="lede">{translate('settingsView.t469Desc')}</div>
 
       {error && <div className="card storage-card">{error}</div>}
 
       {/* ── Archived Workspaces ── */}
-      <div className="subsec-h">已归档项目 ({workspaces.length})</div>
+      <div className="subsec-h">{translate('settingsView.tpl51Desc', { count: workspaces.length })}</div>
       <div className="card">
-        {loading && <div className="settings-card-row">加载中...</div>}
+        {loading && <div className="settings-card-row">{translate('settingsView.t250')}</div>}
         {!loading && workspaces.length === 0 && (
-          <div className="settings-card-row">暂无已归档的项目</div>
+          <div className="settings-card-row">{translate('settingsView.t470')}</div>
         )}
         {!loading &&
           workspaces.length > 0 &&
@@ -3815,7 +3812,7 @@ function ArchivedSection() {
               <div className="flex1 min-w-0">
                 <div className="row-title">{w.name}</div>
                 <div className="row-desc mono-sm">{w.rootPath}</div>
-                <div className="row-desc">归档于 {formatDate(w.archivedAt)}</div>
+                <div className="row-desc">{translate('settingsView.tpl52Desc', { date: formatDate(w.archivedAt) })}</div>
               </div>
               <div className="archived-item-actions">
                 <Button
@@ -3824,7 +3821,7 @@ function ArchivedSection() {
                   icon={<Icons.Refresh size={11} />}
                   onClick={() => handleRestoreWorkspace(w)}
                 >
-                  恢复
+                  {translate('settingsView.t95')}
                 </Button>
                 <Button
                   size="middle"
@@ -3833,7 +3830,7 @@ function ArchivedSection() {
                   icon={<Icons.Trash size={11} />}
                   onClick={() => handleDeleteWorkspace(w)}
                 >
-                  删除
+                  {translate('settingsView.t157')}
                 </Button>
               </div>
             </div>
@@ -3841,11 +3838,11 @@ function ArchivedSection() {
       </div>
 
       {/* ── Archived Sessions ── */}
-      <div className="subsec-h">已归档会话 ({sessions.length})</div>
+      <div className="subsec-h">{translate('settingsView.tpl53Desc', { count: sessions.length })}</div>
       <div className="card">
-        {loading && <div className="settings-card-row">加载中...</div>}
+        {loading && <div className="settings-card-row">{translate('settingsView.t250')}</div>}
         {!loading && sessions.length === 0 && (
-          <div className="settings-card-row">暂无已归档的会话</div>
+          <div className="settings-card-row">{translate('settingsView.t471')}</div>
         )}
         {!loading && sessions.length > 0 && (
           <>
@@ -3859,11 +3856,11 @@ function ArchivedSection() {
                 indeterminate={someSessionsSelected}
                 onChange={(checked) => toggleSelectAllSessions(checked)}
               >
-                全选
+                {translate('settingsView.t472')}
               </Checkbox>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--pad-sm)' }}>
                 {selectedSessionIds.size > 0 && (
-                  <span className="row-desc">已选 {selectedSessionIds.size} 项</span>
+                  <span className="row-desc">{translate('settingsView.tpl54Desc', { count: selectedSessionIds.size })}</span>
                 )}
                 <Button
                   size="middle"
@@ -3874,7 +3871,7 @@ function ArchivedSection() {
                   loading={batchDeleting}
                   onClick={handleBatchDeleteSessions}
                 >
-                  批量删除
+                  {translate('settingsView.t473')}
                 </Button>
               </div>
             </div>
@@ -3887,9 +3884,9 @@ function ArchivedSection() {
                   />
                 </div>
                 <div className="flex1 min-w-0">
-                  <div className="row-title">{s.title || '新会话'}</div>
+                  <div className="row-title">{s.title || translate('settingsView.t255')}</div>
                   <div className="row-desc">
-                    {s.messageCount} 条消息 · {formatDate(s.createdAt)} · 归档于{' '}
+                    {translate('settingsView.tpl55Desc', { count: s.messageCount, date: formatDate(s.createdAt), sep: ' ' })}
                     {formatDate(s.archivedAt)}
                   </div>
                 </div>
@@ -3900,7 +3897,7 @@ function ArchivedSection() {
                     icon={<Icons.Refresh size={11} />}
                     onClick={() => handleRestoreSession(s)}
                   >
-                    恢复
+                    {translate('settingsView.t95')}
                   </Button>
                   <Button
                     size="middle"
@@ -3909,7 +3906,7 @@ function ArchivedSection() {
                     icon={<Icons.Trash size={11} />}
                     onClick={() => handleDeleteSession(s)}
                   >
-                    删除
+                    {translate('settingsView.t157')}
                   </Button>
                 </div>
               </div>
@@ -4022,7 +4019,7 @@ function IntegritySection() {
       setCheckedAt(result.checkedAt)
       window.localStorage.setItem('spark-sdk-integrity', JSON.stringify(result))
     } catch (err) {
-      toast.error(`检测失败: ${err instanceof Error ? err.message : String(err)}`)
+      toast.error(translate('settingsView.tpl23Desc', { message: err instanceof Error ? err.message : String(err) }))
     } finally {
       setIsChecking(false)
       setIsCheckingLatest(false)
@@ -4041,7 +4038,7 @@ function IntegritySection() {
       // percent 为 null 表示尚无法计算进度：按钮显示「下载中」、进度条走
       // indeterminate 动画；写成 0 会让进行中与完成后都显示成 0% 空条。
       percent: null,
-      message: '正在准备下载',
+      message: translate('settingsView.t261'),
     })
     try {
       const result = await window.spark.invoke('sdk:integrity-install', { packageName })
@@ -4076,7 +4073,7 @@ function IntegritySection() {
         }))
       }
     } catch (err) {
-      const message = `安装失败: ${err instanceof Error ? err.message : String(err)}`
+      const message = translate('settingsView.tpl24Desc', { message: err instanceof Error ? err.message : String(err) })
       toast.error(message)
       setInstallProgress((current) => ({
         packageName,
@@ -4093,31 +4090,31 @@ function IntegritySection() {
 
   const getStatusBadge = (sdk: SdkIntegrityItem) => {
     if (sdk.runtime && !sdk.runtime.installed) {
-      return <span className="badge error dot">运行时未安装</span>
+      return <span className="badge error dot">{translate('settingsView.t474')}</span>
     }
     if (sdk.runtime?.updateAvailable) {
-      return <span className="badge warning dot">运行时有新版 {sdk.runtime.latestVersion}</span>
+      return <span className="badge warning dot">{translate('settingsView.tpl56Desc', { version: sdk.runtime.latestVersion })}</span>
     }
     if (!sdk.installed) {
-      return <span className="badge error dot">未安装</span>
+      return <span className="badge error dot">{translate('settingsView.t267')}</span>
     }
     if (sdk.updateAvailable) {
-      return <span className="badge warning dot">有新版 {sdk.latestVersion}</span>
+      return <span className="badge warning dot">{translate('settingsView.tpl57Desc', { version: sdk.latestVersion })}</span>
     }
     if (sdk.latestChecked && sdk.latestVersion && !sdk.updateAvailable) {
-      return <span className="badge success dot">最新</span>
+      return <span className="badge success dot">{translate('settingsView.t280')}</span>
     }
     if (sdk.installed) {
-      return <span className="badge success dot">已安装</span>
+      return <span className="badge success dot">{translate('settingsView.t264')}</span>
     }
-    return <span className="badge dot">未知</span>
+    return <span className="badge dot">{translate('settingsView.t475')}</span>
   }
 
   const getToolBadge = (tool: RuntimeToolStatus) => {
     if (tool.available) {
-      return <span className="badge success dot">可用</span>
+      return <span className="badge success dot">{translate('settingsView.t476')}</span>
     }
-    return <span className="badge error dot">未找到</span>
+    return <span className="badge error dot">{translate('settingsView.t265')}</span>
   }
 
   const getToolIcon = (command: string) => {
@@ -4134,7 +4131,7 @@ function IntegritySection() {
   }
 
   const formatCheckedTime = (iso: string | null) => {
-    if (!iso) return '从未检测'
+    if (!iso) return translate('settingsView.t262')
     try {
       return new Date(iso).toLocaleString('zh-CN')
     } catch {
@@ -4159,8 +4156,8 @@ function IntegritySection() {
 
   return (
     <div className="settings-section">
-      <h2>完整性检测</h2>
-      <div className="lede">检测 Agent 运行所需的环境依赖和 SDK 包，确保核心功能可用。</div>
+      <h2>{translate('settingsView.t477')}</h2>
+      <div className="lede">{translate('settingsView.t478Desc')}</div>
 
       {/* ── Status summary + actions ── */}
       <div className="integrity-toolbar">
@@ -4168,17 +4165,17 @@ function IntegritySection() {
           {totalItems > 0 ? (
             <div className={`integrity-status-badge ${allOk ? 'ok' : 'warn'}`}>
               {allOk ? <Icons.CheckCircle size={14} /> : <Icons.AlertTriangle size={14} />}
-              <span>{allOk ? '环境完整' : `${sdkHealthy + toolAvailable}/${totalItems} 正常`}</span>
+              <span>{allOk ? translate('settingsView.t263') : translate('settingsView.tpl25Desc', { ok: sdkHealthy + toolAvailable, total: totalItems })}</span>
             </div>
           ) : (
             <div className="integrity-status-badge unknown">
               <Icons.Refresh size={14} />
-              <span>尚未检测</span>
+              <span>{translate('settingsView.t479')}</span>
             </div>
           )}
           {checkedAt && (
             <span className="muted" style={{ fontSize: '11px' }}>
-              上次检测: {formatCheckedTime(checkedAt)}
+              {translate('settingsView.tpl58Desc', { time: formatCheckedTime(checkedAt) })}
             </span>
           )}
         </div>
@@ -4191,7 +4188,7 @@ function IntegritySection() {
             icon={<Icons.Refresh size={13} className={isChecking ? 'spin' : ''} />}
             onClick={() => void handleCheck(false)}
           >
-            立即检测
+            {translate('settingsView.t335')}
           </Button>
           <Button
             size="middle"
@@ -4201,7 +4198,7 @@ function IntegritySection() {
             icon={<Icons.Globe size={13} className={isCheckingLatest ? 'spin' : ''} />}
             onClick={() => void handleCheck(true)}
           >
-            检查最新版本
+            {translate('settingsView.t480')}
           </Button>
         </div>
       </div>
@@ -4227,7 +4224,7 @@ function IntegritySection() {
 
       {/* ── Environment tools (node, npm, git) ── */}
       <div className="subsec-h" style={{ marginTop: 0 }}>
-        环境工具
+        {translate('settingsView.t481')}
       </div>
       <div className="settings-card integrity-sdk-card">
         {tools.map((tool, idx) => (
@@ -4237,18 +4234,18 @@ function IntegritySection() {
               <div className="integrity-sdk-name">{tool.displayName}</div>
               <div className="integrity-sdk-version">
                 {tool.available
-                  ? (tool.version ?? '已安装')
+                  ? (tool.version ?? translate('settingsView.t264'))
                   : tool.resolvedPath
                     ? tool.resolvedPath
-                    : '未找到'}
+                    : translate('settingsView.t265')}
               </div>
             </div>
             <div className="integrity-sdk-right">
               {tool.available && tool.source === 'bundled' && (
-                <span className="badge dot">内置</span>
+                <span className="badge dot">{translate('settingsView.t482')}</span>
               )}
               {tool.available && tool.source === 'system' && (
-                <span className="badge dot">系统</span>
+                <span className="badge dot">{translate('settingsView.t112')}</span>
               )}
               {getToolBadge(tool)}
               {!tool.available && (
@@ -4260,7 +4257,7 @@ function IntegritySection() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  下载
+                  {translate('settingsView.t56')}
                 </Button>
               )}
             </div>
@@ -4269,13 +4266,13 @@ function IntegritySection() {
         {tools.length === 0 && !isChecking && (
           <div className="integrity-empty">
             <Icons.Terminal size={24} />
-            <span>点击"立即检测"检查环境工具</span>
+            <span>{translate('settingsView.t483Desc')}</span>
           </div>
         )}
       </div>
 
       {/* ── SDK list ── */}
-      <div className="subsec-h">核心依赖</div>
+      <div className="subsec-h">{translate('settingsView.t484')}</div>
       <div className="settings-card integrity-sdk-card">
         {sdks.map((sdk, idx) => (
           <div key={sdk.packageName}>
@@ -4284,10 +4281,10 @@ function IntegritySection() {
                 <div className="integrity-sdk-name">{sdk.displayName}</div>
                 <div className="integrity-sdk-version">
                   {sdk.installedVersion
-                    ? `v${sdk.installedVersion}${sdk.runtime?.installedVersion ? ` · native v${sdk.runtime.installedVersion}` : sdk.runtime ? ' · native 未安装' : ''}`
+                    ? translate('settingsView.tpl26Desc', { version: sdk.installedVersion, suffix: sdk.runtime?.installedVersion ? translate('settingsView.tpl26bDesc', { version: sdk.runtime.installedVersion }) : sdk.runtime ? translate('settingsView.tpl26cDesc') : '' })
                     : sdk.installed
-                      ? '已安装'
-                      : '未安装'}
+                      ? translate('settingsView.t264')
+                      : translate('settingsView.t267')}
                 </div>
               </div>
               <div className="integrity-sdk-right">
@@ -4304,14 +4301,14 @@ function IntegritySection() {
                     {installingPkg === sdk.packageName
                       ? installProgress?.percent != null
                         ? `${Math.round(installProgress.percent)}%`
-                        : '下载中'
+                        : translate('settingsView.t268')
                       : installingPkg != null
-                        ? '请稍候'
+                        ? translate('settingsView.t269')
                         : sdk.runtime && !sdk.runtime.installed
-                          ? '下载运行时'
+                          ? translate('settingsView.t197')
                           : sdk.installed
-                            ? '更新'
-                            : '安装'}
+                            ? translate('settingsView.t128')
+                            : translate('settingsView.t270')}
                   </Button>
                 )}
               </div>
@@ -4332,59 +4329,58 @@ function IntegritySection() {
         {sdks.length === 0 && !isChecking && (
           <div className="integrity-empty">
             <Icons.Package size={24} />
-            <span>点击"立即检测"开始检查 SDK 完整性</span>
+            <span>{translate('settingsView.t485Desc')}</span>
           </div>
         )}
       </div>
 
       {/* ── Reference ── */}
-      <div className="subsec-h">依赖说明</div>
+      <div className="subsec-h">{translate('settingsView.t486')}</div>
       <div className="integrity-ref-card">
         <div className="integrity-ref-item">
           <div className="integrity-ref-left">
             <div className="integrity-ref-name">Node.js</div>
             <div className="integrity-ref-desc">
-              JavaScript 运行时环境，Agent 进程执行的基础依赖。推荐 v18+ 版本。
+              {translate('settingsView.t487LongDesc')}
             </div>
           </div>
-          <span className="badge dot">必需</span>
+          <span className="badge dot">{translate('settingsView.t488')}</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
             <div className="integrity-ref-name">npm</div>
             <div className="integrity-ref-desc">
-              Node.js 包管理器，用于安装和管理 SDK 依赖。随 Node.js 一起安装。
+              {translate('settingsView.t489LongDesc')}
             </div>
           </div>
-          <span className="badge dot">必需</span>
+          <span className="badge dot">{translate('settingsView.t488')}</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
             <div className="integrity-ref-name">Git</div>
             <div className="integrity-ref-desc">
-              版本控制系统，支持代码仓库操作、文件差异比较和分支管理。
+              {translate('settingsView.t490Desc')}
             </div>
           </div>
-          <span className="badge dot">必需</span>
+          <span className="badge dot">{translate('settingsView.t488')}</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
             <div className="integrity-ref-name">Claude Agent SDK</div>
             <div className="integrity-ref-desc">
-              提供 Claude Code 级别的 Agent 执行引擎，包含文件编辑、Shell 命令、代码搜索等内置工具。
+              {translate('settingsView.t491LongDesc')}
             </div>
           </div>
-          <span className="badge dot">必需</span>
+          <span className="badge dot">{translate('settingsView.t488')}</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
             <div className="integrity-ref-name">OpenAI Codex SDK</div>
             <div className="integrity-ref-desc">
-              JS SDK 随应用提供；native runtime 按需从 Spark
-              云端下载，完整性页面负责校验、安装和升级。
+              {translate('settingsView.tpl59LongDesc')}
             </div>
           </div>
-          <span className="badge dot">必需</span>
+          <span className="badge dot">{translate('settingsView.t488')}</span>
         </div>
       </div>
 
@@ -4405,7 +4401,7 @@ function IntegritySection() {
 function UpdatesSection() {
   const [s, set] = usePersistedSettings(SETTINGS_UPDATES_KEY, DEFAULT_UPDATES)
   const [status, setStatus] = useState<UpdateStatus | null>(null)
-  const installActionLabel = isPlatformDarwin ? '打开安装镜像' : '安装更新'
+  const installActionLabel = isPlatformDarwin ? translate('settingsView.t271') : translate('settingsView.t272')
   const autoInstallSupported = isPlatformWin32
   useEffect(() => {
     window.spark
@@ -4497,13 +4493,13 @@ function UpdatesSection() {
   }
 
   const getStatusLabel = () => {
-    if (isError) return `检查失败：${status?.error ?? '未知错误'}`
-    if (isChecking) return '正在检查更新…'
+    if (isError) return translate('settingsView.tpl27Desc', { message: status?.error ?? translate('settingsView.t273') })
+    if (isChecking) return translate('settingsView.t274')
     if (isDownloading)
-      return `正在下载 ${status?.progress != null ? `(${Math.round(status.progress.percent)}%)` : ''}`
-    if (isDownloaded) return `安装包已就绪：v${status?.updateInfo?.version ?? '?'}`
-    if (hasUpdate) return `发现新版本：v${status?.updateInfo?.version ?? '?'}`
-    return `已是最新版本`
+      return translate('settingsView.tpl28Desc', { percent: status?.progress != null ? `(${Math.round(status.progress.percent)}%)` : '' })
+    if (isDownloaded) return translate('settingsView.tpl29Desc', { version: status?.updateInfo?.version ?? '?' })
+    if (hasUpdate) return translate('settingsView.tpl30Desc', { version: status?.updateInfo?.version ?? '?' })
+    return translate('settingsView.tpl31Desc')
   }
 
   const getStatusClass = () => {
@@ -4517,8 +4513,8 @@ function UpdatesSection() {
 
   return (
     <div className="settings-section">
-      <h2>更新</h2>
-      <div className="lede">保持 SparkWork 最新版本以获得最新模型与安全修复。</div>
+      <h2>{translate('settingsView.t128')}</h2>
+      <div className="lede">{translate('settingsView.t492Desc')}</div>
 
       <div className="card update-card">
         <div className={`update-icon ${getStatusClass()}`}>{getStatusIcon()}</div>
@@ -4526,12 +4522,12 @@ function UpdatesSection() {
           <div className="strong update-version">{getStatusLabel()}</div>
           <div className="muted update-meta">
             SparkWork {currentVersion}
-            {lastChecked ? ` · 上次检查 ${lastChecked}` : ''}
+            {lastChecked ? translate('settingsView.tpl32Desc', { time: lastChecked }) : ''}
           </div>
           <div className="update-source-line">
-            <Tag>官网优先</Tag>
-            <span>检查来源：{updateSourceLabel}</span>
-            {status?.downloadSource != null && <span>下载来源：{downloadSourceLabel}</span>}
+            <Tag>{translate('settingsView.t493')}</Tag>
+            <span>{translate('settingsView.tpl60Desc', { source: updateSourceLabel })}</span>
+            {status?.downloadSource != null && <span>{translate('settingsView.tpl61Desc', { source: downloadSourceLabel })}</span>}
           </div>
           {isDownloading && status?.progress != null && (
             <div className="update-progress-bar">
@@ -4559,11 +4555,11 @@ function UpdatesSection() {
               className="update-action-btn"
               onClick={() => void handleDownload()}
             >
-              下载更新
+              {translate('settingsView.t494')}
             </Button>
           ) : isDownloading ? (
             <Button icon={<Icons.Download size={14} />} className="update-action-btn" disabled>
-              下载中 {status?.progress != null ? `${Math.round(status.progress.percent)}%` : ''}
+              {translate('settingsView.tpl62Desc', { percent: status?.progress != null ? `${Math.round(status.progress.percent)}%` : '' })}
             </Button>
           ) : (
             <Button
@@ -4572,7 +4568,7 @@ function UpdatesSection() {
               onClick={() => void handleCheckUpdate()}
               disabled={isChecking || isDownloading}
             >
-              {isChecking ? '检查中…' : '检查更新'}
+              {isChecking ? translate('settingsView.t275') : translate('settingsView.t131')}
             </Button>
           )}
         </div>
@@ -4588,25 +4584,25 @@ function UpdatesSection() {
 
       <div className="card">
         <SettingsRow
-          title="Release 下载"
-          desc="前往 GitHub Release 页面查看所有版本安装包"
+          title={translate('settingsView.t336')}
+          desc={translate('settingsView.t337Desc')}
           right={
             <Button
               icon={<Icons.GitHub size={14} />}
               className="update-action-btn"
               onClick={handleOpenReleasesPage}
             >
-              打开 Release 页
+              {translate('settingsView.t495')}
             </Button>
           }
         />
       </div>
 
-      <div className="subsec-h">更新策略</div>
+      <div className="subsec-h">{translate('settingsView.t496')}</div>
       <div className="card">
         <SettingsRow
-          title="自动检查更新"
-          desc="启动时检查，运行期间约每 30 分钟静默检查；失败时自动退避，系统唤醒后会按需补查"
+          title={translate('settingsView.t338')}
+          desc={translate('settingsView.t339LongDesc')}
           right={
             <Switch
               size="middle"
@@ -4616,8 +4612,8 @@ function UpdatesSection() {
           }
         />
         <SettingsRow
-          title="自动下载"
-          desc="检测到新版本后自动下载安装包；默认关闭，可随时手动下载"
+          title={translate('settingsView.t340')}
+          desc={translate('settingsView.t341Desc')}
           right={
             <Switch
               size="middle"
@@ -4627,11 +4623,11 @@ function UpdatesSection() {
           }
         />
         <SettingsRow
-          title="自动安装"
+          title={translate('settingsView.t342')}
           desc={
             autoInstallSupported
-              ? '退出应用时自动启动安装器'
-              : '当前平台不支持自动安装，下载后需手动打开安装包'
+              ? translate('settingsView.t276')
+              : translate('settingsView.t277Desc')
           }
           right={
             <Switch
@@ -4643,33 +4639,33 @@ function UpdatesSection() {
           }
         />
         <SettingsRow
-          title="更新来源"
-          desc={`检查顺序：官网版本中心 → GitHub Releases；当前检查来源：${updateSourceLabel}`}
+          title={translate('settingsView.t343')}
+          desc={translate('settingsView.tpl33Desc', { source: updateSourceLabel })}
           right={
             <span className="badge">
               {status?.updateSource === 'github'
                 ? 'GitHub'
                 : status?.updateSource === 'version-center'
-                  ? '官网'
-                  : '待检查'}
+                  ? translate('settingsView.t278')
+                  : translate('settingsView.t279')}
             </span>
           }
         />
       </div>
 
-      <div className="subsec-h">版本</div>
+      <div className="subsec-h">{translate('settingsView.t129')}</div>
       <div className="card">
         <SettingsRow
           title="SparkWork"
           desc={`${currentVersion}`}
           right={
             <span className={hasUpdate ? 'badge warning dot' : 'badge success dot'}>
-              {hasUpdate ? `有新版 ${status?.updateInfo?.version}` : '最新'}
+              {hasUpdate ? translate('settingsView.tpl34Desc', { version: status?.updateInfo?.version }) : translate('settingsView.t280')}
             </span>
           }
         />
 
-        <SettingsRow title="Electron" desc="31.x" right={<span className="badge">嵌入</span>} />
+        <SettingsRow title="Electron" desc="31.x" right={<span className="badge">{translate('settingsView.t497')}</span>} />
       </div>
     </div>
   )
@@ -4677,19 +4673,19 @@ function UpdatesSection() {
 
 /* ───────── Helpers ───────── */
 const CLAUDE_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
-  { value: 'claude-ask', label: '请求批准', desc: '每次工具执行前确认' },
-  { value: 'claude-plan', label: '计划模式', desc: '先产出计划，再批准执行' },
+  { value: 'claude-ask', label: translate('settingsView.t281'), desc: translate('settingsView.t282') },
+  { value: 'claude-plan', label: translate('settingsView.t283'), desc: translate('settingsView.t284') },
   {
     value: 'claude-auto-edits',
-    label: '自动编辑',
-    desc: '自动批准文件编辑',
+    label: translate('settingsView.t285'),
+    desc: translate('settingsView.t286'),
     tone: 'auto',
   },
-  { value: 'claude-auto', label: '自动审批', desc: '使用自动权限策略', tone: 'auto' },
+  { value: 'claude-auto', label: translate('settingsView.t287'), desc: translate('settingsView.t288'), tone: 'auto' },
   {
     value: 'claude-bypass',
-    label: '完全访问',
-    desc: '完全由 agent 执行',
+    label: translate('settingsView.t289'),
+    desc: translate('settingsView.t290'),
     tone: 'danger',
   },
 ]
@@ -4801,60 +4797,60 @@ function AboutSection() {
     <div className="settings-section">
       <div className="about-header">
         <div className="about-title">SparkWork</div>
-        <div className="about-subtitle">AI Agent 工作台</div>
-        <div className="about-version">版本 {sysInfo?.appVersion ?? '0.1.0'} (MVP)</div>
+        <div className="about-subtitle">{translate('settingsView.t498')}</div>
+        <div className="about-version">{translate('settingsView.tpl63Desc', { version: sysInfo?.appVersion ?? '0.1.0' })}</div>
       </div>
-      <div className="subsec-h">技术栈</div>
+      <div className="subsec-h">{translate('settingsView.t499')}</div>
       <div className="card">
         <SettingsRow
           title="Electron"
-          desc="桌面应用框架"
+          desc={translate('settingsView.t344')}
           right={<span className="mono-sm tech-version">{sysInfo?.electronVersion ?? '31.x'}</span>}
         />
         <SettingsRow
           title="Chromium"
-          desc="渲染引擎"
+          desc={translate('settingsView.t345')}
           right={
             <span className="mono-sm tech-version">{sysInfo?.chromeVersion ?? 'unknown'}</span>
           }
         />
         <SettingsRow
           title="Node.js"
-          desc="JavaScript 运行时"
+          desc={translate('settingsView.t346Desc')}
           right={<span className="mono-sm tech-version">{sysInfo?.nodeVersion ?? 'unknown'}</span>}
         />
         <SettingsRow
           title="React"
-          desc="UI 框架"
+          desc={translate('settingsView.t347')}
           right={<span className="mono-sm tech-version">19.x</span>}
         />
         <SettingsRow
           title="TypeScript"
-          desc="开发语言"
+          desc={translate('settingsView.t348')}
           right={<span className="mono-sm tech-version">5.x</span>}
         />
         <SettingsRow
-          title="数据库"
-          desc="本地存储"
+          title={translate('settingsView.t349')}
+          desc={translate('settingsView.t350')}
           right={<span className="mono-sm tech-version">SQLite (better-sqlite3)</span>}
         />
         <SettingsRow
-          title="AI 引擎"
+          title={translate('settingsView.t351')}
           desc="Agent Runtime"
           right={<span className="mono-sm tech-version">Claude / OpenAI / DeepSeek / Ollama</span>}
         />
       </div>
 
-      <div className="subsec-h">系统信息</div>
+      <div className="subsec-h">{translate('settingsView.t500')}</div>
       <div className="card">
         <SettingsRow
-          title="平台"
-          desc="操作系统"
+          title={translate('settingsView.t352')}
+          desc={translate('settingsView.t353')}
           right={<span className="mono-sm tech-version">{sysInfo?.platform ?? '—'}</span>}
         />
         <SettingsRow
           title="User Agent"
-          desc="浏览器标识"
+          desc={translate('settingsView.t354')}
           right={
             <span className="mono-sm tech-version about-user-agent">
               {navigator.userAgent.slice(0, 60)}…
@@ -4863,11 +4859,11 @@ function AboutSection() {
         />
       </div>
 
-      <div className="subsec-h">链接</div>
+      <div className="subsec-h">{translate('settingsView.t501')}</div>
       <div className="card">
         <SettingsRow
           title="GitHub"
-          desc="源代码仓库"
+          desc={translate('settingsView.t355')}
           right={
             <a href="https://github.com" target="_blank" rel="noreferrer" className="about-link">
               github.com →
@@ -4875,8 +4871,8 @@ function AboutSection() {
           }
         />
         <SettingsRow
-          title="文档"
-          desc="使用指南与 API 参考"
+          title={translate('settingsView.t356')}
+          desc={translate('settingsView.t357')}
           right={
             <a
               href="https://docs.spark-agent.dev"
@@ -4884,13 +4880,13 @@ function AboutSection() {
               rel="noreferrer"
               className="about-link"
             >
-              文档 →
+              {translate('settingsView.t502')}
             </a>
           }
         />
         <SettingsRow
-          title="反馈"
-          desc="问题报告与功能建议"
+          title={translate('settingsView.t358')}
+          desc={translate('settingsView.t359')}
           right={
             <a
               href="https://github.com/issues"
@@ -4898,7 +4894,7 @@ function AboutSection() {
               rel="noreferrer"
               className="about-link"
             >
-              提交 Issue →
+              {translate('settingsView.t503')}
             </a>
           }
         />

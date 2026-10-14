@@ -21,6 +21,7 @@ import type {
   VolcengineVideoPreprocessInput,
 } from '@spark/protocol'
 import { useIpcInvoke } from '../../hooks/useIpc'
+import { translate, useI18n } from '../../i18n'
 import { Icons } from '../../Icons'
 import { CanvasOverlayBoundary } from './CanvasOverlayBoundary'
 import { providerFilesApiKindForProfile } from './canvasProviderFiles'
@@ -39,6 +40,8 @@ export function CanvasProviderFilesTab({
   /** 把该 provider 文件作为节点加入画布；运行时会按渠道协议解析 file_id。 */
   onAddToCanvas?: (file: ProviderFileObject, providerProfileId: string) => void
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const { invoke: listProviders, loading: providersLoading } = useIpcInvoke('provider:list')
   const { invoke: listFiles, loading: filesLoading } = useIpcInvoke('provider:files:list')
   const { invoke: getFile, loading: getFileLoading } = useIpcInvoke('provider:files:get')
@@ -75,10 +78,10 @@ export function CanvasProviderFilesTab({
     providerKind === 'xai'
       ? 'xAI'
       : providerKind === 'bailian'
-        ? '阿里云百炼'
+        ? translate('canvasProviderFiles.t1')
         : providerKind === 'minimax-hailuo'
           ? 'MiniMax'
-          : '火山方舟'
+          : translate('canvasProviderFiles.t2')
 
   useEffect(() => {
     providerProfileIdRef.current = providerProfileId
@@ -230,7 +233,7 @@ export function CanvasProviderFilesTab({
         : (await getFile({ providerProfileId: requestedProviderProfileId, fileId: file.id })).file
       if (providerProfileIdRef.current !== requestedProviderProfileId) return
       if (!target.downloadUrl) {
-        setErrorMessage('火山方舟 Files 未返回可预览的官方 download_url，请先刷新文件状态。')
+        setErrorMessage(translate('canvasProviderFiles.t3LongDesc'))
         return
       }
       setFiles((current) => mergeFiles(current, [target]))
@@ -262,22 +265,22 @@ export function CanvasProviderFilesTab({
     setFiles((current) => current.filter((file) => !deleted.has(file.id)))
     setSelectedIds((current) => new Set([...current].filter((id) => !deleted.has(id))))
     setDeletingIds((current) => new Set([...current].filter((id) => !ids.includes(id))))
-    if (failed > 0) setErrorMessage(`${deleted.size} 个文件已删除，${failed} 个删除失败，请重试。`)
-    else message.success(`已删除 ${deleted.size} 个文件`)
+    if (failed > 0) setErrorMessage(translate('canvasProviderFiles.tpl1Desc', { deleted: deleted.size, failed }))
+    else message.success(translate('canvasProviderFiles.tpl2Desc', { count: deleted.size }))
   }
 
   const confirmDelete = (targets: ProviderFileObject[]) => {
     Modal.confirm({
       title:
         targets.length > 1
-          ? `删除 ${targets.length} 个${providerLabel}文件？`
-          : `删除${providerLabel}文件？`,
+          ? translate('canvasProviderFiles.tpl3Desc', { count: targets.length, provider: providerLabel })
+          : translate('canvasProviderFiles.tpl4Desc', { provider: providerLabel }),
       content:
         targets.length > 1
-          ? `单次最多删除 ${MAX_BATCH_DELETE} 个；远端文件可能仍被其他任务引用，删除后无法恢复。`
-          : `${targets[0]?.filename ?? ''}（${targets[0]?.id ?? ''}）可能仍被其他任务引用，删除后无法恢复。`,
-      okText: '确认删除',
-      cancelText: '取消',
+          ? translate('canvasProviderFiles.tpl5Desc', { max: MAX_BATCH_DELETE })
+          : translate('canvasProviderFiles.tpl6Desc', { name: targets[0]?.filename ?? '', id: targets[0]?.id ?? '' }),
+      okText: translate('canvasProviderFiles.t4'),
+      cancelText: translate('canvasProviderFiles.t5'),
       okButtonProps: { danger: true },
       onOk: () => deleteFiles(targets),
     })
@@ -287,7 +290,7 @@ export function CanvasProviderFilesTab({
 
   return (
     <div className="canvas-provider-files">
-      <div className="canvas-provider-files-channel-tabs" role="tablist" aria-label="Files 渠道">
+      <div className="canvas-provider-files-channel-tabs" role="tablist" aria-label={translate('canvasProviderFiles.t38')}>
         <button
           type="button"
           role="tab"
@@ -297,8 +300,7 @@ export function CanvasProviderFilesTab({
           {providerLabel}
         </button>
         <span className="canvas-provider-files-note">
-          已支持火山方舟、百炼 DashScope 与 MiniMax 原生 Files；MiniMax 文件可经 mm_file:// 供 H3
-          视频引用。
+          {translate('canvasProviderFiles.t98LongDesc')}
         </span>
       </div>
 
@@ -306,12 +308,12 @@ export function CanvasProviderFilesTab({
         type="info"
         message={
           providerKind === 'xai'
-            ? 'xAI Files API 用于 Chat / Responses 的图片与 PDF 输入；官方单文件上限 48 MiB。该渠道当前仅支持列表浏览与删除，暂不开放上传与单文件查询。'
+            ? translate('canvasProviderFiles.t6LongDesc')
             : providerKind === 'bailian'
-              ? '百炼 DashScope Files 仅用于文件解析、Batch 和模型微调；官方未声明 file_id 可直接传给万相图片或视频生成，因此画布不会自动引用它。该 API 仅在北京 Region 开放。'
+              ? translate('canvasProviderFiles.t7LongDesc')
               : providerKind === 'minimax-hailuo'
-                ? 'MiniMax Files 以 mm_file://{file_id} 供 H3 视频生成引用（首帧 / 参考图 / 参考视频 / 参考音频）。purpose 固定为 video_generation_input，文件保留 7 天；file_id 按 int64 字符串透传。'
-                : 'Files API 文件必须为 active 才能引用。火山方舟生成任务会先将 file_id 解析为官方 download_url，再提交给 Seedance；远端文件属于所选 Provider 项目，不随当前画布复制或导出。'
+                ? translate('canvasProviderFiles.t8LongDesc')
+                : translate('canvasProviderFiles.t9LongDesc')
         }
       />
       {errorMessage && (
@@ -322,7 +324,7 @@ export function CanvasProviderFilesTab({
         <div className="canvas-provider-files-toolbar-main">
           <Select
             value={providerProfileId || null}
-            placeholder="选择已配置的 Files Provider"
+            placeholder={translate('canvasProviderFiles.t39Desc')}
             options={providers.map((profile) => ({
               value: profile.id,
               label: `${profile.name} · ${profile.defaultModel}`,
@@ -347,7 +349,7 @@ export function CanvasProviderFilesTab({
               setQuery(event.target.value)
               setCurrentPage(1)
             }}
-            placeholder="搜索文件名 / File ID / MIME"
+            placeholder={translate('canvasProviderFiles.t40Desc')}
             style={{ width: 220 }}
           />
           <Select
@@ -357,10 +359,10 @@ export function CanvasProviderFilesTab({
               setCurrentPage(1)
             }}
             options={[
-              { value: 'all', label: '全部状态' },
-              { value: 'active', label: '可用' },
-              { value: 'processing', label: '处理中' },
-              { value: 'failed', label: '失败' },
+              { value: 'all', label: translate('canvasProviderFiles.t10') },
+              { value: 'active', label: translate('canvasProviderFiles.t11') },
+              { value: 'processing', label: translate('canvasProviderFiles.t12') },
+              { value: 'failed', label: translate('canvasProviderFiles.t13') },
             ]}
             style={{ width: 112 }}
           />
@@ -371,8 +373,8 @@ export function CanvasProviderFilesTab({
               setCurrentPage(1)
             }}
             options={[
-              { value: 'desc', label: '最新创建' },
-              { value: 'asc', label: '最早创建' },
+              { value: 'desc', label: translate('canvasProviderFiles.t14') },
+              { value: 'asc', label: translate('canvasProviderFiles.t15') },
             ]}
             style={{ width: 112 }}
           />
@@ -380,7 +382,7 @@ export function CanvasProviderFilesTab({
         <div className="canvas-provider-files-actions">
           {selectedFiles.length > 0 && (
             <Button danger onClick={() => confirmDelete(selectedFiles)}>
-              批量删除 ({Math.min(selectedFiles.length, MAX_BATCH_DELETE)})
+              {translate('canvasProviderFiles.tpl18Desc', { count: Math.min(selectedFiles.length, MAX_BATCH_DELETE) })}
             </Button>
           )}
           <Button
@@ -389,7 +391,7 @@ export function CanvasProviderFilesTab({
             disabled={!providerProfileId}
             onClick={() => void loadFiles()}
           >
-            刷新
+            {translate('canvasProviderFiles.t53')}
           </Button>
           {providerKind !== 'xai' && (
             <Button
@@ -398,18 +400,18 @@ export function CanvasProviderFilesTab({
               disabled={!providerProfileId}
               onClick={() => setUploadOpen(true)}
             >
-              上传 / 导入
+              {translate('canvasProviderFiles.t54')}
             </Button>
           )}
         </div>
       </CanvasOverlayBoundary>
 
       {!providersLoading && providers.length === 0 ? (
-        <Empty description="暂无可用的 Files Provider，请先在模型管理中配置 API Key 与官方 Base URL" />
+        <Empty description={translate('canvasProviderFiles.t41LongDesc')} />
       ) : visibleFiles.length === 0 && !filesLoading ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={files.length === 0 ? '当前 Provider 暂无 Files 文件' : '当前筛选无文件'}
+          description={files.length === 0 ? translate('canvasProviderFiles.t16Desc') : translate('canvasProviderFiles.t17')}
         />
       ) : (
         <div className="canvas-provider-files-list">
@@ -440,7 +442,7 @@ export function CanvasProviderFilesTab({
                     <FileStatusTag status={file.status} />
                     <span className="canvas-provider-file-attr">{formatBytes(file.bytes)}</span>
                     <span className="canvas-provider-file-sep">·</span>
-                    <span className="canvas-provider-file-attr">{file.mimeType ?? '未知类型'}</span>
+                    <span className="canvas-provider-file-attr">{file.mimeType ?? translate('canvasProviderFiles.t18')}</span>
                   </div>
                   <div className="canvas-provider-file-submeta">
                     <span>{file.purpose}</span>
@@ -456,7 +458,7 @@ export function CanvasProviderFilesTab({
                       <>
                         <span className="canvas-provider-file-sep">·</span>
                         <span className="canvas-provider-file-expiry">
-                          到期 · {formatTime(file.expiresAt)}
+                          {translate('canvasProviderFiles.tpl19Desc', { time: formatTime(file.expiresAt) })}
                         </span>
                       </>
                     )}
@@ -464,13 +466,13 @@ export function CanvasProviderFilesTab({
                   {file.status === 'failed' && (
                     <div className="canvas-provider-file-error">
                       {[file.error?.code, file.error?.message].filter(Boolean).join(' · ') ||
-                        '预处理失败，官方响应未提供详情'}
+                        translate('canvasProviderFiles.t19Desc')}
                     </div>
                   )}
                 </div>
                 <div className="canvas-provider-files-actions">
                   <Button size="small" onClick={() => void copyFileId(file.id)}>
-                    复制 ID
+                    {translate('canvasProviderFiles.t55')}
                   </Button>
                   {providerKind === 'minimax-hailuo' &&
                     file.status === 'active' &&
@@ -480,12 +482,12 @@ export function CanvasProviderFilesTab({
                         type="primary"
                         onClick={() => onAddToCanvas(file, providerProfileId)}
                       >
-                        加入视频生成
+                        {translate('canvasProviderFiles.t56')}
                       </Button>
                     )}
                   {providerKind === 'volcengine-ark' && file.status === 'active' && (
                     <Button size="small" onClick={() => void openPreview(file)}>
-                      预览
+                      {translate('canvasProviderFiles.t21')}
                     </Button>
                   )}
                   {providerKind !== 'xai' && (
@@ -494,11 +496,11 @@ export function CanvasProviderFilesTab({
                       loading={getFileLoading && file.status === 'processing'}
                       onClick={() => void refreshOne(file.id)}
                     >
-                      查询
+                      {translate('canvasProviderFiles.t57')}
                     </Button>
                   )}
                   <Button size="small" onClick={() => setDetailsFile(file)}>
-                    查看详情
+                    {translate('canvasProviderFiles.t58')}
                   </Button>
                   <Button
                     size="small"
@@ -506,7 +508,7 @@ export function CanvasProviderFilesTab({
                     loading={deleting}
                     onClick={() => confirmDelete([file])}
                   >
-                    删除
+                    {translate('canvasProviderFiles.t59')}
                   </Button>
                 </div>
               </div>
@@ -518,15 +520,18 @@ export function CanvasProviderFilesTab({
       {totalCount > 0 && (totalCount > FILE_PAGE_SIZE || hasMoreFromProvider) && (
         <div className="canvas-provider-files-pagination">
           <span className="canvas-provider-files-pagination-info">
-            第 {Math.min((safePage - 1) * FILE_PAGE_SIZE + 1, totalCount)}–
-            {Math.min(safePage * FILE_PAGE_SIZE, totalCount)} 条，共 {totalCount} 条
+            {translate('canvasProviderFiles.tpl20Desc', {
+              from: Math.min((safePage - 1) * FILE_PAGE_SIZE + 1, totalCount),
+              to: Math.min(safePage * FILE_PAGE_SIZE, totalCount),
+              total: totalCount,
+            })}
           </span>
           <div className="canvas-provider-files-pagination-controls">
             <Button size="small" disabled={safePage <= 1} onClick={goToPrevPage}>
-              上一页
+              {translate('canvasProviderFiles.t60')}
             </Button>
             <span className="canvas-provider-files-pagination-page">
-              第 {safePage} / {totalPages} 页
+              {translate('canvasProviderFiles.tpl21Desc', { page: safePage, pages: totalPages })}
             </span>
             <Button
               size="small"
@@ -534,7 +539,7 @@ export function CanvasProviderFilesTab({
               disabled={safePage >= totalPages && !hasMoreFromProvider}
               onClick={() => void goToNextPage()}
             >
-              下一页
+              {translate('canvasProviderFiles.t61')}
             </Button>
           </div>
         </div>
@@ -542,7 +547,7 @@ export function CanvasProviderFilesTab({
 
       <Modal
         open={detailsFile !== null}
-        title={detailsFile ? `文件详情 · ${detailsFile.filename}` : '文件详情'}
+        title={detailsFile ? translate('canvasProviderFiles.tpl22Desc', { name: detailsFile.filename }) : translate('canvasProviderFiles.t20')}
         footer={null}
         onCancel={() => setDetailsFile(null)}
         destroyOnClose
@@ -565,7 +570,7 @@ export function CanvasProviderFilesTab({
 
       <Modal
         open={previewFile !== null}
-        title={previewFile ? `预览 · ${previewFile.filename}` : '预览'}
+        title={previewFile ? translate('canvasProviderFiles.tpl23Desc', { name: previewFile.filename }) : translate('canvasProviderFiles.t21')}
         footer={null}
         onCancel={() => setPreviewFile(null)}
         destroyOnClose
@@ -593,16 +598,16 @@ export function CanvasProviderFilesTab({
                 }
                 succeeded += 1
               } catch (error) {
-                failures.push(filesErrorMessage(error, '百炼'))
+                failures.push(filesErrorMessage(error, translate('canvasProviderFiles.t22')))
               }
             }
             if (providerProfileIdRef.current !== requestedProviderProfileId) return
             if (failures.length > 0) {
               setErrorMessage(
-                `${succeeded} 个文件已上传，${failures.length} 个失败：${failures[0]}`,
+                translate('canvasProviderFiles.tpl8Desc', { ok: succeeded, failed: failures.length, reason: failures[0] }),
               )
             } else {
-              message.success(`已上传 ${succeeded} 个百炼文件`)
+              message.success(translate('canvasProviderFiles.tpl7Desc', { count: succeeded }))
               setUploadOpen(false)
             }
           }}
@@ -631,10 +636,10 @@ export function CanvasProviderFilesTab({
             if (providerProfileIdRef.current !== requestedProviderProfileId) return
             if (failures.length > 0) {
               setErrorMessage(
-                `${succeeded} 个文件已上传，${failures.length} 个失败：${failures[0]}`,
+                translate('canvasProviderFiles.tpl8Desc', { ok: succeeded, failed: failures.length, reason: failures[0] }),
               )
             } else {
-              message.success(`已上传 ${succeeded} 个 MiniMax 文件`)
+              message.success(translate('canvasProviderFiles.tpl9Desc', { count: succeeded }))
               setUploadOpen(false)
             }
           }}
@@ -663,10 +668,10 @@ export function CanvasProviderFilesTab({
             if (providerProfileIdRef.current !== requestedProviderProfileId) return
             if (failures.length > 0) {
               setErrorMessage(
-                `${succeeded} 个文件已提交，${failures.length} 个失败：${failures[0]}`,
+                translate('canvasProviderFiles.tpl10Desc', { ok: succeeded, failed: failures.length, reason: failures[0] }),
               )
             } else {
-              message.success(`已提交 ${succeeded} 个文件，处理中项目会自动刷新`)
+              message.success(translate('canvasProviderFiles.tpl11Desc', { count: succeeded }))
               setUploadOpen(false)
             }
           }}
@@ -695,7 +700,7 @@ function BailianFileUploadModal({
 
   const pickFiles = async () => {
     const picked = await window.spark.invoke('dialog:open-file', {
-      title: '选择上传到阿里云百炼 Files 的文件',
+      title: translate('canvasProviderFiles.t23Desc'),
       multiple: true,
     })
     if (picked.canceled) return
@@ -705,14 +710,14 @@ function BailianFileUploadModal({
     )
     setFilePaths(paths)
     if ((picked.filePaths?.length ?? 0) > MAX_LOCAL_UPLOADS) {
-      message.warning(`单次最多选择 ${MAX_LOCAL_UPLOADS} 个文件`)
+      message.warning(translate('canvasProviderFiles.tpl12Desc', { max: MAX_LOCAL_UPLOADS }))
     }
   }
 
   const submit = async () => {
     if (!providerProfileId) return
     if (filePaths.length === 0) {
-      message.warning('请先选择本地文件')
+      message.warning(translate('canvasProviderFiles.t24'))
       return
     }
     await onUpload(
@@ -728,10 +733,10 @@ function BailianFileUploadModal({
   return (
     <Modal
       open={open}
-      title="上传到阿里云百炼 Files"
+      title={translate('canvasProviderFiles.t42Desc')}
       width={620}
-      okText="开始上传"
-      cancelText="取消"
+      okText={translate('canvasProviderFiles.t43')}
+      cancelText={translate('canvasProviderFiles.t5')}
       confirmLoading={uploading}
       onCancel={onClose}
       onOk={() => void submit()}
@@ -741,41 +746,41 @@ function BailianFileUploadModal({
       <div className="canvas-provider-files-upload-form">
         <Alert
           type="info"
-          message="仅支持本地 multipart 上传。该文件平台用于文件解析、Batch 和模型微调；不会作为万相图像/视频生成的素材引用。"
+          message={translate('canvasProviderFiles.t44LongDesc')}
         />
         <div className="canvas-provider-files-upload-row">
           <Button icon={<Icons.FolderOpen size={13} />} onClick={() => void pickFiles()}>
-            选择文件
+            {translate('canvasProviderFiles.t62')}
           </Button>
           <span className="canvas-provider-files-note">
             {filePaths.length > 0
-              ? `已选择 ${filePaths.length} 个：${filePaths.map(fileNameFromPath).join('、')}`
-              : '可多选，单次最多 20 个'}
+              ? translate('canvasProviderFiles.tpl13Desc', { count: filePaths.length, names: filePaths.map(fileNameFromPath).join('、') })
+              : translate('canvasProviderFiles.t25Desc')}
           </span>
         </div>
         <div className="canvas-provider-files-upload-grid">
           <label className="canvas-provider-files-field">
-            <span>用途（purpose）</span>
+            <span>{translate('canvasProviderFiles.t63')}</span>
             <Select
               value={purpose}
               onChange={setPurpose}
               options={[
-                { value: 'file-extract', label: 'file-extract · 文件解析（150 MB）' },
-                { value: 'batch', label: 'batch · 批量任务（500 MB）' },
+                { value: 'file-extract', label: translate('canvasProviderFiles.t26Desc') },
+                { value: 'batch', label: translate('canvasProviderFiles.t27Desc') },
                 {
                   value: 'fine-tune',
-                  label: 'fine-tune · 模型微调（300 MB；视频/图像 ZIP 特例 1 GiB）',
+                  label: translate('canvasProviderFiles.t28LongDesc'),
                 },
               ]}
             />
           </label>
           <label className="canvas-provider-files-field">
-            <span>文件描述（可选）</span>
+            <span>{translate('canvasProviderFiles.t64')}</span>
             <Input
               value={description}
               maxLength={2000}
               onChange={(event) => setDescription(event.target.value)}
-              placeholder="将随 descriptions 字段上传"
+              placeholder={translate('canvasProviderFiles.t45Desc')}
             />
           </label>
         </div>
@@ -801,7 +806,7 @@ function MinimaxFileUploadModal({
 
   const pickFiles = async () => {
     const picked = await window.spark.invoke('dialog:open-file', {
-      title: '选择上传到 MiniMax Files 的素材',
+      title: translate('canvasProviderFiles.t29Desc'),
       multiple: true,
     })
     if (picked.canceled) return
@@ -811,14 +816,14 @@ function MinimaxFileUploadModal({
     )
     setFilePaths(paths)
     if ((picked.filePaths?.length ?? 0) > MAX_LOCAL_UPLOADS) {
-      message.warning(`单次最多选择 ${MAX_LOCAL_UPLOADS} 个文件`)
+      message.warning(translate('canvasProviderFiles.tpl12Desc', { max: MAX_LOCAL_UPLOADS }))
     }
   }
 
   const submit = async () => {
     if (!providerProfileId) return
     if (filePaths.length === 0) {
-      message.warning('请先选择本地文件')
+      message.warning(translate('canvasProviderFiles.t24'))
       return
     }
     await onUpload(
@@ -833,10 +838,10 @@ function MinimaxFileUploadModal({
   return (
     <Modal
       open={open}
-      title="上传到 MiniMax Files"
+      title={translate('canvasProviderFiles.t46Desc')}
       width={620}
-      okText="开始上传"
-      cancelText="取消"
+      okText={translate('canvasProviderFiles.t43')}
+      cancelText={translate('canvasProviderFiles.t5')}
       confirmLoading={uploading}
       onCancel={onClose}
       onOk={() => void submit()}
@@ -846,16 +851,16 @@ function MinimaxFileUploadModal({
       <div className="canvas-provider-files-upload-form">
         <Alert
           type="info"
-          message="上传的素材以 mm_file://{file_id} 供 H3 视频生成引用（首帧 / 参考图 / 参考视频 / 参考音频）。支持图片（JPG/PNG/WebP/HEIC ≤30MB）、参考视频（MP4/MOV ≤50MB）、参考音频（WAV/MP3 ≤15MB）；文件保留 7 天。"
+          message={translate('canvasProviderFiles.t47LongDesc')}
         />
         <div className="canvas-provider-files-upload-row">
           <Button icon={<Icons.FolderOpen size={13} />} onClick={() => void pickFiles()}>
-            选择文件
+            {translate('canvasProviderFiles.t62')}
           </Button>
           <span className="canvas-provider-files-note">
             {filePaths.length > 0
-              ? `已选择 ${filePaths.length} 个：${filePaths.map(fileNameFromPath).join('、')}`
-              : '可多选，单次最多 20 个'}
+              ? translate('canvasProviderFiles.tpl13Desc', { count: filePaths.length, names: filePaths.map(fileNameFromPath).join('、') })
+              : translate('canvasProviderFiles.t25Desc')}
           </span>
         </div>
       </div>
@@ -893,11 +898,11 @@ function VolcengineFileUploadModal({
 
   const pickFiles = async () => {
     const picked = await window.spark.invoke('dialog:open-file', {
-      title: '选择上传到火山方舟 Files 的文件',
+      title: translate('canvasProviderFiles.t30Desc'),
       multiple: true,
       filters: [
         {
-          name: '方舟支持的文件',
+          name: translate('canvasProviderFiles.t31'),
           extensions: [
             'jpg',
             'jpeg',
@@ -931,23 +936,23 @@ function VolcengineFileUploadModal({
     )
     setFilePaths(paths)
     if ((picked.filePaths?.length ?? 0) > MAX_LOCAL_UPLOADS)
-      message.warning(`单次最多选择 ${MAX_LOCAL_UPLOADS} 个文件`)
+      message.warning(translate('canvasProviderFiles.tpl12Desc', { max: MAX_LOCAL_UPLOADS }))
   }
 
   const submit = async () => {
     if (!providerProfileId) return
     const normalizedUrl = url.trim()
     if (source === 'local' && filePaths.length === 0) {
-      message.warning('请先选择本地文件')
+      message.warning(translate('canvasProviderFiles.t24'))
       return
     }
     if (source === 'url' && !/^(?:https?:\/\/|tos:\/\/)/i.test(normalizedUrl)) {
-      message.warning('请输入 HTTP、HTTPS 或 TOS URI')
+      message.warning(translate('canvasProviderFiles.t32Desc'))
       return
     }
     const needsTos = useTos || isTosUrl(normalizedUrl)
     if (needsTos && (!tosBucket.trim() || !tosPrefix.trim())) {
-      message.warning('使用 TOS 时必须填写 bucket 和 prefix')
+      message.warning(translate('canvasProviderFiles.t33Desc'))
       return
     }
     const preprocessVideo: VolcengineVideoPreprocessInput | undefined = preprocessEnabled
@@ -974,10 +979,10 @@ function VolcengineFileUploadModal({
   return (
     <Modal
       open={open}
-      title="上传到火山方舟 Files"
+      title={translate('canvasProviderFiles.t48Desc')}
       width={720}
-      okText="开始上传"
-      cancelText="取消"
+      okText={translate('canvasProviderFiles.t43')}
+      cancelText={translate('canvasProviderFiles.t5')}
       confirmLoading={uploading}
       onCancel={onClose}
       onOk={() => void submit()}
@@ -987,38 +992,38 @@ function VolcengineFileUploadModal({
       <div className="canvas-provider-files-upload-form">
         <Alert
           type="info"
-          message="支持图片、MP4/AVI/MOV、PDF、MP3/WAV/AAC/M4A。平台托管单文件上限 512 MB；TOS 视频上限 2 GB。"
+          message={translate('canvasProviderFiles.t49LongDesc')}
         />
         <Select
           value={source}
           onChange={setSource}
           options={[
-            { value: 'local', label: '本地文件' },
+            { value: 'local', label: translate('canvasProviderFiles.t34') },
             { value: 'url', label: 'HTTP / HTTPS / TOS URI' },
           ]}
         />
         {source === 'local' ? (
           <div className="canvas-provider-files-upload-row">
             <Button icon={<Icons.FolderOpen size={13} />} onClick={() => void pickFiles()}>
-              选择文件
+              {translate('canvasProviderFiles.t62')}
             </Button>
             <span className="canvas-provider-files-note">
               {filePaths.length > 0
-                ? `已选择 ${filePaths.length} 个：${filePaths.map(fileNameFromPath).join('、')}`
-                : '可多选，单次最多 20 个'}
+                ? translate('canvasProviderFiles.tpl13Desc', { count: filePaths.length, names: filePaths.map(fileNameFromPath).join('、') })
+                : translate('canvasProviderFiles.t25Desc')}
             </span>
           </div>
         ) : (
           <Input
             value={url}
             onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://.../file.mp4 或 tos://bucket/prefix/file.mp4"
+            placeholder={translate('canvasProviderFiles.t50LongDesc')}
           />
         )}
 
         <div className="canvas-provider-files-upload-grid">
           <label className="canvas-provider-files-field">
-            <span>保存时长（天，1–30）</span>
+            <span>{translate('canvasProviderFiles.t65')}</span>
             <InputNumber
               min={1}
               max={30}
@@ -1028,7 +1033,7 @@ function VolcengineFileUploadModal({
             />
           </label>
           <label className="canvas-provider-files-field">
-            <span>写入用户 TOS</span>
+            <span>{translate('canvasProviderFiles.t66')}</span>
             <Switch
               checked={useTos || isTosUrl(url)}
               disabled={isTosUrl(url)}
@@ -1048,7 +1053,7 @@ function VolcengineFileUploadModal({
               />
             </label>
             <label className="canvas-provider-files-field">
-              <span>TOS prefix（相对路径）</span>
+              <span>{translate('canvasProviderFiles.t67Desc')}</span>
               <Input
                 value={tosPrefix}
                 onChange={(event) => setTosPrefix(event.target.value)}
@@ -1060,7 +1065,7 @@ function VolcengineFileUploadModal({
 
         <div className="canvas-provider-files-upload-row">
           <Switch checked={preprocessEnabled} onChange={setPreprocessEnabled} />
-          <span>配置视频预处理（非视频文件请关闭）</span>
+          <span>{translate('canvasProviderFiles.t68Desc')}</span>
         </div>
         {preprocessEnabled && (
           <div className="canvas-provider-files-upload-grid">
@@ -1069,11 +1074,11 @@ function VolcengineFileUploadModal({
               <InputNumber min={0.2} max={5} step={0.1} value={fps} onChange={setFps} />
             </label>
             <label className="canvas-provider-files-field">
-              <span>视频理解 Model / Endpoint ID</span>
+              <span>{translate('canvasProviderFiles.t69Desc')}</span>
               <Input
                 value={model}
                 onChange={(event) => setModel(event.target.value)}
-                placeholder="可选"
+                placeholder={translate('canvasProviderFiles.t51')}
               />
             </label>
             <NumberField
@@ -1132,7 +1137,7 @@ function NumberField({
         max={max}
         precision={0}
         value={value}
-        placeholder="可选"
+        placeholder={translate('canvasProviderFiles.t51')}
         onChange={onChange}
       />
     </label>
@@ -1158,15 +1163,15 @@ function compactPreprocess(input: {
 }
 
 function FileStatusTag({ status }: { status?: ProviderFileObject['status'] }) {
-  if (status === 'active') return <Tag color="green">active · 可用</Tag>
-  if (status === 'processing') return <Tag color="blue">processing · 处理中</Tag>
-  if (status === 'failed') return <Tag color="red">failed · 失败</Tag>
-  return <Tag>状态未知</Tag>
+  if (status === 'active') return <Tag color="green">{translate('canvasProviderFiles.t70')}</Tag>
+  if (status === 'processing') return <Tag color="blue">{translate('canvasProviderFiles.t71Desc')}</Tag>
+  if (status === 'failed') return <Tag color="red">{translate('canvasProviderFiles.t72')}</Tag>
+  return <Tag>{translate('canvasProviderFiles.t73')}</Tag>
 }
 
 function ProviderFilePreview({ file }: { file: ProviderFileObject }) {
   const url = file.downloadUrl
-  if (!url) return <Empty description="官方没有返回可预览地址" />
+  if (!url) return <Empty description={translate('canvasProviderFiles.t52')} />
   const mimeType = file.mimeType?.toLowerCase() ?? ''
   if (mimeType.startsWith('image/')) {
     return (
@@ -1190,7 +1195,7 @@ function ProviderFilePreview({ file }: { file: ProviderFileObject }) {
   }
   return (
     <a href={url} target="_blank" rel="noreferrer">
-      打开官方下载地址
+      {translate('canvasProviderFiles.t74')}
     </a>
   )
 }
@@ -1218,14 +1223,14 @@ function expireAtFromDays(days: number): number {
   return now + Math.floor(days) * 86_400
 }
 
-function filesErrorMessage(error: unknown, providerName = '火山方舟'): string {
+function filesErrorMessage(error: unknown, providerName = translate('canvasProviderFiles.t2')): string {
   const detail = error instanceof Error ? error.message : String(error)
   if (/401|api key|auth/i.test(detail))
-    return `${providerName} API Key 无效或未配置，请检查当前 Provider 凭据。`
+    return translate('canvasProviderFiles.tpl14Desc', { provider: providerName })
   if (/403|forbidden|permission/i.test(detail))
-    return `当前 API Key 没有 ${providerName} Files 权限，或文件与 Provider 不属于同一项目。`
-  if (/429|rate.?limit/i.test(detail)) return `${providerName} Files 请求过于频繁，请稍后重试。`
-  return `${providerName} Files 请求失败：${detail}`
+    return translate('canvasProviderFiles.tpl15Desc', { provider: providerName })
+  if (/429|rate.?limit/i.test(detail)) return translate('canvasProviderFiles.tpl16Desc', { provider: providerName })
+  return translate('canvasProviderFiles.tpl17Desc', { provider: providerName, reason: detail })
 }
 
 function formatBytes(bytes: number): string {
@@ -1236,7 +1241,7 @@ function formatBytes(bytes: number): string {
 }
 
 function formatTime(value: number): string {
-  if (!value) return '创建时间未知'
+  if (!value) return translate('canvasProviderFiles.t35')
   return new Date(toMilliseconds(value)).toLocaleString()
 }
 
@@ -1264,8 +1269,8 @@ function isVideoFileName(value: string): boolean {
 async function copyFileId(fileId: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(fileId)
-    message.success('File ID 已复制')
+    message.success(translate('canvasProviderFiles.t36'))
   } catch {
-    message.error('复制失败，请稍后重试')
+    message.error(translate('canvasProviderFiles.t37'))
   }
 }

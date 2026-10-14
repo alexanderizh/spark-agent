@@ -22,44 +22,45 @@ import type { PressureLevel, ResourcePressureChangedPayload } from '@spark/proto
 import { useToast } from '../components/Toast'
 import type { ToastFn } from '../components/Toast'
 import { useApp } from '../AppContext'
+import { useI18n, type TranslateFn } from '../i18n'
 
 /**
  * 触发指标 → 用户视角的现象描述（2026-09-23 文案决策：主语是「电脑」，
  * 不用指标名——用户关心的是「电脑怎么了」，不是 host-rss 与 children-rss
  * 的区别；四个内存指标共用同一现象句，去重后只显示一次）。
  */
-const TRIGGER_PHENOMENA: Record<string, string> = {
-  'system-used-pct': '内存占用接近上限',
-  'app-footprint-pct': '内存占用接近上限',
-  'host-rss-pct': '内存占用接近上限',
-  'children-rss-pct': '内存占用接近上限',
-  'children-count': '后台进程数量过多',
-  'event-loop-delay-ms': '系统响应明显变慢',
+const TRIGGER_PHENOMENA_KEYS: Record<string, string> = {
+  'system-used-pct': 'perf.notice.phenomenonMemory',
+  'app-footprint-pct': 'perf.notice.phenomenonMemory',
+  'host-rss-pct': 'perf.notice.phenomenonMemory',
+  'children-rss-pct': 'perf.notice.phenomenonMemory',
+  'children-count': 'perf.notice.phenomenonChildren',
+  'event-loop-delay-ms': 'perf.notice.phenomenonSlow',
 }
 
-function describePhenomena(keys: string[]): string {
+function describePhenomena(keys: string[], t: TranslateFn): string {
   const seen = new Set<string>()
   for (const key of keys) {
-    const label = TRIGGER_PHENOMENA[key]
-    if (label != null) seen.add(label)
+    const labelKey = TRIGGER_PHENOMENA_KEYS[key]
+    if (labelKey != null) seen.add(t(labelKey))
   }
-  return seen.size > 0 ? [...seen].join('、') : '资源占用接近饱和'
+  return seen.size > 0 ? [...seen].join(', ') : t('perf.notice.phenomenonDefault')
 }
 
 /**
  * 常驻弹窗正文（比原横幅短：弹窗宽度有限，长文会折成高密度文字块；
  * 「不是应用故障」「进行中的任务不受影响」是 2026-09-23 定下的关键安抚信息，保留）。
  */
-function noticeMessage(keys: string[]): string {
-  return `检测到电脑整体${describePhenomena(keys)}，Spark 已暂停新任务派发以保护系统流畅。这是资源保护机制而非应用故障，进行中的任务不受影响；释放电脑资源后会自动恢复。`
+function noticeMessage(keys: string[], t: TranslateFn): string {
+  return t('perf.notice.messageBody', { phenomena: describePhenomena(keys, t) })
 }
 
 /** emergency 系统通知（Electron 渲染层 web Notification；失败静默——弹窗仍在）。 */
-function sendSystemNotice(keys: string[]): void {
+function sendSystemNotice(keys: string[], t: TranslateFn): void {
   try {
     if (typeof Notification === 'undefined') return
-    const body = `电脑整体${describePhenomena(keys)}，Spark 已暂停新任务派发以保护系统流畅。释放电脑资源后将自动恢复。`
-    const notice = new Notification('电脑资源压力提示', { body, silent: true })
+    const body = t('perf.notice.systemBody', { phenomena: describePhenomena(keys, t) })
+    const notice = new Notification(t('perf.notice.systemTitle'), { body, silent: true })
     notice.onclick = () => {
       window.focus()
       notice.close()
@@ -70,6 +71,7 @@ function sendSystemNotice(keys: string[]): void {
 }
 
 export function PressureNoticeHost() {
+  const { t } = useI18n()
   const { toast, dismiss } = useToast()
   const { setTweak } = useApp()
   /** 当前常驻弹窗 id（null = 没有正在展示的弹窗）。 */
@@ -91,16 +93,19 @@ export function PressureNoticeHost() {
     if (id != null) dismiss(id)
   }, [dismiss])
 
-  const showNotice = useCallback((triggeredBy: string[]): void => {
-    const text = noticeMessage(triggeredBy)
-    if (noticeIdRef.current != null && noticeTextRef.current === text) return
-    hideNotice()
-    noticeIdRef.current = toast.warning(text, {
-      sticky: true,
-      actions: [{ label: '查看性能', onClick: navigateToPerformance }],
-    })
-    noticeTextRef.current = text
-  }, [hideNotice, navigateToPerformance, toast])
+  const showNotice = useCallback(
+    (triggeredBy: string[]): void => {
+      const text = noticeMessage(triggeredBy, t)
+      if (noticeIdRef.current != null && noticeTextRef.current === text) return
+      hideNotice()
+      noticeIdRef.current = toast.warning(text, {
+        sticky: true,
+        actions: [{ label: t('perf.notice.viewPerformanceBtn'), onClick: navigateToPerformance }],
+      })
+      noticeTextRef.current = text
+    },
+    [hideNotice, navigateToPerformance, toast, t],
+  )
 
   useEffect(() => {
     mountedAtRef.current = Date.now()
@@ -117,19 +122,21 @@ export function PressureNoticeHost() {
         if (Number.isFinite(changedAtMs) && changedAtMs < mountedAtRef.current) return
         handleLevelChange(payload.previousLevel, payload.level, payload.triggeredBy, {
           toast,
+          t,
           showNotice,
           hideNotice,
         })
       },
     )
     return off
-  }, [hideNotice, showNotice, toast])
+  }, [hideNotice, showNotice, toast, t])
 
   return null
 }
 
 type NoticeApi = {
   toast: ToastFn
+  t: TranslateFn
   showNotice: (triggeredBy: string[]) => void
   hideNotice: () => void
 }
@@ -145,7 +152,7 @@ function handleLevelChange(
   if (level !== 'emergency') {
     api.hideNotice()
     if (level === 'nominal' && previousLevel === 'emergency') {
-      api.toast.success('电脑资源已恢复，任务派发已继续', { duration: 4000 })
+      api.toast.success(api.t('perf.notice.recovered'), { duration: 4000 })
     }
     return
   }
@@ -153,7 +160,7 @@ function handleLevelChange(
   api.showNotice(triggeredBy)
   // 只在升级到 emergency 时补系统通知；长时间停在 emergency 不重复打扰。
   if (rank(level) > rank(previousLevel)) {
-    sendSystemNotice(triggeredBy)
+    sendSystemNotice(triggeredBy, api.t)
   }
 }
 

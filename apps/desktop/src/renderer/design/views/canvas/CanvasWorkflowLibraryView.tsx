@@ -7,6 +7,7 @@ import type {
   CanvasWorkflowVersion,
 } from '@spark/protocol'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import type { CanvasProject } from './canvas.types'
 import { useCanvasProjects } from './canvas.store'
 import { canvasWorkflowApi } from './canvasWorkflow.api'
@@ -27,21 +28,21 @@ const EMPTY_WORKFLOW_PACKAGE: CanvasWorkflowPackage = {
 }
 
 const scopeLabels: Record<CanvasWorkflowScope, string> = {
-  project: '项目工作流',
-  library: '个人工作流',
-  builtin: '内置模板',
+  project: translate('canvasWorkflowLibrary.t1'),
+  library: translate('canvasWorkflowLibrary.t2'),
+  builtin: translate('canvasWorkflowLibrary.t3'),
 }
 
 function workflowTypeLabel(type: string): string {
   const labels: Record<string, string> = {
-    text: '文本',
-    image: '图片',
-    video: '视频',
-    audio: '音频',
-    file: '文件',
-    asset: '资产',
-    node: '节点',
-    structured: '结构化数据',
+    text: translate('canvasWorkflowLibrary.t4'),
+    image: translate('canvasWorkflowLibrary.t5'),
+    video: translate('canvasWorkflowLibrary.t6'),
+    audio: translate('canvasWorkflowLibrary.t7'),
+    file: translate('canvasWorkflowLibrary.t8'),
+    asset: translate('canvasWorkflowLibrary.t9'),
+    node: translate('canvasWorkflowLibrary.t10'),
+    structured: translate('canvasWorkflowLibrary.t11'),
   }
   return labels[type] ?? type
 }
@@ -62,6 +63,8 @@ export function CanvasWorkflowLibraryView({
 }: {
   projects?: CanvasProject[]
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   // 作为独立 view 使用时不传 projects，自己从 store 获取；
   // 保留 prop 向后兼容（CanvasProjectsView 等仍可显式传入）。
   const { projects: projectsFromStore } = useCanvasProjects()
@@ -120,7 +123,7 @@ export function CanvasWorkflowLibraryView({
         setHasMore(response.hasMore)
       } catch (loadError) {
         if (sequence !== loadSequenceRef.current) return
-        setError(loadError instanceof Error ? loadError.message : '加载画布工作流失败')
+        setError(loadError instanceof Error ? loadError.message : translate('canvasWorkflowLibrary.t12'))
       } finally {
         if (sequence === loadSequenceRef.current) {
           setLoading(false)
@@ -168,7 +171,7 @@ export function CanvasWorkflowLibraryView({
         setRuns(nextRuns)
       })
       .catch((detailError) => {
-        setError(detailError instanceof Error ? detailError.message : '加载版本或运行记录失败')
+        setError(detailError instanceof Error ? detailError.message : translate('canvasWorkflowLibrary.t13'))
       })
       .finally(() => setDetailLoading(false))
   }, [selected?.id])
@@ -196,7 +199,7 @@ export function CanvasWorkflowLibraryView({
       setCreateName('')
       setCreateDescription('')
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : '创建画布工作流失败')
+      setError(saveError instanceof Error ? saveError.message : translate('canvasWorkflowLibrary.t14'))
     } finally {
       setSaving(false)
     }
@@ -221,7 +224,7 @@ export function CanvasWorkflowLibraryView({
 
   const deleteSelected = async () => {
     if (!selected || selected.scope === 'builtin') return
-    if (!window.confirm(`删除画布工作流“${selected.name}”？此操作不可撤销。`)) return
+    if (!window.confirm(translate('canvasWorkflowLibrary.tpl1Desc', { name: selected.name }))) return
     const deleted = await canvasWorkflowApi.delete(selected.id)
     if (deleted)
       setWorkflows((current) => current.filter((workflow) => workflow.id !== selected.id))
@@ -260,7 +263,7 @@ export function CanvasWorkflowLibraryView({
       )
       setEditOpen(false)
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : '保存工作流详情失败')
+      setError(updateError instanceof Error ? updateError.message : translate('canvasWorkflowLibrary.t15'))
     } finally {
       setActionBusy(false)
     }
@@ -283,7 +286,7 @@ export function CanvasWorkflowLibraryView({
         ...current.filter((item) => item.version !== result.version.version),
       ])
     } catch (publishError) {
-      setError(publishError instanceof Error ? publishError.message : '发布画布工作流失败')
+      setError(publishError instanceof Error ? publishError.message : translate('canvasWorkflowLibrary.t16'))
     } finally {
       setActionBusy(false)
     }
@@ -317,7 +320,7 @@ export function CanvasWorkflowLibraryView({
       setSelectedId(imported.id)
       setScope('library')
     } catch (importError) {
-      setError(importError instanceof Error ? importError.message : '导入画布工作流失败')
+      setError(importError instanceof Error ? importError.message : translate('canvasWorkflowLibrary.t17'))
     } finally {
       setActionBusy(false)
       if (importInputRef.current) importInputRef.current.value = ''
@@ -325,7 +328,7 @@ export function CanvasWorkflowLibraryView({
   }
 
   return (
-    <section className="canvas-workflow-library" aria-label="画布工作流">
+    <section className="canvas-workflow-library" aria-label={translate('canvasWorkflowLibrary.t42')}>
       <header
         className="canvas-workflow-page-header canvas-view-titlebar"
         onDoubleClick={(event) => {
@@ -344,22 +347,22 @@ export function CanvasWorkflowLibraryView({
           type="button"
           className="canvas-workflow-back-btn"
           onClick={() => setTweak('view', 'canvas')}
-          aria-label="返回画布项目"
+          aria-label={translate('canvasWorkflowLibrary.t43')}
         >
           <Icons.ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} />
-          <span>返回项目</span>
+          <span>{translate('canvasWorkflowLibrary.t60')}</span>
         </button>
         <div className="canvas-workflow-page-title">
-          <span>工作台</span>
-          <h2>画布工作流</h2>
+          <span>{translate('canvasWorkflowLibrary.t61')}</span>
+          <h2>{translate('canvasWorkflowLibrary.t42')}</h2>
         </div>
         <div className="canvas-workflow-page-actions">
           <label className="canvas-workflow-search">
             <Icons.Search size={15} aria-hidden="true" />
             <input
-              aria-label="搜索画布工作流"
+              aria-label={translate('canvasWorkflowLibrary.t44')}
               value={query}
-              placeholder="搜索名称、用途或标签"
+              placeholder={translate('canvasWorkflowLibrary.t45')}
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
@@ -375,16 +378,16 @@ export function CanvasWorkflowLibraryView({
           />
           <div className="canvas-workflow-page-action-buttons">
             <Button
-              aria-label="导入画布工作流"
+              aria-label={translate('canvasWorkflowLibrary.t46')}
               size="small"
               disabled={actionBusy}
               onClick={() => importInputRef.current?.click()}
             >
-              <Icons.Upload size={15} /> 导入
+              <Icons.Upload size={15} /> {translate('canvasWorkflowLibrary.t62')}
             </Button>
-            <Button size="small" aria-label="新建画布工作流" onClick={() => setCreateOpen(true)}>
+            <Button size="small" aria-label={translate('canvasWorkflowLibrary.t47')} onClick={() => setCreateOpen(true)}>
               <Icons.Plus size={15} />
-              新建工作流
+              {translate('canvasWorkflowLibrary.t63')}
             </Button>
           </div>
         </div>
@@ -397,14 +400,14 @@ export function CanvasWorkflowLibraryView({
       )}
 
       <div className="canvas-workflow-library-layout">
-        <nav className="canvas-workflow-scope-nav" aria-label="工作流范围">
+        <nav className="canvas-workflow-scope-nav" aria-label={translate('canvasWorkflowLibrary.t48')}>
           {(
             [
-              ['all', '全部工作流', '显示全部画布工作流'],
-              ['project', '项目工作流', '只看项目工作流'],
-              ['library', '个人工作流', '只看个人工作流'],
-              ['builtin', '内置模板', '只看内置模板'],
-              ['archived', '已归档', '只看已归档工作流'],
+              ['all', translate('canvasWorkflowLibrary.t18'), translate('canvasWorkflowLibrary.t19')],
+              ['project', translate('canvasWorkflowLibrary.t1'), translate('canvasWorkflowLibrary.t20')],
+              ['library', translate('canvasWorkflowLibrary.t2'), translate('canvasWorkflowLibrary.t21')],
+              ['builtin', translate('canvasWorkflowLibrary.t3'), translate('canvasWorkflowLibrary.t22')],
+              ['archived', translate('canvasWorkflowLibrary.t23'), translate('canvasWorkflowLibrary.t24')],
             ] as const
           ).map(([value, label, ariaLabel]) => (
             <button
@@ -423,12 +426,12 @@ export function CanvasWorkflowLibraryView({
 
         <div className="canvas-workflow-list" aria-live="polite">
           {loading ? (
-            <div className="canvas-workflow-empty">正在加载画布工作流…</div>
+            <div className="canvas-workflow-empty">{translate('canvasWorkflowLibrary.t64')}</div>
           ) : visibleWorkflows.length === 0 ? (
             <div className="canvas-workflow-empty">
               <Icons.Workflow size={24} />
-              <strong>{query ? '没有匹配的画布工作流' : '这里还没有画布工作流'}</strong>
-              <span>从当前画布选区提取，或新建一个空白草稿。</span>
+              <strong>{query ? translate('canvasWorkflowLibrary.t25') : translate('canvasWorkflowLibrary.t26')}</strong>
+              <span>{translate('canvasWorkflowLibrary.t65Desc')}</span>
             </div>
           ) : (
             <>
@@ -449,16 +452,18 @@ export function CanvasWorkflowLibraryView({
                       <small>v{workflow.version}</small>
                     </span>
                     <span className="canvas-workflow-list-description">
-                      {workflow.description || '暂无说明'}
+                      {workflow.description || translate('canvasWorkflowLibrary.t27')}
                     </span>
                     <span className="canvas-workflow-list-meta">
                       {scopeLabels[workflow.scope]}
                       {workflow.projectId
-                        ? ` · ${projectById.get(workflow.projectId)?.title ?? '未知项目'}`
+                        ? ` · ${projectById.get(workflow.projectId)?.title ?? translate('canvasWorkflowLibrary.t28')}`
                         : ''}
                       {' · '}
-                      {workflow.package.contract.inputs.length} 输入 /{' '}
-                      {workflow.package.contract.outputs.length} 输出
+                      {translate('canvasWorkflowLibrary.tpl2Desc', {
+                        inputs: workflow.package.contract.inputs.length,
+                        outputs: workflow.package.contract.outputs.length,
+                      })}
                     </span>
                   </span>
                   <time dateTime={workflow.updatedAt}>{formatUpdatedAt(workflow.updatedAt)}</time>
@@ -466,16 +471,16 @@ export function CanvasWorkflowLibraryView({
               ))}
               <div className="canvas-workflow-pagination">
                 <span>
-                  已显示 {visibleWorkflows.length} / {total}
+                  {translate('canvasWorkflowLibrary.tpl3Desc', { shown: visibleWorkflows.length, total })}
                 </span>
                 {hasMore && (
                   <button
                     type="button"
-                    aria-label="加载更多画布工作流"
+                    aria-label={translate('canvasWorkflowLibrary.t49')}
                     disabled={loadingMore}
                     onClick={() => void load(visibleWorkflows.length)}
                   >
-                    {loadingMore ? '正在加载…' : '加载更多'}
+                    {loadingMore ? translate('canvasWorkflowLibrary.t29') : translate('canvasWorkflowLibrary.t30')}
                   </button>
                 )}
               </div>
@@ -483,7 +488,7 @@ export function CanvasWorkflowLibraryView({
           )}
         </div>
 
-        <aside className="canvas-workflow-detail" aria-label="工作流详情摘要">
+        <aside className="canvas-workflow-detail" aria-label={translate('canvasWorkflowLibrary.t50')}>
           {selected ? (
             <>
               <div className="canvas-workflow-detail-heading">
@@ -491,14 +496,14 @@ export function CanvasWorkflowLibraryView({
                   {scopeLabels[selected.scope]}
                 </span>
                 <h3>{selected.name}</h3>
-                <p>{selected.description || '暂无说明'}</p>
+                <p>{selected.description || translate('canvasWorkflowLibrary.t27')}</p>
                 {selected.scope !== 'builtin' && (
                   <button
                     type="button"
-                    aria-label="编辑工作流详情"
+                    aria-label={translate('canvasWorkflowLibrary.t51')}
                     onClick={() => setEditOpen((current) => !current)}
                   >
-                    <Icons.Pencil size={13} /> 编辑
+                    <Icons.Pencil size={13} /> {translate('canvasWorkflowLibrary.t66')}
                   </button>
                 )}
               </div>
@@ -506,15 +511,15 @@ export function CanvasWorkflowLibraryView({
               {editOpen && (
                 <div className="canvas-workflow-detail-edit">
                   <label>
-                    名称
+                    {translate('canvasWorkflowLibrary.t67')}
                     <input
-                      aria-label="编辑工作流名称"
+                      aria-label={translate('canvasWorkflowLibrary.t52')}
                       value={editName}
                       onChange={(event) => setEditName(event.target.value)}
                     />
                   </label>
                   <label>
-                    说明
+                    {translate('canvasWorkflowLibrary.t68')}
                     <textarea
                       rows={3}
                       value={editDescription}
@@ -523,11 +528,11 @@ export function CanvasWorkflowLibraryView({
                   </label>
                   <button
                     type="button"
-                    aria-label="保存工作流详情"
+                    aria-label={translate('canvasWorkflowLibrary.t53')}
                     disabled={actionBusy || !editName.trim()}
                     onClick={() => void saveSelectedDetails()}
                   >
-                    <Icons.Check size={13} /> 保存
+                    <Icons.Check size={13} /> {translate('canvasWorkflowLibrary.t69')}
                   </button>
                 </div>
               )}
@@ -535,13 +540,13 @@ export function CanvasWorkflowLibraryView({
               <div
                 className="canvas-workflow-detail-tabs"
                 role="tablist"
-                aria-label="工作流详情视图"
+                aria-label={translate('canvasWorkflowLibrary.t54')}
               >
                 {(
                   [
-                    ['overview', '概览'],
-                    ['versions', `版本 ${versions.length}`],
-                    ['runs', `运行 ${runs.length}`],
+                    ['overview', translate('canvasWorkflowLibrary.t31')],
+                    ['versions', translate('canvasWorkflowLibrary.tpl4Desc', { count: versions.length })],
+                    ['runs', translate('canvasWorkflowLibrary.tpl5Desc', { count: runs.length })],
                   ] as const
                 ).map(([value, label]) => (
                   <button
@@ -560,7 +565,7 @@ export function CanvasWorkflowLibraryView({
                 <>
                   <div className="canvas-workflow-contract">
                     <section>
-                      <h4>输入</h4>
+                      <h4>{translate('canvasWorkflowLibrary.t70')}</h4>
                       {selected.package.contract.inputs.length > 0 ? (
                         selected.package.contract.inputs.map((input) => (
                           <div key={input.id}>
@@ -569,11 +574,11 @@ export function CanvasWorkflowLibraryView({
                           </div>
                         ))
                       ) : (
-                        <p>尚未定义输入</p>
+                        <p>{translate('canvasWorkflowLibrary.t71')}</p>
                       )}
                     </section>
                     <section>
-                      <h4>输出</h4>
+                      <h4>{translate('canvasWorkflowLibrary.t72')}</h4>
                       {selected.package.contract.outputs.length > 0 ? (
                         selected.package.contract.outputs.map((output) => (
                           <div key={output.id}>
@@ -582,28 +587,28 @@ export function CanvasWorkflowLibraryView({
                           </div>
                         ))
                       ) : (
-                        <p>尚未定义输出</p>
+                        <p>{translate('canvasWorkflowLibrary.t73')}</p>
                       )}
                     </section>
                   </div>
 
                   <dl className="canvas-workflow-facts">
                     <div>
-                      <dt>节点</dt>
+                      <dt>{translate('canvasWorkflowLibrary.t10')}</dt>
                       <dd>{selected.package.graph.nodes.length}</dd>
                     </div>
                     <div>
-                      <dt>版本</dt>
+                      <dt>{translate('canvasWorkflowLibrary.t74')}</dt>
                       <dd>v{selected.version}</dd>
                     </div>
                     <div>
-                      <dt>状态</dt>
+                      <dt>{translate('canvasWorkflowLibrary.t75')}</dt>
                       <dd>
                         {selected.status === 'archived'
-                          ? '已归档'
+                          ? translate('canvasWorkflowLibrary.t23')
                           : selected.status === 'published'
-                            ? '已发布'
-                            : '草稿'}
+                            ? translate('canvasWorkflowLibrary.t32')
+                            : translate('canvasWorkflowLibrary.t33')}
                       </dd>
                     </div>
                   </dl>
@@ -612,17 +617,17 @@ export function CanvasWorkflowLibraryView({
                     <button
                       type="button"
                       className="canvas-workflow-publish-button"
-                      aria-label="发布画布工作流"
+                      aria-label={translate('canvasWorkflowLibrary.t55')}
                       disabled={actionBusy || selected.package.graph.nodes.length === 0}
                       onClick={() => void publishSelected()}
                     >
                       <Icons.Upload size={14} />
-                      {selected.status === 'published' ? '重新发布当前版本' : '发布当前版本'}
+                      {selected.status === 'published' ? translate('canvasWorkflowLibrary.t34') : translate('canvasWorkflowLibrary.t35')}
                     </button>
                   )}
 
                   <div className="canvas-workflow-project-target">
-                    <label htmlFor="canvas-workflow-target-project">使用到项目</label>
+                    <label htmlFor="canvas-workflow-target-project">{translate('canvasWorkflowLibrary.t76')}</label>
                     <select
                       id="canvas-workflow-target-project"
                       value={targetProjectId}
@@ -641,25 +646,25 @@ export function CanvasWorkflowLibraryView({
                     >
                       <Icons.ArrowRight size={15} />
                       {selected.scope === 'project' && selected.projectId === targetProjectId
-                        ? '打开项目'
-                        : '添加到项目'}
+                        ? translate('canvasWorkflowLibrary.t36')
+                        : translate('canvasWorkflowLibrary.t37')}
                     </button>
                   </div>
 
                   <button
                     type="button"
                     className="canvas-workflow-export-button"
-                    aria-label="导出画布工作流"
+                    aria-label={translate('canvasWorkflowLibrary.t56')}
                     onClick={exportSelected}
                   >
-                    <Icons.Download size={14} /> 导出 JSON
+                    <Icons.Download size={14} /> {translate('canvasWorkflowLibrary.t77')}
                   </button>
 
                   {selected.scope !== 'builtin' && (
                     <div className="canvas-workflow-secondary-actions">
                       <button type="button" onClick={() => void archiveSelected()}>
                         <Icons.Archive size={14} />
-                        {selected.status === 'archived' ? '恢复草稿' : '归档'}
+                        {selected.status === 'archived' ? translate('canvasWorkflowLibrary.t38') : translate('canvasWorkflowLibrary.t39')}
                       </button>
                       <button
                         type="button"
@@ -667,7 +672,7 @@ export function CanvasWorkflowLibraryView({
                         onClick={() => void deleteSelected()}
                       >
                         <Icons.Trash size={14} />
-                        删除
+                        {translate('canvasWorkflowLibrary.t78')}
                       </button>
                     </div>
                   )}
@@ -677,9 +682,9 @@ export function CanvasWorkflowLibraryView({
               {detailTab === 'versions' && (
                 <div className="canvas-workflow-history-list">
                   {detailLoading ? (
-                    <p>正在加载版本…</p>
+                    <p>{translate('canvasWorkflowLibrary.t79')}</p>
                   ) : versions.length === 0 ? (
-                    <p>暂无版本快照</p>
+                    <p>{translate('canvasWorkflowLibrary.t80')}</p>
                   ) : (
                     versions.map((version) => (
                       <div key={version.version}>
@@ -687,7 +692,7 @@ export function CanvasWorkflowLibraryView({
                           v{version.version} · {version.name}
                         </strong>
                         <span>
-                          {version.package.graph.nodes.length} 节点 ·{' '}
+                          {translate('canvasWorkflowLibrary.tpl6Desc', { count: version.package.graph.nodes.length })}
                           {formatUpdatedAt(version.createdAt)}
                         </span>
                       </div>
@@ -699,9 +704,9 @@ export function CanvasWorkflowLibraryView({
               {detailTab === 'runs' && (
                 <div className="canvas-workflow-history-list">
                   {detailLoading ? (
-                    <p>正在加载运行记录…</p>
+                    <p>{translate('canvasWorkflowLibrary.t81')}</p>
                   ) : runs.length === 0 ? (
-                    <p>暂无运行记录</p>
+                    <p>{translate('canvasWorkflowLibrary.t82')}</p>
                   ) : (
                     runs.map((run) => (
                       <div key={run.id}>
@@ -710,7 +715,7 @@ export function CanvasWorkflowLibraryView({
                         </strong>
                         <span>
                           {run.steps.filter((step) => step.status === 'completed').length}/
-                          {run.steps.length} 步骤 · {formatUpdatedAt(run.createdAt)}
+                          {translate('canvasWorkflowLibrary.tpl7Desc', { count: run.steps.length, time: formatUpdatedAt(run.createdAt) })}
                         </span>
                       </div>
                     ))
@@ -719,7 +724,7 @@ export function CanvasWorkflowLibraryView({
               )}
             </>
           ) : (
-            <div className="canvas-workflow-detail-placeholder">选择一个工作流查看契约和依赖</div>
+            <div className="canvas-workflow-detail-placeholder">{translate('canvasWorkflowLibrary.t83Desc')}</div>
           )}
         </aside>
       </div>
@@ -735,11 +740,11 @@ export function CanvasWorkflowLibraryView({
             <div className="canvas-workflow-modal-header">
               <div>
                 <span>CANVAS WORKFLOW</span>
-                <h3 id="canvas-workflow-create-title">新建画布工作流</h3>
+                <h3 id="canvas-workflow-create-title">{translate('canvasWorkflowLibrary.t47')}</h3>
               </div>
               <button
                 type="button"
-                aria-label="关闭新建工作流对话框"
+                aria-label={translate('canvasWorkflowLibrary.t57')}
                 onClick={() => setCreateOpen(false)}
               >
                 <Icons.X size={16} />
@@ -747,16 +752,16 @@ export function CanvasWorkflowLibraryView({
             </div>
             <div className="canvas-workflow-modal-body">
               <label>
-                工作流名称
+                {translate('canvasWorkflowLibrary.t58')}
                 <input
-                  aria-label="工作流名称"
+                  aria-label={translate('canvasWorkflowLibrary.t58')}
                   autoFocus
                   value={createName}
                   onChange={(event) => setCreateName(event.target.value)}
                 />
               </label>
               <label>
-                说明
+                {translate('canvasWorkflowLibrary.t68')}
                 <textarea
                   value={createDescription}
                   rows={3}
@@ -764,7 +769,7 @@ export function CanvasWorkflowLibraryView({
                 />
               </label>
               <fieldset>
-                <legend>保存范围</legend>
+                <legend>{translate('canvasWorkflowLibrary.t84')}</legend>
                 <label>
                   <input
                     type="radio"
@@ -772,7 +777,7 @@ export function CanvasWorkflowLibraryView({
                     checked={createScope === 'library'}
                     onChange={() => setCreateScope('library')}
                   />
-                  个人工作流
+                  {translate('canvasWorkflowLibrary.t2')}
                 </label>
                 <label>
                   <input
@@ -781,17 +786,17 @@ export function CanvasWorkflowLibraryView({
                     checked={createScope === 'project'}
                     onChange={() => setCreateScope('project')}
                   />
-                  项目工作流
+                  {translate('canvasWorkflowLibrary.t1')}
                 </label>
               </fieldset>
               {createScope === 'project' && (
                 <label>
-                  所属项目
+                  {translate('canvasWorkflowLibrary.t85')}
                   <select
                     value={createProjectId}
                     onChange={(event) => setCreateProjectId(event.target.value)}
                   >
-                    <option value="">选择项目</option>
+                    <option value="">{translate('canvasWorkflowLibrary.t86')}</option>
                     {projects.map((project) => (
                       <option key={project.id} value={project.id}>
                         {project.title}
@@ -803,18 +808,18 @@ export function CanvasWorkflowLibraryView({
             </div>
             <div className="canvas-workflow-modal-footer">
               <button type="button" onClick={() => setCreateOpen(false)}>
-                取消
+                {translate('canvasWorkflowLibrary.t87')}
               </button>
               <button
                 type="button"
                 className="canvas-workflow-primary-button"
-                aria-label="创建工作流草稿"
+                aria-label={translate('canvasWorkflowLibrary.t59')}
                 disabled={
                   saving || !createName.trim() || (createScope === 'project' && !createProjectId)
                 }
                 onClick={() => void createWorkflow()}
               >
-                {saving ? '创建中…' : '创建草稿'}
+                {saving ? translate('canvasWorkflowLibrary.t40') : translate('canvasWorkflowLibrary.t41')}
               </button>
             </div>
           </div>

@@ -80,10 +80,10 @@ function CanvasProjectSidebarListComponent() {
         await canvasApi.setProjectPinned(projectId, !pinned)
         await refresh()
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '更新项目置顶状态失败')
+        message.error(error instanceof Error ? error.message : tr('canvasSidebar.pinFailed'))
       }
     },
-    [refresh],
+    [refresh, tr],
   )
 
   const handleArchive = useCallback(
@@ -92,37 +92,45 @@ function CanvasProjectSidebarListComponent() {
         await canvasApi.updateProject(projectId, { status: archived ? 'active' : 'archived' })
         await refresh()
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '更新项目归档状态失败')
+        message.error(error instanceof Error ? error.message : tr('canvasSidebar.archiveFailed'))
       }
     },
-    [refresh],
+    [refresh, tr],
   )
 
-  const handleOpenFolder = useCallback(async (projectId: string) => {
-    try {
-      const result = await canvasApi.openProjectFolder(projectId)
-      if (!result.opened) message.error(result.error || '打开项目文件夹失败')
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '打开项目文件夹失败')
-    }
-  }, [])
+  const handleOpenFolder = useCallback(
+    async (projectId: string) => {
+      try {
+        const result = await canvasApi.openProjectFolder(projectId)
+        if (!result.opened) message.error(result.error || tr('canvasSidebar.openFolderFailed'))
+      } catch (error) {
+        message.error(
+          error instanceof Error ? error.message : tr('canvasSidebar.openFolderFailed'),
+        )
+      }
+    },
+    [tr],
+  )
 
-  const handleExport = useCallback(async (projectId: string) => {
-    try {
-      const result = await canvasApi.exportProjectPackage(projectId)
-      if (result.exported) message.success('Canvas 项目包已导出')
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '导出 Canvas 项目失败')
-    }
-  }, [])
+  const handleExport = useCallback(
+    async (projectId: string) => {
+      try {
+        const result = await canvasApi.exportProjectPackage(projectId)
+        if (result.exported) message.success(tr('canvasSidebar.exported'))
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : tr('canvasSidebar.exportFailed'))
+      }
+    },
+    [tr],
+  )
 
   const handleDelete = useCallback(
     (projectId: string) => {
       Modal.confirm({
-        title: '删除 Canvas 项目？',
-        content: '项目会被标记为删除。',
-        okText: '删除',
-        cancelText: '取消',
+        title: tr('canvasSidebar.deleteTitle'),
+        content: tr('canvasSidebar.deleteDesc'),
+        okText: tr('common.delete'),
+        cancelText: tr('common.cancel'),
         okButtonProps: { danger: true },
         onOk: async () => {
           try {
@@ -130,13 +138,15 @@ function CanvasProjectSidebarListComponent() {
             if (selectedProjectId === projectId) selectProject(null)
             await refresh()
           } catch (error) {
-            message.error(error instanceof Error ? error.message : '删除 Canvas 项目失败')
+            message.error(
+              error instanceof Error ? error.message : tr('canvasSidebar.deleteFailed'),
+            )
             throw error
           }
         },
       })
     },
-    [refresh, selectProject, selectedProjectId],
+    [refresh, selectProject, selectedProjectId, tr],
   )
 
   if (loading) {
@@ -178,45 +188,48 @@ function CanvasProjectSidebarListComponent() {
               {
                 key: 'open',
                 icon: <Icons.Canvas size={14} />,
-                label: '打开',
+                label: tr('canvasSidebar.open'),
                 disabled: openingId != null,
                 onClick: () => void handleOpen(project.id),
               },
               {
                 key: 'edit',
                 icon: <Icons.Edit size={14} />,
-                label: '编辑',
+                label: tr('canvasSidebar.edit'),
                 onClick: () => handleEdit(project.id),
               },
               {
                 key: 'pin',
                 icon: project.pinned ? <PinOff size={14} /> : <Pin size={14} />,
-                label: project.pinned ? '取消置顶' : '置顶',
+                label: project.pinned ? tr('canvasSidebar.unpin') : tr('canvasSidebar.pin'),
                 onClick: () => void handleTogglePin(project.id, Boolean(project.pinned)),
               },
               {
                 key: 'open-folder',
                 icon: <Icons.Folder size={14} />,
-                label: '打开文件夹',
+                label: tr('canvasSidebar.openFolder'),
                 onClick: () => void handleOpenFolder(project.id),
               },
               {
                 key: 'export',
                 icon: <Icons.Download size={14} />,
-                label: '导出',
+                label: tr('canvasSidebar.export'),
                 onClick: () => void handleExport(project.id),
               },
               {
                 key: 'archive',
                 icon: <Icons.Archive size={14} />,
-                label: project.status === 'archived' ? '恢复' : '归档',
+                label:
+                  project.status === 'archived'
+                    ? tr('canvasSidebar.restore')
+                    : tr('canvasSidebar.archive'),
                 onClick: () => void handleArchive(project.id, project.status === 'archived'),
               },
               { type: 'divider' as const },
               {
                 key: 'delete',
                 icon: <Icons.Trash size={14} />,
-                label: '删除',
+                label: tr('canvasSidebar.delete'),
                 danger: true,
                 onClick: () => handleDelete(project.id),
               },
@@ -252,8 +265,12 @@ function CanvasProjectSidebarListComponent() {
               </span>
               {(project.taskCount > 0 || project.nodeCount > 0) && (
                 <span className="canvas-sidebar-item-meta">
-                  {project.nodeCount > 0 && <span>{project.nodeCount} 节点</span>}
-                  {project.taskCount > 0 && <span>{project.taskCount} 任务</span>}
+                  {project.nodeCount > 0 && (
+                    <span>{tr('canvasSidebar.nodeCount', { count: project.nodeCount })}</span>
+                  )}
+                  {project.taskCount > 0 && (
+                    <span>{tr('canvasSidebar.taskCount', { count: project.taskCount })}</span>
+                  )}
                 </span>
               )}
             </span>

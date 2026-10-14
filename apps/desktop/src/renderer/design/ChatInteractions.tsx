@@ -330,6 +330,7 @@ export function Checkpoint({
   checkpointId: string
   onRestore?: () => void
 }) {
+  const { t } = useI18n()
   const displayId = checkpointId.length > 10 ? checkpointId.slice(-8) : checkpointId
   return (
     <div className="checkpoint">
@@ -342,7 +343,7 @@ export function Checkpoint({
           <button
             type="button"
             className="icon-btn"
-            title="应用此 checkpoint"
+            title={t('chat.applyCheckpoint')}
             onClick={onRestore}
             disabled={onRestore == null}
           >
@@ -726,7 +727,7 @@ function firstTaskLine(task: string): string {
       .find(Boolean) ?? ''
   return line
     .replace(/^[-*#>\s]+/, '')
-    .replace(/^任务[：:]\s*/, '')
+    .replace(/^(任务|Task)[：:]\s*/i, '') // i18n-exempt-line: 匹配对话文本前缀，非 UI 展示文案
     .trim()
 }
 

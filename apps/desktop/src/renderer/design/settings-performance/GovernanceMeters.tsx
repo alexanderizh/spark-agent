@@ -8,12 +8,14 @@
  * （warning 限流 / critical 暂停 / emergency 熔断）。
  */
 
+import { useMemo } from 'react'
 import type {
   DispatchGovernorDiagnosticsSnapshot,
   DispatchGovernorGetDiagnosticsResponse,
   ResourceMonitorSummarySnapshot,
 } from '@spark/protocol'
-import { PRESSURE_LEVEL_META } from './performance-format'
+import { useI18n, type TranslateFn } from '../i18n'
+import { getPressureLevelMeta } from './performance-format'
 
 interface GovernanceMetersProps {
   diagnostics: DispatchGovernorGetDiagnosticsResponse | null
@@ -31,53 +33,44 @@ interface MeterRow {
 
 function statePillForLevel(
   level: ResourceMonitorSummarySnapshot['pressure']['level'],
+  t: TranslateFn,
 ): { text: string; cls: string } | null {
   switch (level) {
     case 'warning':
-      return { text: '限流中', cls: 'warn' }
+      return { text: t('perf.governance.pillWarning'), cls: 'warn' }
     case 'critical':
-      return { text: '已暂停派发', cls: 'danger' }
+      return { text: t('perf.governance.pillCritical'), cls: 'danger' }
     case 'emergency':
-      return { text: '已熔断', cls: 'danger' }
+      return { text: t('perf.governance.pillEmergency'), cls: 'danger' }
     default:
       return null
   }
 }
 
 /**
- * 底部口径行全文（悬停说明）。
- * 「运行中会话」取自 turnRegistry 的活动执行器 + starting 过渡态采样；
- * 「宿主封顶」= hostInflightCap，超出部分不再计入主池容量（主池容量 =
- * 全局并发预算 − 计入的宿主占用，再取成员侧硬顶 maxMemberDispatches）。
- */
-const HOST_USAGE_HINT =
-  '运行中会话：正在执行本轮任务的会话数（含即将开始的过渡态）。' +
-  '宿主封顶：宿主会话占用计入主池的上限，超出部分不再占用主池；' +
-  '主池容量 = 全局并发预算 − 计入的宿主占用，再取成员侧硬顶。' +
-  '数据为诊断快照：打开页面、每 30 秒、压力级别变更时刷新。'
-
-/**
  * 底部口径行文本：区分「真实运行中会话数」与「计入主池预算的宿主占用」。
  * 二者在未触顶时相等；触顶（宿主封顶或预算 − 成员下限预留）时如实标出差额，
  * 避免把被截断后的占用误读为会话数（旧文案称「宿主在途」且只显示截断值）。
  */
-function hostUsageText(snapshot: DispatchGovernorDiagnosticsSnapshot): string {
+function hostUsageText(snapshot: DispatchGovernorDiagnosticsSnapshot, t: TranslateFn): string {
   const inflight = snapshot.hostInflightCount
   const effective = snapshot.hostEffectiveCount
   const cap = snapshot.config.hostInflightCap
   const budget = snapshot.config.totalAgentProcessBudget
   const head =
     inflight > effective
-      ? `运行中会话 ${inflight} · 计入并发预算 ${effective}（宿主封顶 ${cap}）`
-      : `运行中会话 ${inflight}（全部计入并发预算）`
-  return `${head} · 全局并发预算 ${budget}`
+      ? t('perf.governance.hostUsageCapped', { inflight, effective, cap })
+      : t('perf.governance.hostUsage', { inflight })
+  return `${head} · ${t('perf.governance.budgetSuffix', { budget })}`
 }
 
 export function GovernanceMeters({ diagnostics, summary, loading }: GovernanceMetersProps) {
+  const { t } = useI18n()
   const snapshot = diagnostics?.diagnostics ?? null
   const level = summary?.pressure.level ?? 'nominal'
-  const pill = statePillForLevel(level)
-  const levelMeta = PRESSURE_LEVEL_META[level]
+  const pill = statePillForLevel(level, t)
+  const levels = useMemo(() => getPressureLevelMeta(t), [t])
+  const levelMeta = levels[level]
 
   const rows: MeterRow[] =
     snapshot == null
@@ -85,14 +78,14 @@ export function GovernanceMeters({ diagnostics, summary, loading }: GovernanceMe
       : [
           {
             key: 'main',
-            name: '成员派发（主池）',
+            name: t('perf.governance.nameMain'),
             inUse: snapshot.mainInUse,
             capacity: snapshot.mainCapacity,
             waiting: snapshot.mainWaiting,
           },
           {
             key: 'nested',
-            name: '嵌套派发（防死锁池）',
+            name: t('perf.governance.nameNested'),
             inUse: snapshot.nestedInUse,
             capacity: snapshot.nestedSlots,
             waiting: snapshot.nestedWaiting,
@@ -121,7 +114,7 @@ export function GovernanceMeters({ diagnostics, summary, loading }: GovernanceMe
   if (snapshot == null) {
     return (
       <div className="card">
-        <div className="ev-empty">暂无闸门运行数据（将在首次任务派发后显示）</div>
+        <div className="ev-empty">{t('perf.governance.emptyDesc')}</div>
       </div>
     )
   }
@@ -129,7 +122,7 @@ export function GovernanceMeters({ diagnostics, summary, loading }: GovernanceMe
   if (!snapshot.enabled) {
     return (
       <div className="card">
-        <div className="ev-empty">并发闸门已停用（governance.enabled=false）</div>
+        <div className="ev-empty">{t('perf.governance.disabledDesc')}</div>
       </div>
     )
   }
@@ -146,16 +139,16 @@ export function GovernanceMeters({ diagnostics, summary, loading }: GovernanceMe
               <span className={`m-fill ${degraded ? 'paused' : ''}`} style={{ width: `${pct}%` }} />
             </span>
             <span className="m-nums">
-              {row.inUse}/{row.capacity} 运行
+              {t('perf.governance.running', { inUse: row.inUse, capacity: row.capacity })}
               {row.waiting > 0 ? (
                 <>
                   {' · '}
-                  <b>{row.waiting}</b> 排队
+                  <b>{row.waiting}</b> {t('perf.governance.queued', { count: row.waiting })}
                 </>
               ) : (
                 <>
                   {' · '}
-                  <span className="q">0 排队</span>
+                  <span className="q">{t('perf.governance.queued', { count: 0 })}</span>
                 </>
               )}
             </span>
@@ -163,8 +156,8 @@ export function GovernanceMeters({ diagnostics, summary, loading }: GovernanceMe
         )
       })}
       <div className="meter-row" style={{ paddingTop: 8 }}>
-        <span className="m-sub" style={{ flex: 1 }} title={HOST_USAGE_HINT}>
-          {hostUsageText(snapshot)} · 状态
+        <span className="m-sub" style={{ flex: 1 }} title={t('perf.governance.hostUsageHintLongDesc')}>
+          {hostUsageText(snapshot, t)} · {t('perf.governance.statusLabel')}
         </span>
         {pill != null ? (
           <span className={`state-pill ${pill.cls === 'warn' ? 'warn' : 'danger'}`}>
@@ -178,7 +171,7 @@ export function GovernanceMeters({ diagnostics, summary, loading }: GovernanceMe
               background: 'color-mix(in srgb, currentColor 11%, transparent)',
             }}
           >
-            正常调度
+            {t('perf.governance.normalScheduling')}
           </span>
         )}
       </div>

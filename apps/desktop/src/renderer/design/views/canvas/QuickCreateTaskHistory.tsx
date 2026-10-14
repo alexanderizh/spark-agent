@@ -9,6 +9,7 @@ import {
 import { Button, Modal, Tooltip, message } from 'antd'
 import type { CanvasMediaTaskAsset } from '@spark/protocol'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { ContextMenu } from '../../components/ContextMenu'
 import { useContextMenu, type ContextMenuEntry } from '../../components/contextMenuModel'
 import { MediaArtifactViewer } from '../../components/MediaArtifactViewer'
@@ -68,12 +69,12 @@ type HistorySurface = 'card' | 'row' | 'detail'
 
 type HistoryMenuTarget = QuickCreateMenuTarget & { surface: HistorySurface }
 
-async function copyTaskPrompt(prompt: string, doneMessage = '提示词已复制') {
+async function copyTaskPrompt(prompt: string, doneMessage = translate('quickCreateTaskHistory.t1')) {
   try {
     await copyTextToClipboard(prompt)
     message.success(doneMessage)
   } catch {
-    message.error('复制提示词失败')
+    message.error(translate('quickCreateTaskHistory.t2'))
   }
 }
 
@@ -90,9 +91,13 @@ function outputFileExtension(asset: CanvasMediaTaskAsset): string {
 async function copyTaskImage(url: string) {
   try {
     await copyMediaImage(url)
-    message.success('已复制到剪贴板')
+    message.success(translate('quickCreateTaskHistory.t3'))
   } catch (error) {
-    message.error(`复制失败：${error instanceof Error ? error.message : String(error)}`)
+    message.error(
+      translate('quickCreateTaskHistory.tpl1Desc', {
+        reason: error instanceof Error ? error.message : String(error),
+      }),
+    )
   }
 }
 
@@ -102,10 +107,16 @@ async function saveTaskOutput(asset: CanvasMediaTaskAsset) {
       filePath: asset.filePath,
       fileName: outputFileName(asset, `quick-create-output.${outputFileExtension(asset)}`),
     })
-    if (result.saved && result.savedPath) message.success(`已保存到 ${result.savedPath}`)
-    else if (result.error) message.error(`保存失败：${result.error}`)
+    if (result.saved && result.savedPath)
+      message.success(translate('quickCreateTaskHistory.tpl2Desc', { path: result.savedPath }))
+    else if (result.error)
+      message.error(translate('quickCreateTaskHistory.tpl3Desc', { reason: result.error }))
   } catch (error) {
-    message.error(`保存失败：${error instanceof Error ? error.message : String(error)}`)
+    message.error(
+      translate('quickCreateTaskHistory.tpl3Desc', {
+        reason: error instanceof Error ? error.message : String(error),
+      }),
+    )
   }
 }
 
@@ -113,10 +124,12 @@ async function revealTaskOutput(asset: CanvasMediaTaskAsset) {
   if (!asset.filePath) return
   try {
     const result = await revealMediaArtifact(asset.filePath)
-    if (!result.revealed) message.error(result.error ?? '打开产物所在文件夹失败')
+    if (!result.revealed) message.error(result.error ?? translate('quickCreateTaskHistory.t4'))
   } catch (error) {
     message.error(
-      `打开产物所在文件夹失败：${error instanceof Error ? error.message : String(error)}`,
+      translate('quickCreateTaskHistory.tpl5Desc', {
+        reason: error instanceof Error ? error.message : String(error),
+      }),
     )
   }
 }
@@ -128,8 +141,8 @@ async function revealTaskOutput(asset: CanvasMediaTaskAsset) {
  */
 function DetailPrompt({
   prompt,
-  label = '提示词',
-  doneMessage = '提示词已复制',
+  label = translate('quickCreateTaskHistory.t5'),
+  doneMessage = translate('quickCreateTaskHistory.t1'),
   clamp = false,
   clampLines = 3,
   expandedMaxHeight,
@@ -163,8 +176,8 @@ function DetailPrompt({
         {prompt.trim() && (
           <button
             type="button"
-            aria-label={`复制${label}`}
-            title={`复制${label}`}
+            aria-label={translate('quickCreateTaskHistory.tpl6', { label })}
+            title={translate('quickCreateTaskHistory.tpl6', { label })}
             onClick={() => void copyTaskPrompt(prompt, doneMessage)}
           >
             <Icons.Copy size={12} />
@@ -182,7 +195,7 @@ function DetailPrompt({
               : undefined
         }
       >
-        {prompt || '图片反推任务'}
+        {prompt || translate('quickCreateTaskHistory.t6')}
       </p>
       {clamp && (expanded || overflowed) && (
         <button
@@ -191,7 +204,7 @@ function DetailPrompt({
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? '收起' : '展开'}
+          {expanded ? translate('quickCreateTaskHistory.t7') : translate('quickCreateTaskHistory.t8')}
         </button>
       )}
     </div>
@@ -220,6 +233,8 @@ export function QuickCreateTaskHistory({
   onGenerateImage,
   onEditImage,
 }: HistoryProps) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const [filter, setFilter] = useState<QuickCreateMode | 'all'>(() => {
     // 未对外开放的模式（如暂未放开的音乐）没有筛选页签，历史偏好里残留的筛选值同样要收窄，
     // 否则会出现「筛选项看不见但记录被过滤掉」的空列表。
@@ -351,27 +366,27 @@ export function QuickCreateTaskHistory({
     // 反推任务没有输入提示词，可复制的提示词是它的产物（task.text）
     const copyTarget = copyableTaskPrompt(task)
     return (
-      <div className="quick-create-list-actions" aria-label="任务操作">
+      <div className="quick-create-list-actions" aria-label={translate('quickCreateTaskHistory.t23')}>
         {canGenerateImage(task) &&
-          renderListAction('生图', <Icons.ImagePlus size={14} />, () => onGenerateImage(task))}
+          renderListAction(translate('quickCreateTaskHistory.t9'), <Icons.ImagePlus size={14} />, () => onGenerateImage(task))}
         {copyTarget &&
           renderListAction(copyTarget.label, <Icons.Copy size={14} />, () => {
             void copyTaskPrompt(copyTarget.text, copyTarget.doneMessage)
           })}
         {task.status !== 'running' &&
           renderListAction(
-            task.status === 'succeeded' ? '重新生成' : '重试',
+            task.status === 'succeeded' ? translate('quickCreateTaskHistory.t10') : translate('quickCreateTaskHistory.t11'),
             <Icons.RotateCcw size={14} />,
             () => onRetry(task),
           )}
-        {renderListAction('复用配置', <Icons.Repeat size={14} />, () => onReuse(task))}
+        {renderListAction(translate('quickCreateTaskHistory.t12'), <Icons.Repeat size={14} />, () => onReuse(task))}
         {task.prompt.trim() &&
-          renderListAction('存入提示词库', <Icons.Book size={14} />, () => onSavePrompt(task))}
+          renderListAction(translate('quickCreateTaskHistory.t13'), <Icons.Book size={14} />, () => onSavePrompt(task))}
         {output?.filePath &&
-          renderListAction('打开产物', <Icons.FolderOpen size={14} />, () => {
+          renderListAction(translate('quickCreateTaskHistory.t14'), <Icons.FolderOpen size={14} />, () => {
             void onOpenOutput(output)
           })}
-        {renderListAction('移除记录', <Icons.Trash size={14} />, () => onDelete(task.id), {
+        {renderListAction(translate('quickCreateTaskHistory.t15'), <Icons.Trash size={14} />, () => onDelete(task.id), {
           danger: true,
         })}
       </div>
@@ -387,12 +402,12 @@ export function QuickCreateTaskHistory({
           icon={<Icons.ImagePlus size={13} />}
           onClick={() => onGenerateImage(task)}
         >
-          生图
+          {translate('quickCreateTaskHistory.t9')}
         </Button>
       )}
       {task.status === 'running' && task.runtimeTaskId && (
         <Button size="small" type="text" onClick={() => void onCancel(task)}>
-          取消任务
+          {translate('quickCreateTaskHistory.t36')}
         </Button>
       )}
       {task.status !== 'running' && (
@@ -402,11 +417,11 @@ export function QuickCreateTaskHistory({
           icon={<Icons.RotateCcw size={13} />}
           onClick={() => onRetry(task)}
         >
-          {task.status === 'succeeded' ? '重新生成' : '重试'}
+          {task.status === 'succeeded' ? translate('quickCreateTaskHistory.t10') : translate('quickCreateTaskHistory.t11')}
         </Button>
       )}
       <Button size="small" type="text" onClick={() => onReuse(task)}>
-        复用配置
+        {translate('quickCreateTaskHistory.t12')}
       </Button>
       {task.prompt.trim() && (
         <Button
@@ -415,12 +430,12 @@ export function QuickCreateTaskHistory({
           icon={<Icons.Book size={13} />}
           onClick={() => onSavePrompt(task)}
         >
-          存入提示词库
+          {translate('quickCreateTaskHistory.t13')}
         </Button>
       )}
       {output?.filePath && (
         <Button size="small" type="text" onClick={() => void onOpenOutput(output)}>
-          打开产物
+          {translate('quickCreateTaskHistory.t14')}
         </Button>
       )}
       <Button
@@ -430,7 +445,7 @@ export function QuickCreateTaskHistory({
         className="quick-create-task-remove"
         onClick={() => onDelete(task.id)}
       >
-        移除记录
+        {translate('quickCreateTaskHistory.t15')}
       </Button>
     </div>
   )
@@ -472,7 +487,7 @@ export function QuickCreateTaskHistory({
           ? [
               {
                 key: 'viewer_edit_image',
-                label: '去图编辑',
+                label: translate('quickCreateTaskHistory.t16'),
                 icon: <Icons.ImagePlus size={14} />,
                 onClick: () => onEditImage(viewerOutput.asset),
               },
@@ -487,21 +502,25 @@ export function QuickCreateTaskHistory({
     : []
 
   return (
-    <section className="quick-create-history" aria-label="任务管理">
+    <section className="quick-create-history" aria-label={translate('quickCreateTaskHistory.t24')}>
       <div className="quick-create-history-head">
         <div className="quick-create-history-overview">
           <strong>
             {tasks.some((task) => task.status === 'running')
-              ? `${tasks.filter((task) => task.status === 'running').length} 个任务处理中`
-              : '任务队列空闲'}
+              ? translate('quickCreateTaskHistory.tpl7', {
+                  count: tasks.filter((task) => task.status === 'running').length,
+                })
+              : translate('quickCreateTaskHistory.t17')}
           </strong>
           <span>
-            {tasks.length} 条记录 · {tasks.filter((task) => task.status === 'succeeded').length} 个
-            已完成
+            {translate('quickCreateTaskHistory.tpl8', {
+              total: tasks.length,
+              done: tasks.filter((task) => task.status === 'succeeded').length,
+            })}
           </span>
         </div>
         <div className="quick-create-history-tools">
-          <div className="quick-create-history-filters" role="tablist" aria-label="记录筛选">
+          <div className="quick-create-history-filters" role="tablist" aria-label={translate('quickCreateTaskHistory.t25')}>
             <button
               type="button"
               role="tab"
@@ -509,7 +528,7 @@ export function QuickCreateTaskHistory({
               className={filter === 'all' ? 'is-active' : ''}
               onClick={() => changeFilter('all')}
             >
-              全部 <small>{tasks.length}</small>
+              {translate('quickCreateTaskHistory.t37')} <small>{tasks.length}</small>
             </button>
             {quickCreateModeItems().map((item) => (
               <button
@@ -525,13 +544,13 @@ export function QuickCreateTaskHistory({
               </button>
             ))}
           </div>
-          <div className="quick-create-view-toggle" role="radiogroup" aria-label="任务展示方式">
+          <div className="quick-create-view-toggle" role="radiogroup" aria-label={translate('quickCreateTaskHistory.t26')}>
             <button
               type="button"
               role="radio"
               aria-checked={view === 'list'}
-              aria-label="列表视图"
-              title="列表视图"
+              aria-label={translate('quickCreateTaskHistory.t27')}
+              title={translate('quickCreateTaskHistory.t27')}
               className={view === 'list' ? 'is-active' : ''}
               onClick={() => changeView('list')}
             >
@@ -541,8 +560,8 @@ export function QuickCreateTaskHistory({
               type="button"
               role="radio"
               aria-checked={view === 'grid'}
-              aria-label="卡片视图"
-              title="卡片视图"
+              aria-label={translate('quickCreateTaskHistory.t28')}
+              title={translate('quickCreateTaskHistory.t28')}
               className={view === 'grid' ? 'is-active' : ''}
               onClick={() => changeView('grid')}
             >
@@ -556,8 +575,8 @@ export function QuickCreateTaskHistory({
         cardTasks.length === 0 ? (
           <div className="quick-create-history-empty">
             <Icons.History size={20} />
-            <strong>还没有可展示的产物图片</strong>
-            <span>卡片视图只显示已生成图片的任务，可切换回列表查看全部记录。</span>
+            <strong>{translate('quickCreateTaskHistory.t38')}</strong>
+            <span>{translate('quickCreateTaskHistory.t39Desc')}</span>
           </div>
         ) : (
           <div className="quick-create-card-grid">
@@ -580,7 +599,9 @@ export function QuickCreateTaskHistory({
                   <button
                     type="button"
                     className="quick-create-card-media"
-                    aria-label={`查看详情：${titleForPrompt(task.prompt, task.mode)}`}
+                    aria-label={translate('quickCreateTaskHistory.tpl9', {
+                        title: titleForPrompt(task.prompt, task.mode),
+                      })}
                     onClick={() => setDetailTaskId(task.id)}
                   >
                     <img
@@ -600,7 +621,9 @@ export function QuickCreateTaskHistory({
                     </span>
                   )}
                   {imageCount > 1 && (
-                    <span className="quick-create-card-count">{imageCount} 图</span>
+                    <span className="quick-create-card-count">
+                      {translate('quickCreateTaskHistory.tpl10', { count: imageCount })}
+                    </span>
                   )}
                 </article>
               )
@@ -612,8 +635,8 @@ export function QuickCreateTaskHistory({
           {visibleTasks.length === 0 ? (
             <div className="quick-create-history-empty">
               <Icons.History size={20} />
-              <strong>还没有创作任务</strong>
-              <span>完成第一次生成后，任务会出现在这里。</span>
+              <strong>{translate('quickCreateTaskHistory.t40')}</strong>
+              <span>{translate('quickCreateTaskHistory.t41Desc')}</span>
             </div>
           ) : (
             visibleTasks.map((task, index) => {
@@ -657,12 +680,12 @@ export function QuickCreateTaskHistory({
                         <strong>{titleForPrompt(task.prompt, task.mode)}</strong>
                         <small>
                           {modeLabel(task.mode)} ·{' '}
-                          {task.modelName ?? task.modelId ?? '自动选择模型'} ·{' '}
+                          {task.modelName ?? task.modelId ?? translate('quickCreateTaskHistory.t18')} ·{' '}
                           {new Date(task.createdAt).toLocaleString()}
                         </small>
                       </span>
                       {firstOutput && firstOutput.asset.type === 'image' ? (
-                        <img src={firstOutput.url} alt="生成结果预览" />
+                        <img src={firstOutput.url} alt={translate('quickCreateTaskHistory.t29')} />
                       ) : firstOutput?.asset.type === 'audio' ? (
                         <span className="quick-create-task-audio-thumb" aria-hidden="true">
                           <Icons.AudioLines size={15} />
@@ -692,9 +715,13 @@ export function QuickCreateTaskHistory({
                       )}
                       <div className="quick-create-detail-meta">
                         <span>{modeLabel(task.mode)}</span>
-                        <span>{task.modelName ?? task.modelId ?? '自动选择模型'}</span>
+                        <span>{task.modelName ?? task.modelId ?? translate('quickCreateTaskHistory.t18')}</span>
                         {task.status === 'running' && task.progress !== undefined && (
-                          <span>进度 {Math.round(task.progress)}%</span>
+                          <span>
+                      {translate('quickCreateTaskHistory.tpl11', {
+                        percent: Math.round(task.progress),
+                      })}
+                    </span>
                         )}
                       </div>
                       {taskTextOutput(task) && (
@@ -712,7 +739,7 @@ export function QuickCreateTaskHistory({
                           onClick={() => setViewer({ taskId: task.id, outputIndex: 0 })}
                         >
                           {firstOutput.asset.type === 'image' ? (
-                            <img src={firstOutput.url} alt="生成结果缩略图" />
+                            <img src={firstOutput.url} alt={translate('quickCreateTaskHistory.t30')} />
                           ) : firstOutput.asset.type === 'audio' ? (
                             <span className="quick-create-task-audio-thumb" aria-hidden="true">
                               <Icons.AudioLines size={15} />
@@ -722,10 +749,10 @@ export function QuickCreateTaskHistory({
                           )}
                           <span>
                             {firstOutput.asset.type === 'video'
-                              ? '查看视频'
+                              ? translate('quickCreateTaskHistory.t19')
                               : firstOutput.asset.type === 'audio'
-                                ? '播放语音'
-                                : '查看大图'}
+                                ? translate('quickCreateTaskHistory.t20')
+                                : translate('quickCreateTaskHistory.t21')}
                           </span>
                         </button>
                       )}
@@ -768,16 +795,16 @@ export function QuickCreateTaskHistory({
               <strong>{titleForPrompt(detailTask.prompt, detailTask.mode)}</strong>
               <small>
                 {modeLabel(detailTask.mode)} ·{' '}
-                {detailTask.modelName ?? detailTask.modelId ?? '自动选择模型'} ·{' '}
+                {detailTask.modelName ?? detailTask.modelId ?? translate('quickCreateTaskHistory.t18')} ·{' '}
                 {new Date(detailTask.createdAt).toLocaleString()}
               </small>
             </div>
             {detailCanPage && (
-              <div className="quick-create-detail-pager" role="group" aria-label="切换任务">
+              <div className="quick-create-detail-pager" role="group" aria-label={translate('quickCreateTaskHistory.t31')}>
                 <button
                   type="button"
-                  aria-label="上一个任务"
-                  title="上一个任务（←）"
+                  aria-label={translate('quickCreateTaskHistory.t32')}
+                  title={translate('quickCreateTaskHistory.t33')}
                   onClick={() => stepDetailTask(-1)}
                 >
                   <Icons.ChevronLeft size={14} />
@@ -787,8 +814,8 @@ export function QuickCreateTaskHistory({
                 </span>
                 <button
                   type="button"
-                  aria-label="下一个任务"
-                  title="下一个任务（→）"
+                  aria-label={translate('quickCreateTaskHistory.t34')}
+                  title={translate('quickCreateTaskHistory.t35')}
                   onClick={() => stepDetailTask(1)}
                 >
                   <Icons.ChevronRight size={14} />
@@ -799,7 +826,7 @@ export function QuickCreateTaskHistory({
               <button
                 type="button"
                 className="quick-create-detail-media"
-                aria-label={detailOutputs[0]?.asset.type === 'audio' ? '播放语音' : '查看大图'}
+                aria-label={detailOutputs[0]?.asset.type === 'audio' ? translate('quickCreateTaskHistory.t20') : translate('quickCreateTaskHistory.t21')}
                 onClick={() => setViewer({ taskId: detailTask.id, outputIndex: 0 })}
               >
                 {detailOutputs[0]?.asset.type === 'video' ? (
@@ -809,23 +836,23 @@ export function QuickCreateTaskHistory({
                     <Icons.AudioLines size={20} />
                   </span>
                 ) : (
-                  <img src={detailOutputs[0]?.url} alt="生成结果" />
+                  <img src={detailOutputs[0]?.url} alt={translate('quickCreateTaskHistory.t22')} />
                 )}
                 {detailOutputs.length > 1 && (
                   <span className="quick-create-detail-count">
-                    点击放大 · {detailOutputs.length} 图
+                    {translate('quickCreateTaskHistory.tpl12', { count: detailOutputs.length })}
                   </span>
                 )}
               </button>
             ) : detailTask.status === 'running' ? (
               <div className="quick-create-detail-pending">
                 <Icons.Clock size={16} />
-                <span>任务处理中，完成后这里会显示产物内容。</span>
+                <span>{translate('quickCreateTaskHistory.t42Desc')}</span>
               </div>
             ) : (
               <div className="quick-create-detail-pending">
                 <Icons.Image size={16} />
-                <span>这条任务没有产物内容。</span>
+                <span>{translate('quickCreateTaskHistory.t43')}</span>
               </div>
             )}
             {/* 弹窗提示词默认 2 行折叠；展开后固定高度内部滚动，产物图区域不被长提示词挤压 */}
@@ -860,7 +887,7 @@ export function QuickCreateTaskHistory({
             <MediaArtifactViewer
               media={{
                 src: viewerOutput.url,
-                alt: viewerOutput.asset.title ?? '生成结果',
+                alt: viewerOutput.asset.title ?? translate('quickCreateTaskHistory.t22'),
                 fileName:
                   viewerOutput.asset.filePath?.split(/[\\/]/).pop() ||
                   `quick-create-output.${outputFileExtension(viewerOutput.asset)}`,
@@ -901,7 +928,7 @@ export function QuickCreateTaskHistory({
             buildMenuHandlers(menuState.target),
           )}
           onClose={taskMenu.close}
-          ariaLabel="任务操作"
+          ariaLabel={translate('quickCreateTaskHistory.t23')}
         />
       )}
     </section>

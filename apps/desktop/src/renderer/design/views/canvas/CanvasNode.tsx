@@ -21,6 +21,7 @@ import { Button, Dropdown, Tooltip } from '@lobehub/ui'
 import { Progress, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { MarkdownText } from '../chat/ChatMarkdown'
 import { canvasFlowNodeDataEqual } from './canvasStageNodeSync'
 import { canCopyNodeContent, copyNodeContentToClipboard } from './canvasClipboard'
@@ -120,15 +121,15 @@ function Stage3DMini({ data }: { data: SparkCanvasNode['data'] }) {
   return (
     <div className="canvas-node-stage3d">
       {normalizedThumb ? (
-        <img className="canvas-node-stage3d-thumb" src={normalizedThumb} alt="3D 导演台预览" />
+        <img className="canvas-node-stage3d-thumb" src={normalizedThumb} alt={translate('canvasNode.t93')} />
       ) : (
         <Icons.Box size={30} />
       )}
       <div className="canvas-node-stage3d-stats">
-        <span>角色 {actors}</span>
-        <span>道具 {props}</span>
+        <span>{translate('canvasNode.tpl2Desc', { count: actors })}</span>
+        <span>{translate('canvasNode.tpl3Desc', { count: props })}</span>
       </div>
-      <div className="canvas-node-stage3d-hint">双击进入三维编排</div>
+      <div className="canvas-node-stage3d-hint">{translate('canvasNode.t100')}</div>
     </div>
   )
 }
@@ -148,11 +149,11 @@ function VideoWorkbenchMini({ data }: { data: SparkCanvasNode['data'] }) {
     <div className="canvas-node-video-workbench">
       <div className="canvas-node-vwb-stage">
         {normalizedThumb ? (
-          <img className="canvas-node-vwb-thumb" src={normalizedThumb} alt="视频工作台预览" />
+          <img className="canvas-node-vwb-thumb" src={normalizedThumb} alt={translate('canvasNode.t94')} />
         ) : (
           <div className="canvas-node-vwb-nothumb">
             <Icons.Video size={30} />
-            <span>等待导入视频素材</span>
+            <span>{translate('canvasNode.t101')}</span>
           </div>
         )}
         <div className="canvas-node-vwb-shade" />
@@ -167,9 +168,9 @@ function VideoWorkbenchMini({ data }: { data: SparkCanvasNode['data'] }) {
       <div className="canvas-node-vwb-footer">
         <div className="canvas-node-vwb-summary">
           <span className="canvas-node-vwb-summary-dot" />
-          <span>{keyframeCount > 0 ? `${keyframeCount} 个关键帧` : '尚未提取关键帧'}</span>
+          <span>{keyframeCount > 0 ? translate('canvasNode.tpl4Desc', { count: keyframeCount }) : translate('canvasNode.t1')}</span>
         </div>
-        <span className="canvas-node-vwb-hint">双击进入工作台</span>
+        <span className="canvas-node-vwb-hint">{translate('canvasNode.t102')}</span>
       </div>
     </div>
   )
@@ -210,11 +211,11 @@ function operationNodeIcon(
 }
 
 function operationStatusLabel(status: SparkCanvasNode['data']['status']): string {
-  if (status === 'completed') return '已完成'
-  if (status === 'failed') return '失败'
-  if (status === 'cancelled') return '已取消'
-  if (status === 'running') return '运行中'
-  return '待提交'
+  if (status === 'completed') return translate('canvasNode.t2')
+  if (status === 'failed') return translate('canvasNode.t3')
+  if (status === 'cancelled') return translate('canvasNode.t4')
+  if (status === 'running') return translate('canvasNode.t5')
+  return translate('canvasNode.t6')
 }
 
 function OperationOutputDeck({
@@ -304,7 +305,7 @@ function OperationOutputDeck({
             <div className="canvas-operation-run-nav">
               <button
                 type="button"
-                aria-label="查看更新的一次运行"
+                aria-label={translate('canvasNode.t95')}
                 disabled={runIndex === 0}
                 onClick={(event) => {
                   event.stopPropagation()
@@ -313,17 +314,17 @@ function OperationOutputDeck({
                   onSelectOutput(nextRunIndex, 0, next)
                 }}
               >
-                <Tooltip title="查看更新的一次运行">
+                <Tooltip title={translate('canvasNode.t95')}>
                   <Icons.ChevronLeft size={13} />
                 </Tooltip>
               </button>
               <span>
-                第 {displayRunNumber} 次运行
-                {runs.length > 1 ? ` / 共 ${runs.length} 次` : ''}
+                {translate('canvasNode.tpl5Desc', { index: displayRunNumber })}
+                {runs.length > 1 ? translate('canvasNode.tpl6Desc', { count: runs.length }) : ''}
               </span>
               <button
                 type="button"
-                aria-label="查看更早的一次运行"
+                aria-label={translate('canvasNode.t96')}
                 disabled={runIndex >= runs.length - 1}
                 onClick={(event) => {
                   event.stopPropagation()
@@ -332,7 +333,7 @@ function OperationOutputDeck({
                   onSelectOutput(nextRunIndex, 0, next)
                 }}
               >
-                <Tooltip title="查看更早的一次运行">
+                <Tooltip title={translate('canvasNode.t96')}>
                   <Icons.ChevronRight size={13} />
                 </Tooltip>
               </button>
@@ -485,9 +486,9 @@ function operationOutputNodeForCapabilities(
 const PRODUCTION_STATE_BADGE: Partial<
   Record<NonNullable<SparkCanvasNode['data']['productionState']>, { label: string; color: string }>
 > = {
-  confirmed: { label: '已确认', color: 'green' },
-  stale: { label: '待更新', color: 'orange' },
-  draft: { label: '草稿', color: 'default' },
+  confirmed: { label: translate('canvasNode.t7'), color: 'green' },
+  stale: { label: translate('canvasNode.t8'), color: 'orange' },
+  draft: { label: translate('canvasNode.t9'), color: 'default' },
 }
 
 /**
@@ -501,31 +502,31 @@ const PRODUCTION_STATE_MENU_ENABLED = false
 const PIPELINE_ROLE_META: Partial<
   Record<NonNullable<SparkCanvasNode['data']['pipelineRole']>, { label: string; color: string }>
 > = {
-  style_bible: { label: '视觉总设定', color: '#a855f7' },
-  chapter: { label: '章节', color: '#3b82f6' },
-  screenplay: { label: '剧本', color: '#6366f1' },
-  character: { label: '角色', color: '#f97316' },
-  scene: { label: '场景', color: '#06b6d4' },
-  prop: { label: '道具', color: '#eab308' },
-  effect: { label: '特效', color: '#ec4899' },
-  camera: { label: '运镜', color: '#14b8a6' },
-  frame: { label: '画面', color: '#0ea5e9' },
-  action: { label: '动作', color: '#f43f5e' },
-  design_card: { label: '设定图卡', color: '#d946ef' },
-  shot: { label: '分镜', color: '#22c55e' },
-  keyframe: { label: '关键帧', color: '#2dd4bf' },
-  clip: { label: '视频片段', color: '#8b5cf6' },
+  style_bible: { label: translate('canvasNode.t10'), color: '#a855f7' },
+  chapter: { label: translate('canvasNode.t11'), color: '#3b82f6' },
+  screenplay: { label: translate('canvasNode.t12'), color: '#6366f1' },
+  character: { label: translate('canvasNode.t13'), color: '#f97316' },
+  scene: { label: translate('canvasNode.t14'), color: '#06b6d4' },
+  prop: { label: translate('canvasNode.t15'), color: '#eab308' },
+  effect: { label: translate('canvasNode.t16'), color: '#ec4899' },
+  camera: { label: translate('canvasNode.t17'), color: '#14b8a6' },
+  frame: { label: translate('canvasNode.t18'), color: '#0ea5e9' },
+  action: { label: translate('canvasNode.t19'), color: '#f43f5e' },
+  design_card: { label: translate('canvasNode.t20'), color: '#d946ef' },
+  shot: { label: translate('canvasNode.t21'), color: '#22c55e' },
+  keyframe: { label: translate('canvasNode.t22'), color: '#2dd4bf' },
+  clip: { label: translate('canvasNode.t23'), color: '#8b5cf6' },
 }
 
 const IMAGE_STYLE_EXTRACTION_PROMPT =
-  '请分析输入图片的视觉风格，并输出可复用的中文风格描述。重点包括：画面题材、艺术媒介、色彩倾向、光影氛围、构图镜头、材质细节、时代/类型气质，以及适合作为后续生成提示词的风格关键词。'
+  translate('canvasNode.t24Instruction')
 
 function buildTextStyleExtractionPrompt(node: SparkCanvasNode): string {
   const source = sourceNodeText(node)
   return [
-    '请阅读输入的剧本文本，提炼出这一章节可复用的镜头风格描述（中文）。',
-    '重点包括：整体影像气质、景别偏好、运镜方式、构图习惯、色调与光影氛围、画面材质与年代质感、节奏与剪辑风格，以及适合作为后续分镜 / 生成提示词的风格关键词。',
-    source ? `章节文本：\n${source}` : '',
+    translate('canvasNode.t25Desc'),
+    translate('canvasNode.t26Instruction'),
+    source ? translate('canvasNode.tpl7Instruction', { text: source }) : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -534,13 +535,13 @@ function buildTextStyleExtractionPrompt(node: SparkCanvasNode): string {
 const INLINE_PANEL_TRANSITION_MS = 180
 
 const NODE_TYPE_META_LABEL: Partial<Record<SparkCanvasNode['type'] | 'prompt', string>> = {
-  text: '文本',
-  prompt: '文本',
-  image: '图像',
-  video: '视频',
-  audio: '音频',
-  group: '组',
-  task: '任务',
+  text: translate('canvasNode.t27'),
+  prompt: translate('canvasNode.t27'),
+  image: translate('canvasNode.t28'),
+  video: translate('canvasNode.t29'),
+  audio: translate('canvasNode.t30'),
+  group: translate('canvasNode.t31'),
+  task: translate('canvasNode.t32'),
 }
 
 function sourceNodeText(node: SparkCanvasNode): string {
@@ -550,10 +551,10 @@ function sourceNodeText(node: SparkCanvasNode): string {
 function buildImageOutpaintPrompt(node: SparkCanvasNode): string {
   const source = sourceNodeText(node)
   return [
-    '请基于输入图片进行自然扩图，将画面扩展为默认 2:1 横向比例。',
-    '保持主体身份、造型、场景透视、光影方向、材质纹理、镜头语言和整体风格一致。',
-    '扩展区域需要像原图真实延伸出来，避免重复主体、变形、黑边、文字、水印、拼接痕迹或明显 AI 边缘。',
-    source ? `补充要求：${source}` : '',
+    translate('canvasNode.t33Desc'),
+    translate('canvasNode.t34Desc'),
+    translate('canvasNode.t35LongDesc'),
+    source ? translate('canvasNode.tpl8Desc', { text: source }) : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -563,16 +564,16 @@ function buildDetailSheetNineGridPrompt(node: SparkCanvasNode): string {
   const source = sourceNodeText(node)
   const sourceIntro =
     node.type === 'image'
-      ? '请以输入图片为核心参考，保留主体/场景的身份一致性和视觉风格。'
-      : '请根据输入内容进行视觉扩散设计。'
+      ? translate('canvasNode.t36Desc')
+      : translate('canvasNode.t37Desc')
   return [
     sourceIntro,
-    '生成一张 2:1 横向画布的九宫格设定拆分图，3x3 排列，每格是同一主题的不同角度、距离或细节变化。',
-    '如果主题是场景：包含远景建立、正面、侧面、俯视/高角度、低角度、入口/出口、关键道具、材质细节、光影氛围等变化。',
-    '如果主题是人物：包含正面、侧面、背面、半身、全身、表情、服装细节、道具细节、动态姿态等变化。',
-    '如果主题是道具/物体：包含正视、侧视、背视、俯视、打开/使用状态、局部材质、尺寸关系、环境中的摆放、功能细节等变化。',
-    '九格之间保持同一世界观与设计语言，画面干净，不要文字标签、水印、边框说明或 UI 元素。',
-    source ? `输入内容：${source}` : '',
+    translate('canvasNode.t38LongDesc'),
+    translate('canvasNode.t39LongDesc'),
+    translate('canvasNode.t40LongDesc'),
+    translate('canvasNode.t41LongDesc'),
+    translate('canvasNode.t42LongDesc'),
+    source ? translate('canvasNode.tpl9Desc', { text: source }) : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -587,6 +588,8 @@ export const CanvasNode = memo(function CanvasNode({
   positionAbsoluteX,
   positionAbsoluteY,
 }: NodeProps) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const updateNodeInternals = useUpdateNodeInternals()
   const connection = useConnection((current) =>
     current.inProgress && current.toNode?.id === id
@@ -807,11 +810,11 @@ export const CanvasNode = memo(function CanvasNode({
       >
         {imageTaskOutput ? (
           <>
-            <Tooltip title="预览">
+            <Tooltip title={translate('canvasNode.t78')}>
               <button
                 type="button"
                 className="canvas-node-subview-chip canvas-node-image-chip-preview"
-                aria-label="预览"
+                aria-label={translate('canvasNode.t78')}
                 onClick={(event) => {
                   event.preventDefault()
                   event.stopPropagation()
@@ -822,11 +825,11 @@ export const CanvasNode = memo(function CanvasNode({
               </button>
             </Tooltip>
             {canExtractCharacterSubview ? (
-              <Tooltip title="提取子视图">
+              <Tooltip title={translate('canvasNode.t60')}>
                 <button
                   type="button"
                   className="canvas-node-subview-chip"
-                  aria-label="提取子视图"
+                  aria-label={translate('canvasNode.t60')}
                   onClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
@@ -838,11 +841,11 @@ export const CanvasNode = memo(function CanvasNode({
               </Tooltip>
             ) : null}
             {canExpandImageTaskOutput ? (
-              <Tooltip title="展开产物">
+              <Tooltip title={translate('canvasNode.t50')}>
                 <button
                   type="button"
                   className="canvas-node-subview-chip"
-                  aria-label="展开产物"
+                  aria-label={translate('canvasNode.t50')}
                   onClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
@@ -854,11 +857,11 @@ export const CanvasNode = memo(function CanvasNode({
               </Tooltip>
             ) : null}
             {canDeleteImageTaskOutput ? (
-              <Tooltip title="删除当前产物">
+              <Tooltip title={translate('canvasNode.t97')}>
                 <button
                   type="button"
                   className="canvas-node-subview-chip is-danger"
-                  aria-label={`删除当前产物 ${imageTaskOutput.title}`}
+                  aria-label={translate('canvasNode.tpl10Desc', { title: imageTaskOutput.title })}
                   onClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
@@ -875,14 +878,14 @@ export const CanvasNode = memo(function CanvasNode({
           <Tooltip
             title={
               currentOperationRun.status === 'pending' || currentOperationRun.status === 'running'
-                ? '取消并删除本次运行'
-                : '删除本次运行'
+                ? translate('canvasNode.t43')
+                : translate('canvasNode.t44')
             }
           >
             <button
               type="button"
               className="canvas-node-subview-chip is-danger"
-              aria-label="删除本次运行记录"
+              aria-label={translate('canvasNode.t98')}
               onClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -901,11 +904,11 @@ export const CanvasNode = memo(function CanvasNode({
         className="canvas-node-media-action-group canvas-node-image-chips nodrag nopan"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <Tooltip title="预览">
+        <Tooltip title={translate('canvasNode.t78')}>
           <button
             type="button"
             className="canvas-node-subview-chip canvas-node-image-chip-preview"
-            aria-label="预览"
+            aria-label={translate('canvasNode.t78')}
             onClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
@@ -915,11 +918,11 @@ export const CanvasNode = memo(function CanvasNode({
             <Icons.Eye size={13} />
           </button>
         </Tooltip>
-        <Tooltip title="替换图片">
+        <Tooltip title={translate('canvasNode.t59')}>
           <button
             type="button"
             className="canvas-node-subview-chip canvas-node-image-chip-replace"
-            aria-label="替换图片"
+            aria-label={translate('canvasNode.t59')}
             onClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
@@ -929,11 +932,11 @@ export const CanvasNode = memo(function CanvasNode({
             <Icons.Refresh size={13} />
           </button>
         </Tooltip>
-        <Tooltip title="提取子视图">
+        <Tooltip title={translate('canvasNode.t60')}>
           <button
             type="button"
             className={`canvas-node-subview-chip${assetSubviewCount > 0 ? ' has-subviews' : ''}`}
-            aria-label="提取子视图"
+            aria-label={translate('canvasNode.t60')}
             onClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
@@ -978,19 +981,19 @@ export const CanvasNode = memo(function CanvasNode({
     const target = contentNode ?? node
     const isTextLike = target.type === 'text' || target.type === 'prompt'
     return actions.createOperationChild(node.id, 'text_generate', {
-      title: '风格提取',
+      title: translate('canvasNode.t45'),
       prompt: isTextLike ? buildTextStyleExtractionPrompt(target) : IMAGE_STYLE_EXTRACTION_PROMPT,
     })
   }
   const createImageOutpaintTask = () =>
     actions.createOperationChild(node.id, 'image_edit', {
-      title: '图片扩图',
+      title: translate('canvasNode.t46'),
       prompt: buildImageOutpaintPrompt(contentNode ?? node),
       modelParams: { aspect_ratio: '2:1' },
     })
   const createDetailSheetTask = () =>
     actions.createOperationChild(node.id, isImageContent ? 'image_edit' : 'text_to_image', {
-      title: '细节设定图（九宫格）',
+      title: translate('canvasNode.t47'),
       prompt: buildDetailSheetNineGridPrompt(contentNode ?? node),
       modelParams: { aspect_ratio: '2:1' },
     })
@@ -1003,7 +1006,7 @@ export const CanvasNode = memo(function CanvasNode({
               key: 'outpaint-image',
               label: (
                 <span className="canvas-menu-item">
-                  <Icons.Crop size={14} /> 图片扩图
+                  <Icons.Crop size={14} /> {translate('canvasNode.t46')}
                 </span>
               ),
               onClick: createImageOutpaintTask,
@@ -1012,7 +1015,7 @@ export const CanvasNode = memo(function CanvasNode({
               key: 'extract-style',
               label: (
                 <span className="canvas-menu-item">
-                  <Icons.Sparkles size={14} /> 提取风格
+                  <Icons.Sparkles size={14} /> {translate('canvasNode.t103')}
                 </span>
               ),
               onClick: runStyleExtraction,
@@ -1024,7 +1027,7 @@ export const CanvasNode = memo(function CanvasNode({
                 key: 'extract-style',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.Sparkles size={14} /> 提取风格
+                    <Icons.Sparkles size={14} /> {translate('canvasNode.t103')}
                   </span>
                 ),
                 onClick: runStyleExtraction,
@@ -1042,7 +1045,7 @@ export const CanvasNode = memo(function CanvasNode({
               key: 'detail-sheet-nine-grid',
               label: (
                 <span className="canvas-menu-item">
-                  <Icons.Grid size={14} /> 细节设定图（九宫格）
+                  <Icons.Grid size={14} /> {translate('canvasNode.t47')}
                 </span>
               ),
               onClick: createDetailSheetTask,
@@ -1069,7 +1072,7 @@ export const CanvasNode = memo(function CanvasNode({
     if (isTask && actions.runOperationNode) {
       addAction({
         key: 'run-operation',
-        label: '提交运行',
+        label: translate('canvasNode.t48'),
         icon: <Icons.Play size={15} />,
         disabled: operationStatus === 'running',
         onClick: () => actions.runOperationNode?.(node.id),
@@ -1078,7 +1081,7 @@ export const CanvasNode = memo(function CanvasNode({
     if (isPanorama360) {
       addAction({
         key: 'preview-panorama',
-        label: '全景预览',
+        label: translate('canvasNode.t49'),
         icon: <Icons.Globe size={15} />,
         onClick: () => actions.previewPanorama(node.id),
       })
@@ -1086,7 +1089,7 @@ export const CanvasNode = memo(function CanvasNode({
     if (canExpandOperationOutputs) {
       addAction({
         key: 'expand-operation-outputs',
-        label: '展开产物',
+        label: translate('canvasNode.t50'),
         icon: <Icons.Layers size={15} />,
         onClick: () => actions.expandOperationOutputs?.(node.id),
       })
@@ -1095,7 +1098,7 @@ export const CanvasNode = memo(function CanvasNode({
       if (actions.editVideo) {
         addAction({
           key: 'edit-video',
-          label: '视频编辑',
+          label: translate('canvasNode.t51'),
           icon: <Icons.Video size={15} />,
           onClick: () => actions.editVideo?.(node.id),
         })
@@ -1103,20 +1106,20 @@ export const CanvasNode = memo(function CanvasNode({
       if (actions.scaleCompressVideo) {
         addAction({
           key: 'scale-compress-video',
-          label: '尺寸与压缩',
+          label: translate('canvasNode.t52'),
           icon: <Icons.Minimize size={15} />,
           onClick: () => actions.scaleCompressVideo?.(node.id),
         })
       }
       addAction({
         key: 'extract-audio',
-        label: '分离音频',
+        label: translate('canvasNode.t53'),
         icon: <Icons.AudioLines size={15} />,
         onClick: () => actions.createOperationChild(videoToolbarSourceNodeId, 'extract_audio'),
       })
       addAction({
         key: 'extract-first-last-frames',
-        label: '提取首尾帧',
+        label: translate('canvasNode.t54'),
         icon: <Icons.Image size={15} />,
         onClick: () =>
           actions.createOperationChild(videoToolbarSourceNodeId, 'extract_first_last_frames', {
@@ -1126,7 +1129,7 @@ export const CanvasNode = memo(function CanvasNode({
     }
     addAction({
       key: 'duplicate',
-      label: '复制节点',
+      label: translate('canvasNode.t55'),
       icon: <Icons.Copy size={15} />,
       onClick: () => actions.duplicateNode(node.id),
     })
@@ -1135,12 +1138,12 @@ export const CanvasNode = memo(function CanvasNode({
     if (canCopyNodeContent(node, activeOperationOutput).kind !== 'none') {
       addAction({
         key: 'copy-content',
-        label: '复制内容',
+        label: translate('canvasNode.t56'),
         icon: <Icons.Clipboard size={15} />,
         onClick: () => {
           copyNodeContentToClipboard(node, activeOperationOutput).catch((error) => {
-            console.warn('[CanvasNode] 复制内容失败', error)
-            message.error(error instanceof Error ? error.message : '复制内容失败')
+            console.warn(translate('canvasNode.t57Desc'), error)
+            message.error(error instanceof Error ? error.message : translate('canvasNode.t58'))
           })
         },
       })
@@ -1150,7 +1153,7 @@ export const CanvasNode = memo(function CanvasNode({
     if (isImageContent) {
       mediaChildren.push({
         key: 'replace-image',
-        label: '替换图片',
+        label: translate('canvasNode.t59'),
         icon: <Icons.Refresh size={15} />,
         onClick: () => actions.replaceImage?.(node.id),
       })
@@ -1158,7 +1161,7 @@ export const CanvasNode = memo(function CanvasNode({
     if (canScaleCompressImage) {
       mediaChildren.push({
         key: 'scale-compress-image',
-        label: '尺寸与压缩',
+        label: translate('canvasNode.t52'),
         icon: <Icons.Minimize size={15} />,
         onClick: () => actions.scaleCompressImage?.(node.id),
       })
@@ -1167,7 +1170,7 @@ export const CanvasNode = memo(function CanvasNode({
       if (canExtractCharacterSubview) {
         mediaChildren.push({
           key: 'extract-character-subview',
-          label: '提取子视图',
+          label: translate('canvasNode.t60'),
           icon: <Icons.Crop size={15} />,
           onClick: () => actions.extractCharacterSubview?.(node.id),
         })
@@ -1175,13 +1178,13 @@ export const CanvasNode = memo(function CanvasNode({
       mediaChildren.push(
         {
           key: 'split-grid-image',
-          label: '宫格切分',
+          label: translate('canvasNode.t61'),
           icon: <Icons.Grid size={15} />,
           onClick: () => actions.splitGridImage?.(node.id),
         },
         {
           key: 'annotate-image',
-          label: '图片标注',
+          label: translate('canvasNode.t62'),
           icon: <Icons.Edit size={15} />,
           onClick: () => actions.annotateImage?.(node.id),
         },
@@ -1190,7 +1193,7 @@ export const CanvasNode = memo(function CanvasNode({
     if (storyboardSplitSource && actions.splitStoryboard) {
       mediaChildren.push({
         key: 'split-storyboard-by-shot',
-        label: '按镜拆分',
+        label: translate('canvasNode.t63'),
         icon: <Icons.Scissors size={15} />,
         onClick: () => actions.splitStoryboard?.(storyboardSplitSource.id),
       })
@@ -1202,7 +1205,7 @@ export const CanvasNode = memo(function CanvasNode({
     ) {
       mediaChildren.push({
         key: 'download-media',
-        label: '下载到本地',
+        label: translate('canvasNode.t64'),
         icon: <Icons.Download size={15} />,
         onClick: () => actions.downloadMedia(node.id),
       })
@@ -1210,7 +1213,7 @@ export const CanvasNode = memo(function CanvasNode({
     if (mediaChildren.length > 0) {
       entries.push({
         key: 'media-actions',
-        label: '素材操作',
+        label: translate('canvasNode.t65'),
         icon: <Icons.Image size={15} />,
         expanded: true,
         children: mediaChildren,
@@ -1219,19 +1222,19 @@ export const CanvasNode = memo(function CanvasNode({
     if (audioToolbarNodeId) {
       addAction({
         key: 'audio-trim',
-        label: '音频截取',
+        label: translate('canvasNode.t66'),
         icon: <Icons.Scissors size={15} />,
         onClick: () => openAudioTrim(audioPresentationRef),
       })
       addAction({
         key: 'audio-speed',
-        label: '音频变速',
+        label: translate('canvasNode.t67'),
         icon: <Icons.Sliders size={15} />,
         onClick: () => openAudioSpeed(audioPresentationRef),
       })
       addAction({
         key: 'audio-download',
-        label: '下载音频到本地',
+        label: translate('canvasNode.t68'),
         icon: <Icons.Download size={15} />,
         onClick: () => actions.downloadMedia(audioToolbarNodeId),
       })
@@ -1239,7 +1242,7 @@ export const CanvasNode = memo(function CanvasNode({
     entries.push({ key: 'delete-divider', type: 'divider' })
     addAction({
       key: 'delete-node',
-      label: '删除节点',
+      label: translate('canvasNode.t69'),
       icon: <Icons.Trash size={15} />,
       danger: true,
       onClick: () => actions.deleteNode(node.id),
@@ -1285,7 +1288,7 @@ export const CanvasNode = memo(function CanvasNode({
                 key: 'edit-video',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.Video size={14} /> 视频编辑
+                    <Icons.Video size={14} /> {translate('canvasNode.t51')}
                   </span>
                 ),
                 // 统一传 node.id；handleEditVideo 内部自动解析操作节点的产物视频
@@ -1297,7 +1300,7 @@ export const CanvasNode = memo(function CanvasNode({
                       key: 'scale-compress-video',
                       label: (
                         <span className="canvas-menu-item">
-                          <Icons.Minimize size={14} /> 尺寸与压缩
+                          <Icons.Minimize size={14} /> {translate('canvasNode.t52')}
                         </span>
                       ),
                       // 与视频编辑同一套解析：操作节点取其产物视频
@@ -1361,7 +1364,7 @@ export const CanvasNode = memo(function CanvasNode({
                   {
                     type: 'group' as const,
                     key: 'feature-group-node-enhance',
-                    label: '视觉工具',
+                    label: translate('canvasNode.t70'),
                     children: [
                       ...contextualAiActions,
                       ...CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => ({
@@ -1380,7 +1383,7 @@ export const CanvasNode = memo(function CanvasNode({
                         {
                           type: 'group' as const,
                           key: 'feature-group-media-tools',
-                          label: '媒体工具',
+                          label: translate('canvasNode.t71'),
                           children: canvasVisibleFeatureCreateOperations().map((item) => ({
                             key: `feature-op-${item.operation}`,
                             label: (
@@ -1398,7 +1401,7 @@ export const CanvasNode = memo(function CanvasNode({
                         {
                           type: 'group' as const,
                           key: 'feature-group-image-tools',
-                          label: '图片工具',
+                          label: translate('canvasNode.t72'),
                           children: [
                             ...(canScaleCompressImage
                               ? [
@@ -1406,7 +1409,7 @@ export const CanvasNode = memo(function CanvasNode({
                                     key: 'scale-compress-image',
                                     label: (
                                       <span className="canvas-menu-item">
-                                        <Icons.Minimize size={14} /> 尺寸与压缩
+                                        <Icons.Minimize size={14} /> {translate('canvasNode.t52')}
                                       </span>
                                     ),
                                     onClick: () => actions.scaleCompressImage?.(node.id),
@@ -1419,7 +1422,7 @@ export const CanvasNode = memo(function CanvasNode({
                                     key: 'annotate-image',
                                     label: (
                                       <span className="canvas-menu-item">
-                                        <Icons.Edit size={14} /> 图片标注
+                                        <Icons.Edit size={14} /> {translate('canvasNode.t62')}
                                       </span>
                                     ),
                                     onClick: () => actions.annotateImage?.(node.id),
@@ -1432,7 +1435,7 @@ export const CanvasNode = memo(function CanvasNode({
                                     key: 'extract-character-subview',
                                     label: (
                                       <span className="canvas-menu-item">
-                                        <Icons.Crop size={14} /> 提取子视图
+                                        <Icons.Crop size={14} /> {translate('canvasNode.t60')}
                                       </span>
                                     ),
                                     onClick: () => actions.extractCharacterSubview?.(node.id),
@@ -1445,7 +1448,7 @@ export const CanvasNode = memo(function CanvasNode({
                                     key: 'split-grid-image',
                                     label: (
                                       <span className="canvas-menu-item">
-                                        <Icons.Grid size={14} /> 宫格切分
+                                        <Icons.Grid size={14} /> {translate('canvasNode.t61')}
                                       </span>
                                     ),
                                     onClick: () => actions.splitGridImage?.(node.id),
@@ -1478,7 +1481,7 @@ export const CanvasNode = memo(function CanvasNode({
                 key: 'preview-panorama',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.Globe size={14} /> 全景预览
+                    <Icons.Globe size={14} /> {translate('canvasNode.t49')}
                   </span>
                 ),
                 onClick: () => actions.previewPanorama(node.id),
@@ -1489,7 +1492,7 @@ export const CanvasNode = memo(function CanvasNode({
           key: 'save-to-library',
           label: (
             <span className="canvas-menu-item">
-              <Icons.Folder size={14} /> 保存到资源库…
+              <Icons.Folder size={14} /> {translate('canvasNode.t104')}
             </span>
           ),
           onClick: () => actions.saveToLibrary(node.id),
@@ -1501,7 +1504,7 @@ export const CanvasNode = memo(function CanvasNode({
                 key: 'add-to-agent',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.MessageSquarePlus size={14} /> 添加到 Agent 对话
+                    <Icons.MessageSquarePlus size={14} /> {translate('canvasNode.t105')}
                   </span>
                 ),
                 onClick: () => actions.addNodeToAgent?.(node.id),
@@ -1515,7 +1518,7 @@ export const CanvasNode = memo(function CanvasNode({
                 popupClassName: 'canvas-node-context-submenu-popup',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.Refresh size={14} /> 切换类型
+                    <Icons.Refresh size={14} /> {translate('canvasNode.t106')}
                   </span>
                 ),
                 children: subtypeSwitch.options.map((option) => ({
@@ -1540,7 +1543,7 @@ export const CanvasNode = memo(function CanvasNode({
                       key: 'select-group-children',
                       label: (
                         <span className="canvas-menu-item">
-                          <Icons.CheckSquare size={14} /> 选中组内节点
+                          <Icons.CheckSquare size={14} /> {translate('canvasNode.t107')}
                         </span>
                       ),
                       onClick: () => actions.selectGroupChildren?.(node.id),
@@ -1556,7 +1559,7 @@ export const CanvasNode = memo(function CanvasNode({
                     ) : (
                       <Icons.Folder size={14} />
                     )}{' '}
-                    {collapsedGroupPresentation ? '展开编组' : '折叠编组'}
+                    {collapsedGroupPresentation ? translate('canvasNode.t73') : translate('canvasNode.t74')}
                   </span>
                 ),
                 onClick: () =>
@@ -1568,7 +1571,7 @@ export const CanvasNode = memo(function CanvasNode({
                 key: 'merge-group-to-image',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.Image size={14} /> 多图合并
+                    <Icons.Image size={14} /> {translate('canvasNode.t108')}
                   </span>
                 ),
                 onClick: () => actions.mergeGroupToImage(node.id),
@@ -1577,7 +1580,7 @@ export const CanvasNode = memo(function CanvasNode({
                 key: 'dissolve-group',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.FolderOpen size={14} /> 解散组
+                    <Icons.FolderOpen size={14} /> {translate('canvasNode.t109')}
                   </span>
                 ),
                 onClick: () => actions.dissolveGroup(node.id),
@@ -1590,7 +1593,7 @@ export const CanvasNode = memo(function CanvasNode({
                 key: 'remove-from-group',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.ArrowUp size={14} /> 移出组
+                    <Icons.ArrowUp size={14} /> {translate('canvasNode.t110')}
                   </span>
                 ),
                 onClick: () => actions.removeNodeFromGroup(node.id),
@@ -1606,7 +1609,7 @@ export const CanvasNode = memo(function CanvasNode({
                 key: 'confirm',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.Check size={14} /> 确认（采用）
+                    <Icons.Check size={14} /> {translate('canvasNode.t111')}
                   </span>
                 ),
                 onClick: () => actions.setProductionState(node.id, 'confirmed'),
@@ -1615,7 +1618,7 @@ export const CanvasNode = memo(function CanvasNode({
                 key: 'mark-stale',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.RotateCcw size={14} /> 标记待更新
+                    <Icons.RotateCcw size={14} /> {translate('canvasNode.t112')}
                   </span>
                 ),
                 onClick: () => actions.setProductionState(node.id, 'stale'),
@@ -1627,7 +1630,7 @@ export const CanvasNode = memo(function CanvasNode({
           key: 'delete',
           label: (
             <span className="canvas-menu-item canvas-menu-item-danger">
-              <Icons.Trash size={14} /> 删除节点
+              <Icons.Trash size={14} /> {translate('canvasNode.t69')}
             </span>
           ),
           onClick: () => actions.deleteNode(node.id),
@@ -1720,14 +1723,14 @@ export const CanvasNode = memo(function CanvasNode({
     ? buildCanvasOperationParamSummary(node.data.modelParams, 4)
     : []
   const nodeActionLabel = isDirectorStage3D
-    ? '打开导演台'
+    ? translate('canvasNode.t75')
     : isVideoWorkbench
-      ? '打开工作台'
+      ? translate('canvasNode.t76')
       : isTask
-        ? '查看任务'
+        ? translate('canvasNode.t77')
         : node.type === 'image' || node.type === 'audio' || node.type === 'video'
-          ? '预览'
-          : '打开编辑'
+          ? translate('canvasNode.t78')
+          : translate('canvasNode.t79')
   const isTextContentNode =
     (node.type === 'text' || node.type === 'prompt') && !isOperationNode(node) && !renderShotTable
   const isMediaContentNode =
@@ -1735,18 +1738,18 @@ export const CanvasNode = memo(function CanvasNode({
     !isOperationNode(node)
   const shouldShowContentTitle = isTextContentNode
   const passiveStatusLabel = isResourceOutput
-    ? '产物'
+    ? translate('canvasNode.t80')
     : productionBadge?.label
       ? productionBadge.label
       : node.type === 'group'
-        ? '节点组'
+        ? translate('canvasNode.t81')
         : isMediaContentNode
           ? node.data.url
-            ? '已生成'
-            : '待添加'
+            ? translate('canvasNode.t82')
+            : translate('canvasNode.t83')
           : isTextContentNode
-            ? '可编辑'
-            : '已就绪'
+            ? translate('canvasNode.t84')
+            : translate('canvasNode.t85')
   const nodeStyle = {
     ...(roleMeta ? { ['--role-color' as string]: roleMeta.color } : {}),
     ...(hasInlineExtension
@@ -1776,7 +1779,7 @@ export const CanvasNode = memo(function CanvasNode({
           {node.type === 'group' && <Icons.Layers size={14} />}
         </span>
         <span className="canvas-node-kind-label">
-          {node.data.panorama360 ? `360全景 · ${metaLabel}` : metaLabel}
+          {node.data.panorama360 ? translate('canvasNode.tpl1Desc', { value: metaLabel }) : metaLabel}
         </span>
       </span>
       <span className="canvas-node-meta-tags">
@@ -1798,8 +1801,8 @@ export const CanvasNode = memo(function CanvasNode({
           <button
             type="button"
             className="canvas-node-group-collapse-trigger nodrag nopan"
-            aria-label="折叠编组"
-            title="折叠编组"
+            aria-label={translate('canvasNode.t74')}
+            title={translate('canvasNode.t74')}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.preventDefault()
@@ -1923,8 +1926,8 @@ export const CanvasNode = memo(function CanvasNode({
                     ) : (
                       <div className="canvas-node-image-placeholder">
                         <Icons.Image size={30} />
-                        <strong>{node.data.message ?? '图片节点'}</strong>
-                        <span>双击节点添加内容</span>
+                        <strong>{node.data.message ?? translate('canvasNode.t86')}</strong>
+                        <span>{translate('canvasNode.t113')}</span>
                         <button
                           type="button"
                           className="canvas-node-image-placeholder-upload"
@@ -1935,7 +1938,7 @@ export const CanvasNode = memo(function CanvasNode({
                           }}
                         >
                           <Icons.Upload size={14} />
-                          <span>上传图片</span>
+                          <span>{translate('canvasNode.t114')}</span>
                         </button>
                       </div>
                     )
@@ -1944,7 +1947,7 @@ export const CanvasNode = memo(function CanvasNode({
                       <CanvasAudioNodePresentation
                         ref={audioPresentationRef}
                         src={normalizedAudioSrc}
-                        fileName={node.data.message ?? node.title ?? '音频'}
+                        fileName={node.data.message ?? node.title ?? translate('canvasNode.t30')}
                         durationSec={node.data.audioDurationSec ?? 0}
                         cachedPeaks={node.data.audioWaveformPeaks}
                         selected={Boolean(selected)}
@@ -1961,8 +1964,8 @@ export const CanvasNode = memo(function CanvasNode({
                     ) : (
                       <div className="canvas-node-image-placeholder">
                         <Icons.Play size={30} />
-                        <strong>{node.data.message ?? '暂无音频'}</strong>
-                        <span>运行任务后在这里预览</span>
+                        <strong>{node.data.message ?? translate('canvasNode.t87')}</strong>
+                        <span>{translate('canvasNode.t115')}</span>
                       </div>
                     )
                   ) : node.type === 'video' ? (
@@ -1985,8 +1988,8 @@ export const CanvasNode = memo(function CanvasNode({
                     ) : (
                       <div className="canvas-node-image-placeholder">
                         <Icons.Play size={30} />
-                        <strong>{node.data.message ?? '暂无视频'}</strong>
-                        <span>上传后可直接在节点内预览</span>
+                        <strong>{node.data.message ?? translate('canvasNode.t88')}</strong>
+                        <span>{translate('canvasNode.t116')}</span>
                         {inlinePrimaryAction?.kind === 'upload-video' ? (
                           <>
                             <button
@@ -2004,7 +2007,7 @@ export const CanvasNode = memo(function CanvasNode({
                               ref={videoUploadInputRef}
                               type="file"
                               accept="video/*"
-                              aria-label="上传视频"
+                              aria-label={translate('canvasNode.t99')}
                               hidden
                               onChange={(event) => {
                                 const file = event.target.files?.[0]
@@ -2018,9 +2021,9 @@ export const CanvasNode = memo(function CanvasNode({
                     )
                   ) : node.type === 'group' ? (
                     <div className="canvas-node-group-body">
-                      <div className="canvas-node-group-count">{node.data.text ?? '组'}</div>
+                      <div className="canvas-node-group-count">{node.data.text ?? translate('canvasNode.t31')}</div>
                       <div className="canvas-node-group-hint">
-                        {node.data.message ?? '节点已在组内排列'}
+                        {node.data.message ?? translate('canvasNode.t89')}
                       </div>
                     </div>
                   ) : isDirectorStage3D ? (
@@ -2121,7 +2124,7 @@ export const CanvasNode = memo(function CanvasNode({
                             <div className="canvas-node-task-msg">
                               {node.data.message ??
                                 node.data.prompt ??
-                                '点击节点下方编辑面板调整参数后运行'}
+                                translate('canvasNode.t90Desc')}
                             </div>
                             {showImagePromptInputActions ? (
                               <div className="canvas-operation-input-actions nodrag nopan">
@@ -2135,7 +2138,7 @@ export const CanvasNode = memo(function CanvasNode({
                                       actions.selectOperationInput?.(node.id)
                                     }}
                                   >
-                                    从画布选择
+                                    {translate('canvasNode.t117')}
                                   </Button>
                                 ) : null}
                                 {actions.uploadOperationInput ? (
@@ -2148,7 +2151,7 @@ export const CanvasNode = memo(function CanvasNode({
                                       actions.uploadOperationInput?.(node.id)
                                     }}
                                   >
-                                    上传图片
+                                    {translate('canvasNode.t114')}
                                   </Button>
                                 ) : null}
                               </div>
@@ -2166,7 +2169,7 @@ export const CanvasNode = memo(function CanvasNode({
                       </div>
                       <div className="canvas-node-resource-text-content md-surface">
                         <MarkdownText
-                          content={node.data.text ?? node.data.message ?? '空文本产物'}
+                          content={node.data.text ?? node.data.message ?? translate('canvasNode.t91')}
                         />
                       </div>
                     </div>
@@ -2175,7 +2178,7 @@ export const CanvasNode = memo(function CanvasNode({
                       className={`canvas-node-text md-surface${isTextLong ? ' canvas-node-text-long' : ''}`}
                     >
                       <MarkdownText
-                        content={node.data.text ?? node.data.message ?? '空节点 · 双击编辑'}
+                        content={node.data.text ?? node.data.message ?? translate('canvasNode.t92')}
                       />
                       {inlinePrimaryAction?.kind === 'edit' ? (
                         <button

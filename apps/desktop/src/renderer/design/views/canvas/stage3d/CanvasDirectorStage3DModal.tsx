@@ -13,6 +13,7 @@ import {
 } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../../Icons'
+import { translate, useI18n } from '../../../i18n'
 import type { CanvasNode } from '../canvas.types'
 import { Scene3D, type Scene3DHandle } from './Scene3D'
 import { PoseEditorModal } from './PoseEditorModal'
@@ -222,6 +223,8 @@ export function CanvasDirectorStage3DModal({
   /** 录制运镜视频完成：落盘并插入画布视频节点（未传时退化为浏览器下载 .webm） */
   onExportVideo?: (input: { dataUrl: string; durationMs: number; title: string }) => Promise<void> | void
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const resolvedTheme = useResolvedTheme()
   const initial = useMemo(() => (node ? readStage3DData(node) : createDefaultStage3DData()), [node])
   const [draft, setDraftState] = useState<Stage3DData>(initial)
@@ -537,7 +540,7 @@ export function CanvasDirectorStage3DModal({
       if (playback.playing) stopCameraMotion()
       const scene3d = sceneRef.current
       if (!scene3d) {
-        message.error('3D 视口尚未就绪，请稍后再试')
+        message.error(translate('canvasStage3d.t1Desc'))
         return
       }
       recordingActiveRef.current = true
@@ -576,20 +579,20 @@ export function CanvasDirectorStage3DModal({
         const dataUrl = await blobToDataUrl(result.blob)
         const numberPart = draft.slate?.shotNumber ? `${draft.slate.shotNumber}-` : ''
         const stamp = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-        const title = `3D运镜-${numberPart}${stamp}`.replace(/\s+/g, '')
+        const title = translate('canvasStage3d.tpl1Desc', { number: numberPart, stamp }).replace(/\s+/g, '')
         if (onExportVideo) {
           await onExportVideo({ dataUrl, durationMs: result.durationMs, title })
-          message.success('运镜视频已生成，已插入画布')
+          message.success(translate('canvasStage3d.t2Desc'))
         } else {
           const link = document.createElement('a')
           link.download = `${title}.webm`
           link.href = dataUrl
           link.click()
-          message.success('运镜视频已生成')
+          message.success(translate('canvasStage3d.t3'))
         }
       } catch (error) {
         if (!(error instanceof Stage3DVideoCancelledError)) {
-          message.error(error instanceof Error ? error.message : '录制运镜视频失败')
+          message.error(error instanceof Error ? error.message : translate('canvasStage3d.t4'))
         }
       } finally {
         cameraOverrideRef.current = null
@@ -604,7 +607,7 @@ export function CanvasDirectorStage3DModal({
   const startVideoRecording = useCallback(() => {
     const motion = draft.camera.motion
     if (!motion) {
-      message.warning('请先在「运动轨迹」中选择预设运镜或创建轨迹，再录制视频')
+      message.warning(translate('canvasStage3d.t5Desc'))
       // 选中相机并切到运动轨迹 Tab，引导用户先配置运镜
       setPoseMode(false)
       setDraft((d) => ({ ...d, activeId: 'camera' }))
@@ -618,7 +621,7 @@ export function CanvasDirectorStage3DModal({
   const recordShotVideo = useCallback(
     (shot: Stage3DShot) => {
       if (!shot.motion) {
-        message.warning('该镜头还没有运动轨迹：切到该镜头后套用预设运镜，再重新保存镜头')
+        message.warning(translate('canvasStage3d.t6Desc'))
         return
       }
       const shotCamera: Stage3DCamera = {
@@ -672,7 +675,7 @@ export function CanvasDirectorStage3DModal({
   const requestClose = useCanvasUnsavedChangesGuard({
     dirty: isDirty,
     onClose,
-    subject: '3D 场景',
+    subject: translate('canvasStage3d.t7'),
   })
 
   const activeActor = draft.actors.find((a) => a.id === draft.activeId) ?? null
@@ -853,9 +856,9 @@ export function CanvasDirectorStage3DModal({
         const prop = makeLocalModelProp(asset, d.props.length)
         return { ...d, props: [...d.props, prop], activeId: prop.id }
       })
-      message.success('本地模型已添加到场景')
+      message.success(translate('canvasStage3d.t8'))
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '本地模型导入失败')
+      message.error(error instanceof Error ? error.message : translate('canvasStage3d.t9'))
     }
   }, [])
 
@@ -1027,12 +1030,12 @@ export function CanvasDirectorStage3DModal({
     try {
       await onSave(next, prompt)
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存 3D 场景失败')
+      message.error(error instanceof Error ? error.message : translate('canvasStage3d.t10'))
       return
     }
     setDraft(next)
     savedDraftVersionRef.current = draftVersionRef.current
-    message.success('3D 导演台已保存')
+    message.success(translate('canvasStage3d.t11'))
   }, [draft, onSave, prompt])
 
   useEffect(() => {
@@ -1050,9 +1053,9 @@ export function CanvasDirectorStage3DModal({
   const copyPrompt = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(prompt)
-      message.success('已复制提示词')
+      message.success(translate('canvasStage3d.t12'))
     } catch {
-      message.error('复制提示词失败')
+      message.error(translate('canvasStage3d.t13'))
     }
   }, [prompt])
 
@@ -1063,7 +1066,7 @@ export function CanvasDirectorStage3DModal({
   const captureScreenshot = useCallback(async () => {
     const dataUrl = sceneRef.current?.screenshot()
     if (!dataUrl) {
-      message.error('截图失败，请重试')
+      message.error(translate('canvasStage3d.t14'))
       return
     }
     if (onExportScreenshot) await onExportScreenshot({ dataUrl, prompt })
@@ -1084,7 +1087,7 @@ export function CanvasDirectorStage3DModal({
       const shot = makeStage3DShot(d.camera, list.length)
       return { ...d, shots: [...list, shot] }
     })
-    message.success('已保存当前机位为镜头')
+    message.success(translate('canvasStage3d.t15'))
   }, [])
 
   const updateShot = useCallback((id: string, patch: Partial<Stage3DShot>) => {
@@ -1106,7 +1109,7 @@ export function CanvasDirectorStage3DModal({
       const copy = makeStage3DShot(
         { position: src.position, target: src.target, fov: src.fov, aspect: src.aspect },
         list.length,
-        { name: `${src.name} 副本`, shotNumber: src.shotNumber },
+        { name: translate('canvasStage3d.tpl18Desc', { name: src.name }), shotNumber: src.shotNumber },
       )
       return { ...d, shots: [...list, copy] }
     })
@@ -1130,7 +1133,7 @@ export function CanvasDirectorStage3DModal({
 
   const exportAllShots = useCallback(async () => {
     if (shots.length === 0) {
-      message.warning('还没有保存任何镜头')
+      message.warning(translate('canvasStage3d.t16'))
       return
     }
     if (!onExportScreenshots) return
@@ -1155,7 +1158,7 @@ export function CanvasDirectorStage3DModal({
       inputs.push({ dataUrl, title, prompt: shotPrompt })
     }
     if (inputs.length === 0) {
-      message.error('镜头截图失败，请重试')
+      message.error(translate('canvasStage3d.t17'))
       return
     }
     await onExportScreenshots(inputs)
@@ -1207,7 +1210,7 @@ export function CanvasDirectorStage3DModal({
           <div className={`stage3d-topbar${isPlatformDarwin ? ' platform-darwin-safe-area' : ''}`}>
             <div className="stage3d-titlebox">
               <div className="stage3d-kicker">3D Director Stage</div>
-              <div className="stage3d-title">{node?.title ?? '3D 导演台'}</div>
+              <div className="stage3d-title">{node?.title ?? translate('canvasStage3d.t18')}</div>
             </div>
             <div className="stage3d-topbar-actions">
               <Button
@@ -1215,14 +1218,14 @@ export function CanvasDirectorStage3DModal({
                 type={toolsCollapsed ? 'primary' : 'text'}
                 icon={<Icons.PanelLeft size={14} />}
                 onClick={() => setToolsCollapsed((v) => !v)}
-                title={toolsCollapsed ? '展开左侧面板' : '折叠左侧面板'}
+                title={toolsCollapsed ? translate('canvasStage3d.t19') : translate('canvasStage3d.t20')}
               />
               <Button
                 size="small"
                 type={inspectorCollapsed ? 'primary' : 'text'}
                 icon={<Icons.PanelRight size={14} />}
                 onClick={() => setInspectorCollapsed((v) => !v)}
-                title={inspectorCollapsed ? '展开右侧面板' : '折叠右侧面板'}
+                title={inspectorCollapsed ? translate('canvasStage3d.t21') : translate('canvasStage3d.t22')}
               />
               <Button
                 size="small"
@@ -1230,7 +1233,7 @@ export function CanvasDirectorStage3DModal({
                 icon={<Icons.Eye size={14} />}
                 onClick={() => setCameraPreview((v) => !v)}
               >
-                {cameraPreview ? '退出取景视角' : '进入取景视角'}
+                {cameraPreview ? translate('canvasStage3d.t23') : translate('canvasStage3d.t24')}
               </Button>
               {videoRecording ? (
                 <Button
@@ -1241,9 +1244,9 @@ export function CanvasDirectorStage3DModal({
                   onClick={() => {
                     recordCancelRef.current.cancelled = true
                   }}
-                  title="停止并丢弃录制"
+                  title={translate('canvasStage3d.t45')}
                 >
-                  停止录制 {Math.round(videoRecording.progress * 100)}%
+                  {translate('canvasStage3d.tpl19Desc', { value: Math.round(videoRecording.progress * 100) })}
                 </Button>
               ) : (
                 <Button
@@ -1251,9 +1254,9 @@ export function CanvasDirectorStage3DModal({
                   type="text"
                   icon={<Icons.Video size={14} />}
                   onClick={startVideoRecording}
-                  title="按当前机位的运动轨迹录制运镜视频，完成后插入画布"
+                  title={translate('canvasStage3d.t46Desc')}
                 >
-                  录制视频
+                  {translate('canvasStage3d.t62')}
                 </Button>
               )}
               <Button
@@ -1262,7 +1265,7 @@ export function CanvasDirectorStage3DModal({
                 icon={<Icons.Image size={14} />}
                 onClick={captureScreenshot}
               >
-                截图入画布
+                {translate('canvasStage3d.t63')}
               </Button>
               {onExportScreenshots && (
                 <Button
@@ -1272,11 +1275,11 @@ export function CanvasDirectorStage3DModal({
                   disabled={shots.length === 0}
                   onClick={exportAllShots}
                 >
-                  导出全部镜头{shots.length > 0 ? `（${shots.length}）` : ''}
+                  {translate('canvasStage3d.t128')}{shots.length > 0 ? translate('canvasStage3d.tpl5Desc', { count: shots.length }) : ''}
                 </Button>
               )}
               <Button size="small" type="text" icon={<Icons.Copy size={14} />} onClick={copyPrompt}>
-                复制提示词
+                {translate('canvasStage3d.t64')}
               </Button>
               {onInsertPrompt && (
                 <Button
@@ -1285,18 +1288,18 @@ export function CanvasDirectorStage3DModal({
                   icon={<Icons.FileText size={14} />}
                   onClick={insertPrompt}
                 >
-                  提示词节点
+                  {translate('canvasStage3d.t65')}
                 </Button>
               )}
               <Button size="small" type="text" icon={<Icons.Check size={14} />} onClick={save}>
-                保存
+                {translate('canvasStage3d.t66')}
               </Button>
               <Button
                 size="small"
                 type="text"
                 icon={<Icons.X size={16} />}
                 onClick={requestClose}
-                title="关闭（有未保存内容时会提示）"
+                title={translate('canvasStage3d.t47Desc')}
               />
             </div>
           </div>
@@ -1308,7 +1311,7 @@ export function CanvasDirectorStage3DModal({
                 type="button"
                 className="stage3d-panel-rail stage3d-panel-rail-left"
                 onClick={() => setToolsCollapsed(false)}
-                title="展开左侧面板"
+                title={translate('canvasStage3d.t19')}
               >
                 <Icons.PanelLeft size={16} />
               </button>
@@ -1318,13 +1321,13 @@ export function CanvasDirectorStage3DModal({
                   type="button"
                   className="stage3d-panel-collapse stage3d-panel-collapse-left"
                   onClick={() => setToolsCollapsed(true)}
-                  title="折叠左侧面板"
+                  title={translate('canvasStage3d.t20')}
                 >
                   <Icons.ChevronLeft size={14} />
                 </button>
-                <div className="stage3d-section-title">添加角色</div>
+                <div className="stage3d-section-title">{translate('canvasStage3d.t67')}</div>
                 <label className="stage3d-field">
-                  <span>人物模型</span>
+                  <span>{translate('canvasStage3d.t68')}</span>
                   <Select
                     size="small"
                     style={{ width: '100%' }}
@@ -1342,7 +1345,7 @@ export function CanvasDirectorStage3DModal({
                   icon={<Icons.User size={14} />}
                   onClick={() => addActor()}
                 >
-                  路人角色
+                  {translate('canvasStage3d.t69')}
                 </Button>
                 {characterNodes.length > 0 && (
                   <Dropdown
@@ -1355,15 +1358,15 @@ export function CanvasDirectorStage3DModal({
                     }}
                   >
                     <Button block size="small" icon={<Icons.Users size={14} />}>
-                      绑定画布角色
+                      {translate('canvasStage3d.t70')}
                     </Button>
                   </Dropdown>
                 )}
 
-                <div className="stage3d-section-title">群众阵列</div>
+                <div className="stage3d-section-title">{translate('canvasStage3d.t71')}</div>
                 <div className="stage3d-crowd-grid">
                   <label className="stage3d-field">
-                    <span>行</span>
+                    <span>{translate('canvasStage3d.t72')}</span>
                     <Input
                       size="small"
                       type="number"
@@ -1374,7 +1377,7 @@ export function CanvasDirectorStage3DModal({
                     />
                   </label>
                   <label className="stage3d-field">
-                    <span>列</span>
+                    <span>{translate('canvasStage3d.t73')}</span>
                     <Input
                       size="small"
                       type="number"
@@ -1385,7 +1388,7 @@ export function CanvasDirectorStage3DModal({
                     />
                   </label>
                   <label className="stage3d-field">
-                    <span>间距</span>
+                    <span>{translate('canvasStage3d.t74')}</span>
                     <Input
                       size="small"
                       type="number"
@@ -1403,10 +1406,10 @@ export function CanvasDirectorStage3DModal({
                   icon={<Icons.Users size={14} />}
                   onClick={addCrowdActors}
                 >
-                  添加群众阵列（{Math.round(crowdRows)}x{Math.round(crowdColumns)}）
+                  {translate('canvasStage3d.tpl6Desc', { rows: Math.round(crowdRows), columns: Math.round(crowdColumns) })}
                 </Button>
 
-                <div className="stage3d-section-title">添加几何道具</div>
+                <div className="stage3d-section-title">{translate('canvasStage3d.t75')}</div>
                 <div className="stage3d-prim-grid">
                   {PRIMITIVE_DEFS.map((p) => (
                     <Button key={p.id} size="small" onClick={() => addPrimitive(p.id)}>
@@ -1415,16 +1418,16 @@ export function CanvasDirectorStage3DModal({
                   ))}
                 </div>
 
-                <div className="stage3d-section-title">家具（GLB）</div>
+                <div className="stage3d-section-title">{translate('canvasStage3d.t76')}</div>
                 {GLB_ASSETS.length === 0 ? (
                   <div className="stage3d-tip">
-                    Kenney 家具资产由后续阶段接入，当前可用几何道具搭建布局。
+                    {translate('canvasStage3d.t77Desc')}
                   </div>
                 ) : (
                   <FurniturePanel onPick={addGlbProp} />
                 )}
 
-                <div className="stage3d-section-title">本地模型</div>
+                <div className="stage3d-section-title">{translate('canvasStage3d.t78')}</div>
                 <input
                   ref={localModelInputRef}
                   type="file"
@@ -1443,37 +1446,37 @@ export function CanvasDirectorStage3DModal({
                   icon={<Icons.Upload size={14} />}
                   onClick={() => localModelInputRef.current?.click()}
                 >
-                  导入 FBX / OBJ / GLB
+                  {translate('canvasStage3d.t79Desc')}
                 </Button>
 
-                <div className="stage3d-section-title">背景</div>
+                <div className="stage3d-section-title">{translate('canvasStage3d.t80')}</div>
                 <Segmented
                   size="small"
                   block
                   value={draft.backdrop.mode}
                   onChange={(v) => setBackdropMode(v as Stage3DBackdropMode)}
                   options={[
-                    { label: '网格', value: 'grid' },
-                    { label: '全景', value: 'panorama' },
-                    { label: '背板', value: 'backdrop' },
+                    { label: translate('canvasStage3d.t25'), value: 'grid' },
+                    { label: translate('canvasStage3d.t26'), value: 'panorama' },
+                    { label: translate('canvasStage3d.t27'), value: 'backdrop' },
                   ]}
                 />
                 {draft.backdrop.mode !== 'grid' && (
                   <>
                     <div className="stage3d-subtle">
                       {draft.backdrop.mode === 'panorama'
-                        ? '选一张全景图作为环境球'
-                        : '选一张场景图作为背板'}
+                        ? translate('canvasStage3d.t28')
+                        : translate('canvasStage3d.t29')}
                     </div>
                     {imageNodes.length === 0 ? (
                       <div className="stage3d-tip">
-                        画布中暂无图片节点，先生成/上传一张图片再回来选取。
+                        {translate('canvasStage3d.t81Desc')}
                       </div>
                     ) : (
                       <Select
                         size="small"
                         className="stage3d-image-select"
-                        placeholder="选择背板图"
+                        placeholder={translate('canvasStage3d.t48')}
                         allowClear
                         showSearch
                         optionFilterProp="title"
@@ -1486,7 +1489,7 @@ export function CanvasDirectorStage3DModal({
                       />
                     )}
                     <label className="stage3d-field">
-                      <span>旋转 {Math.round((draft.backdrop.rotationY ?? 0) / RAD)}°</span>
+                      <span>{translate('canvasStage3d.tpl7Desc', { value: Math.round((draft.backdrop.rotationY ?? 0) / RAD) })}</span>
                       <Slider
                         min={-180}
                         max={180}
@@ -1503,7 +1506,7 @@ export function CanvasDirectorStage3DModal({
                 )}
 
                 <SceneControls draft={draft} setDraft={setDraft} />
-                <div className="stage3d-section-title">对象列表</div>
+                <div className="stage3d-section-title">{translate('canvasStage3d.t82')}</div>
                 <div className="stage3d-object-list">
                   {!poseMode && (
                     <button
@@ -1513,8 +1516,8 @@ export function CanvasDirectorStage3DModal({
                       <span className="stage3d-swatch stage3d-swatch-cam">
                         <Icons.Eye size={11} />
                       </span>
-                      取景相机
-                      <Tag>机位</Tag>
+                      {translate('canvasStage3d.t83')}
+                      <Tag>{translate('canvasStage3d.t84')}</Tag>
                     </button>
                   )}
                   {draft.actors.map((a) => (
@@ -1540,7 +1543,7 @@ export function CanvasDirectorStage3DModal({
                         <Icons.Box size={11} />
                       </span>
                       {p.name}
-                      <Tag>道具</Tag>
+                      <Tag>{translate('canvasStage3d.t85')}</Tag>
                     </button>
                   ))}
                 </div>
@@ -1552,10 +1555,10 @@ export function CanvasDirectorStage3DModal({
                   disabled={activeIsCamera || !draft.activeId}
                   onClick={removeActive}
                 >
-                  删除选中
+                  {translate('canvasStage3d.t86')}
                 </Button>
                 <div className="stage3d-tip">
-                  点击选中对象；拖动坐标轴移动，切换到旋转微调朝向；Delete 删除。
+                  {translate('canvasStage3d.t87Desc')}
                 </div>
               </aside>
             )}
@@ -1596,7 +1599,7 @@ export function CanvasDirectorStage3DModal({
                 <div className="stage3d-record-overlay" aria-live="polite">
                   <div className="stage3d-record-badge">
                     <span className="stage3d-record-dot" />
-                    正在录制运镜视频
+                    {translate('canvasStage3d.t88')}
                   </div>
                   <div className="stage3d-record-progress">
                     <div
@@ -1617,19 +1620,19 @@ export function CanvasDirectorStage3DModal({
                         label: (
                           <span
                             className="stage3d-toolbar-option"
-                            title="左键旋转视角，右键平移画布"
+                            title={translate('canvasStage3d.t49Desc')}
                           >
                             <Icons.Compass size={13} />
-                            视角
+                            {translate('canvasStage3d.t89')}
                           </span>
                         ),
                         value: 'orbit',
                       },
                       {
                         label: (
-                          <span className="stage3d-toolbar-option" title="左键拖动画布前后左右移动">
+                          <span className="stage3d-toolbar-option" title={translate('canvasStage3d.t50')}>
                             <Icons.Hand size={13} />
-                            平移
+                            {translate('canvasStage3d.t90')}
                           </span>
                         ),
                         value: 'pan',
@@ -1641,8 +1644,8 @@ export function CanvasDirectorStage3DModal({
                     value={transformMode}
                     onChange={(v) => setTransformMode(v as 'translate' | 'rotate')}
                     options={[
-                      { label: '移动', value: 'translate' },
-                      { label: '旋转', value: 'rotate' },
+                      { label: translate('canvasStage3d.t30'), value: 'translate' },
+                      { label: translate('canvasStage3d.t31'), value: 'rotate' },
                     ]}
                   />
                   <Button
@@ -1650,9 +1653,9 @@ export function CanvasDirectorStage3DModal({
                     type={snap ? 'primary' : 'default'}
                     icon={<Icons.Grid size={13} />}
                     onClick={() => setSnap((v) => !v)}
-                    title="吸附对齐：半格网格 0.25m / 15°"
+                    title={translate('canvasStage3d.t51Desc')}
                   >
-                    吸附
+                    {translate('canvasStage3d.t91')}
                   </Button>
                   {activeActor && (
                     <Button
@@ -1660,9 +1663,9 @@ export function CanvasDirectorStage3DModal({
                       type={poseMode ? 'primary' : 'default'}
                       icon={<Icons.User size={13} />}
                       onClick={() => setPoseMode((v) => !v)}
-                      title="摆姿势：点关节后用视口调节器调整 XYZ，手脚末端可拖 IK（Esc 退出）"
+                      title={translate('canvasStage3d.t52Desc')}
                     >
-                      摆姿势
+                      {translate('canvasStage3d.t92')}
                     </Button>
                   )}
                   {activeActor && (
@@ -1670,9 +1673,9 @@ export function CanvasDirectorStage3DModal({
                       size="small"
                       icon={<Icons.Maximize size={13} />}
                       onClick={() => setPoseEditorOpen(true)}
-                      title="全屏编辑：把当前角色扔进大视口摆姿势"
+                      title={translate('canvasStage3d.t53Desc')}
                     >
-                      全屏编辑
+                      {translate('canvasStage3d.t93')}
                     </Button>
                   )}
                   {poseMode && (
@@ -1682,18 +1685,18 @@ export function CanvasDirectorStage3DModal({
                         icon={<Icons.Undo2 size={13} />}
                         disabled={!canUndo}
                         onClick={undoPose}
-                        title="撤销（Cmd/Ctrl+Z）"
+                        title={translate('canvasStage3d.t54Desc')}
                       >
-                        撤销
+                        {translate('canvasStage3d.t94')}
                       </Button>
                       <Button
                         size="small"
                         icon={<Icons.Redo2 size={13} />}
                         disabled={!canRedo}
                         onClick={redoPose}
-                        title="重做（Cmd/Ctrl+Shift+Z）"
+                        title={translate('canvasStage3d.t55Desc')}
                       >
-                        重做
+                        {translate('canvasStage3d.t95')}
                       </Button>
                     </>
                   )}
@@ -1706,9 +1709,9 @@ export function CanvasDirectorStage3DModal({
                     value={guide}
                     onChange={(v) => setGuide(v as 'none' | 'thirds' | 'cross')}
                     options={[
-                      { label: '无参考线', value: 'none' },
-                      { label: '三分法', value: 'thirds' },
-                      { label: '中心十字', value: 'cross' },
+                      { label: translate('canvasStage3d.t32'), value: 'none' },
+                      { label: translate('canvasStage3d.t33'), value: 'thirds' },
+                      { label: translate('canvasStage3d.t34'), value: 'cross' },
                     ]}
                   />
                 </div>
@@ -1721,7 +1724,7 @@ export function CanvasDirectorStage3DModal({
                 type="button"
                 className="stage3d-panel-rail stage3d-panel-rail-right"
                 onClick={() => setInspectorCollapsed(false)}
-                title="展开右侧面板"
+                title={translate('canvasStage3d.t21')}
               >
                 <Icons.PanelRight size={16} />
               </button>
@@ -1731,29 +1734,29 @@ export function CanvasDirectorStage3DModal({
                   type="button"
                   className="stage3d-panel-collapse stage3d-panel-collapse-right"
                   onClick={() => setInspectorCollapsed(true)}
-                  title="折叠右侧面板"
+                  title={translate('canvasStage3d.t22')}
                 >
                   <Icons.ChevronRight size={14} />
                 </button>
                 {/* 机位预览常驻右栏顶部：无论当前选中什么对象都可查看导演相机/镜头画面 */}
                 <CameraPreviewPanel
                   shots={shots}
-                  directorCameraName={draft.camera.name ?? '导演相机'}
+                  directorCameraName={draft.camera.name ?? translate('canvasStage3d.t35')}
                   resolveCamera={resolvePreviewCamera}
                   renderPreview={renderViewportPreview}
                   recording={!!videoRecording}
                 />
                 {activeIsCamera ? (
                   <>
-                    <div className="stage3d-section-title">机位</div>
+                    <div className="stage3d-section-title">{translate('canvasStage3d.t84')}</div>
                     <Segmented
                       size="small"
                       block
                       value={cameraTab}
                       onChange={(v) => setCameraTab(v as 'props' | 'motion')}
                       options={[
-                        { label: '属性', value: 'props' },
-                        { label: '运动轨迹', value: 'motion' },
+                        { label: translate('canvasStage3d.t36'), value: 'props' },
+                        { label: translate('canvasStage3d.t37'), value: 'motion' },
                       ]}
                     />
                     {cameraTab === 'props' ? (
@@ -1794,7 +1797,7 @@ export function CanvasDirectorStage3DModal({
                     onUpdate={(patch) => updateProp(activeProp.id, patch)}
                   />
                 ) : (
-                  <div className="stage3d-tip">选中一个对象以编辑属性。</div>
+                  <div className="stage3d-tip">{translate('canvasStage3d.t96')}</div>
                 )}
 
                 <ShotListPanel
@@ -1823,14 +1826,14 @@ export function CanvasDirectorStage3DModal({
                   onChange={setSlate}
                 />
 
-                <div className="stage3d-section-title">场景与提示词</div>
+                <div className="stage3d-section-title">{translate('canvasStage3d.t97')}</div>
                 <label className="stage3d-field">
-                  <span>场景一句话</span>
+                  <span>{translate('canvasStage3d.t98')}</span>
                   <Input
                     size="small"
                     value={draft.sceneBrief ?? ''}
                     onChange={(e) => setDraft((d) => ({ ...d, sceneBrief: e.target.value }))}
-                    placeholder="例如：黄昏的咖啡馆窗边"
+                    placeholder={translate('canvasStage3d.t56')}
                   />
                 </label>
                 <Input.TextArea
@@ -1885,7 +1888,7 @@ function FurniturePanel({ onPick }: { onPick: (assetId: string) => void }) {
         icon={<Icons.Box size={14} />}
         onClick={() => setExpanded((v) => !v)}
       >
-        {expanded ? '收起家具面板' : `选择家具（${GLB_ASSETS.length} 件）`}
+        {expanded ? translate('canvasStage3d.t38') : translate('canvasStage3d.tpl8Desc', { count: GLB_ASSETS.length })}
       </Button>
       {expanded && (
         <div className="stage3d-furniture-panel">
@@ -1934,13 +1937,15 @@ function ShotListPanel({
 }) {
   return (
     <>
-      <div className="stage3d-section-title">分镜镜头（{shots.length}）</div>
+      <div className="stage3d-section-title">
+            {translate('canvasStage3d.tpl9Desc', { count: shots.length })}
+          </div>
       <Button block size="small" icon={<Icons.Plus size={13} />} onClick={onSaveCurrent}>
-        保存当前机位为镜头
+        {translate('canvasStage3d.t99')}
       </Button>
       {shots.length === 0 ? (
         <div className="stage3d-tip">
-          调整取景相机后点上方按钮存为镜头，可积累多机位分镜，再「导出全部镜头」一次生成一组参考图。
+          {translate('canvasStage3d.t100LongDesc')}
         </div>
       ) : (
         <div className="stage3d-shot-list">
@@ -1951,13 +1956,13 @@ function ShotListPanel({
                   size="small"
                   className="stage3d-shot-number"
                   value={shot.shotNumber}
-                  placeholder="镜号"
+                  placeholder={translate('canvasStage3d.t57')}
                   onChange={(e) => onUpdate(shot.id, { shotNumber: e.target.value })}
                 />
                 <Input
                   size="small"
                   value={shot.name}
-                  placeholder="镜头名"
+                  placeholder={translate('canvasStage3d.t58')}
                   onChange={(e) => onUpdate(shot.id, { name: e.target.value })}
                 />
               </div>
@@ -1968,17 +1973,17 @@ function ShotListPanel({
                   icon={<Icons.Eye size={12} />}
                   onClick={() => onApply(shot)}
                 >
-                  切换
+                  {translate('canvasStage3d.t101')}
                 </Button>
                 <Button
                   size="small"
                   type="text"
                   icon={<Icons.Video size={12} />}
                   disabled={recording}
-                  title={shot.motion ? '录制该镜头的运镜视频' : '该镜头暂无运动轨迹'}
+                  title={shot.motion ? translate('canvasStage3d.t39') : translate('canvasStage3d.t40')}
                   onClick={() => onRecord(shot)}
                 >
-                  录制
+                  {translate('canvasStage3d.t102')}
                 </Button>
                 <Button
                   size="small"
@@ -1986,7 +1991,7 @@ function ShotListPanel({
                   icon={<Icons.Copy size={12} />}
                   onClick={() => onDuplicate(shot.id)}
                 >
-                  复制
+                  {translate('canvasStage3d.t103')}
                 </Button>
                 <Button
                   size="small"
@@ -1995,14 +2000,14 @@ function ShotListPanel({
                   icon={<Icons.Trash size={12} />}
                   onClick={() => onRemove(shot.id)}
                 >
-                  删除
+                  {translate('canvasStage3d.t104')}
                 </Button>
               </div>
               {shot.motion && (
                 <div className="stage3d-shot-motion-tag">
                   {shot.motion.kind === 'preset'
-                    ? getStage3DMotionPreset(shot.motion.presetId)?.label ?? '预设运镜'
-                    : '自定义轨迹'}
+                    ? getStage3DMotionPreset(shot.motion.presetId)?.label ?? translate('canvasStage3d.t41')
+                    : translate('canvasStage3d.t42')}
                   <span>· {shot.motion.durationSec.toFixed(1)}s</span>
                 </div>
               )}
@@ -2029,9 +2034,9 @@ function LightingInspector({
 }) {
   return (
     <>
-      <div className="stage3d-section-title">场景布光</div>
+      <div className="stage3d-section-title">{translate('canvasStage3d.t105')}</div>
       <label className="stage3d-field">
-        <span>灯光预设</span>
+        <span>{translate('canvasStage3d.t106')}</span>
         <Select
           size="small"
           style={{ width: '100%' }}
@@ -2044,7 +2049,7 @@ function LightingInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>光照强度 {intensity.toFixed(1)}×</span>
+        <span>{translate('canvasStage3d.tpl10Desc', { value: intensity.toFixed(1) })}</span>
         <Slider
           min={0.5}
           max={2}
@@ -2074,10 +2079,10 @@ function SlateInspector({
 }) {
   return (
     <>
-      <div className="stage3d-section-title">场记板</div>
+      <div className="stage3d-section-title">{translate('canvasStage3d.t107')}</div>
       <div className="stage3d-slate-row">
         <label className="stage3d-field">
-          <span>场次</span>
+          <span>{translate('canvasStage3d.t108')}</span>
           <Input
             size="small"
             value={scene}
@@ -2086,7 +2091,7 @@ function SlateInspector({
           />
         </label>
         <label className="stage3d-field">
-          <span>镜号</span>
+          <span>{translate('canvasStage3d.t57')}</span>
           <Input
             size="small"
             value={shotNumber}
@@ -2105,11 +2110,11 @@ function SlateInspector({
         </label>
       </div>
       <label className="stage3d-field">
-        <span>场记备注（可选）</span>
+        <span>{translate('canvasStage3d.t109')}</span>
         <Input
           size="small"
           value={note}
-          placeholder="例如：情绪高点，注意手部"
+          placeholder={translate('canvasStage3d.t59')}
           onChange={(e) => onChange({ note: e.target.value })}
         />
       </label>
@@ -2146,14 +2151,14 @@ function CameraInspector({
 
   // 注视目标候选：手动坐标 + 角色 + 道具
   const lookOptions = [
-    { value: '__manual__', label: '手动坐标' },
-    ...draft.actors.map((a) => ({ value: a.id, label: `角色 · ${a.name}` })),
-    ...draft.props.map((p) => ({ value: p.id, label: `道具 · ${p.name}` })),
+    { value: '__manual__', label: translate('canvasStage3d.t43') },
+    ...draft.actors.map((a) => ({ value: a.id, label: translate('canvasStage3d.tpl3Desc', { name: a.name }) })),
+    ...draft.props.map((p) => ({ value: p.id, label: translate('canvasStage3d.tpl2Desc', { name: p.name }) })),
   ]
   const followOptions = [
-    { value: '__none__', label: '不跟随' },
-    ...draft.actors.map((a) => ({ value: a.id, label: `角色 · ${a.name}` })),
-    ...draft.props.map((p) => ({ value: p.id, label: `道具 · ${p.name}` })),
+    { value: '__none__', label: translate('canvasStage3d.t44') },
+    ...draft.actors.map((a) => ({ value: a.id, label: translate('canvasStage3d.tpl3Desc', { name: a.name }) })),
+    ...draft.props.map((p) => ({ value: p.id, label: translate('canvasStage3d.tpl2Desc', { name: p.name }) })),
   ]
 
   /** 选择注视目标：立即把注视点吸附到对象中心（角色胸口高度） */
@@ -2169,16 +2174,16 @@ function CameraInspector({
   return (
     <>
       <label className="stage3d-field">
-        <span>名称</span>
+        <span>{translate('canvasStage3d.t110')}</span>
         <Input
           size="small"
           value={camera.name ?? ''}
-          placeholder="导演相机"
+          placeholder={translate('canvasStage3d.t35')}
           onChange={(e) => setCam({ name: e.target.value || undefined })}
         />
       </label>
       <div className="stage3d-field">
-        <span>位置</span>
+        <span>{translate('canvasStage3d.t111')}</span>
         <div className="stage3d-vec3-row">
           {(['X', 'Y', 'Z'] as const).map((axis, axisIndex) => (
             <span key={axis} className="stage3d-vec3-item">
@@ -2198,13 +2203,13 @@ function CameraInspector({
         </div>
       </div>
       <div className="stage3d-field">
-        <span>旋转（朝向）</span>
+        <span>{translate('canvasStage3d.t112')}</span>
         <div className="stage3d-vec3-readonly">
-          水平 {yaw}° · 俯仰 {pitch}°（由注视点驱动）
+          {translate('canvasStage3d.tpl11Desc', { yaw, pitch })}
         </div>
       </div>
       <label className="stage3d-field">
-        <span>跟随目标</span>
+        <span>{translate('canvasStage3d.t113')}</span>
         <Select
           size="small"
           style={{ width: '100%' }}
@@ -2214,7 +2219,7 @@ function CameraInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>注视目标</span>
+        <span>{translate('canvasStage3d.t114')}</span>
         <Select
           size="small"
           style={{ width: '100%' }}
@@ -2225,7 +2230,7 @@ function CameraInspector({
       </label>
       {!camera.lookTargetId && (
         <div className="stage3d-field">
-          <span>注视坐标</span>
+          <span>{translate('canvasStage3d.t115')}</span>
           <div className="stage3d-vec3-row">
             {(['X', 'Y', 'Z'] as const).map((axis, axisIndex) => (
               <span key={axis} className="stage3d-vec3-item">
@@ -2247,7 +2252,7 @@ function CameraInspector({
       )}
       <div className="stage3d-field">
         <span className="stage3d-field-label-row">
-          视野角度
+          {translate('canvasStage3d.t116')}
           <Switch size="small" checked={fovEnabled} onChange={setFovEnabled} />
         </span>
         <Slider
@@ -2258,11 +2263,11 @@ function CameraInspector({
           onChange={(v) => setCam({ fov: clamp(v, 10, 100) })}
         />
         <div className="stage3d-vec3-readonly">
-          视野 {Math.round(camera.fov)}°（{fovToFocalLabel(camera.fov)}mm 等效焦段）
+          {translate('canvasStage3d.tpl12Desc', { fov: Math.round(camera.fov), focal: fovToFocalLabel(camera.fov) })}
         </div>
       </div>
       <label className="stage3d-field">
-        <span>画幅</span>
+        <span>{translate('canvasStage3d.t117')}</span>
         <Segmented
           size="small"
           block
@@ -2272,7 +2277,7 @@ function CameraInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>相机高度 {camera.position[1].toFixed(1)}m</span>
+        <span>{translate('canvasStage3d.tpl13Desc', { value: camera.position[1].toFixed(1) })}</span>
         <Slider
           min={0.2}
           max={6}
@@ -2282,7 +2287,7 @@ function CameraInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>目标高度 {camera.target[1].toFixed(1)}m</span>
+        <span>{translate('canvasStage3d.tpl14Desc', { value: camera.target[1].toFixed(1) })}</span>
         <Slider
           min={0}
           max={3}
@@ -2292,9 +2297,9 @@ function CameraInspector({
         />
       </label>
       <Button size="small" block icon={<Icons.Eye size={13} />} onClick={onAim}>
-        对准最近主体
+        {translate('canvasStage3d.t118')}
       </Button>
-      <div className="stage3d-tip">在视口中拖动相机图标改机位；「运动轨迹」页可套用运镜并录制视频。</div>
+      <div className="stage3d-tip">{translate('canvasStage3d.t119Desc')}</div>
     </>
   )
 }
@@ -2329,9 +2334,9 @@ function ActorInspector({
   const [showJoints, setShowJoints] = useState(false)
   return (
     <>
-      <div className="stage3d-section-title">角色属性</div>
+      <div className="stage3d-section-title">{translate('canvasStage3d.t120')}</div>
       <label className="stage3d-field">
-        <span>名称</span>
+        <span>{translate('canvasStage3d.t110')}</span>
         <Input
           size="small"
           value={actor.name}
@@ -2339,11 +2344,11 @@ function ActorInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>绑定角色节点</span>
+        <span>{translate('canvasStage3d.t121')}</span>
         <Select
           size="small"
           style={{ width: '100%' }}
-          placeholder="不绑定（路人）"
+          placeholder={translate('canvasStage3d.t60')}
           allowClear
           value={actor.boundNodeId}
           onChange={(id) => {
@@ -2354,7 +2359,7 @@ function ActorInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>人物模型</span>
+        <span>{translate('canvasStage3d.t68')}</span>
         <Select
           size="small"
           style={{ width: '100%' }}
@@ -2370,7 +2375,7 @@ function ActorInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>体型</span>
+        <span>{translate('canvasStage3d.t122')}</span>
         <Select
           size="small"
           style={{ width: '100%' }}
@@ -2383,7 +2388,7 @@ function ActorInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>身高缩放 {actor.heightScale.toFixed(2)}×</span>
+        <span>{translate('canvasStage3d.tpl15Desc', { value: actor.heightScale.toFixed(2) })}</span>
         <Slider
           min={0.5}
           max={1.5}
@@ -2393,7 +2398,7 @@ function ActorInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>颜色</span>
+        <span>{translate('canvasStage3d.t123')}</span>
         <div className="stage3d-color-row">
           {STAGE3D_ACTOR_COLORS.map((c) => (
             <button
@@ -2411,7 +2416,7 @@ function ActorInspector({
         </div>
       </label>
       <label className="stage3d-field">
-        <span>朝向 {Math.round(actor.rotationY / RAD)}°</span>
+        <span>{translate('canvasStage3d.tpl16Desc', { value: Math.round(actor.rotationY / RAD) })}</span>
         <Slider
           min={-180}
           max={180}
@@ -2420,39 +2425,39 @@ function ActorInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>姿势预设</span>
+        <span>{translate('canvasStage3d.t124')}</span>
         <Select
           size="small"
           style={{ width: '100%' }}
           value={actor.pose}
           onChange={(v) => onUpdate({ pose: v })}
-          options={POSE_PRESETS.map((p) => ({ value: p.id, label: p.label }))}
+          options={POSE_PRESETS.map((p) => ({ value: p.id, label: translate(p.labelKey) }))}
         />
       </label>
       <label className="stage3d-field">
-        <span>备注 / 表演</span>
+        <span>{translate('canvasStage3d.t125')}</span>
         <Input.TextArea
           autoSize={{ minRows: 2, maxRows: 4 }}
           value={actor.note ?? ''}
           onChange={(e) => onUpdate({ note: e.target.value })}
-          placeholder="例如：侧头看向左方，手插口袋"
+          placeholder={translate('canvasStage3d.t61Desc')}
         />
       </label>
 
       <div className="stage3d-joint-header">
         <button className="stage3d-collapse-toggle" onClick={() => setShowJoints((v) => !v)}>
-          {showJoints ? '▾' : '▸'} 关节微调
+          {showJoints ? '▾' : '▸'} {translate('canvasStage3d.t129')}
         </button>
         {showJoints && (
           <Button size="small" type="text" onClick={onResetJoints}>
-            重置
+            {translate('canvasStage3d.t126')}
           </Button>
         )}
       </div>
       {showJoints &&
         JOINT_GROUPS.map((group) => (
-          <div key={group.label} className="stage3d-joint-group">
-            <div className="stage3d-joint-group-title">{group.label}</div>
+          <div key={group.labelKey} className="stage3d-joint-group">
+            <div className="stage3d-joint-group-title">{translate(group.labelKey)}</div>
             {group.joints.map((jointId) => (
               <JointSliders
                 key={jointId}
@@ -2480,9 +2485,9 @@ function PropInspector({
 }) {
   return (
     <>
-      <div className="stage3d-section-title">道具属性</div>
+      <div className="stage3d-section-title">{translate('canvasStage3d.t127')}</div>
       <label className="stage3d-field">
-        <span>名称</span>
+        <span>{translate('canvasStage3d.t110')}</span>
         <Input
           size="small"
           value={prop.name}
@@ -2490,7 +2495,7 @@ function PropInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>缩放 {prop.scale.toFixed(2)}×</span>
+        <span>{translate('canvasStage3d.tpl17Desc', { value: prop.scale.toFixed(2) })}</span>
         <Slider
           min={0.1}
           max={5}
@@ -2500,7 +2505,7 @@ function PropInspector({
         />
       </label>
       <label className="stage3d-field">
-        <span>朝向 {Math.round(prop.rotationY / RAD)}°</span>
+        <span>{translate('canvasStage3d.tpl16Desc', { value: Math.round(prop.rotationY / RAD) })}</span>
         <Slider
           min={-180}
           max={180}
@@ -2510,7 +2515,7 @@ function PropInspector({
       </label>
       {prop.kind === 'primitive' && (
         <label className="stage3d-field">
-          <span>颜色</span>
+          <span>{translate('canvasStage3d.t123')}</span>
           <input
             type="color"
             value={prop.color ?? '#cbd5e1'}

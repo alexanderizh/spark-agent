@@ -10,6 +10,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import type { ResourceMetricsHistoryPoint, ThresholdSnapshot } from '@spark/protocol'
+import { useI18n } from '../i18n'
 import { formatBytes } from './performance-format'
 
 const VIEW_W = 600
@@ -53,6 +54,7 @@ export function PressureTrendCharts({
   rangeMinutes,
   loading,
 }: PressureTrendChartsProps) {
+  const { t } = useI18n()
   const hostThresholds = thresholds?.entries?.['host-rss-pct'] ?? null
   const sysThresholds = thresholds?.entries?.['system-used-pct'] ?? null
   const baselineTotalBytes = thresholds?.baseline?.totalBytes ?? null
@@ -69,7 +71,7 @@ export function PressureTrendCharts({
     return [
       {
         id: 'host',
-        label: '宿主内存（RSS）',
+        label: t('perf.trend.hostLabel'),
         kind: 'line',
         values: hostValues,
         times: allTimes,
@@ -86,7 +88,7 @@ export function PressureTrendCharts({
       },
       {
         id: 'sys',
-        label: '系统内存占用率',
+        label: t('perf.trend.sysLabel'),
         kind: 'line',
         values: sysPairs.map((pair) => pair.value),
         times: sysPairs.map((pair) => pair.time),
@@ -103,7 +105,7 @@ export function PressureTrendCharts({
       },
       {
         id: 'proc',
-        label: '子进程数（全量）',
+        label: t('perf.trend.procLabel'),
         kind: 'bar',
         values: procValues,
         times: allTimes,
@@ -112,7 +114,7 @@ export function PressureTrendCharts({
         zeroBased: true,
       },
     ]
-  }, [points, hostThresholds, sysThresholds, baselineTotalBytes])
+  }, [points, hostThresholds, sysThresholds, baselineTotalBytes, t])
 
   return (
     <div className="trend-grid">
@@ -132,6 +134,7 @@ function TrendChart({
   loading: boolean
   rangeMinutes: number
 }) {
+  const { t } = useI18n()
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [hover, setHover] = useState<{ x: number; width: number; index: number } | null>(null)
 
@@ -196,7 +199,7 @@ function TrendChart({
           />
         ) : spec.values.length === 0 ? (
           <div className="ev-empty" style={{ lineHeight: '64px', padding: 0 }}>
-            暂无趋势数据
+            {t('perf.trend.empty')}
           </div>
         ) : (
           <>
@@ -301,8 +304,8 @@ function TrendChart({
         )}
       </div>
       <div className="chart-x">
-        <span>-{rangeMinutes} 分钟</span>
-        <span>现在</span>
+        <span>{t('perf.trend.rangeAgo', { minutes: rangeMinutes })}</span>
+        <span>{t('perf.trend.now')}</span>
       </div>
     </div>
   )

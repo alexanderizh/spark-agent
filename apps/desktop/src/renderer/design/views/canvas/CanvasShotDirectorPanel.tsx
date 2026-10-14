@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } fro
 import { Button, Tag, Tooltip } from '@lobehub/ui'
 import { Input, Select, message } from 'antd'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 
 type ShotSubjectKind = 'character' | 'prop'
 type ShotLayer = 'foreground' | 'midground' | 'background'
@@ -96,40 +97,40 @@ type CompositionAnalysis = {
 type PercentPoint = { x: number; y: number }
 
 const SHOT_SIZE_LABEL: Record<CameraShotSize, string> = {
-  wide: '远景',
-  full: '全身',
-  medium: '中景',
-  'close-up': '特写',
+  wide: translate('canvasShotDirector.t1'),
+  full: translate('canvasShotDirector.t2'),
+  medium: translate('canvasShotDirector.t3'),
+  'close-up': translate('canvasShotDirector.t4'),
 }
 
 const ANGLE_LABEL: Record<CameraAngle, string> = {
-  'eye-level': '平视',
-  'high-angle': '俯拍',
-  'low-angle': '仰拍',
-  'top-down': '顶拍',
+  'eye-level': translate('canvasShotDirector.t5'),
+  'high-angle': translate('canvasShotDirector.t6'),
+  'low-angle': translate('canvasShotDirector.t7'),
+  'top-down': translate('canvasShotDirector.t8'),
 }
 
 const MOVE_LABEL: Record<CameraMove, string> = {
-  static: '固定',
-  'dolly-in': '推进',
-  'dolly-out': '拉远',
-  tracking: '跟拍',
-  orbit: '环绕',
-  'crane-up': '升降',
+  static: translate('canvasShotDirector.t9'),
+  'dolly-in': translate('canvasShotDirector.t10'),
+  'dolly-out': translate('canvasShotDirector.t11'),
+  tracking: translate('canvasShotDirector.t12'),
+  orbit: translate('canvasShotDirector.t13'),
+  'crane-up': translate('canvasShotDirector.t14'),
 }
 
 const LAYER_LABEL: Record<ShotLayer, string> = {
-  foreground: '前景',
-  midground: '中景',
-  background: '背景',
+  foreground: translate('canvasShotDirector.t15'),
+  midground: translate('canvasShotDirector.t3'),
+  background: translate('canvasShotDirector.t16'),
 }
 
 const initialSubjects: ShotSubject[] = [
   {
     id: 'subject-a',
     kind: 'character',
-    name: '主角',
-    description: '站在画面左前方，面向对手，情绪克制',
+    name: translate('canvasShotDirector.t17'),
+    description: translate('canvasShotDirector.t18Desc'),
     x: 34,
     y: 58,
     z: 0,
@@ -139,8 +140,8 @@ const initialSubjects: ShotSubject[] = [
   {
     id: 'subject-b',
     kind: 'character',
-    name: '对手',
-    description: '站在画面右后方，回望主角',
+    name: translate('canvasShotDirector.t19'),
+    description: translate('canvasShotDirector.t20'),
     x: 68,
     y: 36,
     z: 0,
@@ -157,20 +158,36 @@ const initialCamera: ShotCameraState = {
   shotSize: 'medium',
   angle: 'eye-level',
   focalLength: 35,
-  composition: '三角构图，主体落在三分线交点，保留运动方向空间',
+  composition: translate('canvasShotDirector.t21Desc'),
   movement: 'dolly-in',
 }
 
 const initialKeyframes: ShotCameraKeyframe[] = [
-  { id: 'kf-0', time: 0, x: 50, y: 88, z: 1.6, target: '主角', movement: 'dolly-in' },
-  { id: 'kf-1', time: 4, x: 46, y: 62, z: 1.5, target: '主角与对手之间', movement: 'dolly-in' },
+  {
+    id: 'kf-0',
+    time: 0,
+    x: 50,
+    y: 88,
+    z: 1.6,
+    target: translate('canvasShotDirector.t17'),
+    movement: 'dolly-in',
+  },
+  {
+    id: 'kf-1',
+    time: 4,
+    x: 46,
+    y: 62,
+    z: 1.5,
+    target: translate('canvasShotDirector.t22'),
+    movement: 'dolly-in',
+  },
 ]
 
 const defaultDraft: CanvasShotDirectorDraft = {
   version: 1,
   activeShotId: 'shot-1',
   shots: [],
-  sceneBrief: '夜晚室内对峙场景，空气紧张，电影感布光',
+  sceneBrief: translate('canvasShotDirector.t23Desc'),
   subjects: initialSubjects,
   camera: initialCamera,
   keyframes: initialKeyframes,
@@ -179,7 +196,7 @@ const defaultDraft: CanvasShotDirectorDraft = {
 
 const defaultShot: CanvasShotDirectorShot = {
   id: 'shot-1',
-  title: '镜头 1',
+  title: translate('canvasShotDirector.t24'),
   durationSec: 4,
   sceneBrief: defaultDraft.sceneBrief,
   subjects: initialSubjects,
@@ -207,7 +224,9 @@ function cloneShot(shot: CanvasShotDirectorShot): CanvasShotDirectorShot {
   }
 }
 
-function shotToDraftFields(shot: CanvasShotDirectorShot): Pick<
+function shotToDraftFields(
+  shot: CanvasShotDirectorShot,
+): Pick<
   CanvasShotDirectorDraft,
   'sceneBrief' | 'subjects' | 'camera' | 'keyframes' | 'promptMode'
 > {
@@ -220,10 +239,14 @@ function shotToDraftFields(shot: CanvasShotDirectorShot): Pick<
   }
 }
 
-function draftToShot(draft: CanvasShotDirectorDraft, shot?: CanvasShotDirectorShot): CanvasShotDirectorShot {
+function draftToShot(
+  draft: CanvasShotDirectorDraft,
+  shot?: CanvasShotDirectorShot,
+): CanvasShotDirectorShot {
   return {
     id: shot?.id ?? draft.activeShotId,
-    title: shot?.title ?? `镜头 ${draft.shots.length + 1}`,
+    title:
+      shot?.title ?? translate('canvasShotDirector.tpl1Desc', { index: draft.shots.length + 1 }),
     durationSec: shot?.durationSec ?? estimateShotDuration(draft.keyframes),
     sceneBrief: draft.sceneBrief,
     subjects: draft.subjects.map((subject) => ({ ...subject })),
@@ -248,11 +271,16 @@ function normalizeDraft(
 ): CanvasShotDirectorDraft {
   if (!draft) {
     const shot = cloneShot(defaultShot)
-    return { ...cloneDraft(defaultDraft), ...shotToDraftFields(shot), activeShotId: shot.id, shots: [shot] }
+    return {
+      ...cloneDraft(defaultDraft),
+      ...shotToDraftFields(shot),
+      activeShotId: shot.id,
+      shots: [shot],
+    }
   }
   const legacyShot = normalizeShot({
     id: typeof draft.activeShotId === 'string' ? draft.activeShotId : 'shot-1',
-    title: '镜头 1',
+    title: translate('canvasShotDirector.t24'),
     durationSec: estimateShotDuration(draft.keyframes),
     sceneBrief: draft.sceneBrief ?? defaultDraft.sceneBrief,
     subjects: draft.subjects ?? defaultDraft.subjects,
@@ -282,7 +310,10 @@ function normalizeDraft(
 function normalizeShot(shot: Partial<CanvasShotDirectorShot>): CanvasShotDirectorShot {
   return {
     id: typeof shot.id === 'string' ? shot.id : makeId('shot'),
-    title: typeof shot.title === 'string' && shot.title.trim() ? shot.title : '镜头',
+    title:
+      typeof shot.title === 'string' && shot.title.trim()
+        ? shot.title
+        : translate('canvasShotDirector.t25'),
     durationSec: Number.isFinite(shot.durationSec)
       ? Math.max(1, Number(shot.durationSec))
       : estimateShotDuration(shot.keyframes),
@@ -305,7 +336,7 @@ function normalizeSubject(subject: Partial<ShotSubject>): ShotSubject {
   return {
     id: typeof subject.id === 'string' ? subject.id : makeId('subject'),
     kind: subject.kind === 'prop' ? 'prop' : 'character',
-    name: typeof subject.name === 'string' ? subject.name : '人物',
+    name: typeof subject.name === 'string' ? subject.name : translate('canvasShotDirector.t26'),
     description: typeof subject.description === 'string' ? subject.description : '',
     x: clampPercent(Number(subject.x ?? 50)),
     y: clampPercent(Number(subject.y ?? 50)),
@@ -338,7 +369,8 @@ function normalizeKeyframe(keyframe: Partial<ShotCameraKeyframe>): ShotCameraKey
     x: clampPercent(Number(keyframe.x ?? 50)),
     y: clampPercent(Number(keyframe.y ?? 50)),
     z: Number.isFinite(keyframe.z) ? Number(keyframe.z) : 1.6,
-    target: typeof keyframe.target === 'string' ? keyframe.target : '主体',
+    target:
+      typeof keyframe.target === 'string' ? keyframe.target : translate('canvasShotDirector.t27'),
     movement: normalizeMove(keyframe.movement),
   }
 }
@@ -372,7 +404,9 @@ function parseNumericInput(value: string, fallback: number): number {
 }
 
 function subjectKindLabel(kind: ShotSubjectKind): string {
-  return kind === 'character' ? '人物' : '物件'
+  return kind === 'character'
+    ? translate('canvasShotDirector.t26')
+    : translate('canvasShotDirector.t28')
 }
 
 function activeTargetId(target: DragTarget | null): string {
@@ -427,15 +461,17 @@ function getTargetPoint(draft: CanvasShotDirectorDraft, target: DragTarget | nul
 }
 
 function getActiveTargetLabel(draft: CanvasShotDirectorDraft, target: DragTarget | null): string {
-  if (!target) return '镜头'
-  if (target.type === 'camera') return '镜头'
+  if (!target) return translate('canvasShotDirector.t25')
+  if (target.type === 'camera') return translate('canvasShotDirector.t25')
   if (target.type === 'subject') {
     const subject = draft.subjects.find((item) => item.id === target.id)
-    return subject ? subject.name : '占位'
+    return subject ? subject.name : translate('canvasShotDirector.t29')
   }
   const sorted = sortedKeyframes(draft.keyframes)
   const index = sorted.findIndex((item) => item.id === target.id)
-  return index >= 0 ? `关键帧 ${index + 1}` : '关键帧'
+  return index >= 0
+    ? translate('canvasShotDirector.tpl2Desc', { index: index + 1 })
+    : translate('canvasShotDirector.t30')
 }
 
 function sortedKeyframes(keyframes: ShotCameraKeyframe[]): ShotCameraKeyframe[] {
@@ -478,24 +514,33 @@ function buildCompositionAnalysis(draft: CanvasShotDirectorDraft): CompositionAn
   }
 
   if (!draft.sceneBrief.trim()) {
-    addIssue({ id: 'scene-empty', level: 'warn', label: '场景意图偏弱' }, 8)
+    addIssue({ id: 'scene-empty', level: 'warn', label: translate('canvasShotDirector.t31') }, 8)
   }
   if (draft.subjects.length === 0) {
-    addIssue({ id: 'subjects-empty', level: 'danger', label: '画面缺少人物或物件' }, 34)
+    addIssue(
+      { id: 'subjects-empty', level: 'danger', label: translate('canvasShotDirector.t32') },
+      34,
+    )
   }
 
   const targetSubject = draft.subjects.find((subject) => subject.id === draft.camera.target)
   if (!targetSubject) {
-    addIssue({ id: 'target-missing', level: 'warn', label: '镜头目标未锁定占位' }, 16)
+    addIssue(
+      { id: 'target-missing', level: 'warn', label: translate('canvasShotDirector.t33') },
+      16,
+    )
   }
 
   if (draft.camera.movement !== 'static' && draft.keyframes.length < 2) {
-    addIssue({ id: 'keyframes-short', level: 'warn', label: '运镜缺少起止关键帧' }, 12)
+    addIssue(
+      { id: 'keyframes-short', level: 'warn', label: translate('canvasShotDirector.t34') },
+      12,
+    )
   }
 
   const layerSet = new Set(draft.subjects.map((subject) => subject.layer))
   if (draft.subjects.length >= 2 && (!layerSet.has('foreground') || !layerSet.has('background'))) {
-    addIssue({ id: 'depth-flat', level: 'warn', label: '前中后景层次不够明显' }, 9)
+    addIssue({ id: 'depth-flat', level: 'warn', label: translate('canvasShotDirector.t35') }, 9)
   }
 
   for (let i = 0; i < draft.subjects.length; i += 1) {
@@ -504,7 +549,14 @@ function buildCompositionAnalysis(draft: CanvasShotDirectorDraft): CompositionAn
       const right = draft.subjects[j]
       if (!left || !right) continue
       if (distancePercent(left, right) < 9) {
-        addIssue({ id: `overlap-${left.id}-${right.id}`, level: 'warn', label: '占位距离过近' }, 8)
+        addIssue(
+          {
+            id: `overlap-${left.id}-${right.id}`,
+            level: 'warn',
+            label: translate('canvasShotDirector.t36'),
+          },
+          8,
+        )
         i = draft.subjects.length
         break
       }
@@ -513,51 +565,102 @@ function buildCompositionAnalysis(draft: CanvasShotDirectorDraft): CompositionAn
 
   const primarySubject = targetSubject ?? draft.subjects[0]
   if (primarySubject && distancePercent(primarySubject, nearestThirdPoint(primarySubject)) > 25) {
-    addIssue({ id: 'thirds-off', level: 'warn', label: '主体远离三分构图点' }, 6)
+    addIssue({ id: 'thirds-off', level: 'warn', label: translate('canvasShotDirector.t37') }, 6)
   }
 
   if (draft.camera.focalLength >= 70 && draft.camera.shotSize === 'wide') {
-    addIssue({ id: 'lens-shot-mismatch', level: 'warn', label: '长焦远景空间感可能偏压缩' }, 5)
+    addIssue(
+      { id: 'lens-shot-mismatch', level: 'warn', label: translate('canvasShotDirector.t38') },
+      5,
+    )
   }
 
   const normalizedScore = Math.max(24, Math.min(100, score))
-  if (normalizedScore >= 88) return { score: normalizedScore, label: '稳', tone: 'green', issues }
-  if (normalizedScore >= 74) return { score: normalizedScore, label: '可用', tone: 'blue', issues }
-  if (normalizedScore >= 58) return { score: normalizedScore, label: '待调', tone: 'orange', issues }
-  return { score: normalizedScore, label: '需重构', tone: 'red', issues }
+  if (normalizedScore >= 88)
+    return {
+      score: normalizedScore,
+      label: translate('canvasShotDirector.t39'),
+      tone: 'green',
+      issues,
+    }
+  if (normalizedScore >= 74)
+    return {
+      score: normalizedScore,
+      label: translate('canvasShotDirector.t40'),
+      tone: 'blue',
+      issues,
+    }
+  if (normalizedScore >= 58)
+    return {
+      score: normalizedScore,
+      label: translate('canvasShotDirector.t41'),
+      tone: 'orange',
+      issues,
+    }
+  return { score: normalizedScore, label: translate('canvasShotDirector.t42'), tone: 'red', issues }
 }
 
 function buildPrompt(input: CanvasShotDirectorDraft): { imagePrompt: string; videoPrompt: string } {
   const { sceneBrief, subjects, camera, keyframes } = input
   const subjectLines = subjects.map((subject) => {
     const layer = LAYER_LABEL[subject.layer]
-    return `${subject.name}（${subjectKindLabel(subject.kind)}）位于${layer}，画面坐标约 x=${subject.x}, y=${subject.y}, 朝向 ${subject.facing} 度；${subject.description}`
+    return translate('canvasShotDirector.tpl3Instruction', {
+      name: subject.name,
+      kind: subjectKindLabel(subject.kind),
+      layer,
+      x: subject.x,
+      y: subject.y,
+      rest: translate('canvasShotDirector.tpl17Desc', {
+        facing: subject.facing,
+        description: subject.description,
+      }),
+    })
   })
   const target =
-    subjects.find((subject) => subject.id === camera.target)?.name || camera.target || '主体'
-  const cameraLine = `镜头位于 x=${camera.x}, y=${camera.y}, 高度 ${camera.z}m，拍摄目标为${target}；${SHOT_SIZE_LABEL[camera.shotSize]}，${ANGLE_LABEL[camera.angle]}，${camera.focalLength}mm 焦段。`
-  const compositionLine = `构图要求：${camera.composition}`
-  const keyframeLines = sortedKeyframes(keyframes).map(
-    (keyframe) =>
-      `${keyframe.time}s: 相机到 x=${keyframe.x}, y=${keyframe.y}, 高度 ${keyframe.z}m，看向${keyframe.target}，${MOVE_LABEL[keyframe.movement]}。`,
+    subjects.find((subject) => subject.id === camera.target)?.name ||
+    camera.target ||
+    translate('canvasShotDirector.t27')
+  const cameraLine = translate('canvasShotDirector.tpl4Instruction', {
+    x: camera.x,
+    y: camera.y,
+    z: camera.z,
+    target,
+    rest: translate('canvasShotDirector.tpl18Desc', {
+      size: SHOT_SIZE_LABEL[camera.shotSize],
+      angle: ANGLE_LABEL[camera.angle],
+      focal: camera.focalLength,
+    }),
+  })
+  const compositionLine = translate('canvasShotDirector.tpl5Desc', { value: camera.composition })
+  const keyframeLines = sortedKeyframes(keyframes).map((keyframe) =>
+    translate('canvasShotDirector.tpl6Instruction', {
+      time: keyframe.time,
+      x: keyframe.x,
+      y: keyframe.y,
+      z: keyframe.z,
+      target: keyframe.target,
+      rest: MOVE_LABEL[keyframe.movement],
+    }),
   )
 
   return {
     imagePrompt: [
-      sceneBrief || '电影感画面',
+      sceneBrief || translate('canvasShotDirector.t43'),
       ...subjectLines,
       cameraLine,
       compositionLine,
-      '强调人物空间关系、镜头透视、清晰站位和可读的画面层次。',
+      translate('canvasShotDirector.tpl7Desc'),
     ].join('\n'),
     videoPrompt: [
-      sceneBrief || '电影感视频镜头',
+      sceneBrief || translate('canvasShotDirector.t45'),
       ...subjectLines,
       cameraLine,
       compositionLine,
-      `运镜类型：${MOVE_LABEL[camera.movement]}。`,
-      keyframeLines.length > 0 ? `关键帧：\n${keyframeLines.join('\n')}` : '',
-      '保持角色位置连续、镜头运动平稳、主体始终可读。',
+      translate('canvasShotDirector.tpl8Desc', { value: MOVE_LABEL[camera.movement] }),
+      keyframeLines.length > 0
+        ? translate('canvasShotDirector.tpl9Instruction', { lines: keyframeLines.join('\n') })
+        : '',
+      translate('canvasShotDirector.t46Desc'),
     ]
       .filter(Boolean)
       .join('\n'),
@@ -589,11 +692,27 @@ function applyPresetToDraft(
         angle: 'eye-level',
         focalLength: 35,
         movement: 'dolly-in',
-        composition: '对峙三角构图，双方在画面两侧形成张力，镜头向主角缓慢推进',
+        composition: translate('canvasShotDirector.tpl10Instruction'),
       },
       keyframes: [
-        { id: makeId('kf'), time: 0, x: 50, y: 90, z: 1.6, target: '主角', movement: 'dolly-in' },
-        { id: makeId('kf'), time: 4, x: 48, y: 64, z: 1.5, target: '两人之间', movement: 'dolly-in' },
+        {
+          id: makeId('kf'),
+          time: 0,
+          x: 50,
+          y: 90,
+          z: 1.6,
+          target: translate('canvasShotDirector.t17'),
+          movement: 'dolly-in',
+        },
+        {
+          id: makeId('kf'),
+          time: 4,
+          x: 48,
+          y: 64,
+          z: 1.5,
+          target: translate('canvasShotDirector.t48'),
+          movement: 'dolly-in',
+        },
       ],
     }
   }
@@ -616,10 +735,18 @@ function applyPresetToDraft(
         angle: 'eye-level',
         focalLength: 50,
         movement: 'static',
-        composition: '过肩构图，前景人物肩部形成遮挡，焦点落在对话对象表情',
+        composition: translate('canvasShotDirector.tpl11Instruction'),
       },
       keyframes: [
-        { id: makeId('kf'), time: 0, x: 30, y: 86, z: 1.65, target: '对话对象', movement: 'static' },
+        {
+          id: makeId('kf'),
+          time: 0,
+          x: 30,
+          y: 86,
+          z: 1.65,
+          target: translate('canvasShotDirector.t50'),
+          movement: 'static',
+        },
       ],
     }
   }
@@ -635,12 +762,36 @@ function applyPresetToDraft(
         angle: 'low-angle',
         focalLength: 28,
         movement: 'dolly-in',
-        composition: '从前景遮挡推进揭示主体，保留背景环境信息',
+        composition: translate('canvasShotDirector.t51Desc'),
       },
       keyframes: [
-        { id: makeId('kf'), time: 0, x: 52, y: 96, z: 1.2, target: '前景遮挡', movement: 'dolly-in' },
-        { id: makeId('kf'), time: 3, x: 50, y: 66, z: 1.4, target: '主体', movement: 'dolly-in' },
-        { id: makeId('kf'), time: 5, x: 48, y: 52, z: 1.55, target: '主体表情', movement: 'dolly-in' },
+        {
+          id: makeId('kf'),
+          time: 0,
+          x: 52,
+          y: 96,
+          z: 1.2,
+          target: translate('canvasShotDirector.t52'),
+          movement: 'dolly-in',
+        },
+        {
+          id: makeId('kf'),
+          time: 3,
+          x: 50,
+          y: 66,
+          z: 1.4,
+          target: translate('canvasShotDirector.t27'),
+          movement: 'dolly-in',
+        },
+        {
+          id: makeId('kf'),
+          time: 5,
+          x: 48,
+          y: 52,
+          z: 1.55,
+          target: translate('canvasShotDirector.t53'),
+          movement: 'dolly-in',
+        },
       ],
     }
   }
@@ -662,12 +813,36 @@ function applyPresetToDraft(
       angle: 'high-angle',
       focalLength: 24,
       movement: 'orbit',
-      composition: '群像环绕构图，人物围绕画面中心形成关系网络',
+      composition: translate('canvasShotDirector.t54Desc'),
     },
     keyframes: [
-      { id: makeId('kf'), time: 0, x: 50, y: 82, z: 2.2, target: '群像中心', movement: 'orbit' },
-      { id: makeId('kf'), time: 2, x: 76, y: 56, z: 2.1, target: '群像中心', movement: 'orbit' },
-      { id: makeId('kf'), time: 4, x: 50, y: 24, z: 2.0, target: '群像中心', movement: 'orbit' },
+      {
+        id: makeId('kf'),
+        time: 0,
+        x: 50,
+        y: 82,
+        z: 2.2,
+        target: translate('canvasShotDirector.t55'),
+        movement: 'orbit',
+      },
+      {
+        id: makeId('kf'),
+        time: 2,
+        x: 76,
+        y: 56,
+        z: 2.1,
+        target: translate('canvasShotDirector.t55'),
+        movement: 'orbit',
+      },
+      {
+        id: makeId('kf'),
+        time: 4,
+        x: 50,
+        y: 24,
+        z: 2.0,
+        target: translate('canvasShotDirector.t55'),
+        movement: 'orbit',
+      },
     ],
   }
 }
@@ -694,7 +869,8 @@ function rebalanceSubjectsInDraft(draft: CanvasShotDirectorDraft): CanvasShotDir
               return {
                 x: Math.round(50 + Math.cos(angle) * radiusX),
                 y: Math.round(52 + Math.sin(angle) * radiusY),
-                layer: index % 3 === 0 ? 'foreground' : index % 3 === 1 ? 'midground' : 'background',
+                layer:
+                  index % 3 === 0 ? 'foreground' : index % 3 === 1 ? 'midground' : 'background',
               }
             })
 
@@ -719,14 +895,30 @@ function rebalanceSubjectsInDraft(draft: CanvasShotDirectorDraft): CanvasShotDir
       x: 50,
       y: 88,
       target: first?.id ?? draft.camera.target,
-      composition: '主体关系重新整理为清晰的前中后景构图，保留画面纵深和运动方向空间',
+      composition: translate('canvasShotDirector.tpl12Instruction'),
     },
     keyframes:
       draft.camera.movement === 'static'
         ? draft.keyframes
         : [
-            { id: makeId('kf'), time: 0, x: 50, y: 90, z: draft.camera.z, target: first?.name ?? '主体', movement: draft.camera.movement },
-            { id: makeId('kf'), time: 4, x: 50, y: 62, z: draft.camera.z, target: '主体关系中心', movement: draft.camera.movement },
+            {
+              id: makeId('kf'),
+              time: 0,
+              x: 50,
+              y: 90,
+              z: draft.camera.z,
+              target: first?.name ?? translate('canvasShotDirector.t27'),
+              movement: draft.camera.movement,
+            },
+            {
+              id: makeId('kf'),
+              time: 4,
+              x: 50,
+              y: 62,
+              z: draft.camera.z,
+              target: translate('canvasShotDirector.t57'),
+              movement: draft.camera.movement,
+            },
           ],
   }
 }
@@ -893,7 +1085,13 @@ function renderShotDirectorPreviewToDataUrl(draft: CanvasShotDirectorDraft): str
     })
   })
 
-  drawMarker(ctx, { x: cameraX, y: cameraY, radius: 22, fill: '#0891b2', label: '机' })
+  drawMarker(ctx, {
+    x: cameraX,
+    y: cameraY,
+    radius: 22,
+    fill: '#0891b2',
+    label: translate('canvasShotDirector.t58'),
+  })
 
   ctx.fillStyle = 'rgba(15, 23, 42, 0.82)'
   ctx.fillRect(24, 24, 560, 122)
@@ -901,7 +1099,7 @@ function renderShotDirectorPreviewToDataUrl(draft: CanvasShotDirectorDraft): str
   ctx.font = '700 28px sans-serif'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
-  ctx.fillText('分镜导演台构图', 48, 64)
+  ctx.fillText(translate('canvasShotDirector.t59'), 48, 64)
   ctx.fillStyle = '#cbd5e1'
   ctx.font = '18px sans-serif'
   wrapCanvasText(ctx, draft.sceneBrief, 48, 96, 500, 24, 2)
@@ -931,6 +1129,8 @@ export function CanvasShotDirectorPanel({
   onInsertPrompt: (prompt: string) => Promise<void> | void
   onInsertScreenshot: (input: CanvasShotDirectorScreenshotInput) => Promise<void> | void
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const [draft, setDraft] = useState<CanvasShotDirectorDraft>(() => normalizeDraft(initialDraft))
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -999,7 +1199,7 @@ export function CanvasShotDirectorPanel({
       const shot = normalizeShot({
         ...defaultShot,
         id: makeId('shot'),
-        title: `镜头 ${index}`,
+        title: translate('canvasShotDirector.tpl1Desc', { index }),
         sceneBrief: synced.sceneBrief,
         subjects: synced.subjects,
         camera: {
@@ -1015,7 +1215,7 @@ export function CanvasShotDirectorPanel({
             x: 50,
             y: 88,
             z: synced.camera.z,
-            target: synced.subjects[0]?.name ?? '主体',
+            target: synced.subjects[0]?.name ?? translate('canvasShotDirector.t27'),
             movement: 'static',
           },
         ],
@@ -1039,7 +1239,7 @@ export function CanvasShotDirectorPanel({
       const copy = cloneShot({
         ...source,
         id: makeId('shot'),
-        title: `${source.title} 副本`,
+        title: translate('canvasShotDirector.tpl13Desc', { title: source.title }),
         updatedAt: new Date().toISOString(),
       })
       return {
@@ -1073,7 +1273,9 @@ export function CanvasShotDirectorPanel({
     })
   }
 
-  const updateActiveShotMeta = (patch: Partial<Pick<CanvasShotDirectorShot, 'title' | 'durationSec'>>) => {
+  const updateActiveShotMeta = (
+    patch: Partial<Pick<CanvasShotDirectorShot, 'title' | 'durationSec'>>,
+  ) => {
     updateDraft((current) => ({
       ...current,
       shots: current.shots.map((shot) =>
@@ -1104,10 +1306,7 @@ export function CanvasShotDirectorPanel({
     })
   }
 
-  const updateDraftTarget = (
-    target: DragTarget,
-    event: { clientX: number; clientY: number },
-  ) => {
+  const updateDraftTarget = (target: DragTarget, event: { clientX: number; clientY: number }) => {
     const point = stagePointFromPointer(event, stageRef.current, previewMode)
     if (!point) return
     moveTargetToPoint(target, point)
@@ -1165,9 +1364,12 @@ export function CanvasShotDirectorPanel({
           kind,
           name:
             kind === 'character'
-              ? `人物 ${current.subjects.length + 1}`
-              : `物件 ${current.subjects.length + 1}`,
-          description: kind === 'character' ? '描述人物身份、动作和情绪' : '描述物件外观和用途',
+              ? translate('canvasShotDirector.tpl14Desc', { index: current.subjects.length + 1 })
+              : translate('canvasShotDirector.tpl15Desc', { index: current.subjects.length + 1 }),
+          description:
+            kind === 'character'
+              ? translate('canvasShotDirector.t60')
+              : translate('canvasShotDirector.t61'),
           x: kind === 'character' ? 42 : 58,
           y: kind === 'character' ? 52 : 44,
           z: 0,
@@ -1194,7 +1396,7 @@ export function CanvasShotDirectorPanel({
             target:
               current.subjects.find((subject) => subject.id === current.camera.target)?.name ||
               current.camera.target ||
-              '主体',
+              translate('canvasShotDirector.t27'),
             movement: current.camera.movement,
           },
         ],
@@ -1226,7 +1428,7 @@ export function CanvasShotDirectorPanel({
       await onSaveDraft(nextDraft)
       setDraft(nextDraft)
       setDirty(false)
-      message.success('导演台编排已保存')
+      message.success(translate('canvasShotDirector.t62'))
     } finally {
       setSaving(false)
     }
@@ -1235,9 +1437,9 @@ export function CanvasShotDirectorPanel({
   const copyPrompt = async () => {
     try {
       await navigator.clipboard.writeText(activePrompt)
-      message.success('提示词已复制')
+      message.success(translate('canvasShotDirector.t63'))
     } catch {
-      message.error('复制失败，请手动复制')
+      message.error(translate('canvasShotDirector.t64'))
     }
   }
 
@@ -1248,7 +1450,7 @@ export function CanvasShotDirectorPanel({
   const insertScreenshot = async () => {
     const dataUrl = renderShotDirectorPreviewToDataUrl(draft)
     if (!dataUrl) {
-      message.error('生成导演台截图失败')
+      message.error(translate('canvasShotDirector.t65'))
       return
     }
     await onInsertScreenshot({ dataUrl, prompt: activePrompt, draft })
@@ -1286,14 +1488,19 @@ export function CanvasShotDirectorPanel({
   }
 
   return (
-    <section className="canvas-shot-director-panel" aria-label="分镜导演台">
+    <section
+      className="canvas-shot-director-panel"
+      aria-label={translate('canvasShotDirector.t68')}
+    >
       <header className="canvas-shot-director-head">
         <div>
-          <strong>分镜导演台</strong>
-          <span>编排站位、镜头与运镜，生成 AI 画面提示词</span>
+          <strong>{translate('canvasShotDirector.t68')}</strong>
+          <span>{translate('canvasShotDirector.t72Desc')}</span>
         </div>
         <div className="canvas-shot-director-head-actions">
-          <Tag color={dirty ? 'orange' : 'green'}>{dirty ? '未保存' : '已保存'}</Tag>
+          <Tag color={dirty ? 'orange' : 'green'}>
+            {dirty ? translate('canvasShotDirector.t66') : translate('canvasShotDirector.t67')}
+          </Tag>
           <Button
             size="middle"
             icon={<Icons.Check size={14} />}
@@ -1301,16 +1508,20 @@ export function CanvasShotDirectorPanel({
             disabled={!dirty && Boolean(draft.updatedAt)}
             onClick={() => void saveDraft()}
           >
-            保存编排
+            {translate('canvasShotDirector.t73')}
           </Button>
-          <Tooltip title="关闭">
+          <Tooltip title={translate('canvasShotDirector.t69')}>
             <Button size="middle" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
           </Tooltip>
         </div>
       </header>
 
       <div className="canvas-shot-timeline">
-        <div className="canvas-shot-timeline-list" role="tablist" aria-label="导演台镜头列表">
+        <div
+          className="canvas-shot-timeline-list"
+          role="tablist"
+          aria-label={translate('canvasShotDirector.t70')}
+        >
           {draft.shots.map((shot, index) => (
             <button
               key={shot.id}
@@ -1318,7 +1529,7 @@ export function CanvasShotDirectorPanel({
               className={shot.id === draft.activeShotId ? 'active' : ''}
               onClick={() => switchShot(shot.id)}
             >
-              <span>镜{index + 1}</span>
+              <span>{translate('canvasShotDirector.tpl16Desc', { index: index + 1 })}</span>
               <strong>{shot.title}</strong>
               <em>{shot.durationSec}s</em>
             </button>
@@ -1326,10 +1537,10 @@ export function CanvasShotDirectorPanel({
         </div>
         <div className="canvas-shot-timeline-actions">
           <Button size="middle" icon={<Icons.Plus size={14} />} onClick={createShot}>
-            新镜头
+            {translate('canvasShotDirector.t74')}
           </Button>
           <Button size="middle" icon={<Icons.Copy size={14} />} onClick={duplicateActiveShot}>
-            复制
+            {translate('canvasShotDirector.t75')}
           </Button>
           <Button
             size="middle"
@@ -1337,7 +1548,7 @@ export function CanvasShotDirectorPanel({
             disabled={draft.shots.length <= 1}
             onClick={deleteActiveShot}
           >
-            删除
+            {translate('canvasShotDirector.t76')}
           </Button>
         </div>
       </div>
@@ -1345,16 +1556,18 @@ export function CanvasShotDirectorPanel({
       <div className="canvas-shot-director-body">
         <div className="canvas-shot-director-left">
           <div className="canvas-shot-current-meta">
-            <Tag color="blue">镜{activeShotIndex + 1}</Tag>
+            <Tag color="blue">
+              {translate('canvasShotDirector.tpl16Desc', { index: activeShotIndex + 1 })}
+            </Tag>
             <label className="canvas-shot-field">
-              <span>镜头名</span>
+              <span>{translate('canvasShotDirector.t77')}</span>
               <Input
                 value={activeShot?.title ?? ''}
                 onChange={(event) => updateActiveShotMeta({ title: event.target.value })}
               />
             </label>
             <label className="canvas-shot-field">
-              <span>时长 s</span>
+              <span>{translate('canvasShotDirector.t78')}</span>
               <input
                 type="number"
                 min={1}
@@ -1376,7 +1589,7 @@ export function CanvasShotDirectorPanel({
           </div>
 
           <label className="canvas-shot-field canvas-shot-field-wide">
-            <span>场景描述</span>
+            <span>{translate('canvasShotDirector.t79')}</span>
             <Input.TextArea
               value={draft.sceneBrief}
               autoSize={{ minRows: 2, maxRows: 3 }}
@@ -1387,17 +1600,21 @@ export function CanvasShotDirectorPanel({
           </label>
 
           <div className="canvas-shot-section-head">
-            <strong>人物与物件</strong>
+            <strong>{translate('canvasShotDirector.t80')}</strong>
             <div>
               <Button
                 size="middle"
                 icon={<Icons.User size={14} />}
                 onClick={() => addSubject('character')}
               >
-                人物
+                {translate('canvasShotDirector.t26')}
               </Button>
-              <Button size="middle" icon={<Icons.Box size={14} />} onClick={() => addSubject('prop')}>
-                物件
+              <Button
+                size="middle"
+                icon={<Icons.Box size={14} />}
+                onClick={() => addSubject('prop')}
+              >
+                {translate('canvasShotDirector.t28')}
               </Button>
             </div>
           </div>
@@ -1425,20 +1642,20 @@ export function CanvasShotDirectorPanel({
                 </div>
                 <div className="canvas-shot-grid-form">
                   <label className="canvas-shot-field">
-                    <span>名称</span>
+                    <span>{translate('canvasShotDirector.t81')}</span>
                     <Input
                       value={subject.name}
                       onChange={(event) => updateSubject(subject.id, { name: event.target.value })}
                     />
                   </label>
                   <label className="canvas-shot-field">
-                    <span>层次</span>
+                    <span>{translate('canvasShotDirector.t82')}</span>
                     <Select
                       value={subject.layer}
                       options={[
-                        { label: '前景', value: 'foreground' },
-                        { label: '中景', value: 'midground' },
-                        { label: '背景', value: 'background' },
+                        { label: translate('canvasShotDirector.t15'), value: 'foreground' },
+                        { label: translate('canvasShotDirector.t3'), value: 'midground' },
+                        { label: translate('canvasShotDirector.t16'), value: 'background' },
                       ]}
                       onChange={(value) => updateSubject(subject.id, { layer: value })}
                     />
@@ -1472,7 +1689,7 @@ export function CanvasShotDirectorPanel({
                     />
                   </label>
                   <label className="canvas-shot-field">
-                    <span>朝向</span>
+                    <span>{translate('canvasShotDirector.t83')}</span>
                     <input
                       type="number"
                       min={0}
@@ -1486,7 +1703,7 @@ export function CanvasShotDirectorPanel({
                     />
                   </label>
                   <label className="canvas-shot-field canvas-shot-field-wide">
-                    <span>描述</span>
+                    <span>{translate('canvasShotDirector.t84')}</span>
                     <Input
                       value={subject.description}
                       onChange={(event) =>
@@ -1502,41 +1719,45 @@ export function CanvasShotDirectorPanel({
 
         <div className="canvas-shot-director-preview">
           <div className="canvas-shot-preview-toolbar">
-            <div className="canvas-shot-view-switch" role="tablist" aria-label="导演台视图">
+            <div
+              className="canvas-shot-view-switch"
+              role="tablist"
+              aria-label={translate('canvasShotDirector.t71')}
+            >
               <button
                 type="button"
                 className={previewMode === 'camera3d' ? 'active' : ''}
                 onClick={() => setPreviewMode('camera3d')}
               >
-                3D 预演
+                {translate('canvasShotDirector.t85')}
               </button>
               <button
                 type="button"
                 className={previewMode === 'top' ? 'active' : ''}
                 onClick={() => setPreviewMode('top')}
               >
-                俯视编排
+                {translate('canvasShotDirector.t86')}
               </button>
             </div>
             <div className="canvas-shot-template-row">
               <Button size="middle" onClick={() => applyPreset('standoff')}>
-                对峙
+                {translate('canvasShotDirector.t87')}
               </Button>
               <Button size="middle" onClick={() => applyPreset('over-shoulder')}>
-                过肩
+                {translate('canvasShotDirector.t88')}
               </Button>
               <Button size="middle" onClick={() => applyPreset('dolly-reveal')}>
-                推进揭示
+                {translate('canvasShotDirector.t89')}
               </Button>
               <Button size="middle" onClick={() => applyPreset('orbit-group')}>
-                环绕群像
+                {translate('canvasShotDirector.t90')}
               </Button>
             </div>
           </div>
 
           <div className="canvas-shot-smart-row">
             <Button size="middle" icon={<Icons.Grid size={14} />} onClick={rebalanceSubjects}>
-              重排站位
+              {translate('canvasShotDirector.t91')}
             </Button>
             <Button
               size="middle"
@@ -1544,10 +1765,10 @@ export function CanvasShotDirectorPanel({
               disabled={!activeTarget}
               onClick={moveActiveToThird}
             >
-              贴三分点
+              {translate('canvasShotDirector.t92')}
             </Button>
             <Button size="middle" icon={<Icons.Layers size={14} />} onClick={autoLayerSubjects}>
-              自动层次
+              {translate('canvasShotDirector.t93')}
             </Button>
             <Button
               size="middle"
@@ -1555,12 +1776,12 @@ export function CanvasShotDirectorPanel({
               disabled={activeTarget?.type !== 'subject'}
               onClick={focusCameraOnActiveSubject}
             >
-              镜头看向
+              {translate('canvasShotDirector.t94')}
             </Button>
           </div>
 
           <div className="canvas-shot-active-strip">
-            <Tag color="blue">当前</Tag>
+            <Tag color="blue">{translate('canvasShotDirector.t95')}</Tag>
             <strong>{activeTargetLabel}</strong>
             <span>
               x {activePoint.x} / y {activePoint.y}
@@ -1569,7 +1790,11 @@ export function CanvasShotDirectorPanel({
 
           {previewMode === 'top' ? (
             <div ref={stageRef} className="canvas-shot-preview-stage">
-              <svg className="canvas-shot-preview-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <svg
+                className="canvas-shot-preview-lines"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+              >
                 <line
                   x1={draft.camera.x}
                   y1={draft.camera.y}
@@ -1628,7 +1853,11 @@ export function CanvasShotDirectorPanel({
                 <strong>{draft.camera.focalLength}mm</strong>
                 <em>{ANGLE_LABEL[draft.camera.angle]}</em>
               </div>
-              <svg className="canvas-shot-3d-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <svg
+                className="canvas-shot-3d-lines"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+              >
                 <line
                   x1={draft.camera.x}
                   y1={project3dY(draft.camera.y)}
@@ -1694,19 +1923,19 @@ export function CanvasShotDirectorPanel({
 
           <div className={`canvas-shot-camera-panel${activeId === 'camera' ? ' selected' : ''}`}>
             <div className="canvas-shot-section-head">
-              <strong>镜头</strong>
+              <strong>{translate('canvasShotDirector.t25')}</strong>
               <Tag color="purple">{MOVE_LABEL[draft.camera.movement]}</Tag>
             </div>
             <div className="canvas-shot-grid-form">
               <label className="canvas-shot-field">
-                <span>景别</span>
+                <span>{translate('canvasShotDirector.t96')}</span>
                 <Select
                   value={draft.camera.shotSize}
                   options={[
-                    { label: '远景', value: 'wide' },
-                    { label: '全身', value: 'full' },
-                    { label: '中景', value: 'medium' },
-                    { label: '特写', value: 'close-up' },
+                    { label: translate('canvasShotDirector.t1'), value: 'wide' },
+                    { label: translate('canvasShotDirector.t2'), value: 'full' },
+                    { label: translate('canvasShotDirector.t3'), value: 'medium' },
+                    { label: translate('canvasShotDirector.t4'), value: 'close-up' },
                   ]}
                   onChange={(value) =>
                     updateDraft((current) => ({
@@ -1717,14 +1946,14 @@ export function CanvasShotDirectorPanel({
                 />
               </label>
               <label className="canvas-shot-field">
-                <span>角度</span>
+                <span>{translate('canvasShotDirector.t97')}</span>
                 <Select
                   value={draft.camera.angle}
                   options={[
-                    { label: '平视', value: 'eye-level' },
-                    { label: '俯拍', value: 'high-angle' },
-                    { label: '仰拍', value: 'low-angle' },
-                    { label: '顶拍', value: 'top-down' },
+                    { label: translate('canvasShotDirector.t5'), value: 'eye-level' },
+                    { label: translate('canvasShotDirector.t6'), value: 'high-angle' },
+                    { label: translate('canvasShotDirector.t7'), value: 'low-angle' },
+                    { label: translate('canvasShotDirector.t8'), value: 'top-down' },
                   ]}
                   onChange={(value) =>
                     updateDraft((current) => ({
@@ -1735,7 +1964,7 @@ export function CanvasShotDirectorPanel({
                 />
               </label>
               <label className="canvas-shot-field">
-                <span>目标</span>
+                <span>{translate('canvasShotDirector.t98')}</span>
                 <Select
                   value={draft.camera.target}
                   options={cameraTargetOptions}
@@ -1748,16 +1977,16 @@ export function CanvasShotDirectorPanel({
                 />
               </label>
               <label className="canvas-shot-field">
-                <span>运镜</span>
+                <span>{translate('canvasShotDirector.t99')}</span>
                 <Select
                   value={draft.camera.movement}
                   options={[
-                    { label: '固定', value: 'static' },
-                    { label: '推进', value: 'dolly-in' },
-                    { label: '拉远', value: 'dolly-out' },
-                    { label: '跟拍', value: 'tracking' },
-                    { label: '环绕', value: 'orbit' },
-                    { label: '升降', value: 'crane-up' },
+                    { label: translate('canvasShotDirector.t9'), value: 'static' },
+                    { label: translate('canvasShotDirector.t10'), value: 'dolly-in' },
+                    { label: translate('canvasShotDirector.t11'), value: 'dolly-out' },
+                    { label: translate('canvasShotDirector.t12'), value: 'tracking' },
+                    { label: translate('canvasShotDirector.t13'), value: 'orbit' },
+                    { label: translate('canvasShotDirector.t14'), value: 'crane-up' },
                   ]}
                   onChange={(value) =>
                     updateDraft((current) => ({
@@ -1768,7 +1997,7 @@ export function CanvasShotDirectorPanel({
                 />
               </label>
               <label className="canvas-shot-field">
-                <span>镜头 X</span>
+                <span>{translate('canvasShotDirector.t100')}</span>
                 <input
                   type="number"
                   min={0}
@@ -1786,7 +2015,7 @@ export function CanvasShotDirectorPanel({
                 />
               </label>
               <label className="canvas-shot-field">
-                <span>镜头 Y</span>
+                <span>{translate('canvasShotDirector.t101')}</span>
                 <input
                   type="number"
                   min={0}
@@ -1804,7 +2033,7 @@ export function CanvasShotDirectorPanel({
                 />
               </label>
               <label className="canvas-shot-field">
-                <span>高度 m</span>
+                <span>{translate('canvasShotDirector.t102')}</span>
                 <input
                   type="number"
                   step="0.1"
@@ -1823,7 +2052,7 @@ export function CanvasShotDirectorPanel({
                 />
               </label>
               <label className="canvas-shot-field">
-                <span>焦段 mm</span>
+                <span>{translate('canvasShotDirector.t103')}</span>
                 <input
                   type="number"
                   min={12}
@@ -1844,7 +2073,7 @@ export function CanvasShotDirectorPanel({
                 />
               </label>
               <label className="canvas-shot-field canvas-shot-field-wide">
-                <span>构图</span>
+                <span>{translate('canvasShotDirector.t104')}</span>
                 <Input
                   value={draft.camera.composition}
                   onChange={(event) =>
@@ -1862,15 +2091,19 @@ export function CanvasShotDirectorPanel({
         <div className="canvas-shot-director-right">
           <div className={`canvas-shot-composition-card tone-${composition.tone}`}>
             <div className="canvas-shot-composition-head">
-              <strong>构图健康度</strong>
-              <Tag color={composition.tone}>{composition.score} · {composition.label}</Tag>
+              <strong>{translate('canvasShotDirector.t105')}</strong>
+              <Tag color={composition.tone}>
+                {composition.score} · {composition.label}
+              </Tag>
             </div>
             <div className="canvas-shot-scorebar">
               <span style={{ width: `${composition.score}%` }} />
             </div>
             <div className="canvas-shot-issue-list">
               {composition.issues.length === 0 ? (
-                <span className="canvas-shot-issue-good">空间关系、镜头目标和运镜信息完整</span>
+                <span className="canvas-shot-issue-good">
+                  {translate('canvasShotDirector.t106Desc')}
+                </span>
               ) : (
                 composition.issues.slice(0, 4).map((issue) => (
                   <span key={issue.id} className={`canvas-shot-issue-${issue.level}`}>
@@ -1882,9 +2115,9 @@ export function CanvasShotDirectorPanel({
           </div>
 
           <div className="canvas-shot-section-head">
-            <strong>运镜关键帧</strong>
+            <strong>{translate('canvasShotDirector.t107')}</strong>
             <Button size="middle" icon={<Icons.Plus size={14} />} onClick={addKeyframe}>
-              关键帧
+              {translate('canvasShotDirector.t30')}
             </Button>
           </div>
           <div className="canvas-shot-keyframes">
@@ -1908,7 +2141,7 @@ export function CanvasShotDirectorPanel({
                 </div>
                 <div className="canvas-shot-grid-form">
                   <label className="canvas-shot-field">
-                    <span>秒</span>
+                    <span>{translate('canvasShotDirector.t108')}</span>
                     <input
                       type="number"
                       min={0}
@@ -1950,7 +2183,7 @@ export function CanvasShotDirectorPanel({
                     />
                   </label>
                   <label className="canvas-shot-field canvas-shot-field-wide">
-                    <span>看向</span>
+                    <span>{translate('canvasShotDirector.t109')}</span>
                     <Input
                       value={keyframe.target}
                       onChange={(event) =>
@@ -1975,7 +2208,7 @@ export function CanvasShotDirectorPanel({
                   }))
                 }
               >
-                生图
+                {translate('canvasShotDirector.t110')}
               </button>
               <button
                 type="button"
@@ -1987,20 +2220,24 @@ export function CanvasShotDirectorPanel({
                   }))
                 }
               >
-                视频
+                {translate('canvasShotDirector.t111')}
               </button>
             </div>
             <textarea value={activePrompt} readOnly />
             <div className="canvas-shot-prompt-actions">
-              <Button size="middle" icon={<Icons.Copy size={14} />} onClick={() => void copyPrompt()}>
-                复制
+              <Button
+                size="middle"
+                icon={<Icons.Copy size={14} />}
+                onClick={() => void copyPrompt()}
+              >
+                {translate('canvasShotDirector.t75')}
               </Button>
               <Button
                 size="middle"
                 icon={<Icons.ImagePlus size={14} />}
                 onClick={() => void insertScreenshot()}
               >
-                截图+提示词
+                {translate('canvasShotDirector.t112')}
               </Button>
               <Button
                 size="middle"
@@ -2008,7 +2245,7 @@ export function CanvasShotDirectorPanel({
                 icon={<Icons.FilePlus size={14} />}
                 onClick={() => void insertPrompt()}
               >
-                插入提示词
+                {translate('canvasShotDirector.t113')}
               </Button>
             </div>
           </div>

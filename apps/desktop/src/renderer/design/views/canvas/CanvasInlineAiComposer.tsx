@@ -10,6 +10,8 @@ import {
 import { Button, Checkbox as LobeCheckbox, Input, Tag, Tooltip } from '@lobehub/ui'
 import { message } from 'antd'
 import { Icons } from '../../Icons'
+// 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+import { translate } from '../../i18n'
 import { Select as LobeSelect } from '@lobehub/ui'
 import {
   capabilityForOperation,
@@ -101,12 +103,12 @@ const UNIFIED_VIDEO_MODE_CHOICES: ReadonlyArray<{
   value: CanvasMediaInputMode
   label: string
 }> = [
-  { value: 'text', label: '文生视频' },
-  { value: 'first_frame', label: '首帧生成' },
-  { value: 'first_last_frame', label: '首尾帧生成' },
-  { value: 'reference', label: '全能参考' },
-  { value: 'edit', label: '视频编辑' },
-  { value: 'extend', label: '视频延长' },
+  { value: 'text', label: translate('canvasInlineAi.t1') },
+  { value: 'first_frame', label: translate('canvasInlineAi.t2') },
+  { value: 'first_last_frame', label: translate('canvasInlineAi.t3') },
+  { value: 'reference', label: translate('canvasInlineAi.t4') },
+  { value: 'edit', label: translate('canvasInlineAi.t5') },
+  { value: 'extend', label: translate('canvasInlineAi.t6') },
 ]
 /** 合并后「图片生成」容器覆盖的历史图片 operation；下拉只保留 text_to_image 容器。 */
 const LEGACY_IMAGE_OPERATIONS = new Set<CanvasOperationType>([
@@ -119,8 +121,8 @@ const UNIFIED_IMAGE_MODE_CHOICES: ReadonlyArray<{
   value: CanvasMediaInputMode
   label: string
 }> = [
-  { value: 'text', label: '文生图' },
-  { value: 'reference', label: '图生图 / 编辑' },
+  { value: 'text', label: translate('canvasInlineAi.t7') },
+  { value: 'reference', label: translate('canvasInlineAi.t8') },
 ]
 type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
 type CanvasTaskInputRoleSelection = CanvasTaskInputRole | CanvasTaskInputRole[]
@@ -132,12 +134,12 @@ export function unifiedCanvasComposerCapabilities<
   return capabilities.flatMap((capability) => {
     if (LEGACY_VIDEO_OPERATIONS.has(capability.operation)) {
       if (capability.operation !== 'text_to_video') return []
-      return [{ ...capability, label: '视频生成' }]
+      return [{ ...capability, label: translate('canvasInlineAi.t9') }]
     }
     if (LEGACY_IMAGE_OPERATIONS.has(capability.operation)) {
       // 文生图 / 图生图 / 编辑 / 多图合成合并为单一「图片生成」容器（text_to_image）。
       if (capability.operation !== 'text_to_image') return []
-      return [{ ...capability, label: '图片生成' }]
+      return [{ ...capability, label: translate('canvasInlineAi.t10') }]
     }
     return [{ ...capability }]
   })
@@ -300,7 +302,7 @@ export function CanvasInlineAiComposer({
   )
 
   const selectedSummary = useMemo(() => {
-    if (selectedNodes.length === 0) return '未选择节点'
+    if (selectedNodes.length === 0) return translate('canvasInlineAi.t11')
     const counts = selectedNodes.reduce<Record<string, number>>((acc, node) => {
       acc[node.type] = (acc[node.type] ?? 0) + 1
       return acc
@@ -1006,7 +1008,7 @@ export function CanvasInlineAiComposer({
         if (paramName) focusParameterControl(paramName)
         message.warning(error.message)
       } else {
-        message.error(error instanceof Error ? error.message : '提交任务失败，请稍后重试')
+        message.error(error instanceof Error ? error.message : translate('canvasInlineAi.t12'))
       }
     } finally {
       submittingRef.current = false
@@ -1019,12 +1021,12 @@ export function CanvasInlineAiComposer({
       ? [
           {
             key: 'model',
-            label: '模型',
-            value: selectedModel?.displayName ?? '未选择模型',
+            label: translate('canvasInlineAi.t13'),
+            value: selectedModel?.displayName ?? translate('canvasInlineAi.t14'),
             icon: <Icons.Sparkles size={14} />,
             onClick: () => {
               const trigger =
-                panelRef.current?.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')
+                panelRef.current?.querySelector<HTMLButtonElement>('[aria-label="选择模型"]') // i18n-exempt-line: DOM 查询选择器（CanvasModelPicker 的稳定 aria-label 契约，测试同用）
               trigger?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
               trigger?.click()
             },
@@ -1057,17 +1059,21 @@ export function CanvasInlineAiComposer({
           className={fullscreen ? '' : 'canvas-inline-ai-drag-handle'}
           onPointerDown={fullscreen ? undefined : handleDragStart}
         >
-          <h3>AI 操作</h3>
-          <div className="canvas-inline-ai-subtitle">基于画布选择创建任务</div>
+          <h3>{translate('canvasInlineAi.t68')}</h3>
+          <div className="canvas-inline-ai-subtitle">{translate('canvasInlineAi.t69')}</div>
         </div>
         <div className="canvas-inline-ai-head-actions">
           <Tag color={selectedNodes.length > 0 ? 'blue' : 'default'}>{selectedSummary}</Tag>
-          <Tooltip title={fullscreen ? '退出全屏' : '全屏操作'}>
+          <Tooltip
+            title={fullscreen ? translate('canvasInlineAi.t15') : translate('canvasInlineAi.t16')}
+          >
             <Button
               size="middle"
               type="text"
               icon={fullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
-              aria-label={fullscreen ? '退出全屏' : '全屏操作'}
+              aria-label={
+                fullscreen ? translate('canvasInlineAi.t15') : translate('canvasInlineAi.t16')
+              }
               onClick={() => setFullscreen((current) => !current)}
             />
           </Tooltip>
@@ -1075,20 +1081,22 @@ export function CanvasInlineAiComposer({
             size="middle"
             type="text"
             icon={<Icons.X size={14} />}
-            aria-label="关闭 AI 操作"
+            aria-label={translate('canvasInlineAi.t63')}
             onClick={onClose}
           />
         </div>
       </div>
       <div className="canvas-inline-ai-body">
         <div className="canvas-form-row">
-          <label>能力</label>
+          <label>{translate('canvasInlineAi.t70')}</label>
           <LobeSelect
             value={operation}
             onChange={(value) => setOperation(value as CanvasOperationType)}
             options={capabilities.map((capability) => ({
               value: capability.operation,
-              label: capability.recommended ? `推荐 / ${capability.label}` : capability.label,
+              label: capability.recommended
+                ? translate('canvasInlineAi.tpl6Desc', { label: capability.label })
+                : capability.label,
             }))}
           />
           <div className="canvas-creative-actions">
@@ -1106,7 +1114,7 @@ export function CanvasInlineAiComposer({
         </div>
         {mediaCapabilityIds.length > 0 && (
           <div className="canvas-form-row canvas-composer-model-row">
-            <label>模型</label>
+            <label>{translate('canvasInlineAi.t13')}</label>
             <CanvasModelPicker
               models={supportedMediaModels}
               value={selectedModelKey}
@@ -1115,10 +1123,18 @@ export function CanvasInlineAiComposer({
             />
             <div className="canvas-model-hint">
               {modelsLoading
-                ? '正在读取已启用模型...'
+                ? translate('canvasInlineAi.t17')
                 : supportedMediaModels.length > 0
-                  ? `当前能力可用 ${supportedMediaModels.length} 个模型${selectedModel ? ` · ${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}` : ''}`
-                  : '当前能力暂无已启用模型，请先到 Provider 绑定。'}
+                  ? translate('canvasInlineAi.tpl7Desc', {
+                      count: supportedMediaModels.length,
+                      rest: selectedModel
+                        ? translate('canvasInlineAi.tpl8Desc', {
+                            id: selectedModel.effectiveModelId,
+                            mode: selectedModel.invocationMode,
+                          })
+                        : '',
+                    })
+                  : translate('canvasInlineAi.t18Desc')}
             </div>
           </div>
         )}
@@ -1126,7 +1142,11 @@ export function CanvasInlineAiComposer({
           unifiedMediaModeOptions.length > 0 &&
           effectiveMediaInputMode && (
             <div className="canvas-form-row">
-              <label>{isUnifiedImageOperation ? '图片模式' : '视频模式'}</label>
+              <label>
+                {isUnifiedImageOperation
+                  ? translate('canvasInlineAi.t19')
+                  : translate('canvasInlineAi.t20')}
+              </label>
               <LobeSelect
                 value={effectiveMediaInputMode}
                 onChange={(value) => setMediaInputMode(value as CanvasMediaInputMode)}
@@ -1140,14 +1160,17 @@ export function CanvasInlineAiComposer({
               />
               <div className="canvas-model-hint">
                 {selectedMediaInputIssue ??
-                  `已选择 ${selectedMediaBindings.length} 项画布素材，提交时按 ${selectedCapabilityId ?? '当前能力'} 分配角色。`}
+                  translate('canvasInlineAi.tpl9Desc', {
+                    count: selectedMediaBindings.length,
+                    capability: selectedCapabilityId ?? translate('canvasInlineAi.t21'),
+                  })}
               </div>
             </div>
           )}
         {supportsVideoFrameRoles && (
           <div className="canvas-form-row">
             <div className="canvas-form-label-row">
-              <label>视频帧</label>
+              <label>{translate('canvasInlineAi.t71')}</label>
               {onUploadImage && (
                 <Button
                   size="middle"
@@ -1155,13 +1178,13 @@ export function CanvasInlineAiComposer({
                   icon={<Icons.Upload size={13} />}
                   onClick={onUploadImage}
                 >
-                  上传
+                  {translate('canvasInlineAi.t72')}
                 </Button>
               )}
             </div>
             <div className="canvas-frame-role-grid">
               <div className="canvas-param-field">
-                <span>首帧</span>
+                <span>{translate('canvasInlineAi.t73')}</span>
                 <LobeSelect
                   value={firstFrameNodeId || undefined}
                   allowClear
@@ -1175,7 +1198,7 @@ export function CanvasInlineAiComposer({
                 />
               </div>
               <div className="canvas-param-field">
-                <span>尾帧</span>
+                <span>{translate('canvasInlineAi.t74')}</span>
                 <LobeSelect
                   value={lastFrameNodeId || undefined}
                   allowClear
@@ -1186,14 +1209,14 @@ export function CanvasInlineAiComposer({
                   }}
                   options={frameImageOptions}
                   optionFilterProp="title"
-                  placeholder={canUseLastFrame ? undefined : '当前模型仅 1 张图'}
+                  placeholder={canUseLastFrame ? undefined : translate('canvasInlineAi.t22')}
                   showSearch
                 />
               </div>
             </div>
             {videoFrameMaxImages > 2 && (
               <div className="canvas-param-field">
-                <span>参考图</span>
+                <span>{translate('canvasInlineAi.t75')}</span>
                 <LobeSelect
                   mode="multiple"
                   value={referenceFrameNodeIds}
@@ -1204,7 +1227,7 @@ export function CanvasInlineAiComposer({
                   }}
                   options={frameImageOptions}
                   optionFilterProp="title"
-                  placeholder="可多选，超出模型声明可能失败"
+                  placeholder={translate('canvasInlineAi.t64Desc')}
                   showSearch
                 />
               </div>
@@ -1218,8 +1241,10 @@ export function CanvasInlineAiComposer({
               capabilityId={selectedCapability?.id}
               extraText={
                 videoFrameMaxImages <= 1
-                  ? '如需多图参考，先用“多图合成”生成一张新图片节点。'
-                  : `可从全画布 ${frameCandidateImageNodes.length} 张图片中选择。`
+                  ? translate('canvasInlineAi.t23Desc')
+                  : translate('canvasInlineAi.tpl10Desc', {
+                      count: frameCandidateImageNodes.length,
+                    })
               }
             />
           </div>
@@ -1227,25 +1252,27 @@ export function CanvasInlineAiComposer({
         {isTextOperation && (
           <>
             <div className="canvas-form-row">
-              <label>专属 Agent</label>
+              <label>{translate('canvasInlineAi.t76')}</label>
               <LobeSelect
                 value={selectedAgentId || undefined}
-                placeholder="使用通用文本模型（不指定 agent）"
+                placeholder={translate('canvasInlineAi.t65Desc')}
                 onChange={(value) => setSelectedAgentId(String(value ?? ''))}
                 options={agents.map((agent) => ({
                   value: agent.id,
-                  label: agent.builtIn ? `${agent.name}（内置）` : agent.name,
+                  label: agent.builtIn
+                    ? translate('canvasInlineAi.tpl11Desc', { name: agent.name })
+                    : agent.name,
                 }))}
                 allowClear
               />
               <div className="canvas-model-hint">
                 {agents.length > 0
-                  ? '选中后用该 agent 的人设与绑定模型执行；不选则用通用影视创作助手。'
-                  : '未配置 agent，可继续用通用文本模型，或到「Agents」中新建专属 agent。'}
+                  ? translate('canvasInlineAi.t24Desc')
+                  : translate('canvasInlineAi.t25LongDesc')}
               </div>
             </div>
             <div className="canvas-form-row">
-              <label>内置角色</label>
+              <label>{translate('canvasInlineAi.t77')}</label>
               <div className="canvas-creative-actions">
                 {CANVAS_AGENT_PRESETS.map((preset) => (
                   <Button
@@ -1258,9 +1285,7 @@ export function CanvasInlineAiComposer({
                   </Button>
                 ))}
               </div>
-              <div className="canvas-model-hint">
-                一键填入该角色的内置提示词（含上游内容），可继续编辑后发起。
-              </div>
+              <div className="canvas-model-hint">{translate('canvasInlineAi.t78Desc')}</div>
             </div>
           </>
         )}
@@ -1269,8 +1294,8 @@ export function CanvasInlineAiComposer({
           negativePrompt={negativePrompt}
           promptPlaceholder={
             nodePromptContext
-              ? '已自动带入选中节点内容，可继续补充要求'
-              : '描述你希望 agent/provider 在画布中完成的生成、编辑、重写或合成任务'
+              ? translate('canvasInlineAi.t26Desc')
+              : translate('canvasInlineAi.t27LongDesc')
           }
           optimizeDisabled={prompt.trim().length === 0 && nodePromptContext.length === 0}
           onPromptChange={setPrompt}
@@ -1287,7 +1312,7 @@ export function CanvasInlineAiComposer({
         />
         {parameterPartition.common.length > 0 && (
           <div className="canvas-form-row canvas-composer-common-parameters">
-            <label>常用参数</label>
+            <label>{translate('canvasInlineAi.t79')}</label>
             <div className="canvas-composer-common-grid">
               {parameterPartition.common.map((presentation) => (
                 <CanvasParameterControl
@@ -1309,11 +1334,11 @@ export function CanvasInlineAiComposer({
           <div className="canvas-composer-advanced">
             <div className="canvas-composer-advanced-title">
               <Icons.Sliders size={14} />
-              <span>高级设置</span>
+              <span>{translate('canvasInlineAi.t80')}</span>
             </div>
             {needsImageInput && (
               <div className="canvas-form-row">
-                <label>输入图片传输</label>
+                <label>{translate('canvasInlineAi.t81')}</label>
                 <LobeSelect
                   value={inputTransport}
                   onChange={(value) => setInputTransport((value ?? 'auto') as CanvasInputTransport)}
@@ -1322,45 +1347,43 @@ export function CanvasInlineAiComposer({
                       value: 'auto',
                       label:
                         selectedModel?.providerKind === 'xai'
-                          ? '自动：Base64'
-                          : '自动：云端公网链接',
+                          ? translate('canvasInlineAi.t28')
+                          : translate('canvasInlineAi.t29'),
                     },
-                    { value: 'cloud_url', label: '云端公网链接' },
-                    { value: 'base64', label: 'Base64 直传' },
+                    { value: 'cloud_url', label: translate('canvasInlineAi.t30') },
+                    { value: 'base64', label: translate('canvasInlineAi.t31') },
                   ]}
                 />
-                <div className="canvas-model-hint">
-                  APIMart 等平台需要公网链接；xAI 在国内公网地址不可达时建议使用 Base64。
-                </div>
+                <div className="canvas-model-hint">{translate('canvasInlineAi.t82LongDesc')}</div>
               </div>
             )}
             <div className="canvas-form-row">
-              <label>项目提示词</label>
+              <label>{translate('canvasInlineAi.t83')}</label>
               <div className="canvas-prompt-injection-list">
                 <LobeCheckbox
                   checked={includeProjectPrompt}
                   disabled={projectPrompt.length === 0}
                   onChange={setIncludeProjectPrompt}
                 >
-                  注入项目统一提示词
+                  {translate('canvasInlineAi.t84')}
                 </LobeCheckbox>
                 <LobeCheckbox
                   checked={includeNegativePrompt}
                   disabled={projectNegativePrompt.length === 0}
                   onChange={setIncludeNegativePrompt}
                 >
-                  注入反向提示词
+                  {translate('canvasInlineAi.t85')}
                 </LobeCheckbox>
               </div>
               <div className="canvas-model-hint">
                 {projectPrompt || projectNegativePrompt
-                  ? '提交任务时按勾选状态附加项目级约束。'
-                  : '可在右侧项目信息中配置项目级提示词。'}
+                  ? translate('canvasInlineAi.t32Desc')
+                  : translate('canvasInlineAi.t33Desc')}
               </div>
             </div>
             {parameterPartition.advanced.length > 0 && (
               <div className="canvas-form-row">
-                <label>更多模型参数</label>
+                <label>{translate('canvasInlineAi.t86')}</label>
                 <div className="canvas-composer-advanced-grid">
                   {parameterPartition.advanced.map((presentation) => (
                     <CanvasParameterControl
@@ -1380,26 +1403,24 @@ export function CanvasInlineAiComposer({
             )}
             <div className="canvas-form-row">
               <div className="canvas-form-label-row">
-                <label>自定义参数</label>
+                <label>{translate('canvasInlineAi.t87')}</label>
                 <Button
                   size="middle"
                   icon={<Icons.Plus size={13} />}
                   onClick={() => setCustomParams((prev) => [...prev, createCustomParamDraft()])}
                 >
-                  添加
+                  {translate('canvasInlineAi.t88')}
                 </Button>
               </div>
               {customParams.length === 0 ? (
-                <div className="canvas-param-empty">
-                  可添加模型私有参数，例如 google_search、seed、negative_prompt。
-                </div>
+                <div className="canvas-param-empty">{translate('canvasInlineAi.t89LongDesc')}</div>
               ) : (
                 <div className="canvas-custom-param-list">
                   {customParams.map((param) => (
                     <div key={param.id} className="canvas-custom-param-row">
                       <Input
                         value={param.name}
-                        placeholder="字段名"
+                        placeholder={translate('canvasInlineAi.t66')}
                         onChange={(event) =>
                           updateCustomParam(setCustomParams, param.id, {
                             name: event.target.value,
@@ -1409,10 +1430,10 @@ export function CanvasInlineAiComposer({
                       <LobeSelect
                         value={param.type}
                         options={[
-                          { value: 'string', label: '文本' },
-                          { value: 'number', label: '数字' },
-                          { value: 'integer', label: '整数' },
-                          { value: 'boolean', label: '布尔' },
+                          { value: 'string', label: translate('canvasInlineAi.t34') },
+                          { value: 'number', label: translate('canvasInlineAi.t35') },
+                          { value: 'integer', label: translate('canvasInlineAi.t36') },
+                          { value: 'boolean', label: translate('canvasInlineAi.t37') },
                           { value: 'json', label: 'JSON' },
                         ]}
                         onChange={(value) =>
@@ -1424,7 +1445,7 @@ export function CanvasInlineAiComposer({
                       {param.type === 'boolean' ? (
                         <LobeSelect
                           value={param.value || undefined}
-                          placeholder="值"
+                          placeholder={translate('canvasInlineAi.t38')}
                           allowClear
                           options={[
                             { value: 'true', label: 'true' },
@@ -1439,7 +1460,11 @@ export function CanvasInlineAiComposer({
                       ) : (
                         <Input
                           value={param.value}
-                          placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
+                          placeholder={
+                            param.type === 'json'
+                              ? '{"key":"value"}'
+                              : translate('canvasInlineAi.t38')
+                          }
                           type={
                             param.type === 'integer' || param.type === 'number' ? 'number' : 'text'
                           }
@@ -1454,7 +1479,7 @@ export function CanvasInlineAiComposer({
                         size="middle"
                         type="text"
                         icon={<Icons.Trash size={13} />}
-                        aria-label="删除自定义参数"
+                        aria-label={translate('canvasInlineAi.t67')}
                         onClick={() =>
                           setCustomParams((prev) => prev.filter((item) => item.id !== param.id))
                         }
@@ -1516,9 +1541,13 @@ function mergeProjectPrompt(prompt: string, projectPrompt: string): string {
   const trimmedPrompt = prompt.trim()
   const trimmedProjectPrompt = projectPrompt.trim()
   if (!trimmedProjectPrompt) return trimmedPrompt
-  if (!trimmedPrompt) return `项目统一提示词：\n${trimmedProjectPrompt}`
+  if (!trimmedPrompt)
+    return translate('canvasInlineAi.tpl12Instruction', { text: trimmedProjectPrompt })
   if (trimmedPrompt.includes(trimmedProjectPrompt)) return trimmedPrompt
-  return `${trimmedPrompt}\n\n项目统一提示词：\n${trimmedProjectPrompt}`
+  return translate('canvasInlineAi.tpl1Instruction', {
+    prompt: trimmedPrompt,
+    project: trimmedProjectPrompt,
+  })
 }
 
 function mergeNegativePrompt(negativePrompt: string, projectNegativePrompt: string): string {
@@ -1532,13 +1561,13 @@ function mergeNegativePrompt(negativePrompt: string, projectNegativePrompt: stri
 
 function buildPromptOptimizationPrompt(prompt: string, negativePrompt: string): string {
   const sections = [
-    '请优化以下画布 AI 任务提示词，使其更清晰、可执行、包含必要约束，并保持用户原始意图。',
-    `原提示词：\n${prompt.trim()}`,
+    translate('canvasInlineAi.t39LongDesc'),
+    translate('canvasInlineAi.tpl5Instruction', { text: prompt.trim() }),
   ]
   if (negativePrompt.trim()) {
-    sections.push(`反向提示词：\n${negativePrompt.trim()}`)
+    sections.push(translate('canvasInlineAi.tpl2Instruction', { text: negativePrompt.trim() }))
   }
-  sections.push('请只输出优化后的提示词正文。')
+  sections.push(translate('canvasInlineAi.t40Desc'))
   return sections.join('\n\n')
 }
 
@@ -1635,8 +1664,8 @@ function buildTaskInputNodeIds(selectedNodes: CanvasNode[], extraNodeIds: string
 }
 
 function frameNodeLabelText(node: CanvasNode, index: number, selected: boolean): string {
-  const title = node.title?.trim() || `图片 ${index + 1}`
-  return selected ? `${title} / 已选中` : title
+  const title = node.title?.trim() || translate('canvasInlineAi.tpl3Desc', { index: index + 1 })
+  return selected ? translate('canvasInlineAi.tpl4Desc', { title }) : title
 }
 
 function renderFrameNodeOptionLabel(node: CanvasNode, label: string) {
@@ -1997,7 +2026,7 @@ export function operationSuggestedFields(operation: CanvasOperationType): Schema
     return [
       {
         name: 'size',
-        title: '图片尺寸 size',
+        title: translate('canvasInlineAi.t41'),
         type: 'string',
         enumValues: [
           '1024x1024',
@@ -2008,37 +2037,37 @@ export function operationSuggestedFields(operation: CanvasOperationType): Schema
           '2048x1024',
           '512x512',
         ],
-        description: 'OpenAI 兼容图像模型常用尺寸。',
+        description: translate('canvasInlineAi.t42Desc'),
       },
       {
         name: 'aspect_ratio',
-        title: '比例 aspect_ratio',
+        title: translate('canvasInlineAi.t43Desc'),
         type: 'string',
         enumValues: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '2:1'],
-        description: 'xAI、模板类图像模型常用画幅比例。',
+        description: translate('canvasInlineAi.t44Desc'),
       },
       {
         name: 'resolution',
-        title: '清晰度 resolution',
+        title: translate('canvasInlineAi.t45Desc'),
         type: 'string',
         enumValues: ['auto', '1k', '2k'],
-        description: '支持分辨率参数的图像模型会透传该值。',
+        description: translate('canvasInlineAi.t46Desc'),
       },
       {
         name: 'quality',
-        title: '质量 quality',
+        title: translate('canvasInlineAi.t47'),
         type: 'string',
         enumValues: ['auto', 'low', 'medium', 'high', 'standard', 'hd'],
       },
       {
         name: 'image_format',
-        title: '格式 image_format',
+        title: translate('canvasInlineAi.t48Desc'),
         type: 'string',
         enumValues: ['png', 'jpeg', 'webp'],
       },
       {
         name: 'n',
-        title: '数量 n',
+        title: translate('canvasInlineAi.t49'),
         type: 'integer',
         enumValues: ['1', '2', '3', '4'],
       },
@@ -2048,19 +2077,19 @@ export function operationSuggestedFields(operation: CanvasOperationType): Schema
     const fields: SchemaField[] = [
       {
         name: 'aspectRatio',
-        title: '视频比例 aspectRatio',
+        title: translate('canvasInlineAi.t50Desc'),
         type: 'string',
         enumValues: ['16:9', '9:16', '1:1', '4:3', '3:4'],
       },
       {
         name: 'durationSeconds',
-        title: '时长 durationSeconds',
+        title: translate('canvasInlineAi.t51Desc'),
         type: 'integer',
         enumValues: ['3', '5', '8', '10'],
       },
       {
         name: 'quality',
-        title: '质量 quality',
+        title: translate('canvasInlineAi.t47'),
         type: 'string',
         enumValues: ['standard', 'high', '720p', '1080p'],
       },
@@ -2074,7 +2103,7 @@ export function operationSuggestedFields(operation: CanvasOperationType): Schema
     if (operation === 'video_edit') {
       fields.push({
         name: 'editStrength',
-        title: '编辑强度 editStrength',
+        title: translate('canvasInlineAi.t52Desc'),
         type: 'number',
         enumValues: ['0.25', '0.5', '0.75'],
       })
@@ -2092,15 +2121,15 @@ export function operationSuggestedFields(operation: CanvasOperationType): Schema
     return [
       {
         name: 'voice',
-        title: '音色 voice',
+        title: translate('canvasInlineAi.t53'),
         type: 'string',
         enumValues: [],
-        placeholder: '选择模型后可从音色列表选择，或直接输入音色 ID',
+        placeholder: translate('canvasInlineAi.t54Desc'),
         required: true,
       },
       {
         name: 'format',
-        title: '格式 format',
+        title: translate('canvasInlineAi.t55'),
         type: 'string',
         enumValues: ['mp3', 'wav'],
       },
@@ -2110,13 +2139,13 @@ export function operationSuggestedFields(operation: CanvasOperationType): Schema
     return [
       {
         name: 'language',
-        title: '语言 language',
+        title: translate('canvasInlineAi.t56'),
         type: 'string',
         enumValues: ['zh', 'en', 'ja', 'ko', 'fr', 'de', 'es'],
       },
       {
         name: 'response_format',
-        title: '格式 response_format',
+        title: translate('canvasInlineAi.t57Desc'),
         type: 'string',
         enumValues: ['json', 'text', 'srt', 'verbose_json', 'vtt'],
       },
@@ -2137,7 +2166,7 @@ export function modelSuggestedFields(model: CanvasMediaModelSummary | undefined)
   if (fingerprint.includes('minimax-h3') || fingerprint.includes('minimax h3')) {
     fields.push({
       name: 'durationSeconds',
-      title: '时长(秒)',
+      title: translate('canvasInlineAi.t58'),
       type: 'integer',
       enumValues: [],
       minimum: 4,
@@ -2156,14 +2185,14 @@ export function modelSuggestedFields(model: CanvasMediaModelSummary | undefined)
         title: 'google_search',
         type: 'boolean',
         enumValues: [],
-        description: 'Gemini / Google 系模型常见的搜索增强开关。',
+        description: translate('canvasInlineAi.t59Desc'),
       },
       {
         name: 'person_generation',
         title: 'person_generation',
         type: 'string',
         enumValues: ['allow_adult', 'dont_allow'],
-        description: 'Google 图像模型人物生成策略。',
+        description: translate('canvasInlineAi.t60Desc'),
       },
     )
   }
@@ -2198,7 +2227,7 @@ export function modelSuggestedFields(model: CanvasMediaModelSummary | undefined)
         title: 'negative_prompt',
         type: 'string',
         enumValues: [],
-        placeholder: '不希望出现的内容',
+        placeholder: translate('canvasInlineAi.t61'),
       },
       {
         name: 'camera_control',

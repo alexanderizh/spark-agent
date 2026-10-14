@@ -1,6 +1,6 @@
 import type { Stage3DActor, Stage3DCamera, Stage3DData, Stage3DProp } from './stage3d.types'
 import { STAGE3D_BODY_TYPE_LABEL, STAGE3D_LIGHTING_LABEL } from './stage3d.types'
-import { POSE_LABEL } from './mannequin'
+import { poseLabel } from './mannequin'
 import { describeStage3DMotion, describeStage3DMotionEn } from './cameraMotion'
 
 /** 姿势英文描述词（补生图模型），未收录的预设回退中文标签。 */
@@ -26,7 +26,7 @@ const POSE_EN: Record<string, string> = {
  * @param actor 角色
  */
 function poseDescription(actor: Stage3DActor): string {
-  const label = POSE_LABEL[actor.pose] ?? actor.pose
+  const label = poseLabel(actor.pose)
   const en = POSE_EN[actor.pose]
   const enPart = en ? `（${en}）` : ''
   const hasOverrides = !!actor.joints && Object.keys(actor.joints).length > 0

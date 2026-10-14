@@ -10,6 +10,7 @@ import {
 import { Modal, Tooltip, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../../Icons'
+import { translate, useI18n } from '../../../i18n'
 import type {
   CanvasImageAnnotationDocument,
   CanvasImageAnnotationPadding,
@@ -39,10 +40,11 @@ import {
 import './CanvasImageAnnotationWorkspace.less'
 
 const COLORS = ['#ff4d4f', '#faad14', '#52c41a', '#1677ff', '#722ed1', '#111827', '#ffffff']
+// 模块级常量只存 i18n key，渲染时再 translate()，避免语言切换后不刷新。
 const WIDTHS = [
-  { label: '细', value: 2 },
-  { label: '中', value: 4 },
-  { label: '粗', value: 8 },
+  { labelKey: 'canvasImageAnnotation.t1', value: 2 },
+  { labelKey: 'canvasImageAnnotation.t2', value: 4 },
+  { labelKey: 'canvasImageAnnotation.t3', value: 8 },
 ]
 
 const INITIAL_VIEW_STATE: AnnotationEditorViewState = {
@@ -61,28 +63,36 @@ const INITIAL_VIEW_STATE: AnnotationEditorViewState = {
 
 const TOOL_ITEMS: Array<{
   key: AnnotationTool
-  label: string
+  labelKey: string
   hotkey: string
   icon: ReactNode
 }> = [
-  { key: 'select', label: '选择', hotkey: 'V', icon: <Icons.MousePointer size={18} /> },
-  { key: 'pan', label: '移动', hotkey: 'H', icon: <Icons.Hand size={18} /> },
-  { key: 'arrow', label: '箭头', hotkey: 'A', icon: <Icons.ArrowUpRight size={18} /> },
-  { key: 'rect', label: '矩形', hotkey: 'R', icon: <Icons.Square size={18} /> },
-  { key: 'ellipse', label: '椭圆', hotkey: 'O', icon: <Icons.Circle size={18} /> },
-  { key: 'pen', label: '画笔', hotkey: 'P', icon: <Icons.Pencil size={18} /> },
-  { key: 'highlight', label: '荧光笔', hotkey: 'G', icon: <Icons.Edit size={18} /> },
-  { key: 'text', label: '文字', hotkey: 'T', icon: <Icons.Type size={18} /> },
-  { key: 'counter', label: '编号', hotkey: 'N', icon: <Icons.Hash size={18} /> },
+  { key: 'select', labelKey: 'canvasImageAnnotation.t4', hotkey: 'V', icon: <Icons.MousePointer size={18} /> },
+  { key: 'pan', labelKey: 'canvasImageAnnotation.t5', hotkey: 'H', icon: <Icons.Hand size={18} /> },
+  { key: 'arrow', labelKey: 'canvasImageAnnotation.t6', hotkey: 'A', icon: <Icons.ArrowUpRight size={18} /> },
+  { key: 'rect', labelKey: 'canvasImageAnnotation.t7', hotkey: 'R', icon: <Icons.Square size={18} /> },
+  { key: 'ellipse', labelKey: 'canvasImageAnnotation.t8', hotkey: 'O', icon: <Icons.Circle size={18} /> },
+  { key: 'pen', labelKey: 'canvasImageAnnotation.t9', hotkey: 'P', icon: <Icons.Pencil size={18} /> },
+  { key: 'highlight', labelKey: 'canvasImageAnnotation.t10', hotkey: 'G', icon: <Icons.Edit size={18} /> },
+  { key: 'text', labelKey: 'canvasImageAnnotation.t11', hotkey: 'T', icon: <Icons.Type size={18} /> },
+  { key: 'counter', labelKey: 'canvasImageAnnotation.t12', hotkey: 'N', icon: <Icons.Hash size={18} /> },
   {
     key: 'mosaic',
-    label: '马赛克',
+    labelKey: 'canvasImageAnnotation.t13',
     hotkey: 'M',
     icon: <span className="canvas-annotation-mosaic-icon" aria-hidden="true" />,
   },
-  { key: 'crop', label: '裁剪', hotkey: 'C', icon: <Icons.Crop size={18} /> },
-  { key: 'padding', label: '留白', hotkey: 'B', icon: <Icons.ImagePlus size={18} /> },
+  { key: 'crop', labelKey: 'canvasImageAnnotation.t14', hotkey: 'C', icon: <Icons.Crop size={18} /> },
+  { key: 'padding', labelKey: 'canvasImageAnnotation.t15', hotkey: 'B', icon: <Icons.ImagePlus size={18} /> },
 ]
+
+/** 留白四边：只存 i18n key，渲染时 translate()。 */
+const PADDING_EDGE_LABEL_KEYS: Record<keyof CanvasImageAnnotationPadding, string> = {
+  top: 'canvasImageAnnotation.t39',
+  right: 'canvasImageAnnotation.t40',
+  bottom: 'canvasImageAnnotation.t41',
+  left: 'canvasImageAnnotation.t42',
+}
 
 function parseAnnotationDocument(value: string | undefined): CanvasImageAnnotationDocument | null {
   if (!value) return null
@@ -103,7 +113,7 @@ function parseAnnotationDocument(value: string | undefined): CanvasImageAnnotati
 }
 
 function safeTitle(node: CanvasNode | null): string {
-  return node?.title?.trim() || '图片标注'
+  return node?.title?.trim() || translate('canvasImageAnnotation.t16')
 }
 
 export function CanvasImageAnnotationWorkspace({
@@ -132,6 +142,8 @@ export function CanvasImageAnnotationWorkspace({
     documentPath?: string
   }) => void | Promise<void>
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const fabricMountRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<FabricAnnotationEditor | null>(null)
@@ -210,7 +222,7 @@ export function CanvasImageAnnotationWorkspace({
     if (!sourceUrl) {
       const frame = window.requestAnimationFrame(() => {
         setStatus('error')
-        setErrorText('当前图片节点没有可用的图片地址')
+        setErrorText(translate('canvasImageAnnotation.t17Desc'))
       })
       return () => window.cancelAnimationFrame(frame)
     }
@@ -247,9 +259,9 @@ export function CanvasImageAnnotationWorkspace({
           const response = await window.spark.invoke('file:read', { filePath: documentPath })
           document = parseAnnotationDocument(response.content)
           if (!document && !response.error)
-            message.warning('标注草稿无法识别，已基于当前图片重新开始')
+            message.warning(translate('canvasImageAnnotation.t18Desc'))
         } catch {
-          message.warning('标注草稿读取失败，已基于当前图片重新开始')
+          message.warning(translate('canvasImageAnnotation.t19Desc'))
         }
       }
       if (cancelled) return
@@ -280,7 +292,7 @@ export function CanvasImageAnnotationWorkspace({
       const detail = error instanceof Error ? error.message : String(error)
       setErrorText(detail)
       setStatus('error')
-      message.error('图片加载失败，无法进入标注')
+      message.error(translate('canvasImageAnnotation.t20Desc'))
     })
     return () => {
       cancelled = true
@@ -373,7 +385,7 @@ export function CanvasImageAnnotationWorkspace({
     } catch (error) {
       if (runId !== autoSaveRunRef.current) return
       setDraftStatus('error')
-      setDraftError(error instanceof Error ? error.message : '自动保存失败')
+      setDraftError(error instanceof Error ? error.message : translate('canvasImageAnnotation.t21'))
     }
   }, [onDraftSaved, projectRootPath])
 
@@ -410,14 +422,16 @@ export function CanvasImageAnnotationWorkspace({
       return
     }
     Modal.confirm({
-      title: '退出图片标注？',
+      title: translate('canvasImageAnnotation.t22'),
       content: draftUpToDate
-        ? '当前修改已自动保存为草稿，下次打开这张图片可以继续编辑。'
+        ? translate('canvasImageAnnotation.t23Desc')
         : draftStatus === 'error'
-          ? `自动保存失败：${draftError || '未知错误'}。现在退出可能丢失最近修改。`
-          : '最近修改尚未保存，立即退出可能丢失内容。',
-      okText: draftUpToDate ? '保留草稿并退出' : '仍然退出',
-      cancelText: '继续标注',
+          ? translate('canvasImageAnnotation.tpl1Desc', {
+              reason: draftError || translate('canvasImageAnnotation.t24'),
+            })
+          : translate('canvasImageAnnotation.t25Desc'),
+      okText: draftUpToDate ? translate('canvasImageAnnotation.t26') : translate('canvasImageAnnotation.t27'),
+      cancelText: translate('canvasImageAnnotation.t28'),
       ...(!draftUpToDate ? { okButtonProps: { danger: true } } : {}),
       onOk: onCancel,
     })
@@ -429,7 +443,7 @@ export function CanvasImageAnnotationWorkspace({
       const sourceNode = sourceNodeRef.current
       if (!editor || !sourceNode || status !== 'idle') return
       if (draftStatus === 'saving') {
-        message.info('草稿正在保存，请稍候再完成')
+        message.info(translate('canvasImageAnnotation.t29Desc'))
         return
       }
       autoSaveRunRef.current += 1
@@ -445,7 +459,7 @@ export function CanvasImageAnnotationWorkspace({
           ...(draftPathRef.current ? { documentPath: draftPathRef.current } : {}),
         })
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '保存标注图片失败')
+        message.error(error instanceof Error ? error.message : translate('canvasImageAnnotation.t30'))
         setStatus('idle')
       }
     },
@@ -458,14 +472,19 @@ export function CanvasImageAnnotationWorkspace({
     const budget = calculateAnnotationExportBudget(viewState.width, viewState.height)
     if (budget.level === 'downscale') {
       Modal.confirm({
-        title: '图片尺寸过大，建议缩小导出',
-        content: `当前画布为 ${viewState.width}×${viewState.height}（${formatAnnotationPixelCount(
-          budget.pixels,
-        )}），直接导出可能导致内存不足。建议按 ${Math.round(
-          budget.recommendedMultiplier * 100,
-        )}% 导出为 ${budget.outputWidth}×${budget.outputHeight}。可编辑标注文档仍保留原始坐标。`,
-        okText: `按 ${Math.round(budget.recommendedMultiplier * 100)}% 导出`,
-        cancelText: '返回调整',
+        title: translate('canvasImageAnnotation.t31Desc'),
+        content: translate('canvasImageAnnotation.tpl8LongDesc', {
+          width: viewState.width,
+          height: viewState.height,
+          pixels: formatAnnotationPixelCount(budget.pixels),
+          percent: Math.round(budget.recommendedMultiplier * 100),
+          outWidth: budget.outputWidth,
+          outHeight: budget.outputHeight,
+        }),
+        okText: translate('canvasImageAnnotation.tpl2', {
+          percent: Math.round(budget.recommendedMultiplier * 100),
+        }),
+        cancelText: translate('canvasImageAnnotation.t32'),
         onOk: () => runComplete(budget.recommendedMultiplier),
       })
       return
@@ -654,14 +673,14 @@ export function CanvasImageAnnotationWorkspace({
   const exportBudget = calculateAnnotationExportBudget(viewState.width, viewState.height)
   const draftLabel =
     draftStatus === 'saving'
-      ? '正在自动保存…'
+      ? translate('canvasImageAnnotation.t33')
       : draftStatus === 'saved' && viewState.revision <= lastSavedRevision
-        ? '草稿已保存'
+        ? translate('canvasImageAnnotation.t34')
         : draftStatus === 'error'
-          ? '自动保存失败'
+          ? translate('canvasImageAnnotation.t21')
           : viewState.dirty
-            ? '等待自动保存'
-            : '原图'
+            ? translate('canvasImageAnnotation.t35')
+            : translate('canvasImageAnnotation.t36')
 
   return (
     <>
@@ -684,7 +703,7 @@ export function CanvasImageAnnotationWorkspace({
                 onClick={requestClose}
               >
                 <Icons.ChevronLeft size={19} />
-                <span>返回</span>
+                <span>{translate('canvasImageAnnotation.t70')}</span>
               </button>
               <span className="canvas-annotation-topbar-divider" />
               <div className="canvas-annotation-title">
@@ -693,12 +712,12 @@ export function CanvasImageAnnotationWorkspace({
               </div>
             </div>
             <div className="canvas-annotation-topbar-actions">
-              <Tooltip title="缩小">
+              <Tooltip title={translate('canvasImageAnnotation.t59')}>
                 <button
                   type="button"
                   className="canvas-annotation-icon-button is-square"
                   onClick={() => setZoom((value) => Math.max(0.08, value - 0.1))}
-                  aria-label="缩小"
+                  aria-label={translate('canvasImageAnnotation.t59')}
                 >
                   <Icons.Minus size={17} />
                 </button>
@@ -706,32 +725,32 @@ export function CanvasImageAnnotationWorkspace({
               <button type="button" className="canvas-annotation-zoom" onClick={fitView}>
                 {Math.round(zoom * 100)}%
               </button>
-              <Tooltip title="放大">
+              <Tooltip title={translate('canvasImageAnnotation.t60')}>
                 <button
                   type="button"
                   className="canvas-annotation-icon-button is-square"
                   onClick={() => setZoom((value) => Math.min(4, value + 0.1))}
-                  aria-label="放大"
+                  aria-label={translate('canvasImageAnnotation.t60')}
                 >
                   <Icons.Plus size={17} />
                 </button>
               </Tooltip>
-              <Tooltip title="适应窗口">
+              <Tooltip title={translate('canvasImageAnnotation.t61')}>
                 <button
                   type="button"
                   className="canvas-annotation-icon-button is-square"
                   onClick={fitView}
-                  aria-label="适应窗口"
+                  aria-label={translate('canvasImageAnnotation.t61')}
                 >
                   <Icons.Maximize size={17} />
                 </button>
               </Tooltip>
-              <Tooltip title="暂时收起">
+              <Tooltip title={translate('canvasImageAnnotation.t62')}>
                 <button
                   type="button"
                   className="canvas-annotation-icon-button is-square"
                   onClick={() => setMinimized(true)}
-                  aria-label="暂时收起"
+                  aria-label={translate('canvasImageAnnotation.t62')}
                 >
                   <Icons.Minimize size={17} />
                 </button>
@@ -743,7 +762,7 @@ export function CanvasImageAnnotationWorkspace({
                 disabled={completeDisabled}
               >
                 {status === 'saving' ? <Icons.Spinner size={16} /> : <Icons.Check size={16} />}
-                <span>{status === 'saving' ? '保存中…' : '完成'}</span>
+                <span>{status === 'saving' ? translate('canvasImageAnnotation.t37') : translate('canvasImageAnnotation.t38')}</span>
               </button>
             </div>
           </header>
@@ -769,7 +788,7 @@ export function CanvasImageAnnotationWorkspace({
             <div className="canvas-annotation-artboard-transform" style={transformStyle}>
               <div ref={fabricMountRef} className="canvas-annotation-fabric-mount" />
               {tool === 'padding' && viewState.paddingEnabled && (
-                <div className="canvas-annotation-padding-handles" aria-label="拖动调整底板留白">
+                <div className="canvas-annotation-padding-handles" aria-label={translate('canvasImageAnnotation.t63')}>
                   {(['top', 'right', 'bottom', 'left'] as const).map((edge) => (
                     <button
                       type="button"
@@ -779,7 +798,9 @@ export function CanvasImageAnnotationWorkspace({
                       onPointerMove={movePaddingDrag}
                       onPointerUp={endPaddingDrag}
                       onPointerCancel={endPaddingDrag}
-                      aria-label={`拖动调整${{ top: '上', right: '右', bottom: '下', left: '左' }[edge]}侧留白`}
+                      aria-label={translate('canvasImageAnnotation.tpl3Desc', {
+                        edge: translate(PADDING_EDGE_LABEL_KEYS[edge]),
+                      })}
                     />
                   ))}
                 </div>
@@ -789,7 +810,7 @@ export function CanvasImageAnnotationWorkspace({
             {(status === 'loading' || status === 'error') && (
               <div className={`canvas-annotation-state${status === 'error' ? ' is-error' : ''}`}>
                 {status === 'loading' ? <Icons.Spinner size={28} /> : <Icons.Image size={36} />}
-                <strong>{status === 'loading' ? '正在打开图片…' : '图片加载失败'}</strong>
+                <strong>{status === 'loading' ? translate('canvasImageAnnotation.t43') : translate('canvasImageAnnotation.t44')}</strong>
                 {errorText && <span>{errorText}</span>}
                 {status === 'error' && (
                   <button
@@ -797,7 +818,7 @@ export function CanvasImageAnnotationWorkspace({
                     className="canvas-annotation-state-retry"
                     onClick={() => setLoadAttempt((value) => value + 1)}
                   >
-                    重试加载
+                    {translate('canvasImageAnnotation.t71')}
                   </button>
                 )}
               </div>
@@ -806,9 +827,9 @@ export function CanvasImageAnnotationWorkspace({
             {draftStatus === 'error' && status === 'idle' && (
               <div className="canvas-annotation-draft-error" role="alert">
                 <Icons.AlertTriangle size={16} />
-                <span>{draftError || '草稿自动保存失败，请重试'}</span>
+                <span>{draftError || translate('canvasImageAnnotation.t45')}</span>
                 <button type="button" onClick={() => void saveDraft()}>
-                  重试保存
+                  {translate('canvasImageAnnotation.t72')}
                 </button>
               </div>
             )}
@@ -822,12 +843,12 @@ export function CanvasImageAnnotationWorkspace({
                       checked={viewState.paddingEnabled}
                       onChange={(event) => applyPadding(event.target.checked)}
                     />
-                    <span>白色扩展底板</span>
+                    <span>{translate('canvasImageAnnotation.t73')}</span>
                   </label>
                   <span className="canvas-annotation-property-divider" />
                   {(['top', 'right', 'bottom', 'left'] as const).map((edge) => (
                     <label className="canvas-annotation-padding-field" key={edge}>
-                      <span>{{ top: '上', right: '右', bottom: '下', left: '左' }[edge]}</span>
+                      <span>{translate(PADDING_EDGE_LABEL_KEYS[edge])}</span>
                       <input
                         type="number"
                         min={0}
@@ -838,12 +859,12 @@ export function CanvasImageAnnotationWorkspace({
                       />
                     </label>
                   ))}
-                  <Tooltip title={paddingLinked ? '四边联动已开启' : '四边可分别调整'}>
+                  <Tooltip title={paddingLinked ? translate('canvasImageAnnotation.t46') : translate('canvasImageAnnotation.t47')}>
                     <button
                       type="button"
                       className={`canvas-annotation-link-button${paddingLinked ? ' active' : ''}`}
                       onClick={() => setPaddingLinked((value) => !value)}
-                      aria-label="切换四边联动"
+                      aria-label={translate('canvasImageAnnotation.t64')}
                     >
                       <Icons.Layers size={16} />
                     </button>
@@ -865,14 +886,14 @@ export function CanvasImageAnnotationWorkspace({
               {showStyleBar && tool !== 'padding' && (
                 <div className="canvas-annotation-property-panel">
                   {isMosaicStyle ? (
-                    <div className="canvas-annotation-segments" aria-label="马赛克模式">
+                    <div className="canvas-annotation-segments" aria-label={translate('canvasImageAnnotation.t65')}>
                       <button
                         type="button"
                         className={mosaicMode === 'brush' ? 'active' : ''}
                         onClick={() => updateMosaicMode('brush')}
                         aria-pressed={mosaicMode === 'brush'}
                       >
-                        <Icons.Pencil size={15} /> 涂抹
+                        <Icons.Pencil size={15} /> {translate('canvasImageAnnotation.t74')}
                       </button>
                       <button
                         type="button"
@@ -880,11 +901,11 @@ export function CanvasImageAnnotationWorkspace({
                         onClick={() => updateMosaicMode('rect')}
                         aria-pressed={mosaicMode === 'rect'}
                       >
-                        <Icons.Square size={15} /> 矩形
+                        <Icons.Square size={15} /> {translate('canvasImageAnnotation.t7')}
                       </button>
                     </div>
                   ) : (
-                    <div className="canvas-annotation-colors" aria-label="标注颜色">
+                    <div className="canvas-annotation-colors" aria-label={translate('canvasImageAnnotation.t66')}>
                       {COLORS.map((item) => (
                         <button
                           type="button"
@@ -892,7 +913,7 @@ export function CanvasImageAnnotationWorkspace({
                           className={`canvas-annotation-color${color === item ? ' active' : ''}`}
                           style={{ '--annotation-color': item } as CSSProperties}
                           onClick={() => updateColor(item)}
-                          aria-label={`选择颜色 ${item}`}
+                          aria-label={translate('canvasImageAnnotation.tpl4', { color: item })}
                         />
                       ))}
                     </div>
@@ -900,12 +921,12 @@ export function CanvasImageAnnotationWorkspace({
                   {isTextStyle && (
                     <>
                       <span className="canvas-annotation-property-divider" />
-                      <div className="canvas-annotation-segments" aria-label="文字底板">
+                      <div className="canvas-annotation-segments" aria-label={translate('canvasImageAnnotation.t67')}>
                         {(
                           [
-                            ['none', '无底色'],
-                            ['dark', '深色底'],
-                            ['light', '白色底'],
+                            ['none', translate('canvasImageAnnotation.t48')],
+                            ['dark', translate('canvasImageAnnotation.t49')],
+                            ['light', translate('canvasImageAnnotation.t50')],
                           ] as const
                         ).map(([value, label]) => (
                           <button
@@ -926,7 +947,7 @@ export function CanvasImageAnnotationWorkspace({
                       <span className="canvas-annotation-property-divider" />
                       <div
                         className="canvas-annotation-widths"
-                        aria-label={isMosaicStyle ? '涂抹粗细' : '线条粗细'}
+                        aria-label={isMosaicStyle ? translate('canvasImageAnnotation.t51') : translate('canvasImageAnnotation.t52')}
                       >
                         {WIDTHS.map((item) => (
                           <button
@@ -934,7 +955,9 @@ export function CanvasImageAnnotationWorkspace({
                             key={item.value}
                             className={strokeWidth === item.value ? 'active' : ''}
                             onClick={() => updateStrokeWidth(item.value)}
-                            aria-label={`${item.label}线条`}
+                            aria-label={translate('canvasImageAnnotation.tpl5', {
+                              label: translate(item.labelKey),
+                            })}
                           >
                             <span style={{ width: item.value * 1.6, height: item.value * 1.6 }} />
                           </button>
@@ -948,31 +971,40 @@ export function CanvasImageAnnotationWorkspace({
               {viewState.hasPendingCrop && (
                 <div className="canvas-annotation-crop-actions">
                   <button type="button" onClick={() => editorRef.current?.cancelCrop()}>
-                    取消裁剪
+                    {translate('canvasImageAnnotation.t75')}
                   </button>
                   <button
                     type="button"
                     className="is-primary"
                     onClick={() => editorRef.current?.applyCrop()}
                   >
-                    应用裁剪
+                    {translate('canvasImageAnnotation.t76')}
                   </button>
                 </div>
               )}
 
-              <nav className="canvas-annotation-tool-dock" aria-label="图片标注工具">
+              <nav className="canvas-annotation-tool-dock" aria-label={translate('canvasImageAnnotation.t68')}>
                 {TOOL_ITEMS.map((item) => (
-                  <Tooltip title={`${item.label} (${item.hotkey})`} key={item.key}>
+                  <Tooltip
+                    title={translate('canvasImageAnnotation.tpl7', {
+                      label: translate(item.labelKey),
+                      hotkey: item.hotkey,
+                    })}
+                    key={item.key}
+                  >
                     <button
                       type="button"
                       className={tool === item.key ? 'active' : ''}
                       onClick={() => chooseTool(item.key)}
                       disabled={toolbarDisabled}
-                      aria-label={`${item.label}，快捷键 ${item.hotkey}`}
+                      aria-label={translate('canvasImageAnnotation.tpl6', {
+                        label: translate(item.labelKey),
+                        hotkey: item.hotkey,
+                      })}
                       aria-pressed={tool === item.key}
                     >
                       {item.icon}
-                      <span>{item.label}</span>
+                      <span>{translate(item.labelKey)}</span>
                     </button>
                   </Tooltip>
                 ))}
@@ -987,32 +1019,40 @@ export function CanvasImageAnnotationWorkspace({
                 onClick={() => void editorRef.current?.undo()}
                 disabled={!viewState.canUndo}
               >
-                <Icons.Undo2 size={15} /> 撤销
+                <Icons.Undo2 size={15} /> {translate('canvasImageAnnotation.t77')}
               </button>
               <button
                 type="button"
                 onClick={() => void editorRef.current?.redo()}
                 disabled={!viewState.canRedo}
               >
-                <Icons.Redo2 size={15} /> 重做
+                <Icons.Redo2 size={15} /> {translate('canvasImageAnnotation.t78')}
               </button>
               <button
                 type="button"
                 onClick={() => editorRef.current?.deleteSelection()}
                 disabled={viewState.selectionCount === 0}
               >
-                <Icons.Trash size={15} /> 删除
+                <Icons.Trash size={15} /> {translate('canvasImageAnnotation.t79')}
               </button>
             </div>
             <span>
-              {draftLabel} · {viewState.paddingEnabled ? '白色底板' : '原图画布'} ·{' '}
-              {viewState.width} × {viewState.height}px
+              {draftLabel} ·{' '}
+              {viewState.paddingEnabled
+                ? translate('canvasImageAnnotation.t53')
+                : translate('canvasImageAnnotation.t54')}{' '}
+              · {viewState.width} × {viewState.height}px
               {exportBudget.level !== 'safe'
-                ? ` · ${exportBudget.level === 'downscale' ? '完成时将建议缩小导出' : '大图导出'}`
+                ? translate('canvasImageAnnotation.tpl9', {
+                    mode:
+                      exportBudget.level === 'downscale'
+                        ? translate('canvasImageAnnotation.t55')
+                        : translate('canvasImageAnnotation.t56'),
+                  })
                 : ''}
             </span>
             <span className="canvas-annotation-shortcut-hint">
-              V 选择 · Space/移动工具平移 · ⌘Z 撤销 · ⇧⌘Enter 完成
+              {translate('canvasImageAnnotation.t80Desc')}
             </span>
           </footer>
         </div>
@@ -1021,13 +1061,13 @@ export function CanvasImageAnnotationWorkspace({
       {open && minimized && (
         <div className="canvas-annotation-minimized" role="status">
           <div>
-            <strong>图片标注已收起</strong>
-            <span>{viewState.dirty ? '修改尚未完成' : '可以随时继续'}</span>
+            <strong>{translate('canvasImageAnnotation.t81')}</strong>
+            <span>{viewState.dirty ? translate('canvasImageAnnotation.t57') : translate('canvasImageAnnotation.t58')}</span>
           </div>
           <button type="button" onClick={() => setMinimized(false)}>
-            <Icons.Edit size={15} /> 继续标注
+            <Icons.Edit size={15} /> {translate('canvasImageAnnotation.t28')}
           </button>
-          <button type="button" className="is-close" onClick={requestClose} aria-label="退出标注">
+          <button type="button" className="is-close" onClick={requestClose} aria-label={translate('canvasImageAnnotation.t69')}>
             <Icons.X size={15} />
           </button>
         </div>

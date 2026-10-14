@@ -10,6 +10,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Button, Empty, Input, Modal, Select, Tag, TextArea, Tooltip } from '@lobehub/ui'
 import { Badge, InputNumber, Popconfirm, Radio, Spin, Switch, message as antdMessage } from 'antd'
 import { Icons } from '../Icons'
+import { translate, useI18n } from '../i18n'
 import type {
   ManagedAgent,
   ManagedTeam,
@@ -85,25 +86,36 @@ function formatDuration(ms: number | null): string {
 function formatCountdown(isoString: string | null): string {
   if (!isoString) return '-'
   const diff = new Date(isoString).getTime() - Date.now()
-  if (diff <= 0) return '即将执行'
-  if (diff < 60000) return `${Math.ceil(diff / 1000)}s 后`
-  if (diff < 3600000) return `${Math.ceil(diff / 60000)}m 后`
-  if (diff < 86400000) return `${Math.ceil(diff / 3600000)}h 后`
-  return `${Math.ceil(diff / 86400000)}d 后`
+  if (diff <= 0) return translate('scheduledTasks.t1')
+  if (diff < 60000) return translate('scheduledTasks.tpl23Desc', { value: Math.ceil(diff / 1000) })
+  if (diff < 3600000)
+    return translate('scheduledTasks.tpl1Desc', { value: Math.ceil(diff / 60000) })
+  if (diff < 86400000)
+    return translate('scheduledTasks.tpl2Desc', { value: Math.ceil(diff / 3600000) })
+  return translate('scheduledTasks.tpl3Desc', { value: Math.ceil(diff / 86400000) })
 }
 
 function formatTriggerType(task: ScheduledTaskItem): string {
   switch (task.triggerType) {
     case 'interval':
       if (!task.intervalSeconds) return 'Interval'
-      if (task.intervalSeconds < 60) return `每 ${task.intervalSeconds} 秒`
-      if (task.intervalSeconds < 3600) return `每 ${Math.round(task.intervalSeconds / 60)} 分钟`
-      if (task.intervalSeconds < 86400) return `每 ${Math.round(task.intervalSeconds / 3600)} 小时`
-      return `每 ${Math.round(task.intervalSeconds / 86400)} 天`
+      if (task.intervalSeconds < 60)
+        return translate('scheduledTasks.tpl4Desc', { value: task.intervalSeconds })
+      if (task.intervalSeconds < 3600)
+        return translate('scheduledTasks.tpl5Desc', {
+          value: Math.round(task.intervalSeconds / 60),
+        })
+      if (task.intervalSeconds < 86400)
+        return translate('scheduledTasks.tpl6Desc', {
+          value: Math.round(task.intervalSeconds / 3600),
+        })
+      return translate('scheduledTasks.tpl7Desc', {
+        value: Math.round(task.intervalSeconds / 86400),
+      })
     case 'cron':
       return task.cronExpression ?? 'Cron'
     case 'once':
-      return task.runAt ? new Date(task.runAt).toLocaleString() : '一次'
+      return task.runAt ? new Date(task.runAt).toLocaleString() : translate('scheduledTasks.t2')
     default:
       return task.triggerType
   }
@@ -147,6 +159,8 @@ async function ipcInvoke(channel: string, params?: Record<string, unknown>): Pro
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export function ScheduledTasksView() {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const { toast } = useToast()
   const { requestConfirm, setTweak } = useApp()
   const sidebar = useSessionSidebar()
@@ -239,9 +253,13 @@ export function ScheduledTasksView() {
     try {
       await ipcInvoke('scheduled-task:toggle', { id, enabled })
       setRefreshKey((k) => k + 1)
-      antdMessage.success(enabled ? '任务已启用' : '任务已禁用')
+      antdMessage.success(enabled ? translate('scheduledTasks.t3') : translate('scheduledTasks.t4'))
     } catch (err) {
-      antdMessage.error(`操作失败: ${err}`)
+      antdMessage.error(
+        translate('scheduledTasks.tpl8Desc', {
+          err: err instanceof Error ? err.message : String(err),
+        }),
+      )
     }
   }, [])
 
@@ -252,14 +270,18 @@ export function ScheduledTasksView() {
         const sessionId: string | null = res?.execution?.sessionId ?? null
         setRefreshKey((k) => k + 1)
         if (sessionId) {
-          antdMessage.success('任务已触发执行，正在打开会话')
+          antdMessage.success(translate('scheduledTasks.t5Desc'))
           sidebar.setActiveSession(sessionId as any)
           setTweak('view', 'chat')
         } else {
-          antdMessage.success('任务已触发执行，会话稍后会出现在会话栏「无项目对话」分组')
+          antdMessage.success(translate('scheduledTasks.t6Desc'))
         }
       } catch (err) {
-        antdMessage.error(`执行失败: ${err}`)
+        antdMessage.error(
+          translate('scheduledTasks.tpl9Desc', {
+            err: err instanceof Error ? err.message : String(err),
+          }),
+        )
       }
     },
     [sidebar, setTweak],
@@ -271,9 +293,13 @@ export function ScheduledTasksView() {
         await ipcInvoke('scheduled-task:delete', { id })
         if (selectedId === id) setSelectedId(null)
         setRefreshKey((k) => k + 1)
-        antdMessage.success('任务已删除')
+        antdMessage.success(translate('scheduledTasks.t7'))
       } catch (err) {
-        antdMessage.error(`删除失败: ${err}`)
+        antdMessage.error(
+          translate('scheduledTasks.tpl10Desc', {
+            err: err instanceof Error ? err.message : String(err),
+          }),
+        )
       }
     },
     [selectedId],
@@ -323,9 +349,9 @@ export function ScheduledTasksView() {
   const handleDeleteSelected = useCallback(async () => {
     if (selectedIds.size === 0) return
     const confirmed = await requestConfirm({
-      title: `删除 ${selectedIds.size} 个定时任务？`,
-      description: '此操作不可撤销，选中任务及其历史执行记录会从本地移除。',
-      confirmText: '批量删除',
+      title: translate('scheduledTasks.tpl11Desc', { count: selectedIds.size }),
+      description: translate('scheduledTasks.t8Desc'),
+      confirmText: translate('scheduledTasks.t9'),
       danger: true,
     })
     if (!confirmed) return
@@ -340,8 +366,14 @@ export function ScheduledTasksView() {
         errs.push(`${name}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
-    if (ok > 0) toast.success(`已删除 ${ok} 个任务`)
-    if (errs.length > 0) toast.error(`${errs.length} 个删除失败：${errs.slice(0, 2).join('；')}`)
+    if (ok > 0) toast.success(translate('scheduledTasks.tpl12Desc', { count: ok }))
+    if (errs.length > 0)
+      toast.error(
+        translate('scheduledTasks.tpl13Desc', {
+          count: errs.length,
+          detail: errs.slice(0, 2).join('; '),
+        }),
+      )
     // 如果详情面板中选中的任务被删了，清空选中
     if (selectedId && selectedIds.has(selectedId)) setSelectedId(null)
     clearSelection()
@@ -371,9 +403,9 @@ export function ScheduledTasksView() {
           // 用户取消
           return
         }
-        toast.success(`已导出 ${result.count} 个任务`)
+        toast.success(translate('scheduledTasks.tpl14Desc', { count: result.count }))
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '导出失败')
+        toast.error(err instanceof Error ? err.message : translate('scheduledTasks.t10'))
       }
     },
     [exportTasksToFile, toast],
@@ -388,16 +420,16 @@ export function ScheduledTasksView() {
   }, [handleExportToFile, selectedIds])
 
   /**
-   * 复制全部任务 JSON 到剪贴板（次要入口）。
+   * translate('scheduledTasks.tpl22Desc')（次要入口）。
    */
   const handleCopyToClipboard = useCallback(async () => {
     try {
       const { payload } = await exportTasks({ ids: [] })
       const json = JSON.stringify(payload, null, 2)
       await navigator.clipboard.writeText(json)
-      toast.success(`已复制 ${payload.tasks.length} 个任务到剪贴板`)
+      toast.success(translate('scheduledTasks.tpl15Desc', { count: payload.tasks.length }))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '复制失败')
+      toast.error(err instanceof Error ? err.message : translate('scheduledTasks.t11'))
     }
   }, [exportTasks, toast])
 
@@ -415,7 +447,7 @@ export function ScheduledTasksView() {
       }
       setImportPreview({ payload, filePath })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '导入失败')
+      toast.error(err instanceof Error ? err.message : translate('scheduledTasks.t12'))
     }
   }, [importTasksFromFile, toast])
 
@@ -426,7 +458,7 @@ export function ScheduledTasksView() {
     try {
       const text = await navigator.clipboard.readText()
       if (!text.trim()) {
-        toast.warning('剪贴板为空')
+        toast.warning(translate('scheduledTasks.t13'))
         return
       }
       let json: unknown
@@ -434,14 +466,14 @@ export function ScheduledTasksView() {
         json = JSON.parse(text)
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        toast.error(`剪贴板 JSON 解析失败：${message}`)
+        toast.error(translate('scheduledTasks.tpl16Desc', { message }))
         return
       }
       const { ScheduledTaskExportPayloadSchema } = await import('@spark/protocol')
       const parsed = ScheduledTaskExportPayloadSchema.parse(json)
-      setImportPreview({ payload: parsed, filePath: '从剪贴板' })
+      setImportPreview({ payload: parsed, filePath: translate('scheduledTasks.t14') })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '剪贴板内容不是有效的导出文件')
+      toast.error(err instanceof Error ? err.message : translate('scheduledTasks.t15Desc'))
     }
   }, [toast])
 
@@ -454,21 +486,28 @@ export function ScheduledTasksView() {
       try {
         const result = await importTasks({ payload, mode })
         const parts: string[] = []
-        if (result.imported > 0) parts.push(`导入 ${result.imported}`)
-        if (result.skipped > 0) parts.push(`跳过 ${result.skipped}`)
+        if (result.imported > 0)
+          parts.push(translate('scheduledTasks.tpl17Desc', { count: result.imported }))
+        if (result.skipped > 0)
+          parts.push(translate('scheduledTasks.tpl18Desc', { count: result.skipped }))
         if (parts.length > 0) {
           toast.success(parts.join('，'))
         } else if (result.errors.length === 0) {
-          toast.info('无任务被导入')
+          toast.info(translate('scheduledTasks.t16'))
         }
         if (result.errors.length > 0) {
-          toast.error(`${result.errors.length} 个失败：${result.errors.slice(0, 2).join('；')}`)
+          toast.error(
+            translate('scheduledTasks.tpl19Desc', {
+              count: result.errors.length,
+              detail: result.errors.slice(0, 2).join('; '),
+            }),
+          )
         }
         setImportPreview(null)
         // 关闭预览后刷新列表
         setRefreshKey((k) => k + 1)
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '导入失败')
+        toast.error(err instanceof Error ? err.message : translate('scheduledTasks.t12'))
       } finally {
         setImporting(false)
       }
@@ -495,7 +534,9 @@ export function ScheduledTasksView() {
     setEditingTask(null)
     if (success) {
       setRefreshKey((k) => k + 1)
-      antdMessage.success(wasEdit ? '任务已更新' : '任务已创建')
+      antdMessage.success(
+        wasEdit ? translate('scheduledTasks.t17') : translate('scheduledTasks.t18'),
+      )
     }
   }, [])
 
@@ -525,8 +566,8 @@ export function ScheduledTasksView() {
             shape="circle"
             icon={<Icons.Refresh />}
             onClick={triggerRefresh}
-            title="刷新 (Ctrl+R)"
-            aria-label="刷新"
+            title={translate('scheduledTasks.t59')}
+            aria-label={translate('scheduledTasks.t60')}
           />
           {!multiSelect && (
             <>
@@ -536,9 +577,9 @@ export function ScheduledTasksView() {
                 icon={<Icons.Upload />}
                 onClick={() => void handleImportFromFile()}
                 disabled={importing}
-                title="从 .json 导入定时任务"
+                title={translate('scheduledTasks.t61Desc')}
               >
-                导入
+                {translate('scheduledTasks.t88')}
               </Button>
               {/* <Button
                 size="middle"
@@ -546,9 +587,9 @@ export function ScheduledTasksView() {
                 icon={<Icons.Copy />}
                 onClick={() => void handleImportFromClipboard()}
                 disabled={importing}
-                title="从剪贴板 JSON 字符串导入"
+                title={translate('scheduledTasks.tpl24Desc')}
               >
-                粘贴导入
+                {translate('scheduledTasks.tpl25Desc')}
               </Button> */}
               <Button
                 size="middle"
@@ -556,9 +597,9 @@ export function ScheduledTasksView() {
                 icon={<Icons.Download />}
                 onClick={() => void handleExportAll()}
                 disabled={tasks.length === 0}
-                title="导出全部任务到 .json"
+                title={translate('scheduledTasks.t62Desc')}
               >
-                导出全部
+                {translate('scheduledTasks.t89')}
               </Button>
               {/* <Button
                 size="middle"
@@ -566,9 +607,9 @@ export function ScheduledTasksView() {
                 icon={<Icons.Copy />}
                 onClick={() => void handleCopyToClipboard()}
                 disabled={tasks.length === 0}
-                title="复制全部任务 JSON 到剪贴板"
+                title={translate('scheduledTasks.tpl22Desc')}
               >
-                复制全部
+                {translate('scheduledTasks.tpl26Desc')}
               </Button> */}
               <Button
                 size="middle"
@@ -576,9 +617,9 @@ export function ScheduledTasksView() {
                 icon={<Icons.Check />}
                 onClick={enterMultiSelect}
                 disabled={tasks.length === 0}
-                title="进入多选模式（可批量删除 / 批量导出）"
+                title={translate('scheduledTasks.t63Desc')}
               >
-                批量
+                {translate('scheduledTasks.t90')}
               </Button>
             </>
           )}
@@ -597,10 +638,10 @@ export function ScheduledTasksView() {
             shape="circle"
             icon={<Icons.XCircle />}
             onClick={exitMultiSelect}
-            title="退出多选模式"
+            title={translate('scheduledTasks.t64')}
           />
           <span className="st-multi-count">
-            已选 <strong>{selectedIds.size}</strong> / {tasks.length}
+            {translate('scheduledTasks.t91')} <strong>{selectedIds.size}</strong> / {tasks.length}
           </span>
           <Button
             size="middle"
@@ -608,10 +649,10 @@ export function ScheduledTasksView() {
             onClick={selectAll}
             disabled={selectedIds.size === tasks.length}
           >
-            全选
+            {translate('scheduledTasks.t92')}
           </Button>
           <Button size="middle" type="text" onClick={invertSelection} disabled={tasks.length === 0}>
-            反选
+            {translate('scheduledTasks.t93')}
           </Button>
           <Button
             size="middle"
@@ -619,7 +660,7 @@ export function ScheduledTasksView() {
             onClick={clearSelection}
             disabled={selectedIds.size === 0}
           >
-            取消选择
+            {translate('scheduledTasks.t94')}
           </Button>
           <span style={{ flex: 1 }} />
           <Button
@@ -628,9 +669,9 @@ export function ScheduledTasksView() {
             icon={<Icons.Download />}
             onClick={handleExportSelected}
             disabled={selectedIds.size === 0}
-            title="导出选中的任务"
+            title={translate('scheduledTasks.t65')}
           >
-            导出选中
+            {translate('scheduledTasks.t95')}
           </Button>
           <Button
             size="middle"
@@ -639,9 +680,9 @@ export function ScheduledTasksView() {
             icon={<Icons.Trash />}
             onClick={() => void handleDeleteSelected()}
             disabled={selectedIds.size === 0 || importing}
-            title="删除选中的任务"
+            title={translate('scheduledTasks.t66')}
           >
-            删除选中
+            {translate('scheduledTasks.t96')}
           </Button>
         </div>
       )}
@@ -656,18 +697,18 @@ export function ScheduledTasksView() {
               onClick={() => setFilter(f)}
             >
               {f === 'all'
-                ? '全部'
+                ? translate('scheduledTasks.t19')
                 : f === 'enabled'
-                  ? '已启用'
+                  ? translate('scheduledTasks.t20')
                   : f === 'disabled'
-                    ? '已禁用'
-                    : '异常'}
+                    ? translate('scheduledTasks.t21')
+                    : translate('scheduledTasks.t22')}
             </button>
           ))}
         </div>
         <Input
           prefix={<Icons.Search />}
-          placeholder="搜索任务..."
+          placeholder={translate('scheduledTasks.t67')}
           size="middle"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -687,12 +728,12 @@ export function ScheduledTasksView() {
             <Empty
               description={
                 hasActiveFilter
-                  ? '没有匹配的定时任务'
-                  : '此处为应用级定时任务，您也可在会话内创建「计划任务」，以直接在固定会话内执行！'
+                  ? translate('scheduledTasks.t23')
+                  : translate('scheduledTasks.t24Desc')
               }
             />
             <Button type="primary" onClick={handleCreate} style={{ marginTop: 16 }}>
-              创建第一个任务
+              {translate('scheduledTasks.t97')}
             </Button>
           </div>
         ) : (
@@ -738,13 +779,17 @@ export function ScheduledTasksView() {
                       </Tag>
                       {task.status === 'running' && (
                         <Tag size="middle" color="blue" icon={<Icons.Spinner />}>
-                          运行中
+                          {translate('scheduledTasks.t98')}
                         </Tag>
                       )}
                     </div>
                     <div className="st-task-footer">
                       <span className="st-task-countdown">
-                        {task.enabled ? `下次: ${formatCountdown(task.nextRunAt)}` : '已禁用'}
+                        {task.enabled
+                          ? translate('scheduledTasks.tpl27Desc', {
+                              value: formatCountdown(task.nextRunAt),
+                            })
+                          : translate('scheduledTasks.t21')}
                       </span>
                       <span className="st-task-stats">
                         {task.executionCount > 0 && (
@@ -779,7 +824,7 @@ export function ScheduledTasksView() {
                 />
               ) : (
                 <div className="st-detail-empty">
-                  <Empty description="选择一个任务查看详情" />
+                  <Empty description={translate('scheduledTasks.t68')} />
                 </div>
               )}
             </div>
@@ -826,7 +871,7 @@ function TaskDetailPanel({
         <div className="st-detail-title-row">
           <h3 className="st-detail-title">{task.name}</h3>
           <div className="st-detail-actions">
-            <Tooltip title="立即执行">
+            <Tooltip title={translate('scheduledTasks.t69')}>
               <Button
                 size="small"
                 type="primary"
@@ -835,7 +880,7 @@ function TaskDetailPanel({
                 onClick={onRunNow}
               />
             </Tooltip>
-            <Tooltip title="编辑">
+            <Tooltip title={translate('scheduledTasks.t70')}>
               <Button
                 size="small"
                 type="text"
@@ -844,8 +889,8 @@ function TaskDetailPanel({
                 onClick={onEdit}
               />
             </Tooltip>
-            <Popconfirm title="确定删除此任务？" onConfirm={onDelete}>
-              <Tooltip title="删除">
+            <Popconfirm title={translate('scheduledTasks.t71')} onConfirm={onDelete}>
+              <Tooltip title={translate('scheduledTasks.t72')}>
                 <Button size="small" type="text" danger shape="circle" icon={<Icons.Trash />} />
               </Tooltip>
             </Popconfirm>
@@ -855,7 +900,7 @@ function TaskDetailPanel({
         <div className="st-detail-tags">
           <Switch size="middle" checked={task.enabled} onChange={onToggle} />
           <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-text-3)' }}>
-            {task.enabled ? '已启用' : '已禁用'}
+            {task.enabled ? translate('scheduledTasks.t20') : translate('scheduledTasks.t21')}
           </span>
         </div>
       </div>
@@ -864,43 +909,45 @@ function TaskDetailPanel({
       <div className="st-detail-stats">
         <div className="st-stat-item">
           <span className="st-stat-value">{task.executionCount}</span>
-          <span className="st-stat-label">总执行</span>
+          <span className="st-stat-label">{translate('scheduledTasks.t99')}</span>
         </div>
         <div className="st-stat-item">
           <span className="st-stat-value" style={{ color: 'var(--color-success-6)' }}>
             {task.successCount}
           </span>
-          <span className="st-stat-label">成功</span>
+          <span className="st-stat-label">{translate('scheduledTasks.t100')}</span>
         </div>
         <div className="st-stat-item">
           <span className="st-stat-value" style={{ color: 'var(--color-danger-6)' }}>
             {task.failureCount}
           </span>
-          <span className="st-stat-label">失败</span>
+          <span className="st-stat-label">{translate('scheduledTasks.t101')}</span>
         </div>
         <div className="st-stat-item">
           <span className="st-stat-value">{formatCountdown(task.nextRunAt)}</span>
-          <span className="st-stat-label">下次执行</span>
+          <span className="st-stat-label">{translate('scheduledTasks.t102')}</span>
         </div>
       </div>
 
       {/* Config Summary */}
       <div className="st-detail-config">
-        <h4>配置</h4>
+        <h4>{translate('scheduledTasks.t103')}</h4>
         <div className="st-config-grid">
-          <span className="st-config-label">触发方式</span>
+          <span className="st-config-label">{translate('scheduledTasks.t104')}</span>
           <span className="st-config-value">{formatTriggerType(task)}</span>
-          <span className="st-config-label">权限策略</span>
+          <span className="st-config-label">{translate('scheduledTasks.t105')}</span>
           <span className="st-config-value">
             <Tag size="middle" color={task.permissionMode === 'bypass' ? 'orangered' : 'green'}>
               {task.permissionMode === 'bypass' ? 'Bypass' : 'Auto'}
             </Tag>
           </span>
-          <span className="st-config-label">超时</span>
+          <span className="st-config-label">{translate('scheduledTasks.t106')}</span>
           <span className="st-config-value">{task.timeoutSeconds}s</span>
-          <span className="st-config-label">重试</span>
-          <span className="st-config-value">{task.maxRetries} 次</span>
-          <span className="st-config-label">上次运行</span>
+          <span className="st-config-label">{translate('scheduledTasks.t107')}</span>
+          <span className="st-config-value">
+            {translate('scheduledTasks.tpl28Desc', { count: task.maxRetries })}
+          </span>
+          <span className="st-config-label">{translate('scheduledTasks.t108')}</span>
           <span className="st-config-value">
             {task.lastRunAt ? new Date(task.lastRunAt).toLocaleString() : '-'}
           </span>
@@ -915,10 +962,10 @@ function TaskDetailPanel({
 
       {/* Recent Executions */}
       <div className="st-detail-executions">
-        <h4>最近执行</h4>
+        <h4>{translate('scheduledTasks.t109')}</h4>
         {executions.length === 0 ? (
           <div style={{ color: 'var(--color-text-3)', fontSize: 12, padding: '8px 0' }}>
-            暂无执行记录
+            {translate('scheduledTasks.t110')}
           </div>
         ) : (
           <div className="st-execution-list">
@@ -935,14 +982,14 @@ function TaskDetailPanel({
                   {ex.sessionId && (
                     <Tooltip title={`Session: ${ex.sessionId.slice(0, 8)}...`}>
                       <Tag size="middle" color="default">
-                        会话
+                        {translate('scheduledTasks.t111')}
                       </Tag>
                     </Tooltip>
                   )}
                   {ex.error && (
                     <Tooltip title={ex.error}>
                       <Tag size="middle" color="red">
-                        错误
+                        {translate('scheduledTasks.t112')}
                       </Tag>
                     </Tooltip>
                   )}
@@ -1045,10 +1092,10 @@ function TaskFormPage({
   }
 
   const subjectHint = agentId
-    ? '已选择 Agent，Team 已禁用：执行主体只能有一个。'
+    ? translate('scheduledTasks.t25Desc')
     : teamId
-      ? '已选择 Team，Agent 已禁用：执行主体只能有一个。'
-      : 'Agent 与 Team 互斥，只能选择一个作为执行主体。'
+      ? translate('scheduledTasks.t26Desc')
+      : translate('scheduledTasks.t27Desc')
 
   const canSave = name.trim().length > 0 && promptTemplate.trim().length > 0
 
@@ -1088,21 +1135,29 @@ function TaskFormPage({
           const runRes = await ipcInvoke('scheduled-task:run-now', { id: taskId })
           const sessionId: string | null = runRes?.execution?.sessionId ?? null
           if (sessionId) {
-            antdMessage.success('已保存并触发执行，正在打开会话')
+            antdMessage.success(translate('scheduledTasks.t28Desc'))
             sidebar.setActiveSession(sessionId as any)
             setTweak('view', 'chat')
             onClose(true)
             return
           }
           // 兜底：没拿到 sessionId（10s 内未建会话），仅提示用户后续可在会话栏查看
-          antdMessage.success('已保存并触发执行，会话稍后会出现在会话栏「无项目对话」分组')
+          antdMessage.success(translate('scheduledTasks.t29Desc'))
         } catch (runErr) {
-          antdMessage.warning(`已保存，但立即执行失败: ${runErr}`)
+          antdMessage.warning(
+            translate('scheduledTasks.tpl29Desc', {
+              err: runErr instanceof Error ? runErr.message : String(runErr),
+            }),
+          )
         }
       }
       onClose(true)
     } catch (err) {
-      antdMessage.error(`保存失败: ${err}`)
+      antdMessage.error(
+        translate('scheduledTasks.tpl20Desc', {
+          err: err instanceof Error ? err.message : String(err),
+        }),
+      )
     } finally {
       setSaving(false)
     }
@@ -1123,12 +1178,12 @@ function TaskFormPage({
           />
           <div className="st-form-page-title-text">
             <span className="st-form-page-subtitle">CREATE AUTOMATION</span>
-            <h2>{isEdit ? '编辑定时任务' : '新建定时任务'}</h2>
+            <h2>{isEdit ? translate('scheduledTasks.t30') : translate('scheduledTasks.t31')}</h2>
           </div>
         </div>
         <div className="st-form-page-actions">
           <Button type="text" onClick={() => onClose(false)}>
-            取消
+            {translate('scheduledTasks.t113')}
           </Button>
           <Button
             type="text"
@@ -1136,9 +1191,9 @@ function TaskFormPage({
             disabled={!canSave}
             onClick={() => handleSave(true)}
             icon={<Icons.Play />}
-            title="保存后立即触发一次执行"
+            title={translate('scheduledTasks.t73')}
           >
-            保存并执行
+            {translate('scheduledTasks.t114')}
           </Button>
           <Button
             type="primary"
@@ -1146,7 +1201,7 @@ function TaskFormPage({
             disabled={!canSave}
             onClick={() => handleSave(false)}
           >
-            {isEdit ? '保存修改' : '创建任务'}
+            {isEdit ? translate('scheduledTasks.t32') : translate('scheduledTasks.t33')}
           </Button>
         </div>
       </div>
@@ -1158,30 +1213,30 @@ function TaskFormPage({
           <div className="st-form-section-header">
             <div className="st-section-badge">01</div>
             <div className="st-section-header-text">
-              <h3>基础信息</h3>
-              <p>任务名称、用途描述和分类标签</p>
+              <h3>{translate('scheduledTasks.t115')}</h3>
+              <p>{translate('scheduledTasks.t116Desc')}</p>
             </div>
           </div>
           <div className="st-form-section-body">
             <div className="st-form-field-group">
               <div className="st-form-field">
                 <label className="st-field-label">
-                  任务名称 <span className="st-required">*</span>
+                  {translate('scheduledTasks.t117')} <span className="st-required">*</span>
                 </label>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="例如：每日代码审查"
+                  placeholder={translate('scheduledTasks.t74')}
                   size="middle"
                 />
               </div>
 
               <div className="st-form-field">
-                <label className="st-field-label">描述</label>
+                <label className="st-field-label">{translate('scheduledTasks.t118')}</label>
                 <TextArea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="补充任务目标、产出格式和注意事项"
+                  placeholder={translate('scheduledTasks.t75Desc')}
                   rows={3}
                   autoSize={{ minRows: 2, maxRows: 5 }}
                 />
@@ -1189,21 +1244,23 @@ function TaskFormPage({
 
               <div className="st-form-field-row">
                 <div className="st-form-field st-form-field--half">
-                  <label className="st-field-label">标签</label>
+                  <label className="st-field-label">{translate('scheduledTasks.t119')}</label>
                   <Select
                     mode="tags"
                     value={tags}
                     onChange={(v) => setTags(v as string[])}
-                    placeholder="输入后回车添加"
+                    placeholder={translate('scheduledTasks.t76')}
                     size="middle"
                   />
                 </div>
                 <div className="st-form-field st-form-field--half">
-                  <label className="st-field-label">创建后立即启用</label>
+                  <label className="st-field-label">{translate('scheduledTasks.t120')}</label>
                   <div className="st-form-switch-row">
                     <Switch checked={enabledOnCreate} onChange={setEnabledOnCreate} />
                     <span className="st-form-switch-hint">
-                      {enabledOnCreate ? '任务创建后进入调度' : '创建后暂停，手动启用'}
+                      {enabledOnCreate
+                        ? translate('scheduledTasks.t34')
+                        : translate('scheduledTasks.t35')}
                     </span>
                   </div>
                 </div>
@@ -1217,8 +1274,8 @@ function TaskFormPage({
           <div className="st-form-section-header">
             <div className="st-section-badge">02</div>
             <div className="st-section-header-text">
-              <h3>调度策略</h3>
-              <p>决定任务何时运行</p>
+              <h3>{translate('scheduledTasks.t121')}</h3>
+              <p>{translate('scheduledTasks.t122')}</p>
             </div>
           </div>
           <div className="st-form-section-body">
@@ -1227,20 +1284,20 @@ function TaskFormPage({
                 {
                   value: 'interval' as const,
                   icon: <Icons.Refresh />,
-                  title: '固定间隔',
-                  desc: '每隔固定时间自动执行',
+                  title: translate('scheduledTasks.t36'),
+                  desc: translate('scheduledTasks.t37'),
                 },
                 {
                   value: 'cron' as const,
                   icon: <Icons.Calendar />,
-                  title: 'Cron 表达式',
-                  desc: '用 cron 规则精确控制时间',
+                  title: translate('scheduledTasks.t38'),
+                  desc: translate('scheduledTasks.t39Desc'),
                 },
                 {
                   value: 'once' as const,
                   icon: <Icons.Zap />,
-                  title: '单次执行',
-                  desc: '在指定时间点执行一次',
+                  title: translate('scheduledTasks.t40'),
+                  desc: translate('scheduledTasks.t41'),
                 },
               ].map((opt) => (
                 <div
@@ -1262,34 +1319,38 @@ function TaskFormPage({
 
             {triggerType === 'interval' && (
               <div className="st-form-field" style={{ marginTop: 16 }}>
-                <label className="st-field-label">执行间隔</label>
+                <label className="st-field-label">{translate('scheduledTasks.t123')}</label>
                 <div className="st-interval-input-row">
                   <InputNumber
                     value={intervalSeconds}
                     onChange={(v) => setIntervalSeconds(typeof v === 'number' ? v : 3600)}
                     min={10}
                     max={86400}
-                    suffix="秒"
+                    suffix={translate('scheduledTasks.t77')}
                     style={{ flex: 1 }}
                     size="middle"
                   />
                   <span className="st-interval-hint">
                     {intervalSeconds < 60
-                      ? `每 ${intervalSeconds} 秒`
+                      ? translate('scheduledTasks.tpl4Desc', { value: intervalSeconds })
                       : intervalSeconds < 3600
-                        ? `每 ${Math.round(intervalSeconds / 60)} 分钟`
-                        : `每 ${Math.round(intervalSeconds / 3600)} 小时`}
+                        ? translate('scheduledTasks.tpl5Desc', {
+                            value: Math.round(intervalSeconds / 60),
+                          })
+                        : translate('scheduledTasks.tpl6Desc', {
+                            value: Math.round(intervalSeconds / 3600),
+                          })}
                   </span>
                 </div>
                 <div className="st-quick-intervals">
                   {[
-                    { label: '30秒', val: 30 },
-                    { label: '1分钟', val: 60 },
-                    { label: '5分钟', val: 300 },
-                    { label: '15分钟', val: 900 },
-                    { label: '1小时', val: 3600 },
-                    { label: '6小时', val: 21600 },
-                    { label: '1天', val: 86400 },
+                    { label: translate('scheduledTasks.t42'), val: 30 },
+                    { label: translate('scheduledTasks.t43'), val: 60 },
+                    { label: translate('scheduledTasks.t44'), val: 300 },
+                    { label: translate('scheduledTasks.t45'), val: 900 },
+                    { label: translate('scheduledTasks.t46'), val: 3600 },
+                    { label: translate('scheduledTasks.t47'), val: 21600 },
+                    { label: translate('scheduledTasks.t48'), val: 86400 },
                   ].map((qi) => (
                     <Tag
                       key={qi.val}
@@ -1307,7 +1368,7 @@ function TaskFormPage({
 
             {triggerType === 'cron' && (
               <div className="st-form-field" style={{ marginTop: 16 }}>
-                <label className="st-field-label">Cron 表达式</label>
+                <label className="st-field-label">{translate('scheduledTasks.t38')}</label>
                 <Input
                   value={cronExpression}
                   onChange={(e) => setCronExpression(e.target.value)}
@@ -1316,10 +1377,10 @@ function TaskFormPage({
                 />
                 <div className="st-quick-intervals">
                   {[
-                    { label: '每 5 分钟', expr: '*/5 * * * *' },
-                    { label: '每小时', expr: '0 */1 * * *' },
-                    { label: '工作日 9 点', expr: '0 9 * * MON-FRI' },
-                    { label: '每月 1 号', expr: '0 0 1 * *' },
+                    { label: translate('scheduledTasks.t49'), expr: '*/5 * * * *' },
+                    { label: translate('scheduledTasks.t50'), expr: '0 */1 * * *' },
+                    { label: translate('scheduledTasks.t51'), expr: '0 9 * * MON-FRI' },
+                    { label: translate('scheduledTasks.t52'), expr: '0 0 1 * *' },
                   ].map((qc) => (
                     <Tag
                       key={qc.expr}
@@ -1337,7 +1398,7 @@ function TaskFormPage({
 
             {triggerType === 'once' && (
               <div className="st-form-field" style={{ marginTop: 16 }}>
-                <label className="st-field-label">执行时间</label>
+                <label className="st-field-label">{translate('scheduledTasks.t124')}</label>
                 <Input
                   type="datetime-local"
                   value={runAt}
@@ -1354,8 +1415,8 @@ function TaskFormPage({
           <div className="st-form-section-header">
             <div className="st-section-badge">03</div>
             <div className="st-section-header-text">
-              <h3>执行配置</h3>
-              <p>由谁执行、用哪个模型和工作区</p>
+              <h3>{translate('scheduledTasks.t125')}</h3>
+              <p>{translate('scheduledTasks.t126Desc')}</p>
             </div>
           </div>
           <div className="st-form-section-body">
@@ -1369,7 +1430,7 @@ function TaskFormPage({
                   <Select
                     {...(agentId ? { value: agentId } : {})}
                     onChange={handleAgentChange}
-                    placeholder="选择执行 Agent"
+                    placeholder={translate('scheduledTasks.t78')}
                     allowClear
                     showSearch
                     disabled={teamId !== ''}
@@ -1378,7 +1439,7 @@ function TaskFormPage({
                     }
                     options={agentOptions}
                     size="middle"
-                    notFoundContent="暂无可用 Agent"
+                    notFoundContent={translate('scheduledTasks.t79')}
                   />
                 </div>
                 <div className="st-form-field st-form-field--half">
@@ -1389,7 +1450,7 @@ function TaskFormPage({
                   <Select
                     {...(teamId ? { value: teamId } : {})}
                     onChange={handleTeamChange}
-                    placeholder="选择团队"
+                    placeholder={translate('scheduledTasks.t80')}
                     allowClear
                     showSearch
                     disabled={agentId !== ''}
@@ -1398,7 +1459,7 @@ function TaskFormPage({
                     }
                     options={teamOptions}
                     size="middle"
-                    notFoundContent="暂无可用团队"
+                    notFoundContent={translate('scheduledTasks.t81')}
                   />
                 </div>
               </div>
@@ -1414,7 +1475,7 @@ function TaskFormPage({
                 <Select
                   {...(modelId ? { value: modelId } : {})}
                   onChange={(v) => setModelId(v as string)}
-                  placeholder="选择模型"
+                  placeholder={translate('scheduledTasks.t82')}
                   allowClear
                   showSearch
                   filterOption={(input: string, option: any) =>
@@ -1422,7 +1483,7 @@ function TaskFormPage({
                   }
                   options={modelOptions}
                   size="middle"
-                  notFoundContent="暂无可用模型"
+                  notFoundContent={translate('scheduledTasks.t83')}
                 />
               </div>
               <div className="st-form-field st-form-field--half">
@@ -1433,7 +1494,7 @@ function TaskFormPage({
                 <Select
                   {...(workspaceId ? { value: workspaceId } : {})}
                   onChange={(v) => setWorkspaceId(v as string)}
-                  placeholder="选择工作区"
+                  placeholder={translate('scheduledTasks.t84')}
                   allowClear
                   showSearch
                   filterOption={(input: string, option: any) =>
@@ -1441,25 +1502,24 @@ function TaskFormPage({
                   }
                   options={workspaceOptions}
                   size="middle"
-                  notFoundContent="暂无可用工作区"
+                  notFoundContent={translate('scheduledTasks.t85')}
                 />
               </div>
             </div>
 
             <div className="st-form-field">
               <label className="st-field-label">
-                Prompt 模板 <span className="st-required">*</span>
+                {translate('scheduledTasks.t127')} <span className="st-required">*</span>
               </label>
               <TextArea
                 value={promptTemplate}
                 onChange={(e) => setPromptTemplate(e.target.value)}
-                placeholder="写清任务执行时需要产出的内容、格式和约束"
+                placeholder={translate('scheduledTasks.t86Desc')}
                 rows={6}
                 autoSize={{ minRows: 4, maxRows: 12 }}
               />
               <div className="st-form-hint">
-                可用变量: {'{{date}}'}, {'{{time}}'}, {'{{taskName}}'}, {'{{executionCount}}'},{' '}
-                {'{{interval}}'}
+                {translate('scheduledTasks.tpl30Desc')} {'{{interval}}'}
               </div>
             </div>
           </div>
@@ -1470,8 +1530,8 @@ function TaskFormPage({
           <div className="st-form-section-header">
             <div className="st-section-badge">04</div>
             <div className="st-section-header-text">
-              <h3>高级设置</h3>
-              <p>超时、重试等运行策略</p>
+              <h3>{translate('scheduledTasks.t128')}</h3>
+              <p>{translate('scheduledTasks.t129')}</p>
             </div>
           </div>
           <div className="st-form-section-body">
@@ -1479,26 +1539,26 @@ function TaskFormPage({
               <div className="st-form-field st-form-field--third">
                 <label className="st-field-label">
                   <Icons.Settings style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
-                  超时时间
+                  {translate('scheduledTasks.t130')}
                 </label>
                 <InputNumber
                   value={timeoutSeconds}
                   onChange={(v) => setTimeoutSeconds(typeof v === 'number' ? v : 300)}
                   min={10}
                   max={7200}
-                  suffix="秒"
+                  suffix={translate('scheduledTasks.t77')}
                   style={{ width: '100%' }}
                   size="middle"
                 />
               </div>
               <div className="st-form-field st-form-field--third">
-                <label className="st-field-label">最大重试次数</label>
+                <label className="st-field-label">{translate('scheduledTasks.t131')}</label>
                 <InputNumber
                   value={maxRetries}
                   onChange={(v) => setMaxRetries(typeof v === 'number' ? v : 0)}
                   min={0}
                   max={10}
-                  suffix="次"
+                  suffix={translate('scheduledTasks.t87')}
                   style={{ width: '100%' }}
                   size="middle"
                 />
@@ -1506,14 +1566,14 @@ function TaskFormPage({
               <div className="st-form-field st-form-field--third">
                 <label className="st-field-label">
                   <Icons.Zap style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
-                  权限策略
+                  {translate('scheduledTasks.t105')}
                 </label>
                 <Select
                   value={permissionMode}
                   onChange={(v) => setPermissionMode(v as string)}
                   options={[
-                    { label: 'Auto（自动批准）', value: 'auto' },
-                    { label: 'Bypass（完全放行）', value: 'bypass' },
+                    { label: translate('scheduledTasks.t53'), value: 'auto' },
+                    { label: translate('scheduledTasks.t54'), value: 'bypass' },
                   ]}
                   size="middle"
                   style={{ width: '100%' }}
@@ -1548,16 +1608,20 @@ function triggerLabel(t: ScheduledTaskExportPayload['tasks'][number]): string {
       return t.intervalSeconds == null
         ? 'Interval'
         : t.intervalSeconds < 60
-          ? `每 ${t.intervalSeconds} 秒`
+          ? translate('scheduledTasks.tpl4Desc', { value: t.intervalSeconds })
           : t.intervalSeconds < 3600
-            ? `每 ${Math.round(t.intervalSeconds / 60)} 分钟`
+            ? translate('scheduledTasks.tpl5Desc', { value: Math.round(t.intervalSeconds / 60) })
             : t.intervalSeconds < 86400
-              ? `每 ${Math.round(t.intervalSeconds / 3600)} 小时`
-              : `每 ${Math.round(t.intervalSeconds / 86400)} 天`
+              ? translate('scheduledTasks.tpl6Desc', {
+                  value: Math.round(t.intervalSeconds / 3600),
+                })
+              : translate('scheduledTasks.tpl7Desc', {
+                  value: Math.round(t.intervalSeconds / 86400),
+                })
     case 'cron':
       return t.cronExpression ?? 'Cron'
     case 'once':
-      return t.runAt ?? '单次'
+      return t.runAt ?? translate('scheduledTasks.t55')
   }
 }
 
@@ -1594,7 +1658,7 @@ function TaskImportPreviewModal({
       title={
         <div className="st-import-modal-title">
           <Icons.Upload style={{ fontSize: 16, color: 'var(--primary)' }} />
-          <span>导入定时任务</span>
+          <span>{translate('scheduledTasks.t132')}</span>
         </div>
       }
       visible
@@ -1605,7 +1669,7 @@ function TaskImportPreviewModal({
       footer={
         <div className="st-import-modal-footer">
           <Button type="text" onClick={onClose} disabled={submitting}>
-            取消
+            {translate('scheduledTasks.t113')}
           </Button>
           <Button
             type="primary"
@@ -1613,7 +1677,9 @@ function TaskImportPreviewModal({
             disabled={submitting || payload.tasks.length === 0}
             loading={submitting}
           >
-            {submitting ? '导入中…' : `确认导入 ${payload.tasks.length} 个`}
+            {submitting
+              ? translate('scheduledTasks.t56')
+              : translate('scheduledTasks.tpl21Desc', { count: payload.tasks.length })}
           </Button>
         </div>
       }
@@ -1622,25 +1688,25 @@ function TaskImportPreviewModal({
         {/* 文件元信息 */}
         <div className="st-import-meta">
           <div>
-            <span className="muted">文件：</span>
+            <span className="muted">{translate('scheduledTasks.t133')}</span>
             <span className="mono-sm" title={filePath}>
               {filePath}
             </span>
           </div>
           <div>
-            <span className="muted">版本：</span>
+            <span className="muted">{translate('scheduledTasks.t134')}</span>
             <span className="mono-sm">v{payload.version}</span>
           </div>
           <div>
-            <span className="muted">导出时间：</span>
+            <span className="muted">{translate('scheduledTasks.t135')}</span>
             <span className="mono-sm">{exportedAt}</span>
           </div>
           <div>
-            <span className="muted">来源：</span>
+            <span className="muted">{translate('scheduledTasks.t136')}</span>
             <span className="mono-sm">{payload.exportedBy}</span>
           </div>
           <div>
-            <span className="muted">任务数：</span>
+            <span className="muted">{translate('scheduledTasks.t137')}</span>
             <span className="mono-sm">
               <strong>{payload.tasks.length}</strong>
             </span>
@@ -1648,14 +1714,14 @@ function TaskImportPreviewModal({
           {conflictCount > 0 && (
             <div className="st-import-conflict-warn">
               <Icons.AlertTriangle style={{ fontSize: 12, color: 'var(--color-warning-6)' }} />
-              {conflictCount} 个任务 name 与本地冲突
+              {translate('scheduledTasks.tpl31Desc', { count: conflictCount })}
             </div>
           )}
         </div>
 
         {/* 冲突模式选择 */}
         <div className="st-import-mode-row">
-          <span className="muted">冲突处理：</span>
+          <span className="muted">{translate('scheduledTasks.t138')}</span>
           <Radio.Group
             value={mode}
             onChange={(e) => setMode(e.target.value as 'replace' | 'merge')}
@@ -1663,25 +1729,27 @@ function TaskImportPreviewModal({
             size="middle"
           >
             <Radio value="merge">
-              <strong>合并</strong>
-              <span className="muted"> · 跳过已存在的 name</span>
+              <strong>{translate('scheduledTasks.t139')}</strong>
+              <span className="muted"> {translate('scheduledTasks.t140Desc')}</span>
             </Radio>
             <Radio value="replace">
-              <strong>覆盖</strong>
-              <span className="muted"> · 用导入的字段更新已存在任务（运行时统计保留）</span>
+              <strong>{translate('scheduledTasks.t141')}</strong>
+              <span className="muted"> {translate('scheduledTasks.t142Desc')}</span>
             </Radio>
           </Radio.Group>
         </div>
 
         {/* 任务列表 */}
         <div className="st-import-list-header">
-          <span>名称</span>
-          <span>触发</span>
+          <span>{translate('scheduledTasks.t143')}</span>
+          <span>{translate('scheduledTasks.t144')}</span>
           <span>Agent / Team</span>
-          <span>状态</span>
+          <span>{translate('scheduledTasks.t145')}</span>
         </div>
         <div className="st-import-list">
-          {payload.tasks.length === 0 && <div className="st-import-empty">该文件不含任何任务</div>}
+          {payload.tasks.length === 0 && (
+            <div className="st-import-empty">{translate('scheduledTasks.t146')}</div>
+          )}
           {payload.tasks.map((t, idx) => {
             const conflict = existingNames.has(t.name)
             return (
@@ -1705,11 +1773,13 @@ function TaskImportPreviewModal({
                 <span className="cell-status">
                   {conflict ? (
                     <Tag size="middle" color="orange">
-                      {mode === 'replace' ? '将更新' : '将跳过'}
+                      {mode === 'replace'
+                        ? translate('scheduledTasks.t57')
+                        : translate('scheduledTasks.t58')}
                     </Tag>
                   ) : (
                     <Tag size="middle" color="green">
-                      将新增
+                      {translate('scheduledTasks.t147')}
                     </Tag>
                   )}
                 </span>
@@ -1721,9 +1791,8 @@ function TaskImportPreviewModal({
         <div className="st-import-tip">
           <Icons.AlertTriangle style={{ fontSize: 12 }} />
           <span>
-            导入的新任务默认 <strong>disabled = true</strong>(保留导入文件中的设置);merge
-            模式下不会覆盖本地同名任务,replace 模式会更新字段但保留运行时统计(status / 计数 /
-            nextRunAt 等)。
+            {translate('scheduledTasks.t148')} <strong>disabled = true</strong>
+            {translate('scheduledTasks.tpl32LongDesc')}
           </span>
         </div>
       </div>

@@ -10,6 +10,7 @@ import {
 import { Button, Empty } from '@lobehub/ui'
 import { Drawer, Modal, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
 import {
   CanvasStage,
@@ -506,7 +507,7 @@ function areNodeIdsEqual(left: string[], right: string[]): boolean {
 }
 
 function toolLabel(tool: CanvasTool): string {
-  return tool === 'pan' ? '平移画布' : '选择节点'
+  return tool === 'pan' ? translate('canvasWorkspace.t1') : translate('canvasWorkspace.t2')
 }
 
 const CANVAS_SHORTCUT_HELP_GROUPS: Array<{
@@ -514,54 +515,75 @@ const CANVAS_SHORTCUT_HELP_GROUPS: Array<{
   items: Array<{ keys: string[]; desc: string }>
 }> = [
   {
-    title: '创作 / 节点',
+    title: translate('canvasWorkspace.t3'),
     items: [
-      { keys: ['Tab'], desc: '在选择 / 平移工具之间切换' },
-      { keys: ['Ctrl / Cmd', 'E'], desc: '新建提示词并打开录入面板' },
-      { keys: ['双击节点'], desc: '展开节点编辑面板' },
-      { keys: ['Esc'], desc: '关闭当前浮层 / 弹窗 / 编辑面板' },
-      { keys: ['Delete', 'Backspace'], desc: '删除选中节点或连线' },
-      { keys: ['Ctrl / Cmd', '点击'], desc: '追加选择节点' },
-      { keys: ['Shift', '点击'], desc: '追加选择节点' },
-      { keys: ['框选'], desc: '批量选择节点' },
-      { keys: ['Ctrl / Cmd', 'A'], desc: '选中当前组内节点' },
+      { keys: ['Tab'], desc: translate('canvasWorkspace.t4Desc') },
+      { keys: ['Ctrl / Cmd', 'E'], desc: translate('canvasWorkspace.t5') },
+      { keys: [translate('canvasWorkspace.t6')], desc: translate('canvasWorkspace.t7') },
+      { keys: ['Esc'], desc: translate('canvasWorkspace.t8Desc') },
+      { keys: ['Delete', 'Backspace'], desc: translate('canvasWorkspace.t9') },
+      {
+        keys: ['Ctrl / Cmd', translate('canvasWorkspace.t10')],
+        desc: translate('canvasWorkspace.t11'),
+      },
+      { keys: ['Shift', translate('canvasWorkspace.t10')], desc: translate('canvasWorkspace.t11') },
+      { keys: [translate('canvasWorkspace.t12')], desc: translate('canvasWorkspace.t13') },
+      { keys: ['Ctrl / Cmd', 'A'], desc: translate('canvasWorkspace.t14') },
     ],
   },
   {
-    title: '视图 / 缩放',
+    title: translate('canvasWorkspace.t15'),
     items: [
-      { keys: ['滚轮'], desc: '缩放画布' },
-      { keys: ['Ctrl / Cmd', '+'], desc: '放大画布' },
-      { keys: ['Ctrl / Cmd', '-'], desc: '缩小画布' },
-      { keys: ['Ctrl / Cmd', '0'], desc: '适配全部节点' },
-      { keys: ['底部工具栏', '适配'], desc: '一键查看完整画布' },
-      { keys: ['底部工具栏', '网格'], desc: '显示 / 隐藏画布网格' },
+      { keys: [translate('canvasWorkspace.t16')], desc: translate('canvasWorkspace.t17') },
+      { keys: ['Ctrl / Cmd', '+'], desc: translate('canvasWorkspace.t18') },
+      { keys: ['Ctrl / Cmd', '-'], desc: translate('canvasWorkspace.t19') },
+      { keys: ['Ctrl / Cmd', '0'], desc: translate('canvasWorkspace.t20') },
+      {
+        keys: [translate('canvasWorkspace.t21'), translate('canvasWorkspace.t22')],
+        desc: translate('canvasWorkspace.t23'),
+      },
+      {
+        keys: [translate('canvasWorkspace.t21'), translate('canvasWorkspace.t24')],
+        desc: translate('canvasWorkspace.t25'),
+      },
     ],
   },
   {
-    title: '移动画布',
+    title: translate('canvasWorkspace.t26'),
     items: [
-      { keys: ['Space', '拖拽'], desc: '临时抓手平移画布' },
-      { keys: ['平移工具', '拖拽'], desc: '移动视图' },
-      { keys: ['方向键 ↑'], desc: '向上平移画布' },
-      { keys: ['方向键 ↓'], desc: '向下平移画布' },
-      { keys: ['方向键 ←'], desc: '向左平移画布' },
-      { keys: ['方向键 →'], desc: '向右平移画布' },
-      { keys: ['底部工具栏', '回到选中'], desc: '把视图移动到选中节点' },
+      { keys: ['Space', translate('canvasWorkspace.t27')], desc: translate('canvasWorkspace.t28') },
+      {
+        keys: [translate('canvasWorkspace.t29'), translate('canvasWorkspace.t27')],
+        desc: translate('canvasWorkspace.t30'),
+      },
+      { keys: [translate('canvasWorkspace.t31')], desc: translate('canvasWorkspace.t32') },
+      { keys: [translate('canvasWorkspace.t33')], desc: translate('canvasWorkspace.t34') },
+      { keys: [translate('canvasWorkspace.t35')], desc: translate('canvasWorkspace.t36') },
+      { keys: [translate('canvasWorkspace.t37')], desc: translate('canvasWorkspace.t38') },
+      {
+        keys: [translate('canvasWorkspace.t21'), translate('canvasWorkspace.t39')],
+        desc: translate('canvasWorkspace.t40'),
+      },
     ],
   },
   {
-    title: '其他 / 工具栏入口',
+    title: translate('canvasWorkspace.t41'),
     items: [
-      { keys: ['Ctrl / Cmd', 'S'], desc: '保存画布' },
-      { keys: ['Ctrl / Cmd', 'T'], desc: '打开提示词库查询 / 使用' },
-      { keys: ['Ctrl / Cmd', 'Z'], desc: '撤销' },
-      { keys: ['Ctrl / Cmd', 'Shift', 'Z'], desc: '重做' },
-      { keys: ['Ctrl / Cmd', '\\'], desc: '展开 / 折叠右侧面板' },
-      { keys: ['Ctrl / Cmd', 'R'], desc: '刷新当前画布数据' },
-      { keys: ['Ctrl / Cmd', 'Shift', 'S'], desc: '开启 / 关闭自动保存' },
-      { keys: ['底部工具栏', '全部节点'], desc: '打开全部节点类型列表' },
-      { keys: ['底部工具栏', '资产中心'], desc: '打开项目资产中心' },
+      { keys: ['Ctrl / Cmd', 'S'], desc: translate('canvasWorkspace.t42') },
+      { keys: ['Ctrl / Cmd', 'T'], desc: translate('canvasWorkspace.t43Desc') },
+      { keys: ['Ctrl / Cmd', 'Z'], desc: translate('canvasWorkspace.t44') },
+      { keys: ['Ctrl / Cmd', 'Shift', 'Z'], desc: translate('canvasWorkspace.t45') },
+      { keys: ['Ctrl / Cmd', '\\'], desc: translate('canvasWorkspace.t46') },
+      { keys: ['Ctrl / Cmd', 'R'], desc: translate('canvasWorkspace.t47') },
+      { keys: ['Ctrl / Cmd', 'Shift', 'S'], desc: translate('canvasWorkspace.t48') },
+      {
+        keys: [translate('canvasWorkspace.t21'), translate('canvasWorkspace.t49')],
+        desc: translate('canvasWorkspace.t50'),
+      },
+      {
+        keys: [translate('canvasWorkspace.t21'), translate('canvasWorkspace.t51')],
+        desc: translate('canvasWorkspace.t52'),
+      },
     ],
   },
 ]
@@ -583,6 +605,8 @@ export function CanvasWorkspaceView({
   onWindowThemeChange?: (theme: CanvasWindowTheme) => void
   showWindowControls?: boolean
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const {
     snapshot,
     loading,
@@ -788,7 +812,7 @@ export function CanvasWorkspaceView({
     onSingleValidationError: (nodeId, error) => {
       setActiveOperationPanelNodeId(nodeId)
       setSelectedNodeIds([nodeId])
-      message.error(error instanceof Error ? error.message : '任务参数校验失败')
+      message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t53'))
     },
   })
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
@@ -838,7 +862,7 @@ export function CanvasWorkspaceView({
       const nextName = name.trim()
       if (!nextName) return null
       if (promptLibraryCategories.includes(nextName)) {
-        message.warning('分类已存在')
+        message.warning(translate('canvasWorkspace.t54'))
         return null
       }
       await updateProjectMetadata(
@@ -1058,13 +1082,13 @@ export function CanvasWorkspaceView({
       await persistViewportFnRef.current?.()
       const ok = await saveCanvas()
       if (ok) {
-        if (mode === 'manual') message.success('画布已保存')
+        if (mode === 'manual') message.success(translate('canvasWorkspace.t55'))
         return 'saved'
       }
       if (mode === 'auto') {
-        message.error('自动保存失败，请手动保存并查看控制台日志')
+        message.error(translate('canvasWorkspace.t56Desc'))
       } else {
-        message.error('保存失败，请查看控制台日志')
+        message.error(translate('canvasWorkspace.t57Desc'))
       }
       return 'failed'
     } finally {
@@ -1128,7 +1152,7 @@ export function CanvasWorkspaceView({
           if (autoSaveFailCountRef.current >= CANVAS_AUTO_SAVE_MAX_FAILS) {
             autoSavePendingRef.current = false
             message.warning(
-              `画布自动保存已连续失败 ${CANVAS_AUTO_SAVE_MAX_FAILS} 次，已暂停自动保存。请手动保存或稍后重试。`,
+              translate('canvasWorkspace.tpl1LongDesc', { count: CANVAS_AUTO_SAVE_MAX_FAILS }),
             )
             return
           }
@@ -1150,7 +1174,7 @@ export function CanvasWorkspaceView({
       }
       // 重新打开时清零失败计数，避免上次连续失败直接把新开启卡在 MAX 状态。
       autoSaveFailCountRef.current = 0
-      message.success(enabled ? '已开启画布自动保存' : '已关闭画布自动保存')
+      message.success(enabled ? translate('canvasWorkspace.t58') : translate('canvasWorkspace.t59'))
     },
     [clearAutoSaveTimer],
   )
@@ -1270,10 +1294,10 @@ export function CanvasWorkspaceView({
         (await canvasApi.openSnapshot(projectId, preferredBoardId)).tasks,
       confirmLeave: (runningCount) =>
         requestConfirm({
-          title: '画布仍有运行中的任务',
-          description: `当前还有 ${runningCount} 个正在运行的任务。继续退出将自动取消这些运行中的任务。`,
-          confirmText: '继续退出',
-          cancelText: '留下等待',
+          title: translate('canvasWorkspace.t60'),
+          description: translate('canvasWorkspace.tpl2LongDesc', { count: runningCount }),
+          confirmText: translate('canvasWorkspace.t61'),
+          cancelText: translate('canvasWorkspace.t62'),
           danger: true,
         }),
       cancelTask,
@@ -1685,7 +1709,7 @@ export function CanvasWorkspaceView({
       setWorkflowExtractDraft(draft)
     } catch (extractError) {
       message.warning(
-        extractError instanceof Error ? extractError.message : '当前选区无法提取为画布工作流',
+        extractError instanceof Error ? extractError.message : translate('canvasWorkspace.t63Desc'),
       )
     }
   }, [projectId, selectedNodes, snapshot])
@@ -1706,7 +1730,9 @@ export function CanvasWorkspaceView({
         setWorkflowExtractDraft(draft)
       } catch (extractError) {
         message.warning(
-          extractError instanceof Error ? extractError.message : '当前选区无法更新画布工作流',
+          extractError instanceof Error
+            ? extractError.message
+            : translate('canvasWorkspace.t64Desc'),
         )
       }
     },
@@ -1821,18 +1847,18 @@ export function CanvasWorkspaceView({
 
   const handleCenterSelectedNode = useCallback(() => {
     if (selectedNodeIds.length === 0) {
-      message.info('请先选择一个节点')
+      message.info(translate('canvasWorkspace.t65'))
       return
     }
     const centered = canvasViewportControlsRef.current?.centerNodes(selectedNodeIds)
-    if (!centered) message.warning('未找到选中节点')
+    if (!centered) message.warning(translate('canvasWorkspace.t66'))
   }, [selectedNodeIds])
 
   const handleArrangeCanvas = useCallback(
     async (options: Parameters<CanvasStageViewportControls['arrangeNodes']>[0]) => {
       const controls = canvasViewportControlsRef.current
       if (!controls) {
-        message.warning('画布仍在初始化，请稍后重试')
+        message.warning(translate('canvasWorkspace.t67Desc'))
         return
       }
       setArrangingCanvas(true)
@@ -1844,14 +1870,16 @@ export function CanvasWorkspaceView({
           ...(partialLayout ? { nodeIds: selectedNodeIds } : {}),
         })
         if (!arranged) {
-          message.info('没有可整理的节点')
+          message.info(translate('canvasWorkspace.t68'))
           return
         }
         message.success(
-          partialLayout ? `已整理所选 ${selectedNodeIds.length} 个节点` : '已整理全画布',
+          partialLayout
+            ? translate('canvasWorkspace.tpl3Desc', { count: selectedNodeIds.length })
+            : translate('canvasWorkspace.t69'),
         )
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '整理画布失败')
+        message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t70'))
       } finally {
         setArrangingCanvas(false)
       }
@@ -1863,11 +1891,11 @@ export function CanvasWorkspaceView({
     async (columns: number) => {
       const controls = canvasViewportControlsRef.current
       if (!controls) {
-        message.warning('画布仍在初始化，请稍后重试')
+        message.warning(translate('canvasWorkspace.t67Desc'))
         return
       }
       if (selectedNodeIds.length < 2) {
-        message.info('请先选中至少 2 个节点')
+        message.info(translate('canvasWorkspace.t71'))
         return
       }
       setArrangingCanvas(true)
@@ -1879,12 +1907,14 @@ export function CanvasWorkspaceView({
           nodeIds: selectedNodeIds,
         })
         if (!arranged) {
-          message.info('没有可整理的节点')
+          message.info(translate('canvasWorkspace.t68'))
           return
         }
-        message.success(`已按每排 ${columns} 个整理所选 ${selectedNodeIds.length} 个节点`)
+        message.success(
+          translate('canvasWorkspace.tpl4Desc', { columns, count: selectedNodeIds.length }),
+        )
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '整理画布失败')
+        message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t70'))
       } finally {
         setArrangingCanvas(false)
       }
@@ -1896,22 +1926,22 @@ export function CanvasWorkspaceView({
     async (mode: CanvasAlignmentMode) => {
       const controls = canvasViewportControlsRef.current
       if (!controls) {
-        message.warning('画布仍在初始化，请稍后重试')
+        message.warning(translate('canvasWorkspace.t67Desc'))
         return
       }
       if (selectedNodeIds.length < 2) {
-        message.info('请先选中至少 2 个节点')
+        message.info(translate('canvasWorkspace.t71'))
         return
       }
       try {
         const aligned = await controls.alignNodes({ mode, nodeIds: selectedNodeIds })
         if (!aligned) {
-          message.info('当前选择不支持该对齐')
+          message.info(translate('canvasWorkspace.t72'))
           return
         }
-        message.success(`已对齐所选 ${selectedNodeIds.length} 个节点`)
+        message.success(translate('canvasWorkspace.tpl5Desc', { count: selectedNodeIds.length }))
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '对齐节点失败')
+        message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t73'))
       }
     },
     [selectedNodeIds],
@@ -1931,14 +1961,17 @@ export function CanvasWorkspaceView({
     const nodeIds = selectedNodes.map((node) => node.id)
     if (nodeIds.length === 0) return
     Modal.confirm({
-      title: nodeIds.length === 1 ? '删除选中节点？' : `删除选中的 ${nodeIds.length} 个节点？`,
+      title:
+        nodeIds.length === 1
+          ? translate('canvasWorkspace.t74')
+          : translate('canvasWorkspace.tpl6Desc', { count: nodeIds.length }),
       content:
         nodeIds.length === 1
-          ? '删除后可通过底栏「撤销」恢复，相关连线会同步清理。'
-          : '删除后可通过底栏「撤销」恢复这些节点，相关连线会同步清理。',
-      okText: '删除',
+          ? translate('canvasWorkspace.t75Desc')
+          : translate('canvasWorkspace.t76Desc'),
+      okText: translate('canvasWorkspace.t77'),
       okButtonProps: { danger: true },
-      cancelText: '取消',
+      cancelText: translate('canvasWorkspace.t78'),
       onOk: async () => {
         try {
           await deleteNodes(nodeIds)
@@ -1951,10 +1984,12 @@ export function CanvasWorkspaceView({
           )
           closeCanvasFloatPanels()
           message.success(
-            nodeIds.length === 1 ? '已删除节点，可撤销' : `已删除 ${nodeIds.length} 个节点，可撤销`,
+            nodeIds.length === 1
+              ? translate('canvasWorkspace.t79')
+              : translate('canvasWorkspace.tpl7Desc', { count: nodeIds.length }),
           )
         } catch (error) {
-          message.error(error instanceof Error ? error.message : '删除节点失败')
+          message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t80'))
           throw error
         }
       },
@@ -2062,11 +2097,11 @@ export function CanvasWorkspaceView({
         placeY,
         lockKey,
         projectRootPath,
-        notInViewportMessage = '所选内容当前不在可截图区域内，请先移动视图后再合成',
+        notInViewportMessage = translate('canvasWorkspace.t81Desc'),
       } = params
 
       if (compositingImageLockRef.current.has(lockKey)) {
-        message.info('正在合成，请稍候')
+        message.info(translate('canvasWorkspace.t82'))
         return
       }
 
@@ -2079,7 +2114,7 @@ export function CanvasWorkspaceView({
         .filter((element): element is HTMLElement => Boolean(element))
 
       if (!stageElement || contentElements.length === 0) {
-        message.error('无法定位内容区，请稍后重试')
+        message.error(translate('canvasWorkspace.t83Desc'))
         return
       }
 
@@ -2115,7 +2150,7 @@ export function CanvasWorkspaceView({
       }
 
       compositingImageLockRef.current.add(lockKey)
-      const closeLoading = message.loading('正在合成内容，请稍候…', 0)
+      const closeLoading = message.loading(translate('canvasWorkspace.t84'), 0)
       await nextFrame()
 
       const hideElements = Array.from(
@@ -2155,7 +2190,7 @@ export function CanvasWorkspaceView({
         outputCanvas.width = Math.max(1, Math.round(cropWidth * scaleX))
         outputCanvas.height = Math.max(1, Math.round(cropHeight * scaleY))
         const context = outputCanvas.getContext('2d')
-        if (!context) throw new Error('无法创建合成画布')
+        if (!context) throw new Error(translate('canvasWorkspace.t85'))
         context.drawImage(
           renderedCanvas,
           Math.round(cropX * scaleX),
@@ -2187,7 +2222,9 @@ export function CanvasWorkspaceView({
           imageHeight: outputCanvas.height,
         })
         if (imageNode) {
-          await patchNodes([imageNode.id], { title: `${title} 合成图` })
+          await patchNodes([imageNode.id], {
+            title: translate('canvasWorkspace.tpl8Desc', { title }),
+          })
           await Promise.all(
             sourceNodeIds.map((sourceNodeId) =>
               connectNodes({ sourceNodeId, targetNodeId: imageNode.id }),
@@ -2196,14 +2233,14 @@ export function CanvasWorkspaceView({
           setSelectedNodeIds([imageNode.id])
         }
         closeLoading()
-        message.success('已生成内容合成图节点，并连接来源节点')
+        message.success(translate('canvasWorkspace.t86Desc'))
       } catch (error) {
         console.error('[canvas] composite content to image failed', error)
         closeLoading()
         message.error(
           error instanceof Error
-            ? `合成图失败：${error.message}`
-            : '合成图失败，请检查内容图片是否可访问',
+            ? translate('canvasWorkspace.tpl9Desc', { message: error.message })
+            : translate('canvasWorkspace.t87Desc'),
         )
       } finally {
         restoreColors?.()
@@ -2225,25 +2262,25 @@ export function CanvasWorkspaceView({
       if (!currentSnapshot || !groupNode) return
       const childNodes = collectGroupDescendantNodes(currentSnapshot.nodes, groupId)
       if (childNodes.length === 0) {
-        message.warning('组内没有可合成的节点')
+        message.warning(translate('canvasWorkspace.t88'))
         return
       }
       const contentNodes = childNodes.filter((node) => node.type !== 'group')
       if (contentNodes.length === 0) {
-        message.warning('组内没有可合成的内容节点')
+        message.warning(translate('canvasWorkspace.t89'))
         return
       }
       await compositeContentNodesToImage({
         contentNodes,
         sourceNodeIds: [groupNode.id],
-        title: groupNode.title ?? '组',
+        title: groupNode.title ?? translate('canvasWorkspace.t90'),
         placeX: groupNode.x + groupNode.width + 96,
         placeY: groupNode.y,
         lockKey: groupId,
         ...(currentSnapshot.project.rootPath
           ? { projectRootPath: currentSnapshot.project.rootPath }
           : {}),
-        notInViewportMessage: '组节点当前不在可截图区域内，请先移动视图后再合成',
+        notInViewportMessage: translate('canvasWorkspace.t91Desc'),
       })
     },
     [compositeContentNodesToImage, snapshot],
@@ -2276,7 +2313,7 @@ export function CanvasWorkspaceView({
       return
     }
     if (!summary.canCreateGroup) {
-      message.warning('请选择多个未入组的内容节点，或选择一个组节点')
+      message.warning(translate('canvasWorkspace.t92Desc'))
       return
     }
 
@@ -2285,7 +2322,7 @@ export function CanvasWorkspaceView({
     // 合成图放在选中内容整体的右侧，并从每个来源节点连线到合成图。
     const contentNodes = selectedNodes.filter((node) => summary.topLevelNodeIds.includes(node.id))
     if (contentNodes.length === 0) {
-      message.warning('未找到可合成的内容节点')
+      message.warning(translate('canvasWorkspace.t93'))
       return
     }
     const placeX = contentNodes.reduce((maxX, node) => Math.max(maxX, node.x + node.width), 0) + 96
@@ -2296,7 +2333,7 @@ export function CanvasWorkspaceView({
     await compositeContentNodesToImage({
       contentNodes,
       sourceNodeIds: summary.topLevelNodeIds,
-      title: '组合图',
+      title: translate('canvasWorkspace.t94'),
       placeX,
       placeY: Number.isFinite(placeY) ? placeY : 0,
       lockKey: `selection:${[...summary.topLevelNodeIds].sort().join(',')}`,
@@ -2326,7 +2363,7 @@ export function CanvasWorkspaceView({
 
       const childIds = collectSelectableGroupChildNodeIds(currentSnapshot.nodes, groupId)
       if (childIds.length === 0) {
-        message.info('组内没有可选中的节点')
+        message.info(translate('canvasWorkspace.t95'))
         return
       }
 
@@ -2513,7 +2550,7 @@ export function CanvasWorkspaceView({
         target.data.subtype === 'video_workbench' ||
         (typeof target.data.url === 'string' && Boolean(target.data.url))
       if (!isVideoTarget) {
-        message.warning('该节点没有可编辑的视频内容')
+        message.warning(translate('canvasWorkspace.t96Desc'))
         return
       }
 
@@ -2529,11 +2566,11 @@ export function CanvasWorkspaceView({
           : null
         const materializedNodeId = result?.materializedNodeIds[0]
         if (!materializedNodeId) {
-          message.warning('该节点没有可编辑的视频内容')
+          message.warning(translate('canvasWorkspace.t96Desc'))
           return
         }
         if (result.createdNodeIds.length > 0) {
-          message.success('已将产物展开为视频节点')
+          message.success(translate('canvasWorkspace.t97'))
         }
         closeCanvasFloatPanels('node-edit')
         setSelectedNodeIds([materializedNodeId])
@@ -2557,7 +2594,7 @@ export function CanvasWorkspaceView({
       if (!source || source.type !== 'audio') return
       const filePath = canvasApi.readMediaNodeLocalFilePath(source)
       if (!filePath) {
-        message.error('无法定位源音频文件')
+        message.error(translate('canvasWorkspace.t98'))
         return
       }
       try {
@@ -2577,11 +2614,13 @@ export function CanvasWorkspaceView({
           // 与压缩/其他物化链路一致：选中并聚焦新节点，确保用户立刻看到产物。
           setSelectedNodeIds([created.id])
           requestAnimationFrame(() => canvasViewportControlsRef.current?.focusNodes([created.id]))
-          message.success(`已生成截取片段 ${(endSec - startSec).toFixed(2)}s`)
+          message.success(
+            translate('canvasWorkspace.tpl10Desc', { value: (endSec - startSec).toFixed(2) }),
+          )
         }
       } catch (error) {
         const text = error instanceof Error ? error.message : String(error)
-        message.error(`音频截取失败: ${text}`)
+        message.error(translate('canvasWorkspace.tpl11Desc', { text }))
       }
     },
     [projectId, refreshTaskSnapshot],
@@ -2596,7 +2635,7 @@ export function CanvasWorkspaceView({
       if (!source || source.type !== 'audio') return
       const filePath = canvasApi.readMediaNodeLocalFilePath(source)
       if (!filePath) {
-        message.error('无法定位源音频文件')
+        message.error(translate('canvasWorkspace.t98'))
         return
       }
       try {
@@ -2615,11 +2654,11 @@ export function CanvasWorkspaceView({
           // 与压缩/其他物化链路一致：选中并聚焦新节点，确保用户立刻看到产物。
           setSelectedNodeIds([created.id])
           requestAnimationFrame(() => canvasViewportControlsRef.current?.focusNodes([created.id]))
-          message.success(`已生成 ${factor.toFixed(2)}x 变速副本`)
+          message.success(translate('canvasWorkspace.tpl12Desc', { value: factor.toFixed(2) }))
         }
       } catch (error) {
         const text = error instanceof Error ? error.message : String(error)
-        message.error(`音频变速失败: ${text}`)
+        message.error(translate('canvasWorkspace.tpl13Desc', { text }))
       }
     },
     [projectId, refreshTaskSnapshot],
@@ -2639,7 +2678,7 @@ export function CanvasWorkspaceView({
 
       const filePath = canvasApi.readMediaNodeLocalFilePath(target)
       if (!filePath) {
-        message.warning('该视频没有可用的本地文件，暂不支持尺寸压缩')
+        message.warning(translate('canvasWorkspace.t99Desc'))
         return
       }
       // 操作节点的产物可能是 `operation-output:` 虚拟视图节点（未展开产物时），
@@ -2666,9 +2705,9 @@ export function CanvasWorkspaceView({
   const handleVideoScaleCompressConfirm = useCallback(
     async (input: VideoScaleCompressConfirmInput) => {
       const source = videoScaleCompressSource
-      if (!projectId || !source) throw new Error('缺少源视频')
+      if (!projectId || !source) throw new Error(translate('canvasWorkspace.t100'))
       const boardId = snapshotRef.current?.board.id
-      if (!boardId) throw new Error('画布尚未就绪')
+      if (!boardId) throw new Error(translate('canvasWorkspace.t101'))
       const created = await canvasApi.materializeVideoScaleCompress({
         projectId,
         boardId,
@@ -2681,14 +2720,17 @@ export function CanvasWorkspaceView({
         compressPercent: input.compressPercent,
         onProgress: input.onProgress,
       })
-      if (!created) throw new Error('压缩副本物化失败，请重试')
+      if (!created) throw new Error(translate('canvasWorkspace.t102'))
       await refreshTaskSnapshot()
       // 期望落点（父节点右侧）被占用时，碰撞规避会把副本挪到远处空位（可达数千像素）。
       // 选中并聚焦新节点，确保用户始终能立刻看到压缩产物（与其他物化链路一致）。
       setSelectedNodeIds([created.id])
       requestAnimationFrame(() => canvasViewportControlsRef.current?.focusNodes([created.id]))
       message.success(
-        `已生成尺寸压缩副本（${input.scalePercent}% 尺寸 / 压缩到原大小 ${input.compressPercent}%）`,
+        translate('canvasWorkspace.tpl14Desc', {
+          scale: input.scalePercent,
+          compress: input.compressPercent,
+        }),
       )
     },
     [projectId, refreshTaskSnapshot, videoScaleCompressSource],
@@ -2706,7 +2748,7 @@ export function CanvasWorkspaceView({
         ? resolveCanvasOperationResourceNode(node, currentSnapshot)
         : node
       if (!resolved?.data.panorama360) {
-        message.warning('当前节点没有可预览的全景图内容')
+        message.warning(translate('canvasWorkspace.t103Desc'))
         return
       }
       closeCanvasFloatPanels('node-edit')
@@ -2727,7 +2769,7 @@ export function CanvasWorkspaceView({
         ? resolveCanvasOperationOutputResourceNode(operationNode, output, currentSnapshot)
         : null
       if (!resource?.data.panorama360) {
-        message.warning('当前产物没有可预览的全景图内容')
+        message.warning(translate('canvasWorkspace.t104Desc'))
         return
       }
       closeCanvasFloatPanels('node-edit')
@@ -2748,7 +2790,7 @@ export function CanvasWorkspaceView({
         ? resolveCanvasOperationResourceNode(node, currentSnapshot)
         : node
       if (!resolved?.assetId) {
-        message.warning('当前节点没有可裁切的图片资源')
+        message.warning(translate('canvasWorkspace.t105Desc'))
         return
       }
       const sourceImageAsset =
@@ -2756,7 +2798,7 @@ export function CanvasWorkspaceView({
           (item) => item.id === resolved.assetId && item.type === 'image',
         ) ?? null
       if (!sourceImageAsset) {
-        message.warning('当前节点没有可用的图片资源')
+        message.warning(translate('canvasWorkspace.t106Desc'))
         return
       }
       closeCanvasFloatPanels()
@@ -2780,7 +2822,7 @@ export function CanvasWorkspaceView({
       assets: currentSnapshot.assets,
     })
     if (!downloaded) {
-      message.warning('当前节点没有可下载的图片、视频或音频内容')
+      message.warning(translate('canvasWorkspace.t107Desc'))
     }
   }, [])
 
@@ -2803,7 +2845,7 @@ export function CanvasWorkspaceView({
         assets: currentSnapshot.assets,
       })
       if (!downloaded) {
-        message.warning('当前产物没有可下载的图片、视频或音频内容')
+        message.warning(translate('canvasWorkspace.t108Desc'))
       }
     },
     [],
@@ -2824,7 +2866,11 @@ export function CanvasWorkspaceView({
         primaryOutputId: output.id,
         primaryOutputSelection: 'manual',
       })
-      message.success(output.type === 'text' ? '已设为默认预览产物' : '已设为主产物')
+      message.success(
+        output.type === 'text'
+          ? translate('canvasWorkspace.t109')
+          : translate('canvasWorkspace.t110'),
+      )
     },
     [updateNodeData],
   )
@@ -2838,19 +2884,22 @@ export function CanvasWorkspaceView({
         outputs,
       })
       if (result.deletedOutputCount === 0) {
-        message.warning('所选产物已不存在或不属于当前任务节点')
+        message.warning(translate('canvasWorkspace.t111Desc'))
         return
       }
       if (result.skippedOutputCount > 0) {
         message.warning(
-          `已删除 ${result.deletedOutputCount} 个产物，另有 ${result.skippedOutputCount} 个产物已不存在，已跳过`,
+          translate('canvasWorkspace.tpl15LongDesc', {
+            deleted: result.deletedOutputCount,
+            skipped: result.skippedOutputCount,
+          }),
         )
         return
       }
       message.success(
         result.deletedOutputCount === 1
-          ? '已删除当前产物'
-          : `已删除 ${result.deletedOutputCount} 个产物`,
+          ? translate('canvasWorkspace.t112')
+          : translate('canvasWorkspace.tpl16Desc', { count: result.deletedOutputCount }),
       )
     },
     [deleteOperationOutputs],
@@ -2871,14 +2920,14 @@ export function CanvasWorkspaceView({
         if (!currentRun) {
           const refreshed = await deleteTasks([run.taskId])
           if (refreshed?.tasks.some((task) => task.id === run.taskId)) {
-            message.info('该运行记录仍有关联产物，已保留')
+            message.info(translate('canvasWorkspace.t113Desc'))
             return
           }
-          message.success('已清理该节点的失效运行状态')
+          message.success(translate('canvasWorkspace.t114Desc'))
           return
         }
         if (!isCanvasOperationRunQuickDeletable(currentRun)) {
-          message.info('该运行已经完成并生成产物，请删除具体产物而不是整次运行')
+          message.info(translate('canvasWorkspace.t115Desc'))
           return
         }
 
@@ -2891,12 +2940,12 @@ export function CanvasWorkspaceView({
           deleteTasks,
         })
         if (result === 'preserved') {
-          message.info('该运行已经完成并生成产物，已保留运行记录')
+          message.info(translate('canvasWorkspace.t116Desc'))
           return
         }
-        message.success('已删除该运行记录')
+        message.success(translate('canvasWorkspace.t117'))
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '删除运行记录失败')
+        message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t118'))
       }
     },
     [cancelTask, deleteOperationOutputs, deleteTasks, projectId],
@@ -2906,12 +2955,12 @@ export function CanvasWorkspaceView({
     async (operationNodeId: string, run: CanvasOperationRunView) => {
       const active = run.status === 'pending' || run.status === 'running'
       const confirmed = await requestConfirm({
-        title: active ? '取消并删除本次运行？' : '删除本次运行？',
+        title: active ? translate('canvasWorkspace.t119') : translate('canvasWorkspace.t120'),
         description: active
-          ? '任务仍在执行或等待中。继续后会先取消任务，再删除这次运行记录。'
-          : '这次运行没有可保留的成功产物，删除后无法恢复。',
-        confirmText: active ? '取消并删除' : '删除',
-        cancelText: '保留',
+          ? translate('canvasWorkspace.tpl17LongDesc')
+          : translate('canvasWorkspace.t122Desc'),
+        confirmText: active ? translate('canvasWorkspace.t123') : translate('canvasWorkspace.t77'),
+        cancelText: translate('canvasWorkspace.t124'),
         danger: true,
       })
       if (!confirmed) return
@@ -2925,7 +2974,9 @@ export function CanvasWorkspaceView({
       const result = await materializeOperationOutputs(operationNodeId, outputs)
       if (!result) return
       if (result.unsupportedOutputIds.length > 0) {
-        message.warning(`${result.unsupportedOutputIds.length} 个产物尚未关联资产，暂不能展开`)
+        message.warning(
+          translate('canvasWorkspace.tpl18Desc', { count: result.unsupportedOutputIds.length }),
+        )
       }
       if (result.materializedNodeIds.length > 0) {
         setSelectedNodeIds(result.materializedNodeIds)
@@ -2937,8 +2988,8 @@ export function CanvasWorkspaceView({
         })
         message.success(
           result.createdNodeIds.length > 0
-            ? `已展开 ${result.createdNodeIds.length} 个资产引用节点`
-            : '这些产物已经在画布中展开',
+            ? translate('canvasWorkspace.tpl19Desc', { count: result.createdNodeIds.length })
+            : translate('canvasWorkspace.t125'),
         )
       }
     },
@@ -3040,11 +3091,11 @@ export function CanvasWorkspaceView({
   const handlePanoramaScreenshot = useCallback(
     (dataUrl: string, sourceNode: CanvasNode, pose: { yaw: number; pitch: number; fov: number }) =>
       createPanoramaCaptureNode(dataUrl, sourceNode, pose, {
-        title: '全景视口截图',
-        message: '从 360 全景预览当前视口截图生成',
+        title: translate('canvasWorkspace.t126'),
+        message: translate('canvasWorkspace.t127Desc'),
         suggestedBaseName: 'panorama-viewport',
         cropped: false,
-        successMessage: '已从当前全景视口生成场景图片节点',
+        successMessage: translate('canvasWorkspace.t128Desc'),
       }),
     [createPanoramaCaptureNode],
   )
@@ -3052,11 +3103,11 @@ export function CanvasWorkspaceView({
   const handlePanoramaCrop = useCallback(
     (dataUrl: string, sourceNode: CanvasNode, pose: { yaw: number; pitch: number; fov: number }) =>
       createPanoramaCaptureNode(dataUrl, sourceNode, pose, {
-        title: '全景框选截图',
-        message: '从 360 全景预览框选区域截图生成',
+        title: translate('canvasWorkspace.t129'),
+        message: translate('canvasWorkspace.t130Desc'),
         suggestedBaseName: 'panorama-crop',
         cropped: true,
-        successMessage: '已从框选区域生成场景图片节点',
+        successMessage: translate('canvasWorkspace.t131Desc'),
       }),
     [createPanoramaCaptureNode],
   )
@@ -3072,7 +3123,7 @@ export function CanvasWorkspaceView({
             y: 120,
           })
       return createTextNode({
-        text: '双击打开右侧编辑器，输入文案、剧情段落或生成提示词。',
+        text: translate('canvasWorkspace.t132Desc'),
         x: position.x,
         y: position.y,
         ...(pendingConnection ? { preservePreferredPosition: true } : {}),
@@ -3164,7 +3215,7 @@ export function CanvasWorkspaceView({
         : null
       const source = resolveStoryboardSplitSourceNode(requestedNode, primaryOutput)
       if (!source) {
-        message.warning('没有解析到可拆分的分镜')
+        message.warning(translate('canvasWorkspace.t133'))
         return
       }
       const created = await splitStoryboardNode({
@@ -3175,11 +3226,11 @@ export function CanvasWorkspaceView({
         connectNodes,
       })
       if (created.length === 0) {
-        message.warning('没有解析到可拆分的分镜')
+        message.warning(translate('canvasWorkspace.t133'))
         return
       }
       setSelectedNodeIds(created.map((item) => item.id))
-      message.success(`已拆分为 ${created.length} 个分镜节点`)
+      message.success(translate('canvasWorkspace.tpl20Desc', { count: created.length }))
     },
     [connectNodes, createTextNode, patchNodes],
   )
@@ -3193,14 +3244,14 @@ export function CanvasWorkspaceView({
             y: 160,
           })
       const node = await createTextNode({
-        text: '3D 导演台：双击打开三维编排空间。',
+        text: translate('canvasWorkspace.t134Desc'),
         x: position.x,
         y: position.y,
         ...(pendingConnection ? { preservePreferredPosition: true } : {}),
       })
       if (!node) return
       await patchNodes([node.id], {
-        title: '3D 导演台',
+        title: translate('canvasWorkspace.t135'),
         width: VIDEO_NODE_DEFAULT_SIZE.width,
         height: VIDEO_NODE_DEFAULT_SIZE.height,
       })
@@ -3209,7 +3260,7 @@ export function CanvasWorkspaceView({
         subtype: 'director_stage_3d',
         displayCategory: 'content',
         stage3d: createDefaultStage3DData() as unknown as Record<string, unknown>,
-        text: '3D 导演台：双击打开三维编排空间。',
+        text: translate('canvasWorkspace.t134Desc'),
       })
       setSelectedNodeIds([node.id])
       setDirectorStage3DNodeId(node.id)
@@ -3235,15 +3286,19 @@ export function CanvasWorkspaceView({
       const sourceVideoAssetId = sourceVideoUrl ? (selected?.assetId ?? undefined) : undefined
       const node = await createTextNode({
         text: sourceVideoUrl
-          ? '视频工作台：双击打开，提取关键帧、剪辑、转码。'
-          : '视频工作台：双击打开。请拖入视频或关联视频节点。',
+          ? translate('canvasWorkspace.t136Desc')
+          : translate('canvasWorkspace.t137Desc'),
         x: position.x,
         y: position.y,
         ...(pendingConnection ? { preservePreferredPosition: true } : {}),
       })
       if (!node) return
       await patchNodes([node.id], {
-        title: sourceVideoUrl ? `视频工作台 — ${selected?.title ?? '视频'}` : '视频工作台',
+        title: sourceVideoUrl
+          ? translate('canvasWorkspace.tpl21Desc', {
+              title: selected?.title ?? translate('canvasWorkspace.t138'),
+            })
+          : translate('canvasWorkspace.t139'),
         width: VIDEO_NODE_DEFAULT_SIZE.width,
         height: VIDEO_NODE_DEFAULT_SIZE.height,
       })
@@ -3256,8 +3311,8 @@ export function CanvasWorkspaceView({
         ...(sourceVideoUrl ? { url: sourceVideoUrl } : {}),
         videoWorkbench: wbData as unknown as Record<string, unknown>,
         text: sourceVideoUrl
-          ? '视频工作台：双击打开，提取关键帧、剪辑、转码。'
-          : '视频工作台：双击打开。请拖入视频或关联视频节点。',
+          ? translate('canvasWorkspace.t136Desc')
+          : translate('canvasWorkspace.t137Desc'),
       })
       setSelectedNodeIds([node.id])
       setVideoWorkbenchNodeId(node.id)
@@ -3293,13 +3348,13 @@ export function CanvasWorkspaceView({
           },
         )
         const node = await createTextNode({
-          text: '步骤模式成片：双击打开视频工作台精剪。',
+          text: translate('canvasWorkspace.t140Desc'),
           x: position.x,
           y: position.y,
         })
         if (!node) return false
         await patchNodes([node.id], {
-          title: '步骤模式成片',
+          title: translate('canvasWorkspace.t141'),
           width: VIDEO_NODE_DEFAULT_SIZE.width,
           height: VIDEO_NODE_DEFAULT_SIZE.height,
         })
@@ -3316,7 +3371,7 @@ export function CanvasWorkspaceView({
         // 新建节点需补 subtype/displayCategory 与基础 data；存量节点 merge 语义下只传变更字段
         ...(newNodeData ?? {}),
         ...(newNodeData ? { subtype: 'video_workbench', displayCategory: 'content' } : {}),
-        text: '步骤模式成片：双击打开视频工作台精剪。',
+        text: translate('canvasWorkspace.t140Desc'),
         videoWorkbench: assembled as unknown as Record<string, unknown>,
       })
 
@@ -3378,7 +3433,7 @@ export function CanvasWorkspaceView({
       if (node && pendingConnection) {
         await connectNodes({ sourceNodeId: pendingConnection.sourceNodeId, targetNodeId: node.id })
       }
-      message.success('已插入资产到当前视口')
+      message.success(translate('canvasWorkspace.t142'))
       return node
     },
     [connectNodes, insertAsset, snapshot, updateNodeData],
@@ -3423,7 +3478,7 @@ export function CanvasWorkspaceView({
         x: position.x,
         y: position.y,
       })
-      message.success('已加入画布，可作为视频生成输入')
+      message.success(translate('canvasWorkspace.t143Desc'))
     },
     [createProviderFileNode, snapshot],
   )
@@ -3437,7 +3492,7 @@ export function CanvasWorkspaceView({
     ) => {
       const sourceUrl = characterSourceImageUrl(sourceImageAsset)
       if (!sourceUrl) {
-        message.warning('当前图片没有可用的源图')
+        message.warning(translate('canvasWorkspace.t144'))
         return
       }
       const cropSubviewToDataUrl = (url: string, cropPx: FilmCharacterSubview['cropPx']) =>
@@ -3478,13 +3533,15 @@ export function CanvasWorkspaceView({
             },
           )
           if (!inserted) {
-            message.error('子视图插入失败')
+            message.error(translate('canvasWorkspace.t145'))
             return
           }
-          message.success(`已将子视图「${subview.label}」插入原产物右侧并连线`)
+          message.success(translate('canvasWorkspace.tpl22Desc', { label: subview.label }))
         } catch (error) {
           message.error(
-            error instanceof Error ? `子视图插入失败：${error.message}` : '子视图插入失败',
+            error instanceof Error
+              ? translate('canvasWorkspace.tpl23Desc', { message: error.message })
+              : translate('canvasWorkspace.t145'),
           )
         }
         return
@@ -3504,14 +3561,16 @@ export function CanvasWorkspaceView({
         const file = dataUrlToFile(dataUrl, `${baseName}-${viewName}-${Date.now()}.png`)
         const assetId = await uploadImageAsset(file)
         if (!assetId) {
-          message.error('子视图生成失败')
+          message.error(translate('canvasWorkspace.t146'))
           return
         }
         await handleInsertAsset(assetId)
-        message.success(`已将子视图「${subview.label}」插入画布`)
+        message.success(translate('canvasWorkspace.tpl24Desc', { label: subview.label }))
       } catch (error) {
         message.error(
-          error instanceof Error ? `子视图插入失败：${error.message}` : '子视图插入失败',
+          error instanceof Error
+            ? translate('canvasWorkspace.tpl23Desc', { message: error.message })
+            : translate('canvasWorkspace.t145'),
         )
       }
     },
@@ -3528,7 +3587,7 @@ export function CanvasWorkspaceView({
   const handleUpdateCharacterSubviews = useCallback(
     async (assetId: string, subviews: FilmCharacterSubview[]) => {
       await updateFilmAsset(assetId, { characterSubviews: subviews })
-      message.success('角色子视图已更新')
+      message.success(translate('canvasWorkspace.t147'))
     },
     [updateFilmAsset],
   )
@@ -3548,11 +3607,11 @@ export function CanvasWorkspaceView({
       if (!createdNode) return false
 
       await patchNodes([createdNode.id], {
-        title: `提示词：${entry.label}`,
+        title: translate('canvasWorkspace.tpl25Desc', { label: entry.label }),
         ...(anchorNode.parentNodeId ? { parentNodeId: anchorNode.parentNodeId } : {}),
       })
       setSelectedNodeIds([createdNode.id])
-      message.success(`已在选中节点旁新增提示词节点：${entry.label}`)
+      message.success(translate('canvasWorkspace.tpl26Desc', { label: entry.label }))
       return true
     },
     [createTextNode, patchNodes, selectedNodes, snapshot],
@@ -3581,12 +3640,12 @@ export function CanvasWorkspaceView({
       if (!createdNode) return false
 
       await patchNodes([createdNode.id], {
-        title: `提示词：${entry.label}`,
+        title: translate('canvasWorkspace.tpl25Desc', { label: entry.label }),
         width: 520,
         height: 260,
       })
       setSelectedNodeIds([createdNode.id])
-      message.success(`已插入提示词节点：${entry.label}`)
+      message.success(translate('canvasWorkspace.tpl27Desc', { label: entry.label }))
       return true
     },
     [
@@ -3612,13 +3671,13 @@ export function CanvasWorkspaceView({
       })
       if (!createdNode) return
       await patchNodes([createdNode.id], {
-        title: '分镜导演台提示词',
+        title: translate('canvasWorkspace.t148'),
         width: VIDEO_NODE_DEFAULT_SIZE.width,
         height: VIDEO_NODE_DEFAULT_SIZE.height,
       })
       setSelectedNodeIds([createdNode.id])
       setShotDirectorOpen(false)
-      message.success('已插入分镜提示词节点')
+      message.success(translate('canvasWorkspace.t149'))
     },
     [createTextNode, patchNodes, snapshot],
   )
@@ -3713,12 +3772,12 @@ export function CanvasWorkspaceView({
     if (!snapshot) return
     const target = readStepStudioState(snapshot.project)?.assemblyNodeId
     if (target == null) {
-      message.warning('请先组装时间线，再进入工作台精剪')
+      message.warning(translate('canvasWorkspace.t150Desc'))
       return
     }
     const nodeExists = snapshot.nodes.some((node) => node.id === target)
     if (!nodeExists) {
-      message.warning('工作台节点已被删除，请重新组装时间线后再进入')
+      message.warning(translate('canvasWorkspace.t151Desc'))
       return
     }
     setVideoWorkbenchNodeId(target)
@@ -3760,18 +3819,18 @@ export function CanvasWorkspaceView({
       const selectedIds: string[] = []
       if (imageNode) {
         selectedIds.push(imageNode.id)
-        await patchNodes([imageNode.id], { title: '分镜导演台截图' })
+        await patchNodes([imageNode.id], { title: translate('canvasWorkspace.t152') })
       }
       if (promptNode) {
         selectedIds.push(promptNode.id)
         await patchNodes([promptNode.id], {
-          title: '分镜导演台提示词',
+          title: translate('canvasWorkspace.t148'),
           width: VIDEO_NODE_DEFAULT_SIZE.width,
           height: VIDEO_NODE_DEFAULT_SIZE.height,
         })
       }
       if (selectedIds.length > 0) setSelectedNodeIds(selectedIds)
-      message.success('已插入导演台截图和提示词')
+      message.success(translate('canvasWorkspace.t153'))
     },
     [createImageNode, createTextNode, patchNodes, snapshot],
   )
@@ -3811,7 +3870,7 @@ export function CanvasWorkspaceView({
         nextSnapshot.nodes.filter((node) => !previousNodeIds.has(node.id)).map((node) => node.id),
       )
       setWorkflowDrawerOpen(false)
-      message.success(`已将“${workflow.name}”添加到画布`)
+      message.success(translate('canvasWorkspace.tpl28Desc', { name: workflow.name }))
     },
     [materializeWorkflow, snapshot],
   )
@@ -3826,7 +3885,7 @@ export function CanvasWorkspaceView({
       try {
         await materializeCanvasWorkflowAt(workflow, position)
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '添加画布工作流失败')
+        message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t154'))
       }
     },
     [materializeCanvasWorkflowAt],
@@ -3836,10 +3895,10 @@ export function CanvasWorkspaceView({
     async (position: { x: number; y: number }, workflowId: string) => {
       try {
         const workflow = await canvasWorkflowApi.get(workflowId)
-        if (!workflow) throw new Error('画布工作流不存在或已被删除')
+        if (!workflow) throw new Error(translate('canvasWorkspace.t155Desc'))
         await materializeCanvasWorkflowAt(workflow, position)
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '添加画布工作流失败')
+        message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t154'))
       }
     },
     [materializeCanvasWorkflowAt],
@@ -3861,7 +3920,7 @@ export function CanvasWorkspaceView({
       const node = snapshot.nodes.find((item) => item.assetId === assetId)
       if (node) {
         setSelectedNodeIds([node.id])
-        message.info(`已定位到节点：${node.title ?? node.type}`)
+        message.info(translate('canvasWorkspace.tpl29Desc', { name: node.title ?? node.type }))
       }
     },
     [snapshot],
@@ -3878,7 +3937,7 @@ export function CanvasWorkspaceView({
       // 组：需先选中至少两个节点
       if (item.nodeType === 'group') {
         if (selectedTopLevelNodes.length < 2) {
-          message.info('请先选择至少两个节点，再创建组')
+          message.info(translate('canvasWorkspace.t156Desc'))
           return
         }
         // 复用 handleCreateGroup：编组后把选区切到新组，避免多选工具栏悬空
@@ -3936,7 +3995,7 @@ export function CanvasWorkspaceView({
             inputNodeIds: [],
             x: Math.round(position.x),
             y: Math.round(position.y),
-            message: '请在操作面板填写 Prompt / 连接输入节点后点击开始任务',
+            message: translate('canvasWorkspace.t157Desc'),
           })
           const created = next?.nodes.find(
             (node) => !existingNodeIds.has(node.id) && node.data?.operation === item.operation,
@@ -3945,7 +4004,7 @@ export function CanvasWorkspaceView({
             closeCanvasFloatPanels('operation')
             setSelectedNodeIds([created.id])
             setActiveOperationPanelNodeId(created.id)
-            message.info('已创建任务节点，请填写参数后连接输入并运行')
+            message.info(translate('canvasWorkspace.t158Desc'))
           }
         })()
       }
@@ -3974,7 +4033,7 @@ export function CanvasWorkspaceView({
         .filter((n) => n.type === 'image' && Boolean(n.data.url))
         .map((n) => ({
           id: n.id,
-          title: n.title ?? '图片',
+          title: n.title ?? translate('canvasWorkspace.t159'),
           url: n.data.url as string,
           ...(n.data.thumbnailUrl ? { thumbnailUrl: n.data.thumbnailUrl } : {}),
         })),
@@ -3985,7 +4044,7 @@ export function CanvasWorkspaceView({
     () =>
       (snapshot?.nodes ?? [])
         .filter((n) => n.data.pipelineRole === 'character')
-        .map((n) => ({ id: n.id, title: n.title ?? '角色' })),
+        .map((n) => ({ id: n.id, title: n.title ?? translate('canvasWorkspace.t160') })),
     [snapshot?.nodes],
   )
 
@@ -4031,11 +4090,11 @@ export function CanvasWorkspaceView({
         imageHeight: dimensions.height,
       })
       if (imageNode) {
-        await patchNodes([imageNode.id], { title: '3D 导演台截图' })
+        await patchNodes([imageNode.id], { title: translate('canvasWorkspace.t161') })
         if (source) await connectNodes({ sourceNodeId: source.id, targetNodeId: imageNode.id })
         setSelectedNodeIds([imageNode.id])
       }
-      message.success('已从 3D 导演台生成截图节点')
+      message.success(translate('canvasWorkspace.t162Desc'))
     },
     [connectNodes, createImageNode, directorStage3DNode, patchNodes, snapshot],
   )
@@ -4084,7 +4143,7 @@ export function CanvasWorkspaceView({
         }
       }
       if (createdIds.length > 0) setSelectedNodeIds(createdIds)
-      message.success(`已批量导出 ${createdIds.length} 个镜头截图`)
+      message.success(translate('canvasWorkspace.tpl30Desc', { count: createdIds.length }))
     },
     [connectNodes, createImageNode, directorStage3DNode, patchNodes, snapshot],
   )
@@ -4103,12 +4162,12 @@ export function CanvasWorkspaceView({
       })
       if (!createdNode) return
       await patchNodes([createdNode.id], {
-        title: '3D 画面提示词',
+        title: translate('canvasWorkspace.t163'),
         width: VIDEO_NODE_DEFAULT_SIZE.width,
         height: VIDEO_NODE_DEFAULT_SIZE.height,
       })
       setSelectedNodeIds([createdNode.id])
-      message.success('已插入 3D 画面提示词节点')
+      message.success(translate('canvasWorkspace.t164Desc'))
     },
     [createTextNode, patchNodes, snapshot],
   )
@@ -4154,7 +4213,9 @@ export function CanvasWorkspaceView({
         ...(durationMs ? { durationMs } : {}),
       })
       if (videoNode) {
-        await patchNodes([videoNode.id], { title: input.title || '3D 运镜视频' })
+        await patchNodes([videoNode.id], {
+          title: input.title || translate('canvasWorkspace.t165'),
+        })
         if (source) await connectNodes({ sourceNodeId: source.id, targetNodeId: videoNode.id })
         setSelectedNodeIds([videoNode.id])
       }
@@ -4179,7 +4240,7 @@ export function CanvasWorkspaceView({
         )
         .map((n) => ({
           id: n.id,
-          title: n.title ?? '视频',
+          title: n.title ?? translate('canvasWorkspace.t138'),
           url: n.data.url as string,
           ...(n.data.thumbnailUrl ? { thumbnailUrl: n.data.thumbnailUrl as string } : {}),
         })),
@@ -4231,14 +4292,14 @@ export function CanvasWorkspaceView({
     ): Promise<WorkbenchCanvasMaterialization | undefined> => {
       const current = snapshotRef.current
       const target = current?.nodes.find((item) => item.id === videoWorkbenchNodeId)
-      if (!current || !target || !projectId) throw new Error('当前视频节点已不存在')
+      if (!current || !target || !projectId) throw new Error(translate('canvasWorkspace.t166'))
 
       const sourcePath = output.outputPath
       const media = resolveWorkbenchMaterializationMedia(sourcePath)
       if (mode === 'replace' && media.kind === 'image') {
-        throw new Error('GIF 等图片产物只能添加为新的图片节点，不能替换视频节点')
+        throw new Error(translate('canvasWorkspace.t167Desc'))
       }
-      if (!sourcePath) throw new Error('产物文件路径为空')
+      if (!sourcePath) throw new Error(translate('canvasWorkspace.t168'))
       const copied = await window.spark.invoke('canvas:asset:copy-to-project', {
         projectId,
         ...(current.project.rootPath ? { projectRootPath: current.project.rootPath } : {}),
@@ -4247,7 +4308,7 @@ export function CanvasWorkspaceView({
         type: media.kind,
       })
       if (copied.error || !copied.filePath) {
-        throw new Error(copied.error ?? '产物复制到项目失败')
+        throw new Error(copied.error ?? translate('canvasWorkspace.t169'))
       }
 
       const filePath = copied.filePath as string
@@ -4271,7 +4332,7 @@ export function CanvasWorkspaceView({
           imageWidth,
           imageHeight,
         })
-        if (!imageNode) throw new Error('产物节点创建失败')
+        if (!imageNode) throw new Error(translate('canvasWorkspace.t170'))
         setSelectedNodeIds([imageNode.id])
         return { nodeId: imageNode.id, outputPath: filePath, outputUrl: fileUrl }
       }
@@ -4311,7 +4372,7 @@ export function CanvasWorkspaceView({
         ...(dimensions.height ? { mediaHeight: dimensions.height } : {}),
         ...(dimensions.durationMs ? { durationMs: dimensions.durationMs } : {}),
       })
-      if (!created) throw new Error('产物节点创建失败')
+      if (!created) throw new Error(translate('canvasWorkspace.t170'))
       setSelectedNodeIds([created.id])
       return { nodeId: created.id, outputPath: filePath, outputUrl: fileUrl }
     },
@@ -4321,9 +4382,14 @@ export function CanvasWorkspaceView({
   const handleAddVideoToWorkbench = useCallback(async () => {
     if (!videoWorkbenchNode || !projectId) return
     const picked = await window.spark.invoke('dialog:open-file', {
-      title: '选择视频',
+      title: translate('canvasWorkspace.t171'),
       multiple: false,
-      filters: [{ name: '视频', extensions: ['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv'] }],
+      filters: [
+        {
+          name: translate('canvasWorkspace.t138'),
+          extensions: ['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv'],
+        },
+      ],
     })
     if (picked.canceled || !picked.filePath) return
     const projectRootPath = snapshot?.project.rootPath
@@ -4334,7 +4400,7 @@ export function CanvasWorkspaceView({
       type: 'video',
     })
     if (copyResult.error || !copyResult.filePath) {
-      message.error('视频导入失败')
+      message.error(translate('canvasWorkspace.t172'))
       return
     }
     const fileUrl = encodeToSafeFileUrl(copyResult.filePath as string)
@@ -4342,7 +4408,7 @@ export function CanvasWorkspaceView({
       url: fileUrl,
       videoWorkbench: createDefaultVideoWorkbenchProject() as unknown as Record<string, unknown>,
     })
-    message.success('视频已导入工作台')
+    message.success(translate('canvasWorkspace.t173'))
   }, [videoWorkbenchNode, projectId, snapshot?.project.rootPath, updateNodeData])
 
   // 从画布选择视频作为工作台源视频（直接用已有节点的 url，无需重新落盘）
@@ -4353,7 +4419,7 @@ export function CanvasWorkspaceView({
         url,
         videoWorkbench: createDefaultVideoWorkbenchProject() as unknown as Record<string, unknown>,
       })
-      message.success('已切换源视频')
+      message.success(translate('canvasWorkspace.t174'))
     },
     [videoWorkbenchNode, updateNodeData],
   )
@@ -4383,7 +4449,7 @@ export function CanvasWorkspaceView({
       const BATCH = 5
       const loadingKey = `export-kf-${Date.now()}`
       message.loading({
-        content: `正在导入 ${frames.length} 个关键帧…`,
+        content: translate('canvasWorkspace.tpl31Desc', { count: frames.length }),
         key: loadingKey,
         duration: 0,
       })
@@ -4404,7 +4470,9 @@ export function CanvasWorkspaceView({
                 type: 'image',
               })
               if (copied.error || !copied.filePath) {
-                throw new Error(copied.error ?? `关键帧 ${i + 1} 复制到项目失败`)
+                throw new Error(
+                  copied.error ?? translate('canvasWorkspace.tpl32Desc', { index: i + 1 }),
+                )
               }
               const filePath = copied.filePath as string
               const copiedFileName = (copied.fileName as string | undefined) ?? fileName
@@ -4461,7 +4529,9 @@ export function CanvasWorkspaceView({
         })
         if (groupNode) {
           await patchNodes([groupNode.id], {
-            title: source?.title ? `${source.title} · 关键帧` : `关键帧组 · ${frames.length}帧`,
+            title: source?.title
+              ? translate('canvasWorkspace.tpl33Desc', { title: source.title })
+              : translate('canvasWorkspace.tpl34Desc', { count: frames.length }),
           })
           if (source) {
             await connectNodes({ sourceNodeId: source.id, targetNodeId: groupNode.id })
@@ -4481,7 +4551,7 @@ export function CanvasWorkspaceView({
         }
       }
       if (selectedNodeIds.length > 0) setSelectedNodeIds(selectedNodeIds)
-      message.success(`已导入 ${createdIds.length} 个关键帧到画布`)
+      message.success(translate('canvasWorkspace.tpl35Desc', { count: createdIds.length }))
       return frames.map((frame, index) => ({
         ...frame,
         ...(copiedPathsByOrder[index] ? { path: copiedPathsByOrder[index] } : {}),
@@ -4542,7 +4612,9 @@ export function CanvasWorkspaceView({
       })
       if (imageNode) {
         await patchNodes([imageNode.id], {
-          title: `${source.title ?? '图片'} · 标注`,
+          title: translate('canvasWorkspace.tpl36Desc', {
+            title: source.title ?? translate('canvasWorkspace.t159'),
+          }),
           data: {
             ...imageNode.data,
             imageAnnotation: createCanvasImageAnnotationRef({
@@ -4562,7 +4634,7 @@ export function CanvasWorkspaceView({
         setSelectedNodeIds([imageNode.id])
       }
       setAnnotatingImageNodeId(null)
-      message.success('已生成标注图片节点')
+      message.success(translate('canvasWorkspace.t175'))
     },
     [connectNodes, createImageNode, patchNodes, snapshot, updateNodeData],
   )
@@ -4619,7 +4691,7 @@ export function CanvasWorkspaceView({
           height: nodeSize.height,
           imageWidth: tile.width,
           imageHeight: tile.height,
-          title: `${input.sourceNode.title ?? '图片'} · ${tile.label}`,
+          title: `${input.sourceNode.title ?? translate('canvasWorkspace.t159')} · ${tile.label}`,
         })
       }
 
@@ -4681,14 +4753,18 @@ export function CanvasWorkspaceView({
         })
         if (imageNode) {
           await patchNodes([imageNode.id], {
-            title: image.title ?? `${input.sourceNode.title ?? '图片'} · 宫格切分`,
+            title:
+              image.title ??
+              translate('canvasWorkspace.tpl37Desc', {
+                title: input.sourceNode.title ?? translate('canvasWorkspace.t159'),
+              }),
           })
           await connectNodes({ sourceNodeId: input.sourceNode.id, targetNodeId: imageNode.id })
           await rewireDownstreamTo(imageNode.id)
           setSelectedNodeIds([imageNode.id])
         }
         setGridSplitImageNodeId(null)
-        message.success('已生成宫格切分图片节点')
+        message.success(translate('canvasWorkspace.t176'))
         return
       }
 
@@ -4720,7 +4796,7 @@ export function CanvasWorkspaceView({
 
       if (createdNodeIds.length === 0) {
         setGridSplitImageNodeId(null)
-        message.error('宫格切分结果生成失败')
+        message.error(translate('canvasWorkspace.t177'))
         return
       }
 
@@ -4740,7 +4816,11 @@ export function CanvasWorkspaceView({
         })
         if (groupNode) {
           await patchNodes([groupNode.id], {
-            title: `${input.sourceNode.title ?? '图片'} · 宫格切分 ${input.rows}x${input.cols}`,
+            title: translate('canvasWorkspace.tpl38Desc', {
+              title: input.sourceNode.title ?? translate('canvasWorkspace.t159'),
+              rows: input.rows,
+              cols: input.cols,
+            }),
           })
           await connectNodes({ sourceNodeId: input.sourceNode.id, targetNodeId: groupNode.id })
           await rewireDownstreamTo(groupNode.id)
@@ -4756,7 +4836,7 @@ export function CanvasWorkspaceView({
 
       setSelectedNodeIds(selection)
       setGridSplitImageNodeId(null)
-      message.success(`已生成 ${createdNodeIds.length} 张宫格切分图片`)
+      message.success(translate('canvasWorkspace.tpl39Desc', { count: createdNodeIds.length }))
     },
     [connectNodes, createGroupNode, createImageNode, deleteEdges, patchNodes, snapshot],
   )
@@ -4765,7 +4845,7 @@ export function CanvasWorkspaceView({
     try {
       await undoCanvasChange()
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '撤销失败')
+      message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t178'))
     }
   }, [undoCanvasChange])
 
@@ -4773,7 +4853,7 @@ export function CanvasWorkspaceView({
     try {
       await redoCanvasChange()
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '重做失败')
+      message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t179'))
     }
   }, [redoCanvasChange])
 
@@ -5017,13 +5097,13 @@ export function CanvasWorkspaceView({
       const file = selectedFiles[0]
       if (!file) return
       if (!file.type.startsWith('image/')) {
-        message.warning('请选择图片文件')
+        message.warning(translate('canvasWorkspace.t180'))
         return
       }
       try {
         const targetNode = snapshot.nodes.find((node) => node.id === replaceImageNodeId)
         if (!targetNode || targetNode.type !== 'image') {
-          message.error('未找到目标图片节点')
+          message.error(translate('canvasWorkspace.t181'))
           return
         }
         const prepared = await prepareCanvasImageUpload(file)
@@ -5042,20 +5122,20 @@ export function CanvasWorkspaceView({
           thumbnailUrl: fileUrl,
           mimeType: file.type,
         })
-        message.success('已替换图片')
+        message.success(translate('canvasWorkspace.t182'))
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '替换图片失败')
+        message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t183'))
       }
       return
     }
 
     const imageFiles = selectedFiles.filter((file) => file.type.startsWith('image/'))
     if (imageFiles.length === 0) {
-      message.warning('请选择图片文件')
+      message.warning(translate('canvasWorkspace.t180'))
       return
     }
     if (imageFiles.length < selectedFiles.length) {
-      message.warning('已跳过非图片文件')
+      message.warning(translate('canvasWorkspace.t184'))
     }
 
     try {
@@ -5075,14 +5155,14 @@ export function CanvasWorkspaceView({
       if (result.createdNodeCount > 0) {
         message.success(
           result.createdNodeCount === 1
-            ? '已添加图片到画布'
+            ? translate('canvasWorkspace.t185')
             : result.grouped
-              ? `已添加 ${result.createdNodeCount} 张图片并成组`
-              : `已添加 ${result.createdNodeCount} 张图片到画布`,
+              ? translate('canvasWorkspace.tpl40Desc', { count: result.createdNodeCount })
+              : translate('canvasWorkspace.tpl41Desc', { count: result.createdNodeCount }),
         )
       }
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '添加图片失败')
+      message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t186'))
     }
   }
 
@@ -5340,7 +5420,7 @@ export function CanvasWorkspaceView({
           executeSubworkflow: async (request) => {
             const childWorkflow = await canvasWorkflowApi.get(request.workflowId)
             if (!childWorkflow) {
-              throw new Error(`找不到子工作流“${request.workflowId}”`)
+              throw new Error(`translate('canvasWorkspace.tpl42Desc', { id: request.workflowId })`)
             }
             const childRun = await canvasWorkflowApi.createRun({
               workflowId: childWorkflow.id,
@@ -5357,7 +5437,12 @@ export function CanvasWorkspaceView({
               signal: request.signal ?? new AbortController().signal,
             })
             if (completed.status !== 'completed') {
-              throw new Error(`子工作流“${childWorkflow.name}”未完成：${completed.status}`)
+              throw new Error(
+                translate('canvasWorkspace.tpl43Desc', {
+                  name: childWorkflow.name,
+                  status: completed.status,
+                }),
+              )
             }
             return {
               runId: completed.id,
@@ -5406,7 +5491,7 @@ export function CanvasWorkspaceView({
     ) => Promise<TrackedCanvasWorkflowResult>,
   ): Promise<TrackedCanvasWorkflowResult> => {
     const snapshot = snapshotRef.current
-    if (!snapshot) throw new Error('画布尚未加载')
+    if (!snapshot) throw new Error(translate('canvasWorkspace.t187'))
     const viewportBeforeRun = await persistCurrentCanvasViewport()
     const placement = positionNodeInViewport(
       canvasViewportRef.current,
@@ -5486,7 +5571,7 @@ export function CanvasWorkspaceView({
         status: 'failed',
         errorMsg: 'workflow_failed',
         errorDetail: errorMessage,
-        message: `失败：${errorMessage}`,
+        message: translate('canvasWorkspace.tpl44Desc', { message: errorMessage }),
         ...(diagnostics.rawResponse !== undefined ? { rawResponse: diagnostics.rawResponse } : {}),
         ...(diagnostics.modelOutputText !== undefined
           ? { modelOutputText: diagnostics.modelOutputText }
@@ -5549,7 +5634,7 @@ export function CanvasWorkspaceView({
       y: Math.round(placement.y),
       title: params.title,
       systemPrompt: params.prompt,
-      message: params.message ?? '请在操作面板确认 Prompt / Agent / 模型后点击开始任务',
+      message: params.message ?? translate('canvasWorkspace.t188Desc'),
       ...(inputBindings.length > 0 ? { inputBindings } : {}),
       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
       ...(params.taskPipelineRole ? { taskPipelineRole: params.taskPipelineRole } : {}),
@@ -5573,10 +5658,13 @@ export function CanvasWorkspaceView({
       }
       if (params.openPanel !== false) {
         openOperationPanelForNode(created.id)
-        message.info(`已创建「${params.title}」任务节点，请确认配置后开始`)
+        message.info(translate('canvasWorkspace.tpl46Desc', { title: params.title }))
       } else {
         setSelectedNodeIds([created.id])
-        message.info(`已创建并连接「${params.title}」节点，双击或右键“编辑节点”可打开配置`)
+        message.info(
+          translate('canvasWorkspace.tpl45Desc', { title: params.title }) +
+            translate('canvasWorkspace.tpl47Desc'),
+        )
       }
     }
     return created ?? null
@@ -5587,27 +5675,29 @@ export function CanvasWorkspaceView({
   > = async (asset) => {
     const scriptText = asset.contentText?.trim() ?? ''
     if (!scriptText) {
-      message.warning('请先补充剧本内容，再执行拆解')
+      message.warning(translate('canvasWorkspace.t189Desc'))
       return
     }
     const snapshot = snapshotRef.current
     if (!snapshot) return
 
     const key = `film-breakdown:${asset.id}`
-    message.loading({ key, content: '正在拆解剧本，生成角色/场景/分镜草稿...', duration: 0 })
+    message.loading({ key, content: translate('canvasWorkspace.t190Desc'), duration: 0 })
 
     try {
       const result = await runTrackedCanvasWorkflow(
         {
-          title: '剧本拆解 / 自动分镜',
+          title: translate('canvasWorkspace.t191'),
           prompt: scriptText,
           inputAssetIds: [asset.id],
-          message: '正在拆解剧本，生成角色/场景/分镜草稿...',
+          message: translate('canvasWorkspace.t190Desc'),
           modelParams: { workflow: 'script_breakdown', sourceAssetId: asset.id },
         },
         async () => {
           const draft = buildScriptBreakdownDraft(asset)
-          const sourceTag = `来源:${asset.title ?? '剧本'}`
+          const sourceTag = translate('canvasWorkspace.tpl48Desc', {
+            title: asset.title ?? translate('canvasWorkspace.t192'),
+          })
           const existingByKindAndName = new Map<string, CanvasAsset>()
           const createdAssetIds: string[] = []
           for (const item of snapshot.assets) {
@@ -5627,7 +5717,7 @@ export function CanvasWorkspaceView({
               kind,
               name: normalizedName,
               text: input.text,
-              tags: ['剧本拆解', sourceTag],
+              tags: [translate('canvasWorkspace.t193'), sourceTag],
               attributes: {
                 sourceScriptId: asset.id,
                 sourceScriptTitle: asset.title ?? '',
@@ -5671,7 +5761,11 @@ export function CanvasWorkspaceView({
 
           const segmentsByGroup = new Map<string, ScriptBreakdownDraft['segments']>()
           for (const segment of draft.segments) {
-            const groupName = segment.groupName?.trim() || `${asset.title ?? '剧本'} - 自动分镜`
+            const groupName =
+              segment.groupName?.trim() ||
+              translate('canvasWorkspace.tpl49Desc', {
+                title: asset.title ?? translate('canvasWorkspace.t192'),
+              })
             const list = segmentsByGroup.get(groupName) ?? []
             list.push(segment)
             segmentsByGroup.set(groupName, list)
@@ -5682,7 +5776,9 @@ export function CanvasWorkspaceView({
           for (const [groupName, segments] of segmentsByGroup) {
             const group = await createShotGroup({
               name: groupName,
-              description: `由剧本「${asset.title ?? '未命名剧本'}」自动拆解生成，可继续人工调整。`,
+              description: translate('canvasWorkspace.tpl50LongDesc', {
+                title: asset.title ?? translate('canvasWorkspace.t194'),
+              }),
             })
             createdGroupCount += 1
             for (const segment of segments) {
@@ -5703,7 +5799,13 @@ export function CanvasWorkspaceView({
             }
           }
 
-          const content = `已生成 ${createdCharacters.length} 个角色、${createdScenes.length} 个场景、${createdProps.length} 个道具、${createdGroupCount} 个分组、${createdSegmentCount} 个分镜片段`
+          const content = translate('canvasWorkspace.tpl51LongDesc', {
+            characters: createdCharacters.length,
+            scenes: createdScenes.length,
+            props: createdProps.length,
+            groups: createdGroupCount,
+            segments: createdSegmentCount,
+          })
           return {
             message: content,
             outputAssetIds: createdAssetIds,
@@ -5720,12 +5822,12 @@ export function CanvasWorkspaceView({
       )
       message.success({
         key,
-        content: result.message ?? '剧本拆解完成',
+        content: result.message ?? translate('canvasWorkspace.t195'),
       })
     } catch (error) {
       message.error({
         key,
-        content: error instanceof Error ? error.message : '剧本拆解失败',
+        content: error instanceof Error ? error.message : translate('canvasWorkspace.t196'),
       })
     }
   }
@@ -5736,7 +5838,7 @@ export function CanvasWorkspaceView({
     chapters,
   }) => {
     if (chapters.length === 0) {
-      throw new Error('未选择任何章节')
+      throw new Error(translate('canvasWorkspace.t197'))
     }
     // 单次事务批量写入（整篇索引 + 逐章 + 章节索引），避免逐章重渲染卡死
     await importManuscript({ title, mode, chapters })
@@ -5764,7 +5866,11 @@ export function CanvasWorkspaceView({
     const snapshot = snapshotRef.current
     if (!snapshot) return
     await updateProjectMetadata(writeProductionBible(snapshot.project.metadata, productionBible))
-    message.success(productionBible.locked ? '项目视觉圣经已应用并锁定' : '项目视觉圣经已应用')
+    message.success(
+      productionBible.locked
+        ? translate('canvasWorkspace.t198')
+        : translate('canvasWorkspace.t199'),
+    )
   }
 
   const handleExportTimeline: NonNullable<FilmCenterHandlers['onExportTimeline']> = ({
@@ -5779,9 +5885,9 @@ export function CanvasWorkspaceView({
       )
       const node = await createTextNode({ text: markdown, x: position.x, y: position.y })
       if (node) {
-        await patchNodes([node.id], { title: `成片清单 · ${title}` })
+        await patchNodes([node.id], { title: translate('canvasWorkspace.tpl52Desc', { title }) })
       }
-      message.success('成片清单已插入画布')
+      message.success(translate('canvasWorkspace.t200'))
     })()
   }
 
@@ -5790,21 +5896,29 @@ export function CanvasWorkspaceView({
   > = async (asset) => {
     const chapterText = asset.contentText?.trim() ?? ''
     if (!chapterText) {
-      message.warning('该章节没有正文内容')
+      message.warning(translate('canvasWorkspace.t201'))
       return
     }
     const scriptAsset = await createFilmAsset({
       kind: 'script',
-      name: `${asset.title ?? '章节'} · 剧本`,
+      name: translate('canvasWorkspace.tpl53Desc', {
+        title: asset.title ?? translate('canvasWorkspace.t202'),
+      }),
       text: chapterText,
-      tags: [`来源:${asset.title ?? '章节'}`],
+      tags: [
+        translate('canvasWorkspace.tpl48Desc', {
+          title: asset.title ?? translate('canvasWorkspace.t202'),
+        }),
+      ],
     })
     // 不直接发起任务：在画布上创建「转剧本」操作节点，用户在操作面板确认 Prompt / Agent / 模型后手动开始
     await addFilmAssetTaskNode({
       operation: 'text_rewrite',
-      title: `转剧本 · ${asset.title ?? '章节'}`,
+      title: translate('canvasWorkspace.tpl54Desc', {
+        title: asset.title ?? translate('canvasWorkspace.t202'),
+      }),
       prompt: buildChapterToScreenplayInstruction(chapterText),
-      message: `已在资源库创建剧本「${scriptAsset.title}」。请在操作面板确认 Prompt / Agent / 模型后点击开始任务；产出剧本节点可右键继续编排`,
+      message: translate('canvasWorkspace.tpl55LongDesc', { title: scriptAsset.title }),
       taskPipelineRole: 'screenplay',
       outputPipelineRole: 'screenplay',
     })
@@ -5841,11 +5955,15 @@ export function CanvasWorkspaceView({
         marked += 1
       }
       await updateManyNodeData(updates)
-      message.success(marked > 0 ? `已确认，并标记 ${marked} 个下游节点待更新` : '已确认该节点')
+      message.success(
+        marked > 0
+          ? translate('canvasWorkspace.tpl56Desc', { count: marked })
+          : translate('canvasWorkspace.t203'),
+      )
       return
     }
     await updateManyNodeData(updates)
-    message.info('已标记为待更新')
+    message.info(translate('canvasWorkspace.t204'))
   }
 
   /** 从分镜节点的 shotRef 解析 {group, segment, characters, scene}（§S6 节点化） */
@@ -5972,10 +6090,10 @@ export function CanvasWorkspaceView({
       }
       if (openPanel) {
         openOperationPanelForNode(created.id)
-        if (announce) message.info('已创建操作节点，请确认配置后点击开始任务')
+        if (announce) message.info(translate('canvasWorkspace.t205Desc'))
       } else {
         if (selectCreated) setSelectedNodeIds([created.id])
-        if (announce) message.info('已创建并连接任务节点，双击或右键“编辑节点”可打开配置')
+        if (announce) message.info(translate('canvasWorkspace.t206Desc'))
       }
     }
     return created
@@ -5991,7 +6109,10 @@ export function CanvasWorkspaceView({
     const inputType = getCanvasPipelineInputType(pipelineTextSource.sourceNode)
     if (action && (!inputType || !action.inputTypes.includes(inputType))) {
       message.warning(
-        `「${action.label}」仅支持${action.inputTypes.join('、')}输入，当前节点不是可用的媒体类型`,
+        translate('canvasWorkspace.tpl57LongDesc', {
+          label: action.label,
+          types: action.inputTypes.join(', '),
+        }),
       )
       return
     }
@@ -6010,10 +6131,9 @@ export function CanvasWorkspaceView({
         await createConfiguredOperationNode({
           sourceNode: shotSourceNode,
           operation: 'storyboard_grid',
-          title: '生成分镜关键帧图',
-          prompt:
-            '请根据输入内容生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性；输入可以是普通文本、分镜脚本或图片参考。',
-          nodeMessage: '确认故事板 Prompt、Agent 与模型后点击开始任务',
+          title: translate('canvasWorkspace.t207'),
+          prompt: translate('canvasWorkspace.t269'),
+          nodeMessage: translate('canvasWorkspace.t209Desc'),
           taskPipelineRole: 'shot',
           outputPipelineRole: 'keyframe',
         })
@@ -6026,11 +6146,9 @@ export function CanvasWorkspaceView({
         await createConfiguredOperationNode({
           sourceNode: shotSourceNode,
           operation: 'image_to_video',
-          title: '生成视频',
-          prompt:
-            pipelineTextSource.sourceText ||
-            '请根据输入图片生成连贯的视频，保持主体、构图和视觉风格一致。',
-          nodeMessage: '确认视频 Prompt、Agent 与模型后点击开始任务',
+          title: translate('canvasWorkspace.t210'),
+          prompt: pipelineTextSource.sourceText || translate('canvasWorkspace.t211Desc'),
+          nodeMessage: translate('canvasWorkspace.t212Desc'),
           taskPipelineRole: 'keyframe',
           outputPipelineRole: 'clip',
         })
@@ -6050,7 +6168,9 @@ export function CanvasWorkspaceView({
                 { openPanel: false },
               )
             }
-            message.success(`已按 ${group.segments.length} 个分镜创建视频任务节点`)
+            message.success(
+              translate('canvasWorkspace.tpl58Desc', { count: group.segments.length }),
+            )
             return
           }
         }
@@ -6075,7 +6195,7 @@ export function CanvasWorkspaceView({
           })
           return
         }
-        message.warning('该节点没有可用的分镜关键帧输入')
+        message.warning(translate('canvasWorkspace.t213Desc'))
         return
       }
       if (actionId === 'shot.to_keyframes') {
@@ -6115,8 +6235,8 @@ export function CanvasWorkspaceView({
         requestAnimationFrame(() => canvasViewportControlsRef.current?.focusNodes(createdNodeIds))
         message.success(
           createdNodeIds.length > 1
-            ? `已批量创建 ${createdNodeIds.length} 个后续任务节点`
-            : '已创建并连接任务节点，双击或右键“编辑节点”可打开配置',
+            ? translate('canvasWorkspace.tpl59Desc', { count: createdNodeIds.length })
+            : translate('canvasWorkspace.t206Desc'),
         )
       }
     }
@@ -6193,14 +6313,14 @@ export function CanvasWorkspaceView({
             ...(draft.modelParams ? { modelParams: draft.modelParams } : {}),
             ...(draft.taskPipelineRole ? { taskPipelineRole: draft.taskPipelineRole } : {}),
             ...(draft.outputPipelineRole ? { outputPipelineRole: draft.outputPipelineRole } : {}),
-            outputTitle: textSourceNode.title?.trim() || '角色身份板',
+            outputTitle: textSourceNode.title?.trim() || translate('canvasWorkspace.t214'),
             selectCreated: false,
             announce: false,
           })
           if (created) {
             setSelectedNodeIds([created.id])
             requestAnimationFrame(() => canvasViewportControlsRef.current?.focusNodes([created.id]))
-            message.success('已创建并连接角色身份板生图节点')
+            message.success(translate('canvasWorkspace.t215Desc'))
           }
           break
         }
@@ -6209,7 +6329,9 @@ export function CanvasWorkspaceView({
             sourceNode,
             position,
             operation: 'text_to_image',
-            title: `生成角色身份板 · ${targetAsset.title ?? '角色'}`,
+            title: translate('canvasWorkspace.tpl60Desc', {
+              title: targetAsset.title ?? translate('canvasWorkspace.t160'),
+            }),
             prompt: buildCharacterSheetPrompt({
               aspect: 'turnaround',
               character: assetToCharacterFields(targetAsset),
@@ -6220,10 +6342,10 @@ export function CanvasWorkspaceView({
             }),
             // 角色身份板默认 16:9（综合卡横版构图），仅此面向默认
             modelParams: { aspect_ratio: '16:9' },
-            nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
+            nodeMessage: translate('canvasWorkspace.t216Desc'),
             taskPipelineRole: 'design_card',
             outputPipelineRole: 'design_card',
-            outputTitle: targetAsset.title ?? '角色',
+            outputTitle: targetAsset.title ?? translate('canvasWorkspace.t160'),
             outputFilmAssetId: targetAsset.id,
             outputFilmReferenceKind: 'concept',
             selectCreated: false,
@@ -6268,7 +6390,7 @@ export function CanvasWorkspaceView({
             setSelectedNodeIds([created.id])
             requestAnimationFrame(() => canvasViewportControlsRef.current?.focusNodes([created.id]))
             message.success(
-              `已创建${actionId === 'scene.scene_image' ? '场景' : actionId === 'prop.prop_image' ? '道具' : '特效'}图任务节点`,
+              `${translate('canvasWorkspace.tpl80Desc')}${actionId === 'scene.scene_image' ? translate('canvasWorkspace.t217') : actionId === 'prop.prop_image' ? translate('canvasWorkspace.t218') : translate('canvasWorkspace.t219')}${translate('canvasWorkspace.tpl94Desc')}`,
             )
           }
           break
@@ -6277,19 +6399,19 @@ export function CanvasWorkspaceView({
           const kind = readAssetKind(targetAsset)
           const title =
             kind === 'scene'
-              ? '生成场景图'
+              ? translate('canvasWorkspace.t220')
               : kind === 'prop'
-                ? '生成道具图'
+                ? translate('canvasWorkspace.t221')
                 : kind === 'effect'
-                  ? '生成特效图'
-                  : '生成设计图'
+                  ? translate('canvasWorkspace.t222')
+                  : translate('canvasWorkspace.t223')
           return createConfiguredOperationNode({
             sourceNode,
             position,
             operation: 'text_to_image',
             title,
             prompt: buildFilmAssetReferencePrompt(targetAsset, styleBible),
-            nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
+            nodeMessage: translate('canvasWorkspace.t216Desc'),
             taskPipelineRole: 'design_card',
             outputPipelineRole: 'design_card',
             outputFilmAssetId: targetAsset.id,
@@ -6301,7 +6423,7 @@ export function CanvasWorkspaceView({
         break
       }
       default:
-        message.info('该操作暂未支持在画布节点上直接触发')
+        message.info(translate('canvasWorkspace.t224Desc'))
     }
   }
 
@@ -6373,10 +6495,12 @@ export function CanvasWorkspaceView({
                 ...(inputFiles.length > 0 ? { inputFiles } : {}),
               })
             } catch (error) {
-              message.error(error instanceof Error ? error.message : '任务提交失败')
+              message.error(
+                error instanceof Error ? error.message : translate('canvasWorkspace.t225'),
+              )
             }
           } else {
-            message.info('已创建并连接任务节点，双击或右键“编辑节点”可打开配置')
+            message.info(translate('canvasWorkspace.t206Desc'))
           }
         }
       })()
@@ -6499,7 +6623,7 @@ export function CanvasWorkspaceView({
         )
         if (created) {
           setSelectedNodeIds([created.id])
-          message.info('已创建并连接任务节点，双击或右键“编辑节点”可打开配置')
+          message.info(translate('canvasWorkspace.t206Desc'))
         }
       })()
     },
@@ -6547,7 +6671,7 @@ export function CanvasWorkspaceView({
   /** 生成分镜脚本：剧本/文本节点 → 任务节点 → 分镜脚本产物节点（专用包装 + 血缘） */
   const handleGenerateShotScript = async (node: CanvasNode, sourceText: string) => {
     if (!sourceText) {
-      message.warning('该节点没有可用文本，无法生成分镜脚本')
+      message.warning(translate('canvasWorkspace.t226Desc'))
       return
     }
     const snapshot = snapshotRef.current
@@ -6564,8 +6688,8 @@ export function CanvasWorkspaceView({
       // 原剧本由 used_as_input 连接编译进 user prompt；system prompt 只保留契约，
       // 避免长剧本在 system/user 两侧各出现一次而挤占上下文。
       prompt: stripCanvasFunctionalPromptInput(storyboardSystemPrompt, 'screenplay.to_shot_script'),
-      title: '生成分镜脚本',
-      nodeMessage: '确认分镜脚本 Prompt、Agent 与模型后点击开始任务',
+      title: translate('canvasWorkspace.t227'),
+      nodeMessage: translate('canvasWorkspace.t228Desc'),
       taskPipelineRole: 'shot',
       outputPipelineRole: 'shot',
       modelParams: { workflow: 'shot_script', responseFormat: 'json' },
@@ -6579,15 +6703,15 @@ export function CanvasWorkspaceView({
     sourceText: string,
   ) => {
     if (!sourceText) {
-      message.warning('该节点没有可用文本，无法转剧本')
+      message.warning(translate('canvasWorkspace.t229Desc'))
       return
     }
     await createConfiguredOperationNode({
       sourceNode: node,
       operation: 'text_rewrite',
       prompt: buildChapterToScreenplayInstruction(sourceText),
-      title: '转剧本',
-      nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
+      title: translate('canvasWorkspace.t230'),
+      nodeMessage: translate('canvasWorkspace.t216Desc'),
       taskPipelineRole: 'screenplay',
       outputPipelineRole: 'screenplay',
     })
@@ -6599,19 +6723,19 @@ export function CanvasWorkspaceView({
     kind: ExtractEntityKind,
   ) => {
     if (!sourceText) {
-      message.warning('该节点没有可用文本，无法抽取')
+      message.warning(translate('canvasWorkspace.t231Desc'))
       return
     }
     const snapshot = snapshotRef.current
     if (!snapshot) return
-    const label = `提取${extractEntityKindLabel(kind)}`
+    const label = translate('canvasWorkspace.tpl61Desc', { kind: extractEntityKindLabel(kind) })
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
     await createConfiguredOperationNode({
       sourceNode: node,
       operation: 'text_generate',
       title: label,
       prompt: buildEntityExtractionPrompt(kind, sourceText, styleBible),
-      nodeMessage: `确认${label} Prompt、Agent 与模型后点击开始任务`,
+      nodeMessage: translate('canvasWorkspace.tpl62Desc', { label }),
       modelParams: { workflow: `extract_${kind}`, responseFormat: 'json' },
       taskPipelineRole: kind,
       outputPipelineRole: kind,
@@ -6627,10 +6751,9 @@ export function CanvasWorkspaceView({
       void createConfiguredOperationNode({
         sourceNode,
         operation: 'storyboard_grid',
-        title: '生成分镜关键帧图',
-        prompt:
-          '请根据输入内容生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性；输入可以是普通文本、分镜脚本或图片参考。',
-        nodeMessage: '确认故事板 Prompt、Agent 与模型后点击开始任务',
+        title: translate('canvasWorkspace.t207'),
+        prompt: translate('canvasWorkspace.tpl81LongDesc'),
+        nodeMessage: translate('canvasWorkspace.t209Desc'),
         taskPipelineRole: 'shot',
         outputPipelineRole: 'keyframe',
       })
@@ -6642,7 +6765,7 @@ export function CanvasWorkspaceView({
     const groups = film?.shotGroups ?? []
     const group = groups[groups.length - 1]
     if (!group || group.segments.length === 0) {
-      message.warning('暂无可用输入，请连接文本或图片节点后再生成分镜图')
+      message.warning(translate('canvasWorkspace.t232Desc'))
       return
     }
     handleGenerateStoryboardGrid(group, { openPanel: false })
@@ -6651,7 +6774,7 @@ export function CanvasWorkspaceView({
   const prepareCanvasImageUpload = useCallback(
     async (file: File, options?: { grouped?: boolean }): Promise<PreparedImageUpload> => {
       const snapshot = snapshotRef.current
-      if (!snapshot) throw new Error('画布尚未加载')
+      if (!snapshot) throw new Error(translate('canvasWorkspace.t187'))
       const dataUrl = await readFileAsDataUrl(file)
       const dimensions = await readImageDimensions(dataUrl)
       const savedImage = await window.spark.invoke('file:save-pasted-image', {
@@ -6683,7 +6806,7 @@ export function CanvasWorkspaceView({
   const prepareCanvasMediaUpload = useCallback(
     async (file: File, kind: 'video' | 'audio'): Promise<PreparedMediaUpload> => {
       const snapshot = snapshotRef.current
-      if (!snapshot) throw new Error('画布尚未加载')
+      if (!snapshot) throw new Error(translate('canvasWorkspace.t187'))
       const dataUrl = await readFileAsDataUrl(file)
       const saved = await window.spark.invoke('file:save-pasted-media', {
         dataUrl,
@@ -6721,7 +6844,7 @@ export function CanvasWorkspaceView({
     async (nodeId: string, file: File) => {
       const node = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
       if (!node) {
-        message.error('未找到目标视频节点')
+        message.error(translate('canvasWorkspace.t233'))
         return
       }
       try {
@@ -6732,9 +6855,9 @@ export function CanvasWorkspaceView({
           patchNode: (targetId, patch) => patchNodes([targetId], patch),
           updateNodeData,
         })
-        message.success('已上传视频')
+        message.success(translate('canvasWorkspace.t234'))
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '上传视频失败')
+        message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t235'))
       }
     },
     [patchNodes, prepareCanvasMediaUpload, updateNodeData],
@@ -6749,12 +6872,12 @@ export function CanvasWorkspaceView({
       pendingAudioNodeIdRef.current = null
       if (!file || !nodeId) return
       if (!file.type.startsWith('audio/')) {
-        message.warning('请选择音频文件')
+        message.warning(translate('canvasWorkspace.t236'))
         return
       }
       const node = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
       if (!node) {
-        message.error('未找到目标音频节点')
+        message.error(translate('canvasWorkspace.t237'))
         return
       }
       try {
@@ -6764,9 +6887,9 @@ export function CanvasWorkspaceView({
           prepare: prepareCanvasMediaUpload,
           updateNodeData,
         })
-        message.success('已上传音频')
+        message.success(translate('canvasWorkspace.t238'))
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '上传音频失败')
+        message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t239'))
       }
     },
     [prepareCanvasMediaUpload, updateNodeData],
@@ -6984,8 +7107,8 @@ export function CanvasWorkspaceView({
               if (result.selectedNodeIds.length > 0) setSelectedNodeIds(result.selectedNodeIds)
               message.success(
                 result.createdNodeCount === 1
-                  ? '已粘贴图片到画布'
-                  : `已粘贴 ${result.createdNodeCount} 张图片到画布`,
+                  ? translate('canvasWorkspace.t240')
+                  : translate('canvasWorkspace.tpl63Desc', { count: result.createdNodeCount }),
               )
             }
           }
@@ -7022,8 +7145,8 @@ export function CanvasWorkspaceView({
               setSelectedNodeIds([createdMediaIds[createdMediaIds.length - 1]!])
               message.success(
                 createdMediaIds.length === 1
-                  ? '已粘贴媒体到画布'
-                  : `已粘贴 ${createdMediaIds.length} 个媒体到画布`,
+                  ? translate('canvasWorkspace.t241')
+                  : translate('canvasWorkspace.tpl64Desc', { count: createdMediaIds.length }),
               )
             }
           }
@@ -7036,11 +7159,11 @@ export function CanvasWorkspaceView({
             })
             if (node) {
               setSelectedNodeIds([node.id])
-              message.success('已粘贴文本到画布')
+              message.success(translate('canvasWorkspace.t242'))
             }
           }
         } catch (error) {
-          message.error(error instanceof Error ? error.message : '粘贴到画布失败')
+          message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t243'))
         }
       })()
     }
@@ -7214,7 +7337,10 @@ export function CanvasWorkspaceView({
               } catch (error) {
                 // 单个文件失败不影响其他，错误明确提示，不再静默吞。
                 message.error(
-                  `添加 ${entry.file.name} 失败：${error instanceof Error ? error.message : String(error)}`,
+                  translate('canvasWorkspace.tpl65Desc', {
+                    name: entry.file.name,
+                    message: error instanceof Error ? error.message : String(error),
+                  }),
                 )
               }
             }),
@@ -7225,19 +7351,19 @@ export function CanvasWorkspaceView({
           }
         }
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '拖入文件到画布失败')
+        message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t244'))
       }
 
       if (createdNodeIds.length > 0) {
         if (selectionNodeIds.length > 0) setSelectedNodeIds(selectionNodeIds)
         message.success(
           createdNodeIds.length === 1
-            ? '已添加文件到画布'
-            : `已添加 ${createdNodeIds.length} 个文件到画布`,
+            ? translate('canvasWorkspace.t245')
+            : translate('canvasWorkspace.tpl66Desc', { count: createdNodeIds.length }),
         )
       }
       if (unsupportedCount > 0) {
-        message.warning(`已跳过 ${unsupportedCount} 个不支持的文件`)
+        message.warning(translate('canvasWorkspace.tpl67Desc', { count: unsupportedCount }))
       }
       return createdNodes
     },
@@ -7289,11 +7415,13 @@ export function CanvasWorkspaceView({
         targetNodeId,
         (pickedNode) => {
           if (pickedNode.type !== 'image') {
-            message.warning('图片反推仅支持图片节点')
+            message.warning(translate('canvasWorkspace.t246'))
             return
           }
           void connectNodes({ sourceNodeId: pickedNode.id, targetNodeId }).catch((error) => {
-            message.error(error instanceof Error ? error.message : '连接输入图片失败')
+            message.error(
+              error instanceof Error ? error.message : translate('canvasWorkspace.t247'),
+            )
           })
         },
         { keepWhenInactive: true },
@@ -7315,7 +7443,7 @@ export function CanvasWorkspaceView({
       operationImageUploadTargetNodeIdRef.current = null
       if (!file || !targetNodeId) return
       if (!file.type.startsWith('image/')) {
-        message.warning('请选择图片文件')
+        message.warning(translate('canvasWorkspace.t180'))
         return
       }
       try {
@@ -7323,9 +7451,9 @@ export function CanvasWorkspaceView({
         if (!uploadedNode) return
         await connectNodes({ sourceNodeId: uploadedNode.id, targetNodeId })
         setSelectedNodeIds([targetNodeId])
-        message.success('图片已上传并连接到图片反推节点')
+        message.success(translate('canvasWorkspace.t248Desc'))
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '上传并连接图片失败')
+        message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t249'))
       }
     },
     [connectNodes, handlePromptLocalUpload],
@@ -7351,16 +7479,16 @@ export function CanvasWorkspaceView({
       x: Math.round(position.x),
       y: Math.round(position.y),
       ...(options?.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
-      message: '请在操作面板填写 Prompt / 连接输入节点后点击开始任务',
+      message: translate('canvasWorkspace.t157Desc'),
     })
     const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
     if (created) {
       if (options?.openPanel === false) {
         setSelectedNodeIds([created.id])
-        message.info('已创建并连接任务节点，双击或右键“编辑节点”可打开配置')
+        message.info(translate('canvasWorkspace.t206Desc'))
       } else {
         openOperationPanelForNode(created.id)
-        message.info('已创建操作节点，请填写参数后连接输入并运行')
+        message.info(translate('canvasWorkspace.t250Desc'))
       }
     }
     return created
@@ -7393,7 +7521,7 @@ export function CanvasWorkspaceView({
     const op = CANVAS_PIPELINE_OPS.find((item) => item.id === actionId)
     if (!op) return
     if (op.kind !== 'text' && op.kind !== 'extract') {
-      message.info('该编排需要先选中具体节点再触发')
+      message.info(translate('canvasWorkspace.t251Desc'))
       return
     }
     const operation: CanvasOperationType =
@@ -7401,14 +7529,14 @@ export function CanvasWorkspaceView({
     const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
     const promptPlaceholder =
       op.kind === 'extract' && op.extractKind
-        ? buildEntityExtractionPrompt(op.extractKind, '【请连接剧本/文本节点提供原文】')
+        ? buildEntityExtractionPrompt(op.extractKind, translate('canvasWorkspace.t252Desc'))
         : op.id === 'screenplay.to_shot_script'
           ? buildOpPrompt('screenplay.to_shot_script', {
-              upstreamText: '【请连接剧本/文本节点提供原文】',
+              upstreamText: translate('canvasWorkspace.t252Desc'),
               keepShotScriptPlaceholders: true,
             })
           : op.id === 'chapter.to_screenplay'
-            ? buildChapterToScreenplayInstruction('【请连接章节/文本节点提供原文】')
+            ? buildChapterToScreenplayInstruction(translate('canvasWorkspace.t253Desc'))
             : ''
     const next = await createOperationNode({
       boardId: snapshot.board.id,
@@ -7420,7 +7548,7 @@ export function CanvasWorkspaceView({
       ...(promptPlaceholder
         ? { systemPrompt: stripCanvasFunctionalPromptInput(promptPlaceholder, op.id) }
         : {}),
-      message: '请连接上游文本节点并确认 Prompt 后开始任务',
+      message: translate('canvasWorkspace.t254Desc'),
       ...(op.produces ? { taskPipelineRole: op.produces } : {}),
       ...(op.produces ? { outputPipelineRole: op.produces } : {}),
       ...(op.id === 'screenplay.to_shot_script'
@@ -7436,10 +7564,10 @@ export function CanvasWorkspaceView({
     if (created) {
       if (options?.openPanel === false) {
         setSelectedNodeIds([created.id])
-        message.info(`已创建并连接「${op.label}」节点，双击或右键“编辑节点”可打开配置`)
+        message.info(translate('canvasWorkspace.tpl68Desc', { label: op.label }))
       } else {
         openOperationPanelForNode(created.id)
-        message.info(`已创建「${op.label}」节点，请连接上游文本节点后运行`)
+        message.info(translate('canvasWorkspace.tpl69Desc', { label: op.label }))
       }
     }
     return created
@@ -7469,12 +7597,12 @@ export function CanvasWorkspaceView({
     } = {},
   ) => {
     if (!sourceText) {
-      message.warning('该节点没有可用文本，无法抽取')
+      message.warning(translate('canvasWorkspace.t231Desc'))
       return
     }
     const snapshot = snapshotRef.current
     if (!snapshot) return
-    const label = `提取${extractEntityKindLabel(kind)}`
+    const label = translate('canvasWorkspace.tpl61Desc', { kind: extractEntityKindLabel(kind) })
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
     const extractionPrompt =
       options.promptSubmission?.prompt.trim() ||
@@ -7505,7 +7633,7 @@ export function CanvasWorkspaceView({
           inputNodeIds: options.inputNodeIds ?? [node.id],
           inputAssetIds: options.inputAssetIds ?? (node.assetId ? [node.assetId] : []),
           ...(options.bindToNodeId ? { bindToNodeId: options.bindToNodeId } : {}),
-          message: `正在${label}...`,
+          message: translate('canvasWorkspace.tpl70Desc', { label }),
           ...runtime,
           modelParams: extractionModelParams,
           taskPipelineRole: kind,
@@ -7536,13 +7664,17 @@ export function CanvasWorkspaceView({
             modelId: (response.model || runtime.modelId) ?? null,
           })
           if (response.status !== 'succeeded' || !response.text) {
-            throw new Error(response.error?.message ?? '抽取失败')
+            throw new Error(response.error?.message ?? translate('canvasWorkspace.t255'))
           }
           const entities = parseExtractedEntities(kind, response.text)
           if (entities.length === 0) {
             const outputPreview = response.text.replace(/\s+/g, ' ').trim().slice(0, 500)
             throw new Error(
-              `未识别到实体，请检查文本内容或输出格式${outputPreview ? `。模型输出摘要：${outputPreview}` : ''}`,
+              translate('canvasWorkspace.tpl71LongDesc', {
+                preview: outputPreview
+                  ? translate('canvasWorkspace.tpl71bDesc', { preview: outputPreview })
+                  : '',
+              }),
             )
           }
           // 已存在同名（同 kind）资产去重
@@ -7599,7 +7731,11 @@ export function CanvasWorkspaceView({
                   text: entity.description,
                   prompt: entity.prompt ?? entity.description,
                   attributes: entity.fields,
-                  tags: [`来源:${node.title ?? '剧本'}`],
+                  tags: [
+                    translate('canvasWorkspace.tpl48Desc', {
+                      title: node.title ?? translate('canvasWorkspace.t192'),
+                    }),
+                  ],
                 })
                 existingByName.set(nameKey, entityAsset)
               }
@@ -7628,7 +7764,7 @@ export function CanvasWorkspaceView({
             }
           }
           if (created === 0) {
-            throw new Error(`识别到 ${entities.length} 个实体，但全部落库失败`)
+            throw new Error(translate('canvasWorkspace.tpl72Desc', { count: entities.length }))
           }
           return {
             count: created,
@@ -7636,8 +7772,8 @@ export function CanvasWorkspaceView({
             outputAssetIds,
             message:
               failed > 0
-                ? `已${label} ${created} 个（${failed} 个失败）`
-                : `已${label} ${created} 个`,
+                ? translate('canvasWorkspace.tpl73Desc', { label, created, failed })
+                : translate('canvasWorkspace.tpl74Desc', { label, created }),
             agentId: runtime.agentId ?? null,
             providerProfileId: (response.providerProfileId || runtime.providerProfileId) ?? null,
             provider: response.provider || null,
@@ -7664,9 +7800,11 @@ export function CanvasWorkspaceView({
           }
         },
       )
-      message.success(`${label}完成`)
+      message.success(translate('canvasWorkspace.tpl75Desc', { label }))
     } catch (error) {
-      message.error(error instanceof Error ? error.message : `${label}失败`)
+      message.error(
+        error instanceof Error ? error.message : translate('canvasWorkspace.tpl76Desc', { label }),
+      )
     }
   }
 
@@ -7676,16 +7814,16 @@ export function CanvasWorkspaceView({
     const kind = readAssetKind(asset)
     const title =
       kind === 'scene'
-        ? '生成场景图'
+        ? translate('canvasWorkspace.t220')
         : kind === 'prop'
-          ? '生成道具图'
+          ? translate('canvasWorkspace.t221')
           : kind === 'effect'
-            ? '生成特效图'
-            : '生成设计图'
+            ? translate('canvasWorkspace.t222')
+            : translate('canvasWorkspace.t223')
     // 不直接发起任务：在画布上创建参考图生成任务节点，用户确认后开始
     void addFilmAssetTaskNode({
       operation: 'text_to_image',
-      title: `${title} · ${asset.title ?? '未命名'}`,
+      title: `${title} · ${asset.title ?? translate('canvasWorkspace.t256')}`,
       prompt: buildFilmAssetReferencePrompt(
         asset,
         buildProductionBiblePrompt(snapshot.project.metadata),
@@ -7721,7 +7859,11 @@ export function CanvasWorkspaceView({
         ...(stylePrompt ? { extraPrompt: stylePrompt } : {}),
       })
       const sheetTitle =
-        aspect === 'turnaround' ? `生成角色身份板 · ${asset.title ?? '角色'}` : '生成角色图'
+        aspect === 'turnaround'
+          ? translate('canvasWorkspace.tpl77Desc', {
+              title: asset.title ?? translate('canvasWorkspace.t160'),
+            })
+          : translate('canvasWorkspace.t257')
       const sheetTemplate = getCharacterSheetTemplate(aspect)
       const needsBase = sheetTemplate?.needsBaseImage ?? false
       const referenceKind = sheetTemplate?.referenceKind ?? 'other'
@@ -7740,7 +7882,9 @@ export function CanvasWorkspaceView({
           outputPipelineRole: 'design_card',
           outputFilmAssetId: asset.id,
           outputFilmReferenceKind: referenceKind,
-          ...(aspect === 'turnaround' ? { outputTitle: asset.title ?? '角色' } : {}),
+          ...(aspect === 'turnaround'
+            ? { outputTitle: asset.title ?? translate('canvasWorkspace.t160') }
+            : {}),
         })
       } else {
         void addFilmAssetTaskNode({
@@ -7753,13 +7897,15 @@ export function CanvasWorkspaceView({
           outputPipelineRole: 'design_card',
           outputFilmAssetId: asset.id,
           outputFilmReferenceKind: referenceKind,
-          ...(aspect === 'turnaround' ? { outputTitle: asset.title ?? '角色' } : {}),
+          ...(aspect === 'turnaround'
+            ? { outputTitle: asset.title ?? translate('canvasWorkspace.t160') }
+            : {}),
         })
       }
     }
     if (i2iCount > 0) {
       message.info(
-        `已创建 ${aspects.length} 个角色图任务节点（其中 ${i2iCount} 个基于基准图保持一致），请在画布上确认配置后开始`,
+        translate('canvasWorkspace.tpl78LongDesc', { total: aspects.length, i2i: i2iCount }),
       )
     }
   }
@@ -7858,7 +8004,7 @@ export function CanvasWorkspaceView({
       }
       await addFilmAssetTaskNode({
         operation: 'image_to_video',
-        title: `生成视频 · 分镜 #${input.segment.index}`,
+        title: translate('canvasWorkspace.tpl79Desc', { index: input.segment.index }),
         prompt: buildShotSegmentVideoPrompt(input, styleBible, styleFragments),
         inputNodeIds: anchorNodes.slice(0, 2).map((node) => node.id),
         inputRoles,
@@ -7871,14 +8017,14 @@ export function CanvasWorkspaceView({
     }
     await addFilmAssetTaskNode({
       operation: 'text_to_video',
-      title: `生成视频 · 分镜 #${input.segment.index}`,
+      title: translate('canvasWorkspace.tpl79Desc', { index: input.segment.index }),
       prompt: buildShotSegmentVideoPrompt(input, styleBible, styleFragments),
       ...(input.segment.durationSec != null && input.segment.durationSec > 0
         ? { modelParams: { durationSeconds: input.segment.durationSec } }
         : {}),
       ...(options?.openPanel !== undefined ? { openPanel: options.openPanel } : {}),
     })
-    message.info('未找到关键帧/设定图，已创建文生视频节点；补充基准图可进一步提升一致性')
+    message.info(translate('canvasWorkspace.tpl82LongDesc'))
   }
 
   const handleSetSegmentKeyframesFromSelection: NonNullable<
@@ -7906,9 +8052,9 @@ export function CanvasWorkspaceView({
   > = async (group) => {
     const result = await runTrackedCanvasWorkflow(
       {
-        title: '分镜展开到画布',
+        title: translate('canvasWorkspace.t259'),
         prompt: group.description ?? group.name,
-        message: '正在把分镜片段展开为画布节点...',
+        message: translate('canvasWorkspace.t260Desc'),
         modelParams: {
           workflow: 'shot_expand_to_canvas',
           shotGroupId: group.id,
@@ -7917,7 +8063,7 @@ export function CanvasWorkspaceView({
       },
       async () => {
         const segments = [...group.segments].sort((a, b) => a.index - b.index)
-        if (segments.length === 0) return { count: 0, message: '没有可展开的分镜片段' }
+        if (segments.length === 0) return { count: 0, message: translate('canvasWorkspace.t261') }
         const base = positionNodeInViewport(canvasViewportRef.current, TEXT_NODE_DEFAULT_SIZE, {
           x: 160,
           y: 140,
@@ -7935,7 +8081,13 @@ export function CanvasWorkspaceView({
           if (!node) continue
           createdNodeIds.push(node.id)
           await patchNodes([node.id], {
-            title: `分镜 #${segment.index}${segment.durationSec != null ? ` · ${segment.durationSec}s` : ''}`,
+            title: translate('canvasWorkspace.tpl83Desc', {
+              index: segment.index,
+              duration:
+                segment.durationSec != null
+                  ? translate('canvasWorkspace.tpl83bDesc', { value: segment.durationSec })
+                  : '',
+            }),
           })
           await updateNodeData(node.id, {
             pipelineRole: 'shot',
@@ -7957,7 +8109,7 @@ export function CanvasWorkspaceView({
         return {
           count: created,
           outputNodeIds: createdNodeIds,
-          message: `已展开 ${created} 个分镜节点到画布`,
+          message: translate('canvasWorkspace.tpl84Desc', { count: created }),
           rawResponse: {
             workflow: 'shot_expand_to_canvas',
             shotGroupId: group.id,
@@ -7985,8 +8137,8 @@ export function CanvasWorkspaceView({
         operation: 'text_to_image',
         title:
           frame === 'first'
-            ? `首帧 · 分镜 #${input.segment.index}`
-            : `尾帧 · 分镜 #${input.segment.index}`,
+            ? translate('canvasWorkspace.tpl85Desc', { index: input.segment.index })
+            : translate('canvasWorkspace.tpl86Desc', { index: input.segment.index }),
         prompt: buildShotSegmentKeyframePrompt(input, frame, styleBible, styleFragments),
         ...(options?.openPanel !== undefined ? { openPanel: options.openPanel } : {}),
       })
@@ -8008,12 +8160,12 @@ export function CanvasWorkspaceView({
       nameById: (id) => titleById.get(id) || undefined,
     })
     if (!prompt) {
-      message.warning('该分镜分组暂无可用片段')
+      message.warning(translate('canvasWorkspace.t262'))
       return
     }
     void addFilmAssetTaskNode({
       operation: 'storyboard_grid',
-      title: `分镜图（宫格）· ${group.name}`,
+      title: translate('canvasWorkspace.tpl87Desc', { name: group.name }),
       prompt,
       ...(options?.openPanel !== undefined ? { openPanel: options.openPanel } : {}),
     })
@@ -8059,7 +8211,7 @@ export function CanvasWorkspaceView({
         .filter(Boolean)
         .join('\n\n')
       if (!sourceNode || !sourceText) {
-        message.warning('该抽取任务的原始输入已不存在，无法重试')
+        message.warning(translate('canvasWorkspace.t263Desc'))
         return
       }
       const runtime = runtimeSource === 'current-node' ? taskNode.data : task
@@ -8156,18 +8308,18 @@ export function CanvasWorkspaceView({
   const handleExportProject = async () => {
     try {
       const result = await canvasApi.exportProjectPackage(projectId)
-      if (result.exported) message.success('Canvas 项目包已导出')
+      if (result.exported) message.success(translate('canvasWorkspace.t264Desc'))
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '导出 Canvas 项目失败')
+      message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t265Desc'))
     }
   }
 
   const handleOpenProjectFolder = async () => {
     try {
       const result = await canvasApi.openProjectFolder(projectId)
-      if (!result.opened) message.error(result.error || '打开项目文件夹失败')
+      if (!result.opened) message.error(result.error || translate('canvasWorkspace.t266'))
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '打开项目文件夹失败')
+      message.error(error instanceof Error ? error.message : translate('canvasWorkspace.t266'))
     }
   }
 
@@ -8265,7 +8417,7 @@ export function CanvasWorkspaceView({
                     if (extractKind) {
                       const sourceNode = hydratedTaskInputNodes[0]
                       if (!sourceNode) {
-                        message.warning('该抽取节点缺少原始输入，无法重新执行')
+                        message.warning(translate('canvasWorkspace.t267Desc'))
                         return
                       }
                       const sourceText = hydratedTaskInputNodes
@@ -8490,7 +8642,11 @@ export function CanvasWorkspaceView({
                           try {
                             await repollMediaTask(opTask.id)
                           } catch (error) {
-                            message.error(error instanceof Error ? error.message : '重新轮询失败')
+                            message.error(
+                              error instanceof Error
+                                ? error.message
+                                : translate('canvasWorkspace.t268'),
+                            )
                           }
                         }
                       : undefined
@@ -8590,7 +8746,7 @@ export function CanvasWorkspaceView({
   if (loading) {
     return (
       <div className="canvas-workspace canvas-cinematic canvas-workspace-loading">
-        <Spin description="正在加载画布..." />
+        <Spin description={translate('canvasWorkspace.t279')} />
       </div>
     )
   }
@@ -8598,7 +8754,7 @@ export function CanvasWorkspaceView({
   if (!snapshot) {
     return (
       <div className="canvas-workspace canvas-cinematic canvas-workspace-loading">
-        <Empty description="画布不存在" />
+        <Empty description={translate('canvasWorkspace.t280')} />
       </div>
     )
   }
@@ -8670,10 +8826,12 @@ export function CanvasWorkspaceView({
       const sourceText = asset.contentText ?? asset.title ?? ''
       void addFilmAssetTaskNode({
         operation: 'text_rewrite',
-        title: `AI 优化 · ${asset.title ?? '资产'}`,
+        title: translate('canvasWorkspace.tpl88Desc', {
+          title: asset.title ?? translate('canvasWorkspace.t269'),
+        }),
         prompt: sourceText
-          ? `请优化以下内容，使其更专业、更精炼：\n\n${sourceText}`
-          : '请优化以下内容，使其更专业、更精炼。',
+          ? translate('canvasWorkspace.tpl89Instruction', { text: sourceText })
+          : translate('canvasWorkspace.t270Desc'),
       })
     },
     onBreakdownScriptAsset: handleBreakdownScriptAsset,
@@ -8681,15 +8839,15 @@ export function CanvasWorkspaceView({
     onOptimizeManuscriptDraft: (text) => {
       const source = text.trim()
       if (!source) {
-        message.warning('请先输入需要优化的文稿')
+        message.warning(translate('canvasWorkspace.t271'))
         return
       }
       void addFilmAssetTaskNode({
         operation: 'prompt_optimize',
-        title: 'AI 优化 · 导入文稿',
+        title: translate('canvasWorkspace.t272'),
         prompt: buildPromptOptimizationInstruction(source, ''),
       })
-      message.info('已发起文稿 AI 优化任务，结果会生成到画布上')
+      message.info(translate('canvasWorkspace.t273Desc'))
     },
     deleteManuscript: handleDeleteManuscript,
     onChapterToScreenplay: handleChapterToScreenplay,
@@ -8710,7 +8868,7 @@ export function CanvasWorkspaceView({
     onLocateAsset: (assetId) => {
       const nodeId = resolveCanvasAssetFocusNodeIds(snapshot, assetId)[0]
       if (!nodeId) {
-        message.info('画布中暂无此资产节点')
+        message.info(translate('canvasWorkspace.t275'))
         return
       }
 
@@ -8724,7 +8882,7 @@ export function CanvasWorkspaceView({
             preferredWidth: 520,
             maxZoom: 1.08,
           })
-          if (!focused) message.warning('未找到资产对应的画布节点')
+          if (!focused) message.warning(translate('canvasWorkspace.t275'))
         })
       })
     },
@@ -8777,7 +8935,7 @@ export function CanvasWorkspaceView({
         />
         <aside className={`canvas-agent-side-panel${agentOpen ? '' : ' is-collapsed'}`}>
           <div
-            aria-label="调整助手面板宽度"
+            aria-label={translate('canvasWorkspace.t281')}
             aria-orientation="vertical"
             className="canvas-agent-side-panel-resize-handle"
             onPointerDown={handleAgentPanelResizeStart}
@@ -8796,7 +8954,7 @@ export function CanvasWorkspaceView({
             onFocusNode={(nodeId) => {
               const node = snapshot.nodes.find((item) => item.id === nodeId)
               if (!node) {
-                message.warning('未找到对应的画布节点')
+                message.warning(translate('canvasWorkspace.t276'))
                 return
               }
               setSelectedNodeIds([nodeId])
@@ -8890,7 +9048,9 @@ export function CanvasWorkspaceView({
               aria-live="polite"
             >
               <span className="canvas-tool-switch-key">Tab</span>
-              <span>已切换为 {toolLabel(toolSwitchHint.tool)}</span>
+              <span>
+                {translate('canvasWorkspace.tpl90Desc', { tool: toolLabel(toolSwitchHint.tool) })}
+              </span>
             </div>
           )}
           <CanvasPromptNodePickerBanner
@@ -8932,7 +9092,9 @@ export function CanvasWorkspaceView({
             onConfigureSelectedTasks={batchTasks.controller.openConfigure}
             onSubmitSelectedTasks={(nodeIds) => {
               void batchTasks.controller.openSubmit(nodeIds).catch((error) => {
-                message.error(error instanceof Error ? error.message : '批量提交失败')
+                message.error(
+                  error instanceof Error ? error.message : translate('canvasWorkspace.t277'),
+                )
               })
             }}
             onOpenAiComposer={handleOpenInlineAi}
@@ -9156,7 +9318,7 @@ export function CanvasWorkspaceView({
             onSaved={(workflow) => {
               setWorkflowExtractDraft(null)
               setWorkflowToUpdate(null)
-              message.success(`已保存画布工作流“${workflow.name}”`)
+              message.success(translate('canvasWorkspace.tpl91Desc', { name: workflow.name }))
               setWorkflowDrawerOpen(true)
             }}
           />
@@ -9205,7 +9367,7 @@ export function CanvasWorkspaceView({
               await updateFilmAsset(context.ownerAsset.id, {
                 characterSubviews: [...preserved, ...stamped],
               })
-              message.success('子视图已更新')
+              message.success(translate('canvasWorkspace.t278'))
             }}
             zIndex={1500}
           />
@@ -9341,7 +9503,9 @@ export function CanvasWorkspaceView({
           onRetryTask={(task, runtimeSource) => void handleRetryTask(task, runtimeSource)}
           onRepollTask={(taskId) =>
             repollMediaTask(taskId).catch((error) => {
-              message.error(error instanceof Error ? error.message : '重新轮询失败')
+              message.error(
+                error instanceof Error ? error.message : translate('canvasWorkspace.t268'),
+              )
             })
           }
           onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
@@ -9363,7 +9527,7 @@ export function CanvasWorkspaceView({
         />
       </div>
       <Drawer
-        title="历史记录"
+        title={translate('canvasWorkspace.t282')}
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         size="default"
@@ -9381,7 +9545,9 @@ export function CanvasWorkspaceView({
                 : undefined) ?? snapshot.nodes.find((candidate) => candidate.taskId === taskId)
             if (node) {
               setSelectedNodeIds([node.id])
-              message.info(`已定位到任务节点：${node.title ?? node.type}`)
+              message.info(
+                translate('canvasWorkspace.tpl92Desc', { name: node.title ?? node.type }),
+              )
             }
           }}
           onRetryTask={(taskId) => {
@@ -9391,7 +9557,7 @@ export function CanvasWorkspaceView({
         />
       </Drawer>
       <Drawer
-        title="模板中心"
+        title={translate('canvasWorkspace.t283')}
         open={templateOpen}
         onClose={() => setTemplateOpen(false)}
         size="default"
@@ -9425,7 +9591,7 @@ export function CanvasWorkspaceView({
           <button
             type="button"
             className="canvas-shortcut-help-close"
-            aria-label="关闭画布快捷键帮助"
+            aria-label={translate('canvasWorkspace.t284')}
             onClick={() => setShortcutHelpOpen(false)}
           >
             <Icons.X size={26} />
@@ -9501,24 +9667,24 @@ export function CanvasWorkspaceView({
       )}
       <Modal
         open={leaveOpen}
-        title="画布有未保存的改动"
+        title={translate('canvasWorkspace.t285')}
         closable={false}
         mask={{ closable: false }}
         centered
         width={440}
         footer={[
           <Button key="discard" danger onClick={onLeaveDiscard}>
-            不保存
+            {translate('canvasWorkspace.t286')}
           </Button>,
           <Button key="cancel" onClick={onLeaveCancel}>
-            取消
+            {translate('canvasWorkspace.t78')}
           </Button>,
           <Button key="save" type="primary" loading={saving} onClick={() => void onLeaveSave()}>
-            保存并离开
+            {translate('canvasWorkspace.t287')}
           </Button>,
         ]}
       >
-        离开前是否保存当前画布？未保存的改动不会写入应用数据库，离开后即丢失。
+        {translate('canvasWorkspace.tpl93LongDesc')}
       </Modal>
     </CanvasOverlayBoundary>
   )

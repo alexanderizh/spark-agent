@@ -8,6 +8,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useToast } from '../components/Toast'
 import { AuthGate } from '../auth/AuthGate'
 import { AvatarImage } from '../components/AvatarImage'
+import { useI18n, type Lang, type TranslateFn } from '../i18n'
 import './AccountSection.less'
 
 interface BindStatus {
@@ -34,6 +35,7 @@ export function AccountSection(): React.ReactElement {
 function AuthenticatedAccountView(): React.ReactElement {
   const auth = useAuth()
   const { toast } = useToast()
+  const { t, lang } = useI18n()
   const [bindStatus, setBindStatus] = useState<BindStatus | null>(null)
   const [passwordModal, setPasswordModal] = useState(false)
 
@@ -46,21 +48,21 @@ function AuthenticatedAccountView(): React.ReactElement {
 
   const handleLogout = async (): Promise<void> => {
     Modal.confirm({
-      title: '退出登录',
-      content: '确定要退出当前账号吗？本机的同步数据不会被删除。',
-      okText: '退出',
-      cancelText: '取消',
+      title: t('auth.account.logoutConfirmTitle'),
+      content: t('auth.account.logoutConfirmDesc'),
+      okText: t('auth.account.logoutOk'),
+      cancelText: t('common.cancel'),
       onOk: async () => {
         await auth.logout()
-        toast.success('已退出登录')
+        toast.success(t('auth.account.loggedOut'))
       },
     })
   }
 
-  const displayName = auth.user?.nickname || auth.user?.account || '用户'
-  const displayAccount = auth.user?.account || '未绑定账号'
-  const userRoleLabel = formatRoleLabel(auth.user?.role)
-  const lastLoginLabel = formatTimeLabel(auth.user?.lastLoginAt)
+  const displayName = auth.user?.nickname || auth.user?.account || t('auth.account.defaultUserName')
+  const displayAccount = auth.user?.account || t('auth.account.unboundAccount')
+  const userRoleLabel = formatRoleLabel(auth.user?.role, t)
+  const lastLoginLabel = formatTimeLabel(auth.user?.lastLoginAt, t, lang)
   const baseUrlLabel = useMemo(() => {
     try {
       const url = new URL(auth.baseUrl)
@@ -70,13 +72,13 @@ function AuthenticatedAccountView(): React.ReactElement {
     }
   }, [auth.baseUrl])
   const bindItems = [
-    { label: '邮箱', value: bindStatus?.hasEmail ? '已绑定' : '未绑定' },
-    { label: '手机号', value: bindStatus?.hasPhone ? '已绑定' : '未绑定' },
+    { label: t('auth.account.email'), value: bindStatus?.hasEmail ? t('auth.account.bound') : t('auth.account.unbound') },
+    { label: t('auth.account.phone'), value: bindStatus?.hasPhone ? t('auth.account.bound') : t('auth.account.unbound') },
   ]
 
   return (
     <div className="account-section">
-      <h3 className="settings-section-title">账号</h3>
+      <h3 className="settings-section-title">{t('auth.account.title')}</h3>
 
       <div className="account-profile-card">
         <div className="account-profile">
@@ -105,25 +107,25 @@ function AuthenticatedAccountView(): React.ReactElement {
           <div className="account-profile-actions">
             {bindStatus?.hasPassword && (
               <Button size="middle" onClick={() => setPasswordModal(true)}>
-                修改密码
+                {t('auth.account.changePassword')}
               </Button>
             )}
             <Button size="middle" onClick={handleLogout}>
-              退出登录
+              {t('auth.account.logout')}
             </Button>
           </div>
         </div>
         <div className="account-profile-meta">
           <div className="account-profile-meta-item">
-            <span className="account-profile-meta-label">当前账号</span>
+            <span className="account-profile-meta-label">{t('auth.account.currentAccount')}</span>
             <span className="account-profile-meta-value">{displayAccount}</span>
           </div>
           <div className="account-profile-meta-item">
-            <span className="account-profile-meta-label">身份角色</span>
+            <span className="account-profile-meta-label">{t('auth.account.role')}</span>
             <span className="account-profile-meta-value">{userRoleLabel}</span>
           </div>
           <div className="account-profile-meta-item">
-            <span className="account-profile-meta-label">最近登录</span>
+            <span className="account-profile-meta-label">{t('auth.account.lastLogin')}</span>
             <span className="account-profile-meta-value">{lastLoginLabel}</span>
           </div>
         </div>
@@ -132,8 +134,8 @@ function AuthenticatedAccountView(): React.ReactElement {
       <div className="account-panel">
         <div className="account-panel-head">
           <div>
-            <h4>绑定方式</h4>
-            <p>查看当前账号的绑定状态，便于后续找回和登录。</p>
+            <h4>{t('auth.account.bindSectionTitle')}</h4>
+            <p>{t('auth.account.bindSectionDesc')}</p>
           </div>
         </div>
         <div className="account-bind-list">
@@ -144,7 +146,7 @@ function AuthenticatedAccountView(): React.ReactElement {
             </div>
           ))}
           <div className="account-bind-item">
-            <span>密码</span>
+            <span>{t('auth.account.password')}</span>
             <span>
               {bindStatus?.hasPassword ? (
                 <button
@@ -152,10 +154,10 @@ function AuthenticatedAccountView(): React.ReactElement {
                   className="account-inline-action"
                   onClick={() => setPasswordModal(true)}
                 >
-                  修改密码
+                  {t('auth.account.changePassword')}
                 </button>
               ) : (
-                '未设置'
+                t('auth.account.notSet')
               )}
             </span>
           </div>
@@ -165,8 +167,8 @@ function AuthenticatedAccountView(): React.ReactElement {
       <div className="account-panel">
         <div className="account-panel-head">
           <div>
-            <h4>云端服务地址</h4>
-            <p>当前桌面端连接的账号服务地址。</p>
+            <h4>{t('auth.account.baseUrlTitle')}</h4>
+            <p>{t('auth.account.baseUrlDesc')}</p>
           </div>
         </div>
         <div className="account-baseurl-row">
@@ -175,7 +177,7 @@ function AuthenticatedAccountView(): React.ReactElement {
       </div>
 
       <Modal
-        title="修改密码"
+        title={t('auth.account.changePassword')}
         open={passwordModal}
         onCancel={() => setPasswordModal(false)}
         footer={null}
@@ -185,7 +187,7 @@ function AuthenticatedAccountView(): React.ReactElement {
           onClose={() => setPasswordModal(false)}
           onSuccess={() => {
             setPasswordModal(false)
-            toast.success('密码已修改')
+            toast.success(t('auth.account.passwordChanged'))
           }}
         />
       </Modal>
@@ -193,18 +195,22 @@ function AuthenticatedAccountView(): React.ReactElement {
   )
 }
 
-function formatRoleLabel(value: string | undefined): string {
-  if (value == null || value.trim().length === 0) return '普通用户'
-  if (value === 'admin') return '管理员'
-  if (value === 'user') return '普通用户'
+function formatRoleLabel(value: string | undefined, t: TranslateFn): string {
+  if (value == null || value.trim().length === 0) return t('auth.account.roleUser')
+  if (value === 'admin') return t('auth.account.roleAdmin')
+  if (value === 'user') return t('auth.account.roleUser')
   return value
 }
 
-function formatTimeLabel(value: string | null | undefined): string {
-  if (value == null || value.trim().length === 0) return '首次登录'
+function formatTimeLabel(
+  value: string | null | undefined,
+  t: TranslateFn,
+  lang: Lang,
+): string {
+  if (value == null || value.trim().length === 0) return t('auth.account.firstLogin')
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en-US', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -220,6 +226,7 @@ function ChangePasswordForm({
   onClose: () => void
   onSuccess: () => void
 }): React.ReactElement {
+  const { t } = useI18n()
   const [form] = Form.useForm()
   const [submitting, setSubmitting] = useState(false)
   const { toast } = useToast()
@@ -229,7 +236,7 @@ function ChangePasswordForm({
       setSubmitting(true)
       const values = await form.validateFields()
       if (values.newPassword !== values.confirmPassword) {
-        toast.error('两次输入的新密码不一致')
+        toast.error(t('auth.account.newPasswordMismatch'))
         return
       }
       await window.spark!.invoke('auth:change-password', {
@@ -238,7 +245,7 @@ function ChangePasswordForm({
       })
       onSuccess()
     } catch (e) {
-      toast.error((e as Error).message || '修改失败')
+      toast.error((e as Error).message || t('auth.account.changeFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -248,29 +255,29 @@ function ChangePasswordForm({
     <Form form={form} layout="vertical">
       <Form.Item
         name="oldPassword"
-        label="当前密码"
-        rules={[{ required: true, message: '请输入当前密码' }]}
+        label={t('auth.account.oldPassword')}
+        rules={[{ required: true, message: t('auth.account.oldPasswordRequired') }]}
       >
         <Input.Password />
       </Form.Item>
       <Form.Item
         name="newPassword"
-        label="新密码"
-        rules={[{ required: true, min: 6, message: '至少 6 位' }]}
+        label={t('auth.account.newPassword')}
+        rules={[{ required: true, min: 6, message: t('auth.common.minPasswordHint') }]}
       >
         <Input.Password />
       </Form.Item>
       <Form.Item
         name="confirmPassword"
-        label="确认新密码"
-        rules={[{ required: true, message: '请再次输入新密码' }]}
+        label={t('auth.account.confirmNewPassword')}
+        rules={[{ required: true, message: t('auth.account.confirmNewPasswordRequired') }]}
       >
         <Input.Password />
       </Form.Item>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        <Button onClick={onClose}>取消</Button>
+        <Button onClick={onClose}>{t('common.cancel')}</Button>
         <Button type="primary" loading={submitting} onClick={() => void handleSubmit()}>
-          确认
+          {t('common.confirm')}
         </Button>
       </div>
     </Form>

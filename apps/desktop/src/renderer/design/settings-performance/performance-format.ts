@@ -2,8 +2,11 @@
  * @module performance-format
  *
  * 性能设置页的纯函数工具（无 React / IPC 依赖，便于单测）：
- * 字节/百分比格式化、压力级别元数据、子进程分类中文映射、
+ * 字节/百分比格式化、压力级别元数据、子进程分类映射、
  * 指标阈值联动着色。判定语义对齐主方案 §3.3——pct 直比，bytes 仅展示。
+ *
+ * 多语言：所有面向用户的文本通过注入的 `t` 生成；与语言无关的结构
+ * （颜色变量、rank、格式化规则）保持为模块级常量。
  */
 
 import type {
@@ -12,46 +15,76 @@ import type {
   PressureLevel,
   TrackedProcessKind,
 } from '@spark/protocol'
+import type { TranslateFn } from '../i18n'
 
 /* ─── 压力级别元数据 ─────────────────────────────────────────────────────────── */
 
-export const PRESSURE_LEVEL_META: Record<
+const PRESSURE_LEVEL_META_BASE: Record<
   PressureLevel,
-  { name: string; colorVar: string; rank: number }
+  { nameKey: string; colorVar: string; rank: number }
 > = {
-  nominal: { name: '正常', colorVar: 'var(--primary)', rank: 0 },
-  warning: { name: '警告', colorVar: 'var(--warning)', rank: 1 },
-  critical: { name: '严重', colorVar: 'var(--perf-critical)', rank: 2 },
-  emergency: { name: '危急', colorVar: 'var(--danger)', rank: 3 },
+  nominal: { nameKey: 'perf.level.nominal', colorVar: 'var(--primary)', rank: 0 },
+  warning: { nameKey: 'perf.level.warning', colorVar: 'var(--warning)', rank: 1 },
+  critical: { nameKey: 'perf.level.critical', colorVar: 'var(--perf-critical)', rank: 2 },
+  emergency: { nameKey: 'perf.level.emergency', colorVar: 'var(--danger)', rank: 3 },
+}
+
+export interface PressureLevelMeta {
+  name: string
+  colorVar: string
+  rank: number
+}
+
+/** 按当前语言生成压力级别元数据（模块级常量无法随语言切换更新）。 */
+export function getPressureLevelMeta(t: TranslateFn): Record<PressureLevel, PressureLevelMeta> {
+  const out = {} as Record<PressureLevel, PressureLevelMeta>
+  for (const level of Object.keys(PRESSURE_LEVEL_META_BASE) as PressureLevel[]) {
+    const base = PRESSURE_LEVEL_META_BASE[level]
+    out[level] = { name: t(base.nameKey), colorVar: base.colorVar, rank: base.rank }
+  }
+  return out
 }
 
 /** 级别对应的降级状态描述（降级矩阵 §4.2 的用户可读形态）。 */
-export function pressureActionCopy(level: PressureLevel): string {
+export function pressureActionCopy(level: PressureLevel, t: TranslateFn): string {
   switch (level) {
     case 'nominal':
-      return '资源充裕 · 正常调度'
+      return t('perf.levelAction.nominal')
     case 'warning':
-      return '限制新任务 · 进行中任务不受影响'
+      return t('perf.levelAction.warning')
     case 'critical':
-      return '暂停新派发 · 后台任务延迟执行'
+      return t('perf.levelAction.critical')
     case 'emergency':
-      return '暂停全部新任务派发 · 必要时终止排队任务'
+      return t('perf.levelAction.emergency')
   }
 }
 
 /* ─── 指标元数据 ────────────────────────────────────────────────────────────── */
 
-export const INDICATOR_LABELS: Record<PressureIndicatorKey, string> = {
-  'system-used-pct': '系统内存',
-  'app-footprint-pct': '应用占用',
-  'host-rss-pct': '宿主内存',
-  'children-rss-pct': '子进程内存',
-  'children-count': '子进程数',
-  'event-loop-delay-ms': '事件循环延迟',
+const INDICATOR_LABEL_KEYS: Record<PressureIndicatorKey, string> = {
+  'system-used-pct': 'perf.indicator.systemUsedPctLabel',
+  'app-footprint-pct': 'perf.indicator.appFootprintPctLabel',
+  'host-rss-pct': 'perf.indicator.hostRssPctLabel',
+  'children-rss-pct': 'perf.indicator.childrenRssPctLabel',
+  'children-count': 'perf.indicator.childrenCountLabel',
+  'event-loop-delay-ms': 'perf.indicator.eventLoopDelayMsLabel',
+}
+
+/** 按当前语言生成指标显示名。 */
+export function getIndicatorLabels(t: TranslateFn): Record<PressureIndicatorKey, string> {
+  const out = {} as Record<PressureIndicatorKey, string>
+  for (const key of Object.keys(INDICATOR_LABEL_KEYS) as PressureIndicatorKey[]) {
+    out[key] = t(INDICATOR_LABEL_KEYS[key])
+  }
+  return out
 }
 
 /** 指标当前值的人类可读形式（阈值联动着色由组件层完成）。 */
-export function formatIndicatorValue(key: PressureIndicatorKey, value: number | null): string {
+export function formatIndicatorValue(
+  key: PressureIndicatorKey,
+  value: number | null,
+  t: TranslateFn,
+): string {
   if (value == null || !Number.isFinite(value)) return '—'
   switch (key) {
     case 'system-used-pct':
@@ -60,7 +93,7 @@ export function formatIndicatorValue(key: PressureIndicatorKey, value: number | 
     case 'children-rss-pct':
       return `${formatPct(value)}%`
     case 'children-count':
-      return `${Math.round(value)} 个`
+      return t('perf.unit.count', { value: Math.round(value) })
     case 'event-loop-delay-ms':
       return `${Math.round(value)} ms`
   }
@@ -100,24 +133,35 @@ export function clampNumber(value: number, min: number, max: number): number {
 
 /* ─── 子进程分类 ────────────────────────────────────────────────────────────── */
 
-const PROCESS_KIND_LABELS: Record<TrackedProcessKind, string> = {
-  'claude-cli': 'Claude CLI',
-  'codex-cli': 'Codex CLI',
-  'agent-unknown': '未知 Agent',
-  'mcp-bridge': 'MCP 桥',
-  'platform-pool': '平台常驻池',
-  'codex-pool': 'Codex 池',
-  'engine-subagent': '引擎子代理',
-  'media-mcp': '媒体 MCP',
-  'tool-package': '工具包',
-  'terminal-pty': '终端',
-  'subapp-service': '子应用服务',
-  'media-tool': '媒体工具',
-  other: '其他',
-}
-
-export function processKindLabel(kind: TrackedProcessKind): string {
-  return PROCESS_KIND_LABELS[kind]
+export function processKindLabel(kind: TrackedProcessKind, t: TranslateFn): string {
+  switch (kind) {
+    case 'claude-cli':
+      return t('perf.processKind.claudeCli')
+    case 'codex-cli':
+      return t('perf.processKind.codexCli')
+    case 'agent-unknown':
+      return t('perf.processKind.agentUnknown')
+    case 'mcp-bridge':
+      return t('perf.processKind.mcpBridge')
+    case 'platform-pool':
+      return t('perf.processKind.platformPool')
+    case 'codex-pool':
+      return t('perf.processKind.codexPool')
+    case 'engine-subagent':
+      return t('perf.processKind.engineSubagent')
+    case 'media-mcp':
+      return t('perf.processKind.mediaMcp')
+    case 'tool-package':
+      return t('perf.processKind.toolPackage')
+    case 'terminal-pty':
+      return t('perf.processKind.terminalPty')
+    case 'subapp-service':
+      return t('perf.processKind.subappService')
+    case 'media-tool':
+      return t('perf.processKind.mediaTool')
+    default:
+      return t('perf.processKind.other')
+  }
 }
 
 export interface ProcessKindAggregate {
@@ -128,14 +172,17 @@ export interface ProcessKindAggregate {
 }
 
 /** full 快照 pid 明细按 kind 聚合（RSS 降序），供子进程卡堆叠条与明细行。 */
-export function aggregateChildrenByKind(entries: ChildProcessSample[]): ProcessKindAggregate[] {
+export function aggregateChildrenByKind(
+  entries: ChildProcessSample[],
+  t: TranslateFn,
+): ProcessKindAggregate[] {
   const map = new Map<TrackedProcessKind, ProcessKindAggregate>()
   for (const entry of entries) {
     const current = map.get(entry.kind)
     if (current == null) {
       map.set(entry.kind, {
         kind: entry.kind,
-        label: processKindLabel(entry.kind),
+        label: processKindLabel(entry.kind, t),
         count: 1,
         rssBytes: entry.rssBytes ?? 0,
       })

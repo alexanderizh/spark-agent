@@ -15,6 +15,7 @@ import {
 import { Button, Dropdown, Segmented } from '@lobehub/ui'
 import type { ProviderFileObject } from '@spark/protocol'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import { ShotSegmentTable } from './CanvasShotSegmentTable'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
@@ -94,16 +95,16 @@ const TAB_ORDER: TabKind[] = [
 ]
 
 const TAB_LABELS: Record<TabKind, string> = {
-  manuscript: '文稿',
-  chapter: '章节',
-  script: '剧本',
-  character: '角色',
-  scene: '场景',
-  prop: '道具',
-  effect: '特效',
-  shot_group: '分镜',
-  shots: '分镜分组',
-  prompt_library: '提示词库',
+  manuscript: translate('canvasFilmAsset.t1'),
+  chapter: translate('canvasFilmAsset.t2'),
+  script: translate('canvasFilmAsset.t3'),
+  character: translate('canvasFilmAsset.t4'),
+  scene: translate('canvasFilmAsset.t5'),
+  prop: translate('canvasFilmAsset.t6'),
+  effect: translate('canvasFilmAsset.t7'),
+  shot_group: translate('canvasFilmAsset.t8'),
+  shots: translate('canvasFilmAsset.t9'),
+  prompt_library: translate('canvasFilmAsset.t10'),
   files: 'Files',
 }
 
@@ -111,10 +112,10 @@ const TAB_LABELS: Record<TabKind, string> = {
 const ASSET_PAGE_SIZE = 60
 
 const CHAPTER_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
-  heading: '按章节标题',
-  length: '按长度分片',
-  single: '不分章',
-  'multi-file': '多文件（一文件一章）',
+  heading: translate('canvasFilmAsset.t11'),
+  length: translate('canvasFilmAsset.t12'),
+  single: translate('canvasFilmAsset.t13'),
+  'multi-file': translate('canvasFilmAsset.t14'),
 }
 
 const FILM_CENTER_NESTED_MODAL_Z_INDEX = 1400
@@ -241,6 +242,8 @@ export function CanvasFilmAssetCenter({
   /** 打开时定位到的 tab（导演台深链） */
   initialTab?: TabKind
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const [activeTab, setActiveTab] = useState<TabKind>(initialTab ?? 'script')
 
   // 从导演台深链打开时，定位到目标 tab
@@ -278,13 +281,13 @@ export function CanvasFilmAssetCenter({
         <div className="canvas-bottom-floating-head">
           <div>
             <FilmCenterHeaderTitle />
-            <span>文稿、影视资产、分镜、提示词和渠道 Files</span>
+            <span>{translate('canvasFilmAsset.tpl1Desc')}</span>
           </div>
           <Button
             size="middle"
             type="text"
             icon={<Icons.X size={14} />}
-            aria-label="关闭项目资产中心"
+            aria-label={translate('canvasFilmAsset.t146')}
             onClick={onClose}
           />
         </div>
@@ -334,7 +337,7 @@ function FilmCenterHeaderTitle() {
   return (
     <span className="canvas-film-center-title">
       <Icons.Layers size={16} />
-      项目资产中心
+      {translate('canvasFilmAsset.t195')}
     </span>
   )
 }
@@ -457,13 +460,18 @@ function AssetListTab({
 
   const handleDeleteAsset = (asset: CanvasAsset, usageCount: number): void => {
     Modal.confirm({
-      title: `删除${FILM_ASSET_KIND_LABELS[kind]}？`,
+      title: translate('canvasFilmAsset.tpl2Desc', { kind: FILM_ASSET_KIND_LABELS[kind] }),
       content:
         usageCount > 0
-          ? `「${asset.title ?? '未命名'}」正在被引用 ${usageCount} 次。删除后分镜或画布节点会失去这个资源引用，并删除关联的本地/平台文件。`
-          : `确认删除「${asset.title ?? '未命名'}」？此操作会从项目资源库移除该条目，并删除关联的本地/平台文件。`,
-      okText: '删除',
-      cancelText: '取消',
+          ? translate('canvasFilmAsset.tpl3LongDesc', {
+              title: asset.title ?? translate('canvasFilmAsset.t15'),
+              count: usageCount,
+            })
+          : translate('canvasFilmAsset.tpl4LongDesc', {
+              title: asset.title ?? translate('canvasFilmAsset.t15'),
+            }),
+      okText: translate('canvasFilmAsset.t16'),
+      cancelText: translate('canvasFilmAsset.t17'),
       okButtonProps: { danger: true },
       onOk: () => handlers.deleteFilmAsset(asset.id, { hardDelete: true }),
     })
@@ -472,11 +480,10 @@ function AssetListTab({
   const handleBreakdownScript = (asset: CanvasAsset): void => {
     if (!handlers.onBreakdownScriptAsset) return
     Modal.confirm({
-      title: '从剧本生成角色、场景与分镜草稿？',
-      content:
-        '会基于当前剧本文本自动抽取角色、场景，并创建一个分镜分组。生成结果仍可继续人工编辑。',
-      okText: '生成草稿',
-      cancelText: '取消',
+      title: translate('canvasFilmAsset.t18'),
+      content: translate('canvasFilmAsset.tpl5LongDesc'),
+      okText: translate('canvasFilmAsset.t18'),
+      cancelText: translate('canvasFilmAsset.t17'),
       onOk: () => handlers.onBreakdownScriptAsset?.(asset),
     })
   }
@@ -536,7 +543,11 @@ function AssetListTab({
     <div className="canvas-film-asset-list-tab">
       <div className="canvas-film-asset-list-head">
         <span className="canvas-film-asset-list-count">
-          {FILM_ASSET_KIND_LABELS[kind]} · {filtered.length} / {assets.length} 项
+          {FILM_ASSET_KIND_LABELS[kind]} ·{' '}
+          {translate('canvasFilmAsset.tpl6Desc', {
+            filtered: filtered.length,
+            total: assets.length,
+          })}
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
           <Button
@@ -545,7 +556,7 @@ function AssetListTab({
             icon={<Icons.Plus size={13} />}
             onClick={() => setCreating(true)}
           >
-            新建{FILM_ASSET_KIND_LABELS[kind]}
+            {translate('canvasFilmAsset.tpl7Desc', { kind: FILM_ASSET_KIND_LABELS[kind] })}
           </Button>
         </div>
       </div>
@@ -555,7 +566,7 @@ function AssetListTab({
           size="middle"
           allowClear
           value={query}
-          placeholder="搜索名称/描述/默认 prompt"
+          placeholder={translate('canvasFilmAsset.t147Desc')}
           onChange={(e) => setQuery(e.target.value)}
           className="canvas-film-asset-search"
         />
@@ -564,10 +575,10 @@ function AssetListTab({
           value={sortBy}
           onChange={(value) => setSortBy(value as typeof sortBy)}
           options={[
-            { value: 'updated', label: '最近修改' },
-            { value: 'created', label: '最近创建' },
-            { value: 'name', label: '按名称' },
-            { value: 'usage', label: '按使用次数' },
+            { value: 'updated', label: translate('canvasFilmAsset.t19') },
+            { value: 'created', label: translate('canvasFilmAsset.t20') },
+            { value: 'name', label: translate('canvasFilmAsset.t21') },
+            { value: 'usage', label: translate('canvasFilmAsset.t22') },
           ]}
           className="canvas-film-asset-sort"
         />
@@ -592,7 +603,7 @@ function AssetListTab({
           })}
           {tagFilter.length > 0 && (
             <Button size="middle" type="text" onClick={() => setTagFilter([])}>
-              清空
+              {translate('canvasFilmAsset.t196')}
             </Button>
           )}
         </div>
@@ -602,8 +613,8 @@ function AssetListTab({
         <Empty
           description={
             assets.length === 0
-              ? `暂无${FILM_ASSET_KIND_LABELS[kind]}`
-              : '当前过滤条件下没有匹配的资源'
+              ? translate('canvasFilmAsset.tpl8Desc', { kind: FILM_ASSET_KIND_LABELS[kind] })
+              : translate('canvasFilmAsset.t23Desc')
           }
           className="canvas-film-empty"
         />
@@ -649,22 +660,26 @@ function AssetListTab({
                 {refs.length > 1 && (
                   <span
                     className="canvas-film-asset-card-refcount"
-                    title={`${refs.length} 张参考图`}
+                    title={translate('canvasFilmAsset.tpl9Desc', { count: refs.length })}
                   >
                     <Icons.Image size={11} /> {refs.length}
                   </span>
                 )}
                 {usage > 0 && (
-                  <span className="canvas-film-asset-card-usage" title={`被引用 ${usage} 次`}>
+                  <span
+                    className="canvas-film-asset-card-usage"
+                    title={translate('canvasFilmAsset.tpl10Desc', { count: usage })}
+                  >
                     <Icons.Link size={11} /> {usage}
                   </span>
                 )}
                 <div className="canvas-film-asset-card-overlay">
                   <div className="canvas-film-asset-card-name" title={asset.title ?? ''}>
-                    {asset.title ?? '未命名'}
+                    {asset.title ?? translate('canvasFilmAsset.t15')}
                   </div>
                   <div className="canvas-film-asset-card-preview">
-                    {(asset.contentText ?? refs[0]?.description ?? '').slice(0, 80) || '(无内容)'}
+                    {(asset.contentText ?? refs[0]?.description ?? '').slice(0, 80) ||
+                      translate('canvasFilmAsset.t24')}
                   </div>
                   {tags.length > 0 && (
                     <div className="canvas-film-asset-card-tags">
@@ -681,19 +696,27 @@ function AssetListTab({
                 </div>
                 <div className="canvas-film-asset-card-actions">
                   {handlers.onLocateAsset && (
-                    <Tooltip title={hasCanvasNode ? '定位' : '画布中暂无此资产节点'}>
+                    <Tooltip
+                      title={
+                        hasCanvasNode
+                          ? translate('canvasFilmAsset.t25')
+                          : translate('canvasFilmAsset.t26')
+                      }
+                    >
                       <Button
                         size="middle"
                         type="text"
                         disabled={!hasCanvasNode}
-                        aria-label={`定位资产：${asset.title ?? '未命名'}`}
+                        aria-label={translate('canvasFilmAsset.tpl11Desc', {
+                          title: asset.title ?? translate('canvasFilmAsset.t15'),
+                        })}
                         icon={<Icons.Crosshair size={14} />}
                         onClick={() => handlers.onLocateAsset?.(asset.id)}
                       />
                     </Tooltip>
                   )}
                   {kind === 'script' && handlers.onBreakdownScriptAsset && (
-                    <Tooltip title="拆解剧本">
+                    <Tooltip title={translate('canvasFilmAsset.t148')}>
                       <Button
                         size="middle"
                         type="text"
@@ -703,7 +726,7 @@ function AssetListTab({
                     </Tooltip>
                   )}
                   {kind === 'character' && handlers.onGenerateCharacterSheets && (
-                    <Tooltip title="生成角色图（身份板/表情/服装…）">
+                    <Tooltip title={translate('canvasFilmAsset.t149Desc')}>
                       <Button
                         size="middle"
                         type="text"
@@ -717,7 +740,7 @@ function AssetListTab({
                     kind === 'prop' ||
                     kind === 'effect') &&
                     handlers.onGenerateAssetReference && (
-                      <Tooltip title="生成参考图">
+                      <Tooltip title={translate('canvasFilmAsset.t150')}>
                         <Button
                           size="middle"
                           type="text"
@@ -726,7 +749,7 @@ function AssetListTab({
                         />
                       </Tooltip>
                     )}
-                  <Tooltip title="编辑">
+                  <Tooltip title={translate('canvasFilmAsset.t151')}>
                     <Button
                       size="middle"
                       type="text"
@@ -734,7 +757,7 @@ function AssetListTab({
                       onClick={() => setEditingId(asset.id)}
                     />
                   </Tooltip>
-                  <Tooltip title="AI 优化">
+                  <Tooltip title={translate('canvasFilmAsset.t152')}>
                     <Button
                       size="middle"
                       type="text"
@@ -742,7 +765,7 @@ function AssetListTab({
                       onClick={() => handlers.onOptimizeAsset(asset)}
                     />
                   </Tooltip>
-                  <Tooltip title="插入画布">
+                  <Tooltip title={translate('canvasFilmAsset.t153')}>
                     <Button
                       size="middle"
                       type="text"
@@ -750,7 +773,7 @@ function AssetListTab({
                       onClick={() => handlers.onInsertAssetToCanvas(asset.id)}
                     />
                   </Tooltip>
-                  <Tooltip title="删除">
+                  <Tooltip title={translate('canvasFilmAsset.t16')}>
                     <Button
                       size="middle"
                       type="text"
@@ -769,7 +792,10 @@ function AssetListTab({
               className="canvas-film-asset-loadmore"
               onClick={() => setVisibleCount((c) => Math.min(c + ASSET_PAGE_SIZE, filtered.length))}
             >
-              加载更多（已显示 {visibleCount} / {filtered.length}）
+              {translate('canvasFilmAsset.tpl12Desc', {
+                shown: visibleCount,
+                total: filtered.length,
+              })}
             </button>
           )}
         </div>
@@ -778,9 +804,9 @@ function AssetListTab({
         open={sheetAsset !== null}
         zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
         getContainer={() => document.body}
-        title={`生成角色图 · ${sheetAsset?.title ?? ''}`}
-        okText={`生成 ${sheetAspects.length} 组`}
-        cancelText="取消"
+        title={translate('canvasFilmAsset.tpl13Desc', { title: sheetAsset?.title ?? '' })}
+        okText={translate('canvasFilmAsset.tpl14Desc', { count: sheetAspects.length })}
+        cancelText={translate('canvasFilmAsset.t17')}
         okButtonProps={{ disabled: sheetAspects.length === 0 }}
         onCancel={() => setSheetAsset(null)}
         onOk={() => {
@@ -791,7 +817,7 @@ function AssetListTab({
         }}
       >
         <div style={{ marginBottom: 8, color: 'var(--lobe-color-text-secondary, #888)' }}>
-          选择要生成的面向。角色身份板正面会作为角色基准图，其余面向基于基准图保持一致。
+          {translate('canvasFilmAsset.tpl15LongDesc')}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {CHARACTER_SHEET_TEMPLATES.map((template) => {
@@ -844,7 +870,9 @@ function ManuscriptTab({
   // 该文稿的章节（按 metadata.order 排序；兼容老数据按 tag 兜底）
   const chapters = useMemo(() => {
     if (!activeManuscript) return []
-    const legacyTag = `文稿:${activeManuscript.title ?? ''}`
+    const legacyTag = translate('canvasFilmAsset.tpl16Desc', {
+      title: activeManuscript.title ?? '',
+    })
     const list = snapshot.assets.filter((asset) => {
       if (readAssetKind(asset) !== 'chapter') return false
       const meta = asset.metadata as { manuscriptId?: unknown; tags?: unknown } | undefined
@@ -932,7 +960,7 @@ function ManuscriptListView({
         byId.set(meta.manuscriptId, (byId.get(meta.manuscriptId) ?? 0) + 1)
       } else if (Array.isArray(meta?.tags)) {
         for (const tag of meta.tags as unknown[]) {
-          if (typeof tag === 'string' && tag.startsWith('文稿:')) {
+          if (typeof tag === 'string' && tag.startsWith(translate('canvasFilmAsset.t27'))) {
             byTag.set(tag, (byTag.get(tag) ?? 0) + 1)
           }
         }
@@ -942,20 +970,24 @@ function ManuscriptListView({
   }, [snapshot.assets])
 
   const chapterCountOf = (m: CanvasAsset): number =>
-    chapterCounts.byId.get(m.id) ?? chapterCounts.byTag.get(`文稿:${m.title ?? ''}`) ?? 0
+    chapterCounts.byId.get(m.id) ??
+    chapterCounts.byTag.get(translate('canvasFilmAsset.tpl16Desc', { title: m.title ?? '' })) ??
+    0
 
   const handleDelete = (m: CanvasAsset): void => {
     if (!handlers.deleteManuscript) return
     const count = chapterCountOf(m)
     Modal.confirm({
-      title: `删除文稿《${m.title ?? '未命名'}》？`,
-      content: `将同时删除其 ${count} 个章节及关联的本地/平台文件，且无法恢复。`,
-      okText: '删除',
-      cancelText: '取消',
+      title: translate('canvasFilmAsset.tpl17Desc', {
+        title: m.title ?? translate('canvasFilmAsset.t15'),
+      }),
+      content: translate('canvasFilmAsset.tpl18LongDesc', { count }),
+      okText: translate('canvasFilmAsset.t16'),
+      cancelText: translate('canvasFilmAsset.t17'),
       okButtonProps: { danger: true },
       onOk: async () => {
         const deleted = await handlers.deleteManuscript!(m.id, { hardDelete: true })
-        message.success(`已删除文稿及 ${deleted} 个章节`)
+        message.success(translate('canvasFilmAsset.tpl19Desc', { count: deleted }))
       },
     })
   }
@@ -963,7 +995,9 @@ function ManuscriptListView({
   return (
     <div className="canvas-film-asset-list-tab">
       <div className="canvas-film-asset-list-head">
-        <span className="canvas-film-asset-list-count">文稿 · {manuscripts.length} 部</span>
+        <span className="canvas-film-asset-list-count">
+          {translate('canvasFilmAsset.tpl20Desc', { count: manuscripts.length })}
+        </span>
         {handlers.onImportManuscript && (
           <Button
             type="primary"
@@ -971,12 +1005,12 @@ function ManuscriptListView({
             icon={<Icons.Upload size={13} />}
             onClick={() => setImportOpen(true)}
           >
-            导入文稿
+            {translate('canvasFilmAsset.t161')}
           </Button>
         )}
       </div>
       {manuscripts.length === 0 ? (
-        <Empty description="还没有文稿，导入一部小说开始创作" style={{ marginTop: 48 }} />
+        <Empty description={translate('canvasFilmAsset.t154Desc')} style={{ marginTop: 48 }} />
       ) : (
         <div className="canvas-film-manuscript-grid">
           {manuscripts.map((m) => (
@@ -995,14 +1029,14 @@ function ManuscriptListView({
               </div>
               <div className="canvas-film-manuscript-card-main">
                 <div className="canvas-film-manuscript-card-name" title={m.title ?? ''}>
-                  {m.title ?? '未命名文稿'}
+                  {m.title ?? translate('canvasFilmAsset.t28')}
                 </div>
                 <div className="canvas-film-manuscript-card-meta">
-                  {chapterCountOf(m)} 章 · 点击查看章节
+                  {translate('canvasFilmAsset.tpl21Desc', { count: chapterCountOf(m) })}
                 </div>
               </div>
               {handlers.deleteManuscript && (
-                <Tooltip title="删除文稿（含全部章节）">
+                <Tooltip title={translate('canvasFilmAsset.t155')}>
                   <Button
                     size="middle"
                     type="text"
@@ -1062,14 +1096,17 @@ function ChapterListView({
     <div className="canvas-film-asset-list-tab">
       <div className="canvas-film-chapter-head">
         <Button size="middle" type="text" icon={<Icons.ChevronLeft size={15} />} onClick={onBack}>
-          文稿
+          {translate('canvasFilmAsset.t1')}
         </Button>
         <span className="canvas-film-chapter-head-title">
-          {manuscript.title ?? '未命名文稿'} · {total} 章
+          {translate('canvasFilmAsset.tpl22Desc', {
+            title: manuscript.title ?? translate('canvasFilmAsset.t28'),
+            total,
+          })}
         </span>
       </div>
       {total === 0 ? (
-        <Empty description="该文稿没有章节" style={{ marginTop: 48 }} />
+        <Empty description={translate('canvasFilmAsset.t156')} style={{ marginTop: 48 }} />
       ) : (
         <>
           <div className="canvas-film-chapter-list">
@@ -1086,26 +1123,28 @@ function ChapterListView({
               >
                 <div className="canvas-film-chapter-card-index">
                   <Icons.FileText size={12} />
-                  <span>第 {start + idx + 1} 章</span>
+                  <span>{translate('canvasFilmAsset.tpl23Desc', { index: start + idx + 1 })}</span>
                 </div>
                 <div className="canvas-film-chapter-card-title" title={chapter.title ?? ''}>
-                  {chapter.title ?? '未命名章节'}
+                  {chapter.title ?? translate('canvasFilmAsset.t29')}
                 </div>
                 <div className="canvas-film-chapter-card-foot">
                   <span className="canvas-film-chapter-card-count">
-                    {charCountOf(chapter).toLocaleString()} 字
+                    {translate('canvasFilmAsset.tpl24Desc', {
+                      count: charCountOf(chapter).toLocaleString(),
+                    })}
                   </span>
                   <span className="canvas-film-chapter-card-actions">
                     {handlers.onChapterToScreenplay && (
                       <Tooltip
-                        title="AI 转剧本：把本章改写为场次剧本，添加到画布"
+                        title={translate('canvasFilmAsset.t157Desc')}
                         mouseEnterDelay={0.1}
                         placement="top"
                       >
                         <Button
                           size="middle"
                           type="text"
-                          aria-label="AI 转剧本"
+                          aria-label={translate('canvasFilmAsset.t158')}
                           icon={<Icons.Workflow size={14} />}
                           onClick={(e) => {
                             e.stopPropagation()
@@ -1115,14 +1154,14 @@ function ChapterListView({
                       </Tooltip>
                     )}
                     <Tooltip
-                      title="插入画布：把这一章作为文本节点放到画布上"
+                      title={translate('canvasFilmAsset.t159Desc')}
                       mouseEnterDelay={0.1}
                       placement="top"
                     >
                       <Button
                         size="middle"
                         type="text"
-                        aria-label="插入画布"
+                        aria-label={translate('canvasFilmAsset.t153')}
                         icon={<Icons.Plus size={14} />}
                         onClick={(e) => {
                           e.stopPropagation()
@@ -1130,19 +1169,25 @@ function ChapterListView({
                         }}
                       />
                     </Tooltip>
-                    <Tooltip title="删除本章" mouseEnterDelay={0.1} placement="top">
+                    <Tooltip
+                      title={translate('canvasFilmAsset.t160')}
+                      mouseEnterDelay={0.1}
+                      placement="top"
+                    >
                       <Button
                         size="middle"
                         type="text"
                         danger
-                        aria-label="删除本章"
+                        aria-label={translate('canvasFilmAsset.t160')}
                         icon={<Icons.Trash size={14} />}
                         onClick={(e) => {
                           e.stopPropagation()
                           Modal.confirm({
-                            title: `删除章节「${chapter.title ?? '未命名'}」？`,
-                            okText: '删除',
-                            cancelText: '取消',
+                            title: translate('canvasFilmAsset.tpl25Desc', {
+                              title: chapter.title ?? translate('canvasFilmAsset.t15'),
+                            }),
+                            okText: translate('canvasFilmAsset.t16'),
+                            cancelText: translate('canvasFilmAsset.t17'),
                             okButtonProps: { danger: true },
                             onOk: () => handlers.deleteFilmAsset(chapter.id, { hardDelete: true }),
                           })
@@ -1204,16 +1249,18 @@ function ChapterReader({
     <div className="canvas-film-asset-list-tab canvas-film-reader">
       <div className="canvas-film-chapter-head">
         <Button size="middle" type="text" icon={<Icons.ChevronLeft size={15} />} onClick={onBack}>
-          章节列表
+          {translate('canvasFilmAsset.t197')}
         </Button>
-        <span className="canvas-film-chapter-head-title">{chapter.title ?? '未命名章节'}</span>
+        <span className="canvas-film-chapter-head-title">
+          {chapter.title ?? translate('canvasFilmAsset.t29')}
+        </span>
         {onToScreenplay && (
           <Button
             size="middle"
             icon={<Icons.Workflow size={13} />}
             onClick={() => void onToScreenplay(chapter)}
           >
-            转剧本
+            {translate('canvasFilmAsset.t198')}
           </Button>
         )}
       </div>
@@ -1221,7 +1268,9 @@ function ChapterReader({
         {content ? (
           pageText
         ) : (
-          <span style={{ color: 'var(--lobe-color-text-secondary, #888)' }}>（本章无正文）</span>
+          <span style={{ color: 'var(--lobe-color-text-secondary, #888)' }}>
+            {translate('canvasFilmAsset.t199')}
+          </span>
         )}
       </div>
       <div className="canvas-film-reader-footer">
@@ -1231,7 +1280,7 @@ function ChapterReader({
           icon={<Icons.ChevronLeft size={14} />}
           onClick={() => prev && onJump(prev.id)}
         >
-          上一章
+          {translate('canvasFilmAsset.t200')}
         </Button>
         {pageCount > 1 && (
           <Pagination
@@ -1244,7 +1293,7 @@ function ChapterReader({
           />
         )}
         <Button size="middle" disabled={!next} onClick={() => next && onJump(next.id)}>
-          下一章
+          {translate('canvasFilmAsset.t201')}
           <Icons.ChevronRight size={14} />
         </Button>
       </div>
@@ -1278,7 +1327,8 @@ function ManuscriptImportModal({
   const isMultiFile = files.length >= 2
   const singleFile = files.length === 1 ? files[0] : null
   const sourceText = singleFile?.text ?? text
-  const singleChapterTitle = title.trim() || singleFile?.name.replace(/\.[^.]+$/, '') || '全文'
+  const singleChapterTitle =
+    title.trim() || singleFile?.name.replace(/\.[^.]+$/, '') || translate('canvasFilmAsset.t30')
   const preview = useMemo<ChapterSplitResult | null>(() => {
     if (isMultiFile) return buildChaptersFromFiles(files)
     if (!sourceText.trim()) return null
@@ -1326,7 +1376,7 @@ function ManuscriptImportModal({
         decoded.push({ name: file.name, text })
       }
       if (decoded.length === 0) {
-        message.error('所选文件内容均为空或无法识别')
+        message.error(translate('canvasFilmAsset.t31Desc'))
         return
       }
       setFiles(decoded)
@@ -1339,10 +1389,15 @@ function ManuscriptImportModal({
         setTitle((prev) => prev.trim())
       }
       if (skipped.length > 0) {
-        message.warning(`已跳过 ${skipped.length} 个空文件：${skipped.join('、')}`)
+        message.warning(
+          translate('canvasFilmAsset.tpl26Desc', {
+            count: skipped.length,
+            names: skipped.join(', '),
+          }),
+        )
       }
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '读取文件失败')
+      message.error(error instanceof Error ? error.message : translate('canvasFilmAsset.t32'))
     } finally {
       setParsing(false)
     }
@@ -1356,11 +1411,15 @@ function ManuscriptImportModal({
   return (
     <Modal
       open={open}
-      title="导入文稿"
+      title={translate('canvasFilmAsset.t161')}
       zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
       getContainer={() => document.body}
-      okText={selectedCount > 0 ? `导入 ${selectedCount} 章` : '导入'}
-      cancelText="取消"
+      okText={
+        selectedCount > 0
+          ? translate('canvasFilmAsset.tpl27Desc', { count: selectedCount })
+          : translate('canvasFilmAsset.t33')
+      }
+      cancelText={translate('canvasFilmAsset.t17')}
       okButtonProps={{ disabled: selectedCount === 0 || parsing, loading: importing }}
       mask={{ closable: false }}
       width={920}
@@ -1383,23 +1442,23 @@ function ManuscriptImportModal({
             title:
               title.trim() ||
               (isMultiFile
-                ? `多文件文稿（${files.length} 个）`
+                ? translate('canvasFilmAsset.tpl28Desc', { count: files.length })
                 : singleFile?.name.replace(/\.[^.]+$/, '')) ||
-              '未命名文稿',
+              translate('canvasFilmAsset.t28'),
             mode: preview.mode,
             chapters,
           })
-          message.success(`已导入文稿，生成 ${count} 个章节`)
+          message.success(translate('canvasFilmAsset.tpl29Desc', { count }))
           onClose()
         } catch (error) {
-          message.error(error instanceof Error ? error.message : '导入文稿失败')
+          message.error(error instanceof Error ? error.message : translate('canvasFilmAsset.t34'))
         } finally {
           setImporting(false)
         }
       }}
     >
       <Input
-        placeholder="文稿标题（如：长安十二时辰）"
+        placeholder={translate('canvasFilmAsset.t162Desc')}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         style={{ marginBottom: 8 }}
@@ -1424,12 +1483,12 @@ function ManuscriptImportModal({
           onClick={() => fileInputRef.current?.click()}
         >
           {files.length > 0
-            ? `重新选择文件（已选 ${files.length} 个）`
-            : '从文件导入（.txt / .md，支持多选；多选时一文件一章）'}
+            ? translate('canvasFilmAsset.tpl30Desc', { count: files.length })
+            : translate('canvasFilmAsset.t35Desc')}
         </Button>
         {files.length > 0 && (
           <Button size="middle" icon={<Icons.X size={13} />} onClick={() => setFiles([])}>
-            清除文件
+            {translate('canvasFilmAsset.t202')}
           </Button>
         )}
       </div>
@@ -1448,7 +1507,7 @@ function ManuscriptImportModal({
           }}
         >
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>自动分章</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{translate('canvasFilmAsset.t203')}</div>
             <div
               style={{
                 marginTop: 2,
@@ -1456,13 +1515,15 @@ function ManuscriptImportModal({
                 fontSize: 12,
               }}
             >
-              {splitChapters ? '标题优先，识别不到时按长度分片' : '整篇作为 1 章导入'}
+              {splitChapters
+                ? translate('canvasFilmAsset.t36Desc')
+                : translate('canvasFilmAsset.t37')}
             </div>
           </div>
           <Switch
             checked={splitChapters}
-            checkedChildren="分章"
-            unCheckedChildren="一章"
+            checkedChildren={translate('canvasFilmAsset.t163')}
+            unCheckedChildren={translate('canvasFilmAsset.t164')}
             onChange={setSplitChapters}
           />
         </div>
@@ -1479,7 +1540,7 @@ function ManuscriptImportModal({
             color: 'var(--lobe-color-text-secondary, #888)',
           }}
         >
-          已选择 {files.length} 个文件，将按「一文件一章」导入，共 {total} 章。空文件已自动跳过。
+          {translate('canvasFilmAsset.tpl31LongDesc', { count: files.length, total })}
         </div>
       )}
       {files.length > 0 ? (
@@ -1522,7 +1583,9 @@ function ManuscriptImportModal({
                   fontWeight: 400,
                 }}
               >
-                {countChars(file.text).toLocaleString()} 字
+                {translate('canvasFilmAsset.tpl24Desc', {
+                  count: countChars(file.text).toLocaleString(),
+                })}
               </span>
             </div>
           ))}
@@ -1534,8 +1597,8 @@ function ManuscriptImportModal({
             negativePrompt=""
             promptPlaceholder={
               splitChapters
-                ? '粘贴小说/长文稿全文，或点上方按钮从文件导入。自动识别「第N章 / Chapter N / 序章 / 番外」等标题切分；识别不到时按长度分片。'
-                : '粘贴小说/长文稿全文，或点上方按钮从文件导入。当前会整篇作为 1 章导入。'
+                ? translate('canvasFilmAsset.tpl32LongDesc')
+                : translate('canvasFilmAsset.tpl33Desc')
             }
             optimizeDisabled={text.trim().length === 0 || !onOptimizeDraft}
             onPromptChange={setText}
@@ -1547,12 +1610,16 @@ function ManuscriptImportModal({
       {preview && (
         <div style={{ marginTop: 10 }}>
           <div style={{ color: 'var(--lobe-color-text-secondary, #888)', marginBottom: 6 }}>
-            导入方式：{CHAPTER_SPLIT_MODE_LABELS[preview.mode]} · 共 {total} 章
-            {total > 0 && `（首章：${preview.chapters[0]?.title ?? ''}）`}
+            {translate('canvasFilmAsset.tpl34Desc', {
+              mode: CHAPTER_SPLIT_MODE_LABELS[preview.mode],
+              total,
+            })}
+            {total > 0 &&
+              translate('canvasFilmAsset.tpl35Desc', { title: preview.chapters[0]?.title ?? '' })}
           </div>
           {total > 0 && !isMultiFile && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span>导入范围：第</span>
+              <span>{translate('canvasFilmAsset.tpl36Desc')}</span>
               <InputNumber
                 size="middle"
                 min={1}
@@ -1561,7 +1628,7 @@ function ManuscriptImportModal({
                 onChange={(v) => setRangeFrom(typeof v === 'number' ? v : 1)}
                 style={{ width: 80 }}
               />
-              <span>到第</span>
+              <span>{translate('canvasFilmAsset.t204')}</span>
               <InputNumber
                 size="middle"
                 min={clampedFrom}
@@ -1570,7 +1637,7 @@ function ManuscriptImportModal({
                 onChange={(v) => setRangeTo(typeof v === 'number' ? v : clampedFrom)}
                 style={{ width: 80 }}
               />
-              <span>章</span>
+              <span>{translate('canvasFilmAsset.t205')}</span>
               {total > 20 && (
                 <Button
                   size="middle"
@@ -1580,11 +1647,11 @@ function ManuscriptImportModal({
                     setRangeTo(Math.min(20, total))
                   }}
                 >
-                  前 20 章
+                  {translate('canvasFilmAsset.t206')}
                 </Button>
               )}
               <span style={{ color: 'var(--lobe-color-text-secondary, #888)' }}>
-                共导入 {selectedCount} 章
+                {translate('canvasFilmAsset.tpl37Desc', { count: selectedCount })}
               </span>
             </div>
           )}
@@ -1651,7 +1718,7 @@ function AssetEditor({
   const handleAddLocalImage = useCallback(
     async (file: File) => {
       if (!onUploadImage) {
-        message.warning('当前不支持上传图片')
+        message.warning(translate('canvasFilmAsset.t38'))
         return
       }
       const assetId = await onUploadImage(file)
@@ -1685,7 +1752,7 @@ function AssetEditor({
 
   const handleSave = async () => {
     if (!name.trim()) {
-      message.warning('请输入名称')
+      message.warning(translate('canvasFilmAsset.t39'))
       return
     }
     const cleanAttrs: Record<string, string> = {}
@@ -1710,12 +1777,12 @@ function AssetEditor({
     <div className="canvas-film-asset-editor">
       <div className="canvas-film-editor-head">
         <Button size="middle" type="text" icon={<Icons.ArrowLeft size={14} />} onClick={onClose}>
-          返回列表
+          {translate('canvasFilmAsset.t207')}
         </Button>
         <div className="canvas-film-editor-actions">
           {mode === 'edit' && onOptimize && (
             <Button size="middle" icon={<Icons.Sparkles size={13} />} onClick={onOptimize}>
-              AI 优化
+              {translate('canvasFilmAsset.t152')}
             </Button>
           )}
           <Button
@@ -1724,16 +1791,18 @@ function AssetEditor({
             icon={<Icons.Check size={13} />}
             onClick={() => void handleSave()}
           >
-            保存
+            {translate('canvasFilmAsset.t208')}
           </Button>
         </div>
       </div>
       <div className="canvas-film-editor-form">
         <label className="canvas-film-editor-field">
-          <span>名称</span>
+          <span>{translate('canvasFilmAsset.t209')}</span>
           <Input
             value={name}
-            placeholder={`${FILM_ASSET_KIND_LABELS[kind]}名称`}
+            placeholder={translate('canvasFilmAsset.tpl38Desc', {
+              kind: FILM_ASSET_KIND_LABELS[kind],
+            })}
             onChange={(e) => setName(e.target.value)}
           />
         </label>
@@ -1741,7 +1810,9 @@ function AssetEditor({
         {/* 类型专属快速字段（character/scene/prop/effect） */}
         {attributeFields.length > 0 && (
           <div className="canvas-film-editor-attributes">
-            <div className="canvas-film-editor-section-title">快速字段</div>
+            <div className="canvas-film-editor-section-title">
+              {translate('canvasFilmAsset.t210')}
+            </div>
             <div className="canvas-film-editor-attr-grid">
               {attributeFields.map((field) => (
                 <label key={field.key} className="canvas-film-editor-field">
@@ -1759,7 +1830,9 @@ function AssetEditor({
 
         {/* 标签 */}
         <div className="canvas-film-editor-section">
-          <div className="canvas-film-editor-section-title">标签</div>
+          <div className="canvas-film-editor-section-title">
+            {translate('canvasFilmAsset.t211')}
+          </div>
           <div className="canvas-film-tag-list">
             {tags.map((tag) => (
               <Tag
@@ -1774,7 +1847,7 @@ function AssetEditor({
             <Input
               size="middle"
               value={tagDraft}
-              placeholder="输入标签后回车"
+              placeholder={translate('canvasFilmAsset.t165')}
               className="canvas-film-tag-input"
               onChange={(e) => setTagDraft(e.target.value)}
               onPressEnter={handleAddTag}
@@ -1787,17 +1860,19 @@ function AssetEditor({
         {(kind === 'character' || kind === 'scene' || kind === 'prop' || kind === 'effect') && (
           <div className="canvas-film-editor-section">
             <div className="canvas-film-editor-section-title-row">
-              <span className="canvas-film-editor-section-title">参考图（每张配一段描述词）</span>
+              <span className="canvas-film-editor-section-title">
+                {translate('canvasFilmAsset.t212Desc')}
+              </span>
               <ReferenceToolbar
                 onAddLocal={handleAddLocalImage}
                 onAddFromCanvas={() => {
-                  message.info('请在画布上右键选择「加入资源库」,或拖拽图片节点到此。')
+                  message.info(translate('canvasFilmAsset.tpl39Desc'))
                 }}
               />
             </div>
             {references.length === 0 ? (
               <div className="canvas-film-references-empty">
-                暂无参考图。点击上方「上传」添加，或在画布右键把生成的图片加入此资源。
+                {translate('canvasFilmAsset.tpl40LongDesc')}
               </div>
             ) : (
               <div className="canvas-film-references-grid">
@@ -1829,7 +1904,11 @@ function AssetEditor({
         {/* 整体描述（剧本文本/整体设定） */}
         <label className="canvas-film-editor-field">
           <span>
-            {kind === 'script' ? '剧本内容' : kind === 'prompt_library' ? '提示词内容' : '整体描述'}
+            {kind === 'script'
+              ? translate('canvasFilmAsset.t40')
+              : kind === 'prompt_library'
+                ? translate('canvasFilmAsset.t41')
+                : translate('canvasFilmAsset.t42')}
           </span>
           <Input.TextArea
             rows={kind === 'script' ? 14 : kind === 'prompt_library' ? 8 : 6}
@@ -1850,18 +1929,20 @@ function AssetEditor({
           kind === 'prop' ||
           kind === 'effect') && (
           <label className="canvas-film-editor-field">
-            <span>默认生成提示词（AI 生图/生视频时复用）</span>
+            <span>{translate('canvasFilmAsset.tpl41Desc')}</span>
             <div className="canvas-film-editor-prompt-count-wrap">
               <Input.TextArea
                 className="canvas-film-editor-prompt-input"
                 rows={5}
                 autoSize={{ minRows: 5, maxRows: 16 }}
                 value={prompt}
-                placeholder="如：电影感、高质量、精细细节..."
+                placeholder={translate('canvasFilmAsset.t166Desc')}
                 onChange={(e) => setPrompt(e.target.value)}
               />
               <span className="canvas-film-editor-prompt-count">
-                {prompt.trim().length.toLocaleString()} 字符
+                {translate('canvasFilmAsset.tpl42Desc', {
+                  count: prompt.trim().length.toLocaleString(),
+                })}
               </span>
             </div>
           </label>
@@ -1897,16 +1978,20 @@ function UsagePanel({
   const total = usage.shotSegments.length + usage.nodes.length
   return (
     <div className="canvas-film-usage-panel">
-      <div className="canvas-film-editor-section-title">被谁引用（{total}）</div>
+      <div className="canvas-film-editor-section-title">
+        {translate('canvasFilmAsset.tpl43Desc', { total })}
+      </div>
       {total === 0 ? (
         <div className="canvas-film-references-empty">
-          暂无引用。可在分镜片段或画布节点中使用此资源。
+          {translate('canvasFilmAsset.tpl44LongDesc')}
         </div>
       ) : (
         <div className="canvas-film-usage-list">
           {usage.shotSegments.length > 0 && (
             <div className="canvas-film-usage-group">
-              <div className="canvas-film-usage-group-title">分镜片段</div>
+              <div className="canvas-film-usage-group-title">
+                {translate('canvasFilmAsset.t213')}
+              </div>
               {usage.shotSegments.map((s) => (
                 <div key={`${s.groupId}:${s.segmentId}`} className="canvas-film-usage-item">
                   <Icons.Layers size={12} />
@@ -1921,7 +2006,9 @@ function UsagePanel({
           )}
           {usage.nodes.length > 0 && (
             <div className="canvas-film-usage-group">
-              <div className="canvas-film-usage-group-title">画布节点</div>
+              <div className="canvas-film-usage-group-title">
+                {translate('canvasFilmAsset.t214')}
+              </div>
               {usage.nodes.map((n) => (
                 <div key={n.id} className="canvas-film-usage-item">
                   <Icons.File size={12} />
@@ -1942,12 +2029,24 @@ function UsagePanel({
 // 工具：从文件名猜 reference kind
 function guessReferenceKind(fileName: string): FilmReferenceKind {
   const name = fileName.toLowerCase()
-  if (name.includes('concept') || name.includes('定妆') || name.includes('概念')) return 'concept'
-  if (name.includes('expression') || name.includes('表情')) return 'expression'
-  if (name.includes('costume') || name.includes('服饰') || name.includes('服装')) return 'costume'
-  if (name.includes('action') || name.includes('动作')) return 'action'
-  if (name.includes('storyboard') || name.includes('分镜')) return 'storyboard'
-  if (name.includes('angle') || name.includes('角度')) return 'angle'
+  if (
+    name.includes('concept') ||
+    name.includes(translate('canvasFilmAsset.t43')) ||
+    name.includes(translate('canvasFilmAsset.t44'))
+  )
+    return 'concept'
+  if (name.includes('expression') || name.includes(translate('canvasFilmAsset.t45')))
+    return 'expression'
+  if (
+    name.includes('costume') ||
+    name.includes(translate('canvasFilmAsset.t46')) ||
+    name.includes(translate('canvasFilmAsset.t47'))
+  )
+    return 'costume'
+  if (name.includes('action') || name.includes(translate('canvasFilmAsset.t48'))) return 'action'
+  if (name.includes('storyboard') || name.includes(translate('canvasFilmAsset.t8')))
+    return 'storyboard'
+  if (name.includes('angle') || name.includes(translate('canvasFilmAsset.t49'))) return 'angle'
   return 'reference'
 }
 
@@ -1969,7 +2068,7 @@ function ReferenceCard({
         {linkedAsset ? (
           <AssetThumbnail asset={linkedAsset} />
         ) : (
-          <div className="canvas-film-reference-missing">图片缺失</div>
+          <div className="canvas-film-reference-missing">{translate('canvasFilmAsset.t216')}</div>
         )}
         <Button
           size="middle"
@@ -1993,7 +2092,7 @@ function ReferenceCard({
         <Input
           size="middle"
           value={reference.label ?? ''}
-          placeholder="短标签（可选）"
+          placeholder={translate('canvasFilmAsset.t167')}
           onChange={(e) => {
             const v = e.target.value.trim()
             const next = { ...reference }
@@ -2006,7 +2105,7 @@ function ReferenceCard({
           size="middle"
           rows={3}
           value={reference.description}
-          placeholder="该图的描述词（AI 生成时使用）"
+          placeholder={translate('canvasFilmAsset.t168Desc')}
           onChange={(e) => onChange({ ...reference, description: e.target.value })}
         />
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2015,13 +2114,13 @@ function ReferenceCard({
             checked={Boolean(reference.isPrimary)}
             onChange={(checked) => onChange({ ...reference, isPrimary: checked })}
           />
-          <span style={{ fontSize: 12 }}>主基准图</span>
+          <span style={{ fontSize: 12 }}>{translate('canvasFilmAsset.t217')}</span>
           <Switch
             size="middle"
             checked={Boolean(reference.locked)}
             onChange={(checked) => onChange({ ...reference, locked: checked })}
           />
-          <span style={{ fontSize: 12 }}>锁定</span>
+          <span style={{ fontSize: 12 }}>{translate('canvasFilmAsset.t218')}</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Select
@@ -2030,13 +2129,13 @@ function ReferenceCard({
             value={reference.usage ?? 'other'}
             onChange={(usage) => onChange({ ...reference, usage })}
             options={[
-              { value: 'identity', label: '身份' },
-              { value: 'style', label: '风格' },
-              { value: 'pose', label: '姿态' },
-              { value: 'costume', label: '服装' },
-              { value: 'scene_layout', label: '场景布局' },
-              { value: 'lighting', label: '光影' },
-              { value: 'other', label: '其他' },
+              { value: 'identity', label: translate('canvasFilmAsset.t50') },
+              { value: 'style', label: translate('canvasFilmAsset.t51') },
+              { value: 'pose', label: translate('canvasFilmAsset.t52') },
+              { value: 'costume', label: translate('canvasFilmAsset.t47') },
+              { value: 'scene_layout', label: translate('canvasFilmAsset.t53') },
+              { value: 'lighting', label: translate('canvasFilmAsset.t54') },
+              { value: 'other', label: translate('canvasFilmAsset.t55') },
             ]}
           />
           <InputNumber
@@ -2079,10 +2178,10 @@ function ReferenceToolbar({
         icon={<Icons.Upload size={13} />}
         onClick={() => fileRef.current?.click()}
       >
-        上传
+        {translate('canvasFilmAsset.t219')}
       </Button>
       <Button size="middle" icon={<Icons.Image size={13} />} onClick={onAddFromCanvas}>
-        从画布选
+        {translate('canvasFilmAsset.t220')}
       </Button>
     </div>
   )
@@ -2097,104 +2196,182 @@ function getAttributeFields(
       return [
         {
           key: 'age',
-          label: '年龄阶段',
-          placeholder: '如：青年',
-          aliases: ['年龄', '年龄段', '年纪'],
+          label: translate('canvasFilmAsset.t56'),
+          placeholder: translate('canvasFilmAsset.t57'),
+          aliases: [
+            translate('canvasFilmAsset.t58'),
+            translate('canvasFilmAsset.t59'),
+            translate('canvasFilmAsset.t60'),
+          ],
         },
-        { key: 'gender', label: '性别', placeholder: '如：女', aliases: ['性别'] },
+        {
+          key: 'gender',
+          label: translate('canvasFilmAsset.t61'),
+          placeholder: translate('canvasFilmAsset.t62'),
+          aliases: [translate('canvasFilmAsset.t61')],
+        },
         {
           key: 'occupation',
-          label: '身份/职业',
-          placeholder: '如：剑客',
-          aliases: ['身份', '职业', '角色定位'],
+          label: translate('canvasFilmAsset.t63'),
+          placeholder: translate('canvasFilmAsset.t64'),
+          aliases: [
+            translate('canvasFilmAsset.t50'),
+            translate('canvasFilmAsset.t65'),
+            translate('canvasFilmAsset.t66'),
+          ],
         },
         {
           key: 'appearance',
-          label: '外貌特征',
-          placeholder: '如：银色长发、绿色眼睛',
-          aliases: ['外貌', '外形', '长相'],
+          label: translate('canvasFilmAsset.t67'),
+          placeholder: translate('canvasFilmAsset.t68'),
+          aliases: [
+            translate('canvasFilmAsset.t69'),
+            translate('canvasFilmAsset.t70'),
+            translate('canvasFilmAsset.t71'),
+          ],
         },
         {
           key: 'hair',
-          label: '发型',
-          placeholder: '如：短发、银色长发',
-          aliases: ['发型', '发式', '头发'],
+          label: translate('canvasFilmAsset.t72'),
+          placeholder: translate('canvasFilmAsset.t73'),
+          aliases: [
+            translate('canvasFilmAsset.t72'),
+            translate('canvasFilmAsset.t74'),
+            translate('canvasFilmAsset.t75'),
+          ],
         },
         {
           key: 'costume',
-          label: '服饰',
-          placeholder: '如：黑色战甲、长靴',
-          aliases: ['服饰', '服装', '穿着'],
+          label: translate('canvasFilmAsset.t46'),
+          placeholder: translate('canvasFilmAsset.t76'),
+          aliases: [
+            translate('canvasFilmAsset.t46'),
+            translate('canvasFilmAsset.t47'),
+            translate('canvasFilmAsset.t77'),
+          ],
         },
         {
           key: 'signatureProp',
-          label: '标志道具',
-          placeholder: '如：铜钥匙',
-          aliases: ['标志道具', '随身道具', '道具'],
+          label: translate('canvasFilmAsset.t78'),
+          placeholder: translate('canvasFilmAsset.t79'),
+          aliases: [
+            translate('canvasFilmAsset.t78'),
+            translate('canvasFilmAsset.t80'),
+            translate('canvasFilmAsset.t6'),
+          ],
         },
         {
           key: 'personality',
-          label: '性格关键词',
-          placeholder: '如：坚毅、冷静',
-          aliases: ['性格', '气质', '个性'],
+          label: translate('canvasFilmAsset.t81'),
+          placeholder: translate('canvasFilmAsset.t82'),
+          aliases: [
+            translate('canvasFilmAsset.t83'),
+            translate('canvasFilmAsset.t84'),
+            translate('canvasFilmAsset.t85'),
+          ],
         },
         {
           key: 'voice',
-          label: '声线',
-          placeholder: '如：低沉、沙哑',
-          aliases: ['声线', '声音', '嗓音'],
+          label: translate('canvasFilmAsset.t86'),
+          placeholder: translate('canvasFilmAsset.t87'),
+          aliases: [
+            translate('canvasFilmAsset.t86'),
+            translate('canvasFilmAsset.t88'),
+            translate('canvasFilmAsset.t89'),
+          ],
         },
       ]
     case 'scene':
       return [
         {
           key: 'settingType',
-          label: '内/外景',
-          placeholder: '内景 / 外景',
-          aliases: ['类型', '内外景', '场景类型'],
+          label: translate('canvasFilmAsset.t90'),
+          placeholder: translate('canvasFilmAsset.t91'),
+          aliases: [
+            translate('canvasFilmAsset.t92'),
+            translate('canvasFilmAsset.t93'),
+            translate('canvasFilmAsset.t94'),
+          ],
         },
         {
           key: 'location',
-          label: '地点类型',
-          placeholder: '如：街道、宫殿',
-          aliases: ['地点', '位置', '场所'],
+          label: translate('canvasFilmAsset.t95'),
+          placeholder: translate('canvasFilmAsset.t96'),
+          aliases: [
+            translate('canvasFilmAsset.t97'),
+            translate('canvasFilmAsset.t98'),
+            translate('canvasFilmAsset.t99'),
+          ],
         },
         {
           key: 'timeOfDay',
-          label: '时间段',
-          placeholder: '如：黄昏、深夜',
-          aliases: ['时间', '时段', '时间段'],
+          label: translate('canvasFilmAsset.t100'),
+          placeholder: translate('canvasFilmAsset.t101'),
+          aliases: [
+            translate('canvasFilmAsset.t102'),
+            translate('canvasFilmAsset.t103'),
+            translate('canvasFilmAsset.t100'),
+          ],
         },
-        { key: 'weather', label: '天气', placeholder: '如：雨天、晴', aliases: ['天气'] },
+        {
+          key: 'weather',
+          label: translate('canvasFilmAsset.t104'),
+          placeholder: translate('canvasFilmAsset.t110'),
+          aliases: ['天气'],
+        }, // i18n-exempt-line: 字段别名（供 AI 输出匹配，非 UI 文案）
         {
           key: 'lighting',
-          label: '光线',
-          placeholder: '如：逆光、柔和',
-          aliases: ['光线', '光影', '照明'],
+          label: translate('canvasFilmAsset.t106'),
+          placeholder: translate('canvasFilmAsset.t107'),
+          aliases: [
+            translate('canvasFilmAsset.t106'),
+            translate('canvasFilmAsset.t54'),
+            translate('canvasFilmAsset.t108'),
+          ],
         },
         {
           key: 'colorTone',
-          label: '色彩基调',
-          placeholder: '如：冷色调、暖色调',
-          aliases: ['色调', '色彩', '色温'],
+          label: translate('canvasFilmAsset.t109'),
+          placeholder: translate('canvasFilmAsset.t110'),
+          aliases: [
+            translate('canvasFilmAsset.t111'),
+            translate('canvasFilmAsset.t112'),
+            translate('canvasFilmAsset.t113'),
+          ],
         },
         {
           key: 'artDirection',
-          label: '美术风格',
-          placeholder: '如：赛博废墟',
-          aliases: ['美术', '美术风格', '风格'],
+          label: translate('canvasFilmAsset.t114'),
+          placeholder: translate('canvasFilmAsset.t115'),
+          aliases: [
+            translate('canvasFilmAsset.t116'),
+            translate('canvasFilmAsset.t114'),
+            translate('canvasFilmAsset.t51'),
+          ],
         },
         {
           key: 'mood',
-          label: '氛围',
-          placeholder: '如：压抑、悬疑',
-          aliases: ['氛围', '情绪', '气氛'],
+          label: translate('canvasFilmAsset.t117'),
+          placeholder: translate('canvasFilmAsset.t118'),
+          aliases: [
+            translate('canvasFilmAsset.t117'),
+            translate('canvasFilmAsset.t119'),
+            translate('canvasFilmAsset.t120'),
+          ],
         },
       ]
     case 'prop':
       return [
-        { key: 'usage', label: '用途', placeholder: '如：战斗武器' },
-        { key: 'owner', label: '归属角色', placeholder: '角色名' },
+        {
+          key: 'usage',
+          label: translate('canvasFilmAsset.t121'),
+          placeholder: translate('canvasFilmAsset.t122'),
+        },
+        {
+          key: 'owner',
+          label: translate('canvasFilmAsset.t123'),
+          placeholder: translate('canvasFilmAsset.t124'),
+        },
       ]
     default:
       return []
@@ -2218,11 +2395,11 @@ function readStoredAttribute(
 function getEditorPlaceholder(kind: FilmAssetKind): string {
   switch (kind) {
     case 'script':
-      return '粘贴或编写剧本内容...\n\n支持剧名、集数、章节、场次、角色、对白、旁白、动作描述。'
+      return translate('canvasFilmAsset.tpl45Instruction')
     case 'prompt_library':
-      return '输入提示词模板内容...\n\n可包含镜头语言、风格、质量词等，供分镜生成时引用。'
+      return translate('canvasFilmAsset.tpl46Instruction')
     default:
-      return '输入详细设定与描述...'
+      return translate('canvasFilmAsset.tpl47Desc')
   }
 }
 
@@ -2259,7 +2436,7 @@ function ShotGroupTab({
 
   const timeline = useMemo(() => buildTimeline(shotGroups), [shotGroups])
   const edlMarkdown = useMemo(
-    () => buildEdlMarkdown(snapshot.project.title ?? '成片', timeline),
+    () => buildEdlMarkdown(snapshot.project.title ?? translate('canvasFilmAsset.t125'), timeline),
     [snapshot.project.title, timeline],
   )
 
@@ -2287,10 +2464,10 @@ function ShotGroupTab({
     <div className="canvas-film-shots-tab">
       <div className="canvas-film-shots-sidebar">
         <div className="canvas-film-shots-sidebar-head">
-          <span>分镜分组</span>
+          <span>{translate('canvasFilmAsset.t9')}</span>
           <div style={{ display: 'flex', gap: 2 }}>
             {handlers.onSaveStylePreset && (
-              <Tooltip title="风格预设（运镜/画面/动作）">
+              <Tooltip title={translate('canvasFilmAsset.t169Desc')}>
                 <Button
                   size="middle"
                   type="text"
@@ -2300,7 +2477,7 @@ function ShotGroupTab({
               </Tooltip>
             )}
             {handlers.onExportTimeline && timeline.length > 0 && (
-              <Tooltip title="导出成片清单 (EDL)">
+              <Tooltip title={translate('canvasFilmAsset.t170')}>
                 <Button
                   size="middle"
                   type="text"
@@ -2321,9 +2498,9 @@ function ShotGroupTab({
           open={presetOpen}
           zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
           getContainer={() => document.body}
-          title="项目风格与风格预设"
-          okText="保存预设"
-          cancelText="关闭"
+          title={translate('canvasFilmAsset.t171')}
+          okText={translate('canvasFilmAsset.t172')}
+          cancelText={translate('canvasFilmAsset.t173')}
           okButtonProps={{ disabled: !presetName.trim() || !presetFragment.trim() }}
           onCancel={() => setPresetOpen(false)}
           onOk={async () => {
@@ -2334,7 +2511,7 @@ function ShotGroupTab({
               promptItemIds: [],
               promptFragment: presetFragment.trim(),
             })
-            message.success('风格预设已保存')
+            message.success(translate('canvasFilmAsset.t126'))
             setPresetName('')
             setPresetFragment('')
           }}
@@ -2346,24 +2523,24 @@ function ShotGroupTab({
               style={{ width: 110 }}
               onChange={(v) => setPresetKind(v as FilmStylePreset['kind'])}
               options={[
-                { value: 'production', label: '项目' },
-                { value: 'color', label: '色彩' },
-                { value: 'camera', label: '运镜' },
-                { value: 'frame', label: '画面' },
-                { value: 'action', label: '动作' },
-                { value: 'character', label: '角色' },
-                { value: 'scene', label: '场景' },
+                { value: 'production', label: translate('canvasFilmAsset.t127') },
+                { value: 'color', label: translate('canvasFilmAsset.t112') },
+                { value: 'camera', label: translate('canvasFilmAsset.t128') },
+                { value: 'frame', label: translate('canvasFilmAsset.t129') },
+                { value: 'action', label: translate('canvasFilmAsset.t48') },
+                { value: 'character', label: translate('canvasFilmAsset.t4') },
+                { value: 'scene', label: translate('canvasFilmAsset.t5') },
               ]}
             />
             <Input
               size="middle"
-              placeholder="预设名称（如：手持跟拍）"
+              placeholder={translate('canvasFilmAsset.t174')}
               value={presetName}
               onChange={(e) => setPresetName(e.target.value)}
             />
           </div>
           <Input.TextArea
-            placeholder="提示词片段（英文短语，逗号分隔），将可一键追加到分镜镜头提示词"
+            placeholder={translate('canvasFilmAsset.tpl48LongDesc')}
             value={presetFragment}
             onChange={(e) => setPresetFragment(e.target.value)}
             autoSize={{ minRows: 3, maxRows: 6 }}
@@ -2376,7 +2553,9 @@ function ShotGroupTab({
               borderRadius: 8,
             }}
           >
-            <div style={{ fontWeight: 600, marginBottom: 6 }}>项目视觉圣经</div>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>
+              {translate('canvasFilmAsset.t221')}
+            </div>
             <div
               style={{
                 fontSize: 12,
@@ -2384,19 +2563,23 @@ function ShotGroupTab({
                 marginBottom: 8,
               }}
             >
-              {productionBible?.locked ? '已锁定' : '未锁定'} ·{' '}
-              {productionBible?.aspectRatio ?? '未设置比例'}
+              {productionBible?.locked
+                ? translate('canvasFilmAsset.t130')
+                : translate('canvasFilmAsset.t131')}{' '}
+              · {productionBible?.aspectRatio ?? translate('canvasFilmAsset.t132')}
             </div>
             <Input.TextArea
               rows={3}
               value={productionBible?.visualStyle ?? ''}
               readOnly
-              placeholder="尚未应用项目级风格，可从下方内置风格包一键应用。"
+              placeholder={translate('canvasFilmAsset.t176Desc')}
             />
           </div>
           {handlers.onApplyProductionBible && (
             <div style={{ marginTop: 12 }}>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>内置风格包（一键应用到项目）</div>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                {translate('canvasFilmAsset.t222Desc')}
+              </div>
               <div style={{ display: 'grid', gap: 8 }}>
                 {BUILTIN_FILM_STYLE_PACKS.map((pack) => (
                   <div
@@ -2425,7 +2608,7 @@ function ShotGroupTab({
                           })
                         }
                       >
-                        应用并锁定
+                        {translate('canvasFilmAsset.t223')}
                       </Button>
                     </div>
                     <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
@@ -2457,7 +2640,7 @@ function ShotGroupTab({
                   color: 'var(--lobe-color-text-secondary, #888)',
                 }}
               >
-                已有预设
+                {translate('canvasFilmAsset.t224')}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {stylePresets.map((preset) => (
@@ -2482,22 +2665,25 @@ function ShotGroupTab({
           open={edlOpen}
           zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
           getContainer={() => document.body}
-          title="成片清单 (EDL)"
+          title={translate('canvasFilmAsset.t177')}
           width={720}
-          okText="插入画布为文本节点"
-          cancelText="关闭"
+          okText={translate('canvasFilmAsset.t178')}
+          cancelText={translate('canvasFilmAsset.t173')}
           onCancel={() => setEdlOpen(false)}
           onOk={() => {
             handlers.onExportTimeline?.({
-              title: snapshot.project.title ?? '成片',
+              title: snapshot.project.title ?? translate('canvasFilmAsset.t125'),
               markdown: edlMarkdown,
             })
             setEdlOpen(false)
           }}
         >
           <div style={{ marginBottom: 8, color: 'var(--lobe-color-text-secondary, #888)' }}>
-            共 {timeline.length} 镜 · 总时长 {formatTimecode(totalRuntimeSec(timeline))}（
-            {totalRuntimeSec(timeline)}s）。按分组顺序 + 镜号展开，作为顺序拼接 / 交付清单。
+            {translate('canvasFilmAsset.tpl49LongDesc', {
+              count: timeline.length,
+              timecode: formatTimecode(totalRuntimeSec(timeline)),
+              seconds: totalRuntimeSec(timeline),
+            })}
           </div>
           <Input.TextArea value={edlMarkdown} readOnly autoSize={{ minRows: 10, maxRows: 20 }} />
         </Modal>
@@ -2507,7 +2693,7 @@ function ShotGroupTab({
               size="middle"
               autoFocus
               value={newGroupName}
-              placeholder="分组名称"
+              placeholder={translate('canvasFilmAsset.t179')}
               onChange={(e) => setNewGroupName(e.target.value)}
               onPressEnter={() => void handleCreateGroup()}
               onKeyDown={(e) => {
@@ -2517,7 +2703,7 @@ function ShotGroupTab({
           </div>
         )}
         {shotGroups.length === 0 ? (
-          <div className="canvas-film-empty">暂无分组，点击 + 新建</div>
+          <div className="canvas-film-empty">{translate('canvasFilmAsset.t225')}</div>
         ) : (
           <div className="canvas-film-shots-group-list">
             {shotGroups.map((group) => (
@@ -2527,7 +2713,9 @@ function ShotGroupTab({
                 onClick={() => setSelectedGroupId(group.id)}
               >
                 <div className="canvas-film-shots-group-name">{group.name}</div>
-                <div className="canvas-film-shots-group-meta">{group.segments.length} 片段</div>
+                <div className="canvas-film-shots-group-meta">
+                  {translate('canvasFilmAsset.tpl50Desc', { count: group.segments.length })}
+                </div>
                 <div className="canvas-film-shots-group-actions">
                   <Button
                     size="small"
@@ -2556,7 +2744,7 @@ function ShotGroupTab({
             handlers={handlers}
           />
         ) : (
-          <Empty description="选择或新建一个分镜分组" className="canvas-film-empty" />
+          <Empty description={translate('canvasFilmAsset.t180')} className="canvas-film-empty" />
         )}
       </div>
     </div>
@@ -2606,10 +2794,10 @@ function ShotSegmentEditor({
         })
       }
       await handlers.deleteShotSegment(group.id, splitTarget.id)
-      message.success(`已拆分为 ${splitPreview.length} 段`)
+      message.success(translate('canvasFilmAsset.tpl51Desc', { count: splitPreview.length }))
       setSplitTarget(null)
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '拆分失败')
+      message.error(error instanceof Error ? error.message : translate('canvasFilmAsset.t133'))
     } finally {
       setSplitBusy(false)
     }
@@ -2643,11 +2831,11 @@ function ShotSegmentEditor({
           ...(characterIds.length > 0 ? { characterAssetIds: characterIds } : {}),
         })
       }
-      message.success(`已从分镜表导入 ${parsedRows.length} 个分镜片段`)
+      message.success(translate('canvasFilmAsset.tpl52Desc', { count: parsedRows.length }))
       setImportOpen(false)
       setImportText('')
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '导入失败')
+      message.error(error instanceof Error ? error.message : translate('canvasFilmAsset.t134'))
     } finally {
       setImportBusy(false)
     }
@@ -2710,8 +2898,8 @@ function ShotSegmentEditor({
             value={viewMode}
             onChange={(v) => setViewMode(v as 'table' | 'card')}
             options={[
-              { label: '分镜表', value: 'table' },
-              { label: '卡片', value: 'card' },
+              { label: translate('canvasFilmAsset.t135'), value: 'table' },
+              { label: translate('canvasFilmAsset.t136'), value: 'card' },
             ]}
           />
           <Button
@@ -2719,7 +2907,7 @@ function ShotSegmentEditor({
             icon={<Icons.Workflow size={13} />}
             onClick={() => setAutoOpen(true)}
           >
-            按剧本自动分镜
+            {translate('canvasFilmAsset.t226')}
           </Button>
           <Button
             size="middle"
@@ -2727,7 +2915,7 @@ function ShotSegmentEditor({
             icon={<Icons.Plus size={13} />}
             onClick={() => setCreating(true)}
           >
-            新建片段
+            {translate('canvasFilmAsset.t227')}
           </Button>
           <Dropdown
             trigger={['click']}
@@ -2739,7 +2927,7 @@ function ShotSegmentEditor({
                       {
                         key: 'storyboard',
                         icon: <Icons.Combine size={14} />,
-                        label: '生成分镜图',
+                        label: translate('canvasFilmAsset.t137'),
                         onClick: () => {
                           void handlers.onGenerateStoryboardGrid?.(group)
                         },
@@ -2751,11 +2939,12 @@ function ShotSegmentEditor({
                       {
                         key: 'expand',
                         icon: <Icons.Layers size={14} />,
-                        label: '展开到画布',
+                        label: translate('canvasFilmAsset.t138'),
                         onClick: () => {
                           void (async () => {
                             const count = (await handlers.onExpandShotsToCanvas?.(group)) ?? 0
-                            if (count > 0) message.success(`已在画布展开 ${count} 个分镜节点`)
+                            if (count > 0)
+                              message.success(translate('canvasFilmAsset.tpl53Desc', { count }))
                           })()
                         },
                       },
@@ -2764,13 +2953,13 @@ function ShotSegmentEditor({
                 {
                   key: 'import',
                   icon: <Icons.FilePlus size={14} />,
-                  label: '导入分镜表',
+                  label: translate('canvasFilmAsset.t139'),
                   onClick: () => setImportOpen(true),
                 },
               ],
             }}
           >
-            <Tooltip title="更多操作">
+            <Tooltip title={translate('canvasFilmAsset.t181')}>
               <Button size="middle" type="text" icon={<Icons.More size={14} />} />
             </Tooltip>
           </Dropdown>
@@ -2780,10 +2969,14 @@ function ShotSegmentEditor({
         open={autoOpen}
         zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
         getContainer={() => document.body}
-        title="按剧本自动分镜（按秒）"
+        title={translate('canvasFilmAsset.t182')}
         width={680}
-        okText={plannedShots.length > 0 ? `生成 ${plannedShots.length} 个分镜` : '生成'}
-        cancelText="取消"
+        okText={
+          plannedShots.length > 0
+            ? translate('canvasFilmAsset.tpl54Desc', { count: plannedShots.length })
+            : translate('canvasFilmAsset.t140')
+        }
+        cancelText={translate('canvasFilmAsset.t17')}
         okButtonProps={{ disabled: plannedShots.length === 0, loading: autoBusy }}
         onCancel={() => setAutoOpen(false)}
         onOk={async () => {
@@ -2798,18 +2991,20 @@ function ShotSegmentEditor({
                 durationSec: shot.durationSec,
               })
             }
-            message.success(`已生成 ${plannedShots.length} 个分镜片段`)
+            message.success(translate('canvasFilmAsset.tpl55Desc', { count: plannedShots.length }))
             setAutoOpen(false)
             setSceneText('')
           } catch (error) {
-            message.error(error instanceof Error ? error.message : '自动分镜失败')
+            message.error(
+              error instanceof Error ? error.message : translate('canvasFilmAsset.t141'),
+            )
           } finally {
             setAutoBusy(false)
           }
         }}
       >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ whiteSpace: 'nowrap' }}>节奏基线（秒/镜）</span>
+          <span style={{ whiteSpace: 'nowrap' }}>{translate('canvasFilmAsset.t228')}</span>
           <Input
             type="number"
             min={1}
@@ -2820,12 +3015,15 @@ function ShotSegmentEditor({
           />
           {plannedShots.length > 0 && (
             <span style={{ color: 'var(--lobe-color-text-secondary, #888)' }}>
-              预计 {plannedShots.length} 镜 · 总时长 {totalPlannedDurationSec(plannedShots)}s
+              {translate('canvasFilmAsset.tpl56Desc', {
+                count: plannedShots.length,
+                seconds: totalPlannedDurationSec(plannedShots),
+              })}
             </span>
           )}
         </div>
         <Input.TextArea
-          placeholder="粘贴本场剧本：动作描述独立成行，对白用「角色：台词」。对白行按语速估时长，动作行用节奏基线。"
+          placeholder={translate('canvasFilmAsset.tpl57LongDesc')}
           value={sceneText}
           onChange={(e) => setSceneText(e.target.value)}
           autoSize={{ minRows: 8, maxRows: 16 }}
@@ -2842,7 +3040,9 @@ function ShotSegmentEditor({
               </div>
             ))}
             {plannedShots.length > 12 && (
-              <div style={{ fontSize: 12 }}>… 共 {plannedShots.length} 镜</div>
+              <div style={{ fontSize: 12 }}>
+                {translate('canvasFilmAsset.tpl58Desc', { count: plannedShots.length })}
+              </div>
             )}
           </div>
         )}
@@ -2851,16 +3051,20 @@ function ShotSegmentEditor({
         open={splitTarget != null}
         zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
         getContainer={() => document.body}
-        title={`拆分「${splitTarget?.title ?? ''}」为多段`}
+        title={translate('canvasFilmAsset.tpl59Desc', { title: splitTarget?.title ?? '' })}
         width={560}
-        okText={splitPreview.length > 1 ? `拆成 ${splitPreview.length} 段` : '无需拆分'}
-        cancelText="取消"
+        okText={
+          splitPreview.length > 1
+            ? translate('canvasFilmAsset.tpl60Desc', { count: splitPreview.length })
+            : translate('canvasFilmAsset.t142')
+        }
+        cancelText={translate('canvasFilmAsset.t17')}
         okButtonProps={{ disabled: splitPreview.length <= 1, loading: splitBusy }}
         onCancel={() => setSplitTarget(null)}
         onOk={() => void runSplit()}
       >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ whiteSpace: 'nowrap' }}>单段时长上限（秒）</span>
+          <span style={{ whiteSpace: 'nowrap' }}>{translate('canvasFilmAsset.t229')}</span>
           <Input
             type="number"
             min={1}
@@ -2870,7 +3074,10 @@ function ShotSegmentEditor({
             onChange={(e) => setSplitMaxClip(e.target.value)}
           />
           <span style={{ color: 'var(--lobe-color-text-secondary, #888)', fontSize: 12 }}>
-            原镜 {splitTarget ? resolveSegmentDuration(splitTarget) : 0}s · 多数视频模型每段 ≤
+            {translate('canvasFilmAsset.tpl61Desc', {
+              seconds: splitTarget ? resolveSegmentDuration(splitTarget) : 0,
+            })}
+            {translate('canvasFilmAsset.tpl61bDesc')}
             {DEFAULT_MAX_CLIP_SEC}s
           </span>
         </div>
@@ -2879,13 +3086,15 @@ function ShotSegmentEditor({
             {splitPreview.map((part, idx) => (
               <div key={idx} style={{ fontSize: 12, padding: '3px 0' }}>
                 <strong>{part.title}</strong> {part.inSec}s–{part.outSec}s（{part.durationSec}s）
-                {part.dialogue ? ` 台词：${part.dialogue}` : ''}
+                {part.dialogue
+                  ? translate('canvasFilmAsset.tpl62Desc', { text: part.dialogue })
+                  : ''}
               </div>
             ))}
           </div>
         ) : (
           <div style={{ fontSize: 12, color: 'var(--lobe-color-text-secondary, #888)' }}>
-            当前时长未超过上限，无需拆分。
+            {translate('canvasFilmAsset.t230Desc')}
           </div>
         )}
       </Modal>
@@ -2893,10 +3102,14 @@ function ShotSegmentEditor({
         open={importOpen}
         zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
         getContainer={() => document.body}
-        title="导入分镜表（解析 JSON / Markdown）"
+        title={translate('canvasFilmAsset.t183Desc')}
         width={720}
-        okText={parsedRows.length > 0 ? `导入 ${parsedRows.length} 个分镜` : '解析'}
-        cancelText="取消"
+        okText={
+          parsedRows.length > 0
+            ? translate('canvasFilmAsset.tpl63Desc', { count: parsedRows.length })
+            : translate('canvasFilmAsset.t143')
+        }
+        cancelText={translate('canvasFilmAsset.t17')}
         okButtonProps={{ disabled: parsedRows.length === 0, loading: importBusy }}
         onCancel={() => setImportOpen(false)}
         onOk={() => void runImportTable()}
@@ -2904,12 +3117,11 @@ function ShotSegmentEditor({
         <div
           style={{ fontSize: 12, color: 'var(--lobe-color-text-secondary, #888)', marginBottom: 8 }}
         >
-          粘贴分镜 agent / 导演 agent 生成的分镜表（优先 JSON shots，兼容 Markdown
-          表格）。按表头识别列，容忍列顺序与额外列； 角色名会自动匹配同名角色资产。
+          {translate('canvasFilmAsset.tpl64LongDesc')}
         </div>
         <Input.TextArea
           placeholder={
-            '| 镜号 | 时长(秒) | 景别 | 运镜 | 画面/动作 | 对白 | 角色 |\n| --- | --- | --- | --- | --- | --- | --- |\n| 1 | 3 | 近景 | 推 | 少年握紧剑柄 | 住手！ | 少年 |'
+            '| Shot | Duration(s) | Size | Move | Action | Dialogue | Character |\n| --- | --- | --- | --- | --- | --- | --- |\n| 1 | 3 | Close-up | Push | The boy grips his sword | Stop! | Boy |'
           }
           value={importText}
           onChange={(e) => setImportText(e.target.value)}
@@ -2920,12 +3132,12 @@ function ShotSegmentEditor({
             <table className="canvas-shot-table">
               <thead>
                 <tr>
-                  <th>镜号</th>
-                  <th>时长</th>
-                  <th>镜头</th>
-                  <th>画面</th>
-                  <th>对白</th>
-                  <th>角色</th>
+                  <th>{translate('canvasFilmAsset.t231')}</th>
+                  <th>{translate('canvasFilmAsset.t232')}</th>
+                  <th>{translate('canvasFilmAsset.t233')}</th>
+                  <th>{translate('canvasFilmAsset.t129')}</th>
+                  <th>{translate('canvasFilmAsset.t234')}</th>
+                  <th>{translate('canvasFilmAsset.t4')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -2945,7 +3157,7 @@ function ShotSegmentEditor({
         )}
       </Modal>
       {group.segments.length === 0 ? (
-        <Empty description="暂无分镜片段" className="canvas-film-empty" />
+        <Empty description={translate('canvasFilmAsset.t184')} className="canvas-film-empty" />
       ) : viewMode === 'table' ? (
         <ShotSegmentTable
           group={group}
@@ -2989,24 +3201,26 @@ function ShotSegmentEditor({
                   )}
                   {segment.dialogue && (
                     <div className="canvas-film-segment-line">
-                      <span>对白</span>
+                      <span>{translate('canvasFilmAsset.t234')}</span>
                       {segment.dialogue}
                     </div>
                   )}
                   {segment.narration && (
                     <div className="canvas-film-segment-line">
-                      <span>旁白</span>
+                      <span>{translate('canvasFilmAsset.t235')}</span>
                       {segment.narration}
                     </div>
                   )}
                   {segment.shotPrompt && (
                     <div className="canvas-film-segment-line">
-                      <span>镜头</span>
+                      <span>{translate('canvasFilmAsset.t233')}</span>
                       {segment.shotPrompt}
                     </div>
                   )}
                   <div className="canvas-film-segment-refs">
-                    {scene && <Tag color="blue">{scene.title ?? '场景'}</Tag>}
+                    {scene && (
+                      <Tag color="blue">{scene.title ?? translate('canvasFilmAsset.t5')}</Tag>
+                    )}
                     {characters.map((character) => (
                       <Tag key={character.id} color="orange">
                         {character.title}
@@ -3016,7 +3230,7 @@ function ShotSegmentEditor({
                 </div>
                 <div className="canvas-film-segment-actions">
                   {handlers.onGenerateSegmentKeyframes && (
-                    <Tooltip title="生成关键帧（添加到画布）">
+                    <Tooltip title={translate('canvasFilmAsset.t185')}>
                       <Button
                         size="middle"
                         type="text"
@@ -3033,7 +3247,7 @@ function ShotSegmentEditor({
                     </Tooltip>
                   )}
                   {handlers.onGenerateSegmentVideo && (
-                    <Tooltip title="生成视频（添加到画布）">
+                    <Tooltip title={translate('canvasFilmAsset.t186')}>
                       <Button
                         size="middle"
                         type="text"
@@ -3050,7 +3264,7 @@ function ShotSegmentEditor({
                     </Tooltip>
                   )}
                   {handlers.onSetSegmentKeyframesFromSelection && (
-                    <Tooltip title="把画布选中图片设为关键帧">
+                    <Tooltip title={translate('canvasFilmAsset.t187')}>
                       <Button
                         size="middle"
                         type="text"
@@ -3058,13 +3272,14 @@ function ShotSegmentEditor({
                         onClick={() => {
                           const count =
                             handlers.onSetSegmentKeyframesFromSelection?.({ group, segment }) ?? 0
-                          if (count > 0) message.success(`已设为 ${count} 张关键帧`)
-                          else message.warning('请先在画布上选中图片节点')
+                          if (count > 0)
+                            message.success(translate('canvasFilmAsset.tpl66Desc', { count }))
+                          else message.warning(translate('canvasFilmAsset.t144'))
                         }}
                       />
                     </Tooltip>
                   )}
-                  <Tooltip title="拆分为多段（适配短视频模型）">
+                  <Tooltip title={translate('canvasFilmAsset.t188Desc')}>
                     <Button
                       size="middle"
                       type="text"
@@ -3142,7 +3357,7 @@ function SegmentEditorForm({
 
   const handleSave = async () => {
     if (!title.trim()) {
-      message.warning('请输入片段标题')
+      message.warning(translate('canvasFilmAsset.t145'))
       return
     }
     const parsedDuration = Number.parseFloat(durationSec)
@@ -3167,7 +3382,7 @@ function SegmentEditorForm({
     <div className="canvas-film-asset-editor">
       <div className="canvas-film-editor-head">
         <Button size="middle" type="text" icon={<Icons.ArrowLeft size={14} />} onClick={onClose}>
-          返回列表
+          {translate('canvasFilmAsset.t207')}
         </Button>
         <Button
           size="middle"
@@ -3175,36 +3390,36 @@ function SegmentEditorForm({
           icon={<Icons.Check size={13} />}
           onClick={() => void handleSave()}
         >
-          保存
+          {translate('canvasFilmAsset.t208')}
         </Button>
       </div>
       <div className="canvas-film-editor-form">
         <label className="canvas-film-editor-field">
-          <span>片段标题</span>
+          <span>{translate('canvasFilmAsset.t236')}</span>
           <Input
             value={title}
-            placeholder="如：镜1 - 主角登场"
+            placeholder={translate('canvasFilmAsset.t189')}
             onChange={(e) => setTitle(e.target.value)}
           />
         </label>
         <label className="canvas-film-editor-field">
-          <span>画面描述 / 动作</span>
+          <span>{translate('canvasFilmAsset.t237')}</span>
           <Input.TextArea
             rows={3}
             value={description}
-            placeholder="描述这一镜的画面与角色动作"
+            placeholder={translate('canvasFilmAsset.t190Desc')}
             onChange={(e) => setDescription(e.target.value)}
           />
         </label>
         <div className="canvas-film-editor-field-row">
           <label className="canvas-film-editor-field">
-            <span>场景</span>
+            <span>{translate('canvasFilmAsset.t5')}</span>
             <select
               className="canvas-film-select"
               value={sceneId ?? ''}
               onChange={(e) => setSceneId(e.target.value || undefined)}
             >
-              <option value="">不指定</option>
+              <option value="">{translate('canvasFilmAsset.t238')}</option>
               {sceneAssets.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.title}
@@ -3214,10 +3429,12 @@ function SegmentEditorForm({
           </label>
         </div>
         <div className="canvas-film-editor-field">
-          <span>角色</span>
+          <span>{translate('canvasFilmAsset.t4')}</span>
           <div className="canvas-film-chip-pick">
             {characterAssets.length === 0 ? (
-              <span className="canvas-film-empty-inline">暂无角色资产，请先在「角色」Tab 创建</span>
+              <span className="canvas-film-empty-inline">
+                {translate('canvasFilmAsset.t239Desc')}
+              </span>
             ) : (
               characterAssets.map((c) => (
                 <button
@@ -3233,26 +3450,26 @@ function SegmentEditorForm({
           </div>
         </div>
         <label className="canvas-film-editor-field">
-          <span>对白</span>
+          <span>{translate('canvasFilmAsset.t234')}</span>
           <Input.TextArea
             rows={2}
             value={dialogue}
-            placeholder="角色对白"
+            placeholder={translate('canvasFilmAsset.t191')}
             onChange={(e) => setDialogue(e.target.value)}
           />
         </label>
         <label className="canvas-film-editor-field">
-          <span>旁白</span>
+          <span>{translate('canvasFilmAsset.t235')}</span>
           <Input.TextArea
             rows={2}
             value={narration}
-            placeholder="旁白/解说词"
+            placeholder={translate('canvasFilmAsset.t192')}
             onChange={(e) => setNarration(e.target.value)}
           />
         </label>
         {stylePresets.length > 0 && (
           <div className="canvas-film-editor-field">
-            <span>应用风格预设（点击追加到镜头提示词）</span>
+            <span>{translate('canvasFilmAsset.t240Desc')}</span>
             <div className="canvas-film-chip-pick">
               {stylePresets.map((preset) => (
                 <button
@@ -3262,18 +3479,18 @@ function SegmentEditorForm({
                   onClick={() => applyPreset(preset)}
                 >
                   {preset.kind === 'camera'
-                    ? '运镜'
+                    ? translate('canvasFilmAsset.t128')
                     : preset.kind === 'frame'
-                      ? '画面'
+                      ? translate('canvasFilmAsset.t129')
                       : preset.kind === 'action'
-                        ? '动作'
+                        ? translate('canvasFilmAsset.t48')
                         : preset.kind === 'production'
-                          ? '项目'
+                          ? translate('canvasFilmAsset.t127')
                           : preset.kind === 'color'
-                            ? '色彩'
+                            ? translate('canvasFilmAsset.t112')
                             : preset.kind === 'character'
-                              ? '角色'
-                              : '场景'}{' '}
+                              ? translate('canvasFilmAsset.t4')
+                              : translate('canvasFilmAsset.t5')}{' '}
                   · {preset.name}
                 </button>
               ))}
@@ -3281,22 +3498,22 @@ function SegmentEditorForm({
           </div>
         )}
         <label className="canvas-film-editor-field">
-          <span>镜头提示词</span>
+          <span>{translate('canvasFilmAsset.t241')}</span>
           <Input.TextArea
             rows={2}
             value={shotPrompt}
-            placeholder="景别、运镜、构图等，用于 AI 生成"
+            placeholder={translate('canvasFilmAsset.t193Desc')}
             onChange={(e) => setShotPrompt(e.target.value)}
           />
         </label>
         <label className="canvas-film-editor-field">
-          <span>镜头时长（秒）</span>
+          <span>{translate('canvasFilmAsset.t242')}</span>
           <Input
             type="number"
             min={0}
             step={0.5}
             value={durationSec}
-            placeholder="如 3，用于按秒分镜与逐段视频时长"
+            placeholder={translate('canvasFilmAsset.t194Desc')}
             onChange={(e) => setDurationSec(e.target.value)}
           />
         </label>

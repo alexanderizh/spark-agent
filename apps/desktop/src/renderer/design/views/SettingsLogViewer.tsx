@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, Input, Select } from '@lobehub/ui'
 import { useToast } from '../components/Toast'
+import { useI18n } from '../i18n'
 import { buildLogReadRequest, type LogViewerLevel, type LogViewerScope } from './log-viewer-model'
 
 // eslint-disable-next-line no-control-regex
@@ -8,6 +9,7 @@ const ANSI_PATTERN = /\x1b\[[0-9;]*m/g
 
 export function SettingsLogViewer() {
   const { toast } = useToast()
+  const { t } = useI18n()
   const [lines, setLines] = useState<string[]>([])
   const [filePath, setFilePath] = useState<string | null>(null)
   const [sizeBytes, setSizeBytes] = useState(0)
@@ -24,11 +26,11 @@ export function SettingsLogViewer() {
       setFilePath(res.filePath)
       setSizeBytes(res.sizeBytes)
     } catch (err) {
-      toast.error(`读取日志失败：${err instanceof Error ? err.message : String(err)}`)
+      toast.error(t('log.readFailed', { message: err instanceof Error ? err.message : String(err) }))
     } finally {
       setLoading(false)
     }
-  }, [levelFilter, scope, toast])
+  }, [levelFilter, scope, toast, t])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadLogs(), 0)
@@ -38,39 +40,41 @@ export function SettingsLogViewer() {
   const handleClear = useCallback(async () => {
     try {
       await window.spark.invoke('log:clear', {})
-      toast.success('日志已清空')
+      toast.success(t('log.cleared'))
       void loadLogs()
     } catch (err) {
-      toast.error(`清空日志失败：${err instanceof Error ? err.message : String(err)}`)
+      toast.error(
+        t('log.clearFailed', { message: err instanceof Error ? err.message : String(err) }),
+      )
     }
-  }, [loadLogs, toast])
+  }, [loadLogs, toast, t])
 
   const handleExport = useCallback(async () => {
     try {
       const res = await window.spark.invoke('dialog:save-file', {
-        title: scope === 'canvas' ? '导出画布任务日志' : '导出日志',
+        title: scope === 'canvas' ? t('log.exportCanvasTitle') : t('log.exportTitle'),
         defaultPath: scope === 'canvas' ? 'spark-canvas-tasks.log' : 'spark-agent.log',
-        filters: [{ name: '日志文件', extensions: ['log', 'txt'] }],
+        filters: [{ name: t('log.fileTypeName'), extensions: ['log', 'txt'] }],
       })
       if (res?.filePath) {
         await window.spark.invoke('file:write-text', {
           path: res.filePath,
           content: lines.join('\n'),
         })
-        toast.success(`已导出到：${res.filePath}`)
+        toast.success(t('log.exported', { path: res.filePath }))
       }
     } catch (err) {
-      toast.error(`导出失败：${err instanceof Error ? err.message : String(err)}`)
+      toast.error(t('log.exportFailed', { message: err instanceof Error ? err.message : String(err) }))
     }
-  }, [lines, scope, toast])
+  }, [lines, scope, toast, t])
 
   const handleReveal = useCallback(async () => {
     try {
       await window.spark.invoke('log:reveal', {})
     } catch (err) {
-      toast.error(`打开日志目录失败：${err instanceof Error ? err.message : String(err)}`)
+      toast.error(t('log.revealFailed', { message: err instanceof Error ? err.message : String(err) }))
     }
-  }, [toast])
+  }, [toast, t])
 
   const filteredLines = useMemo(() => {
     const kw = keyword.trim().toLowerCase()
@@ -81,22 +85,22 @@ export function SettingsLogViewer() {
 
   return (
     <>
-      <div className="subsec-h">日志查看器</div>
+      <div className="subsec-h">{t('log.sectionTitle')}</div>
       <div className="log-viewer-toolbar">
         <Select
           value={scope}
           onChange={(value) => setScope(value as LogViewerScope)}
           options={[
-            { label: '画布任务', value: 'canvas' },
-            { label: '工具运行', value: 'tools' },
-            { label: '全部日志', value: 'all' },
+            { label: t('log.scope.canvas'), value: 'canvas' },
+            { label: t('log.scope.tools'), value: 'tools' },
+            { label: t('log.scope.all'), value: 'all' },
           ]}
         />
         <Select
           value={levelFilter}
           onChange={(value) => setLevelFilter(value as LogViewerLevel)}
           options={[
-            { label: '全部级别', value: 'all' },
+            { label: t('log.levelAll'), value: 'all' },
             { label: 'debug', value: 'debug' },
             { label: 'info', value: 'info' },
             { label: 'warn', value: 'warn' },
@@ -106,10 +110,10 @@ export function SettingsLogViewer() {
         <Input
           placeholder={
             scope === 'canvas'
-              ? '任务 ID / 项目 / 模型…'
+              ? t('log.keywordCanvasPlaceholder')
               : scope === 'tools'
-                ? '包 ID / correlationId / 日志内容…'
-                : '关键词过滤…'
+                ? t('log.keywordToolsPlaceholder')
+                : t('log.keywordAllPlaceholder')
           }
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
@@ -117,13 +121,13 @@ export function SettingsLogViewer() {
           style={{ width: 240 }}
         />
         <Button onClick={() => void loadLogs()} loading={loading}>
-          刷新
+          {t('log.refreshBtn')}
         </Button>
         <div className="log-viewer-spacer" />
-        <Button onClick={() => void handleExport()}>导出</Button>
-        <Button onClick={() => void handleReveal()}>在文件夹中显示</Button>
+        <Button onClick={() => void handleExport()}>{t('log.exportBtn')}</Button>
+        <Button onClick={() => void handleReveal()}>{t('log.revealBtn')}</Button>
         <Button onClick={() => void handleClear()} danger>
-          清空
+          {t('log.clearBtn')}
         </Button>
       </div>
 
@@ -136,7 +140,7 @@ export function SettingsLogViewer() {
             <span className="log-viewer-size">{formatSize(sizeBytes)}</span>
           </>
         ) : (
-          <span className="log-viewer-empty">日志文件尚未初始化（应用刚启动时可能暂未落盘）。</span>
+          <span className="log-viewer-empty">{t('log.notInitialized')}</span>
         )}
       </div>
 
@@ -144,12 +148,12 @@ export function SettingsLogViewer() {
         {renderedEntries.length === 0 ? (
           <div className="log-viewer-empty">
             {loading
-              ? '加载中…'
+              ? t('log.loading')
               : scope === 'canvas'
-                ? '暂无画布任务日志。运行节点后点击"刷新"。'
+                ? t('log.emptyCanvasDesc')
                 : scope === 'tools'
-                  ? '暂无工具运行日志。调用或测试工具后点击“刷新”。'
-                  : '暂无日志记录。'}
+                  ? t('log.emptyToolsDesc')
+                  : t('log.emptyAll')}
           </div>
         ) : (
           renderedEntries.map((entry, index) =>

@@ -7,6 +7,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { Activity, RotateCcw } from 'lucide-react'
+import { useI18n } from '../i18n'
 import { formatBytes } from './performance-format'
 import { usePerformanceData } from './usePerformanceData'
 import { PerformanceOverview } from './PerformanceOverview'
@@ -16,13 +17,10 @@ import { PressureEventsList } from './PressureEventsList'
 import { PerformanceConfigPanel } from './PerformanceConfigPanel'
 import './settings-performance.less'
 
-const RANGE_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [
-  { value: 15, label: '15 分钟' },
-  { value: 30, label: '30 分钟' },
-  { value: 60, label: '60 分钟' },
-]
+const RANGE_MINUTES: readonly number[] = [15, 30, 60]
 
 export function PerformanceSettingsSection() {
+  const { t } = useI18n()
   const [rangeMinutes, setRangeMinutes] = useState(30)
   const [refreshing, setRefreshing] = useState(false)
   const [echoVersion, setEchoVersion] = useState(0)
@@ -55,8 +53,11 @@ export function PerformanceSettingsSection() {
   const baselineDesc = useMemo(() => {
     const baseline = full?.baseline
     if (baseline == null) return ''
-    return `${formatBytes(baseline.totalBytes)} / ${baseline.cpuCores} 核`
-  }, [full])
+    return t('perf.section.baselineDesc', {
+      bytes: formatBytes(baseline.totalBytes),
+      cores: baseline.cpuCores,
+    })
+  }, [full, t])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -88,18 +89,20 @@ export function PerformanceSettingsSection() {
 
   return (
     <section className="settings-section perf-settings">
-      <h2>性能</h2>
+      <h2>{t('perf.sectionTitle')}</h2>
       <p className="lede">
-        实时监控 SparkWork 与宿主电脑的资源占用；压力过高时自动降级并发任务并通知你。
-        {baselineDesc !== '' && <> 阈值按本机内存与 CPU 核数动态换算（当前基线：{baselineDesc}）</>}
-        ，数据 2 秒采样，仅保存在本地。
+        {t('perf.section.ledeDesc')}
+        {baselineDesc !== '' && (
+          <> {t('perf.section.baselineNoteDesc', { baseline: baselineDesc })}</>
+        )}
+        {t('perf.section.ledeTailDesc')}
       </p>
 
       {errorMessage != null && (
         <div className="integrity-banner error" style={{ marginBottom: 12 }}>
-          {loadState === 'error' ? '性能数据采集失败' : '性能配置操作失败'}
-          {errorMessage != null ? `：${errorMessage}` : ''}
-          {loadState === 'error' ? ' · 将自动重试' : ''}
+          {loadState === 'error' ? t('perf.error.collectFailed') : t('perf.error.configFailed')}
+          {errorMessage != null ? `: ${errorMessage}` : ''}
+          {loadState === 'error' ? ` · ${t('perf.error.retrying')}` : ''}
         </div>
       )}
 
@@ -108,17 +111,15 @@ export function PerformanceSettingsSection() {
           <div className="empty-ic">
             <Activity size={20} />
           </div>
-          <div className="empty-title">性能监控未开启</div>
-          <div className="empty-desc">
-            开启后展示宿主内存、系统内存、事件循环延迟等实时指标，并在压力过高时自动降级。
-          </div>
+          <div className="empty-title">{t('perf.off.title')}</div>
+          <div className="empty-desc">{t('perf.off.descDesc')}</div>
           <button
             className="btn primary"
             style={{ marginTop: 12 }}
             disabled={enabling}
             onClick={() => void handleEnable()}
           >
-            {enabling ? '开启中…' : '开启性能监控'}
+            {enabling ? t('perf.off.enablingBtn') : t('perf.off.enableBtn')}
           </button>
         </div>
       ) : (
@@ -132,15 +133,15 @@ export function PerformanceSettingsSection() {
           />
 
           <div className="subsec-row">
-            <div className="subsec-h">历史趋势</div>
+            <div className="subsec-h">{t('perf.section.trendTitle')}</div>
             <div className="seg">
-              {RANGE_OPTIONS.map((option) => (
+              {RANGE_MINUTES.map((minutes) => (
                 <button
-                  key={option.value}
-                  className={rangeMinutes === option.value ? 'on' : undefined}
-                  onClick={() => setRangeMinutes(option.value)}
+                  key={minutes}
+                  className={rangeMinutes === minutes ? 'on' : undefined}
+                  onClick={() => setRangeMinutes(minutes)}
                 >
-                  {option.label}
+                  {t('perf.range.minutes', { count: minutes })}
                 </button>
               ))}
             </div>
@@ -152,26 +153,24 @@ export function PerformanceSettingsSection() {
             loading={loading}
           />
 
-          <div className="subsec-h">活动治理</div>
-          <div className="subsec-desc">
-            统计范围：团队 / 工作流子代理派发（普通会话不占闸门槽位，只计入下方并发预算）
-          </div>
+          <div className="subsec-h">{t('perf.section.governanceTitle')}</div>
+          <div className="subsec-desc">{t('perf.section.governanceDesc')}</div>
           <GovernanceMeters diagnostics={diagnostics} summary={summary} loading={loading} />
 
-          <div className="subsec-h">最近降级 / 恢复事件</div>
+          <div className="subsec-h">{t('perf.section.eventsTitle')}</div>
           <PressureEventsList events={events} loading={loading} />
         </>
       )}
 
       <div className="subsec-row">
-        <div className="subsec-h">性能保护</div>
+        <div className="subsec-h">{t('perf.section.protectionTitle')}</div>
         <button
           className="btn text"
           style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
           onClick={() => void handleReset()}
         >
           <RotateCcw size={12} />
-          恢复默认
+          {t('perf.section.restoreDefaultBtn')}
         </button>
       </div>
       <PerformanceConfigPanel
@@ -181,11 +180,7 @@ export function PerformanceSettingsSection() {
         onUpdateSettings={updateSettingsAndSync}
       />
 
-      <p className="footnote">
-        通知规则：warning / critical 仅静默降级（限流、暂停新派发），不弹任何提示；只有
-        emergency（电脑资源即将耗尽、已暂停全部新任务派发）才弹常驻横幅并发送系统通知。这是
-        电脑资源保护机制——压力恢复后横幅自动消失并提示「电脑资源已恢复」。
-      </p>
+      <p className="footnote">{t('perf.section.footnoteLongDesc')}</p>
     </section>
   )
 }

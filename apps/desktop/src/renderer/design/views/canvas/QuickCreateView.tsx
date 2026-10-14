@@ -33,6 +33,7 @@ import {
 } from './quickCreateCapability'
 import { quickCreateModeCopy } from './quickCreateModeCopy'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import { WindowControls } from '../../components/WindowControls'
 import { useApp } from '../../AppContext'
@@ -125,12 +126,12 @@ const QUICK_CREATE_MAX_INPUT_BYTES = 72 * 1024 * 1024
  * 单独给一句说明，避免用户看到「请选择图片素材」时误以为模式坏了。
  */
 function inputRejectMessage(mode: QuickCreateMode, source: 'pick' | 'drop'): string {
-  if (mode === 'audio') return '语音模式只需输入文稿，不支持添加素材'
-  if (mode === 'music') return '音乐模式只需输入描述，不支持添加素材'
-  if (mode === 'transcribe') return source === 'drop' ? '仅支持拖入音频文件' : '请选择音频文件'
+  if (mode === 'audio') return translate('quickCreateView.t1Desc')
+  if (mode === 'music') return translate('quickCreateView.t2Desc')
+  if (mode === 'transcribe') return source === 'drop' ? translate('quickCreateView.t3') : translate('quickCreateView.t4')
   if (mode === 'video')
-    return source === 'drop' ? '仅支持拖入图片或视频素材' : '请选择图片或视频素材'
-  return source === 'drop' ? '仅支持拖入图片素材' : '请选择图片素材'
+    return source === 'drop' ? translate('quickCreateView.t5') : translate('quickCreateView.t6')
+  return source === 'drop' ? translate('quickCreateView.t7') : translate('quickCreateView.t8')
 }
 
 function readBlobAsDataUrl(blob: Blob): Promise<string> {
@@ -138,15 +139,15 @@ function readBlobAsDataUrl(blob: Blob): Promise<string> {
     const reader = new FileReader()
     reader.onload = () => {
       if (typeof reader.result === 'string') resolve(reader.result)
-      else reject(new Error('无法读取剪贴板图片'))
+      else reject(new Error(translate('quickCreateView.t9')))
     }
-    reader.onerror = () => reject(reader.error ?? new Error('无法读取剪贴板图片'))
+    reader.onerror = () => reject(reader.error ?? new Error(translate('quickCreateView.t9')))
     reader.readAsDataURL(blob)
   })
 }
 
 function quickParameterLabel(presentation: CanvasParameterPresentation): string {
-  if (presentation.control === 'count') return '生成数量'
+  if (presentation.control === 'count') return translate('quickCreateView.t10')
   return presentation.label.replace(
     /\s+(size|aspect_ratio|aspectRatio|resolution|quality|image_format|durationSeconds)$/i,
     '',
@@ -160,7 +161,7 @@ function normalizedParameterName(value: string): string {
 function isQualityPresentation(presentation: CanvasParameterPresentation): boolean {
   const name = normalizedParameterName(presentation.field.name)
   const label = presentation.label.toLowerCase()
-  return name.includes('quality') || label.includes('质量')
+  return name.includes('quality') || label.includes(translate('quickCreateView.t11'))
 }
 
 function parameterOptionLabel(presentation: CanvasParameterPresentation, option: string): string {
@@ -205,7 +206,7 @@ function QuickCreateQualityControl({
         value={value || undefined}
         options={options}
         allowClear
-        placeholder="默认"
+        placeholder={translate('quickCreateView.t13')}
         onChange={(next) => onChange(next == null ? '' : String(next))}
       />
     </div>
@@ -242,14 +243,14 @@ function QuickCreateCountControl({
       <div className="quick-create-count-stepper" aria-label={quickParameterLabel(presentation)}>
         <button
           type="button"
-          aria-label="减少生成数量"
+          aria-label={translate('quickCreateView.t68')}
           disabled={current <= minimum}
           onClick={() => onChange(String(current - 1))}
         >
           <Icons.Minus size={13} />
         </button>
         <input
-          aria-label="生成数量"
+          aria-label={translate('quickCreateView.t10')}
           inputMode="numeric"
           min={minimum}
           max={maximum}
@@ -260,10 +261,10 @@ function QuickCreateCountControl({
           onChange={(event) => onChange(event.target.value)}
           onBlur={(event) => commit(event.target.value)}
         />
-        <span>{presentation.unit ?? '张'}</span>
+        <span>{presentation.unit ?? translate('quickCreateView.t12')}</span>
         <button
           type="button"
-          aria-label="增加生成数量"
+          aria-label={translate('quickCreateView.t69')}
           disabled={current >= maximum}
           onClick={() => onChange(String(current + 1))}
         >
@@ -360,7 +361,7 @@ function QuickCreateSizeControl({
     <div className="canvas-parameter-control quick-create-size-control">
       <div className="canvas-parameter-control-head">
         <span>{quickParameterLabel(presentation)}</span>
-        <small>{value ? parameterOptionLabel(presentation, value) : '默认'}</small>
+        <small>{value ? parameterOptionLabel(presentation, value) : translate('quickCreateView.t13')}</small>
       </div>
       <div className="quick-create-size-grid" role="group" aria-label={presentation.label}>
         {primaryOptions.map((option) => (
@@ -383,14 +384,14 @@ function QuickCreateSizeControl({
           >
             <span>
               <Icons.ChevronDown size={12} />
-              更多配置
+              {translate('quickCreateView.t86')}
             </span>
             {moreOptions.length > 0 && <small>{`+${moreOptions.length}`}</small>}
           </button>
           {expanded && (
             <div className="quick-create-size-more-panel">
               {moreOptions.length > 0 && (
-                <div className="quick-create-size-more-options" role="group" aria-label="更多尺寸">
+                <div className="quick-create-size-more-options" role="group" aria-label={translate('quickCreateView.t70')}>
                   {moreOptions.map((option) => (
                     <QuickCreateSizeOption
                       key={option}
@@ -405,18 +406,18 @@ function QuickCreateSizeControl({
               {presentation.field.allowCustom && (
                 <AutoComplete
                   className="quick-create-size-input"
-                  aria-label="自定义或历史尺寸"
+                  aria-label={translate('quickCreateView.t71')}
                   value={value || undefined}
                   options={autoCompleteOptions}
                   allowClear
-                  placeholder="输入自定义尺寸，如 1536x1024"
+                  placeholder={translate('quickCreateView.t72Desc')}
                   onChange={(next) => onChange(next == null ? '' : String(next))}
                   filterOption={createEchoTolerantFilterOption(() => value, matchesValueOrLabel)}
                 />
               )}
               {historyOptions.length > 0 && (
-                <div className="quick-create-size-history" aria-label="缓存尺寸">
-                  <span>已使用</span>
+                <div className="quick-create-size-history" aria-label={translate('quickCreateView.t73')}>
+                  <span>{translate('quickCreateView.t87')}</span>
                   {historyOptions.map((option) => (
                     <button
                       type="button"
@@ -506,7 +507,7 @@ function QuickCreateParameterPanel({
       )
       if (parts.length >= 3) break
     }
-    return parts.length > 0 ? parts.join(' · ') : '默认'
+    return parts.length > 0 ? parts.join(' · ') : translate('quickCreateView.t13')
   }, [groups.advanced, values])
   if (fields.length === 0) return null
   return (
@@ -538,7 +539,7 @@ function QuickCreateParameterPanel({
             onClick={() => setAdvancedOpen((current) => !current)}
           >
             <Icons.Sliders size={12} />
-            <span className="quick-create-advanced-name">高级</span>
+            <span className="quick-create-advanced-name">{translate('quickCreateView.t88')}</span>
             <span className="quick-create-advanced-summary">{advancedSummary}</span>
             <Icons.ChevronDown size={12} className={advancedOpen ? 'is-open' : ''} />
           </button>
@@ -610,11 +611,11 @@ async function prepareInputFile(
     kind,
   })
   if (saved.sizeBytes > QUICK_CREATE_MAX_INPUT_BYTES) {
-    throw new Error('输入素材不能超过 72MB')
+    throw new Error(translate('quickCreateView.t14Desc'))
   }
   return {
     id: `${Date.now()}-${saved.filePath}`,
-    name: filePath.split(/[\\/]/).pop() || '输入素材',
+    name: filePath.split(/[\\/]/).pop() || translate('quickCreateView.t15'),
     type: kind,
     role: 'input',
     path: saved.filePath,
@@ -627,7 +628,7 @@ async function prepareInputFile(
 
 async function preparePastedImage(file: File, index: number): Promise<QuickInput> {
   if (file.size > QUICK_CREATE_MAX_INPUT_BYTES) {
-    throw new Error('粘贴图片不能超过 72MB')
+    throw new Error(translate('quickCreateView.t16Desc'))
   }
   const dataUrl = await readBlobAsDataUrl(file)
   const saved = await window.spark.invoke('file:save-pasted-image', {
@@ -648,12 +649,15 @@ async function preparePastedImage(file: File, index: number): Promise<QuickInput
 }
 
 /** 反推固定指令；用户在提示词框的补充文字会拼接在其后 */
-const REVERSE_BASE_INSTRUCTION =
-  '请分析输入图片并反推出可直接用于图片生成的详细提示词。输出主体、构图、镜头、光线、色彩、材质和风格，直接给出提示词，不要解释。'
+/** 反推固定指令（函数化：模块级常量会在语言切换后不刷新） */
+function reverseBaseInstruction(): string {
+  return translate('quickCreateView.t17Instruction')
+}
 
 function buildReversePrompt(extraInstruction: string): string {
   const extra = extraInstruction.trim()
-  return extra ? `${REVERSE_BASE_INSTRUCTION}\n用户补充要求：${extra}` : REVERSE_BASE_INSTRUCTION
+  const base = reverseBaseInstruction()
+  return extra ? translate('quickCreateView.tpl2Instruction', { base, extra }) : base
 }
 
 function quickInputFromTaskFile(file: CanvasMediaTaskInputFile, index: number): QuickInput {
@@ -661,12 +665,14 @@ function quickInputFromTaskFile(file: CanvasMediaTaskInputFile, index: number): 
   return {
     ...file,
     id: `restored-${index}-${source}`,
-    name: source.split(/[\\/]/).pop() || `输入素材 ${index + 1}`,
+    name: source.split(/[\\/]/).pop() || translate('quickCreateView.tpl1Desc', { index: index + 1 }),
     previewUrl: resolveMediaDisplayUrl({ url: file.url, filePath: file.path }),
   }
 }
 
 export function QuickCreateView() {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const { t, setTweak } = useApp()
   const isStandaloneWindow = isQuickCreateWindowMode()
   const isSidebarHidden = t.sidebarHidden || isStandaloneWindow
@@ -903,7 +909,7 @@ export function QuickCreateView() {
         if (!cancelled) {
           setModels([])
           setTextProviders([])
-          message.warning(error instanceof Error ? error.message : '快速创作配置加载失败')
+          message.warning(error instanceof Error ? error.message : translate('quickCreateView.t18'))
         }
       })
       .finally(() => {
@@ -1019,11 +1025,11 @@ export function QuickCreateView() {
         return
       }
       if (mode === 'reverse' && selectedPaths.length > 1) {
-        message.warning('图片反推仅支持一张输入图片')
+        message.warning(translate('quickCreateView.t19Desc'))
         return
       }
       if (mode === 'transcribe' && selectedPaths.length > 1) {
-        message.warning('语音识别一次只支持一个音频文件')
+        message.warning(translate('quickCreateView.t20Desc'))
         return
       }
       const limit = mode === 'reverse' || mode === 'transcribe' ? 1 : 6
@@ -1038,9 +1044,9 @@ export function QuickCreateView() {
             ? prepared.slice(0, 1)
             : [...current, ...prepared].slice(0, limit),
         )
-        if (mode !== 'reverse') message.success(`已添加 ${prepared.length} 个素材`)
+        if (mode !== 'reverse') message.success(translate('quickCreateView.tpl3Desc', { count: prepared.length }))
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '读取输入素材失败')
+        message.error(error instanceof Error ? error.message : translate('quickCreateView.t21'))
       }
     },
     [mode],
@@ -1055,11 +1061,11 @@ export function QuickCreateView() {
         return
       }
       if (mode === 'reverse' && selectedPaths.length > 1) {
-        message.warning('图片反推仅支持一张输入图片')
+        message.warning(translate('quickCreateView.t19Desc'))
         return
       }
       if (mode === 'transcribe' && selectedPaths.length > 1) {
-        message.warning('语音识别一次只支持一个音频文件')
+        message.warning(translate('quickCreateView.t20Desc'))
         return
       }
       const limit = mode === 'reverse' || mode === 'transcribe' ? 1 : 6
@@ -1074,9 +1080,9 @@ export function QuickCreateView() {
             ? prepared.slice(0, 1)
             : [...current, ...prepared].slice(0, limit),
         )
-        message.success(`已添加 ${prepared.length} 个素材`)
+        message.success(translate('quickCreateView.tpl3Desc', { count: prepared.length }))
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '读取拖入素材失败')
+        message.error(error instanceof Error ? error.message : translate('quickCreateView.t22'))
       }
     },
     [mode],
@@ -1113,7 +1119,7 @@ export function QuickCreateView() {
       const paths = getDataTransferFilePaths(event.dataTransfer)
       if (paths.length === 0) {
         if (isUnresolvableFileDrop(event.dataTransfer, paths)) {
-          message.error('无法读取拖入的文件，请从访达或桌面拖拽本地文件')
+          message.error(translate('quickCreateView.t23Desc'))
         }
         return
       }
@@ -1139,7 +1145,7 @@ export function QuickCreateView() {
         event.preventDefault()
         message.warning(
           mode === 'transcribe'
-            ? '语音识别暂不支持粘贴，请选择音频文件'
+            ? translate('quickCreateView.t24Desc')
             : inputRejectMessage(mode, 'pick'),
         )
         return
@@ -1157,9 +1163,9 @@ export function QuickCreateView() {
         setInputs((current) =>
           mode === 'reverse' ? prepared.slice(0, 1) : [...current, ...prepared].slice(0, 6),
         )
-        message.success(`已粘贴 ${prepared.length} 张图片`)
+        message.success(translate('quickCreateView.tpl4Desc', { count: prepared.length }))
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '粘贴图片失败')
+        message.error(error instanceof Error ? error.message : translate('quickCreateView.t25'))
       }
     },
     [mode],
@@ -1170,16 +1176,16 @@ export function QuickCreateView() {
       const picked = await window.spark.invoke('dialog:open-file', {
         title:
           mode === 'video'
-            ? '选择图片或视频素材'
+            ? translate('quickCreateView.t26')
             : mode === 'transcribe'
-              ? '选择音频文件'
-              : '选择输入图片',
+              ? translate('quickCreateView.t27')
+              : translate('quickCreateView.t28'),
         multiple: mode !== 'reverse' && mode !== 'transcribe',
         filters:
           mode === 'video'
             ? [
                 {
-                  name: '图片与视频',
+                  name: translate('quickCreateView.t29'),
                   extensions: [
                     'png',
                     'jpg',
@@ -1199,7 +1205,7 @@ export function QuickCreateView() {
             : mode === 'transcribe'
               ? [
                   {
-                    name: '音频',
+                    name: translate('quickCreateView.t30'),
                     extensions: [
                       'mp3',
                       'wav',
@@ -1216,7 +1222,7 @@ export function QuickCreateView() {
                 ]
               : [
                   {
-                    name: '图片',
+                    name: translate('quickCreateView.t31'),
                     extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'heic', 'heif'],
                   },
                 ],
@@ -1224,7 +1230,7 @@ export function QuickCreateView() {
       const paths = picked.filePaths ?? (picked.filePath ? [picked.filePath] : [])
       if (!picked.canceled && paths.length > 0) await handleChooseFiles(paths)
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '打开素材选择器失败')
+      message.error(error instanceof Error ? error.message : translate('quickCreateView.t32'))
     }
   }, [handleChooseFiles, mode])
 
@@ -1268,7 +1274,7 @@ export function QuickCreateView() {
     ) => {
       const text = value.trim()
       if (!text) {
-        message.warning('请输入提示词后再保存')
+        message.warning(translate('quickCreateView.t33'))
         return
       }
       try {
@@ -1291,7 +1297,7 @@ export function QuickCreateView() {
               id: `quick-create-${Date.now()}`,
               title: titleForPrompt(text, promptMode),
               text,
-              category: '快速创作',
+              category: translate('quickCreateView.t34'),
               tags: [modeLabel(promptMode)],
               coverUrl: coverPair?.url ?? null,
               coverMimeType: coverPair?.mimeType ?? null,
@@ -1304,9 +1310,9 @@ export function QuickCreateView() {
           : [item, ...library.items]
         await writeGlobalPromptLibrary({ ...library, items: next })
         setPromptLibrary(next)
-        message.success(existing ? '已记录本次使用' : '已保存到提示词库')
+        message.success(existing ? translate('quickCreateView.t35') : translate('quickCreateView.t36'))
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '保存提示词失败')
+        message.error(error instanceof Error ? error.message : translate('quickCreateView.t37'))
       }
     },
     [],
@@ -1322,7 +1328,7 @@ export function QuickCreateView() {
       // 未对外开放的模式（如暂未放开的音乐）：历史记录的「重试 / 重新生成」不允许把请求
       // 重新送进隐藏模式，否则隐藏入口会被历史行绕过（记录本身仍可查看产物与复用提示词）。
       if (!isQuickCreateModeAvailable(taskMode)) {
-        message.warning(`${modeLabel(taskMode)}模式暂未对外开放`)
+        message.warning(translate('quickCreateView.tpl5Desc', { mode: modeLabel(taskMode) }))
         return
       }
       const taskPrompt = source?.prompt ?? prompt.trim()
@@ -1339,19 +1345,19 @@ export function QuickCreateView() {
         source?.operation ??
         operationForSubmission(taskMode, taskInputs as QuickInput[], taskCapability)
       if (taskMode === 'reverse' && taskInputs.length !== 1) {
-        message.warning('图片反推需要先选择一张图片')
+        message.warning(translate('quickCreateView.t38Desc'))
         return
       }
       if (
         taskMode === 'transcribe' &&
         taskInputs.filter((input) => input.type === 'audio').length !== 1
       ) {
-        message.warning('语音识别需要先选择一个音频文件')
+        message.warning(translate('quickCreateView.t39Desc'))
         return
       }
       // 识别的提示词是可选补充（对应 STT 的 prompt 参数），不强制输入
       if (taskMode !== 'reverse' && taskMode !== 'transcribe' && !taskPrompt) {
-        message.warning('请先输入提示词')
+        message.warning(translate('quickCreateView.t40'))
         return
       }
       const taskModel = source?.modelId ? undefined : selectedModel
@@ -1475,7 +1481,7 @@ export function QuickCreateView() {
             message: error instanceof Error ? error.message : String(error),
           },
         })
-        message.error(error instanceof Error ? error.message : '提交创作任务失败')
+        message.error(error instanceof Error ? error.message : translate('quickCreateView.t41'))
       } finally {
         setPendingSubmissions((current) => Math.max(0, current - 1))
       }
@@ -1511,7 +1517,7 @@ export function QuickCreateView() {
         await window.spark.invoke('canvas:task:cancel-media', { runtimeTaskId: task.runtimeTaskId })
         updateTask(task.id, { status: 'cancelled' })
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '取消任务失败')
+        message.error(error instanceof Error ? error.message : translate('quickCreateView.t42'))
       }
     },
     [updateTask],
@@ -1520,11 +1526,11 @@ export function QuickCreateView() {
   const deleteTask = (taskId: string) => {
     const task = tasks.find((item) => item.id === taskId)
     Modal.confirm({
-      title: '删除这条创作任务？',
+      title: translate('quickCreateView.t43'),
       content:
-        '将同时删除本次任务的输入拷贝与生成产物文件；你的原始文件和共享素材（如粘贴图）不会被删除。',
-      okText: '删除任务',
-      cancelText: '取消',
+        translate('quickCreateView.t44LongDesc'),
+      okText: translate('quickCreateView.t45'),
+      cancelText: translate('quickCreateView.t46'),
       okButtonProps: { danger: true },
       onOk: async () => {
         // 先按主进程白名单策略清理专属文件（产物 + quick-create-inputs 输入拷贝），再移除记录
@@ -1539,9 +1545,9 @@ export function QuickCreateView() {
           })
         } catch (error) {
           message.warning(
-            `产物文件清理失败，已仅移除任务记录：${
-              error instanceof Error ? error.message : String(error)
-            }`,
+            translate('quickCreateView.tpl6Desc', {
+              reason: error instanceof Error ? error.message : String(error),
+            }),
           )
         }
         taskIdsRef.current.delete(taskId)
@@ -1556,14 +1562,14 @@ export function QuickCreateView() {
 
   const openOutput = async (asset: CanvasMediaTaskAsset) => {
     if (!asset.filePath) {
-      message.info('当前产物没有本地文件路径')
+      message.info(translate('quickCreateView.t47'))
       return
     }
     try {
       const result = await window.spark.invoke('file:open', { filePath: asset.filePath })
-      if (!result.opened) message.error(result.error ?? '打开产物失败')
+      if (!result.opened) message.error(result.error ?? translate('quickCreateView.t48'))
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '打开产物失败')
+      message.error(error instanceof Error ? error.message : translate('quickCreateView.t48'))
     }
   }
 
@@ -1649,15 +1655,15 @@ export function QuickCreateView() {
     setPrompt(text)
     setInputs([])
     setPromptPickerOpen(false)
-    message.success('已用反推结果填充生图表单')
+    message.success(translate('quickCreateView.t49'))
   }, [])
 
   const handleOpenStandaloneWindow = useCallback(async () => {
     try {
       const response = await window.spark.invoke('quick-create:window:open', {})
-      if (!response.success) message.error('无法打开独立窗口，请稍后重试')
+      if (!response.success) message.error(translate('quickCreateView.t50Desc'))
     } catch {
-      message.error('无法打开独立窗口，请稍后重试')
+      message.error(translate('quickCreateView.t50Desc'))
     }
   }, [])
 
@@ -1666,7 +1672,7 @@ export function QuickCreateView() {
     if (asset.type !== 'image') return
     const source = asset.filePath ?? asset.url ?? ''
     if (!source.trim()) {
-      message.warning('当前图片没有可用的文件地址')
+      message.warning(translate('quickCreateView.t51Desc'))
       return
     }
     const restored = quickInputFromTaskFile(
@@ -1682,7 +1688,7 @@ export function QuickCreateView() {
     setInputs([{ ...restored, mimeType: restored.mimeType || 'image/png' }])
     setPrompt('')
     setPromptPickerOpen(false)
-    message.success('已加入参考素材，当前按图像编辑处理')
+    message.success(translate('quickCreateView.t52Desc'))
   }, [])
 
   return (
@@ -1702,24 +1708,24 @@ export function QuickCreateView() {
           <span className="quick-create-brand-mark">
             <Icons.Image size={16} />
           </span>
-          <strong>快速创作</strong>
-          <span>图片与视频</span>
+          <strong>{translate('quickCreateView.t34')}</strong>
+          <span>{translate('quickCreateView.t29')}</span>
         </div>
         <div className="quick-create-header-actions">
           {!isStandaloneWindow && (
             <button
               type="button"
               className="quick-create-window-open-button"
-              aria-label="在独立窗口中打开快速创作"
-              title="在独立窗口中打开"
+              aria-label={translate('quickCreateView.t74')}
+              title={translate('quickCreateView.t75')}
               onClick={() => void handleOpenStandaloneWindow()}
             >
               <Icons.AppWindow size={15} />
             </button>
           )}
-          <nav className="quick-create-tabs" aria-label="快速创作任务">
+          <nav className="quick-create-tabs" aria-label={translate('quickCreateView.t76')}>
             <button type="button" onClick={() => setActiveTab('tasks')}>
-              <Icons.ListTodo size={14} /> 任务管理
+              <Icons.ListTodo size={14} /> {translate('quickCreateView.t96')}
               {stats.running > 0 && <small>{stats.running}</small>}
             </button>
           </nav>
@@ -1728,7 +1734,7 @@ export function QuickCreateView() {
       </div>
 
       <main className="quick-create-main">
-        <section className="quick-create-workbench" aria-label="创作配置与输出">
+        <section className="quick-create-workbench" aria-label={translate('quickCreateView.t77')}>
           <div
             className={`quick-create-form-pane${dragOverForm ? ' is-drag-over' : ''}`}
             onDragEnter={handleFormDragEnter}
@@ -1736,7 +1742,7 @@ export function QuickCreateView() {
             onDragLeave={handleFormDragLeave}
             onDrop={handleFormDrop}
           >
-            <div className="quick-create-mode-rail" role="tablist" aria-label="创作模式">
+            <div className="quick-create-mode-rail" role="tablist" aria-label={translate('quickCreateView.t78')}>
               <div className="quick-create-mode-segment">
                 {quickCreateModeItems().map((item) => (
                   <button
@@ -1758,22 +1764,22 @@ export function QuickCreateView() {
             <div className="quick-create-form" onPaste={(event) => void handlePasteInput(event)}>
               {/* 语音（TTS）/ 音乐是纯文本输入，没有参考素材语义，整个素材区不渲染 */}
               {modeCopy.acceptsInputMaterials && (
-                <section className="quick-create-reference-section" aria-label="参考素材">
+                <section className="quick-create-reference-section" aria-label={translate('quickCreateView.t55')}>
                   <div className="quick-create-section-head">
                     <div>
                       <strong>
                         {mode === 'reverse'
-                          ? '输入图片'
+                          ? translate('quickCreateView.t53')
                           : mode === 'transcribe'
-                            ? '输入音频'
-                            : '参考素材'}
+                            ? translate('quickCreateView.t54')
+                            : translate('quickCreateView.t55')}
                       </strong>
                       <span>
                         {mode === 'reverse'
-                          ? '支持粘贴或从本地选择，反推可编辑提示词'
+                          ? translate('quickCreateView.t56Desc')
                           : mode === 'transcribe'
-                            ? '必选 · 仅支持 1 个音频文件，从本地选择'
-                            : '可选 · 支持粘贴或从本地选择'}
+                            ? translate('quickCreateView.t57Desc')
+                            : translate('quickCreateView.t58Desc')}
                       </span>
                     </div>
                     <small>
@@ -1785,10 +1791,10 @@ export function QuickCreateView() {
                     role="group"
                     aria-label={
                       mode === 'reverse'
-                        ? '输入图片，仅支持 1 张，可直接粘贴'
+                        ? translate('quickCreateView.t59Desc')
                         : mode === 'transcribe'
-                          ? '输入音频，仅支持 1 个文件'
-                          : '参考素材，可选，可直接粘贴图片'
+                          ? translate('quickCreateView.t60Desc')
+                          : translate('quickCreateView.t61Desc')
                     }
                   >
                     <div className="quick-create-input-list">
@@ -1806,7 +1812,7 @@ export function QuickCreateView() {
                           <span>{input.name}</span>
                           <button
                             type="button"
-                            aria-label={`移除 ${input.name}`}
+                            aria-label={translate('quickCreateView.tpl7Desc', { name: input.name })}
                             onClick={() =>
                               setInputs((current) => current.filter((item) => item.id !== input.id))
                             }
@@ -1821,7 +1827,7 @@ export function QuickCreateView() {
                             type="button"
                             className="quick-create-input-add"
                             aria-label={
-                              mode === 'transcribe' ? '选择音频文件' : '添加素材，也可直接粘贴'
+                              mode === 'transcribe' ? translate('quickCreateView.t27') : translate('quickCreateView.t62')
                             }
                             onClick={() => void handlePickFiles()}
                           >
@@ -1830,7 +1836,7 @@ export function QuickCreateView() {
                             ) : (
                               <Icons.ImagePlus size={17} />
                             )}
-                            <span>{mode === 'transcribe' ? '选择音频' : '添加素材'}</span>
+                            <span>{mode === 'transcribe' ? translate('quickCreateView.t63') : translate('quickCreateView.t64')}</span>
                           </button>
                         )}
                     </div>
@@ -1848,15 +1854,15 @@ export function QuickCreateView() {
                     <div className="quick-create-prompt-tools">
                       <button
                         type="button"
-                        title="从提示词库插入"
-                        aria-label="从提示词库插入"
+                        title={translate('quickCreateView.t79')}
+                        aria-label={translate('quickCreateView.t79')}
                         onClick={() => {
                           setPromptPickerOpen(true)
                           setPromptSearch('')
                         }}
                       >
                         <Icons.Book size={14} />
-                        <span>提示词库</span>
+                        <span>{translate('quickCreateView.t80')}</span>
                       </button>
                     </div>
                   )}
@@ -1871,7 +1877,7 @@ export function QuickCreateView() {
                 />
                 <div className="quick-create-prompt-meta">
                   <span>{modeCopy.promptMeta}</span>
-                  <small>{prompt.length} 字</small>
+                  <small>{translate('quickCreateView.tpl8Desc', { count: prompt.length })}</small>
                 </div>
               </div>
               {promptPickerOpen && mode !== 'reverse' && (
@@ -1880,25 +1886,25 @@ export function QuickCreateView() {
                   width={720}
                   centered
                   footer={null}
-                  title="提示词库"
+                  title={translate('quickCreateView.t80')}
                   className="quick-create-prompt-library-modal"
                   closeIcon={<Icons.X size={15} />}
                   onCancel={() => setPromptPickerOpen(false)}
                 >
                   <div className="quick-create-library-body">
                     <p className="quick-create-library-hint">
-                      选择后会替换当前提示词 · 共 {promptLibrary.length} 条
+                      {translate('quickCreateView.tpl9Desc', { count: promptLibrary.length })}
                     </p>
                     <Input
                       prefix={<Icons.Search size={14} />}
                       value={promptSearch}
                       onChange={(event) => setPromptSearch(event.target.value)}
-                      placeholder="搜索标题、内容或标签"
+                      placeholder={translate('quickCreateView.t81')}
                       allowClear
                     />
                     <div className="quick-create-library-grid">
                       {filteredPrompts.length === 0 ? (
-                        <span className="quick-create-picker-empty">还没有匹配的提示词</span>
+                        <span className="quick-create-picker-empty">{translate('quickCreateView.t89')}</span>
                       ) : (
                         filteredPrompts.map((item) => (
                           <button
@@ -1916,14 +1922,14 @@ export function QuickCreateView() {
                                 <RemoteAssetImage src={item.coverUrl} alt="" />
                               ) : (
                                 <span className="quick-create-library-card-fallback">
-                                  {item.title.trim().slice(0, 2) || '提示'}
+                                  {item.title.trim().slice(0, 2) || translate('quickCreateView.t65')}
                                 </span>
                               )}
                             </span>
                             <span className="quick-create-library-card-body">
                               <strong>{item.title}</strong>
                               <small>{item.text}</small>
-                              <em>{item.usageCount} 次使用</em>
+                              <em>{translate('quickCreateView.tpl10Desc', { count: item.usageCount })}</em>
                             </span>
                           </button>
                         ))
@@ -1935,11 +1941,11 @@ export function QuickCreateView() {
 
               {mode === 'reverse' ? (
                 <div className="quick-create-control-row quick-create-text-model-row">
-                  <label htmlFor="quick-create-provider">视觉理解模型</label>
+                  <label htmlFor="quick-create-provider">{translate('quickCreateView.t90')}</label>
                   <Select
                     id="quick-create-provider"
                     value={effectiveTextProviderId || undefined}
-                    placeholder="选择 Provider"
+                    placeholder={translate('quickCreateView.t82')}
                     options={textProviders.map((provider) => ({
                       label: provider.name,
                       value: provider.id,
@@ -1951,9 +1957,9 @@ export function QuickCreateView() {
                     }}
                   />
                   <Select
-                    aria-label="选择视觉理解模型"
+                    aria-label={translate('quickCreateView.t83')}
                     value={effectiveTextModelId || undefined}
-                    placeholder="选择模型"
+                    placeholder={translate('quickCreateView.t84')}
                     options={(
                       textProviders.find((provider) => provider.id === textProviderId)?.modelIds ??
                       []
@@ -1988,7 +1994,7 @@ export function QuickCreateView() {
                           className="quick-create-capability-action"
                           onClick={() => setTweak('view', 'providers')}
                         >
-                          去配置
+                          {translate('quickCreateView.t91')}
                         </button>
                       )}
                   </div>
@@ -2010,12 +2016,12 @@ export function QuickCreateView() {
                 {pendingSubmissions > 0 && (
                   <span className="quick-create-submit-status" aria-live="polite">
                     <Icons.ListTodo size={13} />
-                    {pendingSubmissions} 个任务提交中
+                    {translate('quickCreateView.tpl11Desc', { count: pendingSubmissions })}
                   </span>
                 )}
                 <div className="quick-create-submit-actions">
                   <Button type="default" className="quick-create-reset-button" onClick={resetForm}>
-                    重置
+                    {translate('quickCreateView.t92')}
                   </Button>
                   <Button
                     type="primary"
@@ -2034,24 +2040,24 @@ export function QuickCreateView() {
             {/* 语音 / 音乐不接受任何素材：不弹「松开以添加素材」，避免承诺一个做不到的动作 */}
             {dragOverForm && modeCopy.acceptsInputMaterials && (
               <div className="quick-create-drop-hint" aria-hidden="true">
-                <span>松开以添加素材</span>
+                <span>{translate('quickCreateView.t93')}</span>
               </div>
             )}
           </div>
           <div className="quick-create-result-pane">
             <div className="quick-create-result-heading">
               <div>
-                <strong>输出</strong>
+                <strong>{translate('quickCreateView.t94')}</strong>
                 <span>
                   {activeTab === 'tasks'
-                    ? `${tasks.length} 条记录`
+                    ? translate('quickCreateView.tpl12Desc', { count: tasks.length })
                     : focusedTask
-                      ? '当前任务'
-                      : '等待生成'}
+                      ? translate('quickCreateView.t66')
+                      : translate('quickCreateView.t67')}
                 </span>
               </div>
             </div>
-            <div className="quick-create-result-tabs" role="tablist" aria-label="创作结果与历史">
+            <div className="quick-create-result-tabs" role="tablist" aria-label={translate('quickCreateView.t85')}>
               <button
                 type="button"
                 role="tab"
@@ -2059,7 +2065,7 @@ export function QuickCreateView() {
                 className={activeTab === 'compose' ? 'is-active' : ''}
                 onClick={() => setActiveTab('compose')}
               >
-                <Icons.Image size={16} /> 创作结果
+                <Icons.Image size={16} /> {translate('quickCreateView.t95')}
               </button>
               <button
                 type="button"
@@ -2068,7 +2074,7 @@ export function QuickCreateView() {
                 className={activeTab === 'tasks' ? 'is-active' : ''}
                 onClick={() => setActiveTab('tasks')}
               >
-                <Icons.History size={16} /> 创作历史
+                <Icons.History size={16} /> {translate('quickCreateView.t97')}
                 {stats.running > 0 && <small>{stats.running}</small>}
               </button>
             </div>

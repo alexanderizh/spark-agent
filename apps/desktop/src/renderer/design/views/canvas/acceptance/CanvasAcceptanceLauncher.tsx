@@ -25,7 +25,8 @@ import {
 } from './canvasAcceptanceTargetModel'
 import {
   CANVAS_ACCEPTANCE_DEFAULT_STAGE_IDS,
-  CANVAS_ACCEPTANCE_STAGE_LABELS,
+  acceptanceStageLabel,
+  CANVAS_ACCEPTANCE_STAGE_LABEL_KEYS,
   buildCanvasAcceptanceWorkflowBlueprint,
 } from './canvasAcceptanceWorkflow'
 import './CanvasAcceptanceLauncher.less'
@@ -226,9 +227,9 @@ export function CanvasAcceptanceLauncher({ onReady }: CanvasAcceptanceLauncherPr
           <Checkbox.Group
             className="canvas-acceptance-stage-grid"
             value={stageIds}
-            options={(Object.keys(CANVAS_ACCEPTANCE_STAGE_LABELS) as CanvasAcceptanceStageId[]).map(
-              (stageId) => ({ label: CANVAS_ACCEPTANCE_STAGE_LABELS[stageId], value: stageId }),
-            )}
+            options={(
+              Object.keys(CANVAS_ACCEPTANCE_STAGE_LABEL_KEYS) as CanvasAcceptanceStageId[]
+            ).map((stageId) => ({ label: acceptanceStageLabel(stageId), value: stageId }))}
             onChange={(values) => setStageIds(values as CanvasAcceptanceStageId[])}
           />
           {effectiveStageIds.length !== stageIds.length && (

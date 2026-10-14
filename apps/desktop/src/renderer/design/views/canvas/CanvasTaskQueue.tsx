@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button, Tag } from '@lobehub/ui'
 import { Descriptions, Empty, Modal, Progress, Space } from 'antd'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { operationLabel } from './canvas.api'
 import { buildCanvasTaskDetailParams } from './canvasTaskInputDiagnostics'
 import { stripDuplicateCanvasRuntimeDiagnostics } from './canvasTaskDetailPresentation'
@@ -36,6 +37,8 @@ export function CanvasTaskQueue({
   onRepollTask?: ((taskId: string) => void | Promise<void>) | undefined
   onSelectNode: (nodeId: string) => void
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const [filter, setFilter] = useState<TaskFilter>('all')
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null)
   const [queueModalOpen, setQueueModalOpen] = useState(false)
@@ -85,12 +88,15 @@ export function CanvasTaskQueue({
     if (taskIds.length === 0 || clearingRef.current) return
     const count = taskIds.length
     Modal.confirm({
-      title: count === 1 ? '清理该无节点的运行中任务？' : `清理 ${count} 个无节点的运行中任务？`,
+      title:
+        count === 1
+          ? translate('canvasTaskQueue.t1Desc')
+          : translate('canvasTaskQueue.tpl1Desc', { count }),
       content:
-        '这些任务的承载节点已被删除，runtime 早已失效，无法正常取消。将直接从队列删除这些残留记录，操作不可撤销。',
-      okText: '清理',
+        translate('canvasTaskQueue.t2LongDesc'),
+      okText: translate('canvasTaskQueue.t3'),
       okButtonProps: { danger: true },
-      cancelText: '再想想',
+      cancelText: translate('canvasTaskQueue.t4'),
       onOk: async () => {
         clearingRef.current = true
         setClearing('orphan')
@@ -110,13 +116,15 @@ export function CanvasTaskQueue({
     if (count === 0 || clearingRef.current) return
     const isClearActive = scope === 'active'
     Modal.confirm({
-      title: isClearActive ? `取消全部 ${count} 个运行中任务？` : `清空全部 ${count} 个失败任务？`,
+      title: isClearActive
+        ? translate('canvasTaskQueue.tpl2Desc', { count })
+        : translate('canvasTaskQueue.tpl3Desc', { count }),
       content: isClearActive
-        ? '将中断这些正在运行的任务，已生成的部分结果不会保留。'
-        : '无产物的失败记录将从队列删除；仍有关联产物的记录会恢复为完成并保留。删除操作不可撤销。',
-      okText: isClearActive ? '全部取消' : '清空',
+        ? translate('canvasTaskQueue.t5Desc')
+        : translate('canvasTaskQueue.t6LongDesc'),
+      okText: isClearActive ? translate('canvasTaskQueue.t7') : translate('canvasTaskQueue.t8'),
       okButtonProps: { danger: true },
-      cancelText: '再想想',
+      cancelText: translate('canvasTaskQueue.t4'),
       onOk: async () => {
         clearingRef.current = true
         setClearing(scope)
@@ -133,28 +141,30 @@ export function CanvasTaskQueue({
   return (
     <section className="canvas-panel-section canvas-task-center">
       <div className="canvas-panel-title-row">
-        <h3>任务队列</h3>
+        <h3>{translate('canvasTaskQueue.t26')}</h3>
         <Space size={6}>
-          <Tag color={activeCount > 0 ? 'blue' : 'default'}>{activeCount} 运行</Tag>
+          <Tag color={activeCount > 0 ? 'blue' : 'default'}>
+            {translate('canvasTaskQueue.tpl4', { count: activeCount })}
+          </Tag>
           <Button
             size="middle"
             type="text"
             icon={<Icons.Maximize size={14} />}
             onClick={() => setQueueModalOpen(true)}
           >
-            放大
+            {translate('canvasTaskQueue.t47')}
           </Button>
           {activeCount > 0 && (
             <Button
               size="middle"
               type="text"
               danger
-              title="全部取消"
+              title={translate('canvasTaskQueue.t7')}
               loading={clearing === 'active'}
               icon={<Icons.Square size={14} />}
               onClick={() => runClearTasks('active', activeCount)}
             >
-              取消
+              {translate('canvasTaskQueue.t48')}
             </Button>
           )}
           {orphanCount > 0 && (
@@ -162,12 +172,12 @@ export function CanvasTaskQueue({
               size="middle"
               type="text"
               danger
-              title="清理无节点"
+              title={translate('canvasTaskQueue.t22')}
               loading={clearing === 'orphan'}
               icon={<Icons.Trash size={14} />}
               onClick={() => runDeleteOrphans(orphanTasks.map((task) => task.id))}
             >
-              清理({orphanCount})
+              {translate('canvasTaskQueue.tpl5Btn', { count: orphanCount })}
             </Button>
           )}
         </Space>
@@ -175,25 +185,25 @@ export function CanvasTaskQueue({
 
       <div className="canvas-task-stat-grid">
         <TaskStat
-          label="全部"
+          label={translate('canvasTaskQueue.t23')}
           value={tasks.length}
           active={filter === 'all'}
           onClick={() => setFilter('all')}
         />
         <TaskStat
-          label="运行"
+          label={translate('canvasTaskQueue.t24')}
           value={activeCount}
           active={filter === 'active'}
           onClick={() => setFilter('active')}
         />
         <TaskStat
-          label="失败"
+          label={translate('canvasTaskQueue.t18')}
           value={failedCount}
           active={filter === 'failed'}
           onClick={() => setFilter('failed')}
         />
         <TaskStat
-          label="完成"
+          label={translate('canvasTaskQueue.t17')}
           value={completedCount}
           active={filter === 'completed'}
           onClick={() => setFilter('completed')}
@@ -202,7 +212,7 @@ export function CanvasTaskQueue({
 
       <div className="canvas-task-queue-list">
         {visibleTasks.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={translate('canvasTaskQueue.t25')} />
         ) : (
           visibleTasks.map((task) => (
             <TaskCard
@@ -218,7 +228,7 @@ export function CanvasTaskQueue({
       </div>
 
       <Modal
-        title="任务队列"
+        title={translate('canvasTaskQueue.t26')}
         open={queueModalOpen}
         onCancel={() => setQueueModalOpen(false)}
         footer={null}
@@ -228,25 +238,25 @@ export function CanvasTaskQueue({
         <div className="canvas-task-queue-modal-body">
           <div className="canvas-task-stat-grid">
             <TaskStat
-              label="全部"
+              label={translate('canvasTaskQueue.t23')}
               value={tasks.length}
               active={filter === 'all'}
               onClick={() => setFilter('all')}
             />
             <TaskStat
-              label="运行"
+              label={translate('canvasTaskQueue.t24')}
               value={activeCount}
               active={filter === 'active'}
               onClick={() => setFilter('active')}
             />
             <TaskStat
-              label="失败"
+              label={translate('canvasTaskQueue.t18')}
               value={failedCount}
               active={filter === 'failed'}
               onClick={() => setFilter('failed')}
             />
             <TaskStat
-              label="完成"
+              label={translate('canvasTaskQueue.t17')}
               value={completedCount}
               active={filter === 'completed'}
               onClick={() => setFilter('completed')}
@@ -261,7 +271,9 @@ export function CanvasTaskQueue({
               icon={<Icons.Square size={14} />}
               onClick={() => runClearTasks('active', activeCount)}
             >
-              清空运行中{activeCount > 0 ? `(${activeCount})` : ''}
+              {translate('canvasTaskQueue.tpl6Btn', {
+                suffix: activeCount > 0 ? `(${activeCount})` : '',
+              })}
             </Button>
             <Button
               size="middle"
@@ -270,7 +282,9 @@ export function CanvasTaskQueue({
               icon={<Icons.Trash size={14} />}
               onClick={() => runClearTasks('failed', failedCount)}
             >
-              清空失败{failedCount > 0 ? `(${failedCount})` : ''}
+              {translate('canvasTaskQueue.tpl7Btn', {
+                suffix: failedCount > 0 ? `(${failedCount})` : '',
+              })}
             </Button>
             {orphanCount > 0 && (
               <Button
@@ -280,13 +294,13 @@ export function CanvasTaskQueue({
                 icon={<Icons.Trash size={14} />}
                 onClick={() => runDeleteOrphans(orphanTasks.map((task) => task.id))}
               >
-                清理无节点任务({orphanCount})
+                {translate('canvasTaskQueue.tpl8', { count: orphanCount })}
               </Button>
             )}
           </div>
           <div className="canvas-task-queue-list canvas-task-queue-list-modal">
             {visibleTasks.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" />
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={translate('canvasTaskQueue.t25')} />
             ) : (
               visibleTasks.map((task) => (
                 <TaskCard
@@ -359,25 +373,25 @@ function TaskCard({
               <button
                 type="button"
                 className="canvas-task-card-cancel canvas-task-card-clear"
-                title="清理无节点的残留任务"
+                title={translate('canvasTaskQueue.t27')}
                 onClick={(event) => {
                   event.stopPropagation()
                   onClearOrphan()
                 }}
               >
-                清理
+                {translate('canvasTaskQueue.t3')}
               </button>
             ) : (
               <button
                 type="button"
                 className="canvas-task-card-cancel"
-                title="取消任务"
+                title={translate('canvasTaskQueue.t28')}
                 onClick={(event) => {
                   event.stopPropagation()
                   onCancelTask(task.id)
                 }}
               >
-                取消
+                {translate('canvasTaskQueue.t48')}
               </button>
             ))}
           <TaskStatusTag status={task.status} />
@@ -385,14 +399,14 @@ function TaskCard({
       </div>
       <div className="canvas-task-card-meta">
         <span>{operationLabel(task.operation)}</span>
-        {orphan && <span className="canvas-task-card-orphan-tag">无节点</span>}
+        {orphan && <span className="canvas-task-card-orphan-tag">{translate('canvasTaskQueue.t49')}</span>}
         {task.provider ? <span>{task.provider}</span> : null}
         {task.modelId ? <span>{task.modelId}</span> : null}
       </div>
       <Progress percent={task.progress} size="middle" status={progressStatus(task.status)} />
       {orphan ? (
         <div className="canvas-task-card-error">
-          承载节点已被删除，无法正常取消，请点「清理」移除该残留记录。
+          {translate('canvasTaskQueue.t50Desc')}
         </div>
       ) : task.errorMsg || task.errorDetail ? (
         <div className="canvas-task-card-error">{task.errorDetail ?? task.errorMsg}</div>
@@ -492,7 +506,7 @@ function TaskDetailModal({
 
   return (
     <Modal
-      title="任务详情"
+      title={translate('canvasTaskQueue.t29')}
       open
       onCancel={onClose}
       footer={null}
@@ -523,11 +537,11 @@ function TaskDetailModal({
               icon={<Icons.Activity size={14} />}
               onClick={() => onSelectNode(taskNode.id)}
             >
-              定位任务节点
+              {translate('canvasTaskQueue.t51')}
             </Button>
           )}
           <Button size="middle" disabled={!canCancel} onClick={() => onCancelTask(task.id)}>
-            中断取消
+            {translate('canvasTaskQueue.t52')}
           </Button>
           {canRepollTask(task) && onRepollTask && (
             <Button
@@ -536,16 +550,16 @@ function TaskDetailModal({
               disabled={repolling}
               onClick={() => void handleRepoll()}
             >
-              重新轮询
+              {translate('canvasTaskQueue.t53')}
             </Button>
           )}
           {taskNode && (
             <Button size="middle" onClick={() => onRetryTask(task, 'current-node')}>
-              使用当前节点模型重试
+              {translate('canvasTaskQueue.t54')}
             </Button>
           )}
           <Button size="middle" type="text" onClick={() => onRetryTask(task, 'original-task')}>
-            按原任务模型重试
+            {translate('canvasTaskQueue.t55')}
           </Button>
         </Space>
 
@@ -562,26 +576,25 @@ function TaskDetailModal({
             { label: 'Manifest', children: task.manifestId ?? '-' },
             { label: 'Model', children: task.modelId ?? '-' },
             { label: 'Agent', children: task.agentId ?? task.agentMode ?? '-' },
-            { label: '创建时间', children: formatTime(task.createdAt) },
-            { label: '更新时间', children: formatTime(task.updatedAt) },
-            { label: '完成时间', children: task.completedAt ? formatTime(task.completedAt) : '-' },
+            { label: translate('canvasTaskQueue.t9'), children: formatTime(task.createdAt) },
+            { label: translate('canvasTaskQueue.t10'), children: formatTime(task.updatedAt) },
+            { label: translate('canvasTaskQueue.t11'), children: task.completedAt ? formatTime(task.completedAt) : '-' },
           ]}
         />
 
-        <DetailBlock title="模型原始输出（解析失败也保留）" defaultOpen>
-          <pre>{outputText || '（Provider/Agent 未返回任何文本）'}</pre>
+        <DetailBlock title={translate('canvasTaskQueue.t30Desc')} defaultOpen>
+          <pre>{outputText || translate('canvasTaskQueue.t12Desc')}</pre>
         </DetailBlock>
 
         {task.requestCall ? (
-          <DetailBlock title="实际模型调用（最终 HTTP / SDK / CLI 参数）" defaultOpen>
+          <DetailBlock title={translate('canvasTaskQueue.t31Desc')} defaultOpen>
             <div className="canvas-task-request-call">
               {requestCaptureStatus === 'session-dispatch' && (
                 <div className="canvas-task-detail-note">
-                  Executor 尚未进入最终 SDK/CLI
-                  提交边界；当前仅保留会话调度参数，不能视为底层模型请求。
+                  {translate('canvasTaskQueue.t60LongDesc')}
                 </div>
               )}
-              <div className="canvas-task-detail-subtitle">模型调用地址</div>
+              <div className="canvas-task-detail-subtitle">{translate('canvasTaskQueue.t56')}</div>
               <div className="canvas-task-request-line">
                 <Tag size="middle" color="blue">
                   {task.requestCall.method}
@@ -590,7 +603,7 @@ function TaskDetailModal({
               </div>
               {task.requestCall.headers != null && (
                 <>
-                  <div className="canvas-task-detail-subtitle">脱敏请求头</div>
+                  <div className="canvas-task-detail-subtitle">{translate('canvasTaskQueue.t57')}</div>
                   <pre>{formatJson(task.requestCall.headers)}</pre>
                 </>
               )}
@@ -598,15 +611,15 @@ function TaskDetailModal({
                 <>
                   <div className="canvas-task-detail-subtitle">
                     {isHttpMethod(task.requestCall.method)
-                      ? '最终 HTTP 请求体（脱敏）'
-                      : '最终 SDK / CLI 调用参数（脱敏）'}
+                      ? translate('canvasTaskQueue.t13Desc')
+                      : translate('canvasTaskQueue.t14Desc')}
                   </div>
                   <pre>{formatJson(task.requestCall.body)}</pre>
                 </>
               )}
               {(httpResponse || task.submitResponse != null) && (
                 <>
-                  <div className="canvas-task-detail-subtitle">调用响应</div>
+                  <div className="canvas-task-detail-subtitle">{translate('canvasTaskQueue.t58')}</div>
                   {httpResponse && (
                     <div className="canvas-task-request-line">
                       <Tag size="middle" color={httpResponse.status >= 400 ? 'red' : 'green'}>
@@ -623,19 +636,18 @@ function TaskDetailModal({
           </DetailBlock>
         ) : (
           task.status !== 'pending' && (
-            <DetailBlock title="实际模型调用（历史任务未记录）" defaultOpen>
+            <DetailBlock title={translate('canvasTaskQueue.t32Desc')} defaultOpen>
               <div className="canvas-task-detail-empty-call">
-                该任务由旧版本创建，未保存最终 HTTP/SDK
-                调用快照。下次运行或重试会记录调用地址和最终参数。
+                {translate('canvasTaskQueue.t61LongDesc')}
               </div>
             </DetailBlock>
           )
         )}
 
         {(task.systemPrompt || displayPrompt) && (
-          <DetailBlock title="画布提交 Prompt（调用前快照）">
+          <DetailBlock title={translate('canvasTaskQueue.t33Desc')}>
             <div className="canvas-task-detail-note">
-              这里是画布提交给主进程的 Prompt；Provider/SDK 最终组合结果以上方“实际模型调用”为准。
+              {translate('canvasTaskQueue.t59LongDesc')}
             </div>
             {task.systemPrompt && (
               <>
@@ -653,32 +665,32 @@ function TaskDetailModal({
         )}
 
         {task.inputSnapshots && task.inputSnapshots.length > 0 && (
-          <DetailBlock title="冻结输入内容（仅用于血缘与原文排查）">
+          <DetailBlock title={translate('canvasTaskQueue.t34Desc')}>
             <CanvasTaskInputSnapshotList snapshots={task.inputSnapshots} />
           </DetailBlock>
         )}
 
-        <DetailBlock title="输入 / 输出">
+        <DetailBlock title={translate('canvasTaskQueue.t35')}>
           <div className="canvas-task-ref-grid">
-            <TaskRefList title="输入节点" nodes={inputNodes} onSelectNode={onSelectNode} />
-            <TaskRefList title="输出节点" nodes={outputNodes} onSelectNode={onSelectNode} />
-            <AssetRefList title="输入资产" assets={inputAssets} />
-            <AssetRefList title="输出资产" assets={outputAssets} />
+            <TaskRefList title={translate('canvasTaskQueue.t36')} nodes={inputNodes} onSelectNode={onSelectNode} />
+            <TaskRefList title={translate('canvasTaskQueue.t37')} nodes={outputNodes} onSelectNode={onSelectNode} />
+            <AssetRefList title={translate('canvasTaskQueue.t38')} assets={inputAssets} />
+            <AssetRefList title={translate('canvasTaskQueue.t39')} assets={outputAssets} />
           </div>
         </DetailBlock>
 
-        <DetailBlock title="画布侧任务配置（非最终模型请求）">
+        <DetailBlock title={translate('canvasTaskQueue.t40Desc')}>
           <pre>{formatJson(detailParams)}</pre>
         </DetailBlock>
 
         {parsedEntities != null && (
-          <DetailBlock title="结构化解析结果">
+          <DetailBlock title={translate('canvasTaskQueue.t41')}>
             <pre>{formatJson(parsedEntities)}</pre>
           </DetailBlock>
         )}
 
         {!task.requestCall && (httpResponse || task.submitResponse != null) && (
-          <DetailBlock title={task.submitResponse != null ? '任务提交响应' : '实际 HTTP 响应'}>
+          <DetailBlock title={task.submitResponse != null ? translate('canvasTaskQueue.t15') : translate('canvasTaskQueue.t16')}>
             <div className="canvas-task-request-call">
               {httpResponse && (
                 <div className="canvas-task-request-line">
@@ -695,7 +707,7 @@ function TaskDetailModal({
         )}
 
         {(task.errorMsg || task.errorDetail) && (
-          <DetailBlock title="错误日志" defaultOpen>
+          <DetailBlock title={translate('canvasTaskQueue.t42')} defaultOpen>
             <div className="canvas-task-error-log">
               <strong>{task.errorMsg ?? 'error'}</strong>
               <pre>{task.errorDetail ?? '-'}</pre>
@@ -703,7 +715,7 @@ function TaskDetailModal({
           </DetailBlock>
         )}
 
-        <DetailBlock title="运行日志">
+        <DetailBlock title={translate('canvasTaskQueue.t43')}>
           <div className="canvas-task-log-list">
             {task.runtimeEvents && task.runtimeEvents.length > 0 ? (
               task.runtimeEvents.map((event, index) => (
@@ -715,16 +727,19 @@ function TaskDetailModal({
               ))
             ) : (
               <>
-                <TaskLogItem time={task.createdAt} label="任务创建（旧任务无详细事件）" />
-                <TaskLogItem time={task.updatedAt} label={`最后状态：${task.status}`} />
-                {task.completedAt && <TaskLogItem time={task.completedAt} label="任务结束" />}
+                <TaskLogItem time={task.createdAt} label={translate('canvasTaskQueue.t44Desc')} />
+                <TaskLogItem
+                  time={task.updatedAt}
+                  label={translate('canvasTaskQueue.tpl9', { status: task.status })}
+                />
+                {task.completedAt && <TaskLogItem time={task.completedAt} label={translate('canvasTaskQueue.t45')} />}
               </>
             )}
           </div>
         </DetailBlock>
 
         {shouldShowProviderResponse && (
-          <DetailBlock title="运行时 / Provider 诊断数据">
+          <DetailBlock title={translate('canvasTaskQueue.t46Desc')}>
             <pre>{formatJson(runtimeDiagnostics)}</pre>
           </DetailBlock>
         )}
@@ -831,11 +846,11 @@ function statusColor(status: CanvasTaskStatus): string {
 }
 
 function statusLabel(status: CanvasTaskStatus): string {
-  if (status === 'completed') return '完成'
-  if (status === 'failed') return '失败'
-  if (status === 'cancelled') return '已取消'
-  if (status === 'running') return '运行中'
-  return '等待中'
+  if (status === 'completed') return translate('canvasTaskQueue.t17')
+  if (status === 'failed') return translate('canvasTaskQueue.t18')
+  if (status === 'cancelled') return translate('canvasTaskQueue.t19')
+  if (status === 'running') return translate('canvasTaskQueue.t20')
+  return translate('canvasTaskQueue.t21')
 }
 
 function progressStatus(status: CanvasTaskStatus): 'normal' | 'active' | 'exception' | 'success' {

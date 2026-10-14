@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { Input, InputNumber, Popover, Select, Switch, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { useProviderConfigVersion } from '../../hooks/useProviderConfigVersion'
 import {
   capabilitySupportsFrameRoles,
@@ -55,10 +56,10 @@ import { selectCanvasOperationBindingConnectionNodes } from './canvasOperationBi
 
 /** 分离音频的输出格式选项（copy=原轨无损抽取，其余为重编码） */
 const AUDIO_FORMAT_OPTIONS: Array<{ value: 'copy' | 'mp3' | 'aac' | 'wav'; label: string }> = [
-  { value: 'copy', label: '原轨抽取（最快无损）' },
-  { value: 'mp3', label: 'MP3（兼容性最好）' },
+  { value: 'copy', label: translate('canvasOperationPanel.t1') },
+  { value: 'mp3', label: translate('canvasOperationPanel.t2') },
   { value: 'aac', label: 'AAC / M4A' },
-  { value: 'wav', label: 'WAV（无损）' },
+  { value: 'wav', label: translate('canvasOperationPanel.t3') },
 ]
 
 import { useCanvasOperationDraftAutosave } from './useCanvasOperationDraftAutosave'
@@ -187,22 +188,22 @@ const HIDDEN_MODEL_PARAM_NAMES = new Set([
   'useLastFrame',
 ])
 const COMMON_MODEL_PARAM_TITLE_PATTERNS = [
-  'Google 搜索',
-  'Google 图片搜索',
-  '分辨率',
-  '尺寸',
-  '帧率',
-  '联网搜索',
-  '随机种子',
-  '视频比例',
-  '画幅',
-  '画质',
-  '比例',
-  '质量',
-  '首帧',
-  '时长',
-  '搜索',
-  '尾帧',
+  translate('canvasOperationPanel.t4'),
+  translate('canvasOperationPanel.t5'),
+  translate('canvasOperationPanel.t6'),
+  translate('canvasOperationPanel.t7'),
+  translate('canvasOperationPanel.t8'),
+  translate('canvasOperationPanel.t9'),
+  translate('canvasOperationPanel.t10'),
+  translate('canvasOperationPanel.t11'),
+  translate('canvasOperationPanel.t12'),
+  translate('canvasOperationPanel.t13'),
+  translate('canvasOperationPanel.t14'),
+  translate('canvasOperationPanel.t15'),
+  translate('canvasOperationPanel.t16'),
+  translate('canvasOperationPanel.t17'),
+  translate('canvasOperationPanel.t18'),
+  translate('canvasOperationPanel.t19'),
 ]
 
 /** 分镜「每镜最长时间」档位（秒） */
@@ -329,7 +330,7 @@ export function mergeOperationPanelPromptWithInputContext(
   if (!trimmedContext) return trimmedPrompt
   if (!trimmedPrompt) return trimmedContext
   if (trimmedPrompt.includes(trimmedContext)) return trimmedPrompt
-  return `${trimmedPrompt}\n\n画布节点内容：\n${trimmedContext}`
+  return translate('canvasOperationPanel.tpl1Instruction', { prompt: trimmedPrompt, context: trimmedContext })
 }
 
 export function resolveOperationPanelEditablePrompt(params: {
@@ -348,10 +349,10 @@ export function isGeneratedCanvasFunctionalPrompt(
   const value = prompt?.trim() ?? ''
   if (!value) return false
   if (presetTargetId === 'screenplay.to_shot_script') {
-    return value.includes('【任务】把下面的场次剧本拆成') && value.includes('JSON 顶层结构必须为')
+    return value.includes('【任务】把下面的场次剧本拆成') && value.includes('JSON 顶层结构必须为') // i18n-exempt-line: 匹配 AI 生成的提示词骨架
   }
   if (presetTargetId === 'chapter.to_screenplay') {
-    return value.includes('请把下面的小说/长文稿章节改写为影视剧本') && value.includes('章节原文：')
+    return value.includes('请把下面的小说/长文稿章节改写为影视剧本') && value.includes('章节原文：') // i18n-exempt-line: 匹配 AI 生成的提示词骨架
   }
   if (
     presetTargetId === 'screenplay.extract_characters' ||
@@ -359,7 +360,7 @@ export function isGeneratedCanvasFunctionalPrompt(
     presetTargetId === 'screenplay.extract_props' ||
     presetTargetId === 'screenplay.extract_effects'
   ) {
-    return value.includes('【任务】你是资深影视美术/设定师') && value.includes('【剧本】')
+    return value.includes('【任务】你是资深影视美术/设定师') && value.includes('【剧本】') // i18n-exempt-line: 匹配 AI 生成的提示词骨架
   }
   return false
 }
@@ -557,16 +558,18 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   fullscreen?: boolean
   onFullscreenChange?: (nextFullscreen: boolean) => void
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const providerConfigVersion = useProviderConfigVersion()
   const operation = nodeOperation(node) ?? 'text_generate'
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
   const panelMode = resolveCanvasOperationPanelMode(operation)
   const isImagePromptReverse = operation === 'image_prompt_reverse'
-  const promptEditorLabel = isImagePromptReverse ? '反推要求' : '提示词'
+  const promptEditorLabel = isImagePromptReverse ? translate('canvasOperationPanel.t20') : translate('canvasOperationPanel.t21')
   const promptEditorPlaceholder = isImagePromptReverse
-    ? '例如：只反推图中场景；只描述人物外观；重点说明人物正在做什么...'
-    : `输入${operationText}的提示词...`
+    ? translate('canvasOperationPanel.t22Desc')
+    : translate('canvasOperationPanel.tpl2Desc', { name: operationText })
   const dedicatedMediaKind = panelMode.dedicatedMediaKind
   const [depthModelState, setDepthModelState] = useState<CanvasDepthModelState>('unknown')
   const [depthModelError, setDepthModelError] = useState('')
@@ -676,10 +679,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           label:
             item.title ??
             (item.type === 'video'
-              ? `视频 ${index + 1}`
+              ? translate('canvasOperationPanel.tpl3Desc', { index: index + 1 })
               : item.type === 'audio'
-                ? `音频 ${index + 1}`
-                : `图片 ${index + 1}`),
+                ? translate('canvasOperationPanel.tpl4Desc', { index: index + 1 })
+                : translate('canvasOperationPanel.tpl5Desc', { index: index + 1 })),
           type: item.type,
         })),
     [capability, node.id, snapshot.nodes],
@@ -1179,7 +1182,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   ])
 
   const runtimeSummary = useMemo(() => {
-    if (runtimeLoading) return '正在读取应用 Agent 与 Provider 配置...'
+    if (runtimeLoading) return translate('canvasOperationPanel.t23Desc')
     const skillSummary = selectedSkillIds.length > 0 ? ` · ${selectedSkillIds.length} Skills` : ''
     if (selectedAgent && selectedTextProvider) {
       return `${selectedAgent.name} · ${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}${skillSummary}`
@@ -1187,7 +1190,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     if (selectedTextProvider) {
       return `${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}${skillSummary}`
     }
-    return '未找到可用文本 Provider'
+    return translate('canvasOperationPanel.t24Desc')
   }, [
     runtimeLoading,
     selectedAgent,
@@ -1347,7 +1350,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     outputMediaNodeByNodeId,
     onRequestCanvasNodePick,
     onAppendNode: appendQuickMediaInput,
-    onInvalidNode: () => message.warning('所选素材类型不适用于当前生成模式'),
+    onInvalidNode: () => message.warning(translate('canvasOperationPanel.t25Desc')),
   })
   const supportsVideoFrameRoles = useMemo(
     () =>
@@ -1757,10 +1760,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const handleSaveDraft = useCallback(async () => {
     try {
       await saveDraftNow(true)
-      message.success('操作配置已保存')
+      message.success(translate('canvasOperationPanel.t26'))
     } catch (error) {
       console.error('[CanvasOperationPanel] Failed to save operation draft:', error)
-      message.error(error instanceof Error ? error.message : '保存操作配置失败')
+      message.error(error instanceof Error ? error.message : translate('canvasOperationPanel.t27'))
     }
   }, [saveDraftNow])
 
@@ -1903,7 +1906,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       if (error instanceof CanvasTaskValidationError) {
         message.warning(error.message)
       } else {
-        message.error(error instanceof Error ? error.message : '提交任务失败，请调整参数后重试')
+        message.error(error instanceof Error ? error.message : translate('canvasOperationPanel.t28Desc'))
       }
     } finally {
       setRunning(false)
@@ -1963,7 +1966,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     [selectedCapability],
   )
   // 当前命中的 capability 标识：让用户一眼看出当前节点命中 manifest 的哪个能力
-  // （如"图生视频（首帧/首尾帧）"、"文生视频 / 多模态参考"），hover 看图片上限/必填输入/支持角色。
+  // （如translate('canvasOperationPanel.t93Desc')、translate('canvasOperationPanel.t94Desc')），hover 看图片上限/必填输入/支持角色。
   const capabilityTag = useMemo(() => {
     if (!selectedCapability) return null
     const policy = selectedCapabilityRolePolicy
@@ -1978,10 +1981,25 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       <Tooltip
         title={
           <div style={{ fontSize: 12, lineHeight: '18px' }}>
-            <div>能力：{selectedCapability.id}</div>
-            <div>图片上限：{maxImages != null ? `${maxImages} 张` : '未限制'}</div>
-            <div>必填输入：{required && required.length > 0 ? required.join('、') : '无'}</div>
-            <div>支持角色：{roles.length > 0 ? roles.join('、') : '无'}</div>
+            <div>{translate('canvasOperationPanel.tpl6Desc', { value: selectedCapability.id })}</div>
+            <div>
+              {translate('canvasOperationPanel.tpl7Desc', {
+                value:
+                  maxImages != null
+                    ? translate('canvasOperationPanel.tpl8Desc', { count: maxImages })
+                    : translate('canvasOperationPanel.t29'),
+              })}
+            </div>
+            <div>
+              {translate('canvasOperationPanel.tpl9Desc', {
+                value: required && required.length > 0 ? required.join('、') : translate('canvasOperationPanel.t30'),
+              })}
+            </div>
+            <div>
+              {translate('canvasOperationPanel.tpl10Desc', {
+                value: roles.length > 0 ? roles.join('、') : translate('canvasOperationPanel.t30'),
+              })}
+            </div>
           </div>
         }
       >
@@ -2043,7 +2061,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     onRequestCanvasNodePick?.((pickedNode) => {
       if (pickedNode.type !== dedicatedMediaKind) {
         message.warning(
-          dedicatedMediaKind === 'video' ? '深度视频转换仅支持视频节点' : '图片反推仅支持图片节点',
+          dedicatedMediaKind === 'video' ? translate('canvasOperationPanel.t31Desc') : translate('canvasOperationPanel.t32'),
         )
         return
       }
@@ -2059,7 +2077,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const handleDedicatedMediaUpload = useCallback(
     async (file: File) => {
       if (!dedicatedMediaKind || !file.type.startsWith(`${dedicatedMediaKind}/`)) {
-        message.warning(dedicatedMediaKind === 'video' ? '请选择视频文件' : '请选择图片文件')
+        message.warning(dedicatedMediaKind === 'video' ? translate('canvasOperationPanel.t33') : translate('canvasOperationPanel.t34'))
         return
       }
       const uploadedNode = await onUploadLocalFile?.(file)
@@ -2145,7 +2163,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     options: Array<{ value: string; label: ReactNode; disabled?: boolean }>,
     selectedValue: string,
     onChange: (value: string) => void,
-    emptyText = '自动 / 默认',
+    emptyText = translate('canvasOperationPanel.t35'),
   ) => (
     <div className="canvas-operation-text-option-list">
       <button
@@ -2187,7 +2205,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     options: Array<{ value: string; label: ReactNode; disabled?: boolean }>,
     selectedValues: string[],
     onChange: (value: string[]) => void,
-    emptyText = '清空选择',
+    emptyText = translate('canvasOperationPanel.t36'),
     maxSelected?: number,
   ) => {
     const selectedSet = new Set(selectedValues)
@@ -2240,11 +2258,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     <div className="canvas-operation-unified-advanced-extras">
       {(operation.includes('image') || operation.includes('video')) && (
         <div className="canvas-operation-unified-advanced-block">
-          <div className="canvas-operation-panel-section-label">反向提示词</div>
+          <div className="canvas-operation-panel-section-label">{translate('canvasOperationPanel.t80')}</div>
           <Input.TextArea
             rows={3}
             value={negativePrompt}
-            placeholder="不希望出现的内容..."
+            placeholder={translate('canvasOperationPanel.t68')}
             onChange={(event) => handleNegativePromptChange(event.target.value)}
             disabled={running}
           />
@@ -2252,7 +2270,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       )}
       <div className="canvas-operation-unified-advanced-block">
         <div className="canvas-operation-panel-section-title-row">
-          <div className="canvas-operation-panel-section-label">自定义参数</div>
+          <div className="canvas-operation-panel-section-label">{translate('canvasOperationPanel.t57')}</div>
           <Button
             size="small"
             type="text"
@@ -2260,12 +2278,12 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             disabled={running}
             onClick={handleAddCustomParam}
           >
-            添加
+            {translate('canvasOperationPanel.t81')}
           </Button>
         </div>
         {customParams.length === 0 ? (
           <div className="canvas-operation-panel-hint">
-            可添加模型私有参数，例如 negative_prompt、camera_control 或 Provider 专属字段。
+            {translate('canvasOperationPanel.t82LongDesc')}
           </div>
         ) : (
           <div className="canvas-operation-panel-custom-params">
@@ -2274,7 +2292,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 <Input
                   size="middle"
                   value={param.name}
-                  placeholder="字段名"
+                  placeholder={translate('canvasOperationPanel.t69')}
                   disabled={running}
                   onChange={(event) =>
                     handleCustomParamPatch(param.id, { name: event.target.value })
@@ -2286,10 +2304,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   disabled={running}
                   getPopupContainer={getCanvasPopoverPopupContainer}
                   options={[
-                    { value: 'string', label: '文本' },
-                    { value: 'number', label: '数字' },
-                    { value: 'integer', label: '整数' },
-                    { value: 'boolean', label: '布尔' },
+                    { value: 'string', label: translate('canvasOperationPanel.t37') },
+                    { value: 'number', label: translate('canvasOperationPanel.t38') },
+                    { value: 'integer', label: translate('canvasOperationPanel.t39') },
+                    { value: 'boolean', label: translate('canvasOperationPanel.t40') },
                     { value: 'json', label: 'JSON' },
                   ]}
                   onChange={(value) =>
@@ -2303,7 +2321,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     size="middle"
                     allowClear
                     value={param.value || undefined}
-                    placeholder="值"
+                    placeholder={translate('canvasOperationPanel.t41')}
                     disabled={running}
                     getPopupContainer={getCanvasPopoverPopupContainer}
                     options={[
@@ -2320,7 +2338,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   <Input
                     size="middle"
                     value={param.value}
-                    placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
+                    placeholder={param.type === 'json' ? '{"key":"value"}' : translate('canvasOperationPanel.t41')}
                     type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
                     disabled={running}
                     onChange={(event) =>
@@ -2332,7 +2350,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   size="middle"
                   type="text"
                   icon={<Icons.Trash size={13} />}
-                  aria-label="删除自定义参数"
+                  aria-label={translate('canvasOperationPanel.t70')}
                   disabled={running}
                   onClick={() => handleRemoveCustomParam(param.id)}
                 />
@@ -2353,21 +2371,21 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         <div className="canvas-operation-composer-top has-no-media">
           <div className="canvas-operation-composer-inputs">
             {/* <label className="canvas-operation-composer-mini-field is-message">
-              <span>备注</span>
+              <span>{translate('canvasOperationPanel.t96')}</span>
               <Input
                 size="middle"
                 value={messageDraft}
-                placeholder="节点展示说明"
+                placeholder={translate('canvasOperationPanel.t95Placeholder')}
                 onChange={(event) => handleMessageDraftChange(event.target.value)}
                 disabled={running}
               />
             </label> */}
             <span className="canvas-operation-panel-hint">
               {dedicatedMediaKind === 'image'
-                ? '反推指令已内置，只需提供一张图片'
+                ? translate('canvasOperationPanel.t42Desc')
                 : dedicatedMediaKind === 'video'
-                  ? '本地转换无需提示词，只需提供一段视频'
-                  : '资源和文本统一在提示词中用 @ 添加'}
+                  ? translate('canvasOperationPanel.t43Desc')
+                  : translate('canvasOperationPanel.t44Desc')}
             </span>
           </div>
         </div>
@@ -2398,10 +2416,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     marginTop: 10,
                   }}
                 >
-                  <span>是否保留音频</span>
+                  <span>{translate('canvasOperationPanel.t71')}</span>
                   <Switch
                     size="small"
-                    aria-label="是否保留音频"
+                    aria-label={translate('canvasOperationPanel.t71')}
                     checked={preserveAudio}
                     disabled={running}
                     onChange={(checked) => {
@@ -2431,10 +2449,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   marginTop: 10,
                 }}
               >
-                <span>音频格式</span>
+                <span>{translate('canvasOperationPanel.t72')}</span>
                 <Select
                   size="small"
-                  aria-label="音频格式"
+                  aria-label={translate('canvasOperationPanel.t72')}
                   value={audioFormat}
                   disabled={running}
                   style={{ width: 150 }}
@@ -2469,7 +2487,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 disabled={running}
               />
               <span className="canvas-operation-prompt-count">
-                {promptCharCount.toLocaleString()} 字符
+                {translate('canvasOperationPanel.tpl11Desc', { count: promptCharCount.toLocaleString() })}
               </span>
             </div>
           </div>
@@ -2521,16 +2539,16 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 {panelMode.runtimeKind === 'text_full' &&
                   renderTextClickSelector({
                     pickerId: 'skills',
-                    title: '选择 Skills',
+                    title: translate('canvasOperationPanel.t45'),
                     label: 'Skills',
                     valueText:
-                      selectedSkillIds.length > 0 ? `${selectedSkillIds.length} 个` : '未选择',
+                      selectedSkillIds.length > 0 ? translate('canvasOperationPanel.tpl12Desc', { count: selectedSkillIds.length }) : translate('canvasOperationPanel.t46'),
                     disabled: running || runtimeLoading || skills.length === 0,
                     content: renderMultiOptionList(
                       skills.map((skill) => ({ value: skill.id, label: skill.name })),
                       selectedSkillIds,
                       handleSkillIdsChange,
-                      '清空 Skills',
+                      translate('canvasOperationPanel.t47'),
                     ),
                   })}
                 {isShotScriptNode && (
@@ -2543,7 +2561,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       flexWrap: 'wrap',
                     }}
                   >
-                    <span style={{ fontSize: 12, opacity: 0.7 }}>每镜最长</span>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>{translate('canvasOperationPanel.t83')}</span>
                     <Select<number | 'custom'>
                       size="small"
                       style={{ width: 92 }}
@@ -2553,8 +2571,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         setMaxClipPreset(v)
                       }}
                       options={[
-                        ...SHOT_MAX_CLIP_PRESETS.map((s) => ({ value: s, label: `${s} 秒` })),
-                        { value: 'custom', label: '自定义' },
+                        ...SHOT_MAX_CLIP_PRESETS.map((s) => ({ value: s, label: translate('canvasOperationPanel.tpl13Desc', { seconds: s }) })),
+                        { value: 'custom', label: translate('canvasOperationPanel.t48') },
                       ]}
                     />
                     {maxClipPreset === 'custom' && (
@@ -2562,7 +2580,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         size="small"
                         min={1}
                         style={{ width: 90 }}
-                        addonAfter="秒"
+                        addonAfter={translate('canvasOperationPanel.t73')}
                         value={maxClipCustom.trim() === '' ? null : Number(maxClipCustom)}
                         onChange={(v) => {
                           markConfigurationTouched()
@@ -2593,9 +2611,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               <>
                 {renderTextClickSelector({
                   pickerId: 'first-frame',
-                  title: '选择首帧',
-                  label: '首帧',
-                  valueText: firstFrameNodeId ? frameLabel(firstFrameNodeId) : '未选择',
+                  title: translate('canvasOperationPanel.t49'),
+                  label: translate('canvasOperationPanel.t16'),
+                  valueText: firstFrameNodeId ? frameLabel(firstFrameNodeId) : translate('canvasOperationPanel.t46'),
                   disabled: running,
                   content: renderSingleOptionList(
                     frameImageOptions.map((option) => ({
@@ -2607,18 +2625,18 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       markConfigurationTouched()
                       setFirstFrameNodeId(value)
                     },
-                    '不指定首帧',
+                    translate('canvasOperationPanel.t50'),
                   ),
                 })}
                 {renderTextClickSelector({
                   pickerId: 'last-frame',
-                  title: '选择尾帧',
-                  label: '尾帧',
+                  title: translate('canvasOperationPanel.t51'),
+                  label: translate('canvasOperationPanel.t19'),
                   valueText: lastFrameNodeId
                     ? frameLabel(lastFrameNodeId)
                     : canUseLastFrame
-                      ? '未选择'
-                      : '仅 1 张图',
+                      ? translate('canvasOperationPanel.t46')
+                      : translate('canvasOperationPanel.t52'),
                   disabled: running || !canUseLastFrame,
                   content: renderSingleOptionList(
                     frameImageOptions.map((option) => ({
@@ -2630,18 +2648,18 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       markConfigurationTouched()
                       setLastFrameNodeId(value)
                     },
-                    canUseLastFrame ? '不指定尾帧' : '仅 1 张图',
+                    canUseLastFrame ? translate('canvasOperationPanel.t53') : translate('canvasOperationPanel.t52'),
                   ),
                 })}
                 {videoFrameMaxImages > 2 &&
                   renderTextClickSelector({
                     pickerId: 'reference-frames',
-                    title: '选择参考图',
-                    label: '参考图',
+                    title: translate('canvasOperationPanel.t54'),
+                    label: translate('canvasOperationPanel.t55'),
                     valueText:
                       referenceFrameNodeIds.length > 0
-                        ? `${referenceFrameNodeIds.length} 张`
-                        : '未选择',
+                        ? translate('canvasOperationPanel.tpl14Desc', { count: referenceFrameNodeIds.length })
+                        : translate('canvasOperationPanel.t46'),
                     disabled: running,
                     content: renderMultiOptionList(
                       frameImageOptions.map((option) => ({
@@ -2653,7 +2671,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         markConfigurationTouched()
                         setReferenceFrameNodeIds(values)
                       },
-                      '清空参考图',
+                      translate('canvasOperationPanel.t56'),
                     ),
                   })}
               </>
@@ -2662,34 +2680,34 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               mediaCapabilityIds.length === 0 &&
               renderTextClickSelector({
                 pickerId: 'custom-params',
-                title: '自定义参数',
-                label: '自定义参数',
-                ...(customParams.length > 0 ? { valueText: `${customParams.length} 项` } : {}),
+                title: translate('canvasOperationPanel.t57'),
+                label: translate('canvasOperationPanel.t57'),
+                ...(customParams.length > 0 ? { valueText: translate('canvasOperationPanel.tpl15Desc', { count: customParams.length }) } : {}),
                 disabled: running,
                 popoverClassName: 'canvas-operation-composer-popover is-custom',
                 content: advancedParameterContent,
               })}
           </div>
           <div className="canvas-operation-composer-actions">
-            <Tooltip title="重试任务">
+            <Tooltip title={translate('canvasOperationPanel.t74')}>
               <Button
                 size="small"
                 type="text"
-                aria-label="重试任务"
+                aria-label={translate('canvasOperationPanel.t74')}
                 icon={<Icons.RotateCcw size={14} />}
                 disabled={running || outputNodes.length === 0}
                 onClick={() => {
                   onRetry()
-                  message.info('已发起重试，将在右侧生成新的产出节点')
+                  message.info(translate('canvasOperationPanel.t58Desc'))
                 }}
               />
             </Tooltip>
             {task && onRepoll && canRepollCanvasTask(task) && (
-              <Tooltip title="重新轮询">
+              <Tooltip title={translate('canvasOperationPanel.t75')}>
                 <Button
                   size="small"
                   type="text"
-                  aria-label="重新轮询"
+                  aria-label={translate('canvasOperationPanel.t75')}
                   icon={<Icons.RotateCcw size={14} />}
                   loading={repolling}
                   disabled={repolling}
@@ -2701,7 +2719,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               <Button
                 size="small"
                 type="text"
-                aria-label="保存配置"
+                aria-label={translate('canvasOperationPanel.t76')}
                 icon={<Icons.Check size={16} />}
                 loading={savingDraft}
                 disabled={running || node.data.status === 'running'}
@@ -2715,7 +2733,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   size="small"
                   danger
                   type="text"
-                  aria-label="取消任务"
+                  aria-label={translate('canvasOperationPanel.t77')}
                   icon={<Icons.XCircle size={13} />}
                   loading={cancelling}
                   onClick={() => void handleCancelTask()}
@@ -2723,7 +2741,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               )}
             <Tooltip
               title={
-                selectedMediaInputIssue ?? (node.data.status === 'running' ? '运行中' : submitLabel)
+                selectedMediaInputIssue ?? (node.data.status === 'running' ? translate('canvasOperationPanel.t59') : submitLabel)
               }
             >
               <Button
@@ -2764,17 +2782,17 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             {statusTag}
             {outputNodes.length > 0 && (
               <Tag color="purple" bordered>
-                {outputNodes.length} 产出
+                {translate('canvasOperationPanel.tpl16Desc', { count: outputNodes.length })}
               </Tag>
             )}
           </div>
           <div className="canvas-operation-panel-head-actions">
-            <Tooltip title={fullscreen ? '退出全屏' : '全屏操作'}>
+            <Tooltip title={fullscreen ? translate('canvasOperationPanel.t60') : translate('canvasOperationPanel.t61')}>
               <Button
                 size="middle"
                 type="text"
                 icon={fullscreen ? <Icons.Minimize size={15} /> : <Icons.Maximize size={15} />}
-                aria-label={fullscreen ? '退出全屏' : '全屏操作'}
+                aria-label={fullscreen ? translate('canvasOperationPanel.t60') : translate('canvasOperationPanel.t61')}
                 onClick={() => setFullscreen((current) => !current)}
               />
             </Tooltip>
@@ -2785,14 +2803,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 
       <div className="canvas-operation-panel-body">
         <div className="canvas-operation-panel-section canvas-operation-panel-section-node">
-          <div className="canvas-operation-panel-section-label">节点备注</div>
+          <div className="canvas-operation-panel-section-label">{translate('canvasOperationPanel.t84')}</div>
           <div className="canvas-operation-panel-detail-grid">
             <label className="canvas-operation-panel-detail-field">
-              <span>备注 / 展示文本</span>
+              <span>{translate('canvasOperationPanel.t85')}</span>
               <Input
                 size="middle"
                 value={messageDraft}
-                placeholder="显示在节点卡片上的辅助说明"
+                placeholder={translate('canvasOperationPanel.t78Desc')}
                 onChange={(event) => handleMessageDraftChange(event.target.value)}
                 disabled={running}
               />
@@ -2804,10 +2822,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           <div className="canvas-operation-panel-section canvas-operation-panel-section-runtime">
             <div className="canvas-operation-panel-section-title-row">
               <div className="canvas-operation-panel-section-label">
-                {panelMode.runtimeKind === 'vision_model' ? '图片理解模型' : 'Agent / 文本模型'}
+                {panelMode.runtimeKind === 'vision_model' ? translate('canvasOperationPanel.t62') : translate('canvasOperationPanel.t63')}
               </div>
               <Tag bordered color="blue">
-                应用配置
+                {translate('canvasOperationPanel.t86')}
               </Tag>
             </div>
             <div className="canvas-operation-panel-runtime-card">
@@ -2838,7 +2856,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   showSearch
                   className="canvas-operation-panel-skill-select"
                   value={selectedSkillIds}
-                  placeholder="选择 Skills"
+                  placeholder={translate('canvasOperationPanel.t45')}
                   optionFilterProp="label"
                   maxTagCount="responsive"
                   options={skills.map((skill) => ({ value: skill.id, label: skill.name }))}
@@ -2868,10 +2886,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   justifyContent: 'space-between',
                 }}
               >
-                <div className="canvas-operation-panel-section-label">是否保留音频</div>
+                <div className="canvas-operation-panel-section-label">{translate('canvasOperationPanel.t71')}</div>
                 <Switch
                   size="middle"
-                  aria-label="是否保留音频"
+                  aria-label={translate('canvasOperationPanel.t71')}
                   checked={preserveAudio}
                   disabled={running}
                   onChange={(checked) => {
@@ -2881,7 +2899,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 />
               </div>
               <div className="canvas-operation-panel-hint">
-                开启后会将原视频音轨保留到转换结果中。
+                {translate('canvasOperationPanel.t87Desc')}
               </div>
             </div>
             <CanvasDepthRenderOptions
@@ -2900,10 +2918,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             className="canvas-operation-panel-section canvas-operation-panel-section-runtime"
             style={{ paddingTop: 0 }}
           >
-            <div className="canvas-operation-panel-section-label">音频格式</div>
+            <div className="canvas-operation-panel-section-label">{translate('canvasOperationPanel.t72')}</div>
             <Select
               size="middle"
-              aria-label="音频格式"
+              aria-label={translate('canvasOperationPanel.t72')}
               value={audioFormat}
               disabled={running}
               style={{ width: '100%' }}
@@ -2914,14 +2932,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               options={AUDIO_FORMAT_OPTIONS}
             />
             <div className="canvas-operation-panel-hint">
-              原轨抽取最快无损，其余选项为按需重编码。
+              {translate('canvasOperationPanel.t88Desc')}
             </div>
           </div>
         )}
 
         {mediaCapabilityIds.length > 0 && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-model">
-            <div className="canvas-operation-panel-section-label">模型与参数</div>
+            <div className="canvas-operation-panel-section-label">{translate('canvasOperationPanel.t89')}</div>
             <CanvasOperationParameterControls
               variant="panel"
               models={supportedMediaModels}
@@ -2937,10 +2955,18 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   {capabilityTag}
                   <div className="canvas-operation-panel-hint">
                     {modelsLoading
-                      ? '正在读取已启用模型...'
+                      ? translate('canvasOperationPanel.t64')
                       : supportedMediaModels.length > 0
-                        ? `当前能力可用 ${supportedMediaModels.length} 个模型${selectedModel ? ` · ${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}` : ''}`
-                        : '当前能力暂无已启用模型，请先到 Provider 绑定。'}
+                        ? translate('canvasOperationPanel.tpl17Desc', {
+                            count: supportedMediaModels.length,
+                            rest: selectedModel
+                              ? translate('canvasOperationPanel.tpl18Desc', {
+                                  id: selectedModel.effectiveModelId,
+                                  mode: selectedModel.invocationMode,
+                                })
+                              : '',
+                          })
+                        : translate('canvasOperationPanel.t65Desc')}
                   </div>
                 </>
               }
@@ -2952,7 +2978,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 
         {mediaInputModeOptions.length > 0 && effectiveMediaInputMode && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-inputs">
-            <div className="canvas-operation-panel-section-label">素材编排</div>
+            <div className="canvas-operation-panel-section-label">{translate('canvasOperationPanel.t90')}</div>
             <CanvasMediaInputConfigurator
               options={mediaInputModeOptions}
               value={effectiveMediaInputMode}
@@ -2973,15 +2999,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 
         {supportsVideoFrameRoles && mediaInputModeOptions.length === 0 && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-frame-params">
-            <div className="canvas-operation-panel-section-label">视频帧 / 参考图</div>
+            <div className="canvas-operation-panel-section-label">{translate('canvasOperationPanel.t91')}</div>
             <div className="canvas-operation-panel-frame-roles">
               <div className="canvas-frame-role-grid">
                 <div className="canvas-param-field">
                   {renderTextClickSelector({
                     pickerId: 'panel-first-frame',
-                    title: '选择首帧',
-                    label: '首帧',
-                    valueText: firstFrameNodeId ? frameLabel(firstFrameNodeId) : '未选择',
+                    title: translate('canvasOperationPanel.t49'),
+                    label: translate('canvasOperationPanel.t16'),
+                    valueText: firstFrameNodeId ? frameLabel(firstFrameNodeId) : translate('canvasOperationPanel.t46'),
                     disabled: running,
                     content: renderSingleOptionList(
                       frameImageOptions.map((option) => ({
@@ -2993,20 +3019,20 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         markConfigurationTouched()
                         setFirstFrameNodeId(value)
                       },
-                      '不指定首帧',
+                      translate('canvasOperationPanel.t50'),
                     ),
                   })}
                 </div>
                 <div className="canvas-param-field">
                   {renderTextClickSelector({
                     pickerId: 'panel-last-frame',
-                    title: '选择尾帧',
-                    label: '尾帧',
+                    title: translate('canvasOperationPanel.t51'),
+                    label: translate('canvasOperationPanel.t19'),
                     valueText: lastFrameNodeId
                       ? frameLabel(lastFrameNodeId)
                       : canUseLastFrame
-                        ? '未选择'
-                        : '仅 1 张图',
+                        ? translate('canvasOperationPanel.t46')
+                        : translate('canvasOperationPanel.t52'),
                     disabled: running || !canUseLastFrame,
                     content: renderSingleOptionList(
                       frameImageOptions.map((option) => ({
@@ -3018,7 +3044,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         markConfigurationTouched()
                         setLastFrameNodeId(value)
                       },
-                      canUseLastFrame ? '不指定尾帧' : '仅 1 张图',
+                      canUseLastFrame ? translate('canvasOperationPanel.t53') : translate('canvasOperationPanel.t52'),
                     ),
                   })}
                 </div>
@@ -3026,12 +3052,12 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               {videoFrameMaxImages > 2 &&
                 renderTextClickSelector({
                   pickerId: 'panel-reference-frames',
-                  title: '选择参考图',
-                  label: '参考图',
+                  title: translate('canvasOperationPanel.t54'),
+                  label: translate('canvasOperationPanel.t55'),
                   valueText:
                     referenceFrameNodeIds.length > 0
-                      ? `${referenceFrameNodeIds.length} 张`
-                      : '未选择',
+                      ? translate('canvasOperationPanel.tpl14Desc', { count: referenceFrameNodeIds.length })
+                      : translate('canvasOperationPanel.t46'),
                   disabled: running,
                   content: renderMultiOptionList(
                     frameImageOptions.map((option) => ({
@@ -3043,7 +3069,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       markConfigurationTouched()
                       setReferenceFrameNodeIds(values)
                     },
-                    '清空参考图',
+                    translate('canvasOperationPanel.t56'),
                   ),
                 })}
             </div>
@@ -3053,7 +3079,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         {dedicatedMediaKind && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-inputs">
             <div className="canvas-operation-panel-section-label">
-              {dedicatedMediaKind === 'video' ? '输入视频' : '输入图片'}
+              {dedicatedMediaKind === 'video' ? translate('canvasOperationPanel.t66') : translate('canvasOperationPanel.t67')}
             </div>
             <CanvasOperationMediaInput
               node={dedicatedMediaInputNode}
@@ -3093,7 +3119,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 disabled={running}
               />
               <span className="canvas-operation-prompt-count">
-                {promptCharCount.toLocaleString()} 字符
+                {translate('canvasOperationPanel.tpl11Desc', { count: promptCharCount.toLocaleString() })}
               </span>
             </div>
           </div>
@@ -3102,7 +3128,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         {panelMode.showCustomParams && mediaCapabilityIds.length === 0 && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-custom">
             <div className="canvas-operation-panel-section-title-row">
-              <div className="canvas-operation-panel-section-label">自定义参数</div>
+              <div className="canvas-operation-panel-section-label">{translate('canvasOperationPanel.t57')}</div>
               <Button
                 size="middle"
                 type="text"
@@ -3110,12 +3136,12 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 disabled={running}
                 onClick={handleAddCustomParam}
               >
-                添加
+                {translate('canvasOperationPanel.t81')}
               </Button>
             </div>
             {customParams.length === 0 ? (
               <div className="canvas-operation-panel-hint">
-                可添加模型私有参数，例如 seed、negative_prompt、camera_control。
+                {translate('canvasOperationPanel.t92LongDesc')}
               </div>
             ) : (
               <div className="canvas-operation-panel-custom-params">
@@ -3124,7 +3150,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     <Input
                       size="middle"
                       value={param.name}
-                      placeholder="字段名"
+                      placeholder={translate('canvasOperationPanel.t69')}
                       disabled={running}
                       onChange={(event) =>
                         handleCustomParamPatch(param.id, { name: event.target.value })
@@ -3135,10 +3161,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       value={param.type}
                       disabled={running}
                       options={[
-                        { value: 'string', label: '文本' },
-                        { value: 'number', label: '数字' },
-                        { value: 'integer', label: '整数' },
-                        { value: 'boolean', label: '布尔' },
+                        { value: 'string', label: translate('canvasOperationPanel.t37') },
+                        { value: 'number', label: translate('canvasOperationPanel.t38') },
+                        { value: 'integer', label: translate('canvasOperationPanel.t39') },
+                        { value: 'boolean', label: translate('canvasOperationPanel.t40') },
                         { value: 'json', label: 'JSON' },
                       ]}
                       onChange={(value) =>
@@ -3152,7 +3178,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         size="middle"
                         allowClear
                         value={param.value || undefined}
-                        placeholder="值"
+                        placeholder={translate('canvasOperationPanel.t41')}
                         disabled={running}
                         options={[
                           { value: 'true', label: 'true' },
@@ -3168,7 +3194,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       <Input
                         size="middle"
                         value={param.value}
-                        placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
+                        placeholder={param.type === 'json' ? '{"key":"value"}' : translate('canvasOperationPanel.t41')}
                         type={
                           param.type === 'integer' || param.type === 'number' ? 'number' : 'text'
                         }
@@ -3182,7 +3208,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       size="middle"
                       type="text"
                       icon={<Icons.Trash size={13} />}
-                      aria-label="删除自定义参数"
+                      aria-label={translate('canvasOperationPanel.t70')}
                       disabled={running}
                       onClick={() => handleRemoveCustomParam(param.id)}
                     />
@@ -3195,25 +3221,25 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       </div>
 
       <div className="canvas-operation-panel-footer">
-        <Tooltip title="重试任务">
+        <Tooltip title={translate('canvasOperationPanel.t74')}>
           <Button
             size="middle"
             type="text"
-            aria-label="重试任务"
+            aria-label={translate('canvasOperationPanel.t74')}
             icon={<Icons.RotateCcw size={14} />}
             disabled={running || outputNodes.length === 0}
             onClick={() => {
               onRetry()
-              message.info('已发起重试，将在右侧生成新的产出节点')
+              message.info(translate('canvasOperationPanel.t58Desc'))
             }}
           />
         </Tooltip>
         {task && onRepoll && canRepollCanvasTask(task) && (
-          <Tooltip title="重新轮询">
+          <Tooltip title={translate('canvasOperationPanel.t75')}>
             <Button
               size="middle"
               type="text"
-              aria-label="重新轮询"
+              aria-label={translate('canvasOperationPanel.t75')}
               icon={<Icons.RotateCcw size={14} />}
               loading={repolling}
               disabled={repolling}
@@ -3226,7 +3252,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           <Button
             size="middle"
             type="text"
-            aria-label="保存配置"
+            aria-label={translate('canvasOperationPanel.t76')}
             icon={<Icons.Check size={14} />}
             loading={savingDraft}
             disabled={running || node.data.status === 'running'}
@@ -3234,11 +3260,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           />
         </Tooltip>
         {placement !== 'inline' && (
-          <Tooltip title="关闭配置">
+          <Tooltip title={translate('canvasOperationPanel.t79')}>
             <Button
               size="middle"
               type="text"
-              aria-label="关闭配置"
+              aria-label={translate('canvasOperationPanel.t79')}
               icon={<Icons.X size={14} />}
               onClick={handleClose}
             />
@@ -3246,7 +3272,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         )}
         <Tooltip
           title={
-            selectedMediaInputIssue ?? (node.data.status === 'running' ? '运行中' : submitLabel)
+            selectedMediaInputIssue ?? (node.data.status === 'running' ? translate('canvasOperationPanel.t59') : submitLabel)
           }
         >
           <Button

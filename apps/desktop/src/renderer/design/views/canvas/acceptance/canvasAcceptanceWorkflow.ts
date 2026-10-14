@@ -1,3 +1,8 @@
+import {
+  CANVAS_ACCEPTANCE_FIXTURE_TITLE,
+  CANVAS_ACCEPTANCE_NOVEL_FIXTURE,
+} from './canvasAcceptanceFixture'
+import { translate } from '../../../i18n'
 import type {
   CanvasAcceptanceModelTarget,
   CanvasAcceptanceSelection,
@@ -8,26 +13,24 @@ import type {
 
 export const CANVAS_ACCEPTANCE_FIXTURE_VERSION = 'novel-production-v1'
 
-export const CANVAS_ACCEPTANCE_NOVEL_FIXTURE = `# 雾港最后一班车
+/** 阶段名：只存 i18n key（模块级不固化翻译结果）。 */
+export const CANVAS_ACCEPTANCE_STAGE_LABEL_KEYS: Record<CanvasAcceptanceStageId, string> = {
+  W0_SOURCE: 'canvasAcceptanceWorkflow.t1',
+  W1_SCREENPLAY: 'canvasAcceptanceWorkflow.t2',
+  W2_ENTITIES: 'canvasAcceptanceWorkflow.t3',
+  W3_STYLE: 'canvasAcceptanceWorkflow.t4',
+  W4_RESOURCE_CARDS: 'canvasAcceptanceWorkflow.t5',
+  W5_RESOURCE_IMAGES: 'canvasAcceptanceWorkflow.t6',
+  W6_SHOTS: 'canvasAcceptanceWorkflow.t7',
+  W7_KEYFRAMES: 'canvasAcceptanceWorkflow.t8',
+  W8_VIDEO: 'canvasAcceptanceWorkflow.t9',
+  W9_AUDIO: 'canvasAcceptanceWorkflow.t10',
+  W10_RECOVERY: 'canvasAcceptanceWorkflow.t11',
+}
 
-凌晨两点，海雾吞没了临港车站。年轻维修师林默提着一只旧铜箱，赶上即将停运的最后一班列车。候车厅里只有失明的小提琴手苏弦和神情紧张的站长周衡。
-
-广播忽然播放出十年前失踪列车的报站声，站台尽头亮起一排幽蓝色信号灯。周衡认出铜箱上的编号，阻止林默登车；苏弦却听见车厢里传来与亡母相同的旋律。铜箱自行开启，投射出一张不断变化的星图，雾中随即浮现没有车头的银色列车。
-
-林默决定带苏弦上车寻找真相。周衡拉下紧急制动闸，整座车站开始震动，破碎的时钟倒转。列车门开启的一刻，三人看见车厢内部并非座椅，而是一片悬浮在夜空中的海。`
-
-export const CANVAS_ACCEPTANCE_STAGE_LABELS: Record<CanvasAcceptanceStageId, string> = {
-  W0_SOURCE: 'W0 小说原文',
-  W1_SCREENPLAY: 'W1 剧本生成',
-  W2_ENTITIES: 'W2 实体抽取',
-  W3_STYLE: 'W3 视觉风格',
-  W4_RESOURCE_CARDS: 'W4 资源设定卡',
-  W5_RESOURCE_IMAGES: 'W5 资源设定图',
-  W6_SHOTS: 'W6 分镜脚本',
-  W7_KEYFRAMES: 'W7 故事板与关键帧',
-  W8_VIDEO: 'W8 视频片段',
-  W9_AUDIO: 'W9 配音与转写',
-  W10_RECOVERY: 'W10 保存与恢复验证',
+/** 阶段名译文（随语言变化）。 */
+export function acceptanceStageLabel(stageId: CanvasAcceptanceStageId): string {
+  return translate(CANVAS_ACCEPTANCE_STAGE_LABEL_KEYS[stageId])
 }
 
 export const CANVAS_ACCEPTANCE_DEFAULT_STAGE_IDS: CanvasAcceptanceStageId[] = [
@@ -44,18 +47,18 @@ export const CANVAS_ACCEPTANCE_DEFAULT_STAGE_IDS: CanvasAcceptanceStageId[] = [
 ]
 
 export const CANVAS_ACCEPTANCE_MATRIX_CASES = [
-  { caseId: 'W1-SCREENPLAY', label: '小说转剧本', kind: 'text' },
-  { caseId: 'W2-CHARACTERS', label: '角色抽取', kind: 'text' },
-  { caseId: 'W2-SCENES', label: '场景抽取', kind: 'text' },
-  { caseId: 'W2-PROPS', label: '道具抽取', kind: 'text' },
-  { caseId: 'W2-EFFECTS', label: '特效抽取', kind: 'text' },
-  { caseId: 'W5-CHARACTER-IMAGE', label: '角色设定图', kind: 'image' },
-  { caseId: 'W5-SCENE-IMAGE', label: '场景设定图', kind: 'image' },
-  { caseId: 'W7-STORYBOARD-GRID', label: '故事板总览', kind: 'image' },
-  { caseId: 'W7-KEYFRAME', label: '视频关键帧', kind: 'image' },
-  { caseId: 'W8-VIDEO-CLIP', label: '图生视频片段', kind: 'video' },
-  { caseId: 'W9-VOICE', label: '旁白配音', kind: 'audio' },
-  { caseId: 'W9-TRANSCRIPT', label: '音频转写', kind: 'audio' },
+  { caseId: 'W1-SCREENPLAY', labelKey: 'canvasAcceptanceWorkflow.t12', kind: 'text' },
+  { caseId: 'W2-CHARACTERS', labelKey: 'canvasAcceptanceWorkflow.t13', kind: 'text' },
+  { caseId: 'W2-SCENES', labelKey: 'canvasAcceptanceWorkflow.t14', kind: 'text' },
+  { caseId: 'W2-PROPS', labelKey: 'canvasAcceptanceWorkflow.t15', kind: 'text' },
+  { caseId: 'W2-EFFECTS', labelKey: 'canvasAcceptanceWorkflow.t16', kind: 'text' },
+  { caseId: 'W5-CHARACTER-IMAGE', labelKey: 'canvasAcceptanceWorkflow.t17', kind: 'image' },
+  { caseId: 'W5-SCENE-IMAGE', labelKey: 'canvasAcceptanceWorkflow.t18', kind: 'image' },
+  { caseId: 'W7-STORYBOARD-GRID', labelKey: 'canvasAcceptanceWorkflow.t19', kind: 'image' },
+  { caseId: 'W7-KEYFRAME', labelKey: 'canvasAcceptanceWorkflow.t20', kind: 'image' },
+  { caseId: 'W8-VIDEO-CLIP', labelKey: 'canvasAcceptanceWorkflow.t21', kind: 'video' },
+  { caseId: 'W9-VOICE', labelKey: 'canvasAcceptanceWorkflow.t22', kind: 'audio' },
+  { caseId: 'W9-TRANSCRIPT', labelKey: 'canvasAcceptanceWorkflow.t23', kind: 'audio' },
 ] as const
 
 const STAGE_DEPENDENCIES: Record<CanvasAcceptanceStageId, CanvasAcceptanceStageId[]> = {
@@ -72,7 +75,7 @@ const STAGE_DEPENDENCIES: Record<CanvasAcceptanceStageId, CanvasAcceptanceStageI
   W10_RECOVERY: [],
 }
 
-const STAGE_ORDER = Object.keys(CANVAS_ACCEPTANCE_STAGE_LABELS) as CanvasAcceptanceStageId[]
+const STAGE_ORDER = Object.keys(CANVAS_ACCEPTANCE_STAGE_LABEL_KEYS) as CanvasAcceptanceStageId[]
 
 export function expandCanvasAcceptanceStageDependencies(
   stageIds: readonly CanvasAcceptanceStageId[],
@@ -109,7 +112,7 @@ export function buildCanvasAcceptanceWorkflowBlueprint(
   ]
   return {
     fixtureVersion: CANVAS_ACCEPTANCE_FIXTURE_VERSION,
-    fixtureTitle: '雾港最后一班车',
+    fixtureTitle: CANVAS_ACCEPTANCE_FIXTURE_TITLE,
     suite: selection.suite,
     selectedStageIds,
     nodes,
@@ -178,7 +181,9 @@ function workflowNodes(): CanvasAcceptanceWorkflowNode[] {
       ref: 'novel-source',
       caseId: 'W0-NOVEL-SOURCE',
       stageId: 'W0_SOURCE',
-      title: '🧪 [W0] 小说原文 · 雾港最后一班车',
+      title: translate('canvasAcceptanceWorkflow.tpl4Title', {
+        title: CANVAS_ACCEPTANCE_FIXTURE_TITLE,
+      }),
       x: 0,
       y: 0,
       inputRefs: [],
@@ -188,16 +193,15 @@ function workflowNodes(): CanvasAcceptanceWorkflowNode[] {
       ref: 'screenplay',
       caseId: 'W1-SCREENPLAY',
       stageId: 'W1_SCREENPLAY',
-      title: '🧪 [W1] 小说转分场剧本',
+      title: translate('canvasAcceptanceWorkflow.t24'),
       x: 420,
       y: 0,
       inputRefs: ['novel-source'],
       operation: 'text_rewrite',
-      prompt: '把输入小说改编为可拍摄的分场剧本，保留关键人物、冲突、场景、对白与视觉事件。',
-      systemPrompt:
-        '你是影视编剧。输出完整、可继续拆解的中文分场剧本，明确场次、内外景、时间、人物、动作和对白，不要省略结尾。',
+      prompt: translate('canvasAcceptanceWorkflow.t25Instruction'),
+      systemPrompt: translate('canvasAcceptanceWorkflow.t26Instruction'),
       outputPipelineRole: 'screenplay',
-      outputTitle: '验收剧本',
+      outputTitle: translate('canvasAcceptanceWorkflow.t27'),
       targetKind: 'text',
     },
     ...entityExtractionNodes(),
@@ -205,88 +209,87 @@ function workflowNodes(): CanvasAcceptanceWorkflowNode[] {
       ref: 'style-bible',
       caseId: 'W3-STYLE-BIBLE',
       stageId: 'W3_STYLE',
-      title: '🧪 [W3] 视觉风格总设定',
+      title: translate('canvasAcceptanceWorkflow.t28'),
       x: 840,
       y: 760,
       inputRefs: ['screenplay'],
       operation: 'text_generate',
-      prompt: '基于剧本制定统一视觉风格、色彩、光线、材质、时代感、镜头语言和负面约束。',
-      systemPrompt:
-        '你是影视美术指导。输出能被后续角色图、场景图、分镜和视频节点共同引用的视觉风格总设定。',
+      prompt: translate('canvasAcceptanceWorkflow.t29Instruction'),
+      systemPrompt: translate('canvasAcceptanceWorkflow.t30Instruction'),
       outputPipelineRole: 'style_bible',
-      outputTitle: '视觉风格总设定',
+      outputTitle: translate('canvasAcceptanceWorkflow.t31'),
       targetKind: 'text',
     },
     {
       ref: 'character-card',
       caseId: 'W4-CHARACTER-CARD',
       stageId: 'W4_RESOURCE_CARDS',
-      title: '🧪 [W4] 角色视觉设定卡',
+      title: translate('canvasAcceptanceWorkflow.t32'),
       x: 1260,
       y: 0,
       inputRefs: ['characters', 'style-bible'],
       operation: 'text_generate',
-      prompt: '把角色抽取结果和视觉风格整理为稳定、可复用的角色图生成设定卡。',
+      prompt: translate('canvasAcceptanceWorkflow.t33Instruction'),
       outputPipelineRole: 'design_card',
-      outputTitle: '角色视觉设定卡',
+      outputTitle: translate('canvasAcceptanceWorkflow.t34'),
       targetKind: 'text',
     },
     {
       ref: 'scene-card',
       caseId: 'W4-SCENE-CARD',
       stageId: 'W4_RESOURCE_CARDS',
-      title: '🧪 [W4] 场景视觉设定卡',
+      title: translate('canvasAcceptanceWorkflow.t35'),
       x: 1260,
       y: 360,
       inputRefs: ['scenes', 'props', 'effects', 'style-bible'],
       operation: 'text_generate',
-      prompt: '把场景、道具、特效和视觉风格整理为稳定、可复用的场景图生成设定卡。',
+      prompt: translate('canvasAcceptanceWorkflow.t36Instruction'),
       outputPipelineRole: 'design_card',
-      outputTitle: '场景视觉设定卡',
+      outputTitle: translate('canvasAcceptanceWorkflow.t37'),
       targetKind: 'text',
     },
     {
       ref: 'character-image',
       caseId: 'W5-CHARACTER-IMAGE',
       stageId: 'W5_RESOURCE_IMAGES',
-      title: '🧪 [W5] 角色设定图',
+      title: translate('canvasAcceptanceWorkflow.t38'),
       x: 1680,
       y: 0,
       inputRefs: ['character-card'],
       operation: 'text_to_image',
-      prompt: '生成一张角色设定图，角色身份清楚、正面主体明确、服装材质和视觉风格稳定。',
+      prompt: translate('canvasAcceptanceWorkflow.t39Instruction'),
       outputPipelineRole: 'design_card',
-      outputTitle: '角色设定图',
+      outputTitle: translate('canvasAcceptanceWorkflow.t17'),
       targetKind: 'image',
     },
     {
       ref: 'scene-image',
       caseId: 'W5-SCENE-IMAGE',
       stageId: 'W5_RESOURCE_IMAGES',
-      title: '🧪 [W5] 场景设定图',
+      title: translate('canvasAcceptanceWorkflow.t40'),
       x: 1680,
       y: 360,
       inputRefs: ['scene-card'],
       operation: 'text_to_image',
-      prompt: '生成临港车站主场景设定图，体现海雾、幽蓝信号灯、旧车站材质和超现实氛围。',
+      prompt: translate('canvasAcceptanceWorkflow.t41Instruction'),
       outputPipelineRole: 'design_card',
-      outputTitle: '场景设定图',
+      outputTitle: translate('canvasAcceptanceWorkflow.t18'),
       targetKind: 'image',
     },
     {
       ref: 'shot-script',
       caseId: 'W6-SHOT-SCRIPT',
       stageId: 'W6_SHOTS',
-      title: '🧪 [W6] 结构化分镜脚本',
+      title: translate('canvasAcceptanceWorkflow.t42'),
       x: 1680,
       y: 760,
       inputRefs: ['screenplay', 'characters', 'scenes', 'props', 'effects', 'style-bible'],
       operation: 'text_generate',
-      prompt: '把剧本拆成可生成关键帧和视频的结构化分镜，每镜不超过 6 秒。',
+      prompt: translate('canvasAcceptanceWorkflow.t43Instruction'),
       modelParams: { workflow: 'shot_script', responseFormat: 'json' },
       taskPipelineRole: 'screenplay',
       outputPipelineRole: 'shot',
-      outputTitle: '结构化分镜脚本',
+      outputTitle: translate('canvasAcceptanceWorkflow.t44'),
       shotScriptConfig: { maxClipSec: 6 },
       targetKind: 'text',
     },
@@ -294,67 +297,67 @@ function workflowNodes(): CanvasAcceptanceWorkflowNode[] {
       ref: 'storyboard-grid',
       caseId: 'W7-STORYBOARD-GRID',
       stageId: 'W7_KEYFRAMES',
-      title: '🧪 [W7] 故事板总览',
+      title: translate('canvasAcceptanceWorkflow.t45'),
       x: 2100,
       y: 360,
       inputRefs: ['shot-script', 'character-image', 'scene-image'],
       operation: 'storyboard_grid',
-      prompt: '根据分镜、角色和场景设定生成一张具有清晰镜号和阅读顺序的故事板总览。',
+      prompt: translate('canvasAcceptanceWorkflow.t46Instruction'),
       outputPipelineRole: 'keyframe',
-      outputTitle: '故事板总览',
+      outputTitle: translate('canvasAcceptanceWorkflow.t19'),
       targetKind: 'image',
     },
     {
       ref: 'keyframe',
       caseId: 'W7-KEYFRAME',
       stageId: 'W7_KEYFRAMES',
-      title: '🧪 [W7] 视频关键帧',
+      title: translate('canvasAcceptanceWorkflow.t47'),
       x: 2100,
       y: 760,
       inputRefs: ['shot-script', 'character-image', 'scene-image'],
       operation: 'image_compose',
-      prompt: '生成银色列车门开启、车厢内悬浮夜海的电影关键帧，保持角色和场景设定一致。',
+      prompt: translate('canvasAcceptanceWorkflow.t48Instruction'),
       outputPipelineRole: 'keyframe',
-      outputTitle: '视频关键帧',
+      outputTitle: translate('canvasAcceptanceWorkflow.t20'),
       targetKind: 'image',
     },
     {
       ref: 'video-clip',
       caseId: 'W8-VIDEO-CLIP',
       stageId: 'W8_VIDEO',
-      title: '🧪 [W8] 图生视频片段',
+      title: translate('canvasAcceptanceWorkflow.t49'),
       x: 2520,
       y: 760,
       inputRefs: ['keyframe'],
       operation: 'image_to_video',
-      prompt: '镜头缓慢推进，银色列车门完全开启，悬浮夜海泛起波纹，人物衣角被风吹动，保持主体一致。',
+      prompt: translate('canvasAcceptanceWorkflow.t50Instruction'),
       modelParams: { duration: 5 },
       outputPipelineRole: 'clip',
-      outputTitle: '验收视频片段',
+      outputTitle: translate('canvasAcceptanceWorkflow.t51'),
       targetKind: 'video',
     },
     {
       ref: 'voice',
       caseId: 'W9-VOICE',
       stageId: 'W9_AUDIO',
-      title: '🧪 [W9] 剧本旁白配音',
+      title: translate('canvasAcceptanceWorkflow.t52'),
       x: 2100,
       y: 1140,
       inputRefs: ['screenplay'],
       operation: 'text_to_audio',
-      prompt: '选择剧本中的旁白生成一段自然、克制、有悬疑氛围的中文配音。',
+      prompt: translate('canvasAcceptanceWorkflow.t53Instruction'),
       targetKind: 'audio',
     },
     {
       ref: 'transcript',
       caseId: 'W9-TRANSCRIPT',
       stageId: 'W9_AUDIO',
-      title: '🧪 [W9] 配音回转写',
+      title: translate('canvasAcceptanceWorkflow.t54'),
       x: 2520,
       y: 1140,
       inputRefs: ['voice'],
       operation: 'audio_transcribe',
-      prompt: '准确转写输入音频，保留中文标点。',
+      prompt: translate('canvasAcceptanceWorkflow.t55Instruction'),
       targetKind: 'audio',
     },
   ]
@@ -362,24 +365,33 @@ function workflowNodes(): CanvasAcceptanceWorkflowNode[] {
 
 function entityExtractionNodes(): CanvasAcceptanceWorkflowNode[] {
   const definitions = [
-    ['characters', 'W2-CHARACTERS', '角色', 'extract_character', 'character'],
-    ['scenes', 'W2-SCENES', '场景', 'extract_scene', 'scene'],
-    ['props', 'W2-PROPS', '道具', 'extract_prop', 'prop'],
-    ['effects', 'W2-EFFECTS', '特效', 'extract_effect', 'effect'],
+    [
+      'characters',
+      'W2-CHARACTERS',
+      'canvasAcceptanceWorkflow.t56',
+      'extract_character',
+      'character',
+    ],
+    ['scenes', 'W2-SCENES', 'canvasAcceptanceWorkflow.t57', 'extract_scene', 'scene'],
+    ['props', 'W2-PROPS', 'canvasAcceptanceWorkflow.t58', 'extract_prop', 'prop'],
+    ['effects', 'W2-EFFECTS', 'canvasAcceptanceWorkflow.t59', 'extract_effect', 'effect'],
   ] as const
-  return definitions.map(([ref, caseId, label, workflow, role], index) => ({
-    ref,
-    caseId,
-    stageId: 'W2_ENTITIES' as const,
-    title: `🧪 [W2] 提取${label}`,
-    x: 840,
-    y: index * 190,
-    inputRefs: ['screenplay'],
-    operation: 'text_generate' as const,
-    prompt: `从输入剧本中完整提取${label}，不要编造剧本中不存在的实体。`,
-    modelParams: { workflow, responseFormat: 'json' },
-    outputPipelineRole: role,
-    outputTitle: `${label}资源`,
-    targetKind: 'text' as const,
-  }))
+  return definitions.map(([ref, caseId, labelKey, workflow, role], index) => {
+    const label = translate(labelKey)
+    return {
+      ref,
+      caseId,
+      stageId: 'W2_ENTITIES' as const,
+      title: translate('canvasAcceptanceWorkflow.tpl1Title', { label }),
+      x: 840,
+      y: index * 190,
+      inputRefs: ['screenplay'],
+      operation: 'text_generate' as const,
+      prompt: translate('canvasAcceptanceWorkflow.tpl2Instruction', { label }),
+      modelParams: { workflow, responseFormat: 'json' },
+      outputPipelineRole: role,
+      outputTitle: translate('canvasAcceptanceWorkflow.tpl3', { label }),
+      targetKind: 'text' as const,
+    }
+  })
 }

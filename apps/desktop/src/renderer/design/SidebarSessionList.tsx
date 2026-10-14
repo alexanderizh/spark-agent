@@ -1050,8 +1050,8 @@ function ChatListItem({
             <button
               type="button"
               className="session-terminal-indicator session-terminal-indicator-btn"
-              title={`终端运行中 (${terminalRunningCount})，点击打开终端`}
-              aria-label={`终端运行中 (${terminalRunningCount})，打开终端面板`}
+              title={t('sessionList.terminalRunningTitle', { count: terminalRunningCount })}
+              aria-label={t('sessionList.terminalRunningAria', { count: terminalRunningCount })}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 // 不触发条目 hover 卡以外的行为冲突；先走选中语义（激活会话 + 切视图），
@@ -1143,7 +1143,7 @@ function ChatListItem({
                       },
                       {
                         icon: <Clock3 size={14} />,
-                        label: '计划任务',
+                        label: t('sessionList.planTasks'),
                         onClick: () => {
                           onClick(s.id)
                           openSessionSchedule(s.id)
@@ -1151,12 +1151,12 @@ function ChatListItem({
                       },
                       {
                         icon: <Icons.Copy size={14} />,
-                        label: '复制会话',
+                        label: t('sessionList.copySession'),
                         onClick: () => onCollaborate?.(s),
                       },
                       {
                         icon: <Icons.MessageSquarePlus size={14} />,
-                        label: '添加到对话',
+                        label: t('sessionList.addToChat'),
                         onClick: () => onAddToConversation?.(s),
                       },
                       {
@@ -1265,9 +1265,9 @@ export function ProjectSessionGroup({
   const handleCopyProjectPath = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(group.workspace.rootPath)
-      optionalToast?.toast.success('已复制路径')
+      optionalToast?.toast.success(t('sessionList.pathCopied'))
     } catch (err) {
-      optionalToast?.toast.error(err instanceof Error ? err.message : '复制失败')
+      optionalToast?.toast.error(err instanceof Error ? err.message : t('sessionList.copyFailed'))
     }
   }, [group.workspace.rootPath, optionalToast])
 
@@ -1290,7 +1290,7 @@ export function ProjectSessionGroup({
     },
     {
       icon: <Icons.Copy size={14} />,
-      label: '复制路径',
+      label: t('sessionList.copyPath'),
       onClick: () => void handleCopyProjectPath(),
     },
     {
@@ -1468,7 +1468,10 @@ export function ProjectSessionGroup({
                   ) => (
                     <React.Fragment key={session.id}>
                       {/* {dateMarker != null && (
-                        <div className="session-date-marker" aria-label={`会话日期 ${dateMarker}`}>
+                        <div
+                          className="session-date-marker"
+                          aria-label={t('sessionList.dateAria', { date: dateMarker })}
+                        >
                           {dateMarker}
                         </div>
                       )} */}
@@ -1680,14 +1683,14 @@ export function FlatGroup({
         {onNewSession != null && (
           <Tooltip
             title={
-              groupId === 'project:no-project' ? '新建临时会话' : t('sidebar.project.newSession')
+              groupId === 'project:no-project' ? t('sessionList.newTempSession') : t('sidebar.project.newSession')
             }
             mouseEnterDelay={0.05}
           >
             <button
               className="icon-btn proj-add-session-btn"
               aria-label={
-                groupId === 'project:no-project' ? '新建临时会话' : t('sidebar.project.newSession')
+                groupId === 'project:no-project' ? t('sessionList.newTempSession') : t('sidebar.project.newSession')
               }
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
@@ -1714,14 +1717,14 @@ export function FlatGroup({
             >
               <Tooltip
                 title={
-                  groupId === 'project:no-project' ? '临时会话操作' : t('sidebar.project.actions')
+                  groupId === 'project:no-project' ? t('sessionList.tempSessionActions') : t('sidebar.project.actions')
                 }
                 mouseEnterDelay={0.05}
               >
                 <button
                   className="icon-btn item-menu-btn"
                   aria-label={
-                    groupId === 'project:no-project' ? '临时会话操作' : t('sidebar.project.actions')
+                    groupId === 'project:no-project' ? t('sessionList.tempSessionActions') : t('sidebar.project.actions')
                   }
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
@@ -2161,7 +2164,7 @@ export function SidebarSessionList() {
   const handleAddSessionToConversation = useCallback(
     async (sourceSession: SessionSummary) => {
       if (appState.view !== 'chat') {
-        message.info('请先打开一个对话')
+        message.info(t('sessionList.openChatFirst'))
         return
       }
       const applied = await requestSessionReferenceAdd(
@@ -2174,7 +2177,7 @@ export function SidebarSessionList() {
         },
         ctx.activeSessionId,
       )
-      if (!applied) message.info('当前对话输入区不可用')
+      if (!applied) message.info(t('sessionList.composerUnavailable'))
     },
     [appState.view, ctx.activeSessionId, t],
   )
@@ -2894,7 +2897,7 @@ export function SidebarSessionList() {
                             ? [
                                 {
                                   icon: <Icons.Chat size={14} />,
-                                  label: '新建临时会话',
+                                  label: t('sessionList.newTempSession'),
                                   onClick: () => {
                                     void (async () => {
                                       const id = await ctx.handleNewSession(noProjectWorkspace.id)
@@ -2904,7 +2907,7 @@ export function SidebarSessionList() {
                                 },
                                 {
                                   icon: <Icons.Folder size={14} />,
-                                  label: '打开临时目录',
+                                  label: t('sessionList.openTempFolder'),
                                   onClick: () => {
                                     void ctx.handleOpenProjectFolder(noProjectWorkspace)
                                   },

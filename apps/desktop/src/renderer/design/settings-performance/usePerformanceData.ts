@@ -23,6 +23,7 @@ import type {
   ResourcePressureChangedPayload,
   ResourcePressureEventRecord,
 } from '@spark/protocol'
+import { useI18n } from '../i18n'
 
 export type PerformanceLoadState = 'loading' | 'live' | 'error' | 'off'
 
@@ -58,6 +59,7 @@ async function writePerformanceSettings(next: Record<string, unknown>): Promise<
 }
 
 export function usePerformanceData(historyWindowMs: number): PerformanceData {
+  const { t } = useI18n()
   const [loadState, setLoadState] = useState<PerformanceLoadState>('loading')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [summary, setSummary] = useState<ResourceMonitorSummarySnapshot | null>(null)
@@ -145,11 +147,11 @@ export function usePerformanceData(historyWindowMs: number): PerformanceData {
         // 持久化失败：回读服务端真值恢复写入基准（防止后续写入基于未持久化的幽灵
         // draft），错误经页面横幅提示；乐观 UI 由刷新时的 key={echoVersion} 重挂载纠正。
         const message = cause instanceof Error ? cause.message : String(cause)
-        setErrorMessage(`性能配置保存失败：${message}`)
+        setErrorMessage(t('perf.saveFailed', { message }))
         void pullSettings().catch(() => {})
       }
     },
-    [pullSettings],
+    [pullSettings, t],
   )
 
   const resetSettings = useCallback(async () => {
@@ -159,12 +161,12 @@ export function usePerformanceData(historyWindowMs: number): PerformanceData {
       await writePerformanceSettings({})
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
-      setErrorMessage(`性能配置重置失败：${message}`)
+      setErrorMessage(t('perf.resetFailed', { message }))
       void pullSettings().catch(() => {})
       return
     }
     await Promise.all([pullFull(), pullSettings()]).catch(() => {})
-  }, [pullFull, pullSettings])
+  }, [pullFull, pullSettings, t])
 
   // ─── 初始拉取 + 订阅 ────────────────────────────────────────────────────────
   useEffect(() => {

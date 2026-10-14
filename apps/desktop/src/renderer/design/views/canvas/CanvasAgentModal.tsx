@@ -34,6 +34,7 @@ import {
 } from '@spark/protocol'
 import { Button, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { AvatarImage } from '../../components/AvatarImage'
 import { ProviderLogo } from '../../components/ProviderLogo'
 import { ChatPanel, type ChatPanelNodeReference } from '../../components/ChatPanel'
@@ -310,12 +311,12 @@ function buildCanvasBindingMessage(
 ): string {
   const nodesContext = buildSelectedNodesContext(selectedNodes)
   return [
-    '[画布绑定]',
+    translate('canvasAgentModal.t1'),
     `canvasProjectId: ${snapshot.project.id}`,
     `activeBoardId: ${snapshot.activeBoardId ?? snapshot.board.id}`,
     '',
-    `当前会话已启用 ${REQUIRED_CANVAS_SKILL_ID}。`,
-    '不要依赖聊天里的旧画布描述；每次需要查看或修改画布时，先调用画布工具获取最新状态。',
+    translate('canvasAgentModal.tpl1Instruction', { skill: REQUIRED_CANVAS_SKILL_ID }),
+    translate('canvasAgentModal.t2LongDesc'),
     '',
     nodesContext ? `---\n${nodesContext}\n---` : '---',
     '',
@@ -324,7 +325,13 @@ function buildCanvasBindingMessage(
 }
 
 function summarizeCanvasContext(snapshot: CanvasSnapshot): string {
-  return `${snapshot.project.title} · ${snapshot.board.name} · ${snapshot.nodes.length} 节点 / ${snapshot.assets.length} 资产 / ${snapshot.tasks.length} 任务`
+  return translate('canvasAgentModal.tpl2Desc', {
+    project: snapshot.project.title,
+    board: snapshot.board.name,
+    nodes: snapshot.nodes.length,
+    assets: snapshot.assets.length,
+    tasks: snapshot.tasks.length,
+  })
 }
 
 function formatCanvasSessionDate(value: string): string {
@@ -340,7 +347,7 @@ function formatCanvasSessionDate(value: string): string {
 
 function getCanvasSessionLabel(
   session: CanvasAgentSessionSummary | undefined,
-  fallback = '新建会话',
+  fallback = translate('canvasAgentModal.t3'),
 ): string {
   const title = session?.title?.trim()
   return title && title.length > 0 ? title : fallback
@@ -402,6 +409,8 @@ export function CanvasAgentModal({
   onWideModeChange,
   externalSubmitRequest,
 }: Props) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const providerConfigVersion = useProviderConfigVersion()
   const pinnedAgents = usePinnedCanvasItems('agents')
   const pinnedModels = usePinnedModels()
@@ -553,18 +562,18 @@ export function CanvasAgentModal({
   const contextSummary = useMemo(() => summarizeCanvasContext(snapshot), [snapshot])
   const connectionLabel =
     sessionId == null
-      ? '发送时连接'
+      ? translate('canvasAgentModal.t4')
       : canvasToolHost.status === 'attached'
-        ? '画布已连接'
+        ? translate('canvasAgentModal.t5')
         : canvasToolHost.status === 'attaching'
-          ? '连接中'
+          ? translate('canvasAgentModal.t6')
           : canvasToolHost.status === 'error'
-            ? '连接断开'
-            : '等待连接'
+            ? translate('canvasAgentModal.t7')
+            : translate('canvasAgentModal.t8')
   const fallbackAssistant = useMemo(
     () => ({
       agentId: activeAgent?.id ?? draftAgentId,
-      agentName: activeAgent?.name ?? '画布助手',
+      agentName: activeAgent?.name ?? translate('canvasAgentModal.t9'),
     }),
     [activeAgent, draftAgentId],
   )
@@ -633,7 +642,7 @@ export function CanvasAgentModal({
       })
       setProjectSessions(sessionRes.sessions)
     } catch (err) {
-      console.warn('加载画布项目会话失败', err)
+      console.warn(translate('canvasAgentModal.t10'), err)
       setProjectSessions([])
     } finally {
       setSessionsLoading(false)
@@ -794,11 +803,11 @@ export function CanvasAgentModal({
         )
 
         if (loadedProviders.length === 0) {
-          setError('未配置对话模型供应商，请先到「Providers」中添加。')
+          setError(translate('canvasAgentModal.t11Desc'))
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : '加载配置失败')
+          setError(err instanceof Error ? err.message : translate('canvasAgentModal.t12'))
         }
       } finally {
         if (!cancelled) setLoadingConfig(false)
@@ -1219,7 +1228,7 @@ export function CanvasAgentModal({
             )
           })
           .catch((updateError) => {
-            console.warn('更新画布 Agent 权限模式失败', updateError)
+            console.warn(translate('canvasAgentModal.t13Desc'), updateError)
           })
       }
     },
@@ -1373,10 +1382,10 @@ export function CanvasAgentModal({
     async (text: string, attachments: SessionAttachment[]) => {
       const rootPath = snapshot.project.rootPath
       if (!rootPath) {
-        throw new Error('画布项目未关联目录，无法启动 agent。请先保存项目到磁盘。')
+        throw new Error(translate('canvasAgentModal.t14Desc'))
       }
       if (selectedProvider == null || effectiveModelId.length === 0) {
-        throw new Error('请先选择供应商和模型。')
+        throw new Error(translate('canvasAgentModal.t15'))
       }
 
       try {
@@ -1392,7 +1401,9 @@ export function CanvasAgentModal({
             agentAdapter: adapter,
             permissionMode: effectivePermissionMode,
             chatMode: 'agent',
-            title: `画布助手 · ${snapshot.project.title}`,
+            title: translate('canvasAgentModal.tpl3Title', {
+              project: snapshot.project.title,
+            }),
             cliSparkOverride,
           })
           sid = sessionRes.sessionId
@@ -1490,10 +1501,10 @@ export function CanvasAgentModal({
       if (!checkpointId) return
       await new Promise<void>((resolve) => {
         Modal.confirm({
-          title: '撤销本轮画布修改？',
-          content: '画布将恢复到本轮开始前；本轮执行期间产生的手动画布修改也会一并还原。',
-          okText: '恢复画布',
-          cancelText: '取消',
+          title: translate('canvasAgentModal.t16'),
+          content: translate('canvasAgentModal.t17Desc'),
+          okText: translate('canvasAgentModal.t18'),
+          cancelText: translate('canvasAgentModal.t19'),
           okButtonProps: { danger: true },
           onOk: async () => {
             try {
@@ -1505,8 +1516,8 @@ export function CanvasAgentModal({
               })
             } catch (undoError) {
               Modal.error({
-                title: '无法撤销本轮修改',
-                content: undoError instanceof Error ? undoError.message : '画布快照恢复失败',
+                title: translate('canvasAgentModal.t20'),
+                content: undoError instanceof Error ? undoError.message : translate('canvasAgentModal.t21'),
               })
             } finally {
               resolve()
@@ -1558,7 +1569,7 @@ export function CanvasAgentModal({
       <AgentPickerInline
         agents={agents}
         selectedId={draftAgentId}
-        fallbackLabel="画布助手"
+        fallbackLabel={translate('canvasAgentModal.t9')}
         disabled={running || creating}
         open={openMenu === 'agent'}
         onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'agent' : null)}
@@ -1648,12 +1659,12 @@ export function CanvasAgentModal({
       <div className="canvas-bottom-floating-head canvas-agent-head-minimal">
         <div className="canvas-agent-head-composer">{headerSessionPicker}</div>
         <div className="canvas-agent-head-actions">
-          <Tooltip title={fullscreen ? '恢复宽度' : '展开到半屏'}>
+          <Tooltip title={fullscreen ? translate('canvasAgentModal.t22') : translate('canvasAgentModal.t23')}>
             <Button
               size="small"
               type="text"
               icon={fullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
-              aria-label={fullscreen ? '恢复宽度' : '展开到半屏'}
+              aria-label={fullscreen ? translate('canvasAgentModal.t22') : translate('canvasAgentModal.t23')}
               onClick={() =>
                 setFullscreen((current) => {
                   const next = !current
@@ -1667,7 +1678,7 @@ export function CanvasAgentModal({
             size="small"
             type="text"
             icon={<Icons.X size={14} />}
-            aria-label="关闭画布 Agent 助手"
+            aria-label={translate('canvasAgentModal.t37Desc')}
             onClick={onClose}
           />
         </div>
@@ -1692,7 +1703,8 @@ export function CanvasAgentModal({
               <Icons.Layers size={12} />
               <span className="canvas-agent-context-copy" title={contextSummary}>
                 {snapshot.project.title} · {snapshot.board.name}
-                {nodeRefs.length > 0 && ` · 已引用 ${nodeRefs.length} 节点`}
+                {nodeRefs.length > 0 &&
+                  translate('canvasAgentModal.tpl4', { count: nodeRefs.length })}
               </span>
               <span
                 className={`canvas-agent-connection is-${canvasToolHost.status}`}
@@ -1706,7 +1718,7 @@ export function CanvasAgentModal({
                     className="canvas-agent-connection-retry"
                     onClick={() => void canvasToolHost.reconnect().catch(() => undefined)}
                   >
-                    重新连接
+                    {translate('canvasAgentModal.t41')}
                   </button>
                 )}
               </span>
@@ -1732,14 +1744,13 @@ export function CanvasAgentModal({
           emptyState={
             <>
               <Icons.Sparkles size={32} />
-              <p>选好 Agent、模型和附加 Skills 后发送消息，agent 会通过实时画布工具操作项目</p>
+              <p>{translate('canvasAgentModal.t42LongDesc')}</p>
               <p style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-                试试：「先读取当前画板摘要，再列出第一幕相关节点」「为第一幕创建 3
-                个镜头片段」「生成一张赛博朋克风格的角色定妆图并插入画布」
+                {translate('canvasAgentModal.t54LongDesc')}
               </p>
             </>
           }
-          placeholder="输入消息，让 agent 操作画布..."
+          placeholder={translate('canvasAgentModal.t38Desc')}
           toolNamePrefixFilter="mcp__spark_canvas__"
           toolCallDisplay="summary"
         />
@@ -1795,7 +1806,7 @@ function SessionPickerInline({
   const selected = sessions.find((session) => session.id === selectedSessionId)
   const menuHeight = Math.min(360, 72 + Math.max(sessions.length, 1) * 42)
   const placement = useComposerDropdownPlacement(rootRef, open, menuHeight, 300)
-  const label = selected ? getCanvasSessionLabel(selected) : '新建会话'
+  const label = selected ? getCanvasSessionLabel(selected) : translate('canvasAgentModal.t3')
   return (
     <Dropdown
       menu={{ items: [] }}
@@ -1811,7 +1822,7 @@ function SessionPickerInline({
       }}
       popupRender={() => (
         <div className="composer-menu composer-session-menu">
-          <div className="composer-menu-group-title">项目会话</div>
+          <div className="composer-menu-group-title">{translate('canvasAgentModal.t26')}</div>
           <button
             type="button"
             className={`composer-menu-item canvas-session-new ${selectedSessionId == null ? 'active' : ''}`}
@@ -1823,16 +1834,16 @@ function SessionPickerInline({
             <span className="composer-menu-item-copy">
               <span className="composer-menu-item-label">
                 <Icons.MessageSquarePlus size={13} />
-                <span>新建会话</span>
+                <span>{translate('canvasAgentModal.t3')}</span>
               </span>
-              <span className="composer-menu-item-desc">从空白上下文开始操作当前画布</span>
+              <span className="composer-menu-item-desc">{translate('canvasAgentModal.t43Desc')}</span>
             </span>
             {selectedSessionId == null && <Icons.Check size={14} className="composer-menu-check" />}
           </button>
           <div className="composer-menu-divider" />
-          {loading && <div className="composer-menu-empty">正在加载...</div>}
+          {loading && <div className="composer-menu-empty">{translate('canvasAgentModal.t44')}</div>}
           {!loading && sessions.length === 0 && (
-            <div className="composer-menu-empty">暂无项目会话</div>
+            <div className="composer-menu-empty">{translate('canvasAgentModal.t45')}</div>
           )}
           {!loading &&
             sessions.map((session) => {
@@ -1851,13 +1862,16 @@ function SessionPickerInline({
                   <span className="composer-menu-item-copy">
                     <span className="composer-menu-item-label">
                       <Icons.MessageSquare size={13} />
-                      <span>{getCanvasSessionLabel(session, '未命名会话')}</span>
+                      <span>{getCanvasSessionLabel(session, translate('canvasAgentModal.t24'))}</span>
                       {session.status === 'running' && (
-                        <span className="composer-menu-item-tag">运行中</span>
+                        <span className="composer-menu-item-tag">{translate('canvasAgentModal.t46')}</span>
                       )}
                     </span>
                     <span className="composer-menu-item-desc">
-                      {session.messageCount} 条消息{date ? ` · ${date}` : ''}
+                      {translate('canvasAgentModal.tpl8', {
+                        count: session.messageCount,
+                        suffix: date ? ` · ${date}` : '',
+                      })}
                     </span>
                   </span>
                   {active && <Icons.Check size={14} className="composer-menu-check" />}
@@ -1870,14 +1884,14 @@ function SessionPickerInline({
       <div
         ref={rootRef}
         className={`composer-select composer-session-picker${disabled ? ' is-disabled' : ''}`}
-        title={disabled ? '会话运行中不可切换' : '项目会话'}
+        title={disabled ? translate('canvasAgentModal.t25') : translate('canvasAgentModal.t26')}
         style={{ ['--composer-menu-max-height' as string]: `${menuHeight}px` }}
       >
         <span className="composer-select-icon">
           {selected ? <Icons.MessageSquare size={13} /> : <Icons.MessageSquarePlus size={13} />}
         </span>
         <button type="button" className="composer-select-trigger" disabled={disabled}>
-          <span>{loading && selected == null ? '加载会话...' : label}</span>
+          <span>{loading && selected == null ? translate('canvasAgentModal.t27') : label}</span>
           <Icons.ChevronDown size={12} />
         </button>
       </div>
@@ -1918,7 +1932,7 @@ export function AdapterPickerInline({
       }}
       popupRender={() => (
         <div className="composer-menu composer-adapter-menu">
-          <div className="composer-menu-group-title">运行时</div>
+          <div className="composer-menu-group-title">{translate('canvasAgentModal.t28')}</div>
           {CANVAS_AGENT_ADAPTER_OPTIONS.map((option) => {
             const active = option.value === normalizedAdapter
             return (
@@ -1947,7 +1961,7 @@ export function AdapterPickerInline({
       <div
         ref={rootRef}
         className={`composer-select composer-adapter-picker${disabled ? ' is-disabled' : ''}`}
-        title={disabled ? '会话运行中不可切换' : '运行时'}
+        title={disabled ? translate('canvasAgentModal.t25') : translate('canvasAgentModal.t28')}
       >
         <span className="composer-select-icon">
           <CanvasAdapterIcon adapter={normalizedAdapter} />
@@ -1972,7 +1986,7 @@ export function AgentPickerInline({
   agents,
   selectedId,
   disabled,
-  fallbackLabel = 'Spark助手',
+  fallbackLabel = translate('canvasAgentModal.t29'),
   open,
   openOnHover = false,
   onOpenChange,
@@ -2002,7 +2016,7 @@ export function AgentPickerInline({
         src={resolveAvatarSrc(getAgentAvatarConfig(selected.metadata, selected.id, selected.name))}
         seed={selected.id}
         name={selected.name}
-        alt={`${selected.name} 头像`}
+        alt={translate('canvasAgentModal.tpl5Aria', { name: selected.name })}
       />
     ) : selected?.builtIn ? (
       <Icons.Code size={11} />
@@ -2032,7 +2046,7 @@ export function AgentPickerInline({
                   src={resolveAvatarSrc(getAgentAvatarConfig(agent.metadata, agent.id, agent.name))}
                   seed={agent.id}
                   name={agent.name}
-                  alt={`${agent.name} 头像`}
+                  alt={translate('canvasAgentModal.tpl5Aria', { name: agent.name })}
                 />
               ) : agent.builtIn ? (
                 <Icons.Code size={13} />
@@ -2040,7 +2054,7 @@ export function AgentPickerInline({
                 <Icons.Bot size={13} />
               )}
               <span>{agent.name}</span>
-              {agent.builtIn && <span className="composer-menu-item-tag">内置</span>}
+              {agent.builtIn && <span className="composer-menu-item-tag">{translate('canvasAgentModal.t47')}</span>}
             </span>
             {agent.description && (
               <span className="composer-menu-item-desc">{agent.description}</span>
@@ -2074,11 +2088,11 @@ export function AgentPickerInline({
       }}
       popupRender={() => (
         <div className="composer-menu composer-agent-menu">
-          <div className="composer-menu-group-title">选择 Agent</div>
+          <div className="composer-menu-group-title">{translate('canvasAgentModal.t48')}</div>
           {pinnedAgents.length > 0 && (
             <>
               <div className="composer-menu-group-title canvas-picker-pinned-title">
-                <Icons.PinFill size={12} /> 常用
+                <Icons.PinFill size={12} /> {translate('canvasAgentModal.t49')}
               </div>
               {pinnedAgents.map((agent) => renderAgentOption(agent, 'pinned:'))}
             </>
@@ -2090,7 +2104,7 @@ export function AgentPickerInline({
       <div
         ref={rootRef}
         className={`composer-select composer-agent-picker${disabled ? ' is-disabled' : ''}`}
-        title={disabled ? '会话运行中不可切换' : 'Agent'}
+        title={disabled ? translate('canvasAgentModal.t25') : 'Agent'}
         style={{ ['--composer-menu-max-height' as string]: `${menuHeight}px` }}
       >
         <span className="composer-select-icon">{triggerIcon}</span>
@@ -2151,8 +2165,8 @@ export function ProviderModelPickerInline({
   const vendor = resolveProviderVendor(selectedProvider)
   // 选中 router：执行模型由分流器逐轮决定，主标签显示 router 名称而非空模型名
   const label = isCanvasAgentAutoRouter(selectedProvider)
-    ? (selectedProvider?.name ?? '智能路由')
-    : selectedModelId || selectedProvider?.defaultModel || '选择模型'
+    ? (selectedProvider?.name ?? translate('canvasAgentModal.t30'))
+    : selectedModelId || selectedProvider?.defaultModel || translate('canvasAgentModal.t31')
   const modelGroups = useMemo(
     () => buildCanvasAgentModelOptions(conversationalProviders),
     [conversationalProviders],
@@ -2259,22 +2273,22 @@ export function ProviderModelPickerInline({
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="搜索模型或供应商"
+                placeholder={translate('canvasAgentModal.t39')}
                 autoFocus
               />
             </div>
           )}
           <div className="composer-model-list">
             {conversationalProviders.length === 0 && (
-              <div className="composer-menu-empty">未配置对话模型</div>
+              <div className="composer-menu-empty">{translate('canvasAgentModal.t50')}</div>
             )}
             {conversationalProviders.length > 0 && filteredModelGroups.length === 0 && (
-              <div className="composer-menu-empty">没有匹配结果</div>
+              <div className="composer-menu-empty">{translate('canvasAgentModal.t51')}</div>
             )}
             {pinningEnabled && pinnedModelEntries.length > 0 && (
               <div className="composer-model-group pinned-composer-model-group">
                 <div className="composer-model-group-title canvas-picker-pinned-title">
-                  <Icons.PinFill size={12} /> 常用
+                  <Icons.PinFill size={12} /> {translate('canvasAgentModal.t49')}
                 </div>
                 {pinnedModelEntries.map(({ provider, modelId }) => (
                   <ModelPickerMenuItem
@@ -2398,7 +2412,7 @@ export function ProviderModelPickerInline({
       <div
         ref={rootRef}
         className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`}
-        title={disabled ? '会话运行中不可切换' : '供应商模型'}
+        title={disabled ? translate('canvasAgentModal.t25') : translate('canvasAgentModal.t32')}
         style={{ ['--composer-menu-max-height' as string]: `${menuHeight}px` }}
       >
         <span className="composer-select-icon">
@@ -2442,8 +2456,12 @@ function PickerPinButton({
     <button
       type="button"
       className={`composer-model-pin${pinned ? ' is-pinned' : ''}`}
-      title={pinned ? '取消置顶' : '置顶'}
-      aria-label={pinned ? `取消置顶 ${label}` : `置顶 ${label}`}
+      title={pinned ? translate('canvasAgentModal.t33') : translate('canvasAgentModal.t34')}
+      aria-label={
+        pinned
+          ? translate('canvasAgentModal.tpl6', { label })
+          : translate('canvasAgentModal.tpl7', { label })
+      }
       aria-pressed={pinned}
       onMouseDown={(event) => {
         event.preventDefault()
@@ -2520,13 +2538,13 @@ export function PermissionPickerInline({
       <div
         ref={rootRef}
         className={`composer-select composer-permission-picker${disabled ? ' is-disabled' : ''}`}
-        title={disabled ? '会话运行中不可切换' : selected?.description}
+        title={disabled ? translate('canvasAgentModal.t25') : selected?.description}
       >
         <span className="composer-select-icon">
           <Icons.Shield size={13} />
         </span>
         <button type="button" className="composer-select-trigger" disabled={disabled}>
-          <span>{selected?.label ?? '权限'}</span>
+          <span>{selected?.label ?? translate('canvasAgentModal.t35')}</span>
           <Icons.ChevronDown size={12} />
         </button>
       </div>
@@ -2595,7 +2613,7 @@ function SkillPickerInline({
         >
           <span className="canvas-agent-skill-option-name">{skill.name}</span>
           {skill.enabled === false && (
-            <span className="canvas-agent-skill-option-status">未启用</span>
+            <span className="canvas-agent-skill-option-status">{translate('canvasAgentModal.t52')}</span>
           )}
           {selected && <Icons.Check size={14} />}
         </button>
@@ -2636,20 +2654,20 @@ function SkillPickerInline({
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索 Skills"
-              aria-label="搜索 Skills"
+              placeholder={translate('canvasAgentModal.t40')}
+              aria-label={translate('canvasAgentModal.t40')}
               autoFocus
             />
           </div>
           <div className="canvas-agent-skill-list">
-            {skills.length === 0 && <div className="canvas-agent-skill-empty">暂无可用 Skills</div>}
+            {skills.length === 0 && <div className="canvas-agent-skill-empty">{translate('canvasAgentModal.t53')}</div>}
             {skills.length > 0 && filteredSkills.length === 0 && (
-              <div className="canvas-agent-skill-empty">没有匹配结果</div>
+              <div className="canvas-agent-skill-empty">{translate('canvasAgentModal.t51')}</div>
             )}
             {onTogglePinned != null && pinnedSkills.length > 0 && (
               <div className="composer-model-group pinned-composer-model-group">
                 <div className="composer-model-group-title canvas-picker-pinned-title">
-                  <Icons.PinFill size={12} /> 常用
+                  <Icons.PinFill size={12} /> {translate('canvasAgentModal.t49')}
                 </div>
                 {pinnedSkills.map((skill) => renderSkillOption(skill, 'pinned:'))}
               </div>
@@ -2662,7 +2680,7 @@ function SkillPickerInline({
       <div
         ref={rootRef}
         className={`composer-select composer-skill-picker${disabled ? ' is-disabled' : ''}`}
-        title={disabled ? '会话运行中不可切换' : '选择附加 Skills'}
+        title={disabled ? translate('canvasAgentModal.t25') : translate('canvasAgentModal.t36')}
       >
         <span className="composer-select-icon">
           <Icons.Skills size={13} />

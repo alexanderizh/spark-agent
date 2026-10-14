@@ -9,6 +9,7 @@
  * 工具返回：紧凑结果（不返回完整 snapshot；快照在每次操作后会被自动 refresh）。
  */
 import { canvasApi, operationLabel } from './canvas.api'
+import { translate } from '../../i18n'
 import type {
   CanvasAsset,
   CanvasBoard,
@@ -215,7 +216,7 @@ export type CanvasToolDescriptor = {
 
 const requireSnapshot = (ctx: CanvasToolContext): CanvasSnapshot => {
   const snap = ctx.getSnapshot()
-  if (!snap) throw new Error('画布尚未加载完成，请稍后重试。')
+  if (!snap) throw new Error(translate('canvasTools.t1Desc'))
   return snap
 }
 
@@ -239,7 +240,7 @@ const findEmptySpot = (snap: CanvasSnapshot, boardId: string): { x: number; y: n
 
 const findNode = (snap: CanvasSnapshot, nodeId: string): CanvasNode => {
   const n = snap.nodes.find((x) => x.id === nodeId)
-  if (!n) throw new Error(`未找到节点 ${nodeId}`)
+  if (!n) throw new Error(translate('canvasTools.tpl1Desc', { id: nodeId }))
   return n
 }
 
@@ -257,7 +258,7 @@ async function updateCanvasNode(
   const hasContent = input.content !== undefined
   const hasData = input.data != null && Object.keys(input.data).length > 0
   if (!hasTitle && !hasContent && !hasData) {
-    throw new Error('至少提供 title、content 或 data 中的一项')
+    throw new Error(translate('canvasTools.t2Desc'))
   }
 
   const dataPatch: Partial<CanvasNodeData> = { ...(input.data ?? {}) }
@@ -273,7 +274,7 @@ async function updateCanvasNode(
     } else if (isOperationNode(node)) {
       dataPatch.prompt = content
     } else {
-      throw new Error(`节点 ${input.nodeId} 不支持 content，请通过 data 修改具体字段`)
+      throw new Error(translate('canvasTools.tpl2LongDesc', { id: input.nodeId }))
     }
   } else if (node.type === 'prompt') {
     const hasPrompt = Object.prototype.hasOwnProperty.call(dataPatch, 'prompt')
@@ -281,7 +282,7 @@ async function updateCanvasNode(
     const prompt = dataPatch.prompt
     const text = dataPatch.text
     if (hasPrompt && hasText && prompt !== text) {
-      throw new Error('Prompt 节点的 data.text 与 data.prompt 必须一致，请改用 content')
+      throw new Error(translate('canvasTools.t3LongDesc'))
     }
     if (hasPrompt && !hasText && typeof prompt === 'string') dataPatch.text = prompt
     if (hasText && !hasPrompt && typeof text === 'string') dataPatch.prompt = text
@@ -501,42 +502,42 @@ const PIPELINE_ROLES = [
 const PRODUCTION_STATES = ['empty', 'drafting', 'draft', 'confirmed', 'stale'] as const
 
 const SHOT_SEGMENT_TOOL_FIELDS = {
-  description: string('镜头画面与动作描述', false),
-  dialogue: string('带说话人的对白', false),
-  narration: string('旁白 / OS / 字幕', false),
-  characterAssetIds: array(string('角色资产 id'), '出场角色'),
-  sceneAssetId: string('场景资产 id', false),
-  propAssetIds: array(string('道具资产 id'), '道具'),
-  shotPrompt: string('自包含的 AI 视频镜头提示词', false),
-  shotSize: string('景别', false),
-  angle: string('机位高度、拍摄角度与视角', false),
-  movement: string('镜头类型、轨迹、方向、速度与稳定性', false),
-  sceneLayout: string('前中后景、道具和空间布局', false),
-  composition: string('九宫格落点、视觉中心与画面分割', false),
-  blocking: string('人物站位、入画范围、走位与 cm 级距离', false),
-  lighting: string('主光/辅光/轮廓光、光比和色温', false),
-  focalLength: string('镜头焦距/焦段', false),
-  aperture: string('光圈、景深与焦平面', false),
-  iso: string('感光度与颗粒', false),
-  colorTone: string('主色、强调色、冷暖与饱和度', false),
-  mood: string('氛围与情绪基调', false),
-  microExpression: string('微表情与表演动作', false),
-  costume: string('服装与造型连续性', false),
-  characterReferences: string('角色图/资产参考与本镜造型', false),
-  actionBeats: string('0.5s 精度的完整动作节拍', false),
-  soundEffects: string('环境声、拟音、音乐与时码', false),
-  transition: string('入镜/出镜的硬切或其他剪辑标识', false),
-  firstFrame: string('0.0s 首帧精确描述', false),
-  lastFrame: string('镜头末尾帧精确描述', false),
-  continuity: string('轴线、视线、道具、造型、光向与动作接点', false),
-  negativePrompt: string('该镜专属反向提示词', false),
-  inSec: number('镜头入点（秒）'),
-  outSec: number('镜头出点（秒）'),
-  durationSec: number('镜头时长（秒）'),
-  keyframeNodeIds: array(string('关键帧节点 id'), '关联关键帧节点'),
-  cameraDesignId: string('运镜风格预设 id', false),
-  actionDesignId: string('动作风格预设 id', false),
-  frameDesignId: string('画面风格预设 id', false),
+  description: string(translate('canvasTools.t4'), false),
+  dialogue: string(translate('canvasTools.t5'), false),
+  narration: string(translate('canvasTools.t6'), false),
+  characterAssetIds: array(string(translate('canvasTools.t7')), translate('canvasTools.t8')),
+  sceneAssetId: string(translate('canvasTools.t9'), false),
+  propAssetIds: array(string(translate('canvasTools.t10')), translate('canvasTools.t11')),
+  shotPrompt: string(translate('canvasTools.t12Desc'), false),
+  shotSize: string(translate('canvasTools.t13'), false),
+  angle: string(translate('canvasTools.t14'), false),
+  movement: string(translate('canvasTools.t15Desc'), false),
+  sceneLayout: string(translate('canvasTools.t16'), false),
+  composition: string(translate('canvasTools.t17Desc'), false),
+  blocking: string(translate('canvasTools.t18Desc'), false),
+  lighting: string(translate('canvasTools.t19Desc'), false),
+  focalLength: string(translate('canvasTools.t20'), false),
+  aperture: string(translate('canvasTools.t21'), false),
+  iso: string(translate('canvasTools.t22'), false),
+  colorTone: string(translate('canvasTools.t23Desc'), false),
+  mood: string(translate('canvasTools.t24'), false),
+  microExpression: string(translate('canvasTools.t25'), false),
+  costume: string(translate('canvasTools.t26'), false),
+  characterReferences: string(translate('canvasTools.t27Desc'), false),
+  actionBeats: string(translate('canvasTools.t28Desc'), false),
+  soundEffects: string(translate('canvasTools.t29'), false),
+  transition: string(translate('canvasTools.t30Desc'), false),
+  firstFrame: string(translate('canvasTools.t31'), false),
+  lastFrame: string(translate('canvasTools.t32'), false),
+  continuity: string(translate('canvasTools.t33Desc'), false),
+  negativePrompt: string(translate('canvasTools.t34'), false),
+  inSec: number(translate('canvasTools.t35')),
+  outSec: number(translate('canvasTools.t36')),
+  durationSec: number(translate('canvasTools.t37')),
+  keyframeNodeIds: array(string(translate('canvasTools.t38')), translate('canvasTools.t39')),
+  cameraDesignId: string(translate('canvasTools.t40'), false),
+  actionDesignId: string(translate('canvasTools.t41'), false),
+  frameDesignId: string(translate('canvasTools.t42'), false),
 }
 
 // ─── 工具定义 ──────────────────────────────────────────────────────────────
@@ -545,8 +546,7 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── 项目 / 概览 ─────────
   {
     name: 'canvas_describe_tool',
-    description:
-      '返回指定画布工具的完整名称、说明和精确 inputSchema。参数字段不确定或调用校验失败时先用本工具查询，不要猜测字段。',
+    description: translate('canvasTools.tpl3LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['toolName'],
@@ -555,13 +555,13 @@ const tools: CanvasToolDescriptor[] = [
         toolName: {
           type: 'string',
           minLength: 1,
-          description: '要查询的画布工具完整名称，例如 canvas_create_reusable_workflow_graph',
+          description: translate('canvasTools.tpl4Desc'),
         },
       },
     },
     handler: async (_ctx, input: { toolName: string }) => {
       const tool = tools.find((candidate) => candidate.name === input.toolName)
-      if (!tool) throw new Error(`未知画布工具: ${input.toolName}`)
+      if (!tool) throw new Error(translate('canvasTools.tpl5Desc', { name: input.toolName }))
       return {
         name: tool.name,
         description: tool.description,
@@ -571,8 +571,7 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_get_project_summary',
-    description:
-      '获取当前画布项目的整体概览（项目信息、当前画布、节点/资产/任务计数）。任何编辑前先调一次。',
+    description: translate('canvasTools.tpl6LongDesc'),
     paramsSchema: { type: 'object', properties: {} },
     handler: async (ctx) => {
       const snap = requireSnapshot(ctx)
@@ -597,12 +596,12 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_update_project_settings',
-    description: '更新项目级 prompt / negativePrompt（影响新建操作节点的默认值）。',
+    description: translate('canvasTools.tpl7Desc'),
     paramsSchema: {
       type: 'object',
       properties: {
-        prompt: string('项目级默认提示词', false),
-        negativePrompt: string('项目级负面提示词', false),
+        prompt: string(translate('canvasTools.t47'), false),
+        negativePrompt: string(translate('canvasTools.t48'), false),
       },
     },
     handler: async (ctx, input: { prompt?: string; negativePrompt?: string }) => {
@@ -613,12 +612,11 @@ const tools: CanvasToolDescriptor[] = [
 
   {
     name: 'canvas_get_available_actions',
-    description:
-      '获取指定节点当前可用的完整能力目录：剧本流水线、推荐影视流程、通用生成、编辑整理和 UI 专属右键功能。针对节点操作前优先调用。',
+    description: translate('canvasTools.tpl8LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeId'],
-      properties: { nodeId: string('节点 id') },
+      properties: { nodeId: string(translate('canvasTools.t50')) },
     },
     handler: async (ctx, input: { nodeId: string }) => {
       const snap = requireSnapshot(ctx)
@@ -645,9 +643,9 @@ const tools: CanvasToolDescriptor[] = [
         actions,
         usage: {
           preferredOrder: [
-            '先选择 pipeline 或 recommended_flow 动作',
-            '再按 toolRecipe 使用专用流水线工具创建可检查的操作节点',
-            '只有用户明确要求立即执行时才运行媒体任务',
+            translate('canvasTools.t51Desc'),
+            translate('canvasTools.t52Desc'),
+            translate('canvasTools.t53Desc'),
           ],
         },
       }
@@ -655,8 +653,7 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_get_production_plan',
-    description:
-      '根据当前画布实时状态生成影视/短剧推荐制作计划、阻塞项和下一步。收到“制作短剧/继续制作/下一步”等宽泛请求时，在创建节点前调用。',
+    description: translate('canvasTools.tpl9LongDesc'),
     paramsSchema: { type: 'object', properties: {} },
     handler: async (ctx) => {
       const snap = requireSnapshot(ctx)
@@ -671,12 +668,12 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── 节点查询 ─────────
   {
     name: 'canvas_list_nodes',
-    description: '列出当前画布内的节点，可按类型筛选。返回节点摘要（含 id/type/坐标/标题/数据）。',
+    description: translate('canvasTools.tpl10Desc'),
     paramsSchema: {
       type: 'object',
       properties: {
-        type: enumOf(NODE_TYPES, '只返回该类型的节点（可选）'),
-        includeHidden: boolean('是否包含 hidden 节点（默认 false）'),
+        type: enumOf(NODE_TYPES, translate('canvasTools.t56Desc')),
+        includeHidden: boolean(translate('canvasTools.t57Desc')),
       },
     },
     handler: async (
@@ -695,11 +692,11 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_get_node',
-    description: '获取单个节点完整信息（含 data 全部字段）。',
+    description: translate('canvasTools.t58Desc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeId'],
-      properties: { nodeId: string('节点 id') },
+      properties: { nodeId: string(translate('canvasTools.t50')) },
     },
     handler: async (ctx, input: { nodeId: string }) => {
       const snap = requireSnapshot(ctx)
@@ -717,29 +714,28 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_get_operation_config',
-    description:
-      '读取 AI 操作节点的持久化配置、关联任务、已连接输入和操作能力约束；精细调参前调用。',
+    description: translate('canvasTools.tpl11LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeId'],
-      properties: { nodeId: string('AI 操作节点 id') },
+      properties: { nodeId: string(translate('canvasTools.t60')) },
     },
     handler: async (ctx, input: { nodeId: string }) => {
       const snap = requireSnapshot(ctx)
       const node = findNode(snap, input.nodeId)
-      if (!isOperationNode(node)) throw new Error(`节点 ${input.nodeId} 不是 AI 操作节点`)
+      if (!isOperationNode(node))
+        throw new Error(translate('canvasTools.tpl12Desc', { id: input.nodeId }))
       return summarizeOperationConfig(snap, node)
     },
   },
   {
     name: 'canvas_find_nodes',
-    description:
-      '在当前画布内按文本搜索节点（匹配 title / data.text / data.prompt）。返回匹配的节点摘要。',
+    description: translate('canvasTools.tpl13Desc'),
     paramsSchema: {
       type: 'object',
       required: ['query'],
       properties: {
-        query: string('搜索关键词（不区分大小写）'),
+        query: string(translate('canvasTools.t62Desc')),
       },
     },
     handler: async (ctx, input: { query: string; boardId?: string }) => {
@@ -760,11 +756,11 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_list_group_members',
-    description: '列出组节点内的成员节点。',
+    description: translate('canvasTools.t63'),
     paramsSchema: {
       type: 'object',
       required: ['groupId'],
-      properties: { groupId: string('组节点 id') },
+      properties: { groupId: string(translate('canvasTools.t64')) },
     },
     handler: async (ctx, input: { groupId: string }) => {
       const snap = requireSnapshot(ctx)
@@ -776,18 +772,17 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── 节点编辑 ─────────
   {
     name: 'canvas_update_node',
-    description:
-      '通用节点更新工具。可同时修改节点标题、可见正文和任意 data 字段，并在写入后强制刷新画布内存快照。text/prompt 节点的 content 会更新卡片正文，AI 操作节点的 content 会更新提示词。优先使用本工具，避免只改存储数据但 UI 仍显示旧值。',
+    description: translate('canvasTools.tpl14LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeId'],
       properties: {
-        nodeId: string('节点 id'),
-        title: string('节点标题（可选）', false),
-        content: string('节点可见正文或 AI 操作提示词（可选）', false),
+        nodeId: string(translate('canvasTools.t50')),
+        title: string(translate('canvasTools.t66'), false),
+        content: string(translate('canvasTools.t67Desc'), false),
         data: {
           type: 'object',
-          description: '需要合并写入的其他 node.data 字段（可选）',
+          description: translate('canvasTools.t68Desc'),
           additionalProperties: true,
         },
       },
@@ -812,15 +807,14 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_create_text_node',
-    description:
-      '创建单个普通纯文本笔记节点（同时生成同步的文本 asset），适合局部编辑。不得用于剧本、分镜或影视资产；完整可复用流程请使用 canvas_create_reusable_workflow_graph。坐标省略时自动放在画布空白处。',
+    description: translate('canvasTools.tpl15LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['text'],
       properties: {
-        text: string('文本内容'),
-        x: number('画布坐标 x（可选）'),
-        y: number('画布坐标 y（可选）'),
+        text: string(translate('canvasTools.t70')),
+        x: number(translate('canvasTools.t71')),
+        y: number(translate('canvasTools.t72')),
       },
     },
     handler: async (ctx, input: { text: string; x?: number; y?: number }) => {
@@ -834,16 +828,15 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_create_prompt_node',
-    description:
-      '创建单个 Prompt 节点（与 text 节点结构相同，data.format=prompt），适合局部编辑。完整可复用流程请使用 canvas_create_reusable_workflow_graph。',
+    description: translate('canvasTools.tpl16LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['prompt'],
       properties: {
-        prompt: string('提示词内容'),
-        title: string('节点标题（可选）', false),
-        x: number('画布坐标 x（可选）'),
-        y: number('画布坐标 y（可选）'),
+        prompt: string(translate('canvasTools.t74')),
+        title: string(translate('canvasTools.t66'), false),
+        x: number(translate('canvasTools.t71')),
+        y: number(translate('canvasTools.t72')),
       },
     },
     handler: async (ctx, input: { prompt: string; title?: string; x?: number; y?: number }) => {
@@ -861,53 +854,54 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_update_node_data',
-    description:
-      '兼容工具：编辑节点 data 字段并刷新画布。普通节点更新优先使用 canvas_update_node；修改 prompt 卡片的 prompt 字段时会自动同步其可见 text。',
+    description: translate('canvasTools.tpl17LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeId', 'data'],
       properties: {
-        nodeId: string('节点 id'),
+        nodeId: string(translate('canvasTools.t50')),
         data: {
           type: 'object',
-          description:
-            '要合并写入的 data 字段（partial）。支持文本/媒体字段，也支持流水线语义字段；未知扩展字段会透传。',
+          description: translate('canvasTools.tpl18LongDesc'),
           additionalProperties: true,
           properties: {
-            text: string('文本/Prompt 内容', false),
-            prompt: string('提示词', false),
-            negativePrompt: string('负面提示词', false),
-            format: enumOf(['plain', 'markdown', 'prompt'], '文本格式'),
-            message: string('节点状态消息', false),
-            url: string('媒体 URL（图片/音频/视频节点）', false),
-            thumbnailUrl: string('缩略图 URL', false),
-            mimeType: string('MIME 类型', false),
-            operation: enumOf(OPERATION_TYPES as unknown as string[], 'AI 操作类型'),
+            text: string(translate('canvasTools.t77'), false),
+            prompt: string(translate('canvasTools.t78'), false),
+            negativePrompt: string(translate('canvasTools.t79'), false),
+            format: enumOf(['plain', 'markdown', 'prompt'], translate('canvasTools.t80')),
+            message: string(translate('canvasTools.t81'), false),
+            url: string(translate('canvasTools.t82Desc'), false),
+            thumbnailUrl: string(translate('canvasTools.t83'), false),
+            mimeType: string(translate('canvasTools.t84'), false),
+            operation: enumOf(OPERATION_TYPES as unknown as string[], translate('canvasTools.t85')),
             modelParams: {
               type: 'object',
               additionalProperties: true,
-              description: '模型特定参数',
+              description: translate('canvasTools.t86'),
             },
-            agentId: string('文本任务使用的 Agent id', false),
-            providerProfileId: string('多模态/文本任务使用的 provider profile id', false),
-            manifestId: string('多模态模型 manifest id', false),
-            modelId: string('模型 id', false),
+            agentId: string(translate('canvasTools.t87Desc'), false),
+            providerProfileId: string(translate('canvasTools.t88Desc'), false),
+            manifestId: string(translate('canvasTools.t89Desc'), false),
+            modelId: string(translate('canvasTools.t90'), false),
             reasoningEffort: enumOf(
               ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
-              '统一推理强度',
+              translate('canvasTools.t91'),
             ),
-            skillIds: array(string('Skill id'), '文本任务使用的 Skill id 列表'),
+            skillIds: array(string('Skill id'), translate('canvasTools.t92Desc')),
             pipelineRole: enumOf(
               PIPELINE_ROLES as unknown as string[],
-              '节点在影视流水线中的语义角色',
+              translate('canvasTools.t93Desc'),
             ),
             outputPipelineRole: enumOf(
               PIPELINE_ROLES as unknown as string[],
-              '任务产物节点的流水线角色',
+              translate('canvasTools.t94'),
             ),
-            productionState: enumOf(PRODUCTION_STATES as unknown as string[], '生产状态'),
-            shotGroupId: string('关联分镜分组 id', false),
-            shotSegmentId: string('关联分镜片段 id', false),
+            productionState: enumOf(
+              PRODUCTION_STATES as unknown as string[],
+              translate('canvasTools.t95'),
+            ),
+            shotGroupId: string(translate('canvasTools.t96'), false),
+            shotSegmentId: string(translate('canvasTools.t97'), false),
           },
         },
       },
@@ -919,24 +913,24 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_patch_nodes',
-    description: '批量更新节点几何属性 / 标题 / 锁定 / 隐藏。',
+    description: translate('canvasTools.t98Desc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeIds', 'patch'],
       properties: {
-        nodeIds: array(string('节点 id'), '要更新的节点 id 列表'),
+        nodeIds: array(string(translate('canvasTools.t50')), translate('canvasTools.t99')),
         patch: {
           type: 'object',
           properties: {
-            x: number('x 坐标'),
-            y: number('y 坐标'),
-            width: number('宽度（像素）'),
-            height: number('高度（像素）'),
-            rotation: number('旋转角度'),
-            zIndex: number('层级'),
-            locked: boolean('是否锁定'),
-            hidden: boolean('是否隐藏'),
-            title: string('标题', false),
+            x: number(translate('canvasTools.t100')),
+            y: number(translate('canvasTools.t101')),
+            width: number(translate('canvasTools.t102')),
+            height: number(translate('canvasTools.t103')),
+            rotation: number(translate('canvasTools.t104')),
+            zIndex: number(translate('canvasTools.t105')),
+            locked: boolean(translate('canvasTools.t106')),
+            hidden: boolean(translate('canvasTools.t107')),
+            title: string(translate('canvasTools.t108'), false),
           },
         },
       },
@@ -959,18 +953,17 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_update_operation_config',
-    description:
-      '持久化更新 AI 操作节点配置，并同步关联任务；后续 retry 会使用新参数。modelParams 为完整替换值。',
+    description: translate('canvasTools.tpl19LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeId', 'config'],
       properties: {
-        nodeId: string('AI 操作节点 id'),
-        title: string('节点标题（可选）', false),
+        nodeId: string(translate('canvasTools.t60')),
+        title: string(translate('canvasTools.t66'), false),
         config: {
           type: 'object',
           additionalProperties: true,
-          description: '只传需要修改的配置字段；修改前先读取 canvas_get_operation_config。',
+          description: translate('canvasTools.tpl20Desc'),
         },
       },
     },
@@ -980,7 +973,8 @@ const tools: CanvasToolDescriptor[] = [
     ) => {
       const snap = requireSnapshot(ctx)
       const node = findNode(snap, input.nodeId)
-      if (!isOperationNode(node)) throw new Error(`节点 ${input.nodeId} 不是 AI 操作节点`)
+      if (!isOperationNode(node))
+        throw new Error(translate('canvasTools.tpl12Desc', { id: input.nodeId }))
       await updateCanvasNode(ctx, {
         nodeId: input.nodeId,
         ...(input.title != null ? { title: input.title } : {}),
@@ -996,11 +990,13 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_delete_nodes',
-    description: '删除节点（软删，可恢复）。',
+    description: translate('canvasTools.t111Desc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeIds'],
-      properties: { nodeIds: array(string('节点 id'), '要删除的节点 id 列表') },
+      properties: {
+        nodeIds: array(string(translate('canvasTools.t50')), translate('canvasTools.t112')),
+      },
     },
     handler: async (ctx, input: { nodeIds: string[] }) => {
       await ctx.workspace.deleteNodes(input.nodeIds)
@@ -1009,11 +1005,13 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_duplicate_nodes',
-    description: '复制节点（保留连线、组归属，自动重新映射 id）。',
+    description: translate('canvasTools.t113Desc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeIds'],
-      properties: { nodeIds: array(string('节点 id'), '要复制的节点 id') },
+      properties: {
+        nodeIds: array(string(translate('canvasTools.t50')), translate('canvasTools.t114')),
+      },
     },
     handler: async (ctx, input: { nodeIds: string[] }) => {
       await ctx.workspace.duplicateNodes(input.nodeIds)
@@ -1022,14 +1020,13 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_connect_nodes',
-    description:
-      '在两个现有节点之间建立单条连线（操作节点入边为 used_as_input），适合局部修复。完整流程创建请使用 canvas_create_reusable_workflow_graph；修改完流程后调用 canvas_validate_workflow_graph 检查。',
+    description: translate('canvasTools.tpl21LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['sourceNodeId', 'targetNodeId'],
       properties: {
-        sourceNodeId: string('源节点 id'),
-        targetNodeId: string('目标节点 id'),
+        sourceNodeId: string(translate('canvasTools.t116')),
+        targetNodeId: string(translate('canvasTools.t117')),
       },
     },
     handler: async (ctx, input: { sourceNodeId: string; targetNodeId: string }) => {
@@ -1039,11 +1036,13 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_create_group',
-    description: '把多个节点组合成一个组节点（至少 2 个非组节点）。',
+    description: translate('canvasTools.t118Desc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeIds'],
-      properties: { nodeIds: array(string('节点 id'), '要分组的节点 id 列表（≥2）') },
+      properties: {
+        nodeIds: array(string(translate('canvasTools.t50')), translate('canvasTools.t119Desc')),
+      },
     },
     handler: async (ctx, input: { nodeIds: string[] }) => {
       const beforeIds = new Set(requireSnapshot(ctx).nodes.map((n) => n.id))
@@ -1060,11 +1059,11 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_dissolve_group',
-    description: '解散组节点（成员节点恢复独立）。',
+    description: translate('canvasTools.t120Desc'),
     paramsSchema: {
       type: 'object',
       required: ['groupId'],
-      properties: { groupId: string('组节点 id') },
+      properties: { groupId: string(translate('canvasTools.t64')) },
     },
     handler: async (ctx, input: { groupId: string }) => {
       await ctx.workspace.dissolveGroupNode(input.groupId)
@@ -1073,13 +1072,13 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_add_to_group',
-    description: '把节点加入已存在的组。',
+    description: translate('canvasTools.t121'),
     paramsSchema: {
       type: 'object',
       required: ['groupId', 'nodeIds'],
       properties: {
-        groupId: string('组节点 id'),
-        nodeIds: array(string('节点 id'), '要加入的节点 id'),
+        groupId: string(translate('canvasTools.t64')),
+        nodeIds: array(string(translate('canvasTools.t50')), translate('canvasTools.t122')),
       },
     },
     handler: async (ctx, input: { groupId: string; nodeIds: string[] }) => {
@@ -1089,11 +1088,13 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_remove_from_group',
-    description: '把节点从组里移出。',
+    description: translate('canvasTools.t123'),
     paramsSchema: {
       type: 'object',
       required: ['nodeIds'],
-      properties: { nodeIds: array(string('节点 id'), '要移出的节点 id') },
+      properties: {
+        nodeIds: array(string(translate('canvasTools.t50')), translate('canvasTools.t124')),
+      },
     },
     handler: async (ctx, input: { nodeIds: string[] }) => {
       await ctx.workspace.removeNodesFromGroup(input.nodeIds)
@@ -1104,12 +1105,15 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── 资产 ─────────
   {
     name: 'canvas_list_assets',
-    description: '列出项目内全部资产（图片/音频/视频/文本/Prompt/文件）。可按 type 筛选。',
+    description: translate('canvasTools.tpl22Desc'),
     paramsSchema: {
       type: 'object',
       properties: {
-        type: enumOf(['image', 'audio', 'video', 'text', 'prompt', 'file'], '资产类型'),
-        kind: string('影视资产细分（script/character/scene/prop/effect/prompt_library）', false),
+        type: enumOf(
+          ['image', 'audio', 'video', 'text', 'prompt', 'file'],
+          translate('canvasTools.t126'),
+        ),
+        kind: string(translate('canvasTools.t127LongDesc'), false),
       },
     },
     handler: async (ctx, input: { type?: string; kind?: string }) => {
@@ -1123,29 +1127,29 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_get_asset',
-    description: '获取单个资产完整信息（含 contentText 全文 / metadata）。',
+    description: translate('canvasTools.t128Desc'),
     paramsSchema: {
       type: 'object',
       required: ['assetId'],
-      properties: { assetId: string('资产 id') },
+      properties: { assetId: string(translate('canvasTools.t129')) },
     },
     handler: async (ctx, input: { assetId: string }) => {
       const snap = requireSnapshot(ctx)
       const a = snap.assets.find((x) => x.id === input.assetId)
-      if (!a) throw new Error(`未找到资产 ${input.assetId}`)
+      if (!a) throw new Error(translate('canvasTools.tpl23Desc', { id: input.assetId }))
       return { asset: { ...summarizeAsset(a), contentText: a.contentText, metadata: a.metadata } }
     },
   },
   {
     name: 'canvas_insert_asset',
-    description: '把已有资产作为引用节点插入当前画布。坐标省略时自动放在画布空白处。',
+    description: translate('canvasTools.tpl24Desc'),
     paramsSchema: {
       type: 'object',
       required: ['assetId'],
       properties: {
-        assetId: string('资产 id'),
-        x: number('画布坐标 x（可选）'),
-        y: number('画布坐标 y（可选）'),
+        assetId: string(translate('canvasTools.t129')),
+        x: number(translate('canvasTools.t71')),
+        y: number(translate('canvasTools.t72')),
       },
     },
     handler: async (ctx, input: { assetId: string; boardId?: string; x?: number; y?: number }) => {
@@ -1159,19 +1163,19 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_create_film_asset',
-    description: '创建影视类资产（剧本/角色/场景/道具/特效/提示词库）。用于项目级共享资源管理。',
+    description: translate('canvasTools.tpl25Desc'),
     paramsSchema: {
       type: 'object',
       required: ['kind', 'name'],
       properties: {
-        kind: enumOf(FILM_ASSET_KINDS as unknown as string[], '资产类型'),
-        name: string('资产名称'),
-        text: string('正文/描述（可选）', false),
-        prompt: string('关联提示词（可选）', false),
-        tags: array(string('标签'), '标签列表'),
+        kind: enumOf(FILM_ASSET_KINDS as unknown as string[], translate('canvasTools.t126')),
+        name: string(translate('canvasTools.t132')),
+        text: string(translate('canvasTools.t133'), false),
+        prompt: string(translate('canvasTools.t134'), false),
+        tags: array(string(translate('canvasTools.t135')), translate('canvasTools.t136')),
         attributes: {
           type: 'object',
-          description: '类型特定属性（自由 JSON）',
+          description: translate('canvasTools.t137Desc'),
           additionalProperties: true,
         },
       },
@@ -1183,17 +1187,21 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_update_film_asset',
-    description: '编辑影视资产字段。',
+    description: translate('canvasTools.t138'),
     paramsSchema: {
       type: 'object',
       required: ['assetId'],
       properties: {
-        assetId: string('资产 id'),
-        title: string('标题', false),
-        contentText: string('正文', false),
-        prompt: string('提示词', false),
-        tags: array(string('标签'), '标签列表'),
-        attributes: { type: 'object', additionalProperties: true, description: '类型特定属性' },
+        assetId: string(translate('canvasTools.t129')),
+        title: string(translate('canvasTools.t108'), false),
+        contentText: string(translate('canvasTools.t139'), false),
+        prompt: string(translate('canvasTools.t78'), false),
+        tags: array(string(translate('canvasTools.t135')), translate('canvasTools.t136')),
+        attributes: {
+          type: 'object',
+          additionalProperties: true,
+          description: translate('canvasTools.t140'),
+        },
       },
     },
     handler: async (
@@ -1214,11 +1222,11 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_delete_film_asset',
-    description: '删除影视资产。',
+    description: translate('canvasTools.t141'),
     paramsSchema: {
       type: 'object',
       required: ['assetId'],
-      properties: { assetId: string('资产 id') },
+      properties: { assetId: string(translate('canvasTools.t129')) },
     },
     handler: async (ctx, input: { assetId: string }) => {
       await ctx.workspace.deleteFilmAsset(input.assetId)
@@ -1227,14 +1235,17 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_search_assets',
-    description: '搜索影视资产（关键词 + kind + tags + 排序）。',
+    description: translate('canvasTools.t142Desc'),
     paramsSchema: {
       type: 'object',
       properties: {
-        query: string('搜索关键词', false),
-        kinds: array(enumOf(FILM_ASSET_KINDS as unknown as string[], 'kind'), '限定 kinds'),
-        tags: array(string('tag'), '限定 tags'),
-        sortBy: enumOf(['updated', 'created', 'name', 'usage'], '排序方式'),
+        query: string(translate('canvasTools.t143'), false),
+        kinds: array(
+          enumOf(FILM_ASSET_KINDS as unknown as string[], 'kind'),
+          translate('canvasTools.t144'),
+        ),
+        tags: array(string('tag'), translate('canvasTools.t145')),
+        sortBy: enumOf(['updated', 'created', 'name', 'usage'], translate('canvasTools.t146')),
       },
     },
     handler: async (
@@ -1254,7 +1265,7 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── 操作节点 / 任务 ─────────
   {
     name: 'canvas_list_capabilities',
-    description: '列出支持的 AI 操作能力（每个操作的输入/输出类型、参数 schema）。',
+    description: translate('canvasTools.tpl26Desc'),
     paramsSchema: { type: 'object', properties: {} },
     handler: async () => {
       const { CANVAS_CAPABILITIES } = await import('./canvas.capabilities')
@@ -1273,31 +1284,39 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_create_operation_node',
-    description:
-      '创建一个 AI 操作节点（不立即执行），适合对现有流程做局部修改。创建完整可复用流程时优先使用 canvas_create_reusable_workflow_graph，以自动生成输入占位、连线、布局和校验。',
+    description: translate('canvasTools.tpl27LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['operation'],
       properties: {
-        operation: enumOf(OPERATION_TYPES as unknown as string[], 'AI 操作类型'),
-        inputNodeIds: array(string('节点 id'), '输入节点 id 列表（图片/文本节点）'),
-        title: string('节点标题', false),
-        message: string('节点提示消息（可选）', false),
-        prompt: string('预填提示词（可选，不会立即执行）', false),
-        negativePrompt: string('预填负面提示词（可选）', false),
+        operation: enumOf(OPERATION_TYPES as unknown as string[], translate('canvasTools.t85')),
+        inputNodeIds: array(
+          string(translate('canvasTools.t50')),
+          translate('canvasTools.t149Desc'),
+        ),
+        title: string(translate('canvasTools.t150'), false),
+        message: string(translate('canvasTools.t151'), false),
+        prompt: string(translate('canvasTools.t152Desc'), false),
+        negativePrompt: string(translate('canvasTools.t153'), false),
         modelParams: {
           type: 'object',
           additionalProperties: true,
-          description: '预填模型参数（如 aspect_ratio / durationSec / workflow / responseFormat）',
+          description: translate('canvasTools.tpl28Desc'),
         },
-        agentId: string('预绑定文本 Agent id（可选）', false),
-        providerProfileId: string('预绑定 provider profile id（可选）', false),
-        manifestId: string('预绑定 manifest id（可选）', false),
-        modelId: string('预绑定模型 id（可选）', false),
-        taskPipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '任务节点流水线角色'),
-        outputPipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '产物节点流水线角色'),
-        x: number('画布坐标 x（可选）'),
-        y: number('画布坐标 y（可选）'),
+        agentId: string(translate('canvasTools.t155Desc'), false),
+        providerProfileId: string(translate('canvasTools.t156Desc'), false),
+        manifestId: string(translate('canvasTools.t157Desc'), false),
+        modelId: string(translate('canvasTools.t158'), false),
+        taskPipelineRole: enumOf(
+          PIPELINE_ROLES as unknown as string[],
+          translate('canvasTools.t159'),
+        ),
+        outputPipelineRole: enumOf(
+          PIPELINE_ROLES as unknown as string[],
+          translate('canvasTools.t160'),
+        ),
+        x: number(translate('canvasTools.t71')),
+        y: number(translate('canvasTools.t72')),
       },
     },
     handler: async (
@@ -1356,29 +1375,32 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_run_operation',
-    description: '运行已存在的 AI 操作节点（提交 prompt + 输入，调用对应模型生成结果）。',
+    description: translate('canvasTools.tpl29Desc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeId'],
       properties: {
-        nodeId: string('操作节点 id'),
-        prompt: string('提示词；省略时使用节点已保存的 prompt', false),
-        negativePrompt: string('负面提示词', false),
-        inputNodeIds: array(string('节点 id'), '覆盖默认输入节点（可选）'),
-        inputAssetIds: array(string('资产 id'), '直接用项目资产作为输入（可选）'),
-        agentId: string('指定文本 Agent（可选，仅文本类任务使用）', false),
-        providerProfileId: string('指定 provider profile（可选）', false),
-        manifestId: string('指定 manifest（可选）', false),
-        modelId: string('指定模型 id（可选）', false),
+        nodeId: string(translate('canvasTools.t162')),
+        prompt: string(translate('canvasTools.t163Desc'), false),
+        negativePrompt: string(translate('canvasTools.t79'), false),
+        inputNodeIds: array(string(translate('canvasTools.t50')), translate('canvasTools.t164')),
+        inputAssetIds: array(
+          string(translate('canvasTools.t129')),
+          translate('canvasTools.t165Desc'),
+        ),
+        agentId: string(translate('canvasTools.t166Desc'), false),
+        providerProfileId: string(translate('canvasTools.t167Desc'), false),
+        manifestId: string(translate('canvasTools.t168Desc'), false),
+        modelId: string(translate('canvasTools.t169'), false),
         reasoningEffort: {
           type: 'string',
           enum: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
-          description: 'Spark 统一推理强度；运行时会按 adapter 映射为 provider 合法枚举',
+          description: translate('canvasTools.tpl30Desc'),
         },
         modelParams: {
           type: 'object',
           additionalProperties: true,
-          description: '模型特定参数（如尺寸 / 步数 / seed），schema 由 capability 决定',
+          description: translate('canvasTools.tpl31Desc'),
         },
       },
     },
@@ -1400,13 +1422,13 @@ const tools: CanvasToolDescriptor[] = [
     ) => {
       const snap = requireSnapshot(ctx)
       const node = findNode(snap, input.nodeId)
-      if (!isOperationNode(node)) throw new Error(`节点 ${input.nodeId} 不是 AI 操作节点`)
+      if (!isOperationNode(node))
+        throw new Error(translate('canvasTools.tpl12Desc', { id: input.nodeId }))
       const savedPrompt =
         node.data.prompt ??
         (node.taskId ? snap.tasks.find((t) => t.id === node.taskId)?.prompt : null)
       const prompt = input.prompt ?? savedPrompt
-      if (!prompt?.trim())
-        throw new Error('操作节点没有可运行的 prompt，请先更新配置或传入 prompt。')
+      if (!prompt?.trim()) throw new Error(translate('canvasTools.tpl32Desc'))
       const { nodeId, ...params } = input
       await ctx.workspace.runOperationNode(nodeId, { ...params, prompt })
       return { ok: true, nodeId }
@@ -1414,11 +1436,11 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_retry_operation',
-    description: '基于操作节点的旧参数重试一次。',
+    description: translate('canvasTools.t173Desc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeId'],
-      properties: { nodeId: string('操作节点 id') },
+      properties: { nodeId: string(translate('canvasTools.t162')) },
     },
     handler: async (ctx, input: { nodeId: string }) => {
       await ctx.workspace.retryOperationNode(input.nodeId)
@@ -1427,11 +1449,11 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_cancel_task',
-    description: '取消运行中的任务。',
+    description: translate('canvasTools.t174'),
     paramsSchema: {
       type: 'object',
       required: ['taskId'],
-      properties: { taskId: string('任务 id') },
+      properties: { taskId: string(translate('canvasTools.t175')) },
     },
     handler: async (ctx, input: { taskId: string }) => {
       await ctx.workspace.cancelTask(input.taskId)
@@ -1440,11 +1462,14 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_list_tasks',
-    description: '列出当前画布的任务（可按 status 筛选）。',
+    description: translate('canvasTools.t176Desc'),
     paramsSchema: {
       type: 'object',
       properties: {
-        status: enumOf(['pending', 'running', 'completed', 'failed', 'cancelled'], '任务状态'),
+        status: enumOf(
+          ['pending', 'running', 'completed', 'failed', 'cancelled'],
+          translate('canvasTools.t177'),
+        ),
       },
     },
     handler: async (ctx, input: { status?: string }) => {
@@ -1456,11 +1481,10 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_list_media_models',
-    description:
-      '列出可用的多模态模型（用于挑选 provider/manifest/modelId 传给 canvas_run_operation）。',
+    description: translate('canvasTools.tpl33Desc'),
     paramsSchema: {
       type: 'object',
-      properties: { enabledOnly: boolean('仅返回已启用模型（默认 true）') },
+      properties: { enabledOnly: boolean(translate('canvasTools.t179Desc')) },
     },
     handler: async (_ctx, input: { enabledOnly?: boolean }) => {
       const { models } = await canvasApi.listMediaModels({ enabledOnly: input.enabledOnly ?? true })
@@ -1471,7 +1495,7 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── 分镜（影视开发专用）─────────
   {
     name: 'canvas_list_shot_groups',
-    description: '列出当前项目所有分镜分组（含每组的 segments 概要）。',
+    description: translate('canvasTools.t180Desc'),
     paramsSchema: { type: 'object', properties: {} },
     handler: async (ctx) => {
       const snap = requireSnapshot(ctx)
@@ -1493,13 +1517,13 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_create_shot_group',
-    description: '新建分镜分组（如「第一幕」「第二幕」）。',
+    description: translate('canvasTools.t181Desc'),
     paramsSchema: {
       type: 'object',
       required: ['name'],
       properties: {
-        name: string('分组名称'),
-        description: string('描述', false),
+        name: string(translate('canvasTools.t182')),
+        description: string(translate('canvasTools.t183'), false),
       },
     },
     handler: async (ctx, input: { name: string; description?: string }) => {
@@ -1509,14 +1533,14 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_update_shot_group',
-    description: '修改分镜分组。',
+    description: translate('canvasTools.t184'),
     paramsSchema: {
       type: 'object',
       required: ['groupId'],
       properties: {
-        groupId: string('分组 id'),
-        name: string('新名称', false),
-        description: string('新描述', false),
+        groupId: string(translate('canvasTools.t185')),
+        name: string(translate('canvasTools.t186'), false),
+        description: string(translate('canvasTools.t187'), false),
       },
     },
     handler: async (ctx, input: { groupId: string; name?: string; description?: string }) => {
@@ -1527,11 +1551,11 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_delete_shot_group',
-    description: '删除分镜分组。',
+    description: translate('canvasTools.t188'),
     paramsSchema: {
       type: 'object',
       required: ['groupId'],
-      properties: { groupId: string('分组 id') },
+      properties: { groupId: string(translate('canvasTools.t185')) },
     },
     handler: async (ctx, input: { groupId: string }) => {
       await ctx.workspace.deleteShotGroup(input.groupId)
@@ -1540,13 +1564,13 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_create_shot_segment',
-    description: '在分镜分组内新建一个镜头片段。',
+    description: translate('canvasTools.t189Desc'),
     paramsSchema: {
       type: 'object',
       required: ['groupId', 'title'],
       properties: {
-        groupId: string('分组 id'),
-        title: string('镜头标题（如「开场—远景」）'),
+        groupId: string(translate('canvasTools.t185')),
+        title: string(translate('canvasTools.t190Desc')),
         ...SHOT_SEGMENT_TOOL_FIELDS,
       },
     },
@@ -1558,14 +1582,14 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_update_shot_segment',
-    description: '修改镜头片段。',
+    description: translate('canvasTools.t191'),
     paramsSchema: {
       type: 'object',
       required: ['groupId', 'segmentId'],
       properties: {
-        groupId: string('分组 id'),
-        segmentId: string('片段 id'),
-        title: string('标题', false),
+        groupId: string(translate('canvasTools.t185')),
+        segmentId: string(translate('canvasTools.t192')),
+        title: string(translate('canvasTools.t108'), false),
         ...SHOT_SEGMENT_TOOL_FIELDS,
       },
     },
@@ -1577,13 +1601,13 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_delete_shot_segment',
-    description: '删除镜头片段。',
+    description: translate('canvasTools.t193'),
     paramsSchema: {
       type: 'object',
       required: ['groupId', 'segmentId'],
       properties: {
-        groupId: string('分组 id'),
-        segmentId: string('片段 id'),
+        groupId: string(translate('canvasTools.t185')),
+        segmentId: string(translate('canvasTools.t192')),
       },
     },
     handler: async (ctx, input: { groupId: string; segmentId: string }) => {
@@ -1595,8 +1619,7 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── Agent 生成结果 → 画布（关键能力）─────────
   {
     name: 'canvas_insert_generated_image',
-    description:
-      'Agent 生成了一张图片后，把它插入到画布作为图片节点。支持本地文件路径或 data URL。会自动创建 asset + 节点。',
+    description: translate('canvasTools.tpl34LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['source'],
@@ -1605,16 +1628,16 @@ const tools: CanvasToolDescriptor[] = [
           oneOf: [
             {
               type: 'string',
-              description: '本地文件绝对路径（如 /tmp/xxx.png）或 data URL 或 http(s) URL',
+              description: translate('canvasTools.t195LongDesc'),
             },
           ],
-          description: '图片来源（路径 / dataURL / URL）',
+          description: translate('canvasTools.t196Desc'),
         },
-        title: string('节点标题（可选）', false),
-        x: number('画布坐标 x（可选）'),
-        y: number('画布坐标 y（可选）'),
-        width: number('节点宽度（可选，默认 320）'),
-        height: number('节点高度（可选，根据图片比例自适应）'),
+        title: string(translate('canvasTools.t66'), false),
+        x: number(translate('canvasTools.t71')),
+        y: number(translate('canvasTools.t72')),
+        width: number(translate('canvasTools.t197Desc')),
+        height: number(translate('canvasTools.t198Desc')),
       },
     },
     handler: async (
@@ -1654,7 +1677,7 @@ const tools: CanvasToolDescriptor[] = [
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader()
           reader.onload = () => resolve(String(reader.result))
-          reader.onerror = () => reject(reader.error ?? new Error('读取图片失败'))
+          reader.onerror = () => reject(reader.error ?? new Error(translate('canvasTools.t199')))
           reader.readAsDataURL(blob)
         })
         const saved = await window.spark.invoke('file:save-pasted-image', {
@@ -1683,17 +1706,16 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_insert_generated_text',
-    description:
-      '把 Agent 生成的普通说明或笔记插入文本节点。不得用于剧本、分镜或影视资产；这些内容必须使用对应专用工具。',
+    description: translate('canvasTools.tpl35LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['text'],
       properties: {
-        text: string('文本内容'),
-        title: string('节点标题', false),
-        format: enumOf(['plain', 'markdown', 'prompt'], '文本格式（默认 markdown）'),
-        x: number('画布坐标 x（可选）'),
-        y: number('画布坐标 y（可选）'),
+        text: string(translate('canvasTools.t70')),
+        title: string(translate('canvasTools.t150'), false),
+        format: enumOf(['plain', 'markdown', 'prompt'], translate('canvasTools.t201Desc')),
+        x: number(translate('canvasTools.t71')),
+        y: number(translate('canvasTools.t72')),
       },
     },
     handler: async (
@@ -1727,41 +1749,40 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── 批量 / 高级操作（C3 增强）─────────
   {
     name: 'canvas_batch_create_nodes',
-    description:
-      '一次性批量创建多个文本/Prompt 节点，并可指定它们之间的连线，适合局部内容卡片。完整可复用流程请使用 canvas_create_reusable_workflow_graph。返回所有创建的节点 id。',
+    description: translate('canvasTools.tpl36LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['nodes'],
       properties: {
         nodes: {
           type: 'array',
-          description: '要创建的节点列表',
+          description: translate('canvasTools.t203'),
           items: {
             type: 'object',
             properties: {
-              text: string('文本内容（text 节点必填）', false),
-              prompt: string('Prompt 内容（prompt 节点用）', false),
-              type: enumOf(['text', 'prompt'], '节点类型（默认 text）'),
-              title: string('节点标题（可选）', false),
-              x: number('画布坐标 x（可选，省略时自动排列）'),
-              y: number('画布坐标 y（可选）'),
+              text: string(translate('canvasTools.t204Desc'), false),
+              prompt: string(translate('canvasTools.t205Desc'), false),
+              type: enumOf(['text', 'prompt'], translate('canvasTools.t206Desc')),
+              title: string(translate('canvasTools.t66'), false),
+              x: number(translate('canvasTools.t207Desc')),
+              y: number(translate('canvasTools.t72')),
             },
           },
         },
         connections: {
           type: 'array',
-          description: '节点之间的连线，用 nodes 数组的索引（从 0 开始）指定',
+          description: translate('canvasTools.t208Desc'),
           items: {
             type: 'object',
             properties: {
-              fromIndex: number('源节点在 nodes 数组中的索引'),
-              toIndex: number('目标节点在 nodes 数组中的索引'),
+              fromIndex: number(translate('canvasTools.t209Desc')),
+              toIndex: number(translate('canvasTools.t210Desc')),
             },
           },
         },
-        startX: number('自动排列起始 x（可选，默认空白处）'),
-        startY: number('自动排列起始 y（可选）'),
-        spacing: number('自动排列间距（默认 360px）'),
+        startX: number(translate('canvasTools.t211Desc')),
+        startY: number(translate('canvasTools.t212')),
+        spacing: number(translate('canvasTools.t213Desc')),
       },
     },
     handler: async (
@@ -1829,16 +1850,15 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_align_nodes',
-    description:
-      '把多个节点对齐到指定方向（left/right/top/bottom/center-h/center-v）。只改 x/y，不改尺寸。',
+    description: translate('canvasTools.tpl37Desc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeIds', 'direction'],
       properties: {
-        nodeIds: array(string('节点 id'), '要对齐的节点 id 列表（≥2）'),
+        nodeIds: array(string(translate('canvasTools.t50')), translate('canvasTools.t215Desc')),
         direction: enumOf(
           ['left', 'right', 'top', 'bottom', 'center-h', 'center-v'],
-          '对齐方向：left=左边缘对齐，center-h=水平居中，center-v=垂直居中',
+          translate('canvasTools.tpl38Desc'),
         ),
       },
     },
@@ -1853,7 +1873,7 @@ const tools: CanvasToolDescriptor[] = [
       const targets = input.nodeIds
         .map((id) => snap.nodes.find((n) => n.id === id))
         .filter((n): n is CanvasNode => n != null)
-      if (targets.length < 2) throw new Error('对齐至少需要 2 个节点')
+      if (targets.length < 2) throw new Error(translate('canvasTools.t217'))
       // 计算基准线
       const left = Math.min(...targets.map((n) => n.x))
       const right = Math.max(...targets.map((n) => n.x + n.width))
@@ -1891,14 +1911,14 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_distribute_nodes',
-    description: '把多个节点等距分布（水平或垂直方向）。',
+    description: translate('canvasTools.t218Desc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeIds', 'axis'],
       properties: {
-        nodeIds: array(string('节点 id'), '要分布的节点 id 列表（≥3）'),
-        axis: enumOf(['horizontal', 'vertical'], '分布轴'),
-        gap: number('节点间最小间距（像素，可选，默认自动）'),
+        nodeIds: array(string(translate('canvasTools.t50')), translate('canvasTools.t219Desc')),
+        axis: enumOf(['horizontal', 'vertical'], translate('canvasTools.t220')),
+        gap: number(translate('canvasTools.t221Desc')),
       },
     },
     handler: async (
@@ -1909,13 +1929,13 @@ const tools: CanvasToolDescriptor[] = [
       const targets = input.nodeIds
         .map((id) => snap.nodes.find((n) => n.id === id))
         .filter((n): n is CanvasNode => n != null)
-      if (targets.length < 3) throw new Error('分布至少需要 3 个节点')
+      if (targets.length < 3) throw new Error(translate('canvasTools.t222'))
       const isH = input.axis === 'horizontal'
       // 按位置排序
       const sorted = [...targets].sort((a, b) => (isH ? a.x - b.x : a.y - b.y))
       const first = sorted[0]
       const last = sorted[sorted.length - 1]
-      if (!first || !last) throw new Error('分布节点排序失败')
+      if (!first || !last) throw new Error(translate('canvasTools.t223'))
       const start = isH ? first.x : first.y
       const end = isH ? last.x + last.width : last.y + last.height
       const totalSpan = end - start
@@ -1933,11 +1953,13 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_bring_to_front',
-    description: '把节点置顶（zIndex 设为当前画布最大值 + 1）。',
+    description: translate('canvasTools.t224Desc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeIds'],
-      properties: { nodeIds: array(string('节点 id'), '要置顶的节点 id 列表') },
+      properties: {
+        nodeIds: array(string(translate('canvasTools.t50')), translate('canvasTools.t225')),
+      },
     },
     handler: async (ctx, input: { nodeIds: string[] }) => {
       const snap = requireSnapshot(ctx)
@@ -1953,11 +1975,13 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_send_to_back',
-    description: '把节点置底（zIndex 设为当前画布最小值 - 1）。',
+    description: translate('canvasTools.t226Desc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeIds'],
-      properties: { nodeIds: array(string('节点 id'), '要置底的节点 id 列表') },
+      properties: {
+        nodeIds: array(string(translate('canvasTools.t50')), translate('canvasTools.t227')),
+      },
     },
     handler: async (ctx, input: { nodeIds: string[] }) => {
       const snap = requireSnapshot(ctx)
@@ -1972,19 +1996,18 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_update_model_param',
-    description:
-      '细粒度更新操作节点的单个 modelParams 参数（如 aspect_ratio / seed / steps），不需要整块替换 data.modelParams。不存在的 key 会自动新增。',
+    description: translate('canvasTools.tpl39LongDesc'),
     paramsSchema: {
       type: 'object',
       required: ['nodeId', 'params'],
       properties: {
-        nodeId: string('操作节点 id'),
+        nodeId: string(translate('canvasTools.t162')),
         params: {
           type: 'object',
-          description: '要设置/更新的参数键值对（合并写入，不删除其他已有参数）',
+          description: translate('canvasTools.tpl40Desc'),
           additionalProperties: true,
         },
-        removeKeys: array(string('参数名'), '要从 modelParams 中删除的 key（可选）'),
+        removeKeys: array(string(translate('canvasTools.t230')), translate('canvasTools.t231Desc')),
       },
     },
     handler: async (
@@ -2004,30 +2027,38 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_query_nodes',
-    description:
-      '按多维条件查询节点：类型、任务状态、坐标范围、是否有连线、资产关联等。比 list_nodes/find_nodes 更强大。',
+    description: translate('canvasTools.tpl41LongDesc'),
     paramsSchema: {
       type: 'object',
       properties: {
-        types: array(enumOf(NODE_TYPES, '类型'), '限定节点类型（任一匹配）'),
-        status: enumOf(['pending', 'running', 'completed', 'failed', 'cancelled'], '任务状态筛选'),
+        types: array(
+          enumOf(NODE_TYPES, translate('canvasTools.t233')),
+          translate('canvasTools.t234'),
+        ),
+        status: enumOf(
+          ['pending', 'running', 'completed', 'failed', 'cancelled'],
+          translate('canvasTools.t235'),
+        ),
         inBbox: {
           type: 'object',
-          description: '坐标范围筛选（节点中心点在此框内）',
+          description: translate('canvasTools.t236Desc'),
           properties: {
-            minX: number('框左边界'),
-            maxX: number('框右边界'),
-            minY: number('框上边界'),
-            maxY: number('框下边界'),
+            minX: number(translate('canvasTools.t237')),
+            maxX: number(translate('canvasTools.t238')),
+            minY: number(translate('canvasTools.t239')),
+            maxY: number(translate('canvasTools.t240')),
           },
         },
-        hasAsset: boolean('只返回有 asset 关联的节点（true）或无关联的（false）'),
-        hasInputs: boolean('只返回有输入连线的操作节点'),
-        hasOutputs: boolean('只返回有输出连线的操作节点'),
-        pipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '流水线角色筛选'),
-        productionState: enumOf(PRODUCTION_STATES as unknown as string[], '生产状态筛选'),
-        limit: number('返回上限（默认 50）'),
-        boardId: string('限定画布 id（可选，默认当前激活画布）', false),
+        hasAsset: boolean(translate('canvasTools.t241Desc')),
+        hasInputs: boolean(translate('canvasTools.t242Desc')),
+        hasOutputs: boolean(translate('canvasTools.t243Desc')),
+        pipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], translate('canvasTools.t244')),
+        productionState: enumOf(
+          PRODUCTION_STATES as unknown as string[],
+          translate('canvasTools.t245'),
+        ),
+        limit: number(translate('canvasTools.t246')),
+        boardId: string(translate('canvasTools.t247Desc'), false),
       },
     },
     handler: async (
@@ -2131,7 +2162,7 @@ export async function executeCanvasTool(
   input: unknown,
 ): Promise<unknown> {
   const tool = CANVAS_TOOL_INDEX[name]
-  if (!tool) throw new Error(`未知画布工具: ${name}`)
+  if (!tool) throw new Error(translate('canvasTools.tpl5Desc', { name }))
   const validation = validateCanvasToolInput(tool.paramsSchema, input)
   if (!validation.valid) {
     throw new Error(formatCanvasToolInputIssues(name, validation.issues))

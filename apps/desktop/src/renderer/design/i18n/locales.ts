@@ -1,3 +1,5 @@
+import { MODULE_EN, MODULE_ZH } from './resources'
+
 export type Lang = 'zh' | 'en'
 
 export const SUPPORTED_LANGUAGES = ['zh-CN', 'en-US'] as const
@@ -6,7 +8,7 @@ const DEFAULT_LANGUAGE: SupportedLanguage = 'zh-CN'
 
 export type TranslationKey = string
 
-export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
+const LEGACY_TRANSLATIONS: Record<Lang, Record<string, string>> = {
   zh: {
     'sidebar.group.today': '今天',
     'sidebar.group.yesterday': '昨天',
@@ -1027,6 +1029,15 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'sidebar.filter.groupBy.none': 'None',
     'sidebar.scheduleSummary': '{{total}} scheduled tasks, {{enabled}} running',
   },
+}
+
+/**
+ * 完整字典 = legacy 大字典 + 各模块 resources。
+ * 模块键放后面，同名时以模块资源为准（便于灰度覆盖历史文案）。
+ */
+export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
+  zh: { ...LEGACY_TRANSLATIONS.zh, ...MODULE_ZH },
+  en: { ...LEGACY_TRANSLATIONS.en, ...MODULE_EN },
 }
 
 export function languageToLang(language: string | undefined): Lang {

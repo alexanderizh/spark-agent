@@ -2,6 +2,7 @@ import { Checkbox, Select, Typography } from 'antd'
 import type { CanvasMediaModelSummary, ProviderProfile } from '@spark/protocol'
 
 import { mediaModelKey } from '../canvasModelPickerModel'
+import { translate } from '../../../i18n'
 import { CANVAS_ACCEPTANCE_MATRIX_CASES } from './canvasAcceptanceWorkflow'
 import { listTextTargetOptions, modelMatchesKind } from './canvasAcceptanceTargetModel'
 import type { CanvasAcceptanceTargetKind } from './canvasAcceptanceTypes'
@@ -78,7 +79,7 @@ export function CanvasAcceptanceMatrixSelector({
         className="canvas-acceptance-stage-grid"
         value={caseIds}
         options={CANVAS_ACCEPTANCE_MATRIX_CASES.map((item) => ({
-          label: `${item.label} · ${item.kind}`,
+          label: `${translate(item.labelKey)} · ${item.kind}`,
           value: item.caseId,
         }))}
         onChange={(values) => onCaseIdsChange(values as string[])}

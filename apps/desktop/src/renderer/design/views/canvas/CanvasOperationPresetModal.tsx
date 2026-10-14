@@ -10,6 +10,7 @@ import {
 } from '@spark/protocol'
 
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import { useProviderConfigVersion } from '../../hooks/useProviderConfigVersion'
 import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
 import { CanvasOperationParameterControls } from './CanvasOperationParameterControls'
@@ -101,6 +102,8 @@ export function CanvasOperationPresetModal({
   onClose: () => void
   onPresetCountChange?: (count: number) => void
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const providerConfigVersion = useProviderConfigVersion()
   const [activeTargetId, setActiveTargetId] = useState<CanvasPresetTargetId>(INITIAL_TARGET)
   const [viewMode, setViewMode] = useState<PresetCenterMode>('tasks')
@@ -559,7 +562,7 @@ export function CanvasOperationPresetModal({
   const requestClose = useCanvasUnsavedChangesGuard({
     dirty: isDirty,
     onClose,
-    subject: '画布默认设置',
+    subject: translate('canvasOperationPreset.t1'),
   })
 
   const saveAllPresets = useCallback(async () => {
@@ -594,10 +597,10 @@ export function CanvasOperationPresetModal({
       baselineDraftsRef.current = nextDrafts
       setBaselineDraftsSignature(JSON.stringify(nextDrafts))
       setBaselineTaskDraftsSignature(JSON.stringify(taskDrafts))
-      message.success('画布默认设置已保存，新建任务会自动使用这套设置')
+      message.success(translate('canvasOperationPreset.t2Desc'))
       onClose()
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存节点预设失败')
+      message.error(error instanceof Error ? error.message : translate('canvasOperationPreset.t3'))
     } finally {
       setSaving(false)
     }
@@ -630,9 +633,11 @@ export function CanvasOperationPresetModal({
         Object.keys(readCanvasPresetTargetOverrides()).length +
         Object.keys(readCanvasTaskDefaults()).length
       onPresetCountChange?.(nextCount)
-      message.success(`${targetLabel(activeTarget)} 已恢复平台默认`)
+      message.success(
+        translate('canvasOperationPreset.tpl1', { target: targetLabel(activeTarget) }),
+      )
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '恢复默认预设失败')
+      message.error(error instanceof Error ? error.message : translate('canvasOperationPreset.t4'))
     } finally {
       setSaving(false)
     }
@@ -640,13 +645,13 @@ export function CanvasOperationPresetModal({
 
   const runtimeSummary = useMemo(() => {
     if (!isTextOperation) {
-      if (modelsLoading) return '正在读取已启用模型...'
+      if (modelsLoading) return translate('canvasOperationPreset.t5')
       if (selectedModel) {
         return `${selectedModel.providerName ?? selectedModel.providerKind} · ${selectedModel.effectiveModelId}`
       }
-      return '未指定固定模型，将沿用预设 / 平台默认配置'
+      return translate('canvasOperationPreset.t6Desc')
     }
-    if (runtimeLoading) return '正在读取应用 Agent / Provider / Skills 配置...'
+    if (runtimeLoading) return translate('canvasOperationPreset.t7Desc')
     const skillSummary = selectedSkillIds.length > 0 ? ` · ${selectedSkillIds.length} Skills` : ''
     if (selectedAgent && selectedTextProvider) {
       return `${selectedAgent.name} · ${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}${skillSummary}`
@@ -654,7 +659,7 @@ export function CanvasOperationPresetModal({
     if (selectedTextProvider) {
       return `${selectedTextProvider.name}${selectedTextModelId ? ` · ${selectedTextModelId}` : ''}${skillSummary}`
     }
-    return '未固定 Agent / Provider，节点将使用平台默认值'
+    return translate('canvasOperationPreset.t8Desc')
   }, [
     isTextOperation,
     modelsLoading,
@@ -683,7 +688,7 @@ export function CanvasOperationPresetModal({
         : null
       if (preset.modelId) return provider ? `${provider.name} · ${preset.modelId}` : preset.modelId
       const taskKind = canvasTaskDefaultKindForOperation(target.operation)
-      return taskKind ? '继承对应任务默认' : '使用平台默认'
+      return taskKind ? translate('canvasOperationPreset.t9') : translate('canvasOperationPreset.t10')
     },
     [agents, drafts, mediaModels, providers],
   )
@@ -717,11 +722,11 @@ export function CanvasOperationPresetModal({
   const advancedParameterContent = (
     <div className="canvas-operation-unified-advanced-extras">
       <label className="canvas-operation-preset-field canvas-operation-unified-advanced-block">
-        <span>预置反向提示词</span>
+        <span>{translate('canvasOperationPreset.t32')}</span>
         <Input.TextArea
           value={negativePrompt}
           rows={4}
-          placeholder="例如：不要水印、不要额外人物、不要低清晰度"
+          placeholder={translate('canvasOperationPreset.t25Desc')}
           onChange={(event) => {
             setNodeFormTouched(true)
             setNegativePrompt(event.target.value)
@@ -732,8 +737,8 @@ export function CanvasOperationPresetModal({
       <div className="canvas-operation-unified-advanced-block">
         <div className="canvas-operation-preset-section-head canvas-operation-preset-custom-head">
           <div>
-            <strong>自定义参数</strong>
-            <span>补充 Provider 私有字段</span>
+            <strong>{translate('canvasOperationPreset.t33')}</strong>
+            <span>{translate('canvasOperationPreset.t34Desc')}</span>
           </div>
           <Button
             size="middle"
@@ -741,12 +746,12 @@ export function CanvasOperationPresetModal({
             icon={<Icons.Plus size={13} />}
             onClick={handleAddCustomParam}
           >
-            添加
+            {translate('canvasOperationPreset.t35')}
           </Button>
         </div>
         {customParams.length === 0 ? (
           <div className="canvas-operation-preset-hint">
-            可补充模型私有字段，例如 `seed`、`camera_control`、`reasoning_effort`。
+            {translate('canvasOperationPreset.t36LongDesc')}
           </div>
         ) : (
           <div className="canvas-operation-preset-custom-list">
@@ -755,7 +760,7 @@ export function CanvasOperationPresetModal({
                 <Input
                   size="middle"
                   value={param.name}
-                  placeholder="字段名"
+                  placeholder={translate('canvasOperationPreset.t26')}
                   onChange={(event) =>
                     handleCustomParamPatch(param.id, { name: event.target.value })
                   }
@@ -764,10 +769,10 @@ export function CanvasOperationPresetModal({
                   size="middle"
                   value={param.type}
                   options={[
-                    { value: 'string', label: '文本' },
-                    { value: 'number', label: '数字' },
-                    { value: 'integer', label: '整数' },
-                    { value: 'boolean', label: '布尔' },
+                    { value: 'string', label: translate('canvasOperationPreset.t11') },
+                    { value: 'number', label: translate('canvasOperationPreset.t12') },
+                    { value: 'integer', label: translate('canvasOperationPreset.t13') },
+                    { value: 'boolean', label: translate('canvasOperationPreset.t14') },
                     { value: 'json', label: 'JSON' },
                   ]}
                   onChange={(value) =>
@@ -781,7 +786,7 @@ export function CanvasOperationPresetModal({
                     size="middle"
                     allowClear
                     value={param.value || undefined}
-                    placeholder="值"
+                    placeholder={translate('canvasOperationPreset.t15')}
                     options={[
                       { value: 'true', label: 'true' },
                       { value: 'false', label: 'false' },
@@ -796,7 +801,7 @@ export function CanvasOperationPresetModal({
                   <Input
                     size="middle"
                     value={param.value}
-                    placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
+                    placeholder={param.type === 'json' ? '{"key":"value"}' : translate('canvasOperationPreset.t15')}
                     type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
                     onChange={(event) =>
                       handleCustomParamPatch(param.id, { value: event.target.value })
@@ -807,7 +812,7 @@ export function CanvasOperationPresetModal({
                   size="middle"
                   type="text"
                   icon={<Icons.Trash size={13} />}
-                  aria-label="删除自定义参数"
+                  aria-label={translate('canvasOperationPreset.t27')}
                   onClick={() => handleRemoveCustomParam(param.id)}
                 />
               </div>
@@ -817,7 +822,7 @@ export function CanvasOperationPresetModal({
       </div>
 
       <label className="canvas-operation-preset-field canvas-operation-unified-advanced-block">
-        <span>当前默认参数预览</span>
+        <span>{translate('canvasOperationPreset.t37')}</span>
         <Input.TextArea
           value={formatCanvasOperationPresetModelParams(buildCurrentModelParams())}
           rows={6}
@@ -845,24 +850,26 @@ export function CanvasOperationPresetModal({
       <div className="canvas-operation-preset-modal-shell">
         <div className="canvas-operation-preset-topbar">
           <div className="canvas-operation-preset-topbar-main">
-            <span className="canvas-operation-preset-topbar-kicker">无限画布 · 新任务默认值</span>
+            <span className="canvas-operation-preset-topbar-kicker">{translate('canvasOperationPreset.t38Desc')}</span>
             <div className="canvas-operation-preset-topbar-title-row">
-              <h2>画布默认设置</h2>
+              <h2>{translate('canvasOperationPreset.t1')}</h2>
               <Tag color={configuredPresetCount > 0 ? 'gold' : 'default'} bordered>
-                {configuredPresetCount > 0 ? `已配置 ${configuredPresetCount}` : '未配置'}
+                {configuredPresetCount > 0
+                ? translate('canvasOperationPreset.tpl2', { count: configuredPresetCount })
+                : translate('canvasOperationPreset.t16')}
               </Tag>
             </div>
-            <p>新建任务会自动使用这些设置，仍可在单个节点里临时修改。</p>
+            <p>{translate('canvasOperationPreset.t39Desc')}</p>
           </div>
           <Button
             size="middle"
             type="text"
             icon={<Icons.X size={15} />}
-            aria-label="关闭画布默认设置"
+            aria-label={translate('canvasOperationPreset.t28')}
             onClick={requestClose}
           />
         </div>
-        <nav className="canvas-preset-mode-tabs" aria-label="默认设置方式">
+        <nav className="canvas-preset-mode-tabs" aria-label={translate('canvasOperationPreset.t29')}>
           <button
             type="button"
             className={viewMode === 'tasks' ? 'is-active' : ''}
@@ -877,7 +884,7 @@ export function CanvasOperationPresetModal({
             }}
           >
             <Icons.Layers size={14} />
-            <span>按任务类型</span>
+            <span>{translate('canvasOperationPreset.t40')}</span>
           </button>
           <button
             type="button"
@@ -886,7 +893,7 @@ export function CanvasOperationPresetModal({
             onClick={() => setViewMode('nodes')}
           >
             <Icons.Grid size={14} />
-            <span>按节点覆盖</span>
+            <span>{translate('canvasOperationPreset.t41')}</span>
             {nodeOverrideCount > 0 ? <em>{nodeOverrideCount}</em> : null}
           </button>
         </nav>
@@ -895,12 +902,12 @@ export function CanvasOperationPresetModal({
             <main className="canvas-preset-task-page">
               <div className="canvas-preset-page-intro">
                 <div>
-                  <strong>先设置四类常用任务</strong>
-                  <span>没有特殊要求时，完成这里就可以保存。</span>
+                  <strong>{translate('canvasOperationPreset.t42')}</strong>
+                  <span>{translate('canvasOperationPreset.t43Desc')}</span>
                 </div>
                 <span className="canvas-preset-inheritance-note">
                   <Icons.HelpCircle size={13} />
-                  节点没有单独设置时，会自动继承这里
+                  {translate('canvasOperationPreset.t44Desc')}
                 </span>
               </div>
               <CanvasPresetTaskCards
@@ -931,7 +938,7 @@ export function CanvasOperationPresetModal({
                   <div>
                     <h3>{targetLabel(activeTarget)}</h3>
                     <p>
-                      只有这个节点功能需要不同的 Agent、模型、提示词或参数时，才在这里单独设置。
+                      {translate('canvasOperationPreset.t45Desc')}
                     </p>
                   </div>
                   <span
@@ -939,14 +946,14 @@ export function CanvasOperationPresetModal({
                       hasCanvasPresetTargetOverride(activeTargetId) ? ' is-override' : ''
                     }`}
                   >
-                    {hasCanvasPresetTargetOverride(activeTargetId) ? '已单独设置' : '当前继承默认'}
+                    {hasCanvasPresetTargetOverride(activeTargetId) ? translate('canvasOperationPreset.t17') : translate('canvasOperationPreset.t18')}
                   </span>
                 </div>
 
                 <section className="canvas-operation-preset-section">
                   <div className="canvas-operation-preset-section-head">
-                    <strong>执行方式</strong>
-                    <span>Agent、模型与 Skills</span>
+                    <strong>{translate('canvasOperationPreset.t46')}</strong>
+                    <span>{translate('canvasOperationPreset.t47Desc')}</span>
                   </div>
                   {isTextOperation ? (
                     <div className="canvas-operation-preset-runtime">
@@ -976,7 +983,7 @@ export function CanvasOperationPresetModal({
                         showSearch
                         className="canvas-operation-preset-runtime-skill canvas-operation-preset-skill-select"
                         value={selectedSkillIds}
-                        placeholder="选择默认 Skills"
+                        placeholder={translate('canvasOperationPreset.t30')}
                         optionFilterProp="label"
                         maxTagCount="responsive"
                         options={skills.map((skill) => ({ value: skill.id, label: skill.name }))}
@@ -994,24 +1001,24 @@ export function CanvasOperationPresetModal({
                     <div className="canvas-operation-preset-summary-tags">
                       {presetCoverage.hasRuntime ? (
                         <Tag color="blue" bordered>
-                          执行方式已设置
+                          {translate('canvasOperationPreset.t48')}
                         </Tag>
                       ) : null}
                       {presetCoverage.hasPrompt || presetCoverage.hasNegativePrompt ? (
                         <Tag color="gold" bordered>
-                          提示词已设置
+                          {translate('canvasOperationPreset.t49')}
                         </Tag>
                       ) : null}
                       {presetCoverage.hasModelParams ? (
                         <Tag color="purple" bordered>
-                          参数已设置
+                          {translate('canvasOperationPreset.t50')}
                         </Tag>
                       ) : null}
                       {!presetCoverage.hasRuntime &&
                       !presetCoverage.hasPrompt &&
                       !presetCoverage.hasNegativePrompt &&
                       !presetCoverage.hasModelParams ? (
-                        <Tag bordered>继承任务默认</Tag>
+                        <Tag bordered>{translate('canvasOperationPreset.t51')}</Tag>
                       ) : null}
                     </div>
                   </div>
@@ -1019,12 +1026,12 @@ export function CanvasOperationPresetModal({
 
                 <section className="canvas-operation-preset-section">
                   <div className="canvas-operation-preset-section-head">
-                    <strong>节点提示词</strong>
-                    <span>只补充这个节点功能需要的要求</span>
+                    <strong>{translate('canvasOperationPreset.t52')}</strong>
+                    <span>{translate('canvasOperationPreset.t53Desc')}</span>
                   </div>
                   {readonlyPromptPrefix ? (
                     <label className="canvas-operation-preset-field">
-                      <span>系统内置前缀（只读）</span>
+                      <span>{translate('canvasOperationPreset.t54')}</span>
                       <Input.TextArea value={readonlyPromptPrefix} rows={5} readOnly />
                     </label>
                   ) : null}
@@ -1032,9 +1039,9 @@ export function CanvasOperationPresetModal({
                     <span>
                       {canEditPresetPrompt
                         ? readonlyPromptPrefix
-                          ? '补充提示词'
-                          : '预置提示词'
-                        : '系统内置能力 Prompt（只读）'}
+                          ? translate('canvasOperationPreset.t19')
+                          : translate('canvasOperationPreset.t20')
+                        : translate('canvasOperationPreset.t21Desc')}
                     </span>
                     <Input.TextArea
                       value={
@@ -1046,8 +1053,8 @@ export function CanvasOperationPresetModal({
                       readOnly={!canEditPresetPrompt}
                       placeholder={
                         readonlyPromptPrefix
-                          ? '例如：描述具体场景、主体、氛围和构图要求'
-                          : '例如：统一镜头语言、品牌语气、结构要求'
+                          ? translate('canvasOperationPreset.t22Desc')
+                          : translate('canvasOperationPreset.t23Desc')
                       }
                       onChange={
                         canEditPresetPrompt
@@ -1060,7 +1067,7 @@ export function CanvasOperationPresetModal({
                     />
                     {!canEditPresetPrompt ? (
                       <span className="canvas-operation-preset-hint">
-                        普通节点的自定义 Prompt 请在项目或节点内填写，避免跨项目静默复用。
+                        {translate('canvasOperationPreset.t55Desc')}
                       </span>
                     ) : null}
                   </label>
@@ -1069,8 +1076,8 @@ export function CanvasOperationPresetModal({
                 <section className="canvas-operation-preset-section">
                   <div className="canvas-operation-preset-section-head">
                     <div>
-                      <strong>生成参数</strong>
-                      <span>常用项直接展示，低频项折叠收起</span>
+                      <strong>{translate('canvasOperationPreset.t56')}</strong>
+                      <span>{translate('canvasOperationPreset.t57Desc')}</span>
                     </div>
                   </div>
                   <CanvasOperationParameterControls
@@ -1081,13 +1088,13 @@ export function CanvasOperationPresetModal({
                     disabled={saving}
                     showModelPicker={!isTextOperation}
                     allowEmptyModel
-                    emptyModelLabel="沿用平台默认"
+                    emptyModelLabel={translate('canvasOperationPreset.t31')}
                     fields={parameterFields}
                     values={modelParamDraft}
                     modelMeta={
                       parameterFields.length === 0 ? (
                         <div className="canvas-operation-preset-hint">
-                          当前模型没有可结构化展示的参数表，仍可在高级设置中添加自定义参数。
+                          {translate('canvasOperationPreset.t58Desc')}
                         </div>
                       ) : null
                     }
@@ -1107,16 +1114,16 @@ export function CanvasOperationPresetModal({
         <div className="canvas-operation-preset-footer">
           <div className="canvas-operation-preset-footer-summary">
             <Icons.HelpCircle size={13} />
-            只影响之后新建的任务；已有节点保留自己的设置。
+            {translate('canvasOperationPreset.t59Desc')}
           </div>
           <div className="canvas-operation-preset-footer-actions">
             {viewMode === 'nodes' ? (
               <Button size="middle" loading={saving} onClick={() => void resetCurrentPreset()}>
-                恢复继承
+                {translate('canvasOperationPreset.t60')}
               </Button>
             ) : null}
             <Button size="middle" onClick={requestClose}>
-              取消
+              {translate('canvasOperationPreset.t61')}
             </Button>
             <Button
               size="middle"
@@ -1124,7 +1131,7 @@ export function CanvasOperationPresetModal({
               loading={saving}
               onClick={() => void saveAllPresets()}
             >
-              保存默认设置
+              {translate('canvasOperationPreset.t62')}
             </Button>
           </div>
         </div>
@@ -1140,7 +1147,7 @@ function targetLabel(
     | null
     | undefined,
 ): string {
-  if (!target) return '未命名节点'
+  if (!target) return translate('canvasOperationPreset.t24')
   return target.kind === 'pipeline' ? target.label : operationLabel(target.operation)
 }
 

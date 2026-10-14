@@ -18,7 +18,8 @@ import type {
   PressureLevelTripleNumbers,
   ResourceMonitorFullSnapshot,
 } from '@spark/protocol'
-import { clampNumber, formatBytes, PRESSURE_LEVEL_META } from './performance-format'
+import { useI18n } from '../i18n'
+import { clampNumber, formatBytes, getPressureLevelMeta } from './performance-format'
 
 interface PerformanceConfigPanelProps {
   full: ResourceMonitorFullSnapshot | null
@@ -40,7 +41,7 @@ const RANGES = {
 
 interface TripleSpec {
   key: 'hostRssPct' | 'systemUsedPct' | 'eventLoopDelayMs'
-  label: string
+  labelKey: string
   unit: string
   range: { min: number; max: number; step: number }
   /** 双形式展示（§3.3.6）：百分比 × 基线 → GB 附注。 */
@@ -50,31 +51,31 @@ interface TripleSpec {
 const TRIPLE_SPECS: readonly TripleSpec[] = [
   {
     key: 'hostRssPct',
-    label: '宿主内存',
+    labelKey: 'perf.config.hostLabel',
     unit: ' %',
     range: RANGES.hostRssPct,
     showGbEquivalent: true,
   },
   {
     key: 'systemUsedPct',
-    label: '系统内存',
+    labelKey: 'perf.config.systemLabel',
     unit: ' %',
     range: RANGES.systemUsedPct,
     showGbEquivalent: true,
   },
   {
     key: 'eventLoopDelayMs',
-    label: '事件循环',
+    labelKey: 'perf.config.eventLoopLabel',
     unit: ' ms',
     range: RANGES.eventLoopDelayMs,
     showGbEquivalent: false,
   },
 ]
 
-const LEVEL_ROWS: ReadonlyArray<{ level: 'warning' | 'critical' | 'emergency'; desc: string }> = [
-  { level: 'warning', desc: '静默限流新任务，不弹通知' },
-  { level: 'critical', desc: '暂停新派发，不弹通知' },
-  { level: 'emergency', desc: '暂停全部新任务，即将溢出时弹通知' },
+const LEVEL_ROWS: ReadonlyArray<{ level: 'warning' | 'critical' | 'emergency'; descKey: string }> = [
+  { level: 'warning', descKey: 'perf.config.levelWarningDesc' },
+  { level: 'critical', descKey: 'perf.config.levelCriticalDesc' },
+  { level: 'emergency', descKey: 'perf.config.levelEmergencyDesc' },
 ]
 
 interface PanelState {
@@ -123,9 +124,11 @@ export function PerformanceConfigPanel({
   diagnostics,
   onUpdateSettings,
 }: PerformanceConfigPanelProps) {
+  const { t } = useI18n()
   // 编辑态仅初始化一次；父层在刷新 / 恢复默认后以 key={echoVersion} 重挂载取新回显。
   const [state, setState] = useState<PanelState>(() => readPanelState(full, diagnostics))
 
+  const levels = useMemo(() => getPressureLevelMeta(t), [t])
   const baselineTotalBytes = full?.baseline?.totalBytes ?? null
   const cores = full?.baseline?.cpuCores ?? null
 
@@ -237,10 +240,8 @@ export function PerformanceConfigPanel({
       {/* 总开关 */}
       <div className="rowline">
         <div className="r-main">
-          <div className="r-title">性能监控</div>
-          <div className="r-desc">
-            实时采集宿主与子进程资源指标（2 秒采样，仅本地保存）；关闭后不再采样与推送。
-          </div>
+          <div className="r-title">{t('perf.config.monitorTitle')}</div>
+          <div className="r-desc">{t('perf.config.monitorDesc')}</div>
         </div>
         <div className="r-act">
           <Switch
@@ -252,10 +253,8 @@ export function PerformanceConfigPanel({
       </div>
       <div className="rowline">
         <div className="r-main">
-          <div className="r-title">自动降级保护</div>
-          <div className="r-desc">
-            资源压力过高时自动限制并发任务，防止应用与系统无响应；关闭后不再自动降级（监控与展示不受影响）。
-          </div>
+          <div className="r-title">{t('perf.config.governanceTitle')}</div>
+          <div className="r-desc">{t('perf.config.governanceDesc')}</div>
         </div>
         <div className="r-act">
           <Switch
@@ -270,12 +269,12 @@ export function PerformanceConfigPanel({
         {/* 并发上限 */}
         <div className="rowline">
           <div className="r-main">
-            <div className="r-title">并发上限</div>
-            <div className="r-desc">同时运行的任务数上限，超出部分进入排队，空闲后按顺序启动。</div>
+            <div className="r-title">{t('perf.config.capTitle')}</div>
+            <div className="r-desc">{t('perf.config.capDesc')}</div>
           </div>
           <div className="cap-steps">
             <span className="th-step">
-              <span>全局预算</span>
+              <span>{t('perf.config.globalBudgetLabel')}</span>
               <Stepper
                 value={state.totalAgentProcessBudget}
                 unit=""
@@ -286,7 +285,7 @@ export function PerformanceConfigPanel({
               />
             </span>
             <span className="th-step">
-              <span>成员派发</span>
+              <span>{t('perf.config.memberDispatchLabel')}</span>
               <Stepper
                 value={state.maxMemberDispatches}
                 unit=""
@@ -297,7 +296,7 @@ export function PerformanceConfigPanel({
               />
             </span>
             <span className="th-step">
-              <span>工作流波宽</span>
+              <span>{t('perf.config.waveWidthLabel')}</span>
               <Stepper
                 value={state.waveWidth}
                 unit=""
@@ -313,22 +312,23 @@ export function PerformanceConfigPanel({
         {/* 子进程数阈值推导说明（治理口径） */}
         <div className="rowline">
           <div className="r-main">
-            <div className="r-title">子进程数阈值 · 治理口径 · 按核数与并发预算推导</div>
+            <div className="r-title">{t('perf.config.childrenThresholdDesc')}</div>
             <div className="r-desc">
-              治理口径统计 claude / codex 家族子进程及其内部 node 载体 （含会话挂载的 MCP server
-              进程，每会话常驻十几个属正常）， 因此阈值下限远高于日常用量，仅在进程数量失控时触发。
+              {t('perf.config.childrenPolicyLongDesc')}
               {state.childrenCount.derived != null && cores != null && (
                 <>
                   {' '}
-                  按本机基线（{cores} 逻辑核 / 预算 {state.totalAgentProcessBudget}）推导：警告{' '}
-                  {Math.round(state.childrenCount.derived.warning)} / 严重{' '}
-                  {Math.round(state.childrenCount.derived.critical)} / 危急{' '}
-                  {Math.round(state.childrenCount.derived.emergency)} 个，公式 max(下限,
-                  核数×8/12/16, 预算+0/8/16)。
+                  {t('perf.config.childrenDerivedLongDesc', {
+                    cores,
+                    budget: state.totalAgentProcessBudget,
+                    warning: Math.round(state.childrenCount.derived.warning),
+                    critical: Math.round(state.childrenCount.derived.critical),
+                    emergency: Math.round(state.childrenCount.derived.emergency),
+                  })}
                 </>
               )}
               {state.childrenCount.mode === 'manual' &&
-                ' 已手动覆盖（下方危急/严重/警告列可编辑）。'}
+                ` ${t('perf.config.childrenManualOverrideDesc')}`}
             </div>
             {state.childrenCount.mode === 'manual' && (
               <button
@@ -336,7 +336,7 @@ export function PerformanceConfigPanel({
                 style={{ padding: '4px 0 0' }}
                 onClick={() => void restoreChildrenAuto()}
               >
-                恢复自动推导
+                {t('perf.config.restoreAutoBtn')}
               </button>
             )}
           </div>
@@ -344,7 +344,7 @@ export function PerformanceConfigPanel({
 
         {/* 压力阈值矩阵 */}
         {LEVEL_ROWS.map((row) => {
-          const meta = PRESSURE_LEVEL_META[row.level]
+          const meta = levels[row.level]
           return (
             <div className="th-row" key={row.level}>
               <span className="th-lv">
@@ -352,14 +352,14 @@ export function PerformanceConfigPanel({
                 <span>
                   <span className="th-name">{meta.name}</span>
                   <br />
-                  <span className="th-desc">{row.desc}</span>
+                  <span className="th-desc">{t(row.descKey)}</span>
                 </span>
               </span>
               <span className="th-steps">
                 {TRIPLE_SPECS.map((spec) => (
                   <span className="th-step" key={spec.key}>
                     <span>
-                      {spec.label}
+                      {t(spec.labelKey)}
                       {spec.showGbEquivalent && (
                         <i style={{ fontStyle: 'normal', color: 'var(--text-faint)' }}>
                           {gbEquivalent(state[spec.key][row.level])}
@@ -377,14 +377,14 @@ export function PerformanceConfigPanel({
                   </span>
                 ))}
                 <span className="th-step">
-                  <span>子进程数</span>
+                  <span>{t('perf.config.childrenCountLabel')}</span>
                   <Stepper
                     value={
                       state.childrenCount.mode === 'manual' && state.childrenCount.manual != null
                         ? state.childrenCount.manual[row.level]
                         : (state.childrenCount.derived?.[row.level] ?? 80)
                     }
-                    unit=" 个"
+                    unit={t('perf.config.childrenUnit')}
                     min={RANGES.childrenCount.min}
                     max={RANGES.childrenCount.max}
                     step={RANGES.childrenCount.step}
@@ -398,13 +398,7 @@ export function PerformanceConfigPanel({
         })}
       </div>
 
-      <p className="footnote">
-        阈值判定：宿主内存（RSS，按占系统总内存百分比）、系统内存占用率、事件循环延迟、
-        子进程数四类指标任一越级，即进入更高压力级别；内存阈值按宿主机基线动态换算 （基线随内存变化
-        &gt;5% 或休眠恢复自动重采样）。判定以百分比直比为准， GB
-        换算值仅用于展示。并发闸门在压力升级时按 warning 限流 → critical 暂停派发 → emergency
-        熔断的固定矩阵自动执行，无需逐项开关。
-      </p>
+      <p className="footnote">{t('perf.config.footnoteLongDesc')}</p>
     </div>
   )
 }
@@ -422,11 +416,12 @@ interface StepperProps {
 }
 
 function Stepper({ value, unit, min, max, step, disabled, onChange }: StepperProps) {
+  const { t } = useI18n()
   const display = `${Number.isInteger(value) ? value : value.toFixed(1)}${unit}`
   return (
     <span className="step">
       <button
-        aria-label="减少"
+        aria-label={t('perf.config.decreaseAria')}
         disabled={disabled || value <= min}
         onClick={() => onChange(clampNumber(value - step, min, max))}
       >
@@ -434,7 +429,7 @@ function Stepper({ value, unit, min, max, step, disabled, onChange }: StepperPro
       </button>
       <span className="v">{display}</span>
       <button
-        aria-label="增加"
+        aria-label={t('perf.config.increaseAria')}
         disabled={disabled || value >= max}
         onClick={() => onChange(clampNumber(value + step, min, max))}
       >

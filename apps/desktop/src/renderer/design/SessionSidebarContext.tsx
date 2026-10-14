@@ -1424,15 +1424,15 @@ export function SessionSidebarProvider({
         const childWorkspaceId = result.session.workspaceIds[0] ?? null
         setActiveWorkspace(childWorkspaceId)
         if (result.sourceWasRunning) {
-          toast.info('源会话仍在运行；副本只复制到最近一个已完成轮次。')
+          toast.info(t('sessionSidebar.copyRunning'))
         }
         if (result.bindingWarning != null) {
           const warningText =
             result.bindingWarning.code === 'workflow_not_found'
-              ? '源会话挂载的工作流已不存在；副本保留该配置用于解释历史，首次执行时会明确失败。'
+              ? t('sessionSidebar.copyWorkflowMissing')
               : result.bindingWarning.code === 'workflow_disabled'
-                ? '源会话挂载的工作流已停用；副本保留该配置用于解释历史，首次执行时会明确失败。'
-                : '源会话挂载的工作流不在活跃状态；副本保留该配置用于解释历史，首次执行时会明确失败。'
+                ? t('sessionSidebar.copyWorkflowDisabled')
+                : t('sessionSidebar.copyWorkflowInactive')
           toast.warning(warningText)
         }
         window.dispatchEvent(
@@ -1442,11 +1442,11 @@ export function SessionSidebarProvider({
         )
         return result.sessionId
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : '复制会话失败')
+        toast.error(error instanceof Error ? error.message : t('sessionSidebar.copyFailed'))
         return null
       }
     },
-    [forkSession, setActive, setActiveWorkspace, toast, upsertSessionInList],
+    [forkSession, setActive, setActiveWorkspace, toast, upsertSessionInList, t],
   )
 
   // 用户从系统托盘菜单触发「新建会话」：走 renderer 标准新建流程（含 worktree 复用 / 草稿清空等）。
@@ -1589,11 +1589,11 @@ export function SessionSidebarProvider({
         return summary
       } catch (err) {
         console.error('Add dropped projects failed', err)
-        toast.error(err instanceof Error ? err.message : '拖拽添加项目失败')
+        toast.error(err instanceof Error ? err.message : t('sessionSidebar.dropAddFailed'))
         return emptySummary
       }
     },
-    [openWorkspace, refreshData, setActiveWorkspace, statFileKind, toast, workspaces],
+    [openWorkspace, refreshData, setActiveWorkspace, statFileKind, toast, workspaces, t],
   )
 
   // Project actions

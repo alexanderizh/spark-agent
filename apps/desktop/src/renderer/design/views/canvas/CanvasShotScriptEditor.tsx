@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Button, Tooltip } from '@lobehub/ui'
 import { Input } from 'antd'
 import { Icons } from '../../Icons'
+import { translate, useI18n } from '../../i18n'
 import type { ParsedShotRow } from './canvasShotTableParse'
 import {
   createStoryboardShot,
@@ -20,33 +21,33 @@ const SECTIONS: Array<{
 }> = [
   {
     id: 'story',
-    label: '画面设计',
+    label: translate('canvasShotScript.t1'),
     icon: <Icons.Film size={15} />,
-    description: '镜头、场景、构图与首尾帧',
+    description: translate('canvasShotScript.t2'),
   },
   {
     id: 'camera',
-    label: '摄影光色',
+    label: translate('canvasShotScript.t3'),
     icon: <Icons.Sliders size={15} />,
-    description: '镜头参数、光照与氛围',
+    description: translate('canvasShotScript.t4'),
   },
   {
     id: 'performance',
-    label: '角色表演',
+    label: translate('canvasShotScript.t5'),
     icon: <Icons.Users size={15} />,
-    description: '角色、调度、动作与连续性',
+    description: translate('canvasShotScript.t6'),
   },
   {
     id: 'sound',
-    label: '对白声音',
+    label: translate('canvasShotScript.t7'),
     icon: <Icons.AudioLines size={15} />,
-    description: '对白、旁白、音效与转场',
+    description: translate('canvasShotScript.t8'),
   },
   {
     id: 'prompt',
-    label: '生成控制',
+    label: translate('canvasShotScript.t9'),
     icon: <Icons.Sparkles size={15} />,
-    description: '生成提示词与反向约束',
+    description: translate('canvasShotScript.t10'),
   },
 ]
 
@@ -100,7 +101,7 @@ function shotSummary(row: ParsedShotRow): string {
     row.description?.trim() ||
     row.sceneLayout?.trim() ||
     row.shotPrompt?.trim() ||
-    '尚未填写画面内容'
+    translate('canvasShotScript.t11')
   )
 }
 
@@ -113,6 +114,8 @@ export function CanvasShotScriptEditor({
   characterAssets: CanvasAsset[]
   onRowsChange: (rows: ParsedShotRow[]) => void
 }) {
+  // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
+  useI18n()
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [activeSection, setActiveSection] = useState<EditorSection>('story')
   const activeIndex = Math.min(selectedIndex, Math.max(0, rows.length - 1))
@@ -141,7 +144,7 @@ export function CanvasShotScriptEditor({
     const insertAt = activeIndex + 1
     const duplicate: ParsedShotRow = {
       ...activeRow,
-      title: activeRow.title.trim() ? `${activeRow.title} 副本` : `镜${insertAt + 1}`,
+      title: activeRow.title.trim() ? translate('canvasShotScript.tpl2Desc', { title: activeRow.title }) : translate('canvasShotScript.tpl1Desc', { index: insertAt + 1 }),
     }
     onRowsChange(
       normalizeStoryboardShotIndexes([
@@ -192,20 +195,20 @@ export function CanvasShotScriptEditor({
 
   return (
     <div className="canvas-storyboard-editor">
-      <aside className="canvas-storyboard-shot-rail" aria-label="镜头列表">
+      <aside className="canvas-storyboard-shot-rail" aria-label={translate('canvasShotScript.t31')}>
         <div className="canvas-storyboard-rail-head">
           <div>
-            <strong>镜头序列</strong>
+            <strong>{translate('canvasShotScript.t98')}</strong>
             <span>
-              {rows.length} 镜{totalDuration > 0 ? ` · ${totalDuration.toFixed(1)}s` : ''}
+              {translate('canvasShotScript.tpl3Desc', { count: rows.length })}{totalDuration > 0 ? translate('canvasShotScript.tpl4Desc', { seconds: totalDuration.toFixed(1) }) : ''}
             </span>
           </div>
-          <Tooltip title="在当前镜头后添加">
+          <Tooltip title={translate('canvasShotScript.t32')}>
             <Button
               size="middle"
               type="primary"
               icon={<Icons.Plus size={14} />}
-              aria-label="添加镜头"
+              aria-label={translate('canvasShotScript.t33')}
               onClick={addShot}
             />
           </Tooltip>
@@ -224,7 +227,7 @@ export function CanvasShotScriptEditor({
                 {String(row.index ?? index + 1).padStart(2, '0')}
               </span>
               <span className="canvas-storyboard-shot-copy">
-                <strong>{row.title?.trim() || `镜${index + 1}`}</strong>
+                <strong>{row.title?.trim() || translate('canvasShotScript.tpl1Desc', { index: index + 1 })}</strong>
                 <small>{shotSummary(row)}</small>
                 <span className="canvas-storyboard-shot-meta">
                   {row.shotSize ? <em>{row.shotSize}</em> : null}
@@ -238,26 +241,26 @@ export function CanvasShotScriptEditor({
 
         <div className="canvas-storyboard-rail-footer">
           <span>
-            当前镜头 {activeIndex + 1} / {rows.length}
+            {translate('canvasShotScript.tpl5Desc', { index: activeIndex + 1, total: rows.length })}
           </span>
           <div>
-            <Tooltip title="上移镜头">
+            <Tooltip title={translate('canvasShotScript.t34')}>
               <Button
                 size="middle"
                 type="text"
                 icon={<Icons.ArrowUp size={14} />}
                 disabled={activeIndex === 0}
-                aria-label="上移镜头"
+                aria-label={translate('canvasShotScript.t34')}
                 onClick={() => moveShot(-1)}
               />
             </Tooltip>
-            <Tooltip title="下移镜头">
+            <Tooltip title={translate('canvasShotScript.t35')}>
               <Button
                 size="middle"
                 type="text"
                 icon={<Icons.ArrowDown size={14} />}
                 disabled={activeIndex === rows.length - 1}
-                aria-label="下移镜头"
+                aria-label={translate('canvasShotScript.t35')}
                 onClick={() => moveShot(1)}
               />
             </Tooltip>
@@ -269,11 +272,11 @@ export function CanvasShotScriptEditor({
         <div className="canvas-storyboard-inspector-head">
           <div className="canvas-storyboard-current-title">
             <span>SHOT {String(activeRow.index ?? activeIndex + 1).padStart(2, '0')}</span>
-            <strong>{activeRow.title?.trim() || `镜${activeIndex + 1}`}</strong>
+            <strong>{activeRow.title?.trim() || translate('canvasShotScript.tpl1Desc', { index: activeIndex + 1 })}</strong>
           </div>
           <div className="canvas-storyboard-current-actions">
             <Button size="middle" icon={<Icons.Copy size={14} />} onClick={duplicateShot}>
-              复制镜头
+              {translate('canvasShotScript.t99')}
             </Button>
             <Button
               size="middle"
@@ -283,12 +286,12 @@ export function CanvasShotScriptEditor({
               disabled={rows.length <= 1}
               onClick={deleteShot}
             >
-              删除
+              {translate('canvasShotScript.t100')}
             </Button>
           </div>
         </div>
 
-        <nav className="canvas-storyboard-section-tabs" aria-label="镜头配置分类">
+        <nav className="canvas-storyboard-section-tabs" aria-label={translate('canvasShotScript.t36')}>
           {SECTIONS.map((section) => (
             <button
               key={section.id}
@@ -308,15 +311,15 @@ export function CanvasShotScriptEditor({
         <div className="canvas-storyboard-inspector-scroll">
           {activeSection === 'story' ? (
             <>
-              <SectionCard title="镜头信息" description="定义镜头在序列中的身份、时长和摄影运动。">
-                <Field label="镜头标题">
+              <SectionCard title={translate('canvasShotScript.t37')} description={translate('canvasShotScript.t38Desc')}>
+                <Field label={translate('canvasShotScript.t39')}>
                   <Input
                     value={activeRow.title ?? ''}
-                    placeholder={`镜${activeIndex + 1}`}
+                    placeholder={translate('canvasShotScript.tpl1Desc', { index: activeIndex + 1 })}
                     onChange={(event) => updateActiveRow({ title: event.target.value })}
                   />
                 </Field>
-                <Field label="镜号">
+                <Field label={translate('canvasShotScript.t40')}>
                   <Input
                     inputMode="numeric"
                     value={activeRow.index ?? activeIndex + 1}
@@ -326,7 +329,7 @@ export function CanvasShotScriptEditor({
                     }}
                   />
                 </Field>
-                <Field label="时长" hint="秒">
+                <Field label={translate('canvasShotScript.t41')} hint={translate('canvasShotScript.t42')}>
                   <Input
                     inputMode="decimal"
                     suffix="s"
@@ -347,57 +350,57 @@ export function CanvasShotScriptEditor({
                     }}
                   />
                 </Field>
-                <Field label="景别">
+                <Field label={translate('canvasShotScript.t43')}>
                   <Input
                     value={activeRow.shotSize ?? ''}
-                    placeholder="如：中近景"
+                    placeholder={translate('canvasShotScript.t44')}
                     onChange={(event) => updateActiveRow({ shotSize: event.target.value })}
                   />
                 </Field>
-                <Field label="机位 / 角度">
+                <Field label={translate('canvasShotScript.t45')}>
                   <Input
                     value={activeRow.angle ?? ''}
-                    placeholder="如：低机位、平视"
+                    placeholder={translate('canvasShotScript.t46')}
                     onChange={(event) => updateActiveRow({ angle: event.target.value })}
                   />
                 </Field>
-                <Field label="运镜">
+                <Field label={translate('canvasShotScript.t47')}>
                   <Input
                     value={activeRow.movement ?? ''}
-                    placeholder="如：固定、跟拍、推近"
+                    placeholder={translate('canvasShotScript.t48')}
                     onChange={(event) => updateActiveRow({ movement: event.target.value })}
                   />
                 </Field>
               </SectionCard>
-              <SectionCard title="场景与画面" description="先描述空间，再明确画面主体与视觉组织。">
-                <Field label="场次 / 分组">
+              <SectionCard title={translate('canvasShotScript.t49')} description={translate('canvasShotScript.t50Desc')}>
+                <Field label={translate('canvasShotScript.t51')}>
                   <Input
                     value={activeRow.groupName ?? ''}
-                    placeholder="如：E1-S02"
+                    placeholder={translate('canvasShotScript.t52')}
                     onChange={(event) => updateActiveRow({ groupName: event.target.value })}
                   />
                 </Field>
-                <Field label="场景名称">
+                <Field label={translate('canvasShotScript.t53')}>
                   <Input
                     value={activeRow.sceneName ?? ''}
-                    placeholder="如：苏黎出租屋"
+                    placeholder={translate('canvasShotScript.t54')}
                     onChange={(event) => updateActiveRow({ sceneName: event.target.value })}
                   />
                 </Field>
-                <Field label="场景布局" wide>
-                  {textArea('sceneLayout', '描述空间大小、陈设、入口、纵深与人物可活动区域')}
+                <Field label={translate('canvasShotScript.t55')} wide>
+                  {textArea('sceneLayout', translate('canvasShotScript.t12Desc'))}
                 </Field>
-                <Field label="构图设计" wide>
-                  {textArea('composition', '描述画面分割、视觉中心、前中后景与留白关系')}
+                <Field label={translate('canvasShotScript.t56')} wide>
+                  {textArea('composition', translate('canvasShotScript.t13Desc'))}
                 </Field>
-                <Field label="画面 / 动作" wide>
-                  {textArea('description', '完整描述这一镜实际看到的画面和动作', true)}
+                <Field label={translate('canvasShotScript.t57')} wide>
+                  {textArea('description', translate('canvasShotScript.t14Desc'), true)}
                 </Field>
-                <Field label="首帧" wide>
-                  {textArea('firstFrame', '描述 0.0s 的确定画面、姿态与构图')}
+                <Field label={translate('canvasShotScript.t58')} wide>
+                  {textArea('firstFrame', translate('canvasShotScript.t15Desc'))}
                 </Field>
-                <Field label="尾帧" wide>
-                  {textArea('lastFrame', '描述镜头结束时的确定画面与动作接点')}
+                <Field label={translate('canvasShotScript.t59')} wide>
+                  {textArea('lastFrame', translate('canvasShotScript.t16Desc'))}
                 </Field>
               </SectionCard>
             </>
@@ -405,47 +408,47 @@ export function CanvasShotScriptEditor({
 
           {activeSection === 'camera' ? (
             <>
-              <SectionCard title="镜头参数" description="把抽象镜头语言落实为可执行的摄影参数。">
-                <Field label="焦距 / 焦段">
+              <SectionCard title={translate('canvasShotScript.t60')} description={translate('canvasShotScript.t61Desc')}>
+                <Field label={translate('canvasShotScript.t62')}>
                   <Input
                     value={activeRow.focalLength ?? ''}
-                    placeholder="如：50mm"
+                    placeholder={translate('canvasShotScript.t63')}
                     onChange={(event) => updateActiveRow({ focalLength: event.target.value })}
                   />
                 </Field>
-                <Field label="光圈 / 景深">
+                <Field label={translate('canvasShotScript.t64')}>
                   <Input
                     value={activeRow.aperture ?? ''}
-                    placeholder="如：f/2.8，浅景深"
+                    placeholder={translate('canvasShotScript.t65')}
                     onChange={(event) => updateActiveRow({ aperture: event.target.value })}
                   />
                 </Field>
-                <Field label="ISO / 颗粒">
+                <Field label={translate('canvasShotScript.t66')}>
                   <Input
                     value={activeRow.iso ?? ''}
-                    placeholder="如：ISO 800"
+                    placeholder={translate('canvasShotScript.t67')}
                     onChange={(event) => updateActiveRow({ iso: event.target.value })}
                   />
                 </Field>
-                <Field label="综合镜头参数" wide>
-                  {textArea('cameraParams', '补充快门、对焦、镜片质感、景深范围与特殊摄影要求')}
+                <Field label={translate('canvasShotScript.t68')} wide>
+                  {textArea('cameraParams', translate('canvasShotScript.t17Desc'))}
                 </Field>
               </SectionCard>
-              <SectionCard title="光色与氛围" description="统一光源逻辑、色彩策略和情绪表达。">
-                <Field label="光照方案" wide>
-                  {textArea('lighting', '描述主光、辅光、轮廓光、色温、方向和强弱关系', true)}
+              <SectionCard title={translate('canvasShotScript.t69')} description={translate('canvasShotScript.t70Desc')}>
+                <Field label={translate('canvasShotScript.t71')} wide>
+                  {textArea('lighting', translate('canvasShotScript.t18Desc'), true)}
                 </Field>
-                <Field label="色调 / 色彩">
+                <Field label={translate('canvasShotScript.t72')}>
                   <Input
                     value={activeRow.colorTone ?? ''}
-                    placeholder="如：暖橙与琥珀色"
+                    placeholder={translate('canvasShotScript.t73')}
                     onChange={(event) => updateActiveRow({ colorTone: event.target.value })}
                   />
                 </Field>
-                <Field label="氛围 / 情绪">
+                <Field label={translate('canvasShotScript.t74')}>
                   <Input
                     value={activeRow.mood ?? ''}
-                    placeholder="如：压抑、焦躁、爆发前"
+                    placeholder={translate('canvasShotScript.t75')}
                     onChange={(event) => updateActiveRow({ mood: event.target.value })}
                   />
                 </Field>
@@ -455,8 +458,8 @@ export function CanvasShotScriptEditor({
 
           {activeSection === 'performance' ? (
             <>
-              <SectionCard title="出场角色" description="选择本镜角色，并锁定角色参考与造型状态。">
-                <Field label="角色" wide>
+              <SectionCard title={translate('canvasShotScript.t76')} description={translate('canvasShotScript.t77Desc')}>
+                <Field label={translate('canvasShotScript.t78')} wide>
                   <div className="canvas-storyboard-character-picker">
                     {characterAssets.length > 0 ? (
                       characterAssets.map((asset) => {
@@ -476,14 +479,14 @@ export function CanvasShotScriptEditor({
                         )
                       })
                     ) : (
-                      <span>项目中暂无角色资产，可在下方手动填写。</span>
+                      <span>{translate('canvasShotScript.t101Desc')}</span>
                     )}
                   </div>
                 </Field>
-                <Field label="角色名称" wide>
+                <Field label={translate('canvasShotScript.t79')} wide>
                   <Input
                     value={activeRow.characterNames?.join('、') ?? ''}
-                    placeholder="使用顿号、逗号或空格分隔多个角色"
+                    placeholder={translate('canvasShotScript.t80Desc')}
                     onChange={(event) =>
                       updateActiveRow({
                         characterNames: event.target.value
@@ -494,25 +497,25 @@ export function CanvasShotScriptEditor({
                     }
                   />
                 </Field>
-                <Field label="角色参考" wide>
-                  {textArea('characterReferences', '描述角色资产、面部、发型、体型与一致性参考')}
+                <Field label={translate('canvasShotScript.t81')} wide>
+                  {textArea('characterReferences', translate('canvasShotScript.t19Desc'))}
                 </Field>
-                <Field label="服装 / 造型" wide>
-                  {textArea('costume', '描述本镜服装、配饰、妆发和状态变化')}
+                <Field label={translate('canvasShotScript.t82')} wide>
+                  {textArea('costume', translate('canvasShotScript.t20Desc'))}
                 </Field>
               </SectionCard>
-              <SectionCard title="调度与表演" description="明确角色在哪里、如何移动、如何表演。">
-                <Field label="站位调度" wide>
-                  {textArea('blocking', '描述人物与镜头、场景、道具之间的站位和移动关系', true)}
+              <SectionCard title={translate('canvasShotScript.t83')} description={translate('canvasShotScript.t84Desc')}>
+                <Field label={translate('canvasShotScript.t85')} wide>
+                  {textArea('blocking', translate('canvasShotScript.t21Desc'), true)}
                 </Field>
-                <Field label="表情 / 微动作" wide>
-                  {textArea('performance', '描述表情变化、视线、呼吸、手部和身体细节', true)}
+                <Field label={translate('canvasShotScript.t86')} wide>
+                  {textArea('performance', translate('canvasShotScript.t22Desc'), true)}
                 </Field>
-                <Field label="动作节拍" wide>
-                  {textArea('actionBeats', '按 0.5s 时间码描述动作推进与关键节拍', true)}
+                <Field label={translate('canvasShotScript.t87')} wide>
+                  {textArea('actionBeats', translate('canvasShotScript.t23Desc'), true)}
                 </Field>
-                <Field label="连续性约束" wide>
-                  {textArea('continuity', '锁定轴线、视线、道具手位、造型、光向和动作接点')}
+                <Field label={translate('canvasShotScript.t88')} wide>
+                  {textArea('continuity', translate('canvasShotScript.t24Desc'))}
                 </Field>
               </SectionCard>
             </>
@@ -520,38 +523,38 @@ export function CanvasShotScriptEditor({
 
           {activeSection === 'sound' ? (
             <SectionCard
-              title="声音与剪辑"
-              description="把台词、环境声与镜头衔接放在同一时间语境中。"
+              title={translate('canvasShotScript.t89')}
+              description={translate('canvasShotScript.t90Desc')}
             >
-              <Field label="对白" wide>
-                {textArea('dialogue', '填写角色对白；可标注角色名、语气和停顿', true)}
+              <Field label={translate('canvasShotScript.t91')} wide>
+                {textArea('dialogue', translate('canvasShotScript.t25Desc'), true)}
               </Field>
-              <Field label="旁白" wide>
-                {textArea('narration', '填写画外音、内心独白或叙事旁白')}
+              <Field label={translate('canvasShotScript.t92')} wide>
+                {textArea('narration', translate('canvasShotScript.t26Desc'))}
               </Field>
-              <Field label="声音设计" wide>
-                {textArea('soundEffects', '描述环境声、拟音、音乐、静默和声音变化')}
+              <Field label={translate('canvasShotScript.t93')} wide>
+                {textArea('soundEffects', translate('canvasShotScript.t27Desc'))}
               </Field>
-              <Field label="转场 / 剪辑" wide>
-                {textArea('transition', '描述入镜、出镜、剪辑点和与前后镜头的转场方式')}
+              <Field label={translate('canvasShotScript.t94')} wide>
+                {textArea('transition', translate('canvasShotScript.t28Desc'))}
               </Field>
             </SectionCard>
           ) : null}
 
           {activeSection === 'prompt' ? (
-            <SectionCard title="生成控制" description="为图像或视频模型准备完整提示词与排除项。">
-              <Field label="生成提示词" wide>
-                {textArea('shotPrompt', '整合镜头语言、主体、环境、动作、光色和风格要求', true)}
+            <SectionCard title={translate('canvasShotScript.t9')} description={translate('canvasShotScript.t95Desc')}>
+              <Field label={translate('canvasShotScript.t96')} wide>
+                {textArea('shotPrompt', translate('canvasShotScript.t29Desc'), true)}
               </Field>
-              <Field label="反向提示词" wide>
-                {textArea('negativePrompt', '描述不应出现的元素、瑕疵、风格和技术问题', true)}
+              <Field label={translate('canvasShotScript.t97')} wide>
+                {textArea('negativePrompt', translate('canvasShotScript.t30Desc'), true)}
               </Field>
               <div className="canvas-storyboard-prompt-note">
                 <Icons.Sparkles size={16} />
                 <div>
-                  <strong>生成提示词不会替代制作字段</strong>
+                  <strong>{translate('canvasShotScript.t102Desc')}</strong>
                   <span>
-                    结构化字段用于后续拆镜、关键帧、视频任务和连续性控制，建议两者同时维护。
+                    {translate('canvasShotScript.t103Desc')}
                   </span>
                 </div>
               </div>
