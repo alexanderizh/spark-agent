@@ -47,6 +47,21 @@
     </view>
   </scroll-view>
 
+  <!-- 快捷行：两个常用选择器（模型 / 权限策略），扁平文字按钮 -->
+  <view wx:if="{{quickChips.length > 0}}" class="quick-row">
+    <view
+      wx:for="{{quickChips}}"
+      wx:key="key"
+      class="quick-chip row"
+      hover-class="hover-dim"
+      data-key="{{item.key}}"
+      bindtap="onChipTap"
+    >
+      <text class="quick-chip-value ellipsis">{{item.value}}</text>
+      <view class="icon icon-chevron-down quick-chip-chevron"></view>
+    </view>
+  </view>
+
   <view class="composer-shell row">
     <!-- 语音按钮：按住说话 -->
     <view
@@ -77,7 +92,7 @@
     <textarea
       wx:else
       class="composer-input"
-      value="{{value}}"
+      value="{{localValue}}"
       placeholder="{{placeholder}}"
       placeholder-style="color:#b3b0ab"
       auto-height
@@ -93,7 +108,7 @@
       bindconfirm="onSend"
     />
     <view
-      class="composer-action {{running || value ? 'composer-action--dark' : ''}}"
+      class="composer-action {{running || localValue ? 'composer-action--dark' : ''}}"
       hover-class="composer-action--hover"
       bindtap="onSend"
     >
@@ -101,21 +116,21 @@
     </view>
   </view>
 
-  <!-- 配置条 chips（横向滚动） -->
-  <scroll-view wx:if="{{chips.length > 0}}" class="chip-bar" scroll-x>
+  <!-- 配置条 chips（扁平态，横向滚动；模型/权限已提为快捷行，不再重复） -->
+  <scroll-view wx:if="{{chips.length > quickChips.length}}" class="chip-bar" scroll-x>
     <view class="chip-bar-row row">
-      <view
-        wx:for="{{chips}}"
-        wx:key="key"
-        class="config-chip row"
-        hover-class="hover-dim"
-        data-key="{{item.key}}"
-        bindtap="onChipTap"
-      >
-        <text class="config-chip-label">{{item.label}}</text>
-        <text class="config-chip-value ellipsis">{{item.value}}</text>
-        <view class="icon icon-chevron-down config-chip-chevron"></view>
-      </view>
+      <block wx:for="{{chips}}" wx:key="key">
+        <view
+          wx:if="{{item.key !== 'model' && item.key !== 'permission'}}"
+          class="config-chip row"
+          hover-class="hover-dim"
+          data-key="{{item.key}}"
+          bindtap="onChipTap"
+        >
+          <text class="config-chip-value ellipsis">{{item.value}}</text>
+          <view class="icon icon-chevron-down config-chip-chevron"></view>
+        </view>
+      </block>
     </view>
   </scroll-view>
 </view>

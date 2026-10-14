@@ -19,18 +19,17 @@
 }
 
 .composer-shell {
-  background: #fff;
-  border: 1rpx solid #e9e6e1;
-  border-radius: 48rpx;
+  background: #eeebe6;
+  border: 1rpx solid transparent;
+  border-radius: 28rpx;
   padding: 10rpx 10rpx 10rpx 16rpx;
-  box-shadow: 0 4rpx 20rpx rgba(26, 26, 26, 0.06);
   /* 原生 textarea 不遵守撑大的 line-height，文字对齐靠外层居中而非盒内定位 */
   align-items: center;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 .composer--focus .composer-shell {
-  border-color: #1a1a1a;
-  box-shadow: 0 6rpx 24rpx rgba(26, 26, 26, 0.08);
+  background: #fff;
+  border-color: #e0ddd8;
 }
 
 /* 左侧功能钮：语音 / 加号 */
@@ -154,41 +153,63 @@
   background-position: center;
 }
 
-/* 配置条 chips */
+/* 快捷行：输入框上方两个常用选择器（模型/权限），左右分布扁平文字钮 */
+.quick-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 0 6rpx 12rpx;
+}
+.quick-chip {
+  align-items: center;
+  gap: 6rpx;
+  min-width: 0;
+  flex: 1;
+  justify-content: flex-start;
+  padding: 6rpx 4rpx;
+}
+.quick-chip-value {
+  font-size: 26rpx;
+  color: #1a1a1a;
+  font-weight: 600;
+  max-width: 320rpx;
+}
+.quick-chip-chevron {
+  width: 24rpx;
+  height: 24rpx;
+  flex: none;
+  opacity: 0.4;
+}
+
+/* 配置条 chips（扁平态：无边框无底色，纯文字 + 下箭头） */
 .chip-bar {
-  margin-top: 12rpx;
+  margin-top: 10rpx;
   white-space: nowrap;
 }
 .chip-bar-row {
-  gap: 12rpx;
+  gap: 24rpx;
   display: inline-flex;
+  padding: 0 6rpx;
 }
 .config-chip {
   align-items: center;
-  gap: 8rpx;
-  background: rgba(255, 255, 255, 0.88);
-  border: 1rpx solid #e9e6e1;
-  border-radius: 999rpx;
-  padding: 8rpx 18rpx;
+  gap: 6rpx;
+  padding: 4rpx 0;
   display: inline-flex;
-  max-width: 340rpx;
-}
-.config-chip-label {
-  font-size: 22rpx;
-  color: #8f8b85;
-  flex: none;
+  max-width: 300rpx;
 }
 .config-chip-value {
-  font-size: 22rpx;
-  color: #1a1a1a;
+  font-size: 24rpx;
+  color: #8f8b85;
   font-weight: 500;
-  max-width: 180rpx;
+  max-width: 240rpx;
 }
 .config-chip-chevron {
-  width: 22rpx;
-  height: 22rpx;
+  width: 20rpx;
+  height: 20rpx;
   flex: none;
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
 /* 命令补全面板 */
@@ -238,7 +259,7 @@
   width: 68rpx;
   height: 68rpx;
   border-radius: 50%;
-  background: #e9e6e1;
+  background: #ddd9d2;
   display: flex;
   align-items: center;
   justify-content: center;
