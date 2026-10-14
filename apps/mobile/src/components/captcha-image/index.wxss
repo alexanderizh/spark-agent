@@ -6,20 +6,22 @@
 }
 
 .captcha-img {
-  width: 176rpx;
-  height: 64rpx;
-  border-radius: 8rpx;
-  background: #f4f4f8;
-  border: 1rpx solid #d7d2c9;
+  width: 200rpx;
+  height: 88rpx;
+  border-radius: 20rpx;
+  background: #fff;
+  border: 1rpx solid #e5e2dd;
+  box-sizing: border-box;
   flex: none;
 }
 
 .captcha-failed {
-  width: 176rpx;
-  height: 64rpx;
-  border-radius: 8rpx;
-  background: #f4f4f8;
-  border: 1rpx solid #d7d2c9;
+  width: 200rpx;
+  height: 88rpx;
+  border-radius: 20rpx;
+  background: #fff;
+  border: 1rpx solid #e5e2dd;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -29,17 +31,19 @@
 }
 
 .captcha-refresh {
-  padding: 10rpx 18rpx;
-  border-radius: 8rpx;
-  background: #f2f2f2;
+  padding: 12rpx 26rpx;
+  border-radius: 999rpx;
+  background: #fff;
+  border: 1rpx solid #e5e2dd;
+  box-sizing: border-box;
   flex: none;
 }
 
 .captcha-refresh--hover {
-  background: #e8e8e8;
+  background: #f2f1ef;
 }
 
 .captcha-refresh-text {
   font-size: 24rpx;
-  color: #8d8a86;
+  color: #6b6b6b;
 }

@@ -20,6 +20,20 @@ interface ProfilePageData {
   avatarInitial: string
   serverUrl: string
   uploadingAvatar: boolean
+  /** 小程序版本号（正式/体验版取后台版本，开发环境显示 dev） */
+  appVersion: string
+}
+
+/** 读取小程序版本号；getAccountInfoSync 在低版本基础库可能缺失，失败回退 em dash */
+function resolveAppVersion(): string {
+  try {
+    const account = wx.getAccountInfoSync()
+    const { version, envVersion } = account.miniProgram
+    if (version) return `v${version}`
+    return envVersion === 'develop' ? 'dev' : '—'
+  } catch {
+    return '—'
+  }
 }
 
 let unsubscribeUserUpdated: (() => void) | null = null
@@ -32,6 +46,7 @@ Page({
     avatarInitial: 'S',
     serverUrl: '',
     uploadingAvatar: false,
+    appVersion: '—',
   } as ProfilePageData,
 
   onShow() {
@@ -40,7 +55,7 @@ Page({
       unsubscribeUserUpdated = subscribe('user-updated', () => this.applyUser())
     }
     this.applyUser()
-    this.setData({ serverUrl: getConfig().baseUrl })
+    this.setData({ serverUrl: getConfig().baseUrl, appVersion: resolveAppVersion() })
   },
 
   onUnload() {

@@ -11,13 +11,15 @@
       <view wx:else class="avatar-large avatar-placeholder">
         <text class="avatar-text">{{avatarInitial}}</text>
       </view>
-      <view class="avatar-badge" wx:if="{{!uploadingAvatar}}">📷</view>
+      <view class="avatar-badge" wx:if="{{!uploadingAvatar}}">
+        <view class="avatar-badge-icon icon-camera"></view>
+      </view>
       <view class="avatar-loading" wx:if="{{uploadingAvatar}}">…</view>
     </view>
-    <view class="grow col">
+    <view class="grow col gap-8">
       <view class="row gap-12">
         <text class="t-title ellipsis">{{user && user.nickname ? user.nickname : '未设置昵称'}}</text>
-        <text class="edit-link" bindtap="onEditNickname">编辑</text>
+        <text class="edit-chip" hover-class="edit-chip--hover" bindtap="onEditNickname">编辑</text>
       </view>
       <text class="t-subtitle ellipsis">{{accountMasked}}</text>
       <view class="row gap-8" wx:if="{{user && user.tier}}">
@@ -68,7 +70,7 @@
     </view>
     <view class="list-row">
       <text class="list-row-label grow">版本</text>
-      <text class="list-row-value">v1.0.0</text>
+      <text class="list-row-value">{{appVersion}}</text>
     </view>
   </view>
 
