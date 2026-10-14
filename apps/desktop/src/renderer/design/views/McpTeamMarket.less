@@ -1,9 +1,18 @@
 // McpTeamMarket — 团队 MCP 推拉 UI 样式（mcp-team- 前缀）
 // 复用 McpView 的间距/圆角 token，窄屏下列表项纵向堆叠。
 
+
+/* 数据色板（mtm 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --mtm-green: #52c41a;
+  --mtm-ember-1: #faad14;
+  --mtm-ember-2: #d48806;
+  --mtm-red: #ff4d4f;
+}
+
 .mcp-team-section {
   margin: 0 0 var(--pad-lg);
-  border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.2));
+  border: 1px solid var(--dividing-line-1, color-mix(in srgb, var(--gray-mid) 20%, transparent));
   border-radius: var(--r-lg);
   background: var(--color-bg-1, transparent);
   overflow: hidden;
@@ -32,7 +41,7 @@
   font-size: var(--font-base);
 
   &:hover {
-    background: var(--color-bg-2, rgba(128, 128, 128, 0.06));
+    background: var(--color-bg-2, color-mix(in srgb, var(--gray-mid) 6%, transparent));
   }
 
   &:focus-visible {
@@ -64,13 +73,13 @@
   line-height: 18px;
 
   &--update {
-    background: rgba(82, 196, 26, 0.15);
-    color: #52c41a;
+    background: color-mix(in srgb, var(--mtm-green) 15%, transparent);
+    color: var(--mtm-green);
   }
 
   &--warn {
-    background: rgba(250, 173, 20, 0.15);
-    color: #faad14;
+    background: color-mix(in srgb, var(--mtm-ember-1) 15%, transparent);
+    color: var(--mtm-ember-1);
   }
 }
 
@@ -87,7 +96,7 @@
 .mcp-team-error {
   padding: var(--pad-sm) 0;
   font-size: var(--font-sm);
-  color: #ff4d4f;
+  color: var(--mtm-red);
 }
 
 .mcp-team-list {
@@ -101,7 +110,7 @@
   align-items: center;
   gap: var(--pad-md);
   padding: var(--pad-sm) var(--pad-md);
-  border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.15));
+  border: 1px solid var(--dividing-line-1, color-mix(in srgb, var(--gray-mid) 15%, transparent));
   border-radius: var(--r-md);
 
   @media (max-width: 560px) {
@@ -175,8 +184,8 @@
 .mcp-team-publish-error {
   padding: var(--pad-sm) var(--pad-sm);
   border-radius: var(--r-sm);
-  background: rgba(255, 77, 79, 0.1);
-  color: #ff4d4f;
+  background: color-mix(in srgb, var(--mtm-red) 10%, transparent);
+  color: var(--mtm-red);
   font-size: var(--font-sm);
   word-break: break-all;
 }
@@ -207,8 +216,8 @@
 .mcp-team-publish-warn {
   padding: var(--pad-sm) var(--pad-sm);
   border-radius: var(--r-sm);
-  background: rgba(250, 173, 20, 0.12);
-  color: #d48806;
+  background: color-mix(in srgb, var(--mtm-ember-1) 12%, transparent);
+  color: var(--mtm-ember-2);
   font-size: var(--font-sm);
   line-height: 1.6;
 }

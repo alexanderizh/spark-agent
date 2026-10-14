@@ -1,3 +1,9 @@
+
+/* 数据色板（ecp 域分类色，恒值；色值残留清理收编，值零变化） */
+:root {
+  --ecp-red: #b14b44;
+}
+
 .evidence-cost-panel {
   --evidence-accent: #2f8f83;
   --evidence-warn: #ba7b2c;
@@ -83,7 +89,7 @@
   padding: var(--pad-sm) var(--pad-md);
   border: 1px solid color-mix(in srgb, #c44 38%, var(--border));
   border-radius: var(--r-md);
-  color: #b14b44;
+  color: var(--ecp-red);
 }
 .evidence-cost-panel__notice.is-conflict {
   color: var(--evidence-warn);
@@ -183,7 +189,7 @@
   color: var(--evidence-accent);
 }
 .evidence-cost-panel__status.is-invalid {
-  color: #b14b44;
+  color: var(--ecp-red);
 }
 .evidence-cost-panel__status.is-unknown {
   color: var(--evidence-warn);

@@ -162,7 +162,7 @@
   color: var(--primary-hover) !important;
 
   &:hover {
-    background: rgba(37, 99, 235, 0.08) !important;
+    background: color-mix(in srgb, var(--primary-hover) 8%, transparent) !important;
   }
 }
 
@@ -232,7 +232,8 @@
 // 中性色，切换器盒子可辨识又不发暗；dark 对比充足不覆盖。
 html[data-theme='light'] .sidebar-mode-switcher,
 .app.theme-light .sidebar-mode-switcher {
-  background: #efefef;
+  /* 原 #efefef：94% white + 6% black = #f0f0f0，Δ1 不可感知，保持恒值中性 */
+  background: color-mix(in srgb, var(--white) 94%, var(--black));
 }
 .mode-switcher-btn {
   flex: 1;

@@ -1,3 +1,40 @@
+
+/* 数据色板（cht 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --cht-slate: #787882;
+  --cht-green-1: #86efac;
+  --cht-green-2: #38a169;
+  --cht-green-3: #15803d;
+  --cht-amber-1: #fcd34d;
+  --cht-amber-2: #d69e2e;
+  --cht-amber-3: #eab308;
+  --cht-amber-4: #ca8a04;
+  --cht-cyan-1: #67e8f9;
+  --cht-cyan-2: #38b2ac;
+  --cht-cyan-3: #06b6d4;
+  --cht-cyan-4: #0e7490;
+  --cht-red-1: #fda4af;
+  --cht-red-2: #f43f5e;
+  --cht-red-3: #e53e3e;
+  --cht-red-4: #be123c;
+  --cht-violet-1: #d8b4fe;
+  --cht-violet-2: #b06dff;
+  --cht-violet-3: #a855f7;
+  --cht-violet-4: #9856e7;
+  --cht-violet-5: #7e22ce;
+  --cht-ember-1: #fdba74;
+  --cht-ember-2: #e6a23c;
+  --cht-ember-3: #f97316;
+  --cht-ember-4: #c2410c;
+  --cht-blue-1: #f7fafd;
+  --cht-blue-2: #93c5fd;
+  --cht-blue-3: #597ef7;
+  --cht-blue-4: #4a8cff;
+  --cht-blue-5: #168ff5;
+  --cht-blue-6: #0b121e;
+  --cht-magenta: #f346d2;
+}
+
 @import './chat/ComposerInlineMenus.less';
 
 .chat-stream-viewport {
@@ -51,7 +88,7 @@
   height: 6px;
   margin-right: var(--pad-3xs);
   border-radius: 50%;
-  background: var(--color-primary-6, #4a8cff);
+  background: var(--color-primary-6, var(--cht-blue-4));
   vertical-align: middle;
   flex-shrink: 0;
 }
@@ -338,15 +375,15 @@
 
 /* 环境信息面板：分支行 worktree 态（图标点亮 + 轻量标签） */
 .git-env-icon.is-worktree {
-  color: var(--color-primary-6, #4a8cff);
+  color: var(--color-primary-6, var(--cht-blue-4));
 }
 
 .git-env-worktree-tag {
   flex-shrink: 0;
   padding: 0 var(--pad-xs);
   border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--color-primary-6, #4a8cff) 14%, transparent);
-  color: var(--color-primary-6, #4a8cff);
+  background: color-mix(in srgb, var(--color-primary-6, var(--canvas-blue-accent)) 14%, transparent);
+  color: var(--color-primary-6, var(--cht-blue-4));
   font-size: var(--font-2xs);
   font-weight: 600;
   line-height: 16px;
@@ -363,8 +400,8 @@
   width: 6px;
   height: 6px;
   border-radius: var(--r-pill);
-  background: var(--color-primary-6, #4a8cff);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-6, #4a8cff) 18%, transparent);
+  background: var(--color-primary-6, var(--cht-blue-4));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-6, var(--canvas-blue-accent)) 18%, transparent);
 }
 
 .git-popover-divider {
@@ -528,28 +565,28 @@
 .git-goal-status-tag {
   padding: 1px var(--pad-xs);
   border-radius: var(--r-pill);
-  background: var(--surface-soft, rgba(120, 120, 130, 0.18));
+  background: var(--surface-soft, color-mix(in srgb, var(--cht-slate) 18%, transparent));
   color: var(--text-muted);
   font-size: var(--font-2xs);
   font-weight: 500;
   letter-spacing: 0.02em;
 
   &.active {
-    background: rgba(56, 161, 105, 0.18);
-    color: var(--success, #38a169);
+    background: color-mix(in srgb, var(--cht-green-2) 18%, transparent);
+    color: var(--success, var(--cht-green-2));
   }
   &.paused {
-    background: rgba(214, 158, 46, 0.2);
-    color: var(--warning, #d69e2e);
+    background: color-mix(in srgb, var(--cht-amber-2) 20%, transparent);
+    color: var(--warning, var(--cht-amber-2));
   }
   &.completed {
-    background: rgba(56, 178, 172, 0.18);
-    color: var(--info, #38b2ac);
+    background: color-mix(in srgb, var(--cht-cyan-2) 18%, transparent);
+    color: var(--info, var(--cht-cyan-2));
   }
   &.failed,
   &.stopped_by_budget {
-    background: rgba(229, 62, 62, 0.18);
-    color: var(--danger, #e53e3e);
+    background: color-mix(in srgb, var(--cht-red-3) 18%, transparent);
+    color: var(--danger, var(--cht-red-3));
   }
 }
 
@@ -582,7 +619,7 @@
   margin-top: var(--pad-xs);
   padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-sm);
-  background: var(--surface-soft, rgba(120, 120, 130, 0.1));
+  background: var(--surface-soft, color-mix(in srgb, var(--cht-slate) 10%, transparent));
   color: var(--text-muted);
   font-size: var(--font-xs);
   line-height: 1.45;
@@ -601,7 +638,7 @@
   align-items: center;
   gap: var(--pad-3xs);
   padding: var(--pad-3xs) var(--pad-sm);
-  border: 1px solid var(--border-subtle, rgba(120, 120, 130, 0.25));
+  border: 1px solid var(--border-subtle, color-mix(in srgb, var(--cht-slate) 25%, transparent));
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--text);
@@ -613,16 +650,16 @@
     color 0.15s ease;
 
   &:hover {
-    background: var(--surface-hover, rgba(120, 120, 130, 0.12));
-    border-color: var(--border, rgba(120, 120, 130, 0.4));
+    background: var(--surface-hover, color-mix(in srgb, var(--cht-slate) 12%, transparent));
+    border-color: var(--border, color-mix(in srgb, var(--cht-slate) 40%, transparent));
   }
 
   &.danger {
-    color: var(--danger, #e53e3e);
+    color: var(--danger, var(--cht-red-3));
 
     &:hover {
-      background: rgba(229, 62, 62, 0.12);
-      border-color: rgba(229, 62, 62, 0.45);
+      background: color-mix(in srgb, var(--cht-red-3) 12%, transparent);
+      border-color: color-mix(in srgb, var(--cht-red-3) 45%, transparent);
     }
   }
 }
@@ -917,8 +954,8 @@
 }
 
 .git-scope-status-badge.mod {
-  background: color-mix(in srgb, #eab308 18%, transparent);
-  color: #ca8a04;
+  background: color-mix(in srgb, var(--cht-amber-3) 18%, transparent);
+  color: var(--cht-amber-4);
 }
 
 .git-scope-status-badge.add {
@@ -1290,8 +1327,8 @@
   margin: 2px 0 var(--pad-xs);
   padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--warning, #d69e2e) 12%, transparent);
-  color: var(--warning, #d69e2e);
+  background: color-mix(in srgb, var(--warning, var(--cht-amber-2)) 12%, transparent);
+  color: var(--warning, var(--cht-amber-2));
   font-size: var(--font-xs);
   font-weight: 500;
   line-height: 1.5;
@@ -1311,15 +1348,15 @@
 }
 
 .composer-branch-trigger-label .is-detached {
-  color: var(--warning, #d69e2e);
+  color: var(--warning, var(--cht-amber-2));
 }
 
 .composer-branch-detached-badge {
   flex: none;
   padding: 1px var(--pad-3xs);
   border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--warning, #d69e2e) 16%, transparent);
-  color: var(--warning, #d69e2e);
+  background: color-mix(in srgb, var(--warning, var(--cht-amber-2)) 16%, transparent);
+  color: var(--warning, var(--cht-amber-2));
   font-size: var(--font-2xs);
   font-weight: 600;
 }
@@ -1820,7 +1857,7 @@ body.git-review-tree-resizing {
   }
 
   &.unstaged {
-    background: var(--warning, #d69e2e);
+    background: var(--warning, var(--cht-amber-2));
   }
 
   &.mixed {
@@ -1828,7 +1865,7 @@ body.git-review-tree-resizing {
   }
 
   &.untracked {
-    background: var(--info, #38b2ac);
+    background: var(--info, var(--cht-cyan-2));
   }
 }
 
@@ -1976,27 +2013,27 @@ body.git-review-tree-resizing {
 
 .git-review-file-badge.tone-green {
   background: color-mix(in srgb, var(--success) 16%, var(--panel));
-  color: #15803d;
+  color: var(--cht-green-3);
 }
 
 .git-review-file-badge.tone-purple {
-  background: color-mix(in srgb, #a855f7 16%, var(--panel));
-  color: #7e22ce;
+  background: color-mix(in srgb, var(--cht-violet-3) 16%, var(--panel));
+  color: var(--cht-violet-5);
 }
 
 .git-review-file-badge.tone-rose {
-  background: color-mix(in srgb, #f43f5e 16%, var(--panel));
-  color: #be123c;
+  background: color-mix(in srgb, var(--cht-red-2) 16%, var(--panel));
+  color: var(--cht-red-4);
 }
 
 .git-review-file-badge.tone-cyan {
-  background: color-mix(in srgb, #06b6d4 16%, var(--panel));
-  color: #0e7490;
+  background: color-mix(in srgb, var(--cht-cyan-3) 16%, var(--panel));
+  color: var(--cht-cyan-4);
 }
 
 .git-review-file-badge.tone-orange {
-  background: color-mix(in srgb, #f97316 16%, var(--panel));
-  color: #c2410c;
+  background: color-mix(in srgb, var(--cht-ember-3) 16%, var(--panel));
+  color: var(--cht-ember-4);
 }
 
 .git-review-file-badge.tone-neutral {
@@ -2141,31 +2178,31 @@ body.git-review-tree-resizing {
   }
 
   .git-review-file-badge.tone-blue {
-    color: #93c5fd;
+    color: var(--cht-blue-2);
   }
 
   .git-review-file-badge.tone-amber {
-    color: #fcd34d;
+    color: var(--cht-amber-1);
   }
 
   .git-review-file-badge.tone-green {
-    color: #86efac;
+    color: var(--cht-green-1);
   }
 
   .git-review-file-badge.tone-purple {
-    color: #d8b4fe;
+    color: var(--cht-violet-1);
   }
 
   .git-review-file-badge.tone-rose {
-    color: #fda4af;
+    color: var(--cht-red-1);
   }
 
   .git-review-file-badge.tone-cyan {
-    color: #67e8f9;
+    color: var(--cht-cyan-1);
   }
 
   .git-review-file-badge.tone-orange {
-    color: #fdba74;
+    color: var(--cht-ember-1);
   }
 }
 
@@ -2547,7 +2584,7 @@ body.git-review-tree-resizing {
   align-items: center;
   justify-content: center;
   padding: var(--pad-3xl);
-  background: color-mix(in srgb, var(--primary-soft) 18%, rgba(247, 250, 253, 0.58));
+  background: color-mix(in srgb, var(--primary-soft) 18%, color-mix(in srgb, var(--cht-blue-1) 58%, transparent));
   -webkit-backdrop-filter: blur(16px) saturate(1.16);
   backdrop-filter: blur(16px) saturate(1.16);
   pointer-events: none;
@@ -2592,7 +2629,7 @@ body.git-review-tree-resizing {
   align-items: center;
   justify-content: center;
   padding: var(--pad-3xl);
-  background: color-mix(in srgb, #b06dff 15%, rgba(247, 250, 253, 0.62));
+  background: color-mix(in srgb, var(--cht-violet-2) 15%, color-mix(in srgb, var(--cht-blue-1) 62%, transparent));
   -webkit-backdrop-filter: blur(16px) saturate(1.16);
   backdrop-filter: blur(16px) saturate(1.16);
   pointer-events: none;
@@ -2608,12 +2645,12 @@ body.git-review-tree-resizing {
   border-radius: var(--r-xl);
   background: color-mix(in srgb, var(--panel) 42%, transparent);
   color: var(--text);
-  box-shadow: 0 18px 50px color-mix(in srgb, #b06dff 14%, transparent);
+  box-shadow: 0 18px 50px color-mix(in srgb, var(--cht-violet-2) 14%, transparent);
   text-align: center;
   animation: composer-file-drop-rise 160ms ease-out;
 
   svg {
-    color: #9856e7;
+    color: var(--cht-violet-4);
   }
   strong {
     margin-top: var(--pad-xs);
@@ -2627,7 +2664,7 @@ body.git-review-tree-resizing {
 }
 
 .composer.is-session-reference-drop-active {
-  box-shadow: 0 0 0 2px color-mix(in srgb, #b06dff 60%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cht-violet-2) 60%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2651,7 +2688,7 @@ body.git-review-tree-resizing {
 
 .dark .composer-file-drop-overlay,
 html[data-theme='dark'] .composer-file-drop-overlay {
-  background: color-mix(in srgb, var(--primary-soft) 16%, rgba(11, 18, 30, 0.62));
+  background: color-mix(in srgb, var(--primary-soft) 16%, color-mix(in srgb, var(--cht-blue-6) 62%, transparent));
 }
 
 @keyframes composer-file-drop-fade {
@@ -3841,7 +3878,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   border-radius: 50%;
   background: var(--panel);
   box-shadow:
-    0 1px 4px rgba(0, 0, 0, 0.24),
+    0 1px 4px color-mix(in srgb, var(--black) 24%, transparent),
     inset 0 0 0 1px color-mix(in srgb, var(--text) 16%, transparent);
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -3871,9 +3908,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-reasoning-menu.is-max .composer-reasoning-slider-track {
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--primary) 50%, #168ff5),
+    color-mix(in srgb, var(--primary) 50%, var(--cht-blue-5)),
     var(--primary) 50%,
-    color-mix(in srgb, var(--primary) 62%, #f346d2)
+    color-mix(in srgb, var(--primary) 62%, var(--cht-magenta))
   );
   box-shadow: 0 0 12px color-mix(in srgb, var(--primary) 32%, transparent);
 }
@@ -3885,7 +3922,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-reasoning-menu.is-max .composer-reasoning-slider-thumb {
   box-shadow:
     -4px 0 13px color-mix(in srgb, var(--primary) 30%, transparent),
-    0 1px 4px rgba(0, 0, 0, 0.24),
+    0 1px 4px color-mix(in srgb, var(--black) 24%, transparent),
     inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
@@ -3906,8 +3943,8 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   height: var(--reasoning-particle-size);
   border-radius: var(--r-pill);
   opacity: var(--reasoning-particle-opacity);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.94));
-  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.48));
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--white) 94%, transparent));
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--white) 48%, transparent));
   transform: rotate(-5deg);
   animation: composer-reasoning-comet-flight var(--reasoning-particle-duration)
     cubic-bezier(0.4, 0, 0.2, 1) var(--reasoning-particle-delay) infinite;
@@ -3976,7 +4013,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 }
 
 .composer-fast-mode-cost {
-  color: color-mix(in srgb, #e6a23c 78%, var(--text));
+  color: color-mix(in srgb, var(--cht-ember-2) 78%, var(--text));
   font-size: var(--font-2xs);
   font-weight: 600;
 }
@@ -4002,7 +4039,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   height: 14px;
   border-radius: 50%;
   background: var(--panel);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--black) 22%, transparent);
   transition: transform 0.16s ease;
 }
 
@@ -4076,8 +4113,8 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   user-select: none;
 
   &.is-active {
-    color: var(--accent-color, #4a8cff);
-    background: var(--accent-bg, rgba(74, 140, 255, 0.08));
+    color: var(--accent-color, var(--cht-blue-4));
+    background: var(--accent-bg, color-mix(in srgb, var(--cht-blue-4) 8%, transparent));
   }
 
   &:has(input[type='checkbox']:disabled) {
@@ -4131,8 +4168,8 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   }
 
   &.is-active {
-    color: var(--accent-color, #4a8cff);
-    background: var(--accent-bg, rgba(74, 140, 255, 0.08));
+    color: var(--accent-color, var(--cht-blue-4));
+    background: var(--accent-bg, color-mix(in srgb, var(--cht-blue-4) 8%, transparent));
   }
 }
 
@@ -4223,8 +4260,8 @@ html[data-theme='dark'] .composer-file-drop-overlay {
       color-mix(in srgb, var(--primary) 18%, transparent),
       transparent 34%
     ),
-    radial-gradient(circle at 72% 34%, rgba(89, 126, 247, 0.16), transparent 30%),
-    radial-gradient(circle at 52% 76%, rgba(34, 197, 94, 0.12), transparent 32%), var(--bg);
+    radial-gradient(circle at 72% 34%, color-mix(in srgb, var(--cht-blue-3) 16%, transparent), transparent 30%),
+    radial-gradient(circle at 52% 76%, color-mix(in srgb, var(--success-fixed) 12%, transparent), transparent 32%), var(--bg);
 }
 
 .team-mode-active .chat-hero-grid {
@@ -4296,7 +4333,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   border-radius: var(--r-lg);
   padding: 2px;
   background: color-mix(in srgb, var(--primary) 12%, var(--panel));
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--ink-slate) 12%, transparent);
 
   img,
   .spark-avatar-fallback {
@@ -4511,12 +4548,12 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 
   &.completed {
     color: var(--c-ok, #22c55e);
-    background: color-mix(in srgb, var(--c-ok, #22c55e) 12%, transparent);
+    background: color-mix(in srgb, var(--c-ok, var(--success-fixed)) 12%, transparent);
   }
 
   &.failed {
     color: var(--c-err, #ef4444);
-    background: color-mix(in srgb, var(--c-err, #ef4444) 12%, transparent);
+    background: color-mix(in srgb, var(--c-err, var(--danger-fixed)) 12%, transparent);
   }
 }
 
@@ -4593,9 +4630,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   padding: var(--pad-3xs) var(--pad-sm);
   max-height: 84px;
   overflow-y: auto;
-  border-left: 2px solid color-mix(in srgb, var(--c-err, #ef4444) 55%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--c-err, var(--danger-fixed)) 55%, transparent);
   border-radius: 0 var(--r-sm) var(--r-sm) 0;
-  background: color-mix(in srgb, var(--c-err, #ef4444) 6%, transparent);
+  background: color-mix(in srgb, var(--c-err, var(--danger-fixed)) 6%, transparent);
   color: var(--c-err, #ef4444);
   font-size: var(--font-xs);
   line-height: 1.5;

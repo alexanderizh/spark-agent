@@ -1,10 +1,16 @@
+
+/* 数据色板（qcv 域分类色，恒值；色值残留清理收编，值零变化） */
+:root {
+  --qcv-mint: #dfe8e5;
+}
+
 .quick-create-view {
   --quick-accent: var(--primary);
   --quick-surface: var(--bg-soft);
   --quick-field: var(--bg-sunken);
   /* 图片上的深色遮罩（rgba(5,8,7,.72)）不随主题变化，其上的文字必须固定为浅色，
      否则浅色主题会取到 --text-strong(#11100e) 变成「深字压深底」而看不清 */
-  --quick-scrim-fg: rgba(255, 255, 255, 0.95);
+  --quick-scrim-fg: color-mix(in srgb, var(--white) 95%, transparent);
   display: flex;
   min-width: 0;
   height: 100%;
@@ -157,7 +163,7 @@
   border: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel) 90%, transparent);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 18px 44px color-mix(in srgb, var(--black) 8%, transparent);
 }
 
 .quick-create-form-pane .quick-create-mode-rail {
@@ -634,7 +640,7 @@
   border: 0;
   border-radius: 50%;
   color: var(--text-inverse);
-  background: rgba(0, 0, 0, 0.58);
+  background: color-mix(in srgb, var(--black) 58%, transparent);
   cursor: pointer;
 }
 
@@ -728,7 +734,7 @@
   border: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel) 88%, transparent);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 18px 44px color-mix(in srgb, var(--black) 8%, transparent);
 }
 
 .quick-create-result-tabs {
@@ -1124,7 +1130,7 @@
   padding: var(--pad-3xs) var(--pad-sm);
   border-radius: var(--r-sm);
   color: var(--text-inverse);
-  background: rgba(0, 0, 0, 0.58);
+  background: color-mix(in srgb, var(--black) 58%, transparent);
   font-size: var(--font-2xs);
 }
 
@@ -1237,7 +1243,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 22px var(--pad-sm) var(--pad-sm);
-  background: linear-gradient(to top, rgba(5, 8, 7, 0.88), transparent);
+  background: linear-gradient(to top, color-mix(in srgb, var(--canvas-stage-bg) 88%, transparent), transparent);
   opacity: 0;
   transition: opacity var(--motion-fast) ease;
 }
@@ -1256,7 +1262,7 @@
 }
 
 .quick-create-card-veil small {
-  color: rgba(223, 232, 229, 0.66);
+  color: color-mix(in srgb, var(--qcv-mint) 66%, transparent);
   font-size: var(--font-2xs);
 }
 
@@ -1266,7 +1272,7 @@
   left: 8px;
   padding: var(--pad-3xs) var(--pad-sm);
   border-radius: var(--r-sm);
-  background: rgba(5, 8, 7, 0.72);
+  background: color-mix(in srgb, var(--canvas-stage-bg) 72%, transparent);
   font-size: var(--font-2xs);
 }
 
@@ -1277,7 +1283,7 @@
   padding: var(--pad-3xs) var(--pad-sm);
   border-radius: var(--r-sm);
   color: var(--quick-scrim-fg);
-  background: rgba(5, 8, 7, 0.72);
+  background: color-mix(in srgb, var(--canvas-stage-bg) 72%, transparent);
   font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
 }
@@ -1286,7 +1292,7 @@
   --quick-accent: var(--primary);
   --quick-surface: var(--bg-soft);
   --quick-field: var(--bg-sunken);
-  --quick-scrim-fg: rgba(255, 255, 255, 0.95);
+  --quick-scrim-fg: color-mix(in srgb, var(--white) 95%, transparent);
 }
 
 .quick-create-task-detail-modal .ant-modal-content {
@@ -1380,7 +1386,7 @@
   padding: var(--pad-3xs) var(--pad-sm);
   border-radius: var(--r-sm);
   color: var(--quick-scrim-fg);
-  background: rgba(5, 8, 7, 0.72);
+  background: color-mix(in srgb, var(--canvas-stage-bg) 72%, transparent);
   font-size: var(--font-2xs);
 }
 
@@ -1540,7 +1546,7 @@
     ),
     radial-gradient(
       circle at 100% 0%,
-      color-mix(in srgb, #8b5cf6 7%, transparent),
+      color-mix(in srgb, var(--violet) 7%, transparent),
       transparent 29%
     ),
     var(--bg-soft);
@@ -1592,8 +1598,8 @@
   border-radius: 18px;
   background: var(--quick-panel);
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.13),
-    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+    0 24px 60px color-mix(in srgb, var(--black) 13%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--white) 5%, transparent);
 }
 
 .quick-create-form-pane .quick-create-form {
@@ -1709,7 +1715,7 @@
   bottom: 0;
   left: 0;
   height: 36px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.76), transparent);
+  background: linear-gradient(to top, color-mix(in srgb, var(--black) 76%, transparent), transparent);
   content: '';
 }
 
@@ -2152,7 +2158,7 @@
 .quick-create-mode.is-active {
   color: var(--quick-accent);
   background: var(--panel);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--black) 16%, transparent);
 }
 
 .quick-create-mode-note {

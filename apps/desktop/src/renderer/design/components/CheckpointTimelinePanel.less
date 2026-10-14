@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(0, 0, 0, 0.28);
+  background: color-mix(in srgb, var(--black) 28%, transparent);
   display: flex;
   justify-content: flex-end;
 }
@@ -161,7 +161,7 @@
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
     background: linear-gradient(180deg, var(--bg-soft) 0%, var(--panel) 100%);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--black) 4%, transparent);
   }
 
   .checkpoint-item-head {

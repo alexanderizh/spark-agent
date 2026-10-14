@@ -244,7 +244,7 @@
     background: transparent;
     box-shadow:
       0 0 0 1px color-mix(in srgb, var(--text) 18%, transparent),
-      0 24px 70px rgba(0, 0, 0, 0.32);
+      0 24px 70px color-mix(in srgb, var(--black) 32%, transparent);
   }
 
   .lower-canvas,
@@ -274,7 +274,7 @@
     background: var(--primary);
     box-shadow:
       0 0 0 2px #ffffff,
-      0 2px 8px rgba(0, 0, 0, 0.3);
+      0 2px 8px color-mix(in srgb, var(--black) 30%, transparent);
     pointer-events: auto;
     touch-action: none;
 
@@ -395,7 +395,7 @@
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel-elev) 94%, transparent);
   color: var(--danger);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--black) 22%, transparent);
   font-size: var(--font-sm);
   transform: translateX(-50%);
   backdrop-filter: blur(16px);
@@ -454,7 +454,7 @@
   pointer-events: auto;
   border: 1px solid var(--border-strong);
   background: var(--annotation-float-bg);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 16px 42px color-mix(in srgb, var(--black) 28%, transparent);
   backdrop-filter: blur(18px) saturate(1.12);
 }
 
@@ -592,7 +592,7 @@
 
     &.active {
       color: var(--primary);
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+      box-shadow: 0 1px 4px color-mix(in srgb, var(--black) 16%, transparent);
     }
 
     &:focus-visible {
@@ -610,7 +610,7 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   background: var(--annotation-color);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--black) 8%, transparent);
   cursor: pointer;
   transition:
     box-shadow 180ms ease,
@@ -619,7 +619,7 @@
   &.active {
     border-color: var(--primary);
     box-shadow:
-      inset 0 0 0 1px rgba(0, 0, 0, 0.08),
+      inset 0 0 0 1px color-mix(in srgb, var(--black) 8%, transparent),
       0 0 0 2px var(--panel-elev),
       0 0 0 4px var(--primary);
   }

@@ -2,6 +2,34 @@
    投影必须挂在封面层而不是节点容器上：容器内还渲染悬浮工具栏（DOM 子元素，
    绝对定位在节点上方），filter 会按整棵子树的轮廓投影，把工具栏也染上一层
    发散光晕。 */
+
+/* 数据色板（ccg 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --ccg-blue-1: #a9ddfb;
+  --ccg-blue-2: #9cacee;
+  --ccg-blue-3: #a9b3bd;
+  --ccg-blue-4: #5260be;
+  --ccg-blue-5: #338fc6;
+  --ccg-blue-6: #52606c;
+  --ccg-blue-7: #204155;
+  --ccg-blue-8: #2a3742;
+  --ccg-blue-9: #233948;
+  --ccg-violet-1: #c09ce9;
+  --ccg-violet-2: #8753b5;
+  --ccg-magenta-1: #ed9ec0;
+  --ccg-magenta-2: #c04c7f;
+  --ccg-red-1: #e88e89;
+  --ccg-red-2: #be453d;
+  --ccg-ember-1: #e9ae62;
+  --ccg-ember-2: #be7622;
+  --ccg-amber-1: #dfc84f;
+  --ccg-amber-2: #ae8f1b;
+  --ccg-green-1: #86c897;
+  --ccg-green-2: #438f55;
+  --ccg-cyan-1: #73c8ca;
+  --ccg-cyan-2: #309194;
+}
+
 .canvas-node.canvas-node-collapsed-group {
   overflow: visible;
   border: 0;
@@ -13,23 +41,23 @@
 .canvas-collapsed-group-cover {
   --group-back-start: #dff3ff;
   --group-back-end: #9ed8fb;
-  --group-front: #a9ddfb;
+  --group-front: var(--ccg-blue-1);
   --group-stroke: #67b8e9;
   --group-ink: #235f84;
   --group-insert-border: #e5f6ff;
   --group-insert-bg: #d8effb;
-  --group-glow: rgba(51, 143, 198, 0.24);
+  --group-glow: color-mix(in srgb, var(--ccg-blue-5) 24%, transparent);
   position: relative;
   width: 100%;
   height: 100%;
   color: var(--group-ink);
   cursor: pointer;
   user-select: none;
-  filter: drop-shadow(0 22px 26px rgba(15, 23, 42, 0.22));
+  filter: drop-shadow(0 22px 26px color-mix(in srgb, var(--ink-slate) 22%, transparent));
 }
 
 .canvas-node-collapsed-group.canvas-node-selected .canvas-collapsed-group-cover {
-  filter: drop-shadow(0 22px 26px rgba(15, 23, 42, 0.22))
+  filter: drop-shadow(0 22px 26px color-mix(in srgb, var(--ink-slate) 22%, transparent))
     drop-shadow(0 0 8px color-mix(in srgb, var(--primary) 56%, transparent));
 }
 
@@ -41,7 +69,7 @@
   --group-ink: #3f4f9b;
   --group-insert-border: #eef0ff;
   --group-insert-bg: #dfe4ff;
-  --group-glow: rgba(82, 96, 190, 0.25);
+  --group-glow: color-mix(in srgb, var(--ccg-blue-4) 25%, transparent);
 }
 
 .canvas-collapsed-group-cover[data-group-color='purple'] {
@@ -52,7 +80,7 @@
   --group-ink: #694090;
   --group-insert-border: #f7efff;
   --group-insert-bg: #eadcf8;
-  --group-glow: rgba(135, 83, 181, 0.25);
+  --group-glow: color-mix(in srgb, var(--ccg-violet-2) 25%, transparent);
 }
 
 .canvas-collapsed-group-cover[data-group-color='pink'] {
@@ -63,7 +91,7 @@
   --group-ink: #99466a;
   --group-insert-border: #fff0f7;
   --group-insert-bg: #fbe0eb;
-  --group-glow: rgba(192, 76, 127, 0.24);
+  --group-glow: color-mix(in srgb, var(--ccg-magenta-2) 24%, transparent);
 }
 
 .canvas-collapsed-group-cover[data-group-color='red'] {
@@ -74,7 +102,7 @@
   --group-ink: #963f3b;
   --group-insert-border: #fff1f0;
   --group-insert-bg: #f9dedc;
-  --group-glow: rgba(190, 69, 61, 0.24);
+  --group-glow: color-mix(in srgb, var(--ccg-red-2) 24%, transparent);
 }
 
 .canvas-collapsed-group-cover[data-group-color='orange'] {
@@ -85,7 +113,7 @@
   --group-ink: #8f5a1c;
   --group-insert-border: #fff6e9;
   --group-insert-bg: #f9e6c9;
-  --group-glow: rgba(190, 118, 34, 0.24);
+  --group-glow: color-mix(in srgb, var(--ccg-ember-2) 24%, transparent);
 }
 
 .canvas-collapsed-group-cover[data-group-color='yellow'] {
@@ -96,7 +124,7 @@
   --group-ink: #796514;
   --group-insert-border: #fffbe8;
   --group-insert-bg: #f5edc3;
-  --group-glow: rgba(174, 143, 27, 0.22);
+  --group-glow: color-mix(in srgb, var(--ccg-amber-2) 22%, transparent);
 }
 
 .canvas-collapsed-group-cover[data-group-color='green'] {
@@ -107,7 +135,7 @@
   --group-ink: #347044;
   --group-insert-border: #edfff1;
   --group-insert-bg: #d8efde;
-  --group-glow: rgba(67, 143, 85, 0.23);
+  --group-glow: color-mix(in srgb, var(--ccg-green-2) 23%, transparent);
 }
 
 .canvas-collapsed-group-cover[data-group-color='cyan'] {
@@ -118,7 +146,7 @@
   --group-ink: #287476;
   --group-insert-border: #eaffff;
   --group-insert-bg: #d2eeee;
-  --group-glow: rgba(48, 145, 148, 0.23);
+  --group-glow: color-mix(in srgb, var(--ccg-cyan-2) 23%, transparent);
 }
 
 .canvas-collapsed-group-cover[data-group-color='gray'] {
@@ -129,7 +157,7 @@
   --group-ink: #4d5b67;
   --group-insert-border: #f6f8fa;
   --group-insert-bg: #e2e7eb;
-  --group-glow: rgba(82, 96, 108, 0.22);
+  --group-glow: color-mix(in srgb, var(--ccg-blue-6) 22%, transparent);
 }
 
 .canvas-collapsed-group-back {
@@ -143,7 +171,7 @@
   border-radius: 38px;
   background: linear-gradient(180deg, var(--group-back-start), var(--group-back-end));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    inset 0 1px 0 color-mix(in srgb, var(--white) 62%, transparent),
     0 12px 28px var(--group-glow);
 }
 
@@ -164,7 +192,7 @@
   border: 5px solid var(--group-insert-border);
   border-radius: 24px;
   background: var(--group-insert-bg);
-  box-shadow: 0 8px 20px rgba(32, 65, 85, 0.2);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--ccg-blue-7) 20%, transparent);
   transition:
     transform 0.34s cubic-bezier(0.2, 0.85, 0.2, 1),
     filter 0.34s ease;
@@ -192,7 +220,7 @@
   place-items: center;
   color: var(--group-ink);
   background:
-    linear-gradient(135deg, transparent 47%, rgba(255, 255, 255, 0.36) 48% 52%, transparent 53%),
+    linear-gradient(135deg, transparent 47%, color-mix(in srgb, var(--white) 36%, transparent) 48% 52%, transparent 53%),
     var(--group-insert-bg);
 }
 
@@ -202,8 +230,8 @@
   height: 60px;
   place-items: center;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.38);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.46);
+  background: color-mix(in srgb, var(--white) 38%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--white) 46%, transparent);
 }
 
 .canvas-collapsed-group-front {
@@ -224,7 +252,7 @@
 
 .canvas-collapsed-group-front-highlight {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.42);
+  stroke: color-mix(in srgb, var(--white) 42%, transparent);
   stroke-width: 1;
 }
 
@@ -274,8 +302,8 @@
 
 .canvas-collapsed-group-expand-trigger:hover,
 .canvas-collapsed-group-expand-trigger:focus-visible {
-  border-color: rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.2);
+  border-color: color-mix(in srgb, var(--white) 45%, transparent);
+  background: color-mix(in srgb, var(--white) 20%, transparent);
   outline: none;
   transform: translateY(-1px);
 }
@@ -324,7 +352,7 @@
   color: var(--group-ink);
   font-size: var(--font-xl);
   font-weight: 700;
-  background: rgba(255, 255, 255, 0.58);
+  background: color-mix(in srgb, var(--white) 58%, transparent);
   border-color: var(--group-stroke);
 }
 
@@ -341,13 +369,13 @@
   height: 46px;
   padding: 0;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border: 1px solid color-mix(in srgb, var(--white) 50%, transparent);
   border-radius: var(--r-xl);
   color: var(--group-ink);
-  background: rgba(255, 255, 255, 0.34);
+  background: color-mix(in srgb, var(--white) 34%, transparent);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--group-stroke) 28%, transparent),
-    0 6px 14px rgba(35, 57, 72, 0.12);
+    0 6px 14px color-mix(in srgb, var(--ccg-blue-9) 12%, transparent);
   cursor: pointer;
   transition:
     transform 0.16s ease,
@@ -356,7 +384,7 @@
 
 .canvas-collapsed-group-color-trigger:hover,
 .canvas-collapsed-group-color-trigger:focus-visible {
-  background: rgba(255, 255, 255, 0.54);
+  background: color-mix(in srgb, var(--white) 54%, transparent);
   outline: 2px solid color-mix(in srgb, var(--group-stroke) 62%, transparent);
   outline-offset: 2px;
   transform: translateY(-1px);
@@ -365,7 +393,7 @@
 .canvas-collapsed-group-color-trigger span {
   width: 21px;
   height: 21px;
-  border: 3px solid rgba(255, 255, 255, 0.82);
+  border: 3px solid color-mix(in srgb, var(--white) 82%, transparent);
   border-radius: 50%;
   background: var(--group-front);
   box-shadow: 0 0 0 1px var(--group-stroke);
@@ -382,7 +410,7 @@
   border: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
   border-radius: 17px;
   background: color-mix(in srgb, var(--panel-elev) 94%, transparent);
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.26);
+  box-shadow: 0 16px 36px color-mix(in srgb, var(--ink-slate) 26%, transparent);
   backdrop-filter: blur(14px);
 }
 
@@ -390,10 +418,10 @@
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 3px solid rgba(255, 255, 255, 0.78);
+  border: 3px solid color-mix(in srgb, var(--white) 78%, transparent);
   border-radius: 50%;
-  background: #a9ddfb;
-  box-shadow: 0 0 0 1px rgba(42, 55, 66, 0.2);
+  background: var(--ccg-blue-1);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ccg-blue-8) 20%, transparent);
   cursor: pointer;
   transition:
     transform 0.15s ease,
@@ -413,39 +441,39 @@
 }
 
 .canvas-collapsed-group-color-option[data-color='indigo'] {
-  background: #9cacee;
+  background: var(--ccg-blue-2);
 }
 
 .canvas-collapsed-group-color-option[data-color='purple'] {
-  background: #c09ce9;
+  background: var(--ccg-violet-1);
 }
 
 .canvas-collapsed-group-color-option[data-color='pink'] {
-  background: #ed9ec0;
+  background: var(--ccg-magenta-1);
 }
 
 .canvas-collapsed-group-color-option[data-color='red'] {
-  background: #e88e89;
+  background: var(--ccg-red-1);
 }
 
 .canvas-collapsed-group-color-option[data-color='orange'] {
-  background: #e9ae62;
+  background: var(--ccg-ember-1);
 }
 
 .canvas-collapsed-group-color-option[data-color='yellow'] {
-  background: #dfc84f;
+  background: var(--ccg-amber-1);
 }
 
 .canvas-collapsed-group-color-option[data-color='green'] {
-  background: #86c897;
+  background: var(--ccg-green-1);
 }
 
 .canvas-collapsed-group-color-option[data-color='cyan'] {
-  background: #73c8ca;
+  background: var(--ccg-cyan-1);
 }
 
 .canvas-collapsed-group-color-option[data-color='gray'] {
-  background: #a9b3bd;
+  background: var(--ccg-blue-3);
 }
 
 .canvas-node-collapsed-group:hover .canvas-collapsed-group-insert.is-slot-0 {

@@ -11,10 +11,10 @@
   background:
     radial-gradient(
       circle at 50% 20%,
-      color-mix(in srgb, var(--brand, #6366f1) 22%, transparent),
+      color-mix(in srgb, var(--brand, var(--accent)) 22%, transparent),
       transparent 34%
     ),
-    color-mix(in srgb, var(--bg, #f8fafc) 32%, rgba(15, 23, 42, 0.18));
+    color-mix(in srgb, var(--bg, var(--white)) 32%, color-mix(in srgb, var(--ink-slate) 18%, transparent));
   backdrop-filter: blur(18px) saturate(1.25);
   -webkit-backdrop-filter: blur(18px) saturate(1.25);
 }
@@ -24,10 +24,10 @@
   width: min(600px, calc(100vw - 32px));
   border: 1px solid color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.28)) 74%, transparent);
   border-radius: 24px;
-  background: color-mix(in srgb, var(--panel, #ffffff) 84%, transparent);
+  background: color-mix(in srgb, var(--panel, var(--white)) 84%, transparent);
   box-shadow:
-    0 24px 80px rgba(15, 23, 42, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+    0 24px 80px color-mix(in srgb, var(--ink-slate) 24%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--white) 42%, transparent);
   color: var(--text, #0f172a);
   overflow: hidden;
 }
@@ -64,7 +64,7 @@
   height: 32px;
   border: 0;
   border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--muted, #e2e8f0) 64%, transparent);
+  background: color-mix(in srgb, var(--muted, var(--canvas-slate-200)) 64%, transparent);
   color: var(--muted-foreground, #64748b);
 }
 
@@ -74,18 +74,18 @@
   min-height: 160px;
   margin: 0 22px;
   padding: var(--pad-lg);
-  border: 1px solid color-mix(in srgb, var(--border, #cbd5e1) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border, var(--canvas-slate-300)) 72%, transparent);
   border-radius: 18px;
   resize: vertical;
-  background: color-mix(in srgb, var(--bg, #f8fafc) 72%, transparent);
+  background: color-mix(in srgb, var(--bg, var(--white)) 72%, transparent);
   color: inherit;
   outline: none;
   font: inherit;
 }
 
 .quick-task-input:focus {
-  border-color: color-mix(in srgb, var(--brand, #6366f1) 68%, var(--border, #cbd5e1));
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand, #6366f1) 16%, transparent);
+  border-color: color-mix(in srgb, var(--brand, var(--accent)) 68%, var(--border, var(--canvas-slate-300)));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand, var(--accent)) 16%, transparent);
 }
 
 .quick-task-attachments {
@@ -120,7 +120,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: rgba(15, 23, 42, 0.72);
+  background: color-mix(in srgb, var(--ink-slate) 72%, transparent);
   color: var(--text-inverse);
 }
 /* 源文件已被清理（如 macOS temp 被回收）→ safe-file 加载失败降级占位，避免控制台刷 404。 */
@@ -157,7 +157,7 @@
   justify-content: space-between;
   gap: var(--pad-md);
   padding: var(--pad-lg) 22px var(--pad-xl);
-  border-top: 1px solid color-mix(in srgb, var(--border, #cbd5e1) 62%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--border, var(--canvas-slate-300)) 62%, transparent);
   color: var(--muted-foreground, #64748b);
   font-size: var(--font-sm);
 }
@@ -171,10 +171,10 @@
 
 [data-theme='dark'] .quick-task-modal,
 .theme-dark .quick-task-modal {
-  background: color-mix(in srgb, var(--panel, #111827) 82%, transparent);
+  background: color-mix(in srgb, var(--panel, var(--ink-slate)) 82%, transparent);
   box-shadow:
-    0 24px 90px rgba(0, 0, 0, 0.48),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 24px 90px color-mix(in srgb, var(--black) 48%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--white) 8%, transparent);
 }
 
 @media (max-width: 680px) {

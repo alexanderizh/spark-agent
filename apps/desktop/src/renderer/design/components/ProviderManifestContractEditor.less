@@ -1,3 +1,9 @@
+
+/* 数据色板（pmc 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --pmc-blue: #1677ff;
+}
+
 .pv_contract_editor {
   color: var(--text, #e4e4e7);
   font-size: var(--font-sm);
@@ -106,9 +112,9 @@ html[data-theme='light'] .pv_contract_editor,
 }
 
 .pv_adapter_chip.is-on {
-  background: rgba(22, 119, 255, 0.1);
-  border-color: #1677ff;
-  color: #1677ff;
+  background: color-mix(in srgb, var(--pmc-blue) 10%, transparent);
+  border-color: var(--pmc-blue);
+  color: var(--pmc-blue);
 }
 
 .pv_adapter_capability_add {
@@ -181,7 +187,7 @@ html[data-theme='light'] .pv_contract_editor,
 .pv_adapter_textarea:focus {
   outline: none;
   border-color: var(--primary, #8b5cf6);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary, #8b5cf6) 22%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary, var(--violet)) 22%, transparent);
 }
 
 .pv_contract_editor :is(input, select, textarea) {

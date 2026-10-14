@@ -12,7 +12,7 @@
   border: 1px solid var(--canvas-cinema-border-strong, rgba(255, 255, 255, 0.16));
   border-radius: var(--r-md);
   background: var(--canvas-cinema-surface-2, rgba(30, 30, 30, 0.92));
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--black) 32%, transparent);
   transform: translateX(-50%);
   overflow-x: auto;
   white-space: nowrap;
@@ -38,7 +38,7 @@
 
   &.is-danger:hover,
   &.is-danger:focus-visible {
-    background: rgba(239, 68, 68, 0.16);
+    background: color-mix(in srgb, var(--danger-fixed) 16%, transparent);
     color: var(--danger);
   }
 }

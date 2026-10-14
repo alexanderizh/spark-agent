@@ -215,7 +215,7 @@
   border: 1px solid var(--divider, rgba(255, 255, 255, 0.1));
   border-radius: var(--r-sm);
   background: var(--panel, #171a21);
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--black) 8%, transparent);
   cursor: pointer;
   transition:
     border-color 160ms ease,
@@ -225,7 +225,7 @@
 
 .canvas-prompt-library-card:hover {
   border-color: color-mix(in srgb, var(--primary, #8b7cff) 44%, var(--divider, #303541));
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 16px 36px color-mix(in srgb, var(--black) 16%, transparent);
   transform: translateY(-2px);
 }
 
@@ -274,7 +274,7 @@
   z-index: 2;
   inset: auto 0 0;
   height: 46%;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.62));
+  background: linear-gradient(transparent, color-mix(in srgb, var(--black) 62%, transparent));
   content: '';
   pointer-events: none;
 }
@@ -284,7 +284,7 @@
   height: 100%;
   overflow: hidden;
   isolation: isolate;
-  background: #111827;
+  background: var(--ink-slate);
 }
 
 .canvas-prompt-library-card-cover-fallback-image {
@@ -308,13 +308,13 @@
   align-items: center;
   justify-content: center;
   gap: var(--pad-sm);
-  color: rgba(226, 230, 238, 0.74);
+  color: color-mix(in srgb, var(--canvas-slate-200) 74%, transparent);
 }
 
 .canvas-prompt-library-card-cover-fallback span {
   font-size: var(--font-sm);
   font-weight: 650;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.32);
+  text-shadow: 0 1px 10px color-mix(in srgb, var(--black) 32%, transparent);
 }
 
 .canvas-prompt-library-card-source {
@@ -322,7 +322,7 @@
   z-index: 3;
   right: 10px;
   bottom: 9px;
-  color: rgba(255, 255, 255, 0.76);
+  color: color-mix(in srgb, var(--white) 76%, transparent);
   font-size: var(--font-2xs);
 }
 
@@ -468,7 +468,7 @@
   overflow: hidden;
   border: 1px dashed color-mix(in srgb, var(--primary, #8b7cff) 42%, var(--divider, #303541));
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--primary, #8b7cff) 6%, var(--bg-sunken, #101216));
+  background: color-mix(in srgb, var(--primary, #8b7cff) 6%, var(--bg-sunken, var(--canvas-stage-bg-2)));
   color: var(--text-muted, #9298a6);
   cursor: pointer;
 }
@@ -506,7 +506,7 @@
 .canvas-prompt-cover-actions span {
   padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-sm);
-  background: rgba(0, 0, 0, 0.55);
+  background: color-mix(in srgb, var(--black) 55%, transparent);
   color: var(--text-inverse);
   cursor: pointer;
   font-size: var(--font-2xs);
@@ -894,7 +894,7 @@
   .canvas-prompt-library-entry:hover {
   border-color: transparent;
   background: color-mix(in srgb, var(--primary, #8b7cff) 8%, var(--surface, #1b1f28));
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--black) 18%, transparent);
   transform: none;
 }
 
@@ -1058,8 +1058,7 @@
   gap: var(--pad-lg);
   margin: 0 0 var(--pad-md);
   padding: var(--pad-sm) var(--pad-lg);
-  border: 1px solid
-    color-mix(in srgb, var(--primary, #8b7cff) 36%, var(--divider, rgba(255, 255, 255, 0.1)));
+  border: 1px solid color-mix(in srgb, var(--primary, #8b7cff) 36%, var(--divider, rgba(255, 255, 255, 0.1)));
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--primary, #8b7cff) 10%, var(--panel, #171a21));
 }
@@ -1099,7 +1098,7 @@
   border-color: color-mix(in srgb, var(--primary, #8b7cff) 78%, transparent);
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--primary, #8b7cff) 42%, transparent),
-    0 12px 26px rgba(0, 0, 0, 0.12);
+    0 12px 26px color-mix(in srgb, var(--black) 12%, transparent);
 }
 
 .canvas-prompt-library-card-check {
@@ -1113,6 +1112,6 @@
   width: 28px;
   height: 28px;
   border-radius: var(--r-md);
-  background: rgba(12, 14, 18, 0.72);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  background: color-mix(in srgb, var(--canvas-stage-bg) 72%, transparent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--black) 40%, transparent);
 }

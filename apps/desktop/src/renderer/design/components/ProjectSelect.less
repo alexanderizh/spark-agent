@@ -32,7 +32,7 @@
 .ps-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: color-mix(in srgb, var(--black) 45%, transparent);
   z-index: 2000;
   display: flex;
   align-items: center;
@@ -45,7 +45,7 @@
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--black) 40%, transparent);
   color: var(--text);
   overflow: hidden;
 }

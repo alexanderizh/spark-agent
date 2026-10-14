@@ -1,3 +1,37 @@
+
+/* 数据色板（cws 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --cws-amber-1: #f7f6f4;
+  --cws-amber-2: #ffd166;
+  /* 含 2 个 ΔE<3 族内近似色合并 */
+  --cws-blue-1: #f8fbff;
+  --cws-blue-2: #d9e3ef;
+  --cws-blue-3: #a5b4fc;
+  --cws-blue-4: #3b82f6;
+  /* 含 2 个 ΔE<3 族内近似色合并 */
+  --cws-blue-5: #1b2027;
+  --cws-blue-6: #121c2c;
+  /* 含 5 个 ΔE<3 族内近似色合并 */
+  --cws-blue-7: #101419;
+  --cws-blue-8: #0a0e18;
+  --cws-blue-9: #020617;
+  --cws-green: #dce9df;
+  --cws-red-1: #f1d6d6;
+  --cws-red-2: #f43f5e;
+  --cws-ember-1: #fb923c;
+  --cws-ember-2: #ea580c;
+  --cws-ember-3: #c2410c;
+  --cws-cyan-1: #7dd3fc;
+  --cws-cyan-2: #67e8f9;
+  --cws-cyan-3: #5edbd1;
+  --cws-cyan-4: #27c2b8;
+  --cws-cyan-5: #047857;
+  --cws-ink-1: #1e1e1e;
+  --cws-ink-2: #0b0b0b;
+  --cws-paper-2: #e8e8e8;
+  --cws-char: #1f1f1f;
+}
+
 .canvas-workspace {
   --canvas-accent-cyan: #22d3ee;
   --canvas-accent-amber: #fbbf24;
@@ -5,14 +39,14 @@
   --canvas-accent-lime: #84cc16;
   --canvas-field-bg: color-mix(in srgb, var(--panel-elev) 86%, var(--bg-sunken));
   --canvas-float-bg: color-mix(in srgb, var(--panel-elev) 88%, transparent);
-  --canvas-node-bg: color-mix(in srgb, var(--panel-elev) 94%, #ffffff 6%);
+  --canvas-node-bg: color-mix(in srgb, var(--panel-elev) 94%, var(--white) 6%);
   --canvas-node-head-bg: color-mix(in srgb, var(--panel-elev) 90%, var(--bg-soft));
   --canvas-node-body-bg: color-mix(in srgb, var(--panel-elev) 88%, var(--bg));
   // 编辑态（顶部/底部工具栏 + 配置面板）统一底色：比节点本体亮一档，与节点内容区分开。
   // 中性灰暗色主题下浮层底色，跟随主题整体提亮后仍浮在节点之上。
   --canvas-edit-bg: #3d3d3d;
-  --canvas-node-shadow: 0 14px 34px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.24);
-  --canvas-node-shadow-selected: 0 18px 46px rgba(0, 0, 0, 0.34);
+  --canvas-node-shadow: 0 14px 34px color-mix(in srgb, var(--black) 28%, transparent), 0 2px 8px color-mix(in srgb, var(--black) 24%, transparent);
+  --canvas-node-shadow-selected: 0 18px 46px color-mix(in srgb, var(--black) 34%, transparent);
   --canvas-node-edge: color-mix(in srgb, var(--border-strong) 50%, transparent);
   display: flex;
   flex: 1;
@@ -36,13 +70,13 @@
 [data-theme='light'] .canvas-workspace {
   --canvas-field-bg: color-mix(in srgb, var(--panel) 82%, var(--bg-sunken));
   --canvas-float-bg: color-mix(in srgb, var(--panel) 92%, transparent);
-  --canvas-node-bg: color-mix(in srgb, var(--panel) 96%, #f7f6f4);
-  --canvas-node-head-bg: color-mix(in srgb, #ffffff 92%, var(--bg-sunken));
-  --canvas-node-body-bg: color-mix(in srgb, #ffffff 94%, var(--bg-sunken));
+  --canvas-node-bg: color-mix(in srgb, var(--panel) 96%, var(--cws-amber-1));
+  --canvas-node-head-bg: color-mix(in srgb, var(--white) 92%, var(--bg-sunken));
+  --canvas-node-body-bg: color-mix(in srgb, var(--white) 94%, var(--bg-sunken));
   // 浅色模式保持原面板底色不变（深色模式才用中性灰浮层色拉开层次）。
   --canvas-edit-bg: var(--canvas-float-bg);
-  --canvas-node-shadow: 0 16px 32px rgba(31, 28, 24, 0.08), 0 2px 8px rgba(31, 28, 24, 0.06);
-  --canvas-node-shadow-selected: 0 18px 44px rgba(31, 28, 24, 0.14);
+  --canvas-node-shadow: 0 16px 32px color-mix(in srgb, var(--canvas-ink-900) 8%, transparent), 0 2px 8px color-mix(in srgb, var(--canvas-ink-900) 6%, transparent);
+  --canvas-node-shadow-selected: 0 18px 44px color-mix(in srgb, var(--canvas-ink-900) 14%, transparent);
   --canvas-node-edge: color-mix(in srgb, var(--border-strong) 52%, transparent);
 }
 
@@ -342,11 +376,11 @@
   border: 1px solid color-mix(in srgb, var(--border-strong) 52%, transparent);
   border-radius: 18px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent),
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 5%, transparent), transparent),
     color-mix(in srgb, var(--canvas-edit-bg) 92%, transparent);
   box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.18),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 8%, transparent);
+    0 12px 28px color-mix(in srgb, var(--black) 18%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--white) 8%, transparent);
   backdrop-filter: blur(18px) saturate(1.04);
   -webkit-backdrop-filter: blur(18px) saturate(1.04);
 }
@@ -595,8 +629,8 @@
 }
 
 .canvas-minimap .react-flow__minimap-mask {
-  fill: rgba(255, 255, 255, 0.07) !important;
-  stroke: rgba(255, 255, 255, 0.22) !important;
+  fill: color-mix(in srgb, var(--white) 7%, transparent) !important;
+  stroke: color-mix(in srgb, var(--white) 22%, transparent) !important;
   stroke-width: 1.5px !important;
 }
 
@@ -631,13 +665,13 @@
 
 .canvas-minimap-toggle:hover,
 .canvas-minimap-toggle:focus-visible {
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: color-mix(in srgb, var(--white) 16%, transparent);
   color: var(--canvas-float-icon-strong);
-  background: color-mix(in srgb, var(--canvas-float-bg-solid) 94%, white);
+  background: color-mix(in srgb, var(--canvas-float-bg-solid) 94%, var(--white));
 }
 
 .canvas-minimap-toggle.is-open {
-  background: color-mix(in srgb, var(--canvas-float-bg-solid) 92%, white);
+  background: color-mix(in srgb, var(--canvas-float-bg-solid) 92%, var(--white));
 }
 
 .canvas-minimap-toggle.is-open svg {
@@ -816,7 +850,7 @@
 .canvas-node.canvas-node-image_edit::before,
 .canvas-node.canvas-node-image_compose::before,
 .canvas-node.canvas-node-text_to_image::before {
-  background: linear-gradient(90deg, #38bdf8, color-mix(in srgb, #38bdf8 18%, transparent));
+  background: linear-gradient(90deg, var(--canvas-sky), color-mix(in srgb, var(--canvas-sky) 18%, transparent));
 }
 
 .canvas-node.canvas-node-video::before,
@@ -846,14 +880,14 @@
 }
 
 .canvas-node-selected {
-  border-color: color-mix(in srgb, #f8fafc 72%, var(--text-muted));
+  border-color: color-mix(in srgb, var(--white) 72%, var(--text-muted));
   box-shadow: var(--canvas-node-shadow-selected);
   /* 节点外的音频操作工具栏不能被相邻节点盖住。 */
   z-index: 20;
 }
 
 [data-theme='light'] .canvas-node-selected {
-  border-color: color-mix(in srgb, #111827 62%, var(--border-strong));
+  border-color: color-mix(in srgb, var(--ink-slate) 62%, var(--border-strong));
 }
 
 .canvas-stage-snapshot-content-only .canvas-node {
@@ -1088,8 +1122,8 @@
 }
 
 .canvas-node-meta-chip-output {
-  color: #d9e3ef;
-  background: rgba(148, 163, 184, 0.14);
+  color: var(--cws-blue-2);
+  background: color-mix(in srgb, var(--canvas-slate-400) 14%, transparent);
   border-color: transparent;
 }
 
@@ -1162,11 +1196,11 @@
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
   border-radius: var(--r-pill);
-  background: color-mix(in srgb, rgba(10, 14, 24, 0.88) 90%, var(--canvas-node-body-bg));
-  color: #f8fbff;
+  background: color-mix(in srgb, color-mix(in srgb, var(--cws-blue-8) 88%, transparent) 90%, var(--canvas-node-body-bg));
+  color: var(--cws-blue-1);
   font-size: var(--font-xs);
   line-height: 1;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--black) 24%, transparent);
   backdrop-filter: blur(8px);
   cursor: pointer;
   transition:
@@ -1177,11 +1211,11 @@
   &:hover {
     transform: translateY(-1px);
     border-color: color-mix(in srgb, var(--primary) 64%, transparent);
-    background: color-mix(in srgb, rgba(18, 28, 44, 0.94) 92%, var(--canvas-node-body-bg));
+    background: color-mix(in srgb, color-mix(in srgb, var(--cws-blue-6) 94%, transparent) 92%, var(--canvas-node-body-bg));
   }
 
   &.has-subviews {
-    background: color-mix(in srgb, var(--primary) 16%, rgba(10, 14, 24, 0.92));
+    background: color-mix(in srgb, var(--primary) 16%, color-mix(in srgb, var(--cws-blue-8) 92%, transparent));
   }
 }
 
@@ -1329,7 +1363,7 @@
   position: relative;
   gap: 0;
   padding: 0;
-  background: #15191f;
+  background: var(--canvas-stage-bg-3);
 }
 
 .canvas-operation-output-deck {
@@ -1373,7 +1407,7 @@
   width: 100%;
   min-height: 0;
   box-sizing: border-box;
-  color: rgba(226, 232, 240, 0.78);
+  color: color-mix(in srgb, var(--canvas-slate-200) 78%, transparent);
 }
 
 .canvas-operation-output-audio,
@@ -1405,7 +1439,7 @@
 
 .canvas-operation-output-text > svg {
   margin-top: 2px;
-  color: rgba(148, 163, 184, 0.68);
+  color: color-mix(in srgb, var(--canvas-slate-400) 68%, transparent);
 }
 
 .canvas-operation-output-stage-label {
@@ -1421,7 +1455,7 @@
   padding: var(--pad-xl) var(--pad-md) var(--pad-sm);
   border: 0;
   border-radius: 0;
-  color: rgba(241, 245, 249, 0.88);
+  color: color-mix(in srgb, var(--cws-blue-1) 88%, transparent);
   font-size: var(--font-2xs);
   line-height: 1;
   pointer-events: none;
@@ -1436,29 +1470,29 @@
 
 .canvas-operation-output-stage-label > span:last-child {
   flex: none;
-  color: rgba(203, 213, 225, 0.66);
+  color: color-mix(in srgb, var(--canvas-slate-300) 66%, transparent);
   font-variant-numeric: tabular-nums;
 }
 
 /* ─── 独立产物节点：保留现有拖拽/连线能力，升级为深色资源卡 ────────── */
 .canvas-node-resource-output {
-  border-color: rgba(203, 213, 225, 0.07);
-  background: #15191f;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  border-color: color-mix(in srgb, var(--canvas-slate-300) 7%, transparent);
+  background: var(--canvas-stage-bg-3);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--black) 18%, transparent);
 }
 
 .canvas-node-resource-output.canvas-node-selected {
-  border-color: rgba(226, 232, 240, 0.62);
+  border-color: color-mix(in srgb, var(--canvas-slate-200) 62%, transparent);
 }
 
 .canvas-node-resource-output .canvas-node-meta-bar {
   border-bottom-color: transparent;
-  background: #1b2027;
+  background: var(--cws-blue-5);
 }
 
 .canvas-node-resource-output .canvas-node-body {
   padding: 0;
-  background: #15191f;
+  background: var(--canvas-stage-bg-3);
 }
 
 .canvas-node-resource-output .canvas-node-image-wrap,
@@ -1468,7 +1502,7 @@
   overflow: hidden;
   border: 0;
   border-radius: 0;
-  background: #191d23;
+  background: var(--canvas-stage-bg-3);
   box-shadow: none;
 }
 
@@ -1483,7 +1517,7 @@
   flex-direction: column;
   gap: var(--pad-md);
   padding: var(--pad-xl);
-  color: rgba(226, 232, 240, 0.82);
+  color: color-mix(in srgb, var(--canvas-slate-200) 82%, transparent);
 }
 
 .canvas-node-resource-text-icon {
@@ -1491,7 +1525,7 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  color: rgba(148, 163, 184, 0.54);
+  color: color-mix(in srgb, var(--canvas-slate-400) 54%, transparent);
 }
 
 .canvas-node-resource-text-content {
@@ -1519,7 +1553,7 @@
   gap: var(--pad-sm);
   padding: 0;
   pointer-events: none;
-  color: rgba(203, 213, 225, 0.68);
+  color: color-mix(in srgb, var(--canvas-slate-300) 68%, transparent);
   font-size: var(--font-2xs);
 }
 
@@ -1530,10 +1564,10 @@
   gap: var(--pad-3xs);
   pointer-events: auto;
   padding: var(--pad-3xs) var(--pad-xs);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid color-mix(in srgb, var(--white) 16%, transparent);
   border-radius: var(--r-pill);
-  background: rgba(10, 14, 20, 0.78);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+  background: color-mix(in srgb, var(--canvas-stage-bg-2) 78%, transparent);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--black) 24%, transparent);
   backdrop-filter: blur(8px);
 }
 
@@ -1561,7 +1595,7 @@
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: rgba(226, 232, 240, 0.82);
+  color: color-mix(in srgb, var(--canvas-slate-200) 82%, transparent);
   cursor: pointer;
   transition:
     border-color 0.12s ease,
@@ -1591,7 +1625,7 @@
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: rgba(148, 163, 184, 0.36);
+  background: color-mix(in srgb, var(--canvas-slate-400) 36%, transparent);
   cursor: pointer;
   transition:
     width 0.14s ease,
@@ -1602,20 +1636,20 @@
 .canvas-operation-output-dots button.is-active {
   width: 17px;
   border-radius: var(--r-pill);
-  background: rgba(226, 232, 240, 0.9);
+  background: color-mix(in srgb, var(--canvas-slate-200) 90%, transparent);
 }
 
 .canvas-operation-run-status {
   flex: none;
-  color: rgba(203, 213, 225, 0.64);
+  color: color-mix(in srgb, var(--canvas-slate-300) 64%, transparent);
 }
 
 .canvas-operation-run-status.is-completed {
-  color: color-mix(in srgb, var(--success) 74%, #dce9df);
+  color: color-mix(in srgb, var(--success) 74%, var(--cws-green));
 }
 
 .canvas-operation-run-status.is-failed {
-  color: color-mix(in srgb, var(--danger) 72%, #f1d6d6);
+  color: color-mix(in srgb, var(--danger) 72%, var(--cws-red-1));
 }
 
 .canvas-operation-empty-state {
@@ -1635,7 +1669,7 @@
   align-items: center;
   justify-content: center;
   margin-bottom: var(--pad-xs);
-  color: rgba(148, 163, 184, 0.66);
+  color: color-mix(in srgb, var(--canvas-slate-400) 66%, transparent);
 }
 
 .canvas-operation-empty-icon svg {
@@ -1650,7 +1684,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--pad-xs) var(--pad-lg);
-  color: rgba(203, 213, 225, 0.72);
+  color: color-mix(in srgb, var(--canvas-slate-300) 72%, transparent);
   font-size: var(--font-xs);
   line-height: 1.35;
 }
@@ -1663,12 +1697,12 @@
 }
 
 .canvas-operation-param-summary > span > span {
-  color: rgba(148, 163, 184, 0.58);
+  color: color-mix(in srgb, var(--canvas-slate-400) 58%, transparent);
 }
 
 .canvas-operation-param-summary strong {
   overflow: hidden;
-  color: rgba(226, 232, 240, 0.88);
+  color: color-mix(in srgb, var(--canvas-slate-200) 88%, transparent);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1865,10 +1899,10 @@
     color: var(--success);
   }
   &.canvas-op-color-audio .canvas-pane-context-op-icon {
-    color: #9333ea;
+    color: var(--file-type-image);
   }
   &.canvas-op-color-video .canvas-pane-context-op-icon {
-    color: #ea580c;
+    color: var(--cws-ember-2);
   }
 
   .canvas-pane-context-op-icon {
@@ -2114,11 +2148,11 @@ body.canvas-side-panel-resizing {
   border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
   border-radius: var(--r-xl);
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 5%, transparent), transparent 120px),
     var(--canvas-edit-bg);
   box-shadow:
-    0 26px 70px rgba(0, 0, 0, 0.34),
-    0 4px 14px rgba(0, 0, 0, 0.22);
+    0 26px 70px color-mix(in srgb, var(--black) 34%, transparent),
+    0 4px 14px color-mix(in srgb, var(--black) 22%, transparent);
   transform: translateX(-50%);
 }
 
@@ -2199,7 +2233,7 @@ body.canvas-side-panel-resizing {
   padding: var(--pad-md);
   border-radius: var(--r-lg);
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 3%, transparent), transparent),
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 3%, transparent), transparent),
     var(--canvas-field-bg);
 }
 
@@ -2390,7 +2424,7 @@ body.canvas-side-panel-resizing {
   max-height: 360px;
   overflow: auto;
   padding: var(--pad-sm) var(--pad-md);
-  border: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--white) 6%, transparent);
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel) 4%, transparent);
   color: var(--text);
@@ -2490,7 +2524,7 @@ body.canvas-side-panel-resizing {
       color-mix(in srgb, var(--surface-2) 92%, var(--panel))
     );
   box-shadow:
-    0 14px 34px rgba(15, 23, 42, 0.08),
+    0 14px 34px color-mix(in srgb, var(--ink-slate) 8%, transparent),
     inset 0 1px 0 color-mix(in srgb, white 48%, transparent);
 }
 
@@ -2517,7 +2551,7 @@ body.canvas-side-panel-resizing {
   justify-content: center;
   border-radius: var(--r-lg);
   color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, white);
+  background: color-mix(in srgb, var(--primary) 12%, var(--white));
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent),
     0 8px 18px color-mix(in srgb, var(--primary) 10%, transparent);
@@ -2562,7 +2596,7 @@ body.canvas-side-panel-resizing {
   color: var(--text-muted);
   font-size: var(--font-xs);
   line-height: 1.2;
-  background: color-mix(in srgb, var(--panel) 82%, white);
+  background: color-mix(in srgb, var(--panel) 82%, var(--panel));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 72%, transparent);
 }
 
@@ -2604,8 +2638,8 @@ body.canvas-side-panel-resizing {
   gap: var(--pad-sm);
   width: min(232px, calc(100vw - 28px));
   transform: none;
-  border-color: rgba(255, 255, 255, 0.16);
-  background: color-mix(in srgb, var(--canvas-float-bg-solid) 94%, white);
+  border-color: color-mix(in srgb, var(--white) 16%, transparent);
+  background: color-mix(in srgb, var(--canvas-float-bg-solid) 94%, var(--white));
   box-shadow: var(--canvas-float-shadow);
 }
 
@@ -2660,7 +2694,7 @@ body.canvas-side-panel-resizing {
   color: var(--text-muted);
   font-size: var(--font-2xs);
   line-height: 1.2;
-  background: color-mix(in srgb, var(--panel) 80%, white);
+  background: color-mix(in srgb, var(--panel) 80%, var(--panel));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 72%, transparent);
   opacity: 0;
   transform: translateX(6px);
@@ -2966,8 +3000,8 @@ body.canvas-side-panel-resizing {
   // 面板底色跟随主题（见文件顶部 --canvas-float-bg），不再硬编码近黑色。
   background: var(--canvas-edit-bg);
   box-shadow:
-    0 20px 48px rgba(0, 0, 0, 0.3),
-    0 2px 10px rgba(0, 0, 0, 0.18);
+    0 20px 48px color-mix(in srgb, var(--black) 30%, transparent),
+    0 2px 10px color-mix(in srgb, var(--black) 18%, transparent);
   transform: translateX(-50%);
 }
 
@@ -2989,7 +3023,7 @@ body.canvas-side-panel-resizing {
   border: 1px solid var(--divider);
   border-radius: var(--r-lg);
   background: var(--panel);
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18);
+  box-shadow: 4px 0 24px color-mix(in srgb, var(--black) 18%, transparent);
   z-index: 50;
   opacity: 1;
   transition: opacity var(--motion-fast) ease;
@@ -3328,7 +3362,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
       var(--canvas-edit-bg)
     ),
     var(--canvas-edit-bg);
-  box-shadow: 0 -12px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 -12px 24px color-mix(in srgb, var(--black) 18%, transparent);
 }
 
 .canvas-node-inline-panel .canvas-node-edit-dialog {
@@ -3381,7 +3415,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   justify-content: space-between;
   gap: var(--pad-sm);
   padding: var(--pad-sm) var(--pad-sm);
-  border-bottom: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--white) 6%, transparent);
   background: color-mix(in srgb, var(--panel) 2%, transparent);
   -webkit-app-region: no-drag;
 }
@@ -3439,11 +3473,11 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: var(--r-xl);
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 7%, transparent), transparent 150px),
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 7%, transparent), transparent 150px),
     var(--canvas-float-bg);
   box-shadow:
-    0 28px 78px rgba(0, 0, 0, 0.36),
-    0 4px 14px rgba(0, 0, 0, 0.22);
+    0 28px 78px color-mix(in srgb, var(--black) 36%, transparent),
+    0 4px 14px color-mix(in srgb, var(--black) 22%, transparent);
   backdrop-filter: blur(22px) saturate(1.16);
   -webkit-backdrop-filter: blur(22px) saturate(1.16);
 }
@@ -3802,7 +3836,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-shot-composition-card.tone-blue {
-  border-color: color-mix(in srgb, #3b82f6 36%, var(--divider));
+  border-color: color-mix(in srgb, var(--cws-blue-4) 36%, var(--divider));
 }
 
 .canvas-shot-composition-card.tone-orange {
@@ -3965,7 +3999,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
       color-mix(in srgb, var(--primary) 9%, transparent),
       transparent 62%
     ),
-    color-mix(in srgb, var(--bg-sunken) 88%, #111827);
+    color-mix(in srgb, var(--bg-sunken) 88%, var(--ink-slate));
   background-size:
     28px 28px,
     28px 28px,
@@ -4051,12 +4085,12 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   width: 34px;
   height: 34px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--canvas-accent-cyan) 84%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--canvas-accent-cyan) 84%, var(--white));
   border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--canvas-accent-cyan) 18%, var(--panel-elev));
   color: var(--canvas-accent-cyan);
   cursor: grab;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--black) 24%, transparent);
 }
 
 .canvas-shot-camera-cone {
@@ -4085,7 +4119,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   color: var(--text-inverse);
   cursor: grab;
   font-size: var(--font-xs);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--black) 28%, transparent);
 }
 
 .canvas-shot-camera.selected,
@@ -4096,11 +4130,11 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-shot-subject-character {
-  background: color-mix(in srgb, var(--success) 84%, #0f172a);
+  background: color-mix(in srgb, var(--success) 84%, var(--ink-slate));
 }
 
 .canvas-shot-subject-prop {
-  background: color-mix(in srgb, #ea580c 84%, #0f172a);
+  background: color-mix(in srgb, var(--cws-ember-2) 84%, var(--ink-slate));
 }
 
 .canvas-shot-facing {
@@ -4131,9 +4165,9 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   width: 22px;
   height: 22px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--canvas-accent-rose) 84%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--canvas-accent-rose) 84%, var(--white));
   border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--canvas-accent-rose) 82%, #111827);
+  background: color-mix(in srgb, var(--canvas-accent-rose) 82%, var(--ink-slate));
   color: var(--text-inverse);
   cursor: grab;
   font-size: var(--font-2xs);
@@ -4156,12 +4190,12 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     ),
     linear-gradient(
       180deg,
-      color-mix(in srgb, #0f172a 88%, var(--panel)) 0 39%,
-      color-mix(in srgb, #111827 86%, var(--bg-sunken)) 39% 100%
+      color-mix(in srgb, var(--ink-slate) 88%, var(--panel)) 0 39%,
+      color-mix(in srgb, var(--ink-slate) 86%, var(--bg-sunken)) 39% 100%
     );
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -80px 120px rgba(0, 0, 0, 0.28);
+    inset 0 1px 0 color-mix(in srgb, var(--white) 8%, transparent),
+    inset 0 -80px 120px color-mix(in srgb, var(--black) 28%, transparent);
 }
 
 .canvas-shot-3d-stage::before {
@@ -4181,7 +4215,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
       color-mix(in srgb, var(--canvas-accent-cyan) 16%, transparent) 1px,
       transparent 1px
     ),
-    linear-gradient(180deg, color-mix(in srgb, #111827 34%, transparent), transparent);
+    linear-gradient(180deg, color-mix(in srgb, var(--ink-slate) 34%, transparent), transparent);
   background-size:
     100% 34px,
     44px 100%,
@@ -4227,23 +4261,23 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   gap: var(--pad-sm);
   align-items: center;
   padding: var(--pad-sm) var(--pad-sm);
-  border: 1px solid color-mix(in srgb, #ffffff 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--white) 16%, transparent);
   border-radius: var(--r-md);
-  background: rgba(15, 23, 42, 0.56);
-  color: #e5e7eb;
+  background: color-mix(in srgb, var(--ink-slate) 56%, transparent);
+  color: var(--canvas-slate-200);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
 
 .canvas-shot-3d-frame span,
 .canvas-shot-3d-frame em {
-  color: #a5b4fc;
+  color: var(--cws-blue-3);
   font-size: var(--font-xs);
   font-style: normal;
 }
 
 .canvas-shot-3d-frame strong {
-  color: #f8fafc;
+  color: var(--white);
   font-size: var(--font-sm);
 }
 
@@ -4268,12 +4302,12 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   width: 42px;
   min-height: 48px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.56);
+  border: 1px solid color-mix(in srgb, var(--white) 56%, transparent);
   border-radius: 999px 999px 14px 14px;
   color: var(--text-inverse);
   box-shadow:
-    0 18px 28px rgba(0, 0, 0, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    0 18px 28px color-mix(in srgb, var(--black) 32%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--white) 22%, transparent);
 }
 
 .canvas-shot-3d-subject::after {
@@ -4283,18 +4317,18 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   left: -11px;
   height: 14px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.28);
+  background: color-mix(in srgb, var(--black) 28%, transparent);
   content: '';
   filter: blur(2px);
   transform: rotateX(62deg);
 }
 
 .canvas-shot-3d-character {
-  background: linear-gradient(180deg, var(--success), #047857);
+  background: linear-gradient(180deg, var(--success), var(--cws-cyan-5));
 }
 
 .canvas-shot-3d-prop {
-  background: linear-gradient(180deg, #fb923c, #c2410c);
+  background: linear-gradient(180deg, var(--cws-ember-1), var(--cws-ember-3));
 }
 
 .canvas-shot-3d-subject strong {
@@ -4307,7 +4341,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   position: absolute;
   bottom: 5px;
   z-index: 1;
-  color: rgba(255, 255, 255, 0.78);
+  color: color-mix(in srgb, var(--white) 78%, transparent);
   font-size: var(--font-2xs);
   font-style: normal;
 }
@@ -4320,7 +4354,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   width: 2px;
   height: 18px;
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--white) 90%, transparent);
   transform-origin: 50% 48px;
 }
 
@@ -4330,8 +4364,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   left: 50%;
   width: 7px;
   height: 7px;
-  border-top: 2px solid rgba(255, 255, 255, 0.9);
-  border-right: 2px solid rgba(255, 255, 255, 0.9);
+  border-top: 2px solid color-mix(in srgb, var(--white) 90%, transparent);
+  border-right: 2px solid color-mix(in srgb, var(--white) 90%, transparent);
   content: '';
   transform: translateX(-50%) rotate(-45deg);
 }
@@ -4341,13 +4375,13 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   width: 36px;
   height: 36px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--canvas-accent-cyan) 80%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--canvas-accent-cyan) 80%, var(--white));
   border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--canvas-accent-cyan) 24%, #020617);
-  color: #67e8f9;
+  background: color-mix(in srgb, var(--canvas-accent-cyan) 24%, var(--cws-blue-9));
+  color: var(--cws-cyan-2);
   box-shadow:
-    0 18px 30px rgba(34, 211, 238, 0.18),
-    0 12px 26px rgba(0, 0, 0, 0.34);
+    0 18px 30px color-mix(in srgb, var(--canvas-cyan) 18%, transparent),
+    0 12px 26px color-mix(in srgb, var(--black) 34%, transparent);
 }
 
 .canvas-shot-3d-keyframe {
@@ -4355,13 +4389,13 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   width: 22px;
   height: 22px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.72);
+  border: 1px solid color-mix(in srgb, var(--white) 72%, transparent);
   border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--canvas-accent-rose) 84%, #111827);
+  background: color-mix(in srgb, var(--canvas-accent-rose) 84%, var(--ink-slate));
   color: var(--text-inverse);
   font-size: var(--font-2xs);
   font-weight: 800;
-  box-shadow: 0 12px 22px rgba(244, 63, 94, 0.22);
+  box-shadow: 0 12px 22px color-mix(in srgb, var(--cws-red-2) 22%, transparent);
 }
 
 .canvas-shot-3d-camera.selected,
@@ -4567,7 +4601,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   gap: var(--pad-3xs);
   height: 24px;
   padding: 0 var(--pad-sm);
-  border: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--white) 6%, transparent);
   border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--panel) 3%, transparent);
   color: var(--text-muted);
@@ -4646,7 +4680,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-prompt-library-entry:hover,
 .canvas-node-edit-prompt-entry:hover {
   border-color: var(--primary);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--ink-slate) 8%, transparent);
   transform: translateY(-1px);
 }
 
@@ -5916,11 +5950,11 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
   border-radius: var(--r-xl);
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 5%, transparent), transparent 120px),
     var(--canvas-edit-bg);
   box-shadow:
-    0 26px 70px rgba(0, 0, 0, 0.34),
-    0 4px 14px rgba(0, 0, 0, 0.22);
+    0 26px 70px color-mix(in srgb, var(--black) 34%, transparent),
+    0 4px 14px color-mix(in srgb, var(--black) 22%, transparent);
   pointer-events: auto;
 }
 
@@ -6003,16 +6037,16 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 // ════════════════════════════════════════════════════════════════════════
 .canvas-stage-area {
   --canvas-float-bottom: 12px;
-  --canvas-float-bg-solid: rgba(30, 30, 30, 0.78);
-  --canvas-float-border-subtle: rgba(255, 255, 255, 0.13);
-  --canvas-float-divider-subtle: rgba(255, 255, 255, 0.1);
-  --canvas-float-icon: rgba(255, 255, 255, 0.78);
-  --canvas-float-icon-strong: rgba(255, 255, 255, 0.9);
-  --canvas-float-hover: rgba(255, 255, 255, 0.07);
-  --canvas-float-active: rgba(255, 255, 255, 0.1);
+  --canvas-float-bg-solid: color-mix(in srgb, var(--cws-ink-1) 78%, transparent);
+  --canvas-float-border-subtle: color-mix(in srgb, var(--white) 13%, transparent);
+  --canvas-float-divider-subtle: color-mix(in srgb, var(--white) 10%, transparent);
+  --canvas-float-icon: color-mix(in srgb, var(--white) 78%, transparent);
+  --canvas-float-icon-strong: color-mix(in srgb, var(--white) 90%, transparent);
+  --canvas-float-hover: color-mix(in srgb, var(--white) 7%, transparent);
+  --canvas-float-active: color-mix(in srgb, var(--white) 10%, transparent);
   --canvas-float-shadow:
-    0 20px 52px rgba(0, 0, 0, 0.46), 0 8px 18px rgba(0, 0, 0, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    0 20px 52px color-mix(in srgb, var(--black) 46%, transparent), 0 8px 18px color-mix(in srgb, var(--black) 24%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--white) 7%, transparent);
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -6187,11 +6221,11 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border: 1px solid color-mix(in srgb, var(--border-strong) 68%, transparent);
   border-radius: var(--r-lg);
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 6%, transparent), transparent),
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 6%, transparent), transparent),
     var(--canvas-edit-bg);
   box-shadow:
-    0 18px 42px rgba(0, 0, 0, 0.3),
-    0 2px 8px rgba(0, 0, 0, 0.2);
+    0 18px 42px color-mix(in srgb, var(--black) 30%, transparent),
+    0 2px 8px color-mix(in srgb, var(--black) 20%, transparent);
   overflow-x: auto;
 }
 
@@ -6327,7 +6361,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     background: var(--panel);
     border: 1px solid color-mix(in srgb, var(--divider) 86%, transparent);
     border-radius: var(--r-lg);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+    box-shadow: 0 12px 32px color-mix(in srgb, var(--black) 28%, transparent);
   }
 }
 
@@ -6373,8 +6407,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border-radius: 0;
 
   box-shadow:
-    0 20px 54px rgba(0, 0, 0, 0.3),
-    0 2px 10px rgba(0, 0, 0, 0.18);
+    0 20px 54px color-mix(in srgb, var(--black) 30%, transparent),
+    0 2px 10px color-mix(in srgb, var(--black) 18%, transparent);
 }
 
 .canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen) {
@@ -6497,7 +6531,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-media-input-configurator {
-  --media-role-color: #27c2b8;
+  --media-role-color: var(--cws-cyan-4);
   display: flex;
   width: 100%;
   min-width: 0;
@@ -6534,10 +6568,10 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   height: 22px;
   align-items: center;
   justify-content: center;
-  border: 1px solid color-mix(in srgb, #27c2b8 32%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cws-cyan-4) 32%, transparent);
   border-radius: var(--r-md);
-  background: color-mix(in srgb, #27c2b8 11%, transparent);
-  color: #5edbd1;
+  background: color-mix(in srgb, var(--cws-cyan-4) 11%, transparent);
+  color: var(--cws-cyan-3);
 }
 
 .canvas-media-input-configurator-title strong {
@@ -6602,8 +6636,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   height: 6px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #27c2b8;
-  box-shadow: 0 0 0 3px color-mix(in srgb, #27c2b8 13%, transparent);
+  background: var(--cws-cyan-4);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cws-cyan-4) 13%, transparent);
 }
 
 .canvas-media-input-capability-tip,
@@ -6619,7 +6653,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-media-input-resource-tip span,
 .canvas-media-input-capability-tip small,
 .canvas-media-input-resource-tip small {
-  color: rgba(255, 255, 255, 0.66);
+  color: color-mix(in srgb, var(--white) 66%, transparent);
 }
 
 .canvas-media-input-track {
@@ -6663,7 +6697,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-media-input-tile {
-  --media-role-color: #27c2b8;
+  --media-role-color: var(--cws-cyan-4);
   position: relative;
   width: 64px;
   min-width: 64px;
@@ -6695,7 +6729,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--bg-sunken) 86%, transparent);
   color: var(--text-muted);
-  box-shadow: inset 0 -18px 24px rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 -18px 24px color-mix(in srgb, var(--black) 10%, transparent);
   transition:
     border-color 140ms ease,
     transform 140ms ease;
@@ -6738,8 +6772,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   justify-content: center;
   padding: 0 var(--pad-3xs);
   border-radius: var(--r-sm);
-  background: rgba(8, 10, 13, 0.74);
-  color: rgba(255, 255, 255, 0.86);
+  background: color-mix(in srgb, var(--canvas-stage-bg) 74%, transparent);
+  color: color-mix(in srgb, var(--white) 86%, transparent);
   font-size: var(--font-2xs);
   font-weight: 700;
   backdrop-filter: blur(6px);
@@ -6753,7 +6787,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   padding: 1px var(--pad-xs);
   overflow: hidden;
   border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--media-role-color) 82%, #101419);
+  background: color-mix(in srgb, var(--media-role-color) 82%, var(--cws-blue-7));
   color: var(--text-inverse);
   font-size: var(--font-2xs);
   font-weight: 700;
@@ -6770,7 +6804,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   gap: 1px;
   padding: 2px;
   border-radius: var(--r-sm);
-  background: rgba(8, 10, 13, 0.82);
+  background: color-mix(in srgb, var(--canvas-stage-bg) 82%, transparent);
   opacity: 0;
   transform: translateY(-2px);
   transition:
@@ -6790,7 +6824,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   width: 18px !important;
   height: 18px !important;
   padding: 0 !important;
-  color: rgba(255, 255, 255, 0.8) !important;
+  color: color-mix(in srgb, var(--white) 80%, transparent) !important;
 }
 
 .canvas-media-input-tile-name {
@@ -6992,7 +7026,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     padding: 0;
     border: 0;
     border-radius: var(--r-sm);
-    background: color-mix(in srgb, #050505 72%, transparent);
+    background: color-mix(in srgb, var(--black) 72%, transparent);
     color: var(--text-inverse);
     cursor: pointer;
   }
@@ -7139,7 +7173,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   align-items: center;
   justify-content: center;
   border-radius: var(--r-pill);
-  background: color-mix(in srgb, #050505 68%, transparent);
+  background: color-mix(in srgb, var(--black) 68%, transparent);
   color: var(--text-inverse);
 }
 
@@ -7190,8 +7224,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     padding: 0;
     border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
     border-radius: var(--r-lg);
-    background: color-mix(in srgb, var(--panel) 94%, #050505);
-    box-shadow: 0 18px 44px color-mix(in srgb, #000 42%, transparent);
+    background: color-mix(in srgb, var(--panel) 94%, var(--black));
+    box-shadow: 0 18px 44px color-mix(in srgb, var(--black) 42%, transparent);
   }
 
   .ant-popover-inner-content {
@@ -7867,20 +7901,20 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   :where(.canvas-operation-panel.is-composer, .canvas-node-edit-bottom-panel.is-composer)
   .canvas-operation-composer-submit.ant-btn-primary {
   background: var(--panel) !important;
-  color: #0a0a0a !important;
-  border: 1px solid color-mix(in srgb, #ffffff 22%, transparent) !important;
+  color: var(--canvas-stage-bg) !important;
+  border: 1px solid color-mix(in srgb, var(--white) 22%, transparent) !important;
   font-weight: 650;
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.16),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    0 1px 2px color-mix(in srgb, var(--black) 16%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--white) 4%, transparent);
 
   &:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--panel) 94%, #e8e8e8) !important;
-    color: #000 !important;
+    background: color-mix(in srgb, var(--panel) 94%, var(--cws-paper-2)) !important;
+    color: var(--black) !important;
   }
 
   svg {
-    color: #0a0a0a !important;
+    color: var(--canvas-stage-bg) !important;
   }
 }
 
@@ -7897,15 +7931,15 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--bg-sunken) 92%, #050505);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+  background: color-mix(in srgb, var(--bg-sunken) 92%, var(--black));
+  box-shadow: 0 18px 42px color-mix(in srgb, var(--black) 42%, transparent);
 }
 
 .canvas-media-input-hover-preview-media {
   width: 100%;
   aspect-ratio: 16 / 10;
   overflow: hidden;
-  background: #050505;
+  background: var(--black);
 
   img {
     width: 100%;
@@ -8287,7 +8321,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-bottom-dock .ant-btn-primary:not(:disabled):not(.ant-btn-disabled) {
   background: var(--canvas-float-active);
   color: var(--canvas-float-icon-strong);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--white) 8%, transparent);
 }
 
 .canvas-bottom-dock .ant-btn-dangerous,
@@ -8297,7 +8331,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-bottom-dock .ant-btn:disabled,
 .canvas-bottom-dock .ant-btn.ant-btn-disabled {
-  color: rgba(255, 255, 255, 0.26);
+  color: color-mix(in srgb, var(--white) 26%, transparent);
   background: transparent;
 }
 
@@ -8324,7 +8358,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-dock-tool-active {
   color: var(--canvas-float-icon-strong) !important;
   background: var(--canvas-float-active) !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--white) 8%, transparent);
 }
 
 .canvas-bottom-dock-divider {
@@ -8357,11 +8391,11 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
   border-radius: var(--r-lg);
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent),
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 5%, transparent), transparent),
     var(--canvas-edit-bg);
   box-shadow:
-    0 22px 56px rgba(0, 0, 0, 0.32),
-    0 4px 12px rgba(0, 0, 0, 0.2);
+    0 22px 56px color-mix(in srgb, var(--black) 32%, transparent),
+    0 4px 12px color-mix(in srgb, var(--black) 20%, transparent);
 }
 
 .canvas-dock-add-dropdown:hover .canvas-dock-add-dropdown-panel,
@@ -8398,11 +8432,11 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
   border-radius: var(--r-lg);
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent),
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 5%, transparent), transparent),
     var(--canvas-edit-bg);
   box-shadow:
-    0 22px 56px rgba(0, 0, 0, 0.32),
-    0 4px 12px rgba(0, 0, 0, 0.2);
+    0 22px 56px color-mix(in srgb, var(--black) 32%, transparent),
+    0 4px 12px color-mix(in srgb, var(--black) 20%, transparent);
 }
 
 // 画布弹层细圆头滚动条：局部覆盖全局 *::-webkit-scrollbar{width:0!important} 隐藏规则。
@@ -8499,7 +8533,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   --canvas-op-tint: #9333ea;
 }
 .canvas-op-color-video {
-  --canvas-op-tint: #ea580c;
+  --canvas-op-tint: var(--cws-ember-2);
 }
 .canvas-op-color-resource {
   --canvas-op-tint: #64748b;
@@ -8540,7 +8574,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   padding: var(--pad-3xs);
   border: 1px solid var(--divider);
   border-radius: var(--r-md);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--black) 18%, transparent);
   overflow: visible;
 }
 
@@ -8600,7 +8634,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   padding: var(--pad-3xs);
   border: 1px solid var(--divider);
   border-radius: var(--r-md);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--black) 18%, transparent);
   overflow-y: auto;
 }
 
@@ -9088,7 +9122,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.32);
+  background: color-mix(in srgb, var(--black) 32%, transparent);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
 }
@@ -9126,8 +9160,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 [data-theme='light'] .canvas-film-center {
   --canvas-film-surface: color-mix(in srgb, var(--panel) 86%, var(--bg-sunken));
-  --canvas-film-card: color-mix(in srgb, #ffffff 94%, var(--bg-sunken));
-  --canvas-film-card-strong: color-mix(in srgb, #ffffff 96%, var(--bg-soft));
+  --canvas-film-card: color-mix(in srgb, var(--white) 94%, var(--bg-sunken));
+  --canvas-film-card-strong: color-mix(in srgb, var(--white) 96%, var(--bg-soft));
 }
 
 .canvas-film-center-title {
@@ -9189,7 +9223,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.28);
+  background: color-mix(in srgb, var(--black) 28%, transparent);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
 }
@@ -9254,9 +9288,9 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
   border-radius: 18px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 4%, transparent), transparent),
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 4%, transparent), transparent),
     var(--canvas-character-library-surface);
-  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 18px 36px color-mix(in srgb, var(--black) 18%, transparent);
 }
 
 .canvas-character-library-preview-card {
@@ -9285,7 +9319,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
   border-radius: var(--r-xl);
   overflow: hidden;
-  background: color-mix(in srgb, var(--canvas-character-library-surface) 94%, #181b20);
+  background: color-mix(in srgb, var(--canvas-character-library-surface) 94%, var(--cws-blue-5));
   color: inherit;
   cursor: pointer;
   transition:
@@ -9296,7 +9330,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   &:hover {
     transform: translateY(-1px);
     border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
-    box-shadow: 0 16px 24px rgba(0, 0, 0, 0.18);
+    box-shadow: 0 16px 24px color-mix(in srgb, var(--black) 18%, transparent);
   }
 
   &.kind-full_body,
@@ -9307,7 +9341,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-character-library-overview-thumb {
   min-height: 160px;
-  background: color-mix(in srgb, var(--bg-soft) 82%, #101216);
+  background: color-mix(in srgb, var(--bg-soft) 82%, var(--canvas-stage-bg-2));
 }
 
 .canvas-character-library-overview-meta {
@@ -9339,8 +9373,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-character-subview-svg {
   object-fit: contain;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.045), transparent),
-    color-mix(in srgb, var(--bg-soft) 92%, #0f1013);
+    linear-gradient(135deg, color-mix(in srgb, var(--white) 4.5%, transparent), transparent),
+    color-mix(in srgb, var(--bg-soft) 92%, var(--cws-blue-7));
 }
 
 .canvas-character-subview-fallback {
@@ -9349,8 +9383,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   justify-content: center;
   color: var(--text-dim);
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent),
-    color-mix(in srgb, var(--bg-soft) 84%, #0f1013);
+    linear-gradient(135deg, color-mix(in srgb, var(--white) 3%, transparent), transparent),
+    color-mix(in srgb, var(--bg-soft) 84%, var(--cws-blue-7));
 }
 
 .canvas-character-library-detail {
@@ -9421,7 +9455,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-character-library-subview-card {
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--canvas-character-library-surface) 92%, #1f1f1f);
+  background: color-mix(in srgb, var(--canvas-character-library-surface) 92%, var(--cws-char));
   overflow: hidden;
   padding: 0;
   color: inherit;
@@ -9434,7 +9468,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   &:hover {
     transform: translateY(-1px);
     border-color: color-mix(in srgb, var(--canvas-accent-cyan) 46%, var(--border));
-    box-shadow: 0 12px 22px rgba(0, 0, 0, 0.16);
+    box-shadow: 0 12px 22px color-mix(in srgb, var(--black) 16%, transparent);
   }
 
   &.is-active {
@@ -9446,7 +9480,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-character-library-subview-thumb {
   height: 112px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--bg-soft) 82%, #111317);
+  background: color-mix(in srgb, var(--bg-soft) 82%, var(--cws-blue-7));
 }
 
 .canvas-character-library-subview-info {
@@ -9485,8 +9519,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   border-radius: var(--r-xl);
   padding: 0;
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 3%, transparent), transparent),
-    color-mix(in srgb, var(--canvas-character-library-surface) 92%, #1f1f1f);
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 3%, transparent), transparent),
+    color-mix(in srgb, var(--canvas-character-library-surface) 92%, var(--cws-char));
   overflow: hidden;
   color: inherit;
   cursor: pointer;
@@ -9504,7 +9538,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     border-color: color-mix(in srgb, var(--primary) 68%, var(--canvas-accent-cyan));
     box-shadow:
       0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent),
-      0 16px 24px rgba(0, 0, 0, 0.18);
+      0 16px 24px color-mix(in srgb, var(--black) 18%, transparent);
   }
 }
 
@@ -9512,7 +9546,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   min-height: 0;
   height: 166px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--bg-soft) 82%, #0f1013);
+  background: color-mix(in srgb, var(--bg-soft) 82%, var(--cws-blue-7));
 }
 
 .canvas-character-library-card-text {
@@ -9656,23 +9690,23 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   height: 100%;
   overflow: hidden;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent),
+    linear-gradient(135deg, color-mix(in srgb, var(--white) 3%, transparent), transparent),
     radial-gradient(
       circle at top left,
       color-mix(in srgb, var(--canvas-accent-cyan) 8%, transparent),
       transparent 30%
     ),
-    #101216;
+    var(--cws-blue-7);
 
   &.is-ready {
     background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.02), transparent),
+      linear-gradient(135deg, color-mix(in srgb, var(--white) 2%, transparent), transparent),
       radial-gradient(
         circle at top left,
         color-mix(in srgb, var(--canvas-accent-cyan) 8%, transparent),
         transparent 26%
       ),
-      #0d1015;
+      var(--cws-blue-7);
   }
 
   &.canvas-character-subview-stage-crop {
@@ -9707,9 +9741,9 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     align-items: center;
     padding: var(--pad-xs) var(--pad-sm);
     border-radius: var(--r-pill);
-    background: rgba(10, 12, 16, 0.72);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: rgba(247, 250, 252, 0.88);
+    background: color-mix(in srgb, var(--canvas-stage-bg) 72%, transparent);
+    border: 1px solid color-mix(in srgb, var(--white) 8%, transparent);
+    color: color-mix(in srgb, var(--white) 88%, transparent);
     font-size: var(--font-sm);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
@@ -9728,28 +9762,28 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-character-subview-box {
   position: absolute;
   z-index: 2;
-  border: 2px solid color-mix(in srgb, var(--canvas-accent-cyan) 72%, #ffffff);
+  border: 2px solid color-mix(in srgb, var(--canvas-accent-cyan) 72%, var(--white));
   background: color-mix(in srgb, var(--canvas-accent-cyan) 12%, transparent);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--white) 14%, transparent);
   border-radius: var(--r-lg);
   cursor: move;
   padding: 0;
   color: inherit;
 
   &.is-active {
-    border-color: color-mix(in srgb, #ffd166 64%, var(--canvas-accent-cyan));
-    background: color-mix(in srgb, #ffd166 14%, transparent);
+    border-color: color-mix(in srgb, var(--cws-amber-2) 64%, var(--canvas-accent-cyan));
+    background: color-mix(in srgb, var(--cws-amber-2) 14%, transparent);
   }
 
   &.is-draft {
     pointer-events: none;
     border-style: dashed;
-    border-color: color-mix(in srgb, #7dd3fc 80%, #ffffff);
-    background: color-mix(in srgb, #38bdf8 12%, transparent);
+    border-color: color-mix(in srgb, var(--cws-cyan-1) 80%, var(--white));
+    background: color-mix(in srgb, var(--canvas-sky) 12%, transparent);
   }
 
   &.is-too-small {
-    border-color: color-mix(in srgb, var(--warning) 78%, #ffffff);
+    border-color: color-mix(in srgb, var(--warning) 78%, var(--white));
     background: color-mix(in srgb, var(--warning) 14%, transparent);
   }
 }
@@ -9770,8 +9804,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   max-width: calc(100% - 16px);
   padding: var(--pad-3xs) var(--pad-sm);
   border-radius: var(--r-pill);
-  background: rgba(10, 12, 16, 0.78);
-  color: #f7fafc;
+  background: color-mix(in srgb, var(--canvas-stage-bg) 78%, transparent);
+  color: var(--white);
   font-size: var(--font-sm);
   white-space: nowrap;
   overflow: hidden;
@@ -9783,8 +9817,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   width: 12px;
   height: 12px;
   border-radius: var(--r-pill);
-  border: 2px solid #0d0f14;
-  background: #f8fafc;
+  border: 2px solid var(--canvas-stage-bg-2);
+  background: var(--white);
 
   &.handle-nw {
     left: -6px;
@@ -9821,7 +9855,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-character-subview-side-preview {
   overflow: hidden;
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--bg-soft) 82%, #101216);
+  background: color-mix(in srgb, var(--bg-soft) 82%, var(--canvas-stage-bg-2));
 }
 
 .canvas-character-subview-side-fields {
@@ -9971,8 +10005,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-film-manuscript-card:hover {
-  border-color: color-mix(in srgb, #8b5cf6 55%, var(--border));
-  box-shadow: 0 4px 16px -8px color-mix(in srgb, #8b5cf6 50%, transparent);
+  border-color: color-mix(in srgb, var(--violet) 55%, var(--border));
+  box-shadow: 0 4px 16px -8px color-mix(in srgb, var(--violet) 50%, transparent);
 }
 
 .canvas-film-manuscript-card:active {
@@ -9987,8 +10021,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   height: 40px;
   border-radius: var(--r-md);
   flex-shrink: 0;
-  color: #8b5cf6;
-  background: color-mix(in srgb, #8b5cf6 14%, transparent);
+  color: var(--violet);
+  background: color-mix(in srgb, var(--violet) 14%, transparent);
 }
 
 .canvas-film-manuscript-card-main {
@@ -10059,8 +10093,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     transform 0.05s;
 
   &:hover {
-    border-color: color-mix(in srgb, #8b5cf6 55%, var(--border));
-    box-shadow: 0 4px 16px -8px color-mix(in srgb, #8b5cf6 50%, transparent);
+    border-color: color-mix(in srgb, var(--violet) 55%, var(--border));
+    box-shadow: 0 4px 16px -8px color-mix(in srgb, var(--violet) 50%, transparent);
   }
 
   &:active {
@@ -10074,7 +10108,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   gap: var(--pad-xs);
   font-size: var(--font-xs);
   font-weight: 700;
-  color: color-mix(in srgb, #8b5cf6 80%, var(--primary));
+  color: color-mix(in srgb, var(--violet) 80%, var(--primary));
   letter-spacing: 0.04em;
 }
 
@@ -10189,7 +10223,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-film-asset-card-preview {
   font-size: var(--font-xs);
   line-height: 1.45;
-  color: rgba(255, 255, 255, 0.8);
+  color: color-mix(in srgb, var(--white) 80%, transparent);
   margin-top: var(--pad-3xs);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -10210,7 +10244,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   justify-content: center;
   padding: var(--pad-3xs);
   border-radius: var(--r-sm);
-  background: rgba(0, 0, 0, 0.55);
+  background: color-mix(in srgb, var(--black) 55%, transparent);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   opacity: 0;
@@ -10221,14 +10255,14 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     transform 0.16s ease;
 
   .ant-btn {
-    color: rgba(255, 255, 255, 0.88);
+    color: color-mix(in srgb, var(--white) 88%, transparent);
 
     &:hover {
-      background: rgba(255, 255, 255, 0.18);
+      background: color-mix(in srgb, var(--white) 18%, transparent);
       color: var(--text-inverse);
     }
     &[disabled] {
-      color: rgba(255, 255, 255, 0.35);
+      color: color-mix(in srgb, var(--white) 35%, transparent);
     }
   }
 }
@@ -10464,7 +10498,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   th,
   td {
     padding: var(--pad-xs) var(--pad-sm);
-    border-bottom: 1px solid var(--canvas-border, rgba(0, 0, 0, 0.08));
+    border-bottom: 1px solid var(--canvas-border, color-mix(in srgb, var(--black) 8%, transparent));
     text-align: left;
     vertical-align: top;
   }
@@ -10473,14 +10507,14 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     position: sticky;
     top: 0;
     z-index: 1;
-    background: var(--canvas-panel-bg, rgba(255, 255, 255, 0.04));
+    background: var(--canvas-panel-bg, color-mix(in srgb, var(--white) 4%, transparent));
     font-weight: 600;
     white-space: nowrap;
     color: var(--lobe-color-text-secondary, #888);
   }
 
   tbody tr:hover {
-    background: var(--canvas-row-hover, rgba(0, 0, 0, 0.03));
+    background: var(--canvas-row-hover, color-mix(in srgb, var(--black) 3%, transparent));
   }
 
   .canvas-shot-table-desc {
@@ -10504,23 +10538,23 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
     .ant-table-thead > tr > th {
       position: relative;
-      background: var(--canvas-panel-bg, rgba(255, 255, 255, 0.04));
+      background: var(--canvas-panel-bg, color-mix(in srgb, var(--white) 4%, transparent));
       color: var(--lobe-color-text-secondary, #888);
       font-weight: 600;
       white-space: nowrap;
       padding: var(--pad-sm);
-      border-bottom: 1px solid var(--canvas-border, rgba(0, 0, 0, 0.08));
+      border-bottom: 1px solid var(--canvas-border, color-mix(in srgb, var(--black) 8%, transparent));
     }
 
     .ant-table-tbody > tr > td {
       padding: var(--pad-xs) var(--pad-sm);
       vertical-align: top;
-      border-bottom: 1px solid var(--canvas-border, rgba(0, 0, 0, 0.08));
+      border-bottom: 1px solid var(--canvas-border, color-mix(in srgb, var(--black) 8%, transparent));
       word-break: break-word;
     }
 
     .ant-table-tbody > tr:hover > td {
-      background: var(--canvas-row-hover, rgba(0, 0, 0, 0.03));
+      background: var(--canvas-row-hover, color-mix(in srgb, var(--black) 3%, transparent));
     }
   }
 
@@ -10659,7 +10693,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   th,
   td {
     padding: var(--pad-xs) var(--pad-xs);
-    border-bottom: 1px solid var(--canvas-border, rgba(0, 0, 0, 0.08));
+    border-bottom: 1px solid var(--canvas-border, color-mix(in srgb, var(--black) 8%, transparent));
     text-align: left;
     vertical-align: top;
     word-break: break-word;
@@ -10679,7 +10713,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   }
 
   tbody tr:hover {
-    background: var(--canvas-row-hover, rgba(0, 0, 0, 0.03));
+    background: var(--canvas-row-hover, color-mix(in srgb, var(--black) 3%, transparent));
   }
 
   // 列宽由 <colgroup> 的 <col> 元素锚定（table-layout:fixed 下最可靠）
@@ -11394,9 +11428,9 @@ body.canvas-agent-panel-resizing {
   padding: var(--pad-sm) var(--pad-md) var(--pad-md);
   background: linear-gradient(
     to top,
-    rgba(0, 0, 0, 0.82) 0%,
-    rgba(0, 0, 0, 0.6) 55%,
-    rgba(0, 0, 0, 0) 100%
+    color-mix(in srgb, var(--black) 82%, transparent) 0%,
+    color-mix(in srgb, var(--black) 60%, transparent) 55%,
+    color-mix(in srgb, var(--black) 0%, transparent) 100%
   );
   color: var(--text-inverse);
 }
@@ -11412,7 +11446,7 @@ body.canvas-agent-panel-resizing {
   border-radius: var(--r-pill);
   font-size: var(--font-2xs);
   line-height: 14px;
-  background: rgba(0, 0, 0, 0.55);
+  background: color-mix(in srgb, var(--black) 55%, transparent);
   color: var(--text-inverse);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -11422,7 +11456,7 @@ body.canvas-agent-panel-resizing {
 }
 .canvas-film-asset-card-usage {
   right: 8px;
-  background: color-mix(in srgb, var(--primary) 82%, rgba(0, 0, 0, 0.48));
+  background: color-mix(in srgb, var(--primary) 82%, color-mix(in srgb, var(--black) 48%, transparent));
 }
 .canvas-film-asset-card-tags {
   margin-top: var(--pad-xs);
@@ -11437,16 +11471,16 @@ body.canvas-agent-panel-resizing {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    background: rgba(255, 255, 255, 0.2);
+    background: color-mix(in srgb, var(--white) 20%, transparent);
     color: var(--text-inverse);
-    border: 1px solid rgba(255, 255, 255, 0.24);
+    border: 1px solid color-mix(in srgb, var(--white) 24%, transparent);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
   }
 }
 .canvas-film-asset-card-tagmore {
   font-size: var(--font-xs);
-  color: rgba(255, 255, 255, 0.85);
+  color: color-mix(in srgb, var(--white) 85%, transparent);
 }
 
 .canvas-film-editor-section {
@@ -11530,7 +11564,7 @@ body.canvas-agent-panel-resizing {
   position: absolute;
   top: 2px;
   right: 2px;
-  background: rgba(255, 255, 255, 0.85);
+  background: color-mix(in srgb, var(--white) 85%, transparent);
 }
 .canvas-film-reference-fields {
   display: flex;
@@ -11622,8 +11656,8 @@ body.canvas-agent-panel-resizing {
 }
 
 [data-theme='light'] .canvas-film-save-dialog {
-  --canvas-film-card: color-mix(in srgb, #ffffff 94%, var(--bg-sunken));
-  --canvas-film-card-strong: color-mix(in srgb, #ffffff 96%, var(--bg-soft));
+  --canvas-film-card: color-mix(in srgb, var(--white) 94%, var(--bg-sunken));
+  --canvas-film-card-strong: color-mix(in srgb, var(--white) 96%, var(--bg-soft));
 }
 
 .canvas-film-save-dialog-title {
@@ -11680,7 +11714,7 @@ body.canvas-agent-panel-resizing {
 .canvas-film-save-cover-actions > span {
   padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-sm);
-  background: rgb(0 0 0 / 58%);
+  background: color-mix(in srgb, var(--black) 58%, transparent);
   color: var(--text-inverse);
   font-size: var(--font-xs);
 }
@@ -11822,8 +11856,8 @@ body.canvas-agent-panel-resizing {
   // 不再硬编码近黑色，否则浅色模式下编辑盒子也是暗的。
   background: var(--canvas-edit-bg);
   box-shadow:
-    0 20px 48px rgba(0, 0, 0, 0.3),
-    0 2px 10px rgba(0, 0, 0, 0.18);
+    0 20px 48px color-mix(in srgb, var(--black) 30%, transparent),
+    0 2px 10px color-mix(in srgb, var(--black) 18%, transparent);
 }
 
 .canvas-operation-panel.is-fullscreen {
@@ -11992,7 +12026,7 @@ body.canvas-agent-panel-resizing {
   height: 22px;
   border-radius: var(--r-pill);
   // 浮在缩略图上的删除按钮：用中性深底半透明 + 文字色反白，两种主题下都清晰。
-  background: color-mix(in srgb, #0b0b0b 64%, transparent);
+  background: color-mix(in srgb, var(--cws-ink-2) 64%, transparent);
   box-shadow: none;
 }
 
@@ -12002,7 +12036,7 @@ body.canvas-agent-panel-resizing {
   border-radius: var(--r-md);
   overflow: hidden;
   border: 0;
-  background: color-mix(in srgb, #000000 78%, var(--bg-sunken));
+  background: color-mix(in srgb, var(--black) 78%, var(--bg-sunken));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -12553,12 +12587,12 @@ body.canvas-agent-panel-resizing {
   flex-direction: column;
   gap: var(--pad-sm);
   padding: var(--pad-md);
-  border: 1px solid color-mix(in srgb, #8b5cf6 38%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--violet) 38%, var(--border));
   border-radius: var(--r-lg);
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, #8b5cf6 12%, transparent),
-    color-mix(in srgb, #22d3ee 6%, transparent)
+    color-mix(in srgb, var(--violet) 12%, transparent),
+    color-mix(in srgb, var(--canvas-cyan) 6%, transparent)
   );
 }
 
@@ -12570,7 +12604,7 @@ body.canvas-agent-panel-resizing {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: color-mix(in srgb, #8b5cf6 70%, var(--text));
+  color: color-mix(in srgb, var(--violet) 70%, var(--text));
 }
 
 .canvas-production-next-cta {
@@ -12683,13 +12717,13 @@ body.canvas-agent-panel-resizing {
 
 .canvas-production-stage.is-next {
   .canvas-production-stage-dot {
-    border-color: #8b5cf6;
-    background: color-mix(in srgb, #8b5cf6 16%, var(--canvas-field-bg));
-    color: #8b5cf6;
-    box-shadow: 0 0 0 4px color-mix(in srgb, #8b5cf6 14%, transparent);
+    border-color: var(--violet);
+    background: color-mix(in srgb, var(--violet) 16%, var(--canvas-field-bg));
+    color: var(--violet);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--violet) 14%, transparent);
   }
   .canvas-production-stage-label {
-    color: color-mix(in srgb, #8b5cf6 60%, var(--text));
+    color: color-mix(in srgb, var(--violet) 60%, var(--text));
   }
 }
 
@@ -12701,12 +12735,12 @@ body.canvas-agent-panel-resizing {
 }
 
 .canvas-node-has-role.canvas-node-selected {
-  border-color: color-mix(in srgb, #f8fafc 72%, var(--text-muted));
+  border-color: color-mix(in srgb, var(--white) 72%, var(--text-muted));
   box-shadow: var(--canvas-node-shadow-selected);
 }
 
 [data-theme='light'] .canvas-node-has-role.canvas-node-selected {
-  border-color: color-mix(in srgb, #111827 62%, var(--border-strong));
+  border-color: color-mix(in srgb, var(--ink-slate) 62%, var(--border-strong));
 }
 
 /* 导演台流水线阶段可点击深链 */
@@ -12721,7 +12755,7 @@ body.canvas-agent-panel-resizing {
 }
 
 .canvas-production-stage[role='button']:focus-visible {
-  outline: 2px solid color-mix(in srgb, #8b5cf6 60%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--violet) 60%, transparent);
   outline-offset: 1px;
 }
 
@@ -13034,7 +13068,7 @@ body.canvas-agent-panel-resizing {
   border-radius: var(--r-xl);
   background: color-mix(in srgb, var(--canvas-float-bg) 92%, transparent);
   box-shadow:
-    0 22px 68px rgba(0, 0, 0, 0.28),
+    0 22px 68px color-mix(in srgb, var(--black) 28%, transparent),
     inset 0 0 0 1px color-mix(in srgb, var(--divider) 38%, transparent);
   color: var(--text);
   text-align: center;
@@ -13060,7 +13094,7 @@ body.canvas-agent-panel-resizing {
 .canvas-panorama-state-error {
   background: color-mix(in srgb, var(--danger-bg) 72%, var(--canvas-float-bg));
   box-shadow:
-    0 22px 68px rgba(0, 0, 0, 0.28),
+    0 22px 68px color-mix(in srgb, var(--black) 28%, transparent),
     inset 0 0 0 1px color-mix(in srgb, var(--danger) 26%, transparent);
 }
 
@@ -13090,7 +13124,7 @@ body.canvas-agent-panel-resizing {
   border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--canvas-float-bg) 84%, transparent);
   box-shadow:
-    0 14px 42px rgba(0, 0, 0, 0.2),
+    0 14px 42px color-mix(in srgb, var(--black) 20%, transparent),
     inset 0 0 0 1px color-mix(in srgb, var(--divider) 38%, transparent);
   color: var(--text-strong);
   backdrop-filter: var(--backdrop-blur);
@@ -13328,9 +13362,9 @@ body.canvas-agent-panel-resizing {
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: 22px;
   background:
-    radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.08), transparent 35%),
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--canvas-cyan) 8%, transparent), transparent 35%),
     var(--canvas-edit-bg);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
+  box-shadow: 0 28px 80px color-mix(in srgb, var(--black) 46%, transparent);
 }
 
 /* 把高度约束透传到滚动容器 */
@@ -13352,7 +13386,7 @@ body.canvas-agent-panel-resizing {
   flex: 1;
   min-height: 0;
   padding: 28px 30px 30px;
-  color: rgba(255, 255, 255, 0.9);
+  color: color-mix(in srgb, var(--white) 90%, transparent);
 }
 
 .canvas-shortcut-help-close {
@@ -13367,14 +13401,14 @@ body.canvas-agent-panel-resizing {
   height: 36px;
   border: 0;
   border-radius: var(--r-pill);
-  color: rgba(255, 255, 255, 0.82);
+  color: color-mix(in srgb, var(--white) 82%, transparent);
   background: transparent;
   cursor: pointer;
 }
 
 .canvas-shortcut-help-close:hover {
   color: var(--text-inverse);
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--white) 8%, transparent);
 }
 
 .canvas-shortcut-help-grid {
@@ -13391,7 +13425,7 @@ body.canvas-agent-panel-resizing {
 .canvas-shortcut-help-column {
   min-width: 0;
   padding: 0 22px;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid color-mix(in srgb, var(--white) 10%, transparent);
 }
 
 .canvas-shortcut-help-column:nth-child(3n) {
@@ -13422,7 +13456,7 @@ body.canvas-agent-panel-resizing {
 
 .canvas-shortcut-help-row > span:first-child {
   min-width: 0;
-  color: rgba(255, 255, 255, 0.48);
+  color: color-mix(in srgb, var(--white) 48%, transparent);
   font-size: var(--font-md);
   line-height: 1.35;
 }
@@ -13442,13 +13476,13 @@ body.canvas-agent-panel-resizing {
   min-width: 34px;
   min-height: 30px;
   padding: var(--pad-3xs) var(--pad-sm);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid color-mix(in srgb, var(--white) 10%, transparent);
   border-radius: var(--r-md);
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.045);
+  color: color-mix(in srgb, var(--white) 90%, transparent);
+  background: color-mix(in srgb, var(--white) 4.5%, transparent);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+    inset 0 0 0 1px color-mix(in srgb, var(--white) 3%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--white) 8%, transparent);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: var(--font-base);
   font-weight: 650;
@@ -13491,8 +13525,8 @@ body.canvas-agent-panel-resizing {
   border-radius: 24px;
   background: var(--canvas-edit-bg);
   box-shadow:
-    0 24px 64px rgba(15, 23, 42, 0.16),
-    0 10px 28px rgba(15, 23, 42, 0.08);
+    0 24px 64px color-mix(in srgb, var(--ink-slate) 16%, transparent),
+    0 10px 28px color-mix(in srgb, var(--ink-slate) 8%, transparent);
 }
 
 .canvas-operation-preset-dialog .ant-modal-close {
@@ -14080,8 +14114,8 @@ body.canvas-agent-panel-resizing {
   border: 1px solid color-mix(in srgb, var(--primary, #ff5f66) 28%, transparent);
   border-radius: var(--r-pill);
   background: var(--panel-elev, #171a20);
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.3);
-  color: var(--text-strong, #f8fbff);
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--black) 30%, transparent);
+  color: var(--text-strong, var(--cws-blue-1));
   user-select: none;
   overflow-x: auto;
   overscroll-behavior: contain;
@@ -14239,7 +14273,7 @@ body.canvas-agent-panel-resizing {
 .canvas-node-audio-overlay-backdrop {
   position: absolute;
   inset: 8px;
-  background: color-mix(in srgb, var(--bg-soft) 92%, rgba(0, 0, 0, 0.55));
+  background: color-mix(in srgb, var(--bg-soft) 92%, color-mix(in srgb, var(--black) 55%, transparent));
   border-radius: inherit;
   display: flex;
   flex-direction: column;
@@ -14342,7 +14376,7 @@ body.canvas-agent-panel-resizing {
   color: var(--text-strong);
   font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--black) 40%, transparent);
 }
 
 .canvas-node-audio-trim-handle {
@@ -14439,7 +14473,7 @@ body.canvas-agent-panel-resizing {
   background: var(--primary);
   border: 2px solid var(--bg-sunken);
   cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--black) 40%, transparent);
 }
 
 .canvas-node-audio-speed-slider::-moz-range-thumb {

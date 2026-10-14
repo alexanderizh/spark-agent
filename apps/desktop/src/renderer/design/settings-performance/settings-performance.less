@@ -96,7 +96,7 @@
       &.on {
         background: var(--panel);
         color: var(--text-strong);
-        box-shadow: 0 0 2px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 0 2px color-mix(in srgb, var(--black) 5%, transparent);
         font-weight: 500;
       }
     }
@@ -501,8 +501,8 @@
     background: var(--panel-elev);
     border: 1px solid var(--border-strong);
     box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.05),
-      0 4px 16px rgba(0, 0, 0, 0.08);
+      0 0 0 1px color-mix(in srgb, var(--black) 5%, transparent),
+      0 4px 16px color-mix(in srgb, var(--black) 8%, transparent);
     font-family: var(--font-mono);
     font-size: var(--font-xs);
     color: var(--text);

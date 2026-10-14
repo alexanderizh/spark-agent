@@ -2,6 +2,12 @@
  * 卡片式工作台：以留白、低饱和色面和细腻动效建立层级，避免模板化后台感。
  */
 
+
+/* 数据色板（sav 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+
+}
+
 .sub-apps-view {
   display: flex;
   flex-direction: column;
@@ -152,7 +158,7 @@
   &.is-active {
     color: var(--text-strong, var(--text));
     background: var(--panel);
-    box-shadow: 0 2px 7px rgb(0 0 0 / 8%);
+    box-shadow: 0 2px 7px color-mix(in srgb, var(--black) 8%, transparent);
   }
 }
 
@@ -208,7 +214,7 @@
   border: 1px solid color-mix(in srgb, var(--sa-accent) 8%, transparent);
   border-radius: 20px;
   background: var(--sa-card-bg);
-  box-shadow: 0 1px 0 rgb(0 0 0 / 5%);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--black) 5%, transparent);
   isolation: isolate;
   opacity: 0;
   transform: translateY(16px);
@@ -241,8 +247,8 @@
   &:hover {
     border-color: color-mix(in srgb, var(--sa-accent) 24%, transparent);
     box-shadow:
-      0 18px 44px rgb(0 0 0 / 9%),
-      0 2px 8px rgb(0 0 0 / 4%);
+      0 18px 44px color-mix(in srgb, var(--black) 9%, transparent),
+      0 2px 8px color-mix(in srgb, var(--black) 4%, transparent);
     transform: translateY(-5px);
   }
 
@@ -313,7 +319,7 @@
   color: var(--sa-accent);
   border: 1px solid color-mix(in srgb, var(--sa-accent) 22%, var(--border));
   background: color-mix(in srgb, var(--panel) 72%, var(--panel) 28%);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 45%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--white) 45%, transparent);
   overflow: hidden;
 
   svg {
@@ -449,7 +455,7 @@
   width: 74%;
   height: 84%;
   border-radius: var(--r-lg);
-  background: rgb(255 255 255 / 72%);
+  background: color-mix(in srgb, var(--white) 72%, transparent);
   box-shadow: 0 18px 34px color-mix(in srgb, var(--sa-accent) 14%, transparent);
 }
 
@@ -469,7 +475,7 @@
   display: block;
   height: 5px;
   border-radius: var(--r-xs);
-  background: color-mix(in srgb, var(--sa-accent) 24%, white);
+  background: color-mix(in srgb, var(--sa-accent) 24%, var(--white));
 
   &:nth-child(2) {
     width: 72%;
@@ -485,7 +491,7 @@
   height: 62px;
   margin-top: var(--pad-sm);
   border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--sa-accent) 78%, white);
+  background: color-mix(in srgb, var(--sa-accent) 78%, var(--white));
   opacity: 0.82;
 }
 
@@ -548,7 +554,7 @@
   flex: none;
   border-radius: 50%;
   background: var(--panel);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 7%);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--black) 7%, transparent);
 }
 
 .sa-filter-empty {

@@ -1,3 +1,13 @@
+
+/* 数据色板（csh 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  /* 含 2 个 ΔE<3 族内近似色合并 */
+  --csh-ink: #191919;
+  --csh-blue-1: #f1efff;
+  --csh-blue-2: #f1f2f5;
+  --csh-blue-3: #cecaff;
+}
+
 .canvas-workspace.canvas-cinematic {
   .canvas-workspace-header {
     display: flex;
@@ -7,8 +17,8 @@
     gap: var(--pad-lg);
     padding: 0 var(--pad-lg) 0 var(--pad-lg);
     border-bottom: 1px solid var(--canvas-cinema-border);
-    background: rgba(20, 20, 20, 0.97);
-    box-shadow: 0 1px rgba(0, 0, 0, 0.55);
+    background: color-mix(in srgb, var(--csh-ink) 97%, transparent);
+    box-shadow: 0 1px color-mix(in srgb, var(--black) 55%, transparent);
   }
 
   // 独立画布仍保留自己的业务 Header，只消费系统发布的标题栏安全区；
@@ -140,15 +150,15 @@
 
   .canvas-toolbar .canvas-toolbar-agent-button {
     padding-inline: var(--pad-sm);
-    border-color: rgba(119, 108, 246, 0.38);
+    border-color: color-mix(in srgb, var(--canvas-indigo-500) 38%, transparent);
     background: var(--canvas-cinema-accent-soft);
-    color: #cecaff;
+    color: var(--csh-blue-3);
   }
 
   .canvas-toolbar .canvas-toolbar-agent-button:hover:not(:disabled) {
-    border-color: rgba(145, 137, 255, 0.56);
-    background: rgba(119, 108, 246, 0.24);
-    color: #f1efff;
+    border-color: color-mix(in srgb, var(--canvas-indigo-400) 56%, transparent);
+    background: color-mix(in srgb, var(--canvas-indigo-500) 24%, transparent);
+    color: var(--csh-blue-1);
   }
 
   .canvas-workspace-body {
@@ -168,12 +178,12 @@
     --canvas-dot-grid-size: 18px;
     --canvas-dot-grid-offset: 9px;
     background:
-      radial-gradient(circle at 58% 42%, rgba(255, 255, 255, 0.018), transparent 36%),
+      radial-gradient(circle at 58% 42%, color-mix(in srgb, var(--white) 1.8%, transparent), transparent 36%),
       var(--canvas-cinema-stage);
   }
 
   .canvas-stage::before {
-    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0 0.7px, transparent 0.8px);
+    background-image: radial-gradient(circle, color-mix(in srgb, var(--white) 12%, transparent) 0 0.7px, transparent 0.8px);
   }
 
   .canvas-stage-quick-actions {
@@ -194,12 +204,12 @@
     flex-direction: column;
     gap: var(--pad-3xs);
     padding: var(--pad-xs);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid color-mix(in srgb, var(--white) 14%, transparent);
     border-radius: var(--r-lg);
-    background: rgba(25, 25, 25, 0.72);
+    background: color-mix(in srgb, var(--csh-ink) 72%, transparent);
     box-shadow:
-      0 18px 42px rgba(0, 0, 0, 0.34),
-      inset 0 1px rgba(255, 255, 255, 0.08);
+      0 18px 42px color-mix(in srgb, var(--black) 34%, transparent),
+      inset 0 1px color-mix(in srgb, var(--white) 8%, transparent);
     overflow-x: hidden;
     overflow-y: auto;
     transform: translateY(-50%);
@@ -237,7 +247,7 @@
   .canvas-bottom-dock .canvas-dock-tool-active {
     background: var(--canvas-cinema-accent-soft);
     color: var(--canvas-cinema-accent-bright);
-    box-shadow: inset 0 0 0 1px rgba(119, 108, 246, 0.28);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--canvas-indigo-500) 28%, transparent);
   }
 
   .canvas-bottom-dock-divider {
@@ -254,8 +264,8 @@
   .canvas-minimap {
     border-color: var(--canvas-cinema-border);
     border-radius: var(--canvas-cinema-radius-sm);
-    background: rgba(20, 20, 20, 0.92);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+    background: color-mix(in srgb, var(--csh-ink) 92%, transparent);
+    box-shadow: 0 12px 30px color-mix(in srgb, var(--black) 30%, transparent);
     backdrop-filter: blur(12px);
   }
 
@@ -273,7 +283,7 @@
     box-shadow: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    background: rgba(0, 0, 0, 0.8);
+    background: color-mix(in srgb, var(--black) 80%, transparent);
     padding: 0 var(--pad-sm);
     border-radius: var(--r-md);
   }
@@ -298,7 +308,7 @@
   }
 
   .canvas-controls .canvas-controls-button:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.07);
+    background: color-mix(in srgb, var(--white) 7%, transparent);
     color: var(--canvas-cinema-text-strong);
   }
 
@@ -378,7 +388,7 @@
     padding: 0 var(--pad-sm);
     border: 1px solid var(--canvas-cinema-border);
     border-radius: var(--r-pill);
-    background: rgba(20, 24, 29, 0.72);
+    background: color-mix(in srgb, var(--canvas-stage-bg-3) 72%, transparent);
     color: var(--canvas-cinema-text-muted);
     font-size: var(--font-2xs);
   }
@@ -406,22 +416,22 @@
     align-items: center;
     gap: var(--pad-sm);
     padding: var(--pad-md) var(--pad-md) var(--pad-md) var(--pad-lg);
-    border: 1px solid rgba(255, 255, 255, 0.11);
+    border: 1px solid color-mix(in srgb, var(--white) 11%, transparent);
     border-radius: var(--r-xl);
-    background: rgba(21, 25, 30, 0.94);
+    background: color-mix(in srgb, var(--canvas-stage-bg-3) 94%, transparent);
     color: var(--canvas-cinema-accent-bright);
     cursor: pointer;
     text-align: left;
     box-shadow:
-      0 26px 72px rgba(0, 0, 0, 0.38),
-      inset 0 1px rgba(255, 255, 255, 0.035);
+      0 26px 72px color-mix(in srgb, var(--black) 38%, transparent),
+      inset 0 1px color-mix(in srgb, var(--white) 3.5%, transparent);
     transition:
       border-color var(--canvas-cinema-motion-fast) ease,
       transform var(--canvas-cinema-motion-fast) ease;
   }
 
   .canvas-cinematic-command:hover {
-    border-color: rgba(145, 137, 255, 0.38);
+    border-color: color-mix(in srgb, var(--canvas-indigo-400) 38%, transparent);
     transform: translateY(-1px);
   }
 
@@ -455,11 +465,11 @@
   }
 
   .canvas-cinematic-command:focus-within {
-    border-color: rgba(145, 137, 255, 0.58);
+    border-color: color-mix(in srgb, var(--canvas-indigo-400) 58%, transparent);
     box-shadow:
-      0 26px 72px rgba(0, 0, 0, 0.38),
-      0 0 0 3px rgba(119, 108, 246, 0.1),
-      inset 0 1px rgba(255, 255, 255, 0.035);
+      0 26px 72px color-mix(in srgb, var(--black) 38%, transparent),
+      0 0 0 3px color-mix(in srgb, var(--canvas-indigo-500) 10%, transparent),
+      inset 0 1px color-mix(in srgb, var(--white) 3.5%, transparent);
   }
 
   .canvas-cinematic-command-send {
@@ -469,8 +479,8 @@
     flex: 0 0 auto;
     place-items: center;
     border-radius: var(--r-lg);
-    background: #f1f2f5;
-    color: #111318;
+    background: var(--csh-blue-2);
+    color: var(--canvas-stage-bg-2);
     cursor: pointer;
   }
 
@@ -495,7 +505,7 @@
     padding: var(--pad-md);
     border: 1px solid var(--canvas-cinema-border);
     border-radius: var(--canvas-cinema-radius-md);
-    background: rgba(16, 19, 23, 0.74);
+    background: color-mix(in srgb, var(--canvas-stage-bg-2) 74%, transparent);
     color: var(--canvas-cinema-text-faint);
     cursor: pointer;
     text-align: left;

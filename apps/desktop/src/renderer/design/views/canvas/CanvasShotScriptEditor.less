@@ -8,7 +8,7 @@
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--bg-sunken) 90%, #080a0d);
+  background: color-mix(in srgb, var(--bg-sunken) 90%, var(--canvas-stage-bg));
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--panel) 4%, transparent);
 }
 
@@ -19,7 +19,7 @@
   flex-direction: column;
   border-right: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 4%, transparent), transparent 180px),
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 4%, transparent), transparent 180px),
     color-mix(in srgb, var(--panel) 96%, #0a0d12);
 }
 
@@ -282,9 +282,9 @@
   border: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
   border-radius: var(--r-lg);
   background:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 3.5%, transparent), transparent 120px),
+    linear-gradient(180deg, color-mix(in srgb, var(--white) 3.5%, transparent), transparent 120px),
     color-mix(in srgb, var(--panel) 96%, #0a0d12);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--black) 12%, transparent);
 }
 
 .canvas-storyboard-section-heading {

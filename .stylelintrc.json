@@ -9,7 +9,9 @@
   ],
   "overrides": [
     {
-      "files": ["**/*.less"],
+      "files": [
+        "**/*.less"
+      ],
       "customSyntax": "postcss-less"
     },
     {
@@ -30,7 +32,10 @@
           "currentColor",
           "inherit",
           "unset",
-          "/^color-mix\\(/"
+          "/^color-mix\\(/",
+          "/^rgb\\(var\\(--/",
+          "/^rgb\\(from var\\(--/",
+          "/^@[\\w-]+$/"
         ],
         "background": [
           "/^var\\(--/",
@@ -42,6 +47,7 @@
           "/gradient\\(/",
           "/^color-mix\\(/",
           "/^rgb\\(var\\(--/",
+          "/^rgb\\(from var\\(--/",
           "/^rgba\\(var\\(--/"
         ],
         "border": [
@@ -51,17 +57,30 @@
           "/(solid|dashed|dotted) var\\(--/",
           "/(solid|dashed|dotted) transparent$/",
           "/(solid|dashed|dotted) currentColor$/",
-          "/(solid|dashed|dotted) color-mix\\(/"
+          "/(solid|dashed|dotted) color-mix\\(/",
+          "/(solid|dashed|dotted)\\s+color-mix\\(/",
+          "/(solid|dashed|dotted)\\s+var\\(--/",
+          "/^\\d+(\\.\\d+)?px (solid|dashed|dotted)$/"
         ],
         "border-color": [
           "/^var\\(--/",
           "transparent",
           "currentColor",
           "inherit",
-          "/^color-mix\\(/"
+          "/^color-mix\\(/",
+          "/^rgb\\(var\\(--/",
+          "/^@[\\w-]+$/"
         ],
-        "font-size": ["/^var\\(--/", "inherit"],
-        "transition-duration": ["/^var\\(--/", "0s", "0ms", "0.01ms"],
+        "font-size": [
+          "/^var\\(--/",
+          "inherit"
+        ],
+        "transition-duration": [
+          "/^var\\(--/",
+          "0s",
+          "0ms",
+          "0.01ms"
+        ],
         "transition-timing-function": [
           "/^var\\(--ease/",
           "linear",
@@ -92,14 +111,40 @@
           "38px"
         ]
       },
-      { "severity": "warning" }
+      {
+        "severity": "warning"
+      }
     ],
     "declaration-property-value-disallowed-list": [
       {
-        "border-radius": ["/^(?!(1|1\\.5|2|2\\.5|17|18|19|20|22|24|38)px$)\\d+(\\.\\d+)?px$/"],
-        "transition-duration": ["/^(?!(0s|0ms|0\\.01ms)$)\\d+(\\.\\d+)?(ms|s)$/"]
+        "border-radius": [
+          "/^(?!(1|1\\.5|2|2\\.5|17|18|19|20|22|24|38)px$)\\d+(\\.\\d+)?px$/"
+        ],
+        "transition-duration": [
+          "/^(?!(0s|0ms|0\\.01ms)$)\\d+(\\.\\d+)?(ms|s)$/"
+        ],
+        "color": [
+          "/^#/",
+          "/^rgba?\\(\\d/"
+        ],
+        "background": [
+          "/^#/",
+          "/^rgba?\\(\\d/"
+        ],
+        "border": [
+          "/^#/",
+          "/^rgba?\\(\\d/",
+          "/(solid|dashed|dotted) #/",
+          "/(solid|dashed|dotted) rgba?\\(\\d/"
+        ],
+        "border-color": [
+          "/^#/",
+          "/^rgba?\\(\\d/"
+        ]
       },
-      { "severity": "error" }
+      {
+        "severity": "error"
+      }
     ]
   }
 }

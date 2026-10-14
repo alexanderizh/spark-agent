@@ -67,7 +67,7 @@
   &:hover::before,
   &:focus-visible::before {
     background: var(--color-primary-5, #3b82f6);
-    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.18);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
   }
 }
 
@@ -78,7 +78,7 @@ body.file-preview-resizing {
 
 body.file-preview-resizing .file-preview-resize-handle::before {
   background: var(--color-primary-5, #3b82f6);
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.18);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 @keyframes common-slide-in-right {

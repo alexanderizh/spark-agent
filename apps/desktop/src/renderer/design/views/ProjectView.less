@@ -1,6 +1,12 @@
 /* ProjectView-owned workspace explorer and diff surfaces. */
 
 /* ── ProjectView helpers ── */
+
+/* 数据色板（pjv 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --pjv-blue: #3178c6;
+}
+
 .project-split {
   display: flex;
   min-height: 0;
@@ -77,7 +83,7 @@
   color: var(--danger);
 }
 .file-ext-ts {
-  color: #3178c6;
+  color: var(--pjv-blue);
   font-size: var(--font-2xs);
   font-weight: 700;
 }

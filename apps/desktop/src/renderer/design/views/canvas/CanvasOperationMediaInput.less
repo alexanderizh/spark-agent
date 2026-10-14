@@ -1,3 +1,11 @@
+
+/* 数据色板（com 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --com-indigo: #7c5cff;
+  --com-indigo-bright: #a18bff;
+
+}
+
 .canvas-operation-media-input {
   display: flex;
   min-height: 148px;
@@ -5,9 +13,9 @@
   justify-content: center;
   gap: var(--pad-lg);
   padding: var(--pad-xl);
-  border: 1px dashed rgb(255 255 255 / 16%);
+  border: 1px dashed color-mix(in srgb, var(--white) 16%, transparent);
   border-radius: var(--r-lg);
-  background: rgb(255 255 255 / 2%);
+  background: color-mix(in srgb, var(--white) 2%, transparent);
 }
 
 .canvas-operation-media-input-preview {
@@ -31,7 +39,7 @@
   flex: 0 0 auto;
   border-radius: var(--r-lg);
   object-fit: cover;
-  background: rgb(0 0 0 / 24%);
+  background: color-mix(in srgb, var(--black) 24%, transparent);
 }
 
 .canvas-operation-media-input-empty-icon {
@@ -40,8 +48,8 @@
   height: 58px;
   place-items: center;
   border-radius: var(--r-lg);
-  background: rgb(124 92 255 / 12%);
-  color: rgb(161 139 255);
+  background: color-mix(in srgb, var(--com-indigo) 12%, transparent);
+  color: var(--com-indigo-bright);
 }
 
 .canvas-operation-media-input-meta {

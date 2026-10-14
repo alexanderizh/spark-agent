@@ -6,8 +6,8 @@
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border, #dfe3e8) 78%, transparent);
   border-radius: var(--r-xl);
-  background: color-mix(in srgb, var(--panel, #ffffff) 96%, var(--bg, #ffffff));
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  background: color-mix(in srgb, var(--panel, var(--white)) 96%, var(--bg, var(--white)));
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--ink-slate) 8%, transparent);
   color: var(--text, #20242a);
 }
 
@@ -144,11 +144,11 @@
 }
 
 .runtime-diagnostic-detail-toggle:hover {
-  background: color-mix(in srgb, var(--text, #22262d) 88%, var(--bg, #ffffff));
+  background: color-mix(in srgb, var(--text, #22262d) 88%, var(--bg, var(--white)));
 }
 
 .app.theme-dark .runtime-diagnostic-card {
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 12px 34px color-mix(in srgb, var(--black) 24%, transparent);
 }
 
 .app.theme-dark .runtime-diagnostic-detail-toggle {
@@ -294,7 +294,7 @@
 }
 
 .codex-runtime-install-button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--primary, #5876d8) 88%, #000);
+  background: color-mix(in srgb, var(--primary, #5876d8) 88%, var(--black));
 }
 
 .codex-runtime-install-button:disabled {

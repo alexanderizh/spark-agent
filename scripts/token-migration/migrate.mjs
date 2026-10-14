@@ -113,6 +113,13 @@ function migrateSource(src, file) {
 
     // 3) 颜色替换（Phase 3 补齐）：非 REVIEW 条目按 scope 生效；REVIEW 仅计数留人审
     // 「var(--token, #hex)」带 fallback 的行本身已是 token 优先形态，跳过（fallback 语义不可劣化）
+    // color-mix() 内的 white/#fff 是「提亮方向常量」：换成主题翻转 token 会在暗色把提亮反转成压暗
+    // （2026-10-15 事故：16 处 white→--panel/--text-inverse 混色反转），mix 上下文一律只放行恒值 token
+    const FLIP_TOKENS = new Set([
+      '--panel', '--text-inverse', '--bg', '--bg-sunken', '--bg-soft', '--bg-elevated',
+      '--text', '--text-secondary', '--text-primary', '--border', '--border-strong',
+      '--border-subtle', '--border-soft', '--bg-hover',
+    ])
     if (
       map.color &&
       !/var\(--[a-z0-9-]+,\s*#/.test(newValue) &&
@@ -120,6 +127,7 @@ function migrateSource(src, file) {
         prop,
       )
     ) {
+      const inMix = newValue.includes('color-mix(')
       let reviewed = false
       for (const [hex, entry] of Object.entries(map.color)) {
         const bare = hex.split(';')[0]
@@ -137,6 +145,7 @@ function migrateSource(src, file) {
           reviewed = true
           continue
         }
+        if (inMix && FLIP_TOKENS.has(entry.token)) continue
         newValue = newValue.replace(re, () => {
           stats.replaced += 1
           stats.byToken.set(entry.token, (stats.byToken.get(entry.token) ?? 0) + 1)

@@ -142,7 +142,7 @@
 
 .render-diagram-zoom-button:focus-visible,
 .render-diagram-zoom-label:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--primary, #6366f1) 55%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--primary, var(--accent)) 55%, transparent);
   outline-offset: 1px;
 }
 
@@ -316,7 +316,7 @@
   display: grid;
   place-items: center;
   padding: var(--pad-2xl);
-  background: rgba(0, 0, 0, 0.46);
+  background: color-mix(in srgb, var(--black) 46%, transparent);
 }
 
 .render-diagram-fullscreen-panel {

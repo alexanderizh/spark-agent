@@ -8,7 +8,7 @@
    ============================================================ */
 
 :root {
-  --selection-bg: rgba(99, 102, 241, 0.18);
+  --selection-bg: color-mix(in srgb, var(--accent) 18%, transparent);
   --selection-bg: color-mix(in srgb, var(--primary) 18%, transparent);
 }
 

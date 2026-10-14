@@ -1,4 +1,14 @@
 /* SettingsView-owned feedback surface. Keep it out of the global view layer. */
+
+/* 数据色板（stv 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --stv-blue-1: #818cf8;
+  --stv-blue-2: #6366f1;
+  --stv-cyan: #10b981;
+  --stv-green: #34d399;
+  --stv-red: #ef4444;
+}
+
 .alert-banner {
   display: flex;
   align-items: flex-start;
@@ -251,7 +261,7 @@
 .model-row-item {
   padding: var(--pad-xs) 0;
   gap: var(--pad-sm);
-  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-top: 1px solid var(--border-subtle, color-mix(in srgb, var(--black) 6%, transparent));
 }
 .model-name-sm {
   flex: 1;
@@ -272,19 +282,19 @@
   line-height: 16px;
 }
 .model-cap-tag.vision {
-  background: rgba(99, 102, 241, 0.15);
-  color: #818cf8;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--stv-blue-1);
 }
 .model-cap-tag.tool {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
+  background: color-mix(in srgb, var(--stv-cyan) 15%, transparent);
+  color: var(--stv-green);
 }
 .model-cap-tag.thinking {
-  background: rgba(245, 158, 11, 0.15);
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
   color: var(--warning);
 }
 .model-cap-tag.ctx {
-  background: rgba(148, 163, 184, 0.1);
+  background: color-mix(in srgb, var(--canvas-slate-400) 10%, transparent);
   color: var(--text-muted);
 }
 .switch-cursor {
@@ -409,7 +419,7 @@
 }
 .runtime-permission-option.tone-auto.active {
   border: none;
-  background: rgba(37, 99, 235, 0.1);
+  background: color-mix(in srgb, var(--primary-hover) 10%, transparent);
 }
 .runtime-permission-option.tone-danger {
   border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
@@ -1093,7 +1103,7 @@
   display: flex;
   justify-content: flex-end;
   z-index: 95;
-  background: rgb(0 0 0 / 30%);
+  background: color-mix(in srgb, var(--black) 30%, transparent);
   animation: common-fade-in 0.15s;
 }
 
@@ -2425,10 +2435,10 @@ body.settings-nav-resizing .settings-nav-resizer {
   transition: background 0.15s;
 }
 .mcp-server-card:hover {
-  background: var(--primary-soft, rgba(99, 102, 241, 0.12));
+  background: var(--primary-soft, color-mix(in srgb, var(--stv-blue-2) 12%, transparent));
 }
 .mcp-server-card.expanded {
-  background: var(--primary-soft, rgba(99, 102, 241, 0.12));
+  background: var(--primary-soft, color-mix(in srgb, var(--stv-blue-2) 12%, transparent));
 }
 .mcp-server-row {
   display: flex;
@@ -2444,15 +2454,15 @@ body.settings-nav-resizing .settings-nav-resizer {
   flex-shrink: 0;
 }
 .mcp-status-dot.running {
-  background: var(--success, #10b981);
-  box-shadow: 0 0 4px var(--success, #10b981);
+  background: var(--success, var(--stv-cyan));
+  box-shadow: 0 0 4px var(--success, var(--stv-cyan));
 }
 .mcp-status-dot.stopped {
   background: var(--text-faint, #9ca3af);
 }
 .mcp-status-dot.error {
-  background: var(--danger, #ef4444);
-  box-shadow: 0 0 4px var(--danger, #ef4444);
+  background: var(--danger, var(--stv-red));
+  box-shadow: 0 0 4px var(--danger, var(--stv-red));
 }
 .mcp-server-meta {
   min-width: 0;
@@ -2525,7 +2535,7 @@ body.settings-nav-resizing .settings-nav-resizer {
   align-items: center;
   gap: var(--pad-xs);
   padding: var(--pad-sm) var(--pad-sm);
-  background: var(--danger-soft, rgba(239, 68, 68, 0.08));
+  background: var(--danger-soft, color-mix(in srgb, var(--stv-red) 8%, transparent));
   color: var(--danger);
   border-radius: var(--r-md);
   font-size: var(--font-xs);

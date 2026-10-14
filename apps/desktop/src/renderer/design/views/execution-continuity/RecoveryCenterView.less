@@ -1,6 +1,13 @@
 /* RecoveryCenterView — 恢复中心（执行连续性 Phase 1 UI）
    扁平设计基线：无分块盒子/卡片分组；层级靠分割线、色点、文字明暗区分。 */
 
+
+/* 数据色板（rcv 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --rcv-green: #3fb96f;
+  --rcv-blue: #9aa4b2;
+}
+
 .recovery-center-view {
   display: flex;
   flex-direction: column;
@@ -124,7 +131,7 @@
     background: var(--warning);
   }
   &-run {
-    background: #3fb96f;
+    background: var(--rcv-green);
   }
   &-pause {
     background: var(--text-tertiary);
@@ -171,7 +178,7 @@
 .rc-status-running,
 .rc-status-recovering,
 .rc-status-accepted {
-  background: #3fb96f;
+  background: var(--rcv-green);
 }
 
 .rc-status-needs_attention,
@@ -182,7 +189,7 @@
 .rc-status-paused,
 .rc-status-pausing,
 .rc-status-waiting {
-  background: #9aa4b2;
+  background: var(--rcv-blue);
 }
 
 .rc-run-kind {
@@ -341,7 +348,7 @@
     color: var(--warning);
   }
   &-confirmed {
-    color: #3fb96f;
+    color: var(--rcv-green);
   }
 }
 

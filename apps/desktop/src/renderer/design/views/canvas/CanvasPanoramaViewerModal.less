@@ -9,17 +9,17 @@
     z-index: 6;
     top: 8px;
     right: 8px;
-    border-color: rgba(255, 255, 255, 0.22);
-    background: rgba(16, 18, 24, 0.58);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.24);
+    border-color: color-mix(in srgb, var(--white) 22%, transparent);
+    background: color-mix(in srgb, var(--canvas-stage-bg-2) 58%, transparent);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--black) 24%, transparent);
     color: var(--text-inverse);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
 
     &:hover,
     &:focus-visible {
-      border-color: rgba(255, 255, 255, 0.36) !important;
-      background: rgba(16, 18, 24, 0.82) !important;
+      border-color: color-mix(in srgb, var(--white) 36%, transparent) !important;
+      background: color-mix(in srgb, var(--canvas-stage-bg-2) 82%, transparent) !important;
       color: var(--text-inverse) !important;
     }
   }

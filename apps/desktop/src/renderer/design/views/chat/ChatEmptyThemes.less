@@ -48,8 +48,8 @@
   --eh-accent-2: color-mix(in srgb, var(--primary) 62%, #2563eb);
   --eh-ink: #171923;
   --eh-muted: #686b78;
-  --eh-surface-strong: rgba(255, 255, 255, 0.94);
-  --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 3%, #fff);
+  --eh-surface-strong: color-mix(in srgb, var(--white) 94%, transparent);
+  --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 3%, var(--white));
   --eh-line: color-mix(in srgb, var(--primary) 18%, transparent);
   /* 阴影保持中性灰发散，不随主题色染色（空会话输入区弹层使用）。 */
   --eh-shadow: rgba(18, 18, 40, 0.12);
@@ -241,7 +241,7 @@
   box-shadow:
     0 14px 42px rgba(18, 18, 40, 0.1),
     0 2px 8px rgba(18, 18, 40, 0.07),
-    inset 0 1px 0 color-mix(in srgb, #fff 62%, transparent);
+    inset 0 1px 0 color-mix(in srgb, var(--white) 62%, transparent);
   backdrop-filter: blur(16px) saturate(1.04);
 }
 
@@ -449,7 +449,7 @@
   --eh-surface-strong: rgba(19, 20, 28, 0.94);
   --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 4%, #15161d);
   --eh-line: rgba(235, 232, 255, 0.15);
-  --eh-shadow: rgba(0, 0, 0, 0.36);
+  --eh-shadow: color-mix(in srgb, var(--black) 36%, transparent);
   --bg-soft: color-mix(in srgb, var(--eh-accent) 9%, #11131a);
   --hover: color-mix(in srgb, var(--eh-accent) 16%, transparent);
   color-scheme: dark;
@@ -457,7 +457,7 @@
 
 .app.theme-dark .chat-main-empty[data-empty-theme='celestial'] {
   /* 暗底下强调色向白提亮，保持星图的通透感；冷蓝副色同源派生。 */
-  --eh-accent: color-mix(in srgb, var(--primary) 72%, #fff);
+  --eh-accent: color-mix(in srgb, var(--primary) 72%, var(--white));
   --eh-accent-2: color-mix(in srgb, var(--primary) 55%, #8ab4ff);
   /* 输入区回到无主题时的通用暗色 token，不再叠加星图材质。 */
   --eh-surface-strong: #303030;
@@ -483,8 +483,8 @@
   --composer-toolbar-bg: #3d3d3d;
   --panel: #303030;
   --panel-elev: #383838;
-  --hover: rgba(255, 255, 255, 0.04);
-  --active: rgba(255, 255, 255, 0.07);
+  --hover: color-mix(in srgb, var(--white) 4%, transparent);
+  --active: color-mix(in srgb, var(--white) 7%, transparent);
   --border: #3d3d3d;
   --text: #e4e4e7;
   --text-strong: #fafafa;
@@ -493,7 +493,7 @@
   --eh-ink: #e4e4e7;
   --eh-muted: #9ca3af;
   --eh-line: #3d3d3d;
-  --eh-shadow: rgba(0, 0, 0, 0.32);
+  --eh-shadow: color-mix(in srgb, var(--black) 32%, transparent);
   --eh-popup-surface: #383838;
 }
 
@@ -549,7 +549,7 @@
 .app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-send-round {
   background: var(--text-strong);
   color: var(--bg);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--black) 12%, transparent);
 }
 
 .app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .chat-hero-grid {

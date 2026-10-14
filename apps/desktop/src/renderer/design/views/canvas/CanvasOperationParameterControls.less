@@ -117,11 +117,11 @@
     padding: var(--pad-md);
     border: 1px solid color-mix(in srgb, var(--border-strong) 88%, transparent);
     border-radius: var(--r-lg);
-    background: color-mix(in srgb, var(--panel) 96%, #050505);
+    background: color-mix(in srgb, var(--panel) 96%, var(--black));
     box-shadow:
-      0 22px 64px rgba(0, 0, 0, 0.46),
-      0 6px 18px rgba(0, 0, 0, 0.28),
-      inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+      0 22px 64px color-mix(in srgb, var(--black) 46%, transparent),
+      0 6px 18px color-mix(in srgb, var(--black) 28%, transparent),
+      inset 0 1px 0 color-mix(in srgb, var(--white) 5%, transparent);
     backdrop-filter: blur(18px) saturate(112%);
   }
 

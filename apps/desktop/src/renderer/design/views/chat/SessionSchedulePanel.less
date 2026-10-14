@@ -40,7 +40,7 @@
   position: absolute;
   inset: 0;
   border: 0;
-  background: rgba(0, 0, 0, 0.26);
+  background: color-mix(in srgb, var(--black) 26%, transparent);
   backdrop-filter: blur(2px);
   pointer-events: auto;
 }
@@ -63,7 +63,7 @@
   );
   box-shadow:
     var(--shadow-lg),
-    0 22px 70px rgba(0, 0, 0, 0.24);
+    0 22px 70px color-mix(in srgb, var(--black) 24%, transparent);
   color: var(--schedule-text);
   pointer-events: auto;
   animation: session-schedule-enter 180ms cubic-bezier(0.22, 0.8, 0.32, 1);
@@ -74,7 +74,7 @@ html[data-theme='dark'] .session-schedule-panel,
   color-scheme: dark;
   box-shadow:
     var(--shadow-lg),
-    0 26px 84px rgba(0, 0, 0, 0.5);
+    0 26px 84px color-mix(in srgb, var(--black) 50%, transparent);
 }
 
 html[data-theme='light'] .session-schedule-panel,
@@ -372,7 +372,7 @@ html[data-theme='light'] .session-schedule-panel,
   height: 12px;
   border-radius: 50%;
   background: var(--schedule-text-muted);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--black) 22%, transparent);
   transition:
     background 150ms ease,
     transform 150ms ease;

@@ -1,6 +1,15 @@
 // 语音输入相关样式：麦克风按钮 + 下载进度卡片
 
 // ── 麦克风按钮（挂在 composer-submit-row，紧邻发送按钮）──────────────────────
+
+/* 数据色板（voc 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --voc-char: #202024;
+  --voc-green: #4caf78;
+  --voc-red-1: #ff8a8e;
+  --voc-red-2: #e84c54;
+}
+
 .composer-voice-control {
   position: relative;
   display: inline-flex;
@@ -130,11 +139,11 @@
   align-items: center;
   gap: var(--pad-sm);
   padding: var(--pad-xs) var(--pad-sm) var(--pad-xs) var(--pad-sm);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid color-mix(in srgb, var(--white) 12%, transparent);
   border-radius: var(--r-md);
-  background: rgba(32, 32, 36, 0.96);
-  color: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
+  background: color-mix(in srgb, var(--voc-char) 96%, transparent);
+  color: color-mix(in srgb, var(--white) 86%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--black) 20%, transparent);
   font-size: var(--font-xs);
   line-height: 1;
   white-space: nowrap;
@@ -149,7 +158,7 @@
     padding: var(--pad-3xs) var(--pad-xs);
     border: 0;
     border-radius: var(--r-sm);
-    background: rgba(255, 255, 255, 0.1);
+    background: color-mix(in srgb, var(--white) 10%, transparent);
     color: var(--text-inverse);
     font-family: inherit;
     font-size: var(--font-xs);
@@ -239,17 +248,17 @@
   padding: var(--pad-md) var(--pad-lg);
   border-radius: var(--r-lg);
   background: var(--bg-panel, #1f1f24);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border, color-mix(in srgb, var(--white) 12%, transparent));
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--black) 35%, transparent);
   color: var(--text-primary, #fff);
   animation: voice-toast-in 0.18s ease-out;
 
   &.is-done {
-    border-color: rgba(76, 175, 120, 0.5);
+    border-color: color-mix(in srgb, var(--voc-green) 50%, transparent);
   }
 
   &.is-error {
-    border-color: rgba(232, 76, 84, 0.55);
+    border-color: color-mix(in srgb, var(--voc-red-2) 55%, transparent);
   }
 }
 
@@ -289,12 +298,12 @@
   height: 22px;
   border: none;
   background: transparent;
-  color: var(--text-tertiary, rgba(255, 255, 255, 0.5));
+  color: var(--text-tertiary, color-mix(in srgb, var(--white) 50%, transparent));
   cursor: pointer;
   border-radius: var(--r-xs);
 
   &:hover {
-    background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+    background: var(--bg-hover, color-mix(in srgb, var(--white) 8%, transparent));
     color: var(--text-primary, #fff);
   }
 }
@@ -303,7 +312,7 @@
   margin-top: var(--pad-sm);
   height: 6px;
   border-radius: var(--r-xs);
-  background: var(--bg-sunken, rgba(255, 255, 255, 0.08));
+  background: var(--bg-sunken, color-mix(in srgb, var(--white) 8%, transparent));
   overflow: hidden;
 }
 
@@ -317,11 +326,11 @@
 .voice-install-toast-meta {
   margin-top: var(--pad-sm);
   font-size: var(--font-sm);
-  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+  color: var(--text-secondary, color-mix(in srgb, var(--white) 70%, transparent));
 }
 
 .voice-install-toast-error {
-  color: #ff8a8e;
+  color: var(--voc-red-1);
 }
 
 .voice-install-toast-actions {
@@ -334,13 +343,13 @@
     padding: var(--pad-3xs) var(--pad-md);
     font-size: var(--font-sm);
     border-radius: var(--r-sm);
-    border: 1px solid var(--border, rgba(255, 255, 255, 0.16));
-    background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+    border: 1px solid var(--border, color-mix(in srgb, var(--white) 16%, transparent));
+    background: var(--bg-hover, color-mix(in srgb, var(--white) 6%, transparent));
     color: var(--text-primary, #fff);
     cursor: pointer;
 
     &:hover {
-      background: var(--bg-hover-strong, rgba(255, 255, 255, 0.12));
+      background: var(--bg-hover-strong, color-mix(in srgb, var(--white) 12%, transparent));
     }
   }
 }
@@ -383,7 +392,7 @@
 
 .voice-integrity-desc {
   font-size: var(--font-xs);
-  color: var(--text-muted, rgba(255, 255, 255, 0.5));
+  color: var(--text-muted, color-mix(in srgb, var(--white) 50%, transparent));
   line-height: 1.45;
   margin-top: 2px;
 }
@@ -404,7 +413,7 @@
 .voice-progress {
   width: 100%;
   margin-top: var(--pad-sm);
-  color: var(--text-muted, rgba(255, 255, 255, 0.55));
+  color: var(--text-muted, color-mix(in srgb, var(--white) 55%, transparent));
 }
 
 .voice-progress-head {
@@ -437,7 +446,7 @@
   margin-top: var(--pad-xs);
   overflow: hidden;
   border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--text-primary, #fff) 9%, transparent);
+  background: color-mix(in srgb, var(--text-primary, var(--white)) 9%, transparent);
 }
 
 .voice-progress-fill {
@@ -448,11 +457,11 @@
 }
 
 .voice-progress.is-done .voice-progress-fill {
-  background: var(--success, #4caf78);
+  background: var(--success, var(--voc-green));
 }
 
 .voice-progress.is-error .voice-progress-fill {
-  background: var(--danger, #e84c54);
+  background: var(--danger, var(--voc-red-2));
 }
 
 .voice-progress-track.indeterminate .voice-progress-fill {

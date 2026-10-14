@@ -440,7 +440,7 @@
 
 .canvas-operation-more-menu-actions button.is-danger:hover,
 .canvas-operation-more-menu-actions button.is-danger:focus-visible {
-  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+  background: color-mix(in srgb, var(--danger, var(--danger-fixed)) 12%, transparent);
 }
 
 @container canvas-operation-workbench (max-width: 1100px) {
@@ -744,7 +744,7 @@
 }
 
 .canvas-operation-history-delete:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger, #ef4444) 14%, transparent);
+  background: color-mix(in srgb, var(--danger, var(--danger-fixed)) 14%, transparent);
   color: var(--danger, #ef4444);
 }
 

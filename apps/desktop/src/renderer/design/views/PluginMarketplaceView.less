@@ -1,9 +1,52 @@
+/* 数据色板（mkt 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --mkt-ember-1: #e7b477;
+  --mkt-ember-2: #d3ae70;
+  --mkt-ember-3: #d4ad68;
+  --mkt-ember-4: #f5b041;
+  /* 含 3 个 ΔE<3 族内近似色合并 */
+  --mkt-ember-5: #cea05d;
+  --mkt-ember-6: #cd9b53;
+  --mkt-ember-7: #9a6518;
+  --mkt-green-1: #a8e1bd;
+  --mkt-green-2: #9be2ba;
+  --mkt-green-3: #83c59e;
+  /* 含 2 个 ΔE<3 族内近似色合并 */
+  --mkt-green-4: #7fbe9b;
+  --mkt-green-5: #70c89b;
+  /* 含 2 个 ΔE<3 族内近似色合并 */
+  --mkt-green-6: #65b486;
+  --mkt-red-1: #f0c4c4;
+  --mkt-red-2: #e59b9b;
+  --mkt-red-3: #d8a8a8;
+  --mkt-red-4: #d99a9a;
+  --mkt-red-5: #dc8888;
+  --mkt-red-6: #cd8585;
+  /* 含 2 个 ΔE<3 族内近似色合并 */
+  --mkt-red-7: #b88f8f;
+  --mkt-red-8: #da6565;
+  --mkt-blue-1: #dce2ef;
+  --mkt-blue-2: #b8c2ff;
+  --mkt-blue-3: #aab7ff;
+  --mkt-blue-4: #8fb5e8;
+  /* 含 2 个 ΔE<3 族内近似色合并 */
+  --mkt-blue-5: #aeb7c6;
+  --mkt-blue-6: #9baeca;
+  --mkt-blue-7: #6fa1e0;
+  --mkt-blue-8: #6e7edc;
+  --mkt-blue-9: #8795be;
+  --mkt-blue-10: #697487;
+  --mkt-sand-1: #cda66a;
+  /* 含 2 个 ΔE<3 族内近似色合并 */
+  --mkt-sand-2: #c7a36f;
+}
+
 .plugin-marketplace-view {
   --plugin-ink: var(--text-strong, #eef1f6);
   --plugin-muted: var(--text-muted, #9098a8);
   --plugin-faint: var(--text-faint, #6f7889);
-  --plugin-line: var(--border, rgba(255, 255, 255, 0.09));
-  --plugin-panel: var(--panel, rgba(255, 255, 255, 0.045));
+  --plugin-line: var(--border, color-mix(in srgb, var(--white) 9%, transparent));
+  --plugin-panel: var(--panel, color-mix(in srgb, var(--white) 4.5%, transparent));
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -39,7 +82,7 @@
   height: 30px;
   margin-top: 2px;
   padding: 0 var(--pad-sm);
-  color: color-mix(in srgb, var(--primary) 72%, white);
+  color: color-mix(in srgb, var(--primary) 72%, var(--white));
   border-radius: var(--r-md);
   font-size: var(--font-sm);
   font-weight: 600;
@@ -77,14 +120,14 @@
 .plugin-section-heading.is-installed span {
   padding: 2px var(--pad-sm);
   border-radius: var(--r-pill);
-  background: var(--hover, rgba(255, 255, 255, 0.06));
+  background: var(--hover, color-mix(in srgb, var(--white) 6%, transparent));
 }
 .plugin-market-search {
   width: min(280px, 40vw);
 }
 .plugin-market-search .ant-input-affix-wrapper {
   border-color: var(--plugin-line) !important;
-  background: rgba(255, 255, 255, 0.05) !important;
+  background: color-mix(in srgb, var(--white) 5%, transparent) !important;
   box-shadow: none !important;
 }
 .plugin-market-search .ant-input-affix-wrapper input,
@@ -122,7 +165,7 @@
 .plugin-market-card:hover {
   border-color: color-mix(in srgb, var(--primary) 38%, var(--plugin-line));
   background: color-mix(in srgb, var(--plugin-panel) 92%, var(--primary));
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 26px color-mix(in srgb, var(--black) 12%, transparent);
 }
 .plugin-card.is-disabled {
   opacity: 0.62;
@@ -133,15 +176,15 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  color: color-mix(in srgb, var(--primary) 72%, white);
+  color: color-mix(in srgb, var(--primary) 72%, var(--white));
   border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
 }
 .plugin-card-icon.market {
-  color: #e7b477;
-  border-color: rgba(231, 180, 119, 0.2);
-  background: rgba(231, 180, 119, 0.09);
+  color: var(--mkt-ember-1);
+  border-color: color-mix(in srgb, var(--mkt-ember-1) 20%, transparent);
+  background: color-mix(in srgb, var(--mkt-ember-1) 9%, transparent);
 }
 .plugin-card-icon.is-connector {
   background: color-mix(in srgb, var(--panel) 86%, var(--primary));
@@ -193,7 +236,7 @@
   white-space: nowrap;
 }
 .plugin-card-state.is-enabled {
-  color: #7dbb9a;
+  color: var(--mkt-green-4);
 }
 .plugin-card-remove {
   width: 28px;
@@ -212,8 +255,8 @@
     background 0.15s ease;
 }
 .plugin-card-remove:hover {
-  color: #e59b9b;
-  background: rgba(218, 101, 101, 0.1);
+  color: var(--mkt-red-2);
+  background: color-mix(in srgb, var(--mkt-red-8) 10%, transparent);
 }
 .plugin-card-remove:focus-visible,
 .plugin-runtime-action:focus-visible {
@@ -248,32 +291,32 @@
   align-items: center;
   height: 20px;
   padding: 0 var(--pad-sm);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid color-mix(in srgb, var(--white) 8%, transparent);
   border-radius: var(--r-sm);
-  color: #a9b2c2;
-  background: rgba(255, 255, 255, 0.035);
+  color: var(--mkt-blue-5);
+  background: color-mix(in srgb, var(--white) 3.5%, transparent);
   font-weight: 600;
 }
 .plugin-source-badge.is-bundled,
 .plugin-source-badge.is-verified {
-  color: #8fb5e8;
-  border-color: rgba(111, 161, 224, 0.16);
-  background: rgba(111, 161, 224, 0.07);
+  color: var(--mkt-blue-4);
+  border-color: color-mix(in srgb, var(--mkt-blue-7) 16%, transparent);
+  background: color-mix(in srgb, var(--mkt-blue-7) 7%, transparent);
 }
 .plugin-source-badge.is-local {
-  color: #c7a36f;
-  border-color: rgba(206, 160, 93, 0.15);
-  background: rgba(206, 160, 93, 0.07);
+  color: var(--mkt-sand-2);
+  border-color: color-mix(in srgb, var(--mkt-ember-5) 15%, transparent);
+  background: color-mix(in srgb, var(--mkt-ember-5) 7%, transparent);
 }
 .plugin-card-merged-badge {
   display: inline-flex;
   align-items: center;
   min-height: 20px;
   padding: 0 var(--pad-sm);
-  border: 1px solid rgba(143, 181, 232, 0.14);
+  border: 1px solid color-mix(in srgb, var(--mkt-blue-4) 14%, transparent);
   border-radius: var(--r-sm);
-  color: #9baeca;
-  background: rgba(143, 181, 232, 0.055);
+  color: var(--mkt-blue-6);
+  background: color-mix(in srgb, var(--mkt-blue-4) 5.5%, transparent);
   white-space: nowrap;
 }
 .plugin-card-contributions {
@@ -289,8 +332,8 @@
   padding: 0 var(--pad-sm);
   border: 1px solid var(--plugin-line);
   border-radius: var(--r-sm);
-  color: #aeb7c6;
-  background: rgba(255, 255, 255, 0.025);
+  color: var(--mkt-blue-5);
+  background: color-mix(in srgb, var(--white) 2.5%, transparent);
 }
 .plugin-card-permissions {
   display: inline-flex;
@@ -301,7 +344,7 @@
   white-space: nowrap;
 }
 .plugin-card-muted {
-  color: #697487;
+  color: var(--mkt-blue-10);
 }
 .plugin-card-availability {
   display: grid;
@@ -311,28 +354,28 @@
   margin-top: var(--pad-md);
   padding: var(--pad-sm) var(--pad-md);
   color: var(--plugin-muted);
-  border: 1px solid rgba(203, 158, 89, 0.12);
+  border: 1px solid color-mix(in srgb, var(--mkt-ember-5) 12%, transparent);
   border-radius: var(--r-md);
-  background: rgba(203, 158, 89, 0.045);
+  background: color-mix(in srgb, var(--mkt-ember-5) 4.5%, transparent);
   font-size: var(--font-xs);
 }
 .plugin-card-availability.is-connected {
-  border-color: rgba(95, 177, 132, 0.13);
-  background: rgba(95, 177, 132, 0.045);
+  border-color: color-mix(in srgb, var(--mkt-green-6) 13%, transparent);
+  background: color-mix(in srgb, var(--mkt-green-6) 4.5%, transparent);
 }
 .plugin-card-availability strong {
-  color: #cda66a;
+  color: var(--mkt-sand-1);
   font-weight: 600;
   white-space: nowrap;
 }
 .plugin-card-availability.is-connected strong {
-  color: #7fbe9b;
+  color: var(--mkt-green-4);
 }
 .plugin-availability-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #c99a57;
+  background: var(--mkt-ember-5);
 }
 .plugin-card-availability-copy {
   display: flex;
@@ -347,12 +390,12 @@
   flex: 1 1 240px;
 }
 .plugin-card-availability.is-connected .plugin-availability-dot {
-  background: #65b486;
+  background: var(--mkt-green-6);
 }
 .plugin-card-availability.is-disabled {
   opacity: 0.78;
   border-color: var(--plugin-line);
-  background: rgba(255, 255, 255, 0.025);
+  background: color-mix(in srgb, var(--white) 2.5%, transparent);
 }
 .plugin-card-availability.is-disabled strong {
   color: var(--plugin-muted);
@@ -362,7 +405,7 @@
   align-items: center;
   gap: var(--pad-3xs);
   padding: var(--pad-3xs) var(--pad-sm);
-  color: color-mix(in srgb, var(--primary) 76%, white);
+  color: color-mix(in srgb, var(--primary) 76%, var(--white));
   border: 0;
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
@@ -380,9 +423,9 @@
   gap: var(--pad-xs);
   margin-top: var(--pad-sm);
   padding: var(--pad-sm) var(--pad-sm);
-  color: #c7a36e;
+  color: var(--mkt-sand-2);
   border-radius: var(--r-md);
-  background: rgba(205, 155, 83, 0.065);
+  background: color-mix(in srgb, var(--mkt-ember-6) 6.5%, transparent);
   font-size: var(--font-xs);
 }
 .plugin-market-grid {
@@ -429,9 +472,9 @@
   align-items: center;
   justify-content: center;
   gap: var(--pad-xs);
-  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border: 1px dashed color-mix(in srgb, var(--white) 15%, transparent);
   border-radius: var(--r-lg);
-  background: rgba(255, 255, 255, 0.025);
+  background: color-mix(in srgb, var(--white) 2.5%, transparent);
   text-align: center;
 }
 .plugin-empty-icon {
@@ -440,12 +483,12 @@
   display: grid;
   place-items: center;
   margin-bottom: var(--pad-3xs);
-  color: #8795be;
+  color: var(--mkt-blue-9);
   border-radius: var(--r-lg);
-  background: rgba(110, 126, 220, 0.12);
+  background: color-mix(in srgb, var(--mkt-blue-8) 12%, transparent);
 }
 .plugin-empty strong {
-  color: #dce2ef;
+  color: var(--mkt-blue-1);
   font-size: var(--font-base);
 }
 .plugin-empty > span {
@@ -459,7 +502,7 @@
   margin-top: var(--pad-sm);
   padding: 0;
   border: 0;
-  color: #aab7ff;
+  color: var(--mkt-blue-3);
   background: transparent;
   cursor: pointer;
   font-size: var(--font-xs);
@@ -473,16 +516,16 @@
   border: 1px solid var(--plugin-line);
   border-radius: var(--r-lg);
   color: var(--plugin-muted);
-  background: rgba(255, 255, 255, 0.025);
+  background: color-mix(in srgb, var(--white) 2.5%, transparent);
   font-size: var(--font-xs);
 }
 .plugin-market-status.error {
-  color: #d8a8a8;
-  border-color: rgba(220, 136, 136, 0.17);
-  background: rgba(220, 136, 136, 0.06);
+  color: var(--mkt-red-3);
+  border-color: color-mix(in srgb, var(--mkt-red-5) 17%, transparent);
+  background: color-mix(in srgb, var(--mkt-red-5) 6%, transparent);
 }
 .plugin-market-status.error strong {
-  color: #f0c4c4;
+  color: var(--mkt-red-1);
   font-weight: 600;
 }
 .plugin-market-status.error > div {
@@ -494,7 +537,7 @@
 .plugin-market-error-detail {
   overflow: hidden;
   max-width: 100%;
-  color: #b88f8f;
+  color: var(--mkt-red-7);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -502,7 +545,7 @@
   margin-left: auto;
   padding: 0;
   border: 0;
-  color: #b8c2ff;
+  color: var(--mkt-blue-2);
   background: none;
   cursor: pointer;
   font-size: var(--font-xs);
@@ -512,11 +555,11 @@
   height: 7px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #cd8585;
+  background: var(--mkt-red-6);
 }
 .plugin-status-dot.loading {
-  background: #d4ad68;
-  box-shadow: 0 0 0 4px rgba(212, 173, 104, 0.1);
+  background: var(--mkt-ember-3);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--mkt-ember-3) 10%, transparent);
 }
 
 .plugin-inspection h3 {
@@ -554,9 +597,9 @@
 .plugin-inspection-warning {
   margin-top: var(--pad-md);
   padding: var(--pad-sm) var(--pad-sm);
-  color: #9a6518;
+  color: var(--mkt-ember-7);
   border-radius: var(--r-md);
-  background: rgba(245, 176, 65, 0.12);
+  background: color-mix(in srgb, var(--mkt-ember-4) 12%, transparent);
   font-size: var(--font-sm);
 }
 .plugin-permission-confirm {
@@ -586,18 +629,18 @@
   min-width: 0;
   gap: var(--pad-md);
   padding: var(--pad-md);
-  border: 1px solid rgba(112, 200, 155, 0.2);
+  border: 1px solid color-mix(in srgb, var(--mkt-green-5) 20%, transparent);
   border-radius: var(--r-lg);
-  background: rgba(112, 200, 155, 0.07);
+  background: color-mix(in srgb, var(--mkt-green-5) 7%, transparent);
 }
 .plugin-runtime-account-icon {
   width: 38px;
   height: 38px;
   display: grid;
   place-items: center;
-  color: #9be2ba;
+  color: var(--mkt-green-2);
   border-radius: var(--r-md);
-  background: rgba(112, 200, 155, 0.14);
+  background: color-mix(in srgb, var(--mkt-green-5) 14%, transparent);
 }
 .plugin-runtime-account-icon img {
   width: 30px;
@@ -623,17 +666,17 @@
   font-size: var(--font-sm);
 }
 .plugin-runtime-account-status {
-  color: #83c59e !important;
+  color: var(--mkt-green-3) !important;
 }
 .plugin-runtime-account-status.is-error {
-  color: #d99a9a !important;
+  color: var(--mkt-red-4) !important;
 }
 .plugin-runtime-account-status.is-needs_auth {
-  color: #d3ae70 !important;
+  color: var(--mkt-ember-2) !important;
 }
 .plugin-runtime-account-copy small {
   overflow: hidden;
-  color: #b58b8b;
+  color: var(--mkt-red-7);
   font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -665,7 +708,7 @@
 .plugin-runtime-mode-switch button.is-active {
   color: var(--text-primary);
   background: var(--bg-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--black) 16%, transparent);
 }
 .plugin-runtime-field {
   display: flex;
@@ -701,7 +744,7 @@
   align-items: center;
   gap: var(--pad-3xs);
   padding: 0;
-  color: color-mix(in srgb, var(--primary) 78%, white);
+  color: color-mix(in srgb, var(--primary) 78%, var(--white));
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -760,9 +803,9 @@
   white-space: nowrap;
 }
 .plugin-runtime-capability.is-enabled {
-  color: #a8e1bd;
-  border-color: rgba(112, 200, 155, 0.34);
-  background: rgba(112, 200, 155, 0.1);
+  color: var(--mkt-green-1);
+  border-color: color-mix(in srgb, var(--mkt-green-5) 34%, transparent);
+  background: color-mix(in srgb, var(--mkt-green-5) 10%, transparent);
 }
 .plugin-runtime-capability:disabled {
   cursor: default;

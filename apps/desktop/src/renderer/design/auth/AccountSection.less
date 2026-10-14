@@ -7,6 +7,12 @@
  *   - 头像显示与 web 端一样稳定裁切，不再出现加载后空白
  */
 
+
+/* 数据色板（acs 域分类色，恒值；色值残留清理收编，值零变化） */
+:root {
+  --acs-blue-deep: #1d4ed8;
+}
+
 .account-section {
   display: flex;
   flex-direction: column;
@@ -123,7 +129,7 @@
   }
 
   &.paid {
-    background: rgba(37, 99, 235, 0.1);
+    background: color-mix(in srgb, var(--primary-hover) 10%, transparent);
     color: var(--primary-hover);
   }
 }
@@ -136,7 +142,7 @@
 
 .account-service-chip {
   max-width: 180px;
-  background: rgba(15, 23, 42, 0.05);
+  background: color-mix(in srgb, var(--ink-slate) 5%, transparent);
   color: var(--color-text-3, #64748b);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -241,7 +247,7 @@
   font-size: var(--font-base);
 
   &:hover {
-    color: #1d4ed8;
+    color: var(--acs-blue-deep);
     text-decoration: underline;
   }
 }

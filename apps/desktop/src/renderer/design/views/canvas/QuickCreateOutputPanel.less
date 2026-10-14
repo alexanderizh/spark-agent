@@ -1,6 +1,12 @@
 // 创作结果面板：产物展示交给公用 MediaArtifactViewer，这里只保留面板布局与状态态
 // 原则：灰底面板区分层级，不用边框盒子与多余分割线
 
+
+/* 数据色板（qop 域分类色，恒值；色值残留清理收编，值零变化） */
+:root {
+  --qop-red: #ee8e8e;
+}
+
 .quick-create-output-panel {
   display: flex;
   min-width: 0;
@@ -107,7 +113,7 @@
 }
 
 .quick-create-output-pending.is-error {
-  color: #ee8e8e;
+  color: var(--qop-red);
 }
 
 .quick-create-output-pending.is-cancelled {
@@ -119,7 +125,7 @@
 }
 
 .quick-create-output-pending.is-error svg {
-  color: #ee8e8e;
+  color: var(--qop-red);
 }
 
 .quick-create-output-empty {

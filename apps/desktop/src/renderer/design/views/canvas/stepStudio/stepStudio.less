@@ -7,6 +7,14 @@
 // P4：设定页内嵌 assetLibrary 的 AssetGrid 等组件（消费 --ast-* token），
 // 经 (reference) 引入 token mixin，在 .step-setup-view 上建立作用域。
 
+
+/* 数据色板（sst 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --sst-ink: #141414;
+  --sst-green: #4ade80;
+  --sst-red: #ef6b76;
+}
+
 @import (reference) '../assetLibrary/assetLibrary.less';
 
 .canvas-workspace.canvas-cinematic {
@@ -37,8 +45,8 @@
     border-bottom: 1px solid var(--canvas-cinema-border);
     // 暗色默认值与画布顶栏一致（cinematic/shell.less）；浅色窗口主题的覆盖
     // 在 cinematic/window-theme.less（与 .canvas-workspace-header 同组），两模式顶栏同步变色。
-    background: rgba(20, 20, 20, 0.97);
-    box-shadow: 0 1px rgba(0, 0, 0, 0.55);
+    background: color-mix(in srgb, var(--sst-ink) 97%, transparent);
+    box-shadow: 0 1px color-mix(in srgb, var(--black) 55%, transparent);
     // macOS：header 自身作为窗口拖拽区（与 .canvas-workspace-header 一致）。
     // app-region 不按继承生效：header 内可交互按钮必须显式 no-drag，否则点击被拖拽吞掉。
     -webkit-app-region: drag;
@@ -594,14 +602,14 @@
     background: var(--ast-surface-1);
 
     &.is-generating {
-      border-color: rgba(119, 108, 246, 0.4);
+      border-color: color-mix(in srgb, var(--canvas-indigo-500) 40%, transparent);
     }
 
     // 拖拽中（二期 dnd-kit）：浮起半透明，避免遮挡目标位判断
     &.is-dragging {
       z-index: 10;
       opacity: 0.72;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+      box-shadow: 0 6px 20px color-mix(in srgb, var(--black) 16%, transparent);
     }
   }
 
@@ -675,12 +683,12 @@
     }
 
     &.is-done {
-      background: rgba(74, 222, 128, 0.14);
+      background: color-mix(in srgb, var(--sst-green) 14%, transparent);
       color: var(--ast-success);
     }
 
     &.is-failed {
-      background: rgba(239, 107, 118, 0.14);
+      background: color-mix(in srgb, var(--sst-red) 14%, transparent);
       color: var(--ast-danger);
     }
   }
@@ -734,7 +742,7 @@
     border: 1px solid var(--ast-border-strong);
     border-radius: var(--ast-radius-sm);
     background: var(--ast-surface-2);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--black) 32%, transparent);
   }
 
   .segment-mention-option {
@@ -891,7 +899,7 @@
     margin: 0;
     padding: var(--pad-xs) var(--pad-sm);
     border-radius: var(--r-sm);
-    background: rgba(239, 107, 118, 0.1);
+    background: color-mix(in srgb, var(--sst-red) 10%, transparent);
     color: var(--ast-danger);
     font-size: var(--font-xs);
     line-height: 1.6;
@@ -908,7 +916,7 @@
       width: 100%;
       max-width: 460px;
       border-radius: var(--r-md);
-      background: #000000;
+      background: var(--black);
     }
   }
 
@@ -1079,7 +1087,7 @@
     max-width: 720px;
     max-height: 100%;
     border-radius: var(--r-lg);
-    background: #000000;
+    background: var(--black);
   }
 
   .step-assembly-preview-caption {

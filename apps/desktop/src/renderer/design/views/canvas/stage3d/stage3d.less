@@ -1,3 +1,17 @@
+
+/* 数据色板（s3d 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --s3d-blue-1: #082f49;
+  --s3d-blue-2: #0b1220;
+  --s3d-blue-3: #020617;
+  --s3d-green: #4ade80;
+  --s3d-red-1: #fecdd3;
+  --s3d-red-2: #fca5a5;
+  --s3d-red-3: #f43f5e;
+  --s3d-red-4: #be123c;
+  --s3d-ember: #f5a623;
+}
+
 .stage3d-modal-overlay {
   --stage3d-shell-bg: color-mix(in srgb, var(--panel, #303030) 88%, var(--bg-sunken, #1a1a1a));
   --stage3d-shell-border: color-mix(in srgb, var(--border-strong, #4a4a4a) 64%, transparent);
@@ -116,7 +130,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   .ant-segmented-item-selected {
     background: var(--stage3d-control-bg-active);
     color: var(--stage3d-control-text-strong);
-    box-shadow: 0 1px 2px rgba(31, 28, 24, 0.12);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--canvas-ink-900) 12%, transparent);
   }
 }
 
@@ -232,7 +246,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   cursor: pointer;
 
   &:hover {
-    border-color: color-mix(in srgb, var(--primary, #60a5fa) 45%, var(--border, #3d3d3d));
+    border-color: color-mix(in srgb, var(--primary, var(--canvas-blue-400)) 45%, var(--border, #3d3d3d));
     color: var(--stage3d-title);
     background: var(--stage3d-panel-hover);
   }
@@ -356,8 +370,8 @@ html[data-theme='light'] .stage3d-modal-overlay,
     text-overflow: ellipsis;
 
     &:hover {
-      background: color-mix(in srgb, var(--primary, #60a5fa) 14%, transparent);
-      border-color: color-mix(in srgb, var(--primary, #60a5fa) 36%, var(--border, #3d3d3d));
+      background: color-mix(in srgb, var(--primary, var(--canvas-blue-400)) 14%, transparent);
+      border-color: color-mix(in srgb, var(--primary, var(--canvas-blue-400)) 36%, var(--border, #3d3d3d));
       color: var(--stage3d-title);
     }
   }
@@ -388,8 +402,8 @@ html[data-theme='light'] .stage3d-modal-overlay,
       background: color-mix(in srgb, var(--panel-elev, #383838) 90%, transparent);
     }
     &.active {
-      border-color: color-mix(in srgb, var(--primary, #60a5fa) 45%, var(--border, #3d3d3d));
-      background: color-mix(in srgb, var(--primary, #60a5fa) 14%, transparent);
+      border-color: color-mix(in srgb, var(--primary, var(--canvas-blue-400)) 45%, var(--border, #3d3d3d));
+      background: color-mix(in srgb, var(--primary, var(--canvas-blue-400)) 14%, transparent);
       color: var(--stage3d-title);
     }
     :last-child {
@@ -441,7 +455,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #0f172a;
+  color: var(--ink-slate);
   flex-shrink: 0;
   line-height: 0;
 
@@ -507,8 +521,8 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-pose-anglelabel {
   padding: 2px var(--pad-sm);
   border-radius: var(--r-sm);
-  background: rgba(56, 189, 248, 0.92);
-  color: #0b1220;
+  background: color-mix(in srgb, var(--canvas-sky) 92%, transparent);
+  color: var(--s3d-blue-2);
   font-size: var(--font-sm);
   font-weight: 600;
   line-height: 1.3;
@@ -527,7 +541,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   border-radius: var(--r-md);
   border: 1px solid var(--stage3d-panel-border);
   background: var(--stage3d-panel-bg-strong);
-  box-shadow: 0 14px 36px rgba(2, 6, 23, 0.34);
+  box-shadow: 0 14px 36px color-mix(in srgb, var(--s3d-blue-3) 34%, transparent);
   color: var(--stage3d-title);
   pointer-events: auto;
   user-select: none;
@@ -535,8 +549,8 @@ html[data-theme='light'] .stage3d-modal-overlay,
 }
 
 .stage3d-pose-controller.is-editing {
-  border-color: rgba(56, 189, 248, 0.62);
-  box-shadow: 0 16px 42px rgba(8, 47, 73, 0.38);
+  border-color: color-mix(in srgb, var(--canvas-sky) 62%, transparent);
+  box-shadow: 0 16px 42px color-mix(in srgb, var(--s3d-blue-1) 38%, transparent);
 }
 
 .stage3d-pose-controller-head {
@@ -554,14 +568,14 @@ html[data-theme='light'] .stage3d-modal-overlay,
   height: 22px;
   border: 0;
   border-radius: var(--r-sm);
-  background: rgba(148, 163, 184, 0.14);
-  color: #cbd5e1;
+  background: color-mix(in srgb, var(--canvas-slate-400) 14%, transparent);
+  color: var(--canvas-slate-300);
   cursor: pointer;
   line-height: 1;
 }
 
 .stage3d-pose-controller-close:hover {
-  background: rgba(148, 163, 184, 0.24);
+  background: color-mix(in srgb, var(--canvas-slate-400) 24%, transparent);
   color: var(--text-inverse);
 }
 
@@ -586,12 +600,12 @@ html[data-theme='light'] .stage3d-modal-overlay,
     font-variant-numeric: tabular-nums;
     text-align: right;
     font-size: var(--font-xs);
-    color: #cbd5e1;
+    color: var(--canvas-slate-300);
   }
 
   > input[type='range'] {
     width: 100%;
-    accent-color: #38bdf8;
+    accent-color: var(--canvas-sky);
     cursor: ew-resize;
   }
 }
@@ -600,7 +614,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   color: var(--danger);
 }
 .stage3d-pose-controller-axis.axis-y > span {
-  color: #4ade80;
+  color: var(--s3d-green);
 }
 .stage3d-pose-controller-axis.axis-z > span {
   color: var(--info);
@@ -633,7 +647,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
 }
 .stage3d-viewport-error-msg {
   font-size: var(--font-sm);
-  color: #fca5a5;
+  color: var(--s3d-red-2);
   max-width: 80%;
 }
 .stage3d-viewport-error-stack {
@@ -643,8 +657,8 @@ html[data-theme='light'] .stage3d-modal-overlay,
   margin: 0;
   padding: var(--pad-sm) var(--pad-sm);
   border-radius: var(--r-md);
-  background: rgba(2, 6, 12, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: color-mix(in srgb, var(--canvas-stage-bg) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--canvas-slate-400) 16%, transparent);
   color: var(--stage3d-text-muted);
   font-size: var(--font-xs);
   line-height: 1.5;
@@ -662,7 +676,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   inset: 0;
   pointer-events: none;
   z-index: 4;
-  box-shadow: inset 0 0 0 3px rgba(245, 166, 35, 0.5);
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--s3d-ember) 50%, transparent);
 }
 
 .stage3d-field {
@@ -782,8 +796,8 @@ html[data-theme='light'] .stage3d-modal-overlay,
   align-items: center;
   justify-content: center;
   gap: var(--pad-xs);
-  background: radial-gradient(circle at 50% 30%, rgba(56, 189, 248, 0.08), rgba(2, 6, 12, 0.4));
-  color: #94a3b8;
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--canvas-sky) 8%, transparent), color-mix(in srgb, var(--canvas-stage-bg) 40%, transparent));
+  color: var(--canvas-slate-400);
   padding: var(--pad-sm);
 }
 .canvas-node-stage3d-thumb {
@@ -815,29 +829,29 @@ html[data-theme='light'] .stage3d-modal-overlay,
     linear-gradient(
       to right,
       transparent calc(33.333% - 1px),
-      rgba(226, 232, 240, 0.4) calc(33.333% - 1px),
-      rgba(226, 232, 240, 0.4) calc(33.333% + 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 40%, transparent) calc(33.333% - 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 40%, transparent) calc(33.333% + 1px),
       transparent calc(33.333% + 1px)
     ),
     linear-gradient(
       to right,
       transparent calc(66.666% - 1px),
-      rgba(226, 232, 240, 0.4) calc(66.666% - 1px),
-      rgba(226, 232, 240, 0.4) calc(66.666% + 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 40%, transparent) calc(66.666% - 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 40%, transparent) calc(66.666% + 1px),
       transparent calc(66.666% + 1px)
     ),
     linear-gradient(
       to bottom,
       transparent calc(33.333% - 1px),
-      rgba(226, 232, 240, 0.4) calc(33.333% - 1px),
-      rgba(226, 232, 240, 0.4) calc(33.333% + 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 40%, transparent) calc(33.333% - 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 40%, transparent) calc(33.333% + 1px),
       transparent calc(33.333% + 1px)
     ),
     linear-gradient(
       to bottom,
       transparent calc(66.666% - 1px),
-      rgba(226, 232, 240, 0.4) calc(66.666% - 1px),
-      rgba(226, 232, 240, 0.4) calc(66.666% + 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 40%, transparent) calc(66.666% - 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 40%, transparent) calc(66.666% + 1px),
       transparent calc(66.666% + 1px)
     );
 }
@@ -846,15 +860,15 @@ html[data-theme='light'] .stage3d-modal-overlay,
     linear-gradient(
       to right,
       transparent calc(50% - 1px),
-      rgba(226, 232, 240, 0.5) calc(50% - 1px),
-      rgba(226, 232, 240, 0.5) calc(50% + 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 50%, transparent) calc(50% - 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 50%, transparent) calc(50% + 1px),
       transparent calc(50% + 1px)
     ),
     linear-gradient(
       to bottom,
       transparent calc(50% - 1px),
-      rgba(226, 232, 240, 0.5) calc(50% - 1px),
-      rgba(226, 232, 240, 0.5) calc(50% + 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 50%, transparent) calc(50% - 1px),
+      color-mix(in srgb, var(--canvas-slate-200) 50%, transparent) calc(50% + 1px),
       transparent calc(50% + 1px)
     );
 }
@@ -1105,7 +1119,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   border-radius: var(--r-lg);
   overflow: hidden;
   border: 1px solid var(--stage3d-panel-border);
-  background: #0b1220;
+  background: var(--s3d-blue-2);
   line-height: 0;
 
   .stage3d-pip-canvas {
@@ -1135,7 +1149,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   gap: var(--pad-3xs);
   padding: 2px var(--pad-sm);
   border-radius: var(--r-pill);
-  background: rgba(190, 18, 60, 0.85);
+  background: color-mix(in srgb, var(--s3d-red-4) 85%, transparent);
   color: var(--text-inverse);
   font-size: var(--font-2xs);
   font-weight: 700;
@@ -1146,7 +1160,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #fecdd3;
+  background: var(--s3d-red-1);
   animation: stage3d-rec-blink 1s ease-in-out infinite;
 }
 @keyframes stage3d-rec-blink {
@@ -1165,15 +1179,15 @@ html[data-theme='light'] .stage3d-modal-overlay,
   width: 24px;
   height: 24px;
   border-radius: var(--r-sm);
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  background: rgba(15, 23, 42, 0.62);
-  color: #e2e8f0;
+  border: 1px solid color-mix(in srgb, var(--canvas-slate-400) 40%, transparent);
+  background: color-mix(in srgb, var(--ink-slate) 62%, transparent);
+  color: var(--canvas-slate-200);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   &:hover {
-    background: rgba(15, 23, 42, 0.85);
+    background: color-mix(in srgb, var(--ink-slate) 85%, transparent);
   }
 }
 .stage3d-pip-select {
@@ -1194,7 +1208,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   border-radius: var(--r-lg);
   border: 1px solid var(--stage3d-panel-border);
   background: var(--stage3d-panel-bg-strong);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--black) 35%, transparent);
 }
 
 // ─────────── 运动轨迹面板（CameraMotionPanel） ───────────
@@ -1375,8 +1389,8 @@ html[data-theme='light'] .stage3d-modal-overlay,
   gap: var(--pad-sm);
   padding: var(--pad-sm) var(--pad-lg);
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, #0f172a 78%, transparent);
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: color-mix(in srgb, var(--ink-slate) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--canvas-slate-400) 35%, transparent);
   backdrop-filter: blur(4px);
   pointer-events: none;
 }
@@ -1384,7 +1398,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   display: inline-flex;
   align-items: center;
   gap: var(--pad-xs);
-  color: #fecdd3;
+  color: var(--s3d-red-1);
   font-size: var(--font-sm);
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -1393,20 +1407,20 @@ html[data-theme='light'] .stage3d-modal-overlay,
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #f43f5e;
+  background: var(--s3d-red-3);
   animation: stage3d-rec-blink 1s ease-in-out infinite;
 }
 .stage3d-record-progress {
   width: 220px;
   height: 4px;
   border-radius: var(--r-pill);
-  background: rgba(148, 163, 184, 0.3);
+  background: color-mix(in srgb, var(--canvas-slate-400) 30%, transparent);
   overflow: hidden;
 }
 .stage3d-record-progress-bar {
   height: 100%;
   border-radius: var(--r-pill);
-  background: #f43f5e;
+  background: var(--s3d-red-3);
   transition: width var(--motion-fast) linear;
 }
 

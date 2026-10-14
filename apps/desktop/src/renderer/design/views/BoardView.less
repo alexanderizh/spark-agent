@@ -950,7 +950,7 @@
 .board-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: color-mix(in srgb, var(--black) 35%, transparent);
   z-index: 200;
   display: flex;
   align-items: center;
@@ -1069,7 +1069,7 @@
 .board-detail-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--black) 30%, transparent);
   z-index: 200;
   display: flex;
   justify-content: flex-end;
@@ -1530,7 +1530,7 @@
   padding: var(--pad-xs);
   background: var(--bg);
   border-radius: var(--r-md);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--black) 15%, transparent);
   min-width: 160px;
 }
 
@@ -1937,7 +1937,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
+  background: color-mix(in srgb, var(--black) 55%, transparent);
   color: var(--text-inverse);
   border: none;
   cursor: pointer;
@@ -1955,7 +1955,7 @@
   left: 0;
   right: 0;
   padding: 2px var(--pad-xs);
-  background: rgba(0, 0, 0, 0.55);
+  background: color-mix(in srgb, var(--black) 55%, transparent);
   color: var(--text-inverse);
   font-size: var(--font-2xs);
   white-space: nowrap;
@@ -2047,7 +2047,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: color-mix(in srgb, var(--black) 70%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2075,7 +2075,7 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: color-mix(in srgb, var(--white) 15%, transparent);
   color: var(--text-inverse);
   border: none;
   cursor: pointer;
@@ -2085,7 +2085,7 @@
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: color-mix(in srgb, var(--white) 30%, transparent);
   }
 }
 
@@ -2165,7 +2165,7 @@
   padding: var(--pad-md);
   background: var(--panel);
   border-radius: var(--r-md);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--black) 15%, transparent);
 }
 
 .board-filter-popover-row {
@@ -2202,7 +2202,7 @@
   width: 220px;
   background: var(--panel);
   border-radius: var(--r-md);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--black) 15%, transparent);
   overflow: hidden;
 }
 

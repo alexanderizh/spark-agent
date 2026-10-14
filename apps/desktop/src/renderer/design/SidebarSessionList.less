@@ -33,7 +33,7 @@
   cursor: grabbing;
   opacity: 0.92;
   box-shadow:
-    0 8px 22px color-mix(in srgb, #000 22%, transparent),
+    0 8px 22px color-mix(in srgb, var(--black) 22%, transparent),
     0 0 0 1px color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 38%, transparent);
 }
 
@@ -741,7 +741,7 @@ button.session-terminal-indicator-btn {
 
 .empty-action-card--primary .empty-action-card__icon {
   color: currentColor;
-  background: rgb(255 255 255 / 0.16);
+  background: color-mix(in srgb, var(--white) 16%, transparent);
 }
 
 .empty-action-card__copy {
@@ -784,7 +784,7 @@ button.session-terminal-indicator-btn {
 
 .empty-action-card--primary .empty-action-card__copy small,
 .empty-action-card--primary .empty-action-card__arrow {
-  color: rgb(255 255 255 / 0.78);
+  color: color-mix(in srgb, var(--white) 78%, transparent);
 }
 
 .empty-action-card--primary:hover .empty-action-card__arrow {
@@ -1188,7 +1188,7 @@ button.session-terminal-indicator-btn {
 .session-hover-card-popover {
   // antd 6 uses filter: drop-shadow on the Popover root rather than box-shadow.
   filter: none !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18) !important;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--black) 18%, transparent) !important;
   border-radius: var(--r-lg);
 
   .ant-popover-container {

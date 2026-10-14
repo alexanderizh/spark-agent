@@ -284,24 +284,25 @@
       "scope": "non-canvas"
     },
     "#6366f1": {
-      "token": "REVIEW",
-      "scope": "non-canvas",
-      "note": "品牌相关→--primary；功能色→域 token，逐条人审"
+      "token": "--accent",
+      "scope": "global",
+      "note": "品牌靛蓝辅助强调色，恒值（原 var(--brand/--accent) 兜底实值）"
     },
     "#8b5cf6": {
-      "token": "REVIEW",
-      "scope": "non-canvas",
-      "note": "同上"
+      "token": "--violet",
+      "scope": "global",
+      "note": "紫罗兰强调色，恒值"
     },
     "#0f172a": {
-      "token": "REVIEW",
+      "token": "--ink-slate",
       "scope": "global",
-      "note": "深底→--bg-sunken 或域 token，逐条人审"
+      "note": "slate-900 深投影墨，恒值"
     },
     "#1a1a1a": {
-      "token": "REVIEW",
+      "token": "--bg-sunken",
       "scope": "global",
-      "note": "同上"
+      "skip": true,
+      "note": "现网仅以 var(--bg-sunken,#1a1a1a) 兜底形态存在，合法，无需替换"
     },
     "#fff;bg": {
       "token": "--panel",
@@ -383,13 +384,11 @@
       "scope": "global"
     },
     "#3d8eff": {
-      "token": "--info",
-      "direction": "near",
-      "scope": "global"
+      "token": "--canvas-blue-accent",
+      "scope": "canvas"
     },
     "#60a5fa": {
-      "token": "--info",
-      "direction": "up",
+      "token": "--canvas-blue-400",
       "scope": "canvas"
     },
     "#f87171": {
@@ -421,6 +420,451 @@
       "token": "--canvas-stage-bg-3",
       "direction": "near",
       "scope": "canvas"
+    },
+    "#93c5fd": {
+      "token": "--canvas-blue-300",
+      "scope": "canvas"
+    },
+    "#bfdbfe": {
+      "token": "--canvas-blue-200",
+      "scope": "canvas"
+    },
+    "#38bdf8": {
+      "token": "--canvas-sky",
+      "scope": "canvas"
+    },
+    "#22d3ee": {
+      "token": "--canvas-cyan",
+      "scope": "canvas"
+    },
+    "#e2e8f0": {
+      "token": "--canvas-slate-200",
+      "scope": "canvas"
+    },
+    "#cbd5e1": {
+      "token": "--canvas-slate-300",
+      "scope": "canvas"
+    },
+    "#94a3b8": {
+      "token": "--canvas-slate-400",
+      "scope": "canvas"
+    },
+    "#776cf6": {
+      "token": "--canvas-indigo-500",
+      "scope": "canvas"
+    },
+    "#655bd8": {
+      "token": "--canvas-indigo-600",
+      "scope": "canvas"
+    },
+    "#9189ff": {
+      "token": "--canvas-indigo-400",
+      "scope": "canvas"
+    },
+    "#ffffff": {
+      "token": "--white",
+      "scope": "global",
+      "snap": true,
+      "dE": 0,
+      "note": "同值"
+    },
+    "#000000": {
+      "token": "--black",
+      "scope": "global",
+      "snap": true,
+      "dE": 0,
+      "note": "同值"
+    },
+    "#0f0f12": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.79,
+      "note": "ΔE2000=1.79 < 2.3 不可感知吸附"
+    },
+    "#050505": {
+      "token": "--black",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.79,
+      "note": "ΔE2000=0.79 < 2.3 不可感知吸附"
+    },
+    "#15191f": {
+      "token": "--canvas-stage-bg-3",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.76,
+      "note": "ΔE2000=0.76 < 2.3 不可感知吸附"
+    },
+    "#050807": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.47,
+      "note": "ΔE2000=1.47 < 2.3 不可感知吸附"
+    },
+    "#1d1c19": {
+      "token": "--canvas-ink-900",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.45,
+      "note": "ΔE2000=1.45 < 2.3 不可感知吸附"
+    },
+    "#1a1a1e": {
+      "token": "--canvas-stage-bg-3",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.99,
+      "note": "ΔE2000=1.99 < 2.3 不可感知吸附"
+    },
+    "#4a8cff": {
+      "token": "--canvas-blue-accent",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.26,
+      "note": "ΔE2000=1.26 < 2.3 不可感知吸附"
+    },
+    "#fdfdfc": {
+      "token": "--white",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.68,
+      "note": "ΔE2000=0.68 < 2.3 不可感知吸附"
+    },
+    "#141418": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.62,
+      "note": "ΔE2000=1.62 < 2.3 不可感知吸附"
+    },
+    "#0c0e12": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.65,
+      "note": "ΔE2000=1.65 < 2.3 不可感知吸附"
+    },
+    "#080a0e": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.02,
+      "note": "ΔE2000=1.02 < 2.3 不可感知吸附"
+    },
+    "#101218": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.95,
+      "note": "ΔE2000=0.95 < 2.3 不可感知吸附"
+    },
+    "#f8fafc": {
+      "token": "--white",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.62,
+      "note": "ΔE2000=1.62 < 2.3 不可感知吸附"
+    },
+    "#080a0d": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.54,
+      "note": "ΔE2000=0.54 < 2.3 不可感知吸附"
+    },
+    "#0a0a0a": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.02,
+      "note": "ΔE2000=1.02 < 2.3 不可感知吸附"
+    },
+    "#0a0c10": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.31,
+      "note": "ΔE2000=1.31 < 2.3 不可感知吸附"
+    },
+    "#f7fafc": {
+      "token": "--white",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.9,
+      "note": "ΔE2000=1.9 < 2.3 不可感知吸附"
+    },
+    "#14181d": {
+      "token": "--canvas-stage-bg-3",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.61,
+      "note": "ΔE2000=0.61 < 2.3 不可感知吸附"
+    },
+    "#121216": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.61,
+      "note": "ΔE2000=1.61 < 2.3 不可感知吸附"
+    },
+    "#fbfaf7": {
+      "token": "--white",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.82,
+      "note": "ΔE2000=1.82 < 2.3 不可感知吸附"
+    },
+    "#101216": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.87,
+      "note": "ΔE2000=0.87 < 2.3 不可感知吸附"
+    },
+    "#4d93e8": {
+      "token": "--canvas-blue-accent",
+      "scope": "global",
+      "snap": true,
+      "dE": 2.15,
+      "note": "ΔE2000=2.15 < 2.3 不可感知吸附"
+    },
+    "#fcfcfa": {
+      "token": "--white",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.23,
+      "note": "ΔE2000=1.23 < 2.3 不可感知吸附"
+    },
+    "#f6f6f4": {
+      "token": "--white",
+      "scope": "global",
+      "snap": true,
+      "dE": 2.13,
+      "note": "ΔE2000=2.13 < 2.3 不可感知吸附"
+    },
+    "#08090c": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.69,
+      "note": "ΔE2000=0.69 < 2.3 不可感知吸附"
+    },
+    "#4d80f0": {
+      "token": "--primary",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.72,
+      "note": "ΔE2000=0.72 < 2.3 不可感知吸附"
+    },
+    "#14171c": {
+      "token": "--canvas-stage-bg-3",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.31,
+      "note": "ΔE2000=0.31 < 2.3 不可感知吸附"
+    },
+    "#101012": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.68,
+      "note": "ΔE2000=1.68 < 2.3 不可感知吸附"
+    },
+    "#191d23": {
+      "token": "--canvas-stage-bg-3",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.67,
+      "note": "ΔE2000=1.67 < 2.3 不可感知吸附"
+    },
+    "#0a0e14": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.15,
+      "note": "ΔE2000=1.15 < 2.3 不可感知吸附"
+    },
+    "#e5e7eb": {
+      "token": "--canvas-slate-200",
+      "scope": "global",
+      "snap": true,
+      "dE": 2.22,
+      "note": "ΔE2000=2.22 < 2.3 不可感知吸附"
+    },
+    "#0d0f14": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.16,
+      "note": "ΔE2000=1.16 < 2.3 不可感知吸附"
+    },
+    "#111827": {
+      "token": "--ink-slate",
+      "scope": "global",
+      "snap": true,
+      "dE": 2.27,
+      "note": "ΔE2000=2.27 < 2.3 不可感知吸附"
+    },
+    "#e2e6ee": {
+      "token": "--canvas-slate-200",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.98,
+      "note": "ΔE2000=0.98 < 2.3 不可感知吸附"
+    },
+    "#dce0e5": {
+      "token": "--canvas-slate-200",
+      "scope": "global",
+      "snap": true,
+      "dE": 2.23,
+      "note": "ΔE2000=2.23 < 2.3 不可感知吸附"
+    },
+    "#090b0e": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.68,
+      "note": "ΔE2000=0.68 < 2.3 不可感知吸附"
+    },
+    "#0f1216": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.85,
+      "note": "ΔE2000=0.85 < 2.3 不可感知吸附"
+    },
+    "#0d1014": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.22,
+      "note": "ΔE2000=1.22 < 2.3 不可感知吸附"
+    },
+    "#111216": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.17,
+      "note": "ΔE2000=1.17 < 2.3 不可感知吸附"
+    },
+    "#15191e": {
+      "token": "--canvas-stage-bg-3",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.66,
+      "note": "ΔE2000=0.66 < 2.3 不可感知吸附"
+    },
+    "#111318": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.54,
+      "note": "ΔE2000=0.54 < 2.3 不可感知吸附"
+    },
+    "#101317": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 0.72,
+      "note": "ΔE2000=0.72 < 2.3 不可感知吸附"
+    },
+    "#02060c": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.68,
+      "note": "ΔE2000=1.68 < 2.3 不可感知吸附"
+    },
+    "#080a10": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 2.03,
+      "note": "ΔE2000=2.03 < 2.3 不可感知吸附"
+    },
+    "#08090d": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.1,
+      "note": "ΔE2000=1.1 < 2.3 不可感知吸附"
+    },
+    "#141419": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.71,
+      "note": "ΔE2000=1.71 < 2.3 不可感知吸附"
+    },
+    "#0a0a0e": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.45,
+      "note": "ΔE2000=1.45 < 2.3 不可感知吸附"
+    },
+    "#08080c": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.32,
+      "note": "ΔE2000=1.32 < 2.3 不可感知吸附"
+    },
+    "#141417": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.84,
+      "note": "ΔE2000=1.84 < 2.3 不可感知吸附"
+    },
+    "#101013": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.99,
+      "note": "ΔE2000=1.99 < 2.3 不可感知吸附"
+    },
+    "#18181c": {
+      "token": "--canvas-stage-bg-3",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.83,
+      "note": "ΔE2000=1.83 < 2.3 不可感知吸附"
+    },
+    "#0b0b0e": {
+      "token": "--canvas-stage-bg",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.18,
+      "note": "ΔE2000=1.18 < 2.3 不可感知吸附"
+    },
+    "#0f1115": {
+      "token": "--canvas-stage-bg-2",
+      "scope": "global",
+      "snap": true,
+      "dE": 1.05,
+      "note": "ΔE2000=1.05 < 2.3 不可感知吸附"
+    },
+    "#0891b2": {
+      "token": "--file-type-text",
+      "scope": "global"
+    },
+    "#9333ea": {
+      "token": "--file-type-image",
+      "scope": "global"
+    },
+    "#7c3aed": {
+      "token": "--file-type-video",
+      "scope": "global"
+    },
+    "#db2777": {
+      "token": "--file-type-audio",
+      "scope": "global"
+    },
+    "#f1f1f3": {
+      "token": "--white-soft",
+      "scope": "global"
     }
   },
   "transition": {

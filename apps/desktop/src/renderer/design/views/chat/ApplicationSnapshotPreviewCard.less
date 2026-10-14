@@ -39,7 +39,7 @@
   aspect-ratio: 16 / 10;
   padding: 2px;
   overflow: hidden;
-  background: rgba(127, 127, 127, 0.055);
+  background: color-mix(in srgb, var(--gray-mid) 5.5%, transparent);
 }
 
 .application-snapshot-card-media img {
@@ -60,9 +60,9 @@
   height: 28px;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid color-mix(in srgb, var(--white) 18%, transparent);
   border-radius: var(--r-sm);
-  background: rgba(12, 14, 18, 0.68);
+  background: color-mix(in srgb, var(--canvas-stage-bg) 68%, transparent);
   color: var(--text-inverse);
   opacity: 0;
   transform: translateY(3px);

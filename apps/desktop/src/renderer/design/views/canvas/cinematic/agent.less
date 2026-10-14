@@ -14,7 +14,7 @@
     border-left: 0px solid var(--canvas-cinema-border);
     border-radius: 0;
     background: var(--canvas-cinema-surface-1);
-    box-shadow: -18px 0 40px rgba(0, 0, 0, 0.16);
+    box-shadow: -18px 0 40px color-mix(in srgb, var(--black) 16%, transparent);
   }
 
   .canvas-agent-side-panel.is-collapsed {
@@ -110,10 +110,10 @@
   }
 
   .canvas-agent-modal .chat-panel-message-user .chat-panel-text {
-    border-color: rgba(255, 255, 255, 0.09);
+    border-color: color-mix(in srgb, var(--white) 9%, transparent);
     border-radius: 12px 12px 4px 12px;
     background: var(--canvas-cinema-surface-3);
-    color: #dce0e5;
+    color: var(--canvas-slate-200);
   }
 
   .canvas-agent-modal :is(.tool-call-card, .tool-result-card, .chat-panel-tool-card) {
@@ -145,15 +145,15 @@
     border-radius: var(--r-lg);
     background: var(--canvas-cinema-surface-2);
     box-shadow:
-      0 16px 36px rgba(0, 0, 0, 0.24),
-      inset 0 1px rgba(255, 255, 255, 0.025);
+      0 16px 36px color-mix(in srgb, var(--black) 24%, transparent),
+      inset 0 1px color-mix(in srgb, var(--white) 2.5%, transparent);
     color: var(--canvas-cinema-text);
     font-size: var(--font-2xs);
   }
 
   .canvas-agent-modal .chat-panel-composer textarea:focus {
-    border-color: rgba(145, 137, 255, 0.5);
-    box-shadow: 0 0 0 3px rgba(119, 108, 246, 0.11);
+    border-color: color-mix(in srgb, var(--canvas-indigo-400) 50%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--canvas-indigo-500) 11%, transparent);
   }
 
   .canvas-agent-side-panel-inner .chat-panel-composer-below {

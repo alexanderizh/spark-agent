@@ -4,6 +4,14 @@
  * Agents 列表屏与编辑器的页面样式均归属于本文件；仅跨页面的 Team 时间线等样式继续留在历史兼容层。
  */
 
+
+/* 数据色板（agv 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --agv-cyan: #10b981;
+  /* 含 2 个 ΔE<3 族内近似色合并 */
+  --agv-blue: #0a1220;
+}
+
 .agents-view {
   display: flex;
   flex-direction: column;
@@ -180,7 +188,7 @@
 
   &.active {
     color: var(--primary, #6366f1);
-    background: color-mix(in srgb, var(--primary, #6366f1) 12%, transparent);
+    background: color-mix(in srgb, var(--primary, var(--accent)) 12%, transparent);
   }
 }
 
@@ -206,7 +214,7 @@
 
 .agents-home-tab.active .agents-home-tab-count {
   color: var(--primary, #6366f1);
-  background: color-mix(in srgb, var(--primary, #6366f1) 16%, transparent);
+  background: color-mix(in srgb, var(--primary, var(--accent)) 16%, transparent);
 }
 
 .agents-home-toolbar {
@@ -221,7 +229,7 @@
   align-items: center;
   gap: var(--pad-sm);
   padding: var(--pad-sm) var(--pad-md);
-  background: color-mix(in srgb, var(--primary, #6366f1) 8%, var(--bg));
+  background: color-mix(in srgb, var(--primary, var(--accent)) 8%, var(--bg));
   border: 1px solid transparent;
   border-radius: var(--r-md);
   flex-shrink: 0;
@@ -297,7 +305,7 @@
 
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--black) 8%, transparent);
   }
 
   &.is-disabled {
@@ -305,7 +313,7 @@
   }
 
   &.is-selected {
-    background: color-mix(in srgb, var(--primary, #6366f1) 8%, var(--bg-sunken));
+    background: color-mix(in srgb, var(--primary, var(--accent)) 8%, var(--bg-sunken));
   }
 
   &.is-selecting {
@@ -321,7 +329,7 @@
   &.is-selected {
     box-shadow:
       0 0 0 1px var(--primary, #6366f1) inset,
-      0 8px 20px rgba(0, 0, 0, 0.18);
+      0 8px 20px color-mix(in srgb, var(--black) 18%, transparent);
   }
 }
 
@@ -356,7 +364,7 @@
   min-height: 0;
 
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--primary, #6366f1) 60%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--primary, var(--accent)) 60%, transparent);
     outline-offset: 2px;
     border-radius: var(--r-sm);
   }
@@ -417,8 +425,8 @@
 }
 
 .agents-card-status.enabled {
-  color: var(--success, #10b981);
-  background: rgba(16, 185, 129, 0.12);
+  color: var(--success, var(--agv-cyan));
+  background: color-mix(in srgb, var(--agv-cyan) 12%, transparent);
 }
 
 .agents-card-status.disabled {
@@ -520,7 +528,7 @@
 
 .agents-card-tag.default-tag {
   color: var(--warning, #f59e0b);
-  background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
+  background: color-mix(in srgb, var(--warning, var(--warning)) 12%, transparent);
   border-color: transparent;
 }
 
@@ -566,7 +574,7 @@
   display: grid;
   place-items: center;
   padding: var(--pad-2xl);
-  background: color-mix(in srgb, #07111f 42%, transparent);
+  background: color-mix(in srgb, var(--agv-blue) 42%, transparent);
   backdrop-filter: blur(10px);
 }
 
@@ -584,7 +592,7 @@
     color-mix(in srgb, var(--panel) 92%, var(--panel) 8%),
     var(--panel)
   );
-  box-shadow: 0 24px 64px rgba(10, 18, 32, 0.24);
+  box-shadow: 0 24px 64px color-mix(in srgb, var(--agv-blue) 24%, transparent);
   overflow: hidden;
 }
 
@@ -706,7 +714,7 @@
 .agents-quickchat-project:hover,
 .agents-quickchat-temp:hover {
   background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--black) 8%, transparent);
 }
 
 .agents-quickchat-project:disabled,
@@ -1549,7 +1557,7 @@
   align-items: center;
   gap: var(--pad-sm);
   padding: var(--pad-sm) 0;
-  border-bottom: 1px dashed var(--border-color, rgba(128, 128, 128, 0.15));
+  border-bottom: 1px dashed var(--border-color, color-mix(in srgb, var(--gray-mid) 15%, transparent));
 }
 
 .agent-hooks-row:last-child {

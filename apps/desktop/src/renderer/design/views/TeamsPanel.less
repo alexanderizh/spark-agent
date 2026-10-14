@@ -5,6 +5,13 @@
  * 列表屏复用 .agents-card-grid（来自 AgentsView.less），仅在卡片元素上微调。
  */
 
+
+/* 数据色板（tpm 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --tpm-green: #16a34a;
+  --tpm-blue: #7a5cf9;
+}
+
 @accent: var(--accent, var(--primary));
 
 .teams-panel {
@@ -96,7 +103,7 @@
 
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--black) 8%, transparent);
   }
 
   &-head {
@@ -134,8 +141,8 @@
     border-radius: var(--r-pill);
 
     &.enabled {
-      color: var(--success, #16a34a);
-      background: rgba(22, 163, 74, 0.08);
+      color: var(--success, var(--tpm-green));
+      background: color-mix(in srgb, var(--tpm-green) 8%, transparent);
     }
     &.disabled {
       color: var(--text-faint);
@@ -271,7 +278,7 @@
 
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--black) 6%, transparent);
   }
 
   &-head {
@@ -363,7 +370,7 @@
     background: var(--hover);
   }
   &.active {
-    background: var(--primary-soft, rgba(122, 92, 249, 0.08));
+    background: var(--primary-soft, color-mix(in srgb, var(--tpm-blue) 8%, transparent));
     border-color: transparent;
     color: var(--primary);
     font-weight: 500;

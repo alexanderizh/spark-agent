@@ -1,3 +1,15 @@
+/* 数据色板（team-tag 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --team-tag-slate: #808080;
+  --team-tag-red: #ee6666;
+  --team-tag-blue: #4a9eff;
+  --team-tag-violet: #a878ff;
+  --team-tag-green: #34c77b;
+  --team-tag-ember-1: #ff9f43;
+  --team-tag-ember-2: #e6a23c;
+  --team-tag-cyan: #35c3d6;
+}
+
 // TeamStoreView — 团队商店页样式（team-store- / tsc- 前缀）
 // 复用全局 design token（--color-bg-*、--dividing-line-1、--color-primary）；
 // 卡片网格 auto-fill 自适应，窄屏自动降为单列；含侧栏角标样式。
@@ -43,9 +55,9 @@
   align-items: center;
   gap: var(--pad-sm);
   padding: var(--pad-sm) var(--pad-lg);
-  border: 1px solid color-mix(in srgb, var(--color-primary, #4a9eff) 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary, var(--team-tag-blue)) 35%, transparent);
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--color-primary, #4a9eff) 8%, var(--color-bg-1, transparent));
+  background: color-mix(in srgb, var(--color-primary, var(--team-tag-blue)) 8%, var(--color-bg-1, transparent));
   font-size: var(--font-base);
 
   span b {
@@ -59,7 +71,7 @@
 
 .team-store-warn-line {
   padding: var(--pad-sm) var(--pad-lg);
-  border: 1px dashed var(--dividing-line-1, rgba(128, 128, 128, 0.2));
+  border: 1px dashed var(--dividing-line-1, color-mix(in srgb, var(--team-tag-slate) 20%, transparent));
   border-radius: var(--r-md);
   font-size: var(--font-sm);
   opacity: 0.8;
@@ -78,7 +90,7 @@
 .team-store-sort {
   display: flex;
   overflow: hidden;
-  border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.2));
+  border: 1px solid var(--dividing-line-1, color-mix(in srgb, var(--team-tag-slate) 20%, transparent));
   border-radius: var(--r-md);
 
   button {
@@ -90,16 +102,16 @@
     cursor: pointer;
 
     &:hover {
-      background: var(--color-bg-2, rgba(128, 128, 128, 0.06));
+      background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 6%, transparent));
     }
 
     &.is-active {
-      background: var(--color-bg-2, rgba(128, 128, 128, 0.1));
+      background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 10%, transparent));
       font-weight: 600;
     }
 
     &:focus-visible {
-      outline: 2px solid var(--color-primary, #4a9eff);
+      outline: 2px solid var(--color-primary, var(--team-tag-blue));
       outline-offset: -2px;
     }
   }
@@ -116,7 +128,7 @@
   align-items: center;
   gap: var(--pad-xs);
   padding: var(--pad-xs) var(--pad-md);
-  border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.2));
+  border: 1px solid var(--dividing-line-1, color-mix(in srgb, var(--team-tag-slate) 20%, transparent));
   border-radius: var(--r-pill);
   background: transparent;
   color: inherit;
@@ -127,17 +139,17 @@
     border-color 0.15s;
 
   &:hover {
-    background: var(--color-bg-2, rgba(128, 128, 128, 0.06));
+    background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 6%, transparent));
   }
 
   &:focus-visible {
-    outline: 2px solid var(--color-primary, #4a9eff);
+    outline: 2px solid var(--color-primary, var(--team-tag-blue));
     outline-offset: 1px;
   }
 
   &.is-active {
-    border-color: var(--color-primary, #4a9eff);
-    color: var(--color-primary, #4a9eff);
+    border-color: var(--color-primary, var(--team-tag-blue));
+    color: var(--color-primary, var(--team-tag-blue));
     font-weight: 600;
   }
 }
@@ -146,7 +158,7 @@
   min-width: 18px;
   padding: 0 var(--pad-xs);
   border-radius: var(--r-pill);
-  background: var(--color-bg-2, rgba(128, 128, 128, 0.12));
+  background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 12%, transparent));
   font-size: var(--font-xs);
   text-align: center;
 }
@@ -173,18 +185,18 @@
   }
 
   &:hover {
-    background: var(--color-bg-2, rgba(128, 128, 128, 0.08));
+    background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 8%, transparent));
     opacity: 1;
   }
 
   &.is-active {
-    background: var(--color-bg-2, rgba(128, 128, 128, 0.14));
+    background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 14%, transparent));
     opacity: 1;
     font-weight: 600;
   }
 
   &:focus-visible {
-    outline: 2px solid var(--color-primary, #4a9eff);
+    outline: 2px solid var(--color-primary, var(--team-tag-blue));
     outline-offset: 1px;
   }
 }
@@ -216,7 +228,7 @@
   align-items: center;
   gap: var(--pad-sm);
   padding-bottom: var(--pad-xs);
-  border-bottom: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.14));
+  border-bottom: 1px solid var(--dividing-line-1, color-mix(in srgb, var(--team-tag-slate) 14%, transparent));
 
   h3 {
     margin: 0;
@@ -228,7 +240,7 @@
 .team-store-section-count {
   padding: 0 var(--pad-sm);
   border-radius: var(--r-pill);
-  background: var(--color-bg-2, rgba(128, 128, 128, 0.12));
+  background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 12%, transparent));
   font-size: var(--font-xs);
   opacity: 0.75;
 }
@@ -238,7 +250,7 @@
   flex-direction: column;
   gap: var(--pad-sm);
   padding: var(--pad-lg) var(--pad-lg);
-  border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.2));
+  border: 1px solid var(--dividing-line-1, color-mix(in srgb, var(--team-tag-slate) 20%, transparent));
   border-radius: var(--r-lg);
   background: var(--color-bg-1, transparent);
   cursor: pointer;
@@ -248,13 +260,13 @@
     box-shadow 0.15s;
 
   &:hover {
-    border-color: color-mix(in srgb, var(--color-primary, #4a9eff) 45%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary, var(--team-tag-blue)) 45%, transparent);
     transform: translateY(-1px);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--black) 8%, transparent);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--color-primary, #4a9eff);
+    outline: 2px solid var(--color-primary, var(--team-tag-blue));
     outline-offset: 2px;
   }
 }
@@ -276,24 +288,24 @@
   border-radius: var(--r-md);
 
   &--app {
-    color: #4a9eff;
-    background: rgba(74, 158, 255, 0.12);
+    color: var(--team-tag-blue);
+    background: color-mix(in srgb, var(--team-tag-blue) 12%, transparent);
   }
   &--workflow {
-    color: #a878ff;
-    background: rgba(168, 120, 255, 0.12);
+    color: var(--team-tag-violet);
+    background: color-mix(in srgb, var(--team-tag-violet) 12%, transparent);
   }
   &--agent {
     color: var(--success);
-    background: rgba(52, 199, 123, 0.12);
+    background: color-mix(in srgb, var(--team-tag-green) 12%, transparent);
   }
   &--skill {
-    color: #ff9f43;
-    background: rgba(255, 159, 67, 0.12);
+    color: var(--team-tag-ember-1);
+    background: color-mix(in srgb, var(--team-tag-ember-1) 12%, transparent);
   }
   &--mcp {
-    color: #35c3d6;
-    background: rgba(53, 195, 214, 0.12);
+    color: var(--team-tag-cyan);
+    background: color-mix(in srgb, var(--team-tag-cyan) 12%, transparent);
   }
 }
 
@@ -314,24 +326,24 @@
   line-height: 1.6;
 
   &--app {
-    color: #4a9eff;
-    background: rgba(74, 158, 255, 0.12);
+    color: var(--team-tag-blue);
+    background: color-mix(in srgb, var(--team-tag-blue) 12%, transparent);
   }
   &--workflow {
-    color: #a878ff;
-    background: rgba(168, 120, 255, 0.12);
+    color: var(--team-tag-violet);
+    background: color-mix(in srgb, var(--team-tag-violet) 12%, transparent);
   }
   &--agent {
     color: var(--success);
-    background: rgba(52, 199, 123, 0.12);
+    background: color-mix(in srgb, var(--team-tag-green) 12%, transparent);
   }
   &--skill {
-    color: #ff9f43;
-    background: rgba(255, 159, 67, 0.12);
+    color: var(--team-tag-ember-1);
+    background: color-mix(in srgb, var(--team-tag-ember-1) 12%, transparent);
   }
   &--mcp {
-    color: #35c3d6;
-    background: rgba(53, 195, 214, 0.12);
+    color: var(--team-tag-cyan);
+    background: color-mix(in srgb, var(--team-tag-cyan) 12%, transparent);
   }
 }
 
@@ -394,18 +406,18 @@
   line-height: 1.6;
 
   &--update {
-    color: var(--color-primary, #4a9eff);
-    background: color-mix(in srgb, var(--color-primary, #4a9eff) 12%, transparent);
+    color: var(--color-primary, var(--team-tag-blue));
+    background: color-mix(in srgb, var(--color-primary, var(--team-tag-blue)) 12%, transparent);
   }
 
   &--warn {
-    color: #e6a23c;
-    background: rgba(230, 162, 60, 0.12);
+    color: var(--team-tag-ember-2);
+    background: color-mix(in srgb, var(--team-tag-ember-2) 12%, transparent);
   }
 
   &--ok {
     color: var(--success);
-    background: rgba(52, 199, 123, 0.12);
+    background: color-mix(in srgb, var(--team-tag-green) 12%, transparent);
   }
 }
 
@@ -437,7 +449,7 @@
   flex-direction: column;
   gap: 0;
   margin: 0;
-  border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.2));
+  border: 1px solid var(--dividing-line-1, color-mix(in srgb, var(--team-tag-slate) 20%, transparent));
   border-radius: var(--r-lg);
   overflow: hidden;
   font-size: var(--font-base);
@@ -448,7 +460,7 @@
     padding: var(--pad-sm) var(--pad-lg);
 
     &:nth-child(odd) {
-      background: var(--color-bg-2, rgba(128, 128, 128, 0.04));
+      background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 4%, transparent));
     }
   }
 
@@ -481,7 +493,7 @@
   margin: 0;
   padding: var(--pad-sm) var(--pad-md);
   border-radius: var(--r-md);
-  background: var(--color-bg-2, rgba(128, 128, 128, 0.06));
+  background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 6%, transparent));
   font-size: var(--font-sm);
   line-height: 1.6;
   opacity: 0.65;
@@ -505,7 +517,7 @@
   margin: 0;
   padding: var(--pad-sm) var(--pad-md);
   border-radius: var(--r-md);
-  background: var(--color-bg-2, rgba(128, 128, 128, 0.06));
+  background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 6%, transparent));
   font-size: var(--font-sm);
   line-height: 1.7;
   opacity: 0.7;
@@ -515,7 +527,7 @@
   display: flex;
   overflow: hidden;
   width: fit-content;
-  border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.2));
+  border: 1px solid var(--dividing-line-1, color-mix(in srgb, var(--team-tag-slate) 20%, transparent));
   border-radius: var(--r-md);
 
   button {
@@ -527,16 +539,16 @@
     cursor: pointer;
 
     &:hover {
-      background: var(--color-bg-2, rgba(128, 128, 128, 0.06));
+      background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 6%, transparent));
     }
 
     &.is-active {
-      background: var(--color-bg-2, rgba(128, 128, 128, 0.1));
+      background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 10%, transparent));
       font-weight: 600;
     }
 
     &:focus-visible {
-      outline: 2px solid var(--color-primary, #4a9eff);
+      outline: 2px solid var(--color-primary, var(--team-tag-blue));
       outline-offset: -2px;
     }
   }
@@ -557,7 +569,7 @@
   gap: var(--pad-sm);
   align-items: flex-start;
   padding: var(--pad-sm) var(--pad-md);
-  border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.2));
+  border: 1px solid var(--dividing-line-1, color-mix(in srgb, var(--team-tag-slate) 20%, transparent));
   border-radius: var(--r-lg);
   background: var(--color-bg-1, transparent);
 
@@ -597,7 +609,7 @@
 .team-store-pub-row-warn {
   margin-top: var(--pad-3xs);
   font-size: var(--font-sm);
-  color: #e6a23c;
+  color: var(--team-tag-ember-2);
 }
 
 .team-store-pub-row-actions {
@@ -611,7 +623,7 @@
   margin-top: var(--pad-sm);
   padding: var(--pad-sm) var(--pad-sm);
   border-radius: var(--r-md);
-  background: rgba(52, 199, 123, 0.08);
+  background: color-mix(in srgb, var(--team-tag-green) 8%, transparent);
   font-size: var(--font-sm);
 
   b {
@@ -623,7 +635,7 @@
   margin-top: var(--pad-3xs);
   font-size: var(--font-sm);
   line-height: 1.5;
-  color: #e6a23c;
+  color: var(--team-tag-ember-2);
 }
 
 .team-store-pub-empty {
@@ -657,7 +669,7 @@
   gap: var(--pad-md);
   padding: var(--pad-3xl) 0;
   font-size: var(--font-base);
-  color: #e66;
+  color: var(--team-tag-red);
 }
 
 // ── 侧栏「团队商店」角标 ──
@@ -677,7 +689,7 @@
   height: 16px;
   padding: 0 var(--pad-3xs);
   border-radius: var(--r-pill);
-  background: var(--color-primary, #4a9eff);
+  background: var(--color-primary, var(--team-tag-blue));
   color: var(--text-inverse);
   font-size: var(--font-2xs);
   font-weight: 600;
@@ -707,11 +719,11 @@
   border: none;
   border-radius: var(--r-sm);
   background: transparent;
-  color: var(--color-primary, #4a9eff);
+  color: var(--color-primary, var(--team-tag-blue));
   font-size: var(--font-sm);
   cursor: pointer;
 
   &:hover {
-    background: var(--color-bg-2, rgba(128, 128, 128, 0.12));
+    background: var(--color-bg-2, color-mix(in srgb, var(--team-tag-slate) 12%, transparent));
   }
 }

@@ -682,7 +682,7 @@
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: color-mix(in srgb, var(--black) 40%, transparent);
   z-index: 90;
   display: flex;
   align-items: center;
@@ -775,7 +775,7 @@
   font-weight: 700;
   letter-spacing: 0;
   line-height: 1;
-  text-shadow: 0 1px 1px rgb(0 0 0 / 18%);
+  text-shadow: 0 1px 1px color-mix(in srgb, var(--black) 18%, transparent);
 }
 
 .chip-list {

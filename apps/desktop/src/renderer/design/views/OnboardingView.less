@@ -1,3 +1,12 @@
+
+/* 数据色板（obv 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --obv-blue-1: #82a9c0;
+  --obv-blue-2: #6683a6;
+  --obv-sand-1: #c0a082;
+  --obv-sand-2: #a78466;
+}
+
 .onboarding-shell {
   position: relative;
   flex: 1 1 auto;
@@ -300,15 +309,15 @@
 
 /* 本机 CLI 卡片（Claude Code / Codex）：沿用用途卡片的场景色语言，两条路径一眼可分 */
 .source-card.accent-blue > svg {
-  color: #6683a6;
-  background: color-mix(in srgb, #82a9c0 13%, var(--panel));
-  border-color: color-mix(in srgb, #82a9c0 20%, var(--border));
+  color: var(--obv-blue-2);
+  background: color-mix(in srgb, var(--obv-blue-1) 13%, var(--panel));
+  border-color: color-mix(in srgb, var(--obv-blue-1) 20%, var(--border));
 }
 
 .source-card.accent-amber > svg {
-  color: #a78466;
-  background: color-mix(in srgb, #c0a082 13%, var(--panel));
-  border-color: color-mix(in srgb, #c0a082 20%, var(--border));
+  color: var(--obv-sand-2);
+  background: color-mix(in srgb, var(--obv-sand-1) 13%, var(--panel));
+  border-color: color-mix(in srgb, var(--obv-sand-1) 20%, var(--border));
 }
 
 /* 未检测到 / 不可用时回到中性，避免禁用态仍带彩色强调 */

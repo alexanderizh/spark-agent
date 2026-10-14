@@ -12,7 +12,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: #080a0e;
+  background: var(--canvas-stage-bg);
   font-variant-numeric: tabular-nums;
 
   &:focus-visible {
@@ -60,9 +60,9 @@
     place-items: center;
     width: 52px;
     height: 52px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
+    border: 1px solid color-mix(in srgb, var(--white) 22%, transparent);
     border-radius: 50%;
-    background: rgba(10, 14, 24, 0.5);
+    background: color-mix(in srgb, var(--canvas-stage-bg-2) 50%, transparent);
     backdrop-filter: blur(6px);
     cursor: pointer;
     pointer-events: auto;
@@ -93,8 +93,8 @@
   right: 6px;
   padding: 2px var(--pad-xs);
   border-radius: var(--r-xs);
-  background: rgba(8, 10, 16, 0.66);
-  color: rgba(255, 255, 255, 0.86);
+  background: color-mix(in srgb, var(--canvas-stage-bg-2) 66%, transparent);
+  color: color-mix(in srgb, var(--white) 86%, transparent);
   font-size: var(--font-2xs);
   line-height: 1.4;
   pointer-events: none;
@@ -143,7 +143,7 @@
   bottom: 0;
   left: 0;
   height: 3px;
-  background: rgba(255, 255, 255, 0.16);
+  background: color-mix(in srgb, var(--white) 16%, transparent);
   pointer-events: none;
 
   .canvas-video-player:not([data-tier='mini']) & {
@@ -172,7 +172,7 @@
   width: 100%;
   height: 4px;
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.18);
+  background: color-mix(in srgb, var(--white) 18%, transparent);
   overflow: hidden;
   transition: height var(--motion-instant) ease;
 }
@@ -184,7 +184,7 @@
 .canvas-video-player-progress-buffered {
   position: absolute;
   inset: 0 auto 0 0;
-  background: rgba(255, 255, 255, 0.28);
+  background: color-mix(in srgb, var(--white) 28%, transparent);
 }
 
 .canvas-video-player-progress-played {
@@ -198,7 +198,7 @@
   top: 50%;
   width: 10px;
   height: 10px;
-  border: 2px solid #fff;
+  border: 2px solid var(--white);
   border-radius: 50%;
   background: var(--primary);
   transform: translate(-50%, -50%) scale(0);
@@ -216,7 +216,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  color: rgba(255, 255, 255, 0.88);
+  color: color-mix(in srgb, var(--white) 88%, transparent);
 }
 
 .canvas-video-player-btn {
@@ -236,7 +236,7 @@
     color 0.12s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: color-mix(in srgb, var(--white) 12%, transparent);
     color: var(--text-inverse);
   }
 
@@ -246,13 +246,13 @@
   }
 
   &.is-active {
-    color: color-mix(in srgb, var(--primary) 70%, #ffffff);
+    color: color-mix(in srgb, var(--primary) 70%, var(--white));
   }
 }
 
 .canvas-video-player-time {
   margin: 0 var(--pad-3xs) 0 var(--pad-xs);
-  color: rgba(255, 255, 255, 0.78);
+  color: color-mix(in srgb, var(--white) 78%, transparent);
   font-size: var(--font-xs);
   line-height: 1;
   white-space: nowrap;
@@ -282,9 +282,9 @@
   gap: 2px;
   min-width: 72px;
   padding: var(--pad-3xs);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid color-mix(in srgb, var(--white) 12%, transparent);
   border-radius: var(--r-md);
-  background: rgba(14, 18, 28, 0.94);
+  background: color-mix(in srgb, var(--canvas-stage-bg-2) 94%, transparent);
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow-lg);
 }
@@ -298,17 +298,17 @@
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
-  color: rgba(255, 255, 255, 0.82);
+  color: color-mix(in srgb, var(--white) 82%, transparent);
   font-size: var(--font-xs);
   cursor: pointer;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: color-mix(in srgb, var(--white) 10%, transparent);
     color: var(--text-inverse);
   }
 
   &.is-active {
-    color: color-mix(in srgb, var(--primary) 70%, #ffffff);
+    color: color-mix(in srgb, var(--primary) 70%, var(--white));
   }
 }
 

@@ -1,3 +1,10 @@
+
+/* 数据色板（msn 域分类色，恒值；色值残留清理收编，值零变化） */
+:root {
+  --msn-chip-bg: #2c2c2c;
+  --msn-chip-fg: #f2f2f2;
+}
+
 .model-switch-notice {
   display: flex;
   align-items: center;
@@ -52,12 +59,12 @@
   padding: var(--pad-md) var(--pad-lg);
   border: 1px solid color-mix(in srgb, white 14%, transparent);
   border-radius: var(--r-lg);
-  background: #2c2c2c;
-  color: #f2f2f2;
+  background: var(--msn-chip-bg);
+  color: var(--msn-chip-fg);
   font-size: var(--font-md);
   font-weight: 600;
   line-height: 1.5;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--black) 24%, transparent);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;

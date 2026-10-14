@@ -4,6 +4,15 @@
  * 与 CodeViewerEditor 内 Monaco 的 vs / vs-dark 由同一 useResolvedTheme 驱动，保持一致。
  */
 
+
+/* 数据色板（cdv 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --cdv-blue: #4f7cff;
+  --cdv-green: #2ea043;
+  --cdv-red: #f85149;
+  --cdv-amber: #d4a72c;
+}
+
 .code-viewer-panel {
   --cv-bg: #1e1e1f;
   --cv-bg-2: #252527;
@@ -13,14 +22,14 @@
   --cv-text: #d4d4d4;
   --cv-text-dim: #9a9aa0;
   --cv-text-faint: #6e6e72;
-  --cv-accent: var(--primary, #4f7cff);
-  --cv-accent-soft: var(--primary-soft, rgba(79, 124, 255, 0.16));
+  --cv-accent: var(--primary, var(--cdv-blue));
+  --cv-accent-soft: var(--primary-soft, color-mix(in srgb, var(--cdv-blue) 16%, transparent));
   --cv-accent-fg: var(--primary-fg, #fff);
-  --cv-green: #2ea043;
-  --cv-red: #f85149;
-  --cv-add-bg: rgba(46, 160, 67, 0.16);
-  --cv-del-bg: rgba(248, 81, 73, 0.16);
-  --cv-warn: #d4a72c;
+  --cv-green: var(--cdv-green);
+  --cv-red: var(--cdv-red);
+  --cv-add-bg: color-mix(in srgb, var(--cdv-green) 16%, transparent);
+  --cv-del-bg: color-mix(in srgb, var(--cdv-red) 16%, transparent);
+  --cv-warn: var(--cdv-amber);
   --cv-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
 
   display: flex;
@@ -41,9 +50,9 @@
     --cv-text: #2b2b2f;
     --cv-text-dim: #686870;
     --cv-text-faint: #9a9aa2;
-    --cv-accent-soft: var(--primary-soft, rgba(79, 124, 255, 0.1));
-    --cv-add-bg: rgba(46, 160, 67, 0.1);
-    --cv-del-bg: rgba(248, 81, 73, 0.08);
+    --cv-accent-soft: var(--primary-soft, color-mix(in srgb, var(--cdv-blue) 10%, transparent));
+    --cv-add-bg: color-mix(in srgb, var(--cdv-green) 10%, transparent);
+    --cv-del-bg: color-mix(in srgb, var(--cdv-red) 8%, transparent);
     --cv-warn: #b07900;
   }
 }
@@ -186,11 +195,11 @@
 }
 .cv-tag-dirty {
   color: var(--cv-green);
-  background: rgba(46, 160, 67, 0.14);
+  background: color-mix(in srgb, var(--cdv-green) 14%, transparent);
 }
 .cv-tag-warn {
   color: var(--cv-warn);
-  background: rgba(212, 167, 44, 0.14);
+  background: color-mix(in srgb, var(--cdv-amber) 14%, transparent);
 }
 .cv-seg {
   display: flex;
@@ -267,7 +276,7 @@
   align-items: center;
   gap: var(--pad-sm);
   padding: var(--pad-xs) var(--pad-sm);
-  background: rgba(212, 167, 44, 0.12);
+  background: color-mix(in srgb, var(--cdv-amber) 12%, transparent);
   border-bottom: 1px solid var(--cv-border);
   color: var(--cv-warn);
   font-size: var(--font-sm);
@@ -296,7 +305,7 @@
   }
   &.primary {
     background: var(--cv-warn);
-    color: #1a1a1a;
+    color: var(--bg-sunken);
     border-color: transparent;
   }
 }

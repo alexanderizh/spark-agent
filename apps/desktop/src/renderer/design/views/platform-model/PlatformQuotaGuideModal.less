@@ -1,3 +1,11 @@
+
+/* 数据色板（pqg 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --pqg-blue: #101820;
+  --pqg-red: #ff5a52;
+  --pqg-cyan: #34c7d9;
+}
+
 .platform-quota-guide-root .ant-modal-content {
   overflow: hidden;
   padding: 0;
@@ -10,14 +18,14 @@
 .platform-quota-guide-root .ant-modal-close {
   top: 14px;
   inset-inline-end: 14px;
-  color: rgba(255, 255, 255, 0.72);
-  background: rgba(20, 23, 28, 0.52);
+  color: color-mix(in srgb, var(--white) 72%, transparent);
+  background: color-mix(in srgb, var(--canvas-stage-bg-3) 52%, transparent);
 }
 
 .platform-quota-guide__poster {
   height: 220px;
   overflow: hidden;
-  background: #101820;
+  background: var(--pqg-blue);
 }
 
 .platform-quota-guide__poster img {
@@ -45,8 +53,8 @@
   width: 32px;
   height: 32px;
   flex: 0 0 32px;
-  color: #ff5a52;
-  border: 1px solid rgba(255, 90, 82, 0.5);
+  color: var(--pqg-red);
+  border: 1px solid color-mix(in srgb, var(--pqg-red) 50%, transparent);
   border-radius: 50%;
 }
 
@@ -73,7 +81,7 @@
 }
 
 .platform-quota-guide__balance > svg {
-  color: #34c7d9;
+  color: var(--pqg-cyan);
 }
 .platform-quota-guide__balance strong {
   color: var(--text-strong);
@@ -88,7 +96,7 @@
   gap: var(--pad-xs);
   border: 0;
   padding: var(--pad-3xs) var(--pad-xs);
-  color: #34c7d9;
+  color: var(--pqg-cyan);
   background: transparent;
   cursor: pointer;
 }

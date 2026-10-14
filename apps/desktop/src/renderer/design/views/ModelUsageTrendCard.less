@@ -1,6 +1,14 @@
 /* 设置-通用页「模型用量趋势」卡片：TOP 5 模型按日堆叠柱状图。
    独立组件级 LESS（与 HeroUsageHeatmap.less 同模式），由 ModelUsageTrendCard.tsx 直接 import。
    序列色为固定数据可视化用色（不跟随 --primary，保证多系列可区分）。 */
+
+/* 数据色板（muc 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --muc-red: #f0524d;
+  --muc-ember: #eda23f;
+  --muc-violet: #9b6df0;
+}
+
 .usage-trend-card {
   box-sizing: border-box;
   margin-bottom: var(--pad-lg);
@@ -86,7 +94,7 @@
 
 /* 数据可视化固定序列色：蓝 / 绿 / 红 / 橙 / 紫，明暗模式都可读 */
 .usage-trend-swatch--c0 {
-  background: #4d80f0;
+  background: var(--primary);
 }
 
 .usage-trend-swatch--c1 {
@@ -94,15 +102,15 @@
 }
 
 .usage-trend-swatch--c2 {
-  background: #f0524d;
+  background: var(--muc-red);
 }
 
 .usage-trend-swatch--c3 {
-  background: #eda23f;
+  background: var(--muc-ember);
 }
 
 .usage-trend-swatch--c4 {
-  background: #9b6df0;
+  background: var(--muc-violet);
 }
 
 /* 分组柱状图：每列（一天）= 柱区 + 刻度槽；柱区内是该天各模型并排的独立细柱。

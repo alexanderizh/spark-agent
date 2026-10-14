@@ -1,3 +1,9 @@
+
+/* 数据色板（cgs 域分类色，恒值；色值残留清理收编，值零变化） */
+:root {
+  --cgs-deep: #082f49;
+}
+
 .canvas-grid-split-modal {
   .ant-modal-content {
     padding: 0;
@@ -127,8 +133,8 @@
 
 .canvas-grid-split-cell {
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.42);
-  background: rgba(15, 23, 42, 0.34);
+  border: 1px solid color-mix(in srgb, var(--white) 42%, transparent);
+  background: color-mix(in srgb, var(--ink-slate) 34%, transparent);
   color: var(--text-inverse);
   cursor: pointer;
   transition:
@@ -138,13 +144,13 @@
 }
 
 .canvas-grid-split-cell:hover {
-  background: rgba(15, 23, 42, 0.18);
+  background: color-mix(in srgb, var(--ink-slate) 18%, transparent);
 }
 
 .canvas-grid-split-cell.active {
-  background: rgba(34, 197, 94, 0.1);
-  border-color: #22d3ee;
-  box-shadow: inset 0 0 0 2px #22d3ee;
+  background: color-mix(in srgb, var(--success-fixed) 10%, transparent);
+  border-color: var(--canvas-cyan);
+  box-shadow: inset 0 0 0 2px var(--canvas-cyan);
 }
 
 .canvas-grid-split-cell-label {
@@ -153,7 +159,7 @@
   top: 12px;
   padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-lg);
-  background: rgba(15, 23, 42, 0.62);
+  background: color-mix(in srgb, var(--ink-slate) 62%, transparent);
   font-size: var(--font-md);
   font-weight: 600;
   line-height: 1;
@@ -169,8 +175,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(34, 211, 238, 0.92);
-  color: #082f49;
+  background: color-mix(in srgb, var(--canvas-cyan) 92%, transparent);
+  color: var(--cgs-deep);
 }
 
 .canvas-grid-split-status {

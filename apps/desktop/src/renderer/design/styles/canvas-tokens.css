@@ -17,4 +17,32 @@
 
   /* 画布节点次级文字（zinc-600，全局暖灰无同深度档，作为域色保留原值） */
   --canvas-text-secondary: #52525b;
+
+  /* 暖墨阶（cinematic / window-theme 系暗底墨色，恒值；
+     原 rgba(#1f1c18/#24201b/#2f2b25/#3b362f, α) 家族的实值基色） */
+  --canvas-ink-900: #1f1c18;
+  --canvas-ink-800: #24201b;
+  --canvas-ink-700: #2f2b25;
+  --canvas-ink-600: #3b362f;
+
+  /* 冷灰阶（videoWorkbench / stage3d 专业编辑器冷调，恒值） */
+  --canvas-slate-200: #e2e8f0;
+  --canvas-slate-300: #cbd5e1;
+  --canvas-slate-400: #94a3b8;
+
+  /* 影视蓝/青阶（videoWorkbench 时间轴轨道与选中态；画布文件不走
+     JS 注入的 --primary，用固定蓝保证两主题渲染一致） */
+  --canvas-blue-200: #bfdbfe;
+  --canvas-blue-300: #93c5fd;
+  --canvas-blue-400: #60a5fa;
+  --canvas-blue-500: #3b82f6;
+  --canvas-blue-600: #2563eb;
+  --canvas-blue-accent: #3d8eff;
+  --canvas-sky: #38bdf8;
+  --canvas-cyan: #22d3ee;
+
+  /* cinematic 品牌靛蓝阶 */
+  --canvas-indigo-400: #9189ff;
+  --canvas-indigo-500: #776cf6;
+  --canvas-indigo-600: #655bd8;
 }

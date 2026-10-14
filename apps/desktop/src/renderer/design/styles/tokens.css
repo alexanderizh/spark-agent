@@ -14,6 +14,35 @@
   --primary-soft: rgba(59, 130, 246, 0.12);
   --primary-fg: #ffffff;
 
+  /* 色彩基元（恒值：不随明暗主题翻转；带透明度的分层用法经
+     color-mix(in srgb, var(--white) N%, transparent) 引用，与原 rgba 等值） */
+  --white: #ffffff;
+  --black: #000000;
+  --gray-mid: #808080;
+  --ink-slate: #0f172a; /* slate-900 深投影墨（原 rgba(15,23,42,α) 家族） */
+
+  /* 数据色板（app 域分类色，恒值；色值残留清理收编，值零变化） */
+  --app-ink: #20201d;
+  --app-scrim: #1f1f1f;
+
+  /* 固定强调色（恒值：品牌靛蓝辅助/紫罗兰强调，两主题同值） */
+  --accent: #6366f1;
+  --violet: #8b5cf6;
+
+  /* 语义固定色阶（恒值：无主题作用域的场景（时间轴/画布等）使用，
+     与随主题翻转的 --danger/--success 区分；solid 形态沿用既有语义 token） */
+  --danger-fixed: #ef4444;
+  --success-fixed: #22c55e;
+
+  /* 文件类型标签色（interactions.css / views.css 共用的文件类型体系，恒值） */
+  --file-type-text: #0891b2;
+  --file-type-image: #9333ea;
+  --file-type-video: #7c3aed;
+  --file-type-audio: #db2777;
+
+  /* 深色表面上的柔白前景（原 #f1f1f3 家族，恒值；带透明度经 color-mix 引用） */
+  --white-soft: #f1f1f3;
+
   /* radii */
   --r-xs: 4px;
   --r-sm: 6px;
@@ -148,6 +177,11 @@ html[data-theme='light'],
 
   --term-bg: #ebe9e3;
   --term-fg: #24211d;
+
+  /* markdown 代码块头部 macOS 窗口点（浅色档） */
+  --code-dot-red: #ec5d57;
+  --code-dot-amber: #f4b13e;
+  --code-dot-green: #46c04f;
 }
 
 /* ---------- THEME: DARK — also on html for Arco popups outside .app ---------- */
@@ -212,6 +246,11 @@ html[data-theme='dark'],
 
   --term-bg: #08080a;
   --term-fg: #d4d4d8;
+
+  /* markdown 代码块头部 macOS 窗口点（暗色档） */
+  --code-dot-red: #ff6058;
+  --code-dot-amber: #febc2e;
+  --code-dot-green: #28c840;
 }
 
 /* ---------- DENSITY MODES ----------

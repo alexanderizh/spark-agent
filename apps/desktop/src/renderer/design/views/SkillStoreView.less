@@ -1,6 +1,13 @@
 /* ── SkillStoreView — Cursor-style dual-page layout ── */
 
 // ── Page shell ──
+
+/* 数据色板（ssv 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --ssv-blue-1: #dbeafe;
+  --ssv-blue-2: #1d4ed8;
+}
+
 .card-error {
   margin-bottom: var(--pad-lg);
   padding: var(--pad-sm) var(--pad-md);
@@ -44,7 +51,7 @@
   align-items: center;
   gap: var(--pad-3xs);
   padding: var(--pad-3xs);
-  background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+  background: var(--bg-soft, color-mix(in srgb, var(--black) 4%, transparent));
   border-radius: 0;
   width: 100%;
   flex-shrink: 0;
@@ -54,7 +61,7 @@
   appearance: none;
   border: none;
   background: transparent;
-  color: var(--text-muted, rgba(0, 0, 0, 0.65));
+  color: var(--text-muted, color-mix(in srgb, var(--black) 65%, transparent));
   font-size: var(--font-base);
   font-weight: 500;
   padding: var(--pad-xs) var(--pad-lg);
@@ -63,13 +70,13 @@
   transition: all var(--motion-fast) ease;
 
   &:hover {
-    color: var(--text, rgba(0, 0, 0, 0.88));
+    color: var(--text, color-mix(in srgb, var(--black) 88%, transparent));
   }
 
   &.is-active {
     background: var(--panel, #fff);
-    color: var(--text-strong, rgba(0, 0, 0, 0.88));
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    color: var(--text-strong, color-mix(in srgb, var(--black) 88%, transparent));
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--black) 8%, transparent);
   }
 }
 
@@ -128,7 +135,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-xl, 16px);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--panel) 94%, #ffffff 6%), var(--panel)),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 94%, var(--white) 6%), var(--panel)),
     var(--panel);
 }
 
@@ -212,7 +219,7 @@
   &:focus-visible,
   &.is-selected {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--black) 8%, transparent);
     outline: none;
   }
 }
@@ -231,10 +238,10 @@
   width: 32px;
   height: 32px;
   border-radius: var(--r-md, 8px);
-  color: #1d4ed8;
+  color: var(--ssv-blue-2);
   background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), rgba(191, 219, 254, 0.9)),
-    #dbeafe;
+    radial-gradient(circle at top left, color-mix(in srgb, var(--white) 92%, transparent), color-mix(in srgb, var(--canvas-blue-200) 90%, transparent)),
+    var(--ssv-blue-1);
   font-weight: 700;
   font-size: var(--font-sm, 12px);
 }
@@ -361,7 +368,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-xl, 16px);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, #ffffff 8%), var(--panel)),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, var(--white) 8%), var(--panel)),
     var(--panel);
 }
 
@@ -394,13 +401,13 @@
   width: 48px;
   height: 48px;
   border-radius: var(--r-lg, 12px);
-  color: #1d4ed8;
+  color: var(--ssv-blue-2);
   background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), rgba(191, 219, 254, 0.9)),
-    #dbeafe;
+    radial-gradient(circle at top left, color-mix(in srgb, var(--white) 92%, transparent), color-mix(in srgb, var(--canvas-blue-200) 90%, transparent)),
+    var(--ssv-blue-1);
   font-weight: 700;
   font-size: var(--font-lg, 14px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--white) 80%, transparent);
 }
 
 .skill-store-detail-hero-copy {
@@ -774,7 +781,7 @@
   align-items: center;
   gap: var(--pad-3xs);
   padding: var(--pad-3xs);
-  background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+  background: var(--bg-soft, color-mix(in srgb, var(--black) 4%, transparent));
   border-radius: var(--r-lg);
   width: fit-content;
   margin-bottom: var(--pad-sm, var(--pad-sm));
@@ -799,7 +806,7 @@
   &.is-active {
     background: var(--panel, #fff);
     color: var(--text-strong);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--black) 8%, transparent);
   }
 }
 
@@ -934,7 +941,7 @@
 .skill-store-card-icon--default {
   border-radius: 50%;
   background: var(--bg-soft);
-  color: var(--primary, #1d4ed8);
+  color: var(--primary, var(--ssv-blue-2));
 }
 
 // ── 已安装 Tab：详情弹窗 ───────────────────────────────────────────────
@@ -1272,7 +1279,7 @@
   display: block;
   width: 5px;
   height: 8px;
-  border: solid #fff;
+  border: solid var(--white);
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
   margin-top: -1px;
@@ -1454,12 +1461,12 @@
 
 .team-market-badge--warn {
   color: var(--warning, #d97706);
-  background: color-mix(in srgb, var(--warning, #d97706) 12%, transparent);
+  background: color-mix(in srgb, var(--warning, var(--warning)) 12%, transparent);
 }
 
 .team-market-badge--muted {
   color: var(--text-faint);
-  background: var(--bg-soft, rgba(128, 128, 128, 0.1));
+  background: var(--bg-soft, color-mix(in srgb, var(--gray-mid) 10%, transparent));
 }
 
 .team-market-meta {
@@ -1532,7 +1539,7 @@
   margin-top: var(--pad-3xs);
   padding: var(--pad-sm) var(--pad-md);
   border-radius: var(--r-sm, 6px);
-  background: var(--bg-soft, rgba(128, 128, 128, 0.08));
+  background: var(--bg-soft, color-mix(in srgb, var(--gray-mid) 8%, transparent));
   font-size: var(--font-sm, 12px);
   color: var(--text-muted);
 
@@ -1559,7 +1566,7 @@
   margin-bottom: var(--pad-xs);
   padding: 2px;
   border-radius: var(--r-sm, 6px);
-  background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+  background: var(--bg-soft, color-mix(in srgb, var(--black) 4%, transparent));
 }
 
 .create-content-mode-btn {
@@ -1590,7 +1597,7 @@
   &.is-active {
     background: var(--panel);
     color: var(--primary);
-    box-shadow: var(--shadow-xs, 0 1px 2px rgba(0, 0, 0, 0.06));
+    box-shadow: var(--shadow-xs, 0 1px 2px color-mix(in srgb, var(--black) 6%, transparent));
   }
 }
 

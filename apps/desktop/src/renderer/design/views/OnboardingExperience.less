@@ -1,3 +1,20 @@
+
+/* 数据色板（obx 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --obx-blue-1: #82a9c0;
+  --obx-blue-2: #5892c9;
+  --obx-blue-3: #6683a6;
+  --obx-violet-1: #a195b1;
+  --obx-violet-2: #aa82c0;
+  --obx-violet-3: #a070b7;
+  --obx-violet-4: #806795;
+  --obx-ember: #df9d7f;
+  --obx-green-1: #8cb091;
+  --obx-green-2: #738e76;
+  --obx-sand-1: #c0a082;
+  --obx-sand-2: #a78466;
+}
+
 .experience-shell.onboarding-shell {
   grid-template-columns: minmax(260px, 40%) minmax(0, 1fr);
   gap: var(--pad-md);
@@ -47,7 +64,7 @@
   left: 25%;
   right: 25%;
   height: 18px;
-  background: linear-gradient(90deg, #5892c9, #a070b7, #df9d7f);
+  background: linear-gradient(90deg, var(--obx-blue-2), var(--obx-violet-3), var(--obx-ember));
   filter: blur(25px);
   opacity: 0.16;
   pointer-events: none;
@@ -172,8 +189,8 @@
   transform: translateY(-2px);
 }
 .experience-choice[aria-pressed='true'] {
-  border-color: #a195b1;
-  background: color-mix(in srgb, #aa82c0 7%, var(--panel));
+  border-color: var(--obx-violet-1);
+  background: color-mix(in srgb, var(--obx-violet-2) 7%, var(--panel));
 }
 .experience-choice strong,
 .experience-choice small {
@@ -195,21 +212,21 @@
   width: 38px;
   height: 38px;
   border-radius: var(--r-lg);
-  color: #806795;
-  background: color-mix(in srgb, #aa82c0 13%, var(--panel));
-  border: 1px solid color-mix(in srgb, #aa82c0 18%, var(--border));
+  color: var(--obx-violet-4);
+  background: color-mix(in srgb, var(--obx-violet-2) 13%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--obx-violet-2) 18%, var(--border));
 }
 .experience-choice:nth-child(2) .experience-icon {
-  color: #6683a6;
-  background: color-mix(in srgb, #82a9c0 13%, var(--panel));
+  color: var(--obx-blue-3);
+  background: color-mix(in srgb, var(--obx-blue-1) 13%, var(--panel));
 }
 .experience-choice:nth-child(3) .experience-icon {
-  color: #738e76;
-  background: color-mix(in srgb, #8cb091 13%, var(--panel));
+  color: var(--obx-green-2);
+  background: color-mix(in srgb, var(--obx-green-1) 13%, var(--panel));
 }
 .experience-choice:nth-child(4) .experience-icon {
-  color: #a78466;
-  background: color-mix(in srgb, #c0a082 13%, var(--panel));
+  color: var(--obx-sand-2);
+  background: color-mix(in srgb, var(--obx-sand-1) 13%, var(--panel));
 }
 .experience-check {
   position: absolute;
@@ -220,7 +237,7 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: #806795;
+  background: var(--obx-violet-4);
   color: var(--text-inverse);
 }
 .experience-hint {

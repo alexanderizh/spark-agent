@@ -1,3 +1,10 @@
+
+/* 数据色板（cvt 域分类色，恒值；色值残留清理收编，值零变化） */
+:root {
+  --cvt-red-soft: #ff8d8d;
+  --cvt-red-faint: #ffb2b2;
+}
+
 .canvas-video-tasks-view {
   display: flex;
   flex-direction: column;
@@ -109,11 +116,11 @@
   padding: var(--pad-xl);
   border: 1px solid color-mix(in srgb, #f04444 40%, var(--color-border-2));
   border-radius: var(--r-lg);
-  color: #ff8d8d;
+  color: var(--cvt-red-soft);
   background: color-mix(in srgb, #f04444 8%, var(--color-bg-2));
 
   strong {
-    color: #ffb2b2;
+    color: var(--cvt-red-faint);
   }
   p {
     margin: var(--pad-xs) 0;
@@ -161,11 +168,11 @@
 }
 .video-task-link:hover,
 .video-task-detail-result:hover {
-  color: color-mix(in srgb, var(--primary) 78%, white);
+  color: color-mix(in srgb, var(--primary) 78%, var(--white));
 }
 .video-task-error {
   overflow: hidden;
-  color: #ff8d8d;
+  color: var(--cvt-red-soft);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

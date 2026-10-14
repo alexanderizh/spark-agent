@@ -25,8 +25,8 @@ html[data-theme='dark'] .ant-btn-primary:not(:disabled):hover,
 
 html[data-theme='dark'] .ant-btn-primary:not(:disabled):active,
 .app.theme-dark .ant-btn-primary:not(:disabled):active {
-  border-color: color-mix(in srgb, var(--primary-hover) 78%, #000) !important;
-  background: color-mix(in srgb, var(--primary-hover) 78%, #000) !important;
+  border-color: color-mix(in srgb, var(--primary-hover) 78%, var(--black)) !important;
+  background: color-mix(in srgb, var(--primary-hover) 78%, var(--black)) !important;
 }
 
 html[data-theme='dark'] .ant-btn-primary:not(:disabled) :where(svg, span),
@@ -100,8 +100,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  background: #fdfdfc;
-  color: #20201d;
+  background: var(--white);
+  color: var(--app-ink);
 }
 code,
 pre,
@@ -125,7 +125,7 @@ button {
   justify-content: center;
   overflow: hidden;
   /* 默认浅色：半透明白叠加，让原生模糊层透出 */
-  background: rgba(253, 253, 252, 0.55);
+  background: color-mix(in srgb, var(--white) 55%, transparent);
   backdrop-filter: blur(30px) saturate(1.6);
   -webkit-backdrop-filter: blur(30px) saturate(1.6);
   -webkit-app-region: drag;
@@ -134,7 +134,7 @@ button {
 html[data-theme='dark'] .boot-splash,
 .app.theme-dark .boot-splash {
   /* 深色：半透明深灰叠加 */
-  background: rgba(31, 31, 31, 0.5);
+  background: color-mix(in srgb, var(--app-scrim) 50%, transparent);
 }
 
 /* 无原生模糊的平台（Linux）或原生模糊未生效时，backdrop-filter 仍提供一层
@@ -224,8 +224,8 @@ summary:focus {
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(1200px 800px at 20% 10%, rgba(99, 102, 241, 0.12), transparent 60%),
-    radial-gradient(1000px 700px at 80% 90%, rgba(139, 92, 246, 0.1), transparent 65%), #0e0e12;
+    radial-gradient(1200px 800px at 20% 10%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 60%),
+    radial-gradient(1000px 700px at 80% 90%, color-mix(in srgb, var(--violet) 10%, transparent), transparent 65%), #0e0e12;
   overflow: hidden;
 }
 .scene-scale {
@@ -314,7 +314,7 @@ summary:focus {
 /* 浅色减重：floating 卡片提到与内容区同底的近白，分隔靠既有阴影而非灰底
    （现为 #fcfcfa）；特异性低于下方 backdrop-blur 规则，仅接管默认不透明路径。 */
 .sidebar-style-floating.theme-light .floating-sidebar {
-  background: #fcfcfa;
+  background: var(--white);
 }
 
 html[data-backdrop-blur='1'] .sidebar-style-floating .floating-sidebar {
@@ -327,14 +327,14 @@ html[data-theme='light'][data-backdrop-blur='1']
   .sidebar-style-floating.theme-light
   .floating-sidebar {
   background: color-mix(in srgb, #fdfdfb 58%, transparent);
-  border-color: rgba(255, 255, 255, 0.72);
+  border-color: color-mix(in srgb, var(--white) 72%, transparent);
 }
 
 html[data-theme='dark'][data-backdrop-blur='1']
   .sidebar-style-floating.theme-dark
   .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 54%, transparent);
-  border-color: rgba(255, 255, 255, 0.09);
+  border-color: color-mix(in srgb, var(--white) 9%, transparent);
 }
 
 /* 'flat' mirrors the Windows look: sidebar is flush to the window edges
@@ -354,7 +354,7 @@ html[data-theme='dark'][data-backdrop-blur='1']
    Floating keeps its token-based translucent background; flat dark
    theme keeps the elevated panel token. */
 .sidebar-style-flat.theme-light .floating-sidebar {
-  background: rgb(246, 246, 244);
+  background: var(--white);
 }
 html[data-backdrop-blur='1'] .sidebar-style-flat .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 84%, transparent);
@@ -964,7 +964,7 @@ body.floating-sidebar-resizing * {
   height: 14px;
   border-radius: 50%;
   flex: 0 0 14px;
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--black) 12%, transparent);
 }
 .user-menu-accent-sub {
   min-width: 148px;
@@ -975,7 +975,7 @@ body.floating-sidebar-resizing * {
   height: 14px;
   border-radius: var(--r-xs);
   flex: 0 0 14px;
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--black) 12%, transparent);
 }
 .user-menu-check {
   display: inline-flex;
@@ -1177,7 +1177,7 @@ body.floating-sidebar-resizing * {
   border-radius: var(--r-md) !important;
   background: var(--spark-icon-tooltip-bg) !important;
   color: var(--text-inverse) !important;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16) !important;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--black) 16%, transparent) !important;
   font-size: var(--font-sm) !important;
   font-weight: 500;
   line-height: 1.2 !important;
@@ -1203,7 +1203,7 @@ body.floating-sidebar-resizing * {
 
 html[data-theme='dark'] .spark-icon-tooltip {
   --spark-icon-tooltip-bg: #141414;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--black) 40%, transparent) !important;
 }
 
 /* App popups render in portals and may overlap titlebar drag regions. Electron
@@ -1224,9 +1224,9 @@ html[data-theme='dark'] .spark-icon-tooltip {
    button is unreachable — Electron intercepts the mouse for window dragging. */
 .spark-lobe-toast-host,
 .spark-lobe-toast-host * {
-  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #ffffff) 97%, var(--bg-soft, #fefefe));
+  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, var(--white)) 97%, var(--bg-soft, #fefefe));
   --spark-toast-border: color-mix(in srgb, var(--border-strong, #d7d2c9) 42%, transparent);
-  --spark-toast-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 10px 26px rgba(15, 23, 42, 0.12);
+  --spark-toast-shadow: 0 1px 2px color-mix(in srgb, var(--ink-slate) 6%, transparent), 0 10px 26px color-mix(in srgb, var(--ink-slate) 12%, transparent);
   --spark-toast-backdrop: none;
 
   -webkit-app-region: no-drag;
@@ -1239,11 +1239,11 @@ html[data-theme='dark'] .spark-icon-tooltip {
 html[data-theme='dark'] .spark-lobe-toast-host {
   --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #383838) 96%, var(--bg-soft, #2c2c2c));
   --spark-toast-border: color-mix(in srgb, var(--border-strong, #4a4a4a) 54%, transparent);
-  --spark-toast-shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 12px 28px rgba(0, 0, 0, 0.34);
+  --spark-toast-shadow: 0 1px 2px color-mix(in srgb, var(--black) 22%, transparent), 0 12px 28px color-mix(in srgb, var(--black) 34%, transparent);
 }
 
 html[data-backdrop-blur='1'] .spark-lobe-toast-host {
-  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #ffffff) 92%, transparent);
+  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, var(--white)) 92%, transparent);
   --spark-toast-backdrop: var(--backdrop-blur);
 }
 
@@ -1505,7 +1505,7 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
   inset-inline-end: 10px;
   width: 28px;
   height: 28px;
-  background: rgba(0, 0, 0, 0.42);
+  background: color-mix(in srgb, var(--black) 42%, transparent);
   color: var(--text-inverse);
   border-radius: 50%;
   display: inline-flex;
@@ -1514,7 +1514,7 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
   z-index: 2;
 }
 .user-contact-qq-modal .ant-modal-close:hover {
-  background: rgba(0, 0, 0, 0.6);
+  background: color-mix(in srgb, var(--black) 60%, transparent);
   color: var(--text-inverse);
 }
 
@@ -2005,7 +2005,7 @@ input.spark-checkbox:checked::after {
   top: 1px;
   width: 4px;
   height: 7px;
-  border: solid #fff;
+  border: solid var(--white);
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
 }

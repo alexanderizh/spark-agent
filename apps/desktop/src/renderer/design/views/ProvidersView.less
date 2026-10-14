@@ -430,7 +430,7 @@
 
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--black) 8%, transparent);
   }
 }
 
@@ -516,7 +516,7 @@
 
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--black) 8%, transparent);
   }
 
   &.pv_multi_mode {
@@ -1956,7 +1956,7 @@
   color: var(--text-inverse);
 
   &:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--primary) 88%, #000);
+    background: color-mix(in srgb, var(--primary) 88%, var(--black));
   }
 
   &:disabled {

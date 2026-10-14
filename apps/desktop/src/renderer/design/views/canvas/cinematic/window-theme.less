@@ -1,6 +1,20 @@
 // Legacy canvas panels and portal-mounted dialogs use these names instead of the
 // cinematic tokens. Keep them on the document theme as well as the workspace so
 // Ant Design portals mounted under body inherit the same light palette.
+
+/* 数据色板（cwt 域分类色，恒值；由色值残留清理收编，值零变化） */
+:root {
+  --cwt-cyan-1: #2c82a7;
+  --cwt-cyan-2: #277191;
+  --cwt-cyan-3: #168b68;
+  --cwt-ember: #b87512;
+  --cwt-red: #d84d5b;
+  --cwt-sand: #47433c;
+  --cwt-amber: #f1f0ec;
+  --cwt-char: #484640;
+  --cwt-slate: #777169;
+}
+
 html:has(.canvas-workspace.canvas-cinematic) {
   // 节点右键菜单由 Ant Design 挂到 body，无法继承工作台内部的 --panel。
   // 这里把它桥接到图一空白画布菜单使用的炭黑表面。
@@ -8,30 +22,30 @@ html:has(.canvas-workspace.canvas-cinematic) {
 }
 
 html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
-  --canvas-context-menu-bg: rgba(255, 255, 255, 0.98);
+  --canvas-context-menu-bg: color-mix(in srgb, var(--white) 98%, transparent);
   --canvas-v4-surface: #ffffff;
-  --canvas-v4-surface-muted: #f1f0ec;
-  --canvas-v4-divider: rgba(47, 43, 37, 0.1);
+  --canvas-v4-surface-muted: var(--cwt-amber);
+  --canvas-v4-divider: color-mix(in srgb, var(--canvas-ink-700) 10%, transparent);
   --canvas-v4-radius-xs: 6px;
   --canvas-v4-radius-sm: 8px;
   --canvas-field-bg: #f5f4f1;
-  --canvas-float-bg: rgba(255, 255, 255, 0.96);
+  --canvas-float-bg: color-mix(in srgb, var(--white) 96%, transparent);
   --canvas-float-bg-solid: #ffffff;
-  --canvas-float-border-subtle: rgba(47, 43, 37, 0.14);
-  --canvas-float-divider-subtle: rgba(47, 43, 37, 0.1);
+  --canvas-float-border-subtle: color-mix(in srgb, var(--canvas-ink-700) 14%, transparent);
+  --canvas-float-divider-subtle: color-mix(in srgb, var(--canvas-ink-700) 10%, transparent);
   --canvas-float-icon: #6a665e;
   --canvas-float-icon-strong: #2f2c27;
-  --canvas-float-hover: rgba(47, 43, 37, 0.06);
-  --canvas-float-active: rgba(101, 91, 216, 0.1);
+  --canvas-float-hover: color-mix(in srgb, var(--canvas-ink-700) 6%, transparent);
+  --canvas-float-active: color-mix(in srgb, var(--canvas-indigo-600) 10%, transparent);
   --canvas-float-shadow:
-    0 20px 52px rgba(59, 54, 47, 0.14), 0 8px 18px rgba(59, 54, 47, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+    0 20px 52px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent), 0 8px 18px color-mix(in srgb, var(--canvas-ink-600) 8%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--white) 82%, transparent);
   --canvas-node-bg: #ffffff;
   --canvas-node-head-bg: #faf9f6;
   --canvas-node-body-bg: #ffffff;
-  --canvas-node-shadow: 0 16px 32px rgba(31, 28, 24, 0.08), 0 2px 8px rgba(31, 28, 24, 0.06);
-  --canvas-node-shadow-selected: 0 18px 44px rgba(31, 28, 24, 0.14);
-  --canvas-node-edge: rgba(47, 43, 37, 0.12);
+  --canvas-node-shadow: 0 16px 32px color-mix(in srgb, var(--canvas-ink-900) 8%, transparent), 0 2px 8px color-mix(in srgb, var(--canvas-ink-900) 6%, transparent);
+  --canvas-node-shadow-selected: 0 18px 44px color-mix(in srgb, var(--canvas-ink-900) 14%, transparent);
+  --canvas-node-edge: color-mix(in srgb, var(--canvas-ink-700) 12%, transparent);
 }
 
 .canvas-workspace.canvas-cinematic {
@@ -44,7 +58,7 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
     border: 1px solid var(--canvas-cinema-border);
     border-radius: var(--r-lg);
     background: var(--canvas-cinema-surface-2);
-    box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
+    box-shadow: inset 0 1px color-mix(in srgb, var(--white) 4%, transparent);
   }
 
   .canvas-window-theme-option {
@@ -124,21 +138,21 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   --canvas-cinema-stage: #efeeeb;
   --canvas-cinema-surface-1: #fbfaf7;
   --canvas-cinema-surface-2: #ffffff;
-  --canvas-cinema-surface-3: #f1f0ec;
+  --canvas-cinema-surface-3: var(--cwt-amber);
   --canvas-cinema-surface-4: #e4e1da;
-  --canvas-cinema-border: rgba(47, 43, 37, 0.1);
-  --canvas-cinema-border-strong: rgba(47, 43, 37, 0.18);
+  --canvas-cinema-border: color-mix(in srgb, var(--canvas-ink-700) 10%, transparent);
+  --canvas-cinema-border-strong: color-mix(in srgb, var(--canvas-ink-700) 18%, transparent);
   --canvas-cinema-text-strong: #1d1c19;
-  --canvas-cinema-text: #484640;
-  --canvas-cinema-text-muted: #777169;
+  --canvas-cinema-text: var(--cwt-char);
+  --canvas-cinema-text-muted: var(--cwt-slate);
   --canvas-cinema-text-faint: #9a958c;
   --canvas-cinema-accent: #655bd8;
   --canvas-cinema-accent-bright: #5148c7;
-  --canvas-cinema-accent-soft: rgba(101, 91, 216, 0.11);
-  --canvas-cinema-success: #168b68;
-  --canvas-cinema-warning: #b87512;
-  --canvas-cinema-danger: #d84d5b;
-  --canvas-context-menu-bg: rgba(255, 255, 255, 0.98);
+  --canvas-cinema-accent-soft: color-mix(in srgb, var(--canvas-indigo-600) 11%, transparent);
+  --canvas-cinema-success: var(--cwt-cyan-3);
+  --canvas-cinema-warning: var(--cwt-ember);
+  --canvas-cinema-danger: var(--cwt-red);
+  --canvas-context-menu-bg: color-mix(in srgb, var(--white) 98%, transparent);
 
   // 旧画布模块仍使用 v4 / float / node 变量。这里显式桥接，避免未定义变量
   // 回退到组件库暗色默认值，尤其是任务队列、预设中心和文本编辑浮层。
@@ -148,32 +162,32 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   --canvas-v4-radius-xs: var(--canvas-cinema-radius-xs);
   --canvas-v4-radius-sm: var(--canvas-cinema-radius-sm);
   --canvas-field-bg: #f5f4f1;
-  --canvas-float-bg: rgba(255, 255, 255, 0.96);
+  --canvas-float-bg: color-mix(in srgb, var(--white) 96%, transparent);
   --canvas-float-bg-solid: #ffffff;
-  --canvas-float-border-subtle: rgba(47, 43, 37, 0.14);
-  --canvas-float-divider-subtle: rgba(47, 43, 37, 0.1);
+  --canvas-float-border-subtle: color-mix(in srgb, var(--canvas-ink-700) 14%, transparent);
+  --canvas-float-divider-subtle: color-mix(in srgb, var(--canvas-ink-700) 10%, transparent);
   --canvas-float-icon: #6a665e;
   --canvas-float-icon-strong: #2f2c27;
-  --canvas-float-hover: rgba(47, 43, 37, 0.06);
-  --canvas-float-active: rgba(101, 91, 216, 0.1);
+  --canvas-float-hover: color-mix(in srgb, var(--canvas-ink-700) 6%, transparent);
+  --canvas-float-active: color-mix(in srgb, var(--canvas-indigo-600) 10%, transparent);
   --canvas-float-shadow:
-    0 20px 52px rgba(59, 54, 47, 0.14), 0 8px 18px rgba(59, 54, 47, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+    0 20px 52px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent), 0 8px 18px color-mix(in srgb, var(--canvas-ink-600) 8%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--white) 82%, transparent);
   --canvas-node-bg: #ffffff;
   --canvas-node-head-bg: #faf9f6;
   --canvas-node-body-bg: #ffffff;
-  --canvas-node-shadow: 0 16px 32px rgba(31, 28, 24, 0.08), 0 2px 8px rgba(31, 28, 24, 0.06);
-  --canvas-node-shadow-selected: 0 18px 44px rgba(31, 28, 24, 0.14);
-  --canvas-node-edge: rgba(47, 43, 37, 0.12);
-  --success: #168b68;
-  --success-bg: rgba(22, 139, 104, 0.1);
-  --warning: #b87512;
-  --warning-bg: rgba(184, 117, 18, 0.12);
-  --danger: #d84d5b;
-  --danger-bg: rgba(216, 77, 91, 0.1);
-  --info: #277191;
-  --info-bg: rgba(39, 113, 145, 0.1);
-  --danger-6: #d84d5b;
+  --canvas-node-shadow: 0 16px 32px color-mix(in srgb, var(--canvas-ink-900) 8%, transparent), 0 2px 8px color-mix(in srgb, var(--canvas-ink-900) 6%, transparent);
+  --canvas-node-shadow-selected: 0 18px 44px color-mix(in srgb, var(--canvas-ink-900) 14%, transparent);
+  --canvas-node-edge: color-mix(in srgb, var(--canvas-ink-700) 12%, transparent);
+  --success: var(--cwt-cyan-3);
+  --success-bg: color-mix(in srgb, var(--cwt-cyan-3) 10%, transparent);
+  --warning: var(--cwt-ember);
+  --warning-bg: color-mix(in srgb, var(--cwt-ember) 12%, transparent);
+  --danger: var(--cwt-red);
+  --danger-bg: color-mix(in srgb, var(--cwt-red) 10%, transparent);
+  --info: var(--cwt-cyan-2);
+  --info-bg: color-mix(in srgb, var(--cwt-cyan-2) 10%, transparent);
+  --danger-6: var(--cwt-red);
   --shadow-color: #2f2b25;
 
   --bg: var(--canvas-cinema-bg);
@@ -195,60 +209,60 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
 
   .canvas-workspace-header,
   .step-studio-header {
-    background: rgba(251, 250, 247, 0.96);
-    box-shadow: 0 1px rgba(47, 43, 37, 0.08);
+    background: color-mix(in srgb, var(--white) 96%, transparent);
+    box-shadow: 0 1px color-mix(in srgb, var(--canvas-ink-700) 8%, transparent);
   }
 
   .canvas-stage {
     background:
-      radial-gradient(circle at 58% 42%, rgba(101, 91, 216, 0.07), transparent 36%),
+      radial-gradient(circle at 58% 42%, color-mix(in srgb, var(--canvas-indigo-600) 7%, transparent), transparent 36%),
       var(--canvas-cinema-stage);
   }
 
   .canvas-stage::before {
-    background-image: radial-gradient(circle, rgba(71, 67, 60, 0.16) 0 0.7px, transparent 0.8px);
+    background-image: radial-gradient(circle, color-mix(in srgb, var(--cwt-sand) 16%, transparent) 0 0.7px, transparent 0.8px);
   }
 
   .canvas-bottom-dock {
-    border-color: rgba(47, 43, 37, 0.16);
-    background: rgba(255, 255, 255, 0.78);
+    border-color: color-mix(in srgb, var(--canvas-ink-700) 16%, transparent);
+    background: color-mix(in srgb, var(--white) 78%, transparent);
     box-shadow:
-      0 18px 42px rgba(59, 54, 47, 0.14),
-      inset 0 1px rgba(255, 255, 255, 0.78);
+      0 18px 42px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent),
+      inset 0 1px color-mix(in srgb, var(--white) 78%, transparent);
   }
 
   .canvas-minimap {
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 12px 30px rgba(59, 54, 47, 0.14);
+    background: color-mix(in srgb, var(--white) 92%, transparent);
+    box-shadow: 0 12px 30px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent);
   }
 
   .canvas-controls {
-    background: rgba(255, 255, 255, 0.86) !important;
-    box-shadow: 0 8px 22px rgba(59, 54, 47, 0.11) !important;
+    background: color-mix(in srgb, var(--white) 86%, transparent) !important;
+    box-shadow: 0 8px 22px color-mix(in srgb, var(--canvas-ink-600) 11%, transparent) !important;
   }
 
   .canvas-controls .canvas-controls-button:hover:not(:disabled) {
-    background: rgba(47, 43, 37, 0.06);
+    background: color-mix(in srgb, var(--canvas-ink-700) 6%, transparent);
   }
 
   .canvas-cinematic-empty-kicker {
-    background: rgba(255, 255, 255, 0.8);
+    background: color-mix(in srgb, var(--white) 80%, transparent);
   }
 
   .canvas-cinematic-command {
-    border-color: rgba(47, 43, 37, 0.14);
-    background: rgba(255, 255, 255, 0.94);
+    border-color: color-mix(in srgb, var(--canvas-ink-700) 14%, transparent);
+    background: color-mix(in srgb, var(--white) 94%, transparent);
     color: var(--canvas-cinema-accent-bright);
     box-shadow:
-      0 26px 72px rgba(59, 54, 47, 0.14),
-      inset 0 1px rgba(255, 255, 255, 0.86);
+      0 26px 72px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent),
+      inset 0 1px color-mix(in srgb, var(--white) 86%, transparent);
   }
 
   .canvas-cinematic-command:focus-within {
     box-shadow:
-      0 26px 72px rgba(59, 54, 47, 0.14),
-      0 0 0 3px rgba(101, 91, 216, 0.1),
-      inset 0 1px rgba(255, 255, 255, 0.86);
+      0 26px 72px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent),
+      0 0 0 3px color-mix(in srgb, var(--canvas-indigo-600) 10%, transparent),
+      inset 0 1px color-mix(in srgb, var(--white) 86%, transparent);
   }
 
   .canvas-cinematic-command-send {
@@ -257,12 +271,12 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   }
 
   .canvas-cinematic-starters button {
-    border-color: rgba(47, 43, 37, 0.1);
-    background: rgba(255, 255, 255, 0.74);
+    border-color: color-mix(in srgb, var(--canvas-ink-700) 10%, transparent);
+    background: color-mix(in srgb, var(--white) 74%, transparent);
   }
 
   .canvas-agent-side-panel {
-    box-shadow: -18px 0 40px rgba(59, 54, 47, 0.1);
+    box-shadow: -18px 0 40px color-mix(in srgb, var(--canvas-ink-600) 10%, transparent);
   }
 
   .canvas-agent-modal .chat-panel-context,
@@ -272,76 +286,76 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   }
 
   .canvas-agent-modal .chat-panel-message-user .chat-panel-text {
-    border-color: rgba(47, 43, 37, 0.1);
+    border-color: color-mix(in srgb, var(--canvas-ink-700) 10%, transparent);
     color: var(--canvas-cinema-text-strong);
   }
 
   .canvas-agent-modal .chat-panel-composer textarea {
     box-shadow:
-      0 16px 36px rgba(59, 54, 47, 0.1),
-      inset 0 1px rgba(255, 255, 255, 0.78);
+      0 16px 36px color-mix(in srgb, var(--canvas-ink-600) 10%, transparent),
+      inset 0 1px color-mix(in srgb, var(--white) 78%, transparent);
   }
 
   .canvas-right-panel-switch {
-    background: rgba(255, 255, 255, 0.78);
+    background: color-mix(in srgb, var(--white) 78%, transparent);
   }
 
   .canvas-right-panel-switch.is-agent.is-open {
-    background: rgba(101, 91, 216, 0.14);
+    background: color-mix(in srgb, var(--canvas-indigo-600) 14%, transparent);
     color: var(--canvas-cinema-accent-bright);
   }
 
   .canvas-right-panel-switch.is-workspace.is-open {
-    background: rgba(44, 130, 167, 0.12);
-    color: #277191;
+    background: color-mix(in srgb, var(--cwt-cyan-1) 12%, transparent);
+    color: var(--cwt-cyan-2);
   }
 
   .canvas-side-panel {
-    box-shadow: -14px 0 32px rgba(59, 54, 47, 0.08);
+    box-shadow: -14px 0 32px color-mix(in srgb, var(--canvas-ink-600) 8%, transparent);
   }
 
   .canvas-pane-context-menu,
   .canvas-pane-context-submenu-panel,
   .canvas-edge-context-menu {
-    box-shadow: 0 18px 42px rgba(59, 54, 47, 0.18) !important;
+    box-shadow: 0 18px 42px color-mix(in srgb, var(--canvas-ink-600) 18%, transparent) !important;
   }
 
   .canvas-add-node-menu,
   .canvas-dock-add-dropdown-panel {
-    background: rgba(255, 255, 255, 0.98);
+    background: color-mix(in srgb, var(--white) 98%, transparent);
   }
 
   .canvas-node {
-    box-shadow: 0 14px 34px rgba(59, 54, 47, 0.08);
+    box-shadow: 0 14px 34px color-mix(in srgb, var(--canvas-ink-600) 8%, transparent);
   }
 
   .canvas-node-group {
-    border-color: rgba(47, 43, 37, 0.13) !important;
+    border-color: color-mix(in srgb, var(--canvas-ink-700) 13%, transparent) !important;
     background: color-mix(in srgb, var(--canvas-cinema-surface-3) 86%, transparent) !important;
   }
 
   .canvas-node-group .canvas-node-quick-footer {
-    background: rgba(241, 240, 236, 0.92);
+    background: color-mix(in srgb, var(--cwt-amber) 92%, transparent);
   }
 
   .canvas-node-task-image-actions button,
   .canvas-node-image-overlay-footer button {
-    border-color: rgba(47, 43, 37, 0.12);
-    background: rgba(255, 255, 255, 0.84);
+    border-color: color-mix(in srgb, var(--canvas-ink-700) 12%, transparent);
+    background: color-mix(in srgb, var(--white) 84%, transparent);
     color: var(--canvas-cinema-text-muted);
   }
 
   .canvas-stage-area {
     --canvas-float-bg-solid: #ffffff;
-    --canvas-float-border-subtle: rgba(47, 43, 37, 0.14);
-    --canvas-float-divider-subtle: rgba(47, 43, 37, 0.1);
+    --canvas-float-border-subtle: color-mix(in srgb, var(--canvas-ink-700) 14%, transparent);
+    --canvas-float-divider-subtle: color-mix(in srgb, var(--canvas-ink-700) 10%, transparent);
     --canvas-float-icon: #6a665e;
     --canvas-float-icon-strong: #2f2c27;
-    --canvas-float-hover: rgba(47, 43, 37, 0.06);
-    --canvas-float-active: rgba(101, 91, 216, 0.1);
+    --canvas-float-hover: color-mix(in srgb, var(--canvas-ink-700) 6%, transparent);
+    --canvas-float-active: color-mix(in srgb, var(--canvas-indigo-600) 10%, transparent);
     --canvas-float-shadow:
-      0 20px 52px rgba(59, 54, 47, 0.14), 0 8px 18px rgba(59, 54, 47, 0.08),
-      inset 0 1px 0 rgba(255, 255, 255, 0.82);
+      0 20px 52px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent), 0 8px 18px color-mix(in srgb, var(--canvas-ink-600) 8%, transparent),
+      inset 0 1px 0 color-mix(in srgb, var(--white) 82%, transparent);
   }
 
   // MarkdownText 还会经过全局 .md-surface 规则。显式设置内容和 Markdown
@@ -547,7 +561,7 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
     border-color: var(--canvas-cinema-border-strong);
     background: var(--canvas-cinema-surface-2);
     color: var(--canvas-cinema-text);
-    box-shadow: 0 14px 30px rgba(59, 54, 47, 0.12);
+    box-shadow: 0 14px 30px color-mix(in srgb, var(--canvas-ink-600) 12%, transparent);
   }
 
   .canvas-preset-hub-quick-entry:hover,
@@ -586,8 +600,8 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
     border-color: color-mix(in srgb, var(--canvas-cinema-accent) 24%, var(--canvas-cinema-border));
     background: var(--canvas-cinema-surface-2);
     box-shadow:
-      0 14px 34px rgba(59, 54, 47, 0.1),
-      inset 0 1px rgba(255, 255, 255, 0.7);
+      0 14px 34px color-mix(in srgb, var(--canvas-ink-600) 10%, transparent),
+      inset 0 1px color-mix(in srgb, var(--white) 70%, transparent);
   }
 
   .canvas-preset-hub-card-icon {
@@ -673,9 +687,9 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   .canvas-task-detail-modal .ant-modal-content,
   .canvas-operation-preset-dialog .ant-modal-content,
   .canvas-batch-task-modal .ant-modal-content {
-    border: 1px solid rgba(47, 43, 37, 0.1);
+    border: 1px solid color-mix(in srgb, var(--canvas-ink-700) 10%, transparent);
     background: var(--panel);
-    color: #484640;
+    color: var(--cwt-char);
   }
 
   .canvas-task-queue-modal .ant-modal-header,
@@ -683,14 +697,14 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   .canvas-operation-preset-dialog .ant-modal-header,
   .canvas-batch-task-modal .ant-modal-header {
     background: var(--panel);
-    color: #1d1c19;
+    color: var(--canvas-ink-900);
   }
 
   .canvas-task-queue-modal .ant-modal-title,
   .canvas-task-detail-modal .ant-modal-title,
   .canvas-operation-preset-dialog .ant-modal-title,
   .canvas-batch-task-modal .ant-modal-title {
-    color: #1d1c19;
+    color: var(--canvas-ink-900);
   }
 
   .canvas-task-queue-modal .ant-modal-body,
@@ -698,7 +712,7 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   .canvas-operation-preset-dialog .ant-modal-body,
   .canvas-batch-task-modal .ant-modal-body {
     background: var(--panel);
-    color: #484640;
+    color: var(--cwt-char);
   }
 
   .canvas-task-queue-modal .canvas-task-stat,
@@ -706,23 +720,23 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   .canvas-task-detail-modal .canvas-task-detail-note,
   .canvas-task-detail-modal .canvas-task-detail-empty-call,
   .canvas-task-detail-modal .canvas-task-ref-list {
-    border-color: rgba(47, 43, 37, 0.1);
-    background: #fbfaf7;
-    color: #484640;
+    border-color: color-mix(in srgb, var(--canvas-ink-700) 10%, transparent);
+    background: var(--white);
+    color: var(--cwt-char);
   }
 
   .canvas-task-queue-modal .canvas-task-stat strong,
   .canvas-task-queue-modal .canvas-task-card-title,
   .canvas-task-detail-modal .canvas-task-detail-title,
   .canvas-task-detail-modal .canvas-task-detail-block-title {
-    color: #1d1c19;
+    color: var(--canvas-ink-900);
   }
 
   .canvas-task-queue-modal .canvas-task-stat span,
   .canvas-task-queue-modal .canvas-task-card-meta,
   .canvas-task-detail-modal .canvas-task-detail-meta,
   .canvas-task-detail-modal .canvas-task-detail-subtitle {
-    color: #777169;
+    color: var(--cwt-slate);
   }
 }
 

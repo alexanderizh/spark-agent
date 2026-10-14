@@ -73,7 +73,7 @@
 
     &:hover {
       opacity: 1;
-      background: rgba(128, 128, 128, 0.18);
+      background: color-mix(in srgb, var(--gray-mid) 18%, transparent);
     }
   }
 }
@@ -252,8 +252,8 @@
   background: var(--panel, #303030);
   border-left: 1px solid var(--border, #3d3d3d);
   box-shadow:
-    -10px 0 20px -12px rgba(0, 0, 0, 0.18),
-    -1px 0 4px -2px rgba(0, 0, 0, 0.08);
+    -10px 0 20px -12px color-mix(in srgb, var(--black) 18%, transparent),
+    -1px 0 4px -2px color-mix(in srgb, var(--black) 8%, transparent);
 }
 
 // 左缘宽度拖拽条：hover/拖拽时高亮，拖拽期间禁用文本选择。
@@ -310,7 +310,7 @@
 
     &:hover {
       opacity: 1;
-      background: rgba(128, 128, 128, 0.18);
+      background: color-mix(in srgb, var(--gray-mid) 18%, transparent);
     }
   }
 }
@@ -386,7 +386,7 @@
 
   &:hover {
     opacity: 1;
-    background: rgba(128, 128, 128, 0.14);
+    background: color-mix(in srgb, var(--gray-mid) 14%, transparent);
   }
 
   &.is-active {
@@ -510,7 +510,7 @@
   transition: background var(--motion-fast) ease;
 
   &:hover {
-    background: rgba(128, 128, 128, 0.14);
+    background: color-mix(in srgb, var(--gray-mid) 14%, transparent);
   }
 
   &.is-running {

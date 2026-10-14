@@ -91,7 +91,7 @@
 
     &:hover {
       border-color: color-mix(in srgb, var(--primary) 30%, var(--border-strong));
-      box-shadow: 0 14px 30px color-mix(in srgb, var(--shadow-color, #000) 18%, transparent);
+      box-shadow: 0 14px 30px color-mix(in srgb, var(--shadow-color, var(--black)) 18%, transparent);
       transform: translateY(-2px);
     }
   }
@@ -195,7 +195,7 @@
     height: 240px;
     border-radius: var(--canvas-ui-radius-md);
     overflow: hidden;
-    background: #111216;
+    background: var(--canvas-stage-bg-2);
     border: 1px solid var(--canvas-ui-border);
   }
   .canvas-detail-cover-preview-trigger {
@@ -259,9 +259,9 @@
     gap: var(--pad-xs);
     min-height: 32px;
     padding: 0 var(--pad-sm);
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 1px solid color-mix(in srgb, var(--white) 16%, transparent);
     border-radius: var(--canvas-ui-radius-sm);
-    background: rgba(18, 18, 22, 0.78);
+    background: color-mix(in srgb, var(--canvas-stage-bg-2) 78%, transparent);
     color: var(--text-inverse);
     font-size: var(--font-sm);
     cursor: pointer;
@@ -270,7 +270,7 @@
     -webkit-backdrop-filter: blur(8px);
     transition: background var(--motion-instant) ease;
     &:hover {
-      background: rgba(18, 18, 22, 0.94);
+      background: color-mix(in srgb, var(--canvas-stage-bg-2) 94%, transparent);
     }
   }
   .canvas-detail-cover-input {
@@ -431,7 +431,7 @@
     &.active {
       background: var(--panel);
       color: var(--text-strong);
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--black) 6%, transparent);
     }
   }
   .canvas-detail-assets-loading,
@@ -569,7 +569,7 @@
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.55);
+    background: color-mix(in srgb, var(--black) 55%, transparent);
     color: var(--text-inverse);
   }
 
@@ -664,13 +664,13 @@
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.42);
+  background: color-mix(in srgb, var(--black) 42%, transparent);
   color: var(--text-inverse);
   cursor: pointer;
   transition: background var(--motion-instant) ease;
   -webkit-app-region: no-drag;
   &:hover {
-    background: rgba(0, 0, 0, 0.66);
+    background: color-mix(in srgb, var(--black) 66%, transparent);
   }
   &.prev {
     left: 20px;

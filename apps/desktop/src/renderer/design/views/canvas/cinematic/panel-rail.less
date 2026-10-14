@@ -1,3 +1,11 @@
+
+/* 数据色板（cpr 域分类色，恒值；色值残留清理收编，值零变化） */
+:root {
+  --cpr-lavender: #c9c5ff;
+  --cpr-sky: #a8dff2;
+  --cpr-teal: #3b96c0;
+}
+
 .canvas-workspace.canvas-cinematic {
   .canvas-right-panel-rail {
     position: absolute;
@@ -23,7 +31,7 @@
     padding: 0;
     border: 0;
     border-radius: var(--r-md);
-    background: rgba(20, 24, 29, 0.72);
+    background: color-mix(in srgb, var(--canvas-stage-bg-3) 72%, transparent);
     color: var(--canvas-cinema-text-faint);
     cursor: pointer;
     backdrop-filter: blur(12px);
@@ -49,13 +57,13 @@
   }
 
   .canvas-right-panel-switch.is-agent.is-open {
-    background: rgba(119, 108, 246, 0.24);
-    color: #c9c5ff;
+    background: color-mix(in srgb, var(--canvas-indigo-500) 24%, transparent);
+    color: var(--cpr-lavender);
   }
 
   .canvas-right-panel-switch.is-workspace.is-open {
-    background: rgba(59, 150, 192, 0.2);
-    color: #a8dff2;
+    background: color-mix(in srgb, var(--cpr-teal) 20%, transparent);
+    color: var(--cpr-sky);
   }
 }
 

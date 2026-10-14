@@ -21,7 +21,7 @@
   border: 1px dashed color-mix(in srgb, var(--primary) 68%, var(--divider));
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel-elev) 92%, var(--primary) 8%);
-  box-shadow: 0 12px 32px color-mix(in srgb, #000 20%, transparent);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--black) 20%, transparent);
   color: var(--primary);
   pointer-events: none;
 
@@ -162,7 +162,7 @@
   border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--divider));
   border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--panel-elev) 94%, transparent);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--shadow-color, #000) 18%, transparent);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--shadow-color, var(--black)) 18%, transparent);
   color: var(--text);
   cursor: pointer;
   font: inherit;
@@ -495,8 +495,8 @@
   padding: var(--pad-sm);
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--bg-sunken) 92%, #050505);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+  background: color-mix(in srgb, var(--bg-sunken) 92%, var(--black));
+  box-shadow: 0 18px 42px color-mix(in srgb, var(--black) 42%, transparent);
 
   img {
     display: block;
@@ -506,7 +506,7 @@
     height: auto;
     object-fit: contain;
     border-radius: var(--r-sm);
-    background: #050505;
+    background: var(--black);
   }
 
   .chat-panel-attachment-preview-fallback {
@@ -1029,7 +1029,7 @@
   border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--divider));
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel) 88%, var(--bg-soft));
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow, #000) 9%, transparent);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow, var(--black)) 9%, transparent);
 }
 
 .chat-panel-question-head {
@@ -1390,7 +1390,7 @@ textarea.chat-panel-question-answer {
     background: var(--danger);
 
     &:hover:not(:disabled) {
-      background: color-mix(in srgb, var(--danger) 85%, #000);
+      background: color-mix(in srgb, var(--danger) 85%, var(--black));
     }
   }
 }

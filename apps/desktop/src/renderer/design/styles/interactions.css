@@ -609,7 +609,7 @@
   color: var(--primary);
 }
 .file-type-text-tag--style {
-  color: #0891b2;
+  color: var(--file-type-text);
 }
 .file-type-text-tag--script,
 .file-type-text-tag--json {
@@ -626,13 +626,13 @@
   color: var(--danger);
 }
 .file-type-text-tag--image {
-  color: #9333ea;
+  color: var(--file-type-image);
 }
 .file-type-text-tag--video {
-  color: #7c3aed;
+  color: var(--file-type-video);
 }
 .file-type-text-tag--audio {
-  color: #db2777;
+  color: var(--file-type-audio);
 }
 .file-type-text-tag--archive {
   color: var(--warning);
@@ -663,7 +663,7 @@
   color: var(--text);
   text-align: left;
   cursor: pointer;
-  box-shadow: 0 1px 8px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 1px 8px color-mix(in srgb, var(--ink-slate) 6%, transparent);
   transition:
     border-color 0.15s ease,
     background 0.15s ease,
@@ -674,7 +674,7 @@
   border-color: var(--border-strong);
   background: var(--hover);
   transform: translateY(-1px);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--ink-slate) 10%, transparent);
 }
 .document-output-card-preview {
   position: relative;
@@ -693,7 +693,7 @@
   inset: auto 9px 0 27px;
   height: 44px;
   border-radius: 7px 7px 0 0;
-  background: color-mix(in srgb, var(--panel) 88%, white);
+  background: color-mix(in srgb, var(--panel) 88%, var(--panel));
   border: 1px solid var(--divider);
 }
 .document-output-card-preview .document-file-icon,
@@ -788,7 +788,7 @@
   color: var(--primary);
 }
 .turn-summary-file-row .file-type-badge.type-style {
-  color: #0891b2;
+  color: var(--file-type-text);
 }
 .turn-summary-file-row .file-type-badge.type-script,
 .turn-summary-file-row .file-type-badge.type-json {
@@ -805,13 +805,13 @@
   color: var(--danger);
 }
 .turn-summary-file-row .file-type-badge.type-image {
-  color: #9333ea;
+  color: var(--file-type-image);
 }
 .turn-summary-file-row .file-type-badge.type-video {
-  color: #7c3aed;
+  color: var(--file-type-video);
 }
 .turn-summary-file-row .file-type-badge.type-audio {
-  color: #db2777;
+  color: var(--file-type-audio);
 }
 .turn-summary-file-row .file-type-badge.type-archive {
   color: var(--warning);
@@ -1030,7 +1030,7 @@
 .error-card pre {
   margin: var(--pad-xs) 0 0;
   padding: var(--pad-sm) var(--pad-sm);
-  background: rgba(0, 0, 0, 0.06);
+  background: color-mix(in srgb, var(--black) 6%, transparent);
   border-radius: var(--r-sm);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: var(--font-xs);
@@ -1040,7 +1040,7 @@
   max-height: 120px;
 }
 .app.theme-dark .error-card pre {
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--black) 30%, transparent);
 }
 .error-card .e-actions {
   display: flex;
@@ -1352,7 +1352,7 @@
 
 .playwright-row.error {
   display: block;
-  background: rgba(220, 38, 38, 0.05);
+  background: color-mix(in srgb, var(--danger) 5%, transparent);
 }
 
 .playwright-row-main {
@@ -1628,7 +1628,7 @@
 
 .ffmpeg-summary-item.none {
   color: var(--danger, #dc2626);
-  background: rgba(220, 38, 38, 0.08);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
   border-color: transparent;
 }
 
@@ -1654,7 +1654,7 @@
 
 .ffmpeg-row.error {
   display: block;
-  background: rgba(220, 38, 38, 0.05);
+  background: color-mix(in srgb, var(--danger) 5%, transparent);
 }
 
 .ffmpeg-row-main {
