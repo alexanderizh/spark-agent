@@ -110,17 +110,23 @@ async function main() {
     page = await miniProgram.currentPage()
     check('聊天页可达', (page?.path ?? '').includes('chat'))
 
+    const quickChips = await page.$$('.quick-chip')
     const chips = await page.$$('.config-chip')
-    check('配置条 chips 渲染', chips.length >= 5, `${chips.length} 个 chip`)
+    check('快捷行 2 个常用 chip', quickChips.length === 2, `${quickChips.length} 个`)
+    check('配置条 chips 渲染', chips.length >= 4, `${chips.length} 个 chip`)
     if (chips.length > 0) {
-      const firstChipText = await (await chips[0].$('.config-chip-label')).text()
+      const firstChipText = await (await chips[0].$('.config-chip-value')).text()
       check(
-        'chip 标签渲染',
+        'chip 值渲染（扁平态无 label）',
         typeof firstChipText === 'string' && firstChipText.length > 0,
         `首个="${firstChipText}"`,
       )
-      // 点开助手面板 → 面板出现 → 关闭
-      await chips[0].tap()
+      // 点开助手面板 → 面板出现 → 关闭（按 data-key 定位助手 chip）
+      let agentChip = null
+      for (const chip of chips) {
+        if ((await chip.attribute('data-key')) === 'agent') agentChip = chip
+      }
+      await agentChip.tap()
       await sleep(1200)
       const sheet = await page.$('.sheet')
       check('半屏选择面板打开', sheet != null)

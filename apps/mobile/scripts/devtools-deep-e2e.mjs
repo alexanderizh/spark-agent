@@ -56,13 +56,18 @@ async function main() {
   await sleep(3500)
   const page = await miniProgram.currentPage()
 
-  // 找到推理 chip（第 4 个）
+  // 找到推理 chip（快捷行改造后配置条含 agent/reasoning/workflow/project，按 data-key 定位）
   const chips = await page.$$('.config-chip')
-  check('chips 就绪', chips.length >= 5, `${chips.length} 个`)
-  const before = await (await chips[3].$('.config-chip-value')).text()
+  check('chips 就绪', chips.length >= 4, `${chips.length} 个`)
+  let reasonChip = null
+  for (const chip of chips) {
+    if ((await chip.attribute('data-key')) === 'reasoning') reasonChip = chip
+  }
+  check('推理 chip 存在', reasonChip != null)
+  const before = await (await reasonChip.$('.config-chip-value')).text()
   console.log(`     切换前推理 chip 值 = "${before}"`)
 
-  await chips[3].tap()
+  await reasonChip.tap()
   await sleep(1200)
   const slider = await page.$('.sheet-slider')
   check('推理面板为滑块模式', slider != null)
@@ -80,7 +85,11 @@ async function main() {
   const sheetAfter = await page.$('.sheet')
   check('切换后面板关闭', sheetAfter == null)
   const chipsAfter = await page.$$('.config-chip')
-  const after = await (await chipsAfter[3].$('.config-chip-value')).text()
+  let reasonChipAfter = null
+  for (const chip of chipsAfter) {
+    if ((await chip.attribute('data-key')) === 'reasoning') reasonChipAfter = chip
+  }
+  const after = await (await reasonChipAfter.$('.config-chip-value')).text()
   console.log(`     切换后推理 chip 值 = "${after}"`)
   check('chip 值已更新', after !== before || after === efforts[targetIdx])
 
