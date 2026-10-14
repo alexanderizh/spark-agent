@@ -4,7 +4,7 @@
   min-width: 0;
   height: 100%;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   -webkit-app-region: no-drag;
 }
 
@@ -16,7 +16,7 @@
   justify-content: center;
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--divider) 88%, transparent);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text-muted);
   background: color-mix(in srgb, var(--panel) 72%, transparent);
   cursor: pointer;
@@ -57,7 +57,7 @@
 
 @media (max-width: 560px) {
   .quick-create-header-actions {
-    gap: 4px;
+    gap: var(--pad-3xs);
   }
 
   .quick-create-window-open-button {

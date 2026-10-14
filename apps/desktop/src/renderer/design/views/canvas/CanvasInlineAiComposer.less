@@ -1,12 +1,12 @@
 .canvas-composer-model-row {
-  padding: 7px;
+  padding: var(--pad-sm);
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--canvas-field-bg) 74%, transparent);
 }
 
 .canvas-composer-common-parameters {
-  padding: 9px;
+  padding: var(--pad-sm);
   border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--canvas-field-bg) 78%, transparent);
@@ -16,7 +16,7 @@
 .canvas-composer-advanced-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .canvas-composer-common-grid > .canvas-parameter-control:has(.canvas-aspect-ratio-grid) {
@@ -26,8 +26,8 @@
 .canvas-composer-advanced {
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  padding: 10px;
+  gap: var(--pad-md);
+  padding: var(--pad-sm);
   border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
   border-radius: var(--r-lg);
   background:
@@ -39,9 +39,9 @@
 .canvas-composer-advanced-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: var(--text-strong);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 800;
 }
 

@@ -3,9 +3,9 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--pad-lg);
   overflow: auto;
-  padding: 18px 20px 24px;
+  padding: var(--pad-xl) var(--pad-xl) var(--pad-2xl);
 }
 
 .canvas-provider-files-channel-tabs,
@@ -15,12 +15,12 @@
 .canvas-provider-files-upload-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-wrap: wrap;
 }
 
 .canvas-provider-files-channel-tab {
-  padding: 7px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   border: 1px solid var(--divider);
   border-radius: var(--r-md);
   background: var(--canvas-film-card);
@@ -37,7 +37,7 @@
 .canvas-provider-files-toolbar {
   position: relative;
   justify-content: space-between;
-  padding: 12px;
+  padding: var(--pad-md);
   border: 1px solid var(--divider);
   border-radius: var(--r-lg);
   background: var(--canvas-film-card);
@@ -48,21 +48,21 @@
   min-width: min(100%, 520px);
   flex: 1;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-wrap: wrap;
 }
 
 .canvas-provider-files-list {
   display: grid;
-  gap: 9px;
+  gap: var(--pad-sm);
 }
 
 .canvas-provider-file-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: var(--pad-md);
   align-items: center;
-  padding: 12px;
+  padding: var(--pad-md);
   border: 1px solid var(--divider);
   border-radius: var(--r-lg);
   background: var(--canvas-film-card);
@@ -88,11 +88,11 @@
 .canvas-provider-files-note,
 .canvas-provider-file-error {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .canvas-provider-file-error {
-  margin-top: 5px;
+  margin-top: var(--pad-xs);
   color: var(--danger);
   white-space: pre-wrap;
 }
@@ -101,7 +101,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 
 .canvas-provider-file-head {
@@ -109,7 +109,7 @@
   justify-content: space-between;
   align-items: baseline;
   min-width: 0;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .canvas-provider-file-name {
@@ -123,7 +123,7 @@
 
 .canvas-provider-file-attr {
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   opacity: 0.72;
 }
 
@@ -131,9 +131,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .canvas-provider-file-sep {
@@ -149,46 +149,46 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding-top: 8px;
+  gap: var(--pad-md);
+  padding-top: var(--pad-sm);
 }
 
 .canvas-provider-files-pagination-info {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .canvas-provider-files-pagination-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .canvas-provider-files-pagination-page {
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
   white-space: nowrap;
 }
 
 .canvas-provider-files-upload-form {
   display: grid;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .canvas-provider-files-upload-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .canvas-provider-files-field {
   display: grid;
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 
 .canvas-provider-files-field > span:first-child {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 860px) {

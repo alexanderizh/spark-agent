@@ -18,7 +18,7 @@
   // 380px：设置条五控件行（27px×4 + 展开钮行）+ 10px 行距下，中部文案区仍需
   // 呼吸留白；body 是 flex:1 吸收富余高度（真机反馈 320 偏挤，加高）
   min-height: 380px;
-  border-radius: 16px;
+  border-radius: var(--r-xl);
   border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
   background: color-mix(in srgb, var(--bg, #fff) 88%, transparent);
   backdrop-filter: blur(12px);
@@ -269,7 +269,7 @@
   max-width: 240px;
   margin-top: 2px;
   padding: var(--pad-sm) var(--pad-sm);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--text) 5%, transparent);
   display: flex;
   flex-direction: column;
@@ -488,7 +488,7 @@
   gap: var(--pad-sm);
   height: 30px;
   padding: 0 var(--pad-lg);
-  border-radius: 15px;
+  border-radius: var(--r-xl);
   border: 1px solid color-mix(in srgb, var(--danger) 36%, transparent);
   background: transparent;
   color: var(--danger);
@@ -648,7 +648,7 @@
   flex: 1;
   min-width: 0;
   height: 27px;
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--text) 5%, transparent);
   transition:
     background 0.15s ease,
@@ -770,7 +770,7 @@
   box-sizing: border-box;
   height: 27px;
   padding: var(--pad-3xs);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--text) 5%, transparent);
 }
 

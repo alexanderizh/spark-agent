@@ -40,9 +40,9 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
     flex: 0 0 auto;
     align-items: center;
     gap: 2px;
-    padding: 3px;
+    padding: var(--pad-3xs);
     border: 1px solid var(--canvas-cinema-border);
-    border-radius: 10px;
+    border-radius: var(--r-lg);
     background: var(--canvas-cinema-surface-2);
     box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
   }
@@ -54,7 +54,7 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
     place-items: center;
     padding: 0;
     border: 0;
-    border-radius: 7px;
+    border-radius: var(--r-md);
     background: transparent;
     color: var(--canvas-cinema-text-faint);
     cursor: pointer;
@@ -253,7 +253,7 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
 
   .canvas-cinematic-command-send {
     background: var(--canvas-cinema-accent);
-    color: #ffffff;
+    color: var(--text-inverse);
   }
 
   .canvas-cinematic-starters button {
@@ -662,7 +662,7 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   .canvas-node-media-full-bleed .canvas-node-core,
   .canvas-node-media-full-bleed .canvas-node-body,
   .canvas-node-media-full-bleed .canvas-node-image-wrap {
-    background: #07090b;
+    background: var(--canvas-stage-bg);
   }
 }
 
@@ -674,7 +674,7 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   .canvas-operation-preset-dialog .ant-modal-content,
   .canvas-batch-task-modal .ant-modal-content {
     border: 1px solid rgba(47, 43, 37, 0.1);
-    background: #ffffff;
+    background: var(--panel);
     color: #484640;
   }
 
@@ -682,7 +682,7 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   .canvas-task-detail-modal .ant-modal-header,
   .canvas-operation-preset-dialog .ant-modal-header,
   .canvas-batch-task-modal .ant-modal-header {
-    background: #ffffff;
+    background: var(--panel);
     color: #1d1c19;
   }
 
@@ -697,7 +697,7 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   .canvas-task-detail-modal .ant-modal-body,
   .canvas-operation-preset-dialog .ant-modal-body,
   .canvas-batch-task-modal .ant-modal-body {
-    background: #ffffff;
+    background: var(--panel);
     color: #484640;
   }
 

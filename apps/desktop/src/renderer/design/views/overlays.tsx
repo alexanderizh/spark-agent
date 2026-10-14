@@ -397,7 +397,7 @@ function getRiskBadge(risk: CommandRisk | 'none'): ReactNode | null {
         padding: '1px 5px',
         borderRadius: 3,
         background: colors[risk] ?? colors.medium,
-        color: '#fff',
+        color: 'var(--text-inverse)',
       }}
     >
       {risk === 'high' ? '危险' : '注意'}
@@ -955,7 +955,7 @@ function PaletteCommandItem({
             padding: '1px 4px',
             borderRadius: 3,
             background: layerColor,
-            color: '#fff',
+            color: 'var(--text-inverse)',
             opacity: 0.7,
             whiteSpace: 'nowrap',
           }}

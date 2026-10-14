@@ -46,14 +46,14 @@
   cursor: grabbing;
 }
 .quick-task-kicker {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 700;
   color: var(--brand, #6366f1);
   letter-spacing: 0.12em;
 }
 .quick-task-drag-handle h2 {
-  margin: 4px 0 0;
-  font-size: 22px;
+  margin: var(--pad-3xs) 0 0;
+  font-size: var(--font-xl);
   line-height: 1.2;
 }
 
@@ -101,7 +101,7 @@
   height: 72px;
   padding: 0;
   border: 1px solid var(--border, #cbd5e1);
-  border-radius: 16px;
+  border-radius: var(--r-xl);
   overflow: hidden;
   background: transparent;
 }
@@ -121,7 +121,7 @@
   height: 18px;
   border-radius: 50%;
   background: rgba(15, 23, 42, 0.72);
-  color: white;
+  color: var(--text-inverse);
 }
 /* 源文件已被清理（如 macOS temp 被回收）→ safe-file 加载失败降级占位，避免控制台刷 404。 */
 .quick-task-thumb.is-missing {
@@ -145,8 +145,8 @@
 }
 .quick-task-fields label {
   display: grid;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--pad-xs);
+  font-size: var(--font-sm);
   font-weight: 700;
   color: var(--muted-foreground, #64748b);
 }

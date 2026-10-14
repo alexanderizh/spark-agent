@@ -2,7 +2,7 @@
 
 .nb-center-modal {
   .ant-modal-body {
-    padding: 0 0 8px;
+    padding: 0 0 var(--pad-sm);
   }
 }
 
@@ -26,7 +26,7 @@
   max-height: min(640px, 72vh);
 
   .ant-tabs {
-    padding: 0 16px;
+    padding: 0 var(--pad-lg);
 
     .ant-tabs-extra-content {
       display: flex;
@@ -38,19 +38,19 @@
 // ─── 公告横幅（置顶）────────────────────────────────────────────────────────
 
 .nb-banner {
-  margin: 4px 16px 8px;
-  padding: 8px 10px;
+  margin: var(--pad-3xs) var(--pad-lg) var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
   border-radius: var(--r-md);
   background: var(--info-bg);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .nb-banner-row {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -82,16 +82,16 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 16px 8px;
+  padding: var(--pad-3xs) var(--pad-lg) var(--pad-sm);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .nb-item {
   border-radius: var(--r-md);
   background: var(--bg-sunken);
-  transition: background 0.15s ease;
+  transition: background var(--motion-fast) ease;
 
   &:hover {
     background: var(--hover);
@@ -101,9 +101,9 @@
 .nb-item-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   border: none;
   background: transparent;
   text-align: left;
@@ -113,7 +113,7 @@
 .nb-item-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   flex: 1;
   min-width: 0;
   font-size: var(--font-sm);
@@ -137,7 +137,7 @@
 .nb-item-chev {
   flex-shrink: 0;
   color: var(--text-faint);
-  transition: transform 0.15s ease;
+  transition: transform var(--motion-fast) ease;
 
   &.is-open {
     transform: rotate(180deg);
@@ -145,14 +145,14 @@
 }
 
 .nb-item-body {
-  padding: 0 12px 12px 26px;
+  padding: 0 var(--pad-md) var(--pad-md) 26px;
   font-size: var(--font-sm);
   line-height: 1.65;
   color: var(--text-muted);
   word-break: break-word;
 
   p {
-    margin: 0 0 8px;
+    margin: 0 0 var(--pad-sm);
     &:last-child {
       margin-bottom: 0;
     }
@@ -163,24 +163,24 @@
   }
 
   blockquote {
-    margin: 8px 0;
-    padding: 4px 10px;
+    margin: var(--pad-sm) 0;
+    padding: var(--pad-3xs) var(--pad-sm);
     border-left: 2px solid var(--divider);
     color: var(--text-faint);
   }
 
   ul,
   ol {
-    margin: 6px 0;
-    padding-left: 20px;
+    margin: var(--pad-xs) 0;
+    padding-left: var(--pad-xl);
   }
 }
 
 // ─── 加载更多 / 提示 ─────────────────────────────────────────────────────────
 
 .nb-load-more {
-  margin: 4px 16px 8px;
-  padding: 8px 0;
+  margin: var(--pad-3xs) var(--pad-lg) var(--pad-sm);
+  padding: var(--pad-sm) 0;
   border: none;
   border-radius: var(--r-md);
   background: transparent;
@@ -207,8 +207,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 32px 16px;
+  gap: var(--pad-sm);
+  padding: var(--pad-3xl) var(--pad-lg);
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
@@ -226,7 +226,7 @@
 }
 
 .nb-unread-note {
-  margin: 2px 16px 6px;
+  margin: 2px var(--pad-lg) var(--pad-xs);
   font-size: var(--font-xs);
   color: var(--text-faint);
 }

@@ -36,7 +36,7 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-brand-mark {
@@ -45,23 +45,23 @@
   height: 28px;
   align-items: center;
   justify-content: center;
-  border-radius: 9px;
-  color: #fff;
+  border-radius: var(--r-md);
+  color: var(--text-inverse);
   background: linear-gradient(145deg, #3699ff, #7157ff);
   box-shadow: 0 6px 18px color-mix(in srgb, var(--quick-accent) 24%, transparent);
 }
 
 .quick-create-brand > strong {
   color: var(--text-strong);
-  font-size: 16px;
+  font-size: var(--font-lg);
   letter-spacing: -0.02em;
 }
 
 .quick-create-brand > span:last-child {
   overflow: hidden;
-  margin-left: 10px;
+  margin-left: var(--pad-sm);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -77,7 +77,7 @@
 }
 
 .quick-create-tabbar.is-sidebar-hidden .quick-create-tabs {
-  margin-left: 48px;
+  margin-left: var(--pad-3xl);
 }
 
 .quick-create-task-status i {
@@ -92,14 +92,14 @@
   width: 100%;
   min-height: 0;
   margin: 0 auto;
-  padding: 16px 18px 18px;
+  padding: var(--pad-lg) var(--pad-xl) var(--pad-xl);
   overflow: hidden;
 }
 
 .quick-create-tabs {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   height: 100%;
 }
 
@@ -107,15 +107,15 @@
   display: inline-flex;
   min-height: 32px;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
+  gap: var(--pad-xs);
+  padding: 0 var(--pad-sm);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
@@ -136,14 +136,14 @@
   border-radius: 50%;
   color: var(--quick-field);
   background: var(--quick-accent);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
 }
 
 .quick-create-workbench {
   display: grid;
   grid-template-columns: minmax(390px, 43%) minmax(440px, 1fr);
-  gap: 10px;
+  gap: var(--pad-sm);
   height: 100%;
   min-height: 560px;
 }
@@ -155,14 +155,14 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
-  border-radius: 13px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel) 90%, transparent);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.08);
 }
 
 .quick-create-form-pane .quick-create-mode-rail {
   min-height: 0;
-  padding: 12px 16px 0;
+  padding: var(--pad-md) var(--pad-lg) 0;
   border-bottom: 1px solid var(--divider);
 }
 
@@ -170,7 +170,7 @@
   flex: 1;
   min-height: 0;
   max-height: none;
-  padding: 16px;
+  padding: var(--pad-lg);
   overflow: auto;
 }
 
@@ -180,18 +180,18 @@
 }
 
 .quick-create-parameter-panel {
-  margin-top: 14px;
+  margin-top: var(--pad-lg);
 }
 
 .quick-create-parameter-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 10px;
+  gap: var(--pad-md) var(--pad-sm);
   align-items: start;
 }
 
 .quick-create-parameter-grid.is-advanced {
-  margin-top: 10px;
+  margin-top: var(--pad-sm);
 }
 
 .quick-create-parameter-field {
@@ -210,10 +210,10 @@
   display: flex;
   min-height: 16px;
   align-items: baseline;
-  gap: 8px;
-  margin-bottom: 5px;
+  gap: var(--pad-sm);
+  margin-bottom: var(--pad-xs);
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   font-weight: 400;
 }
 
@@ -221,7 +221,7 @@
   margin-left: auto;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-style: normal;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
@@ -230,7 +230,7 @@
 .quick-create-form .ant-input,
 .quick-create-form .ant-input-affix-wrapper {
   border-color: transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--quick-field);
 }
 
@@ -241,7 +241,7 @@
   align-items: center;
   justify-content: space-between;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text-muted);
   background: var(--quick-field);
 }
@@ -253,7 +253,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: inherit;
   background: transparent;
   cursor: pointer;
@@ -283,7 +283,7 @@
   color: var(--text-strong);
   background: transparent;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--font-base);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -296,13 +296,13 @@
 
 .quick-create-count-stepper span {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-size-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .quick-create-size-grid button {
@@ -312,15 +312,15 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 4px;
-  padding: 5px 2px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-xs) 2px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text-muted);
   background: var(--quick-field);
   cursor: pointer;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-size-grid button > span:last-child {
@@ -365,15 +365,15 @@
   min-width: 0;
   min-height: 32px;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
+  gap: var(--pad-xs);
+  padding: 0 var(--pad-sm);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .quick-create-advanced-toggle:hover,
@@ -393,7 +393,7 @@
   flex: 1;
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -401,7 +401,7 @@
 
 .quick-create-advanced-toggle > svg:last-child {
   flex-shrink: 0;
-  transition: transform 160ms ease;
+  transition: transform var(--motion-base) ease;
 }
 
 .quick-create-advanced-toggle > svg.is-open {
@@ -411,7 +411,7 @@
 .quick-create-mode-rail {
   display: flex;
   flex-direction: row;
-  gap: 4px;
+  gap: var(--pad-3xs);
   padding: 0;
 }
 
@@ -422,8 +422,8 @@
   flex: 1 1 0;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 0 10px;
+  gap: var(--pad-xs);
+  padding: 0 var(--pad-sm);
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 8px 8px 0 0;
@@ -456,7 +456,7 @@
 .quick-create-form {
   position: relative;
   min-width: 0;
-  padding: 14px 22px 22px;
+  padding: var(--pad-lg) 22px 22px;
 }
 
 .quick-create-control-row,
@@ -468,13 +468,13 @@
 .quick-create-text-model-row label,
 .quick-create-control-label {
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   font-weight: 400;
 }
 
 .quick-create-prompt-wrap {
   position: relative;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   border: 1px solid color-mix(in srgb, var(--quick-accent) 28%, var(--divider));
   background: color-mix(in srgb, var(--quick-field) 92%, transparent);
 }
@@ -487,14 +487,14 @@
   display: block;
   width: 100%;
   min-height: 154px;
-  padding: 12px 84px 0 14px;
+  padding: var(--pad-md) 84px 0 var(--pad-lg);
   border: 0;
   outline: none;
   resize: vertical;
   color: var(--text-strong);
   background: transparent;
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--font-base);
   line-height: 1.65;
 }
 
@@ -524,7 +524,7 @@
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   color: var(--text-faint);
   background: transparent;
   cursor: pointer;
@@ -538,14 +538,14 @@
 }
 
 .quick-create-input-zone {
-  margin-top: 16px;
+  margin-top: var(--pad-lg);
 }
 
 .quick-create-input-list {
   display: flex;
   min-height: 64px;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   overflow-x: auto;
 }
 
@@ -557,7 +557,7 @@
   align-items: center;
   justify-content: center;
   border: 1px dashed color-mix(in srgb, var(--quick-accent) 32%, var(--divider));
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
@@ -580,7 +580,7 @@
   align-items: flex-end;
   overflow: hidden;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--quick-field);
 }
 
@@ -612,10 +612,10 @@
   position: relative;
   z-index: 1;
   max-width: calc(100% - 26px);
-  margin: 0 7px 6px;
+  margin: 0 var(--pad-sm) var(--pad-xs);
   overflow: hidden;
-  color: #fff;
-  font-size: 10px;
+  color: var(--text-inverse);
+  font-size: var(--font-2xs);
   text-overflow: ellipsis;
   text-shadow: 0 1px 3px #000;
   white-space: nowrap;
@@ -633,7 +633,7 @@
   justify-content: center;
   border: 0;
   border-radius: 50%;
-  color: #fff;
+  color: var(--text-inverse);
   background: rgba(0, 0, 0, 0.58);
   cursor: pointer;
 }
@@ -644,15 +644,15 @@
 
 .quick-create-control-row {
   min-width: 0;
-  gap: 12px;
-  margin-top: 15px;
+  gap: var(--pad-md);
+  margin-top: var(--pad-lg);
 }
 
 .quick-create-model-control {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-control-label {
@@ -663,7 +663,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -676,7 +676,7 @@
   color: var(--quick-accent);
   background: transparent;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .quick-create-capability-action:hover,
@@ -697,16 +697,16 @@
 
 .quick-create-submit-row {
   justify-content: space-between;
-  gap: 16px;
-  margin-top: 18px;
+  gap: var(--pad-lg);
+  margin-top: var(--pad-xl);
 }
 
 .quick-create-submit-row > span {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-submit-row .ant-btn {
@@ -714,7 +714,7 @@
   min-height: 40px;
   margin-left: auto;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: linear-gradient(100deg, #2898ff, #7558ff 68%, #a33df0);
   box-shadow: 0 9px 24px color-mix(in srgb, var(--quick-accent) 24%, transparent);
 }
@@ -726,7 +726,7 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
-  border-radius: 13px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel) 88%, transparent);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.08);
 }
@@ -743,15 +743,15 @@
 .quick-create-result-tabs button {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 4px;
+  gap: var(--pad-sm);
+  padding: 0 var(--pad-3xs);
   border: 0;
   border-bottom: 2px solid transparent;
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .quick-create-result-tabs button:hover,
@@ -771,15 +771,15 @@
   height: 16px;
   align-items: center;
   justify-content: center;
-  border-radius: 99px;
-  color: #fff;
+  border-radius: var(--r-pill);
+  color: var(--text-inverse);
   background: var(--quick-accent);
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-result-pane > .quick-create-history {
   min-height: 0;
-  padding: 0 20px 20px;
+  padding: 0 var(--pad-xl) var(--pad-xl);
   overflow: auto;
 }
 
@@ -794,8 +794,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  row-gap: 6px;
+  gap: var(--pad-xl);
+  row-gap: var(--pad-xs);
   border-bottom: 1px solid var(--divider);
 }
 
@@ -805,13 +805,13 @@
   /* 两段文案各自成块，放不下时整段换到下一行，避免「已完成」被拆成「已/完成」 */
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 10px;
+  gap: var(--pad-sm);
   row-gap: 2px;
 }
 
 .quick-create-history-overview strong {
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
@@ -819,7 +819,7 @@
   /* 统计文案单行显示，极端窄容器下退化为省略号而不是逐字折行 */
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -832,22 +832,22 @@
   min-width: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .quick-create-history-filters button {
   display: inline-flex;
   min-height: 40px;
   align-items: center;
-  gap: 5px;
-  padding: 0 8px;
+  gap: var(--pad-xs);
+  padding: 0 var(--pad-sm);
   border: 0;
   border-bottom: 2px solid transparent;
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
   white-space: nowrap;
 }
 
@@ -859,10 +859,10 @@
 
 .quick-create-history-filters small {
   min-width: 16px;
-  padding: 1px 4px;
-  border-radius: 5px;
+  padding: 1px var(--pad-3xs);
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, currentColor 12%, transparent);
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-history-list {
@@ -879,8 +879,8 @@
   grid-template-columns: 74px minmax(0, 1fr) 92px 18px;
   min-height: 72px;
   align-items: center;
-  gap: 12px;
-  padding: 8px 0;
+  gap: var(--pad-md);
+  padding: var(--pad-sm) 0;
   border: 0;
   color: inherit;
   background: transparent;
@@ -892,12 +892,12 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .quick-create-task-state > small {
   color: var(--text-faint);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -910,9 +910,9 @@
 .quick-create-task-status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-task-status.is-running {
@@ -935,13 +935,13 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .quick-create-task-copy strong {
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -949,7 +949,7 @@
 .quick-create-task-copy small {
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -958,7 +958,7 @@
 .quick-create-task-main > video {
   width: 92px;
   height: 54px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   object-fit: cover;
 }
 
@@ -966,7 +966,7 @@
   display: -webkit-box;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.4;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -984,7 +984,7 @@
 .quick-create-task-main > .quick-create-task-audio-thumb {
   width: 92px;
   height: 54px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
 }
 
 /* 展开态缩略图的父级按钮会把内部 span 绝对定位成角标，这里显式还原为占位块 */
@@ -1008,14 +1008,14 @@
   height: 54px;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: var(--text-faint);
   background: var(--quick-field);
 }
 
 .quick-create-task-main > svg {
   color: var(--text-faint);
-  transition: transform 160ms ease;
+  transition: transform var(--motion-base) ease;
 }
 
 .quick-create-task-main > svg.is-open {
@@ -1023,26 +1023,26 @@
 }
 
 .quick-create-task-detail {
-  padding: 0 0 16px 86px;
+  padding: 0 0 var(--pad-lg) 86px;
 }
 
 .quick-create-detail-prompt {
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr);
-  gap: 12px;
-  padding: 8px 0;
+  gap: var(--pad-md);
+  padding: var(--pad-sm) 0;
   border-top: 1px solid color-mix(in srgb, var(--divider) 65%, transparent);
 }
 
 .quick-create-detail-prompt span {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-detail-prompt p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -1051,38 +1051,38 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px 12px;
-  padding: 7px 0;
+  gap: var(--pad-xs) var(--pad-md);
+  padding: var(--pad-sm) 0;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-task-error {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  padding: 8px 0;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm) 0;
   color: var(--danger);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .quick-create-task-detail pre {
   max-height: 190px;
-  margin: 8px 0;
-  padding: 10px;
+  margin: var(--pad-sm) 0;
+  padding: var(--pad-sm);
   overflow: auto;
   border-left: 2px solid var(--quick-accent);
   color: var(--text-muted);
   background: var(--quick-field);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.55;
   white-space: pre-wrap;
 }
 
 .quick-create-detail-output {
   max-width: 520px;
-  margin: 10px 0;
+  margin: var(--pad-sm) 0;
 }
 
 .quick-create-detail-output img,
@@ -1090,7 +1090,7 @@
   display: block;
   width: 100%;
   max-height: 360px;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   object-fit: contain;
   background: var(--bg-sunken);
 }
@@ -1100,11 +1100,11 @@
   display: block;
   width: min(360px, 100%);
   min-height: 92px;
-  margin: 10px 0;
+  margin: var(--pad-sm) 0;
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--divider);
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: var(--bg-sunken);
   cursor: pointer;
 }
@@ -1121,11 +1121,11 @@
   position: absolute;
   right: 8px;
   bottom: 8px;
-  padding: 4px 7px;
-  border-radius: 5px;
-  color: #fff;
+  padding: var(--pad-3xs) var(--pad-sm);
+  border-radius: var(--r-sm);
+  color: var(--text-inverse);
   background: rgba(0, 0, 0, 0.58);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-history-output-thumb:hover,
@@ -1137,8 +1137,8 @@
 .quick-create-task-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 8px;
+  gap: var(--pad-3xs);
+  margin-top: var(--pad-sm);
 }
 
 .quick-create-history-empty {
@@ -1147,24 +1147,24 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: var(--text-faint);
 }
 
 .quick-create-history-empty strong {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .quick-create-history-empty span {
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-history-tools {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 .quick-create-view-toggle {
   display: inline-flex;
@@ -1172,7 +1172,7 @@
   align-items: center;
   gap: 2px;
   padding: 2px;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: var(--quick-field);
 }
 
@@ -1184,7 +1184,7 @@
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   color: var(--text-faint);
   background: transparent;
   cursor: pointer;
@@ -1200,17 +1200,17 @@
 }
 
 .quick-create-card-grid {
-  padding: 14px 0 4px;
+  padding: var(--pad-lg) 0 var(--pad-3xs);
   columns: 4 220px;
-  column-gap: 12px;
+  column-gap: var(--pad-md);
 }
 
 .quick-create-card {
   position: relative;
   display: block;
-  margin: 0 0 12px;
+  margin: 0 0 var(--pad-md);
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--bg-sunken);
   break-inside: avoid;
 }
@@ -1236,10 +1236,10 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 22px 10px 8px;
+  padding: 22px var(--pad-sm) var(--pad-sm);
   background: linear-gradient(to top, rgba(5, 8, 7, 0.88), transparent);
   opacity: 0;
-  transition: opacity 140ms ease;
+  transition: opacity var(--motion-fast) ease;
 }
 
 .quick-create-card-media:hover .quick-create-card-veil,
@@ -1250,35 +1250,35 @@
 .quick-create-card-veil strong {
   overflow: hidden;
   color: var(--quick-scrim-fg);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .quick-create-card-veil small {
   color: rgba(223, 232, 229, 0.66);
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-card > .quick-create-task-status {
   position: absolute;
   top: 8px;
   left: 8px;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: var(--pad-3xs) var(--pad-sm);
+  border-radius: var(--r-sm);
   background: rgba(5, 8, 7, 0.72);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-card-count {
   position: absolute;
   top: 8px;
   right: 8px;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: var(--pad-3xs) var(--pad-sm);
+  border-radius: var(--r-sm);
   color: var(--quick-scrim-fg);
   background: rgba(5, 8, 7, 0.72);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1320,7 +1320,7 @@
   display: flex;
   flex-direction: column;
   height: min(76vh, 760px);
-  padding: 12px;
+  padding: var(--pad-md);
 }
 
 .quick-create-media-viewer-body .media-artifact-viewer-stage {
@@ -1330,9 +1330,9 @@
 .quick-create-detail-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
   max-height: calc(100vh - 140px);
-  padding: 16px;
+  padding: var(--pad-lg);
   overflow: auto;
 }
 
@@ -1340,18 +1340,18 @@
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 4px 10px;
+  gap: var(--pad-3xs) var(--pad-sm);
   padding-right: 30px;
 }
 
 .quick-create-detail-head strong {
   color: var(--text-strong);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .quick-create-detail-head small {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-detail-media {
@@ -1361,7 +1361,7 @@
   padding: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--bg-sunken);
   cursor: zoom-in;
 }
@@ -1377,11 +1377,11 @@
   position: absolute;
   right: 8px;
   bottom: 8px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  padding: var(--pad-3xs) var(--pad-sm);
+  border-radius: var(--r-sm);
   color: var(--quick-scrim-fg);
   background: rgba(5, 8, 7, 0.72);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-detail-pending {
@@ -1389,11 +1389,11 @@
   min-height: 120px;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  border-radius: 8px;
+  gap: var(--pad-sm);
+  border-radius: var(--r-md);
   color: var(--text-faint);
   background: var(--quick-field);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .quick-create-detail-body .quick-create-detail-prompt,
@@ -1403,14 +1403,14 @@
 
 .quick-create-task-detail-modal .quick-create-task-actions {
   margin-top: 2px;
-  padding-top: 10px;
+  padding-top: var(--pad-sm);
   border-top: 1px solid var(--divider);
 }
 
 @media (max-width: 820px) {
   .quick-create-tabbar {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: var(--pad-lg);
+    padding-right: var(--pad-lg);
   }
 
   .quick-create-tabbar .sidebar-expand-btn {
@@ -1418,7 +1418,7 @@
   }
 
   .quick-create-main {
-    padding: 12px;
+    padding: var(--pad-md);
     overflow: auto;
   }
 
@@ -1444,14 +1444,14 @@
   }
 
   .quick-create-form {
-    padding: 14px 16px 22px;
+    padding: var(--pad-lg) var(--pad-lg) 22px;
   }
 
   .quick-create-history-head {
     align-items: flex-start;
     flex-direction: column;
     justify-content: center;
-    padding: 12px 0;
+    padding: var(--pad-md) 0;
   }
 
   .quick-create-history-tools {
@@ -1460,7 +1460,7 @@
 
   .quick-create-task-main {
     grid-template-columns: 62px minmax(0, 1fr) 68px 16px;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .quick-create-task-main > img,
@@ -1482,7 +1482,7 @@
   }
 
   .quick-create-tabs button {
-    padding-bottom: 6px;
+    padding-bottom: var(--pad-xs);
   }
 
   .quick-create-parameter-grid {
@@ -1554,35 +1554,35 @@
 }
 
 .quick-create-brand {
-  gap: 11px;
+  gap: var(--pad-md);
 }
 
 .quick-create-brand-mark {
   width: 32px;
   height: 32px;
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   background: linear-gradient(145deg, #26a9ff 0%, #6561ff 55%, #a24eea 100%);
   box-shadow: 0 9px 26px color-mix(in srgb, var(--quick-accent) 28%, transparent);
 }
 
 .quick-create-brand > strong {
-  font-size: 17px;
+  font-size: var(--font-lg);
   letter-spacing: -0.03em;
 }
 
 .quick-create-brand > span:last-child {
-  margin-left: 6px;
-  font-size: 11px;
+  margin-left: var(--pad-xs);
+  font-size: var(--font-xs);
   letter-spacing: 0.01em;
 }
 
 .quick-create-main {
-  padding: 22px 24px 24px;
+  padding: 22px var(--pad-2xl) var(--pad-2xl);
 }
 
 .quick-create-workbench {
   grid-template-columns: minmax(430px, 0.86fr) minmax(520px, 1.14fr);
-  gap: 10px;
+  gap: var(--pad-sm);
   min-height: 620px;
 }
 
@@ -1599,8 +1599,8 @@
 .quick-create-form-pane .quick-create-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px;
+  gap: var(--pad-lg);
+  padding: var(--pad-xl);
   overflow-x: hidden;
 }
 
@@ -1608,7 +1608,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-section-head {
@@ -1616,21 +1616,21 @@
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .quick-create-section-head > div {
   display: flex;
   min-width: 0;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-section-head strong {
   /* 标题固定占位不参与收缩：否则窄面板下同行的长说明会把「输入音频」这类标题挤成两行 */
   flex: 0 0 auto;
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1638,33 +1638,33 @@
 .quick-create-section-head span {
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .quick-create-section-head > small {
   flex: 0 0 auto;
-  padding: 3px 7px;
+  padding: var(--pad-3xs) var(--pad-sm);
   border: 1px solid var(--quick-border);
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   color: var(--text-muted);
   background: var(--quick-field);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
 }
 
 .quick-create-input-zone {
   margin-top: 0;
-  padding: 11px;
+  padding: var(--pad-md);
   border: 1px solid var(--quick-border);
-  border-radius: 13px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--quick-field) 54%, transparent);
 }
 
 .quick-create-input-list {
   min-height: 88px;
-  gap: 9px;
+  gap: var(--pad-sm);
   align-items: stretch;
   overflow-x: auto;
   scrollbar-width: thin;
@@ -1675,12 +1675,12 @@
   height: 88px;
   flex-basis: 104px;
   flex-direction: column;
-  gap: 7px;
+  gap: var(--pad-sm);
   border-color: color-mix(in srgb, var(--quick-accent) 42%, var(--divider));
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   color: var(--quick-accent);
   background: color-mix(in srgb, var(--quick-accent) 5%, transparent);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-input-add:hover,
@@ -1693,7 +1693,7 @@
   height: 88px;
   flex-basis: 104px;
   align-items: flex-end;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   border-color: var(--quick-border);
   background: var(--quick-field);
 }
@@ -1715,10 +1715,10 @@
 
 .quick-create-input-chip span {
   max-width: calc(100% - 14px);
-  margin: 0 7px 7px;
+  margin: 0 var(--pad-sm) var(--pad-sm);
   padding: 0;
   background: transparent;
-  font-size: 9px;
+  font-size: var(--font-2xs);
   text-overflow: ellipsis;
 }
 
@@ -1726,9 +1726,9 @@
   display: flex;
   flex-direction: column;
   border-color: color-mix(in srgb, var(--quick-accent) 34%, var(--divider));
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--quick-field) 78%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--panel) 4%, transparent);
 }
 
 .quick-create-prompt-head {
@@ -1736,37 +1736,37 @@
   min-height: 44px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px 0 17px;
+  gap: var(--pad-md);
+  padding: var(--pad-sm) var(--pad-md) 0 17px;
 }
 
 .quick-create-prompt-head > div:first-child {
   display: flex;
   min-width: 0;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-prompt-head strong {
   /* 同上：标题单行固定宽度，剩余宽度让给说明（说明自身已有 ellipsis） */
   flex: 0 0 auto;
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
 .quick-create-prompt-head span {
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .quick-create-prompt {
   min-height: 168px;
-  padding: 12px 17px 10px;
-  font-size: 13px;
+  padding: var(--pad-md) 17px var(--pad-sm);
+  font-size: var(--font-base);
   line-height: 1.72;
 }
 
@@ -1775,7 +1775,7 @@
   z-index: auto;
   display: flex;
   flex: 0 0 auto;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .quick-create-prompt-tools button {
@@ -1783,10 +1783,10 @@
   width: auto;
   min-height: 28px;
   align-items: center;
-  gap: 6px;
-  padding: 0 8px;
+  gap: var(--pad-xs);
+  padding: 0 var(--pad-sm);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel) 30%, transparent);
 }
 
@@ -1797,21 +1797,21 @@
 
 .quick-create-prompt-tools button span {
   color: currentColor;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
 }
 
 .quick-create-parameter-panel {
   margin-top: 0;
-  padding: 15px;
+  padding: var(--pad-lg);
   border: 1px solid var(--quick-border);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--quick-field) 42%, transparent);
 }
 
 .quick-create-parameter-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 15px 12px;
+  gap: var(--pad-lg) var(--pad-md);
 }
 
 .quick-create-parameter-cell {
@@ -1824,18 +1824,18 @@
 }
 
 .quick-create-parameter-grid.is-advanced {
-  margin-top: 13px;
-  padding-top: 13px;
+  margin-top: var(--pad-md);
+  padding-top: var(--pad-md);
   border-top: 1px solid var(--quick-border);
 }
 
 .quick-create-parameter-panel .canvas-parameter-control {
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-parameter-panel .canvas-parameter-control-head > span {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 650;
 }
 
@@ -1845,7 +1845,7 @@
 
 .quick-create-parameter-panel .canvas-aspect-ratio-grid,
 .quick-create-parameter-panel .canvas-parameter-option-rail {
-  gap: 7px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-parameter-panel .canvas-aspect-ratio-option,
@@ -1858,23 +1858,23 @@
 .quick-create-parameter-panel .ant-input,
 .quick-create-parameter-panel .ant-input-affix-wrapper {
   border-color: var(--quick-border);
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: var(--quick-field);
 }
 
 .quick-create-advanced-toggle {
   min-height: 35px;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   border: 1px solid var(--quick-border);
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--quick-field) 54%, transparent);
 }
 
 .quick-create-control-row {
   margin-top: 0;
-  padding: 13px 15px;
+  padding: var(--pad-md) var(--pad-lg);
   border: 1px solid var(--quick-border);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--quick-field) 42%, transparent);
 }
 
@@ -1889,7 +1889,7 @@
   z-index: 3;
   min-height: 58px;
   margin-top: 0;
-  padding: 12px 0 0;
+  padding: var(--pad-md) 0 0;
   // border-top: 1px solid var(--quick-border);
   // background: linear-gradient(
   //   to bottom,
@@ -1901,7 +1901,7 @@
 .quick-create-submit-row .ant-btn {
   min-width: 174px;
   min-height: 42px;
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   background: linear-gradient(105deg, #229cff 0%, #6565ff 58%, #9d4fe2 100%);
   box-shadow: 0 11px 28px color-mix(in srgb, var(--quick-accent) 27%, transparent);
 }
@@ -1909,12 +1909,12 @@
 .quick-create-result-tabs {
   min-height: 60px;
   gap: 26px;
-  padding: 0 24px;
+  padding: 0 var(--pad-2xl);
   border-bottom-color: var(--quick-border);
 }
 
 .quick-create-result-tabs button {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .quick-create-output-panel {
@@ -1933,7 +1933,7 @@
 
 .quick-create-history-list,
 .quick-create-card-grid {
-  padding-top: 6px;
+  padding-top: var(--pad-xs);
 }
 
 .quick-create-task {
@@ -1943,9 +1943,9 @@
 .quick-create-task-main {
   min-height: 78px;
   grid-template-columns: 82px minmax(0, 1fr) 98px 18px;
-  gap: 14px;
-  padding: 10px 6px;
-  border-radius: 10px;
+  gap: var(--pad-lg);
+  padding: var(--pad-sm) var(--pad-xs);
+  border-radius: var(--r-lg);
 }
 
 .quick-create-task-main > img,
@@ -1953,23 +1953,23 @@
 .quick-create-task-placeholder {
   width: 98px;
   height: 58px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 
 .quick-create-task-detail {
-  padding: 0 6px 18px 96px;
+  padding: 0 var(--pad-xs) var(--pad-xl) 96px;
 }
 
 .quick-create-task-actions {
   flex-wrap: wrap;
-  gap: 6px;
-  padding-top: 9px;
+  gap: var(--pad-xs);
+  padding-top: var(--pad-sm);
   border-top: 1px solid var(--quick-border);
 }
 
 .quick-create-task-actions .ant-btn {
   border: 1px solid var(--quick-border);
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 
 @media (max-width: 1080px) {
@@ -1978,7 +1978,7 @@
   }
 
   .quick-create-main {
-    padding: 16px;
+    padding: var(--pad-lg);
   }
 }
 
@@ -1988,15 +1988,15 @@
   }
 
   .quick-create-main {
-    padding: 12px;
+    padding: var(--pad-md);
   }
 
   .quick-create-workbench {
-    gap: 10px;
+    gap: var(--pad-sm);
   }
 
   .quick-create-form-pane .quick-create-form {
-    padding: 16px;
+    padding: var(--pad-lg);
   }
 
   .quick-create-submit-row {
@@ -2021,7 +2021,7 @@
   }
 
   .quick-create-task-detail {
-    padding-left: 6px;
+    padding-left: var(--pad-xs);
   }
 }
 
@@ -2035,13 +2035,13 @@
 
 .quick-create-tabbar {
   min-height: 54px;
-  padding: 0 24px;
+  padding: 0 var(--pad-2xl);
   background: var(--quick-panel);
   backdrop-filter: none;
 }
 
 .quick-create-brand {
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-brand-mark {
@@ -2054,14 +2054,14 @@
 }
 
 .quick-create-brand > strong {
-  font-size: 15px;
+  font-size: var(--font-lg);
   letter-spacing: 0;
 }
 
 .quick-create-brand > span:last-child {
-  margin-left: 8px;
+  margin-left: var(--pad-sm);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .quick-create-tabs {
@@ -2070,7 +2070,7 @@
 
 .quick-create-tabs button {
   min-height: 54px;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;
@@ -2087,20 +2087,20 @@
 .quick-create-main {
   display: flex;
   flex: 1;
-  padding: 16px 18px 18px;
+  padding: var(--pad-lg) var(--pad-xl) var(--pad-xl);
 }
 
 .quick-create-workbench {
   width: 100%;
   min-height: 0;
   grid-template-columns: minmax(410px, 0.86fr) minmax(500px, 1.14fr);
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-form-pane,
 .quick-create-result-pane {
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: var(--bg-sunken);
   box-shadow: none;
 }
@@ -2111,8 +2111,8 @@
      放不下时让说明整行换到下一行完整显示，而不是压成省略号；一行放得下时保持原样 */
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-  padding: 10px 14px;
+  gap: var(--pad-sm) var(--pad-md);
+  padding: var(--pad-sm) var(--pad-lg);
   border-bottom: 0;
 }
 
@@ -2121,8 +2121,8 @@
   flex: none;
   align-items: center;
   gap: 2px;
-  padding: 3px;
-  border-radius: 8px;
+  padding: var(--pad-3xs);
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel) 55%, transparent);
 }
 
@@ -2131,11 +2131,11 @@
   flex: none;
   justify-content: center;
   gap: 0;
-  padding: 0 12px;
+  padding: 0 var(--pad-md);
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 550;
   transition:
     color 140ms ease,
@@ -2162,51 +2162,51 @@
   flex: 1 1 240px;
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .quick-create-form-pane .quick-create-form {
-  gap: 14px;
-  padding: 16px;
+  gap: var(--pad-lg);
+  padding: var(--pad-lg);
 }
 
 .quick-create-reference-section {
-  gap: 7px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-section-head > div {
-  gap: 7px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-section-head strong {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .quick-create-section-head span {
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-section-head > small {
-  padding: 2px 7px;
+  padding: 2px var(--pad-sm);
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--quick-field);
 }
 
 .quick-create-input-zone {
-  padding: 6px;
+  padding: var(--pad-xs);
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: var(--quick-panel);
 }
 
 .quick-create-input-list {
   min-height: 72px;
   align-items: stretch;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-input-add,
@@ -2214,15 +2214,15 @@
   width: 84px;
   height: 72px;
   flex-basis: 84px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 }
 
 .quick-create-input-add {
-  gap: 5px;
+  gap: var(--pad-xs);
   border-color: color-mix(in srgb, var(--quick-accent) 55%, var(--quick-border));
   color: var(--quick-accent);
   background: transparent;
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-input-chip {
@@ -2231,7 +2231,7 @@
 
 .quick-create-prompt-wrap {
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: var(--quick-panel);
   box-shadow: none;
 }
@@ -2243,32 +2243,32 @@
 
 .quick-create-prompt-head {
   min-height: 40px;
-  padding: 9px 11px 0;
+  padding: var(--pad-sm) var(--pad-md) 0;
 }
 
 .quick-create-prompt-head > div:first-child {
-  gap: 7px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-prompt-head strong {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .quick-create-prompt-head span {
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-prompt-tools button {
   min-height: 26px;
-  padding: 0 7px;
-  border-radius: 4px;
+  padding: 0 var(--pad-sm);
+  border-radius: var(--r-xs);
   background: transparent;
 }
 
 .quick-create-prompt {
   min-height: 132px;
-  padding: 9px 11px 4px;
-  font-size: 12px;
+  padding: var(--pad-sm) var(--pad-md) var(--pad-3xs);
+  font-size: var(--font-sm);
   line-height: 1.65;
 }
 
@@ -2276,16 +2276,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 0 11px 7px;
+  gap: var(--pad-sm);
+  padding: 0 var(--pad-md) var(--pad-sm);
   color: var(--text-faint);
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-prompt-meta small {
   flex: 0 0 auto;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2310,32 +2310,32 @@
 }
 
 .quick-create-prompt-library-modal .ant-modal-header {
-  padding: 14px 16px 0;
+  padding: var(--pad-lg) var(--pad-lg) 0;
   background: transparent;
 }
 
 .quick-create-prompt-library-modal .ant-modal-title {
   color: var(--text-strong);
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
 }
 
 .quick-create-library-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px 16px 16px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-lg) var(--pad-lg);
 }
 
 .quick-create-library-hint {
   margin: 0;
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
 }
 
 .quick-create-prompt-library-modal .ant-input-affix-wrapper {
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: var(--quick-field);
 }
 
@@ -2347,7 +2347,7 @@
   display: grid;
   max-height: min(520px, 62vh);
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 10px;
+  gap: var(--pad-sm);
   overflow: auto;
   padding: 2px;
 }
@@ -2358,7 +2358,7 @@
   flex-direction: column;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text-muted);
   background: color-mix(in srgb, var(--quick-field) 75%, transparent);
   cursor: pointer;
@@ -2393,7 +2393,7 @@
   width: 100%;
   height: 100%;
   color: var(--text-faint);
-  font-size: 15px;
+  font-size: var(--font-lg);
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -2403,13 +2403,13 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 3px;
-  padding: 8px 10px 9px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-sm);
 
   strong {
     overflow: hidden;
     color: var(--text-strong);
-    font-size: 11.5px;
+    font-size: var(--font-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -2419,7 +2419,7 @@
     overflow: hidden;
     flex: 1;
     color: var(--text-faint);
-    font-size: 10.5px;
+    font-size: var(--font-xs);
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
@@ -2428,28 +2428,28 @@
 
   em {
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--font-2xs);
     font-style: normal;
     font-variant-numeric: tabular-nums;
   }
 }
 
 .quick-create-picker-empty {
-  padding: 24px 8px;
+  padding: var(--pad-2xl) var(--pad-sm);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-align: center;
 }
 
 .quick-create-control-row {
-  gap: 10px;
+  gap: var(--pad-sm);
   padding: 2px 0;
   border: 0;
   background: transparent;
 }
 
 .quick-create-model-control {
-  gap: 9px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-model-control .canvas-model-picker-trigger {
@@ -2461,7 +2461,7 @@
 .quick-create-control-label,
 .quick-create-text-model-row label {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-parameter-panel {
@@ -2471,25 +2471,25 @@
 }
 
 .quick-create-parameter-grid {
-  gap: 12px 10px;
+  gap: var(--pad-md) var(--pad-sm);
 }
 
 .quick-create-parameter-grid.is-advanced {
-  margin-top: 11px;
-  padding-top: 11px;
+  margin-top: var(--pad-md);
+  padding-top: var(--pad-md);
 }
 
 .quick-create-parameter-panel .canvas-parameter-control {
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .quick-create-parameter-panel .canvas-parameter-control-head > span {
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-parameter-panel .canvas-aspect-ratio-grid,
 .quick-create-parameter-panel .canvas-parameter-option-rail {
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 
 .quick-create-parameter-panel .canvas-aspect-ratio-option,
@@ -2497,7 +2497,7 @@
 .quick-create-parameter-panel .canvas-parameter-custom-value,
 .quick-create-parameter-panel .ant-input,
 .quick-create-parameter-panel .ant-input-affix-wrapper {
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 }
 
 .quick-create-parameter-panel .canvas-parameter-custom-value,
@@ -2515,7 +2515,7 @@
    .ant-select 根元素（经 --ant-select-* 组件变量驱动）。这里覆盖组件变量，
    使 Select 与上方扁平表单字段（步进器 / 输入框）的底色、圆角、高度一致。 */
 .quick-create-form .ant-select.ant-select-outlined {
-  --ant-select-border-radius: 4px;
+  --ant-select-border-radius: var(--r-xs);
   --ant-select-border-color: transparent;
   --ant-select-border-size: 0px;
   --ant-select-background-color: var(--quick-panel);
@@ -2538,7 +2538,7 @@
 .quick-create-count-control .quick-create-count-stepper {
   min-height: 34px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--quick-panel);
 }
 
@@ -2551,13 +2551,13 @@
 .quick-create-count-control .quick-create-count-stepper input {
   width: 52px;
   min-height: 30px;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .quick-create-count-control .quick-create-count-stepper span {
   margin-left: auto;
-  margin-right: 8px;
-  font-size: 9px;
+  margin-right: var(--pad-sm);
+  font-size: var(--font-2xs);
 }
 
 .quick-create-size-control {
@@ -2569,7 +2569,7 @@
   display: grid;
   min-width: 0;
   grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .quick-create-size-option {
@@ -2579,16 +2579,16 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 4px;
-  padding: 5px 3px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-xs) var(--pad-3xs);
   overflow: hidden;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   color: var(--text-muted);
   background: var(--quick-field);
   cursor: pointer;
   font: inherit;
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-size-option:hover,
@@ -2645,26 +2645,26 @@
   min-height: 26px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-3xs);
   padding: 0 2px;
   border: 0;
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   text-align: left;
 }
 
 .quick-create-size-more-toggle > span {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 
 .quick-create-size-more-toggle > span svg {
-  transition: transform 140ms ease;
+  transition: transform var(--motion-fast) ease;
 }
 
 .quick-create-size-more-toggle.is-open > span svg {
@@ -2673,7 +2673,7 @@
 
 .quick-create-size-more-toggle > small {
   color: var(--text-faint);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2686,8 +2686,8 @@
 .quick-create-size-more-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 6px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-xs);
 }
 
 .quick-create-size-more-options {
@@ -2707,20 +2707,20 @@
   min-width: 0;
   align-items: center;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: var(--pad-xs);
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-size-history > button {
-  padding: 3px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   color: var(--text-muted);
   background: var(--quick-panel);
   cursor: pointer;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2734,9 +2734,9 @@
 
 .quick-create-advanced-toggle {
   min-height: 32px;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--quick-field);
 }
 
@@ -2753,10 +2753,10 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 7px;
+  gap: var(--pad-sm);
   min-height: 50px;
   margin-top: auto;
-  padding: 8px 0 0;
+  padding: var(--pad-sm) 0 0;
   border-top: 0;
   background: var(--quick-pane);
 }
@@ -2767,12 +2767,12 @@
 .quick-create-submit-actions {
   display: flex;
   width: 100%;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 .quick-create-submit-actions .ant-btn {
   min-height: 38px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   box-shadow: none;
   cursor: pointer;
 }
@@ -2800,39 +2800,39 @@
   display: flex;
   min-height: 52px;
   align-items: center;
-  padding: 0 18px;
+  padding: 0 var(--pad-xl);
   border-bottom: 0;
 }
 
 .quick-create-result-heading > div {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-result-heading strong {
   color: var(--text-strong);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .quick-create-result-heading span {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-result-tabs {
   min-height: 42px;
-  gap: 20px;
-  padding: 0 18px;
+  gap: var(--pad-xl);
+  padding: 0 var(--pad-xl);
   border-bottom: 0;
 }
 
 .quick-create-result-tabs button {
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .quick-create-output-panel {
-  padding: 0 18px 18px;
+  padding: 0 var(--pad-xl) var(--pad-xl);
 }
 
 .quick-create-output-meta {
@@ -2845,7 +2845,7 @@
 
 .quick-create-history-list,
 .quick-create-card-grid {
-  padding-top: 4px;
+  padding-top: var(--pad-3xs);
 }
 
 .quick-create-task-main {
@@ -2853,7 +2853,7 @@
 }
 
 .quick-create-task-actions .ant-btn {
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 }
 
 @media (max-width: 1080px) {
@@ -2868,15 +2868,15 @@
 
 @media (max-width: 820px) {
   .quick-create-main {
-    padding: 12px;
+    padding: var(--pad-md);
   }
 
   .quick-create-workbench {
-    gap: 10px;
+    gap: var(--pad-sm);
   }
 
   .quick-create-form-pane .quick-create-form {
-    padding: 14px;
+    padding: var(--pad-lg);
   }
 
   .quick-create-submit-row {
@@ -2905,7 +2905,7 @@
 }
 
 .quick-create-task-main {
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 
 .quick-create-detail-prompt {
@@ -2923,7 +2923,7 @@
 }
 
 .quick-create-task-detail-modal .quick-create-task-actions {
-  padding-top: 10px;
+  padding-top: var(--pad-sm);
   border-top: 0;
 }
 
@@ -2946,7 +2946,7 @@
   background: color-mix(in srgb, var(--panel) 62%, transparent);
   border-radius: inherit;
   color: var(--quick-accent);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 550;
   pointer-events: none;
 }
@@ -2960,7 +2960,7 @@
 /* 展开按钮回到文档流排在内容最前；保持绝对定位会压在 macOS 红绿灯与品牌区上 */
 .quick-create-tabbar.is-sidebar-hidden .sidebar-expand-btn {
   position: static;
-  margin-right: 10px;
+  margin-right: var(--pad-sm);
 }
 
 /* macOS：红绿灯占据窗口左上角，header 内容整体让出安全区 */
@@ -2978,12 +2978,12 @@
 .quick-create-detail-prompt-label {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 
 .quick-create-detail-prompt-label span {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .quick-create-detail-prompt-label button {
@@ -2992,7 +2992,7 @@
   justify-content: center;
   padding: 2px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   color: var(--text-faint);
   background: transparent;
   cursor: pointer;
@@ -3012,10 +3012,10 @@
 
 .quick-create-task-actions .ant-btn.ant-btn-text {
   height: 24px;
-  padding: 0 8px;
-  border-radius: 5px;
+  padding: 0 var(--pad-sm);
+  border-radius: var(--r-sm);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .quick-create-task-actions .ant-btn.ant-btn-text:hover:not(:disabled),
@@ -3041,16 +3041,16 @@
 
 /* 参考素材区：更低高度、更小缩略图，进一步压低表单占比 */
 .quick-create-reference-section {
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .quick-create-input-zone {
-  padding: 5px;
+  padding: var(--pad-xs);
 }
 
 .quick-create-input-list {
   min-height: 58px;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .quick-create-input-add,
@@ -3058,12 +3058,12 @@
   width: 66px;
   height: 58px;
   flex-basis: 66px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 }
 
 .quick-create-input-add {
-  gap: 4px;
-  font-size: 9px;
+  gap: var(--pad-3xs);
+  font-size: var(--font-2xs);
 }
 
 .quick-create-input-add svg {
@@ -3072,14 +3072,14 @@
 }
 
 .quick-create-input-chip span {
-  margin: 0 5px 5px;
-  font-size: 9px;
+  margin: 0 var(--pad-xs) var(--pad-xs);
+  font-size: var(--font-2xs);
 }
 
 /* 查看弹层：几乎铺满视口，压缩留白让舞台尽量大 */
 .quick-create-media-viewer-body {
   height: min(88vh, 940px);
-  padding: 8px;
+  padding: var(--pad-sm);
 }
 
 /* ── 本轮：详情提示词折叠行数由组件内联 style 提供（列表展开行 3 行 / 查看弹窗 2 行）── */
@@ -3097,7 +3097,7 @@
   border: 0;
   color: var(--quick-accent, var(--primary));
   background: transparent;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   cursor: pointer;
 }
 
@@ -3116,7 +3116,7 @@
   gap: 2px;
   margin-top: -4px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3128,7 +3128,7 @@
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   color: var(--text-faint);
   background: transparent;
   cursor: pointer;

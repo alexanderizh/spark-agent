@@ -148,7 +148,7 @@
   align-items: flex-start;
   padding: var(--pad-sm) var(--pad-md);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--bg-soft);
   color: var(--text);
 }

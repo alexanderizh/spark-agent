@@ -14,21 +14,21 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding: 5px 28px 4px;
+  gap: var(--pad-xl);
+  padding: var(--pad-xs) 28px var(--pad-3xs);
   flex-shrink: 0;
 }
 
 .canvas-projects-header h2 {
   margin: 0;
   color: var(--text-strong);
-  font-size: 22px;
+  font-size: var(--font-xl);
   line-height: 1.2;
   font-weight: 700;
 }
 
 .canvas-projects-header p {
-  margin: 6px 0 0;
+  margin: var(--pad-xs) 0 0;
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
@@ -37,7 +37,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-wrap: wrap;
 }
 
@@ -45,7 +45,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
   padding: 2px 28px;
   flex-shrink: 0;
 }
@@ -53,7 +53,7 @@
 .canvas-projects-toolbar-right {
   display: inline-flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--pad-lg);
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -61,7 +61,7 @@
 .canvas-projects-sort {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .canvas-projects-sort-label {
@@ -81,7 +81,7 @@
 .canvas-projects-stats {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -90,13 +90,13 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 6px 28px 30px;
+  padding: var(--pad-xs) 28px 30px;
 }
 
 .canvas-projects-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  gap: var(--pad-lg);
 }
 
 .canvas-project-card {
@@ -108,7 +108,9 @@
   border-radius: var(--r-md);
   background: var(--bg-sunken);
   cursor: pointer;
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease;
 }
 
 .canvas-project-card:hover {
@@ -149,7 +151,10 @@
   opacity: 0;
   cursor: pointer;
   flex-shrink: 0;
-  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+  transition:
+    opacity var(--motion-instant) ease,
+    background var(--motion-instant) ease,
+    color var(--motion-instant) ease;
 }
 .canvas-project-card:hover .canvas-project-pin-btn,
 .canvas-project-pin-btn:focus-visible,
@@ -211,8 +216,8 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
+  gap: var(--pad-sm);
+  padding: var(--pad-lg);
 }
 
 .canvas-project-card-top,
@@ -220,7 +225,7 @@
 .canvas-project-card-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .canvas-project-card-top {
@@ -232,7 +237,7 @@
   margin: 0;
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 15px;
+  font-size: var(--font-lg);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -259,23 +264,23 @@
   display: inline-flex;
   height: 22px;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   border-radius: var(--r-sm);
   color: var(--text-muted);
   background: var(--panel);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .canvas-project-card-foot {
   justify-content: space-between;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .canvas-project-actions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex-shrink: 0;
 }
 
@@ -285,19 +290,19 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .canvas-create-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--pad-lg);
 }
 
 .canvas-create-form label {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: var(--text);
   font-size: var(--font-sm);
   font-weight: 600;
@@ -306,14 +311,14 @@
 .canvas-create-location {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: var(--pad-sm);
   align-items: stretch;
 }
 
 .canvas-create-cover {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: var(--pad-sm);
   align-items: stretch;
 }
 
@@ -353,7 +358,7 @@
   display: inline-flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: var(--text-muted);
 }
 

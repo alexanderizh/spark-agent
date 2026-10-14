@@ -18,7 +18,7 @@
   max-width: min(240px, calc(100vw - 24px));
   max-height: min(340px, calc(100vh - 24px));
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
   overflow: hidden;
   background: var(--canvas-edit-bg, var(--panel-elev, var(--panel)));
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
@@ -29,13 +29,13 @@
   display: flex;
   min-height: 30px;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   flex: 0 0 30px;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--text) 5%, transparent);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .canvas-agent-skill-search input {
@@ -56,10 +56,10 @@
 
 .canvas-agent-skill-option {
   min-height: 32px;
-  padding: 7px 8px;
-  gap: 8px;
+  padding: var(--pad-sm) var(--pad-sm);
+  gap: var(--pad-sm);
   border-radius: var(--r-sm);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .canvas-agent-skill-option-name {
@@ -73,20 +73,20 @@
 .canvas-agent-skill-option-status {
   flex: 0 0 auto;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .canvas-agent-skill-empty {
-  padding: 12px 8px;
+  padding: var(--pad-md) var(--pad-sm);
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-align: center;
 }
 
 .canvas-picker-pinned-title {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 
 .canvas-agent-picker-item,
@@ -121,19 +121,19 @@
 .canvas-agent-picker-item > .composer-model-pin,
 .canvas-agent-skill-option-row > .composer-model-pin {
   flex: 0 0 28px;
-  margin-right: 4px;
+  margin-right: var(--pad-3xs);
 }
 
 .canvas-agent-permission-menu {
   width: min(280px, calc(100vw - 24px));
-  padding: 6px;
+  padding: var(--pad-xs);
 }
 
 .canvas-agent-permission-option {
   min-height: 50px;
   align-items: center;
-  gap: 10px;
-  padding: 7px 9px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
   border-radius: var(--r-sm);
   text-align: left;
 
@@ -151,14 +151,14 @@
 
   strong {
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 600;
   }
 
   small {
     overflow: hidden;
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     line-height: 1.35;
     text-overflow: ellipsis;
     white-space: nowrap;

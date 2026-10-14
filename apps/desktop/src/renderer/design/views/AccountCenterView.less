@@ -36,7 +36,7 @@
   justify-content: center;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   border: none;
   background: transparent;
   color: var(--color-text-1, var(--text-strong, #0f172a));
@@ -90,7 +90,7 @@
   gap: var(--pad-sm);
   padding: 22px var(--pad-xl);
   background: var(--color-bg-2, var(--panel, #ffffff));
-  border-radius: 12px;
+  border-radius: var(--r-lg);
 }
 
 .account-profile-avatar-wrap {
@@ -121,7 +121,7 @@
   align-items: center;
   justify-content: center;
   background: rgba(15, 23, 42, 0.45);
-  color: #ffffff;
+  color: var(--text-inverse);
   opacity: 0;
   transition: opacity 0.15s;
   border-radius: inherit;
@@ -160,7 +160,7 @@
   border: none;
   background: transparent;
   padding: var(--pad-3xs);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: var(--color-text-3, var(--text-faint, #64748b));
   cursor: pointer;
   display: inline-flex;
@@ -227,7 +227,7 @@
   flex-direction: column;
   gap: var(--pad-3xs);
   padding: var(--pad-sm);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--color-fill-1, var(--bg-soft, #f8fafc));
   text-align: left;
 }
@@ -258,7 +258,7 @@
 .account-panel {
   padding: var(--pad-lg) var(--pad-xl);
   background: var(--color-bg-2, var(--panel, #ffffff));
-  border-radius: 12px;
+  border-radius: var(--r-lg);
 
   h4 {
     margin: 0;
@@ -291,7 +291,7 @@
   flex-direction: column;
   margin-top: var(--pad-md);
   background: var(--color-fill-1, var(--bg-soft, #f8fafc));
-  border-radius: 8px;
+  border-radius: var(--r-md);
   overflow: hidden;
 }
 

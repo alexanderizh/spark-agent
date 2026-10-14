@@ -12,7 +12,7 @@
   min-height: 0;
   background: var(--cv-bg);
   color: var(--cv-text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   user-select: none;
 }
 
@@ -23,7 +23,7 @@
   align-items: center;
   height: 34px;
   flex: none;
-  padding: 0 6px 0 9px;
+  padding: 0 var(--pad-xs) 0 var(--pad-sm);
   background: var(--cv-bg-2);
   border-bottom: 1px solid var(--cv-border);
 }
@@ -31,7 +31,7 @@
 .sp-header-title {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 
@@ -41,7 +41,7 @@
 }
 
 .sp-title {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--cv-text);
@@ -59,7 +59,7 @@
   height: 24px;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--cv-text-dim);
   cursor: pointer;
@@ -82,8 +82,8 @@
   display: inline-flex;
   align-items: center;
   height: 24px;
-  margin: 0 3px;
-  padding-left: 4px;
+  margin: 0 var(--pad-3xs);
+  padding-left: var(--pad-3xs);
   border-left: 1px solid var(--cv-border-soft);
 }
 
@@ -91,14 +91,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: var(--pad-3xs);
   height: 22px;
-  padding: 0 5px;
+  padding: 0 var(--pad-xs);
   border: none;
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--cv-text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   cursor: pointer;
 
   &:hover {
@@ -122,10 +122,10 @@
 .sp-mode-tabs {
   display: flex;
   align-items: stretch;
-  gap: 18px;
+  gap: var(--pad-xl);
   height: 34px;
   flex: none;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   border-bottom: 1px solid var(--cv-border-soft);
 }
 
@@ -137,7 +137,7 @@
   border: none;
   background: transparent;
   color: var(--cv-text-dim);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
   cursor: pointer;
   transition: color 0.16s ease;
@@ -171,7 +171,7 @@
 
 .sp-input-row {
   flex: none;
-  padding: 8px 9px 6px;
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-xs);
 }
 
 .sp-search-box {
@@ -179,7 +179,7 @@
   align-items: center;
   height: 30px;
   border: 1px solid var(--cv-border);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: var(--cv-bg-2);
   transition:
     border-color 0.16s ease,
@@ -195,7 +195,7 @@
 
 .sp-input-icon {
   flex: none;
-  margin-left: 8px;
+  margin-left: var(--pad-sm);
   color: var(--cv-text-faint);
 }
 
@@ -203,12 +203,12 @@
   flex: 1;
   min-width: 0;
   height: 100%;
-  padding: 0 7px;
+  padding: 0 var(--pad-sm);
   border: none;
   outline: none;
   background: transparent;
   color: var(--cv-text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   user-select: text;
 
   &::placeholder {
@@ -225,7 +225,7 @@
   height: 22px;
   padding: 0;
   border: none;
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--cv-text-faint);
   cursor: pointer;
@@ -250,8 +250,8 @@
 
 .sp-case-btn {
   width: 28px;
-  margin: 0 3px 0 2px;
-  font-size: 11px;
+  margin: 0 var(--pad-3xs) 0 2px;
+  font-size: var(--font-xs);
   font-weight: 600;
 
   &.on {
@@ -272,9 +272,9 @@
   display: flex;
   align-items: center;
   min-height: 24px;
-  padding: 2px 10px 5px;
+  padding: 2px var(--pad-sm) var(--pad-xs);
   color: var(--cv-text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -288,7 +288,7 @@
 .sp-spin {
   animation: sp-rotate 0.9s linear infinite;
   vertical-align: -2px;
-  margin-right: 4px;
+  margin-right: var(--pad-3xs);
 }
 
 @keyframes sp-rotate {
@@ -304,7 +304,7 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-top: 3px;
+  padding-top: var(--pad-3xs);
   scrollbar-color: var(--cv-border) transparent;
 }
 
@@ -314,27 +314,27 @@
   align-items: center;
   justify-content: center;
   min-height: 156px;
-  padding: 28px 18px;
+  padding: 28px var(--pad-xl);
   text-align: center;
 }
 
 .sp-empty-icon {
-  margin-bottom: 10px;
+  margin-bottom: var(--pad-sm);
   color: var(--cv-text-faint);
   opacity: 0.72;
 }
 
 .sp-empty-title {
   color: var(--cv-text-dim);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
 }
 
 .sp-empty-detail {
   max-width: 220px;
-  margin-top: 4px;
+  margin-top: var(--pad-3xs);
   color: var(--cv-text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
 }
 
@@ -349,7 +349,7 @@
   display: flex;
   width: 100%;
   height: 100%;
-  padding: 0 9px;
+  padding: 0 var(--pad-sm);
   border: none;
   border-left: 2px solid transparent;
   background: transparent;
@@ -370,7 +370,7 @@
 
 .sp-flat-file-row {
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
 
   &.selected {
     border-left-color: var(--cv-accent);
@@ -397,39 +397,39 @@
 
 .sp-flat-title {
   color: var(--cv-text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
 }
 
 .sp-flat-path {
   color: var(--cv-text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .sp-flat-match-row {
   flex-direction: column;
   justify-content: center;
-  gap: 3px;
+  gap: var(--pad-3xs);
 }
 
 .sp-flat-match-heading {
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 5px;
+  gap: var(--pad-xs);
 
   .sp-flat-path {
     margin-left: auto;
-    padding-left: 8px;
+    padding-left: var(--pad-sm);
   }
 }
 
 .sp-flat-match-text {
   width: 100%;
-  padding-left: 18px;
+  padding-left: var(--pad-xl);
   color: var(--cv-text-dim);
   font-family: var(--cv-mono);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 /* ---------- 树形结果：目录 / 文件节点 ---------- */
@@ -437,15 +437,15 @@
 .sp-tree-row {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   width: 100%;
   height: 100%;
-  padding: 0 8px 0 6px;
+  padding: 0 var(--pad-sm) 0 var(--pad-xs);
   border: none;
   background: transparent;
   color: var(--cv-text-dim);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-align: left;
   cursor: pointer;
   transition:
@@ -471,7 +471,7 @@
 
 .sp-tree-chevron {
   color: var(--cv-text-faint);
-  transition: color 0.12s ease;
+  transition: color var(--motion-instant) ease;
 }
 
 .sp-tree-folder-icon {
@@ -497,7 +497,7 @@
   flex: none;
   min-width: 18px;
   color: var(--cv-text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -532,14 +532,14 @@
   gap: 0;
   width: 100%;
   height: 100%;
-  padding: 0 8px 0 6px;
+  padding: 0 var(--pad-sm) 0 var(--pad-xs);
   border: none;
   background: transparent;
   font-family: var(--cv-mono);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.12s ease;
+  transition: background-color var(--motion-instant) ease;
 
   &:hover {
     background: var(--cv-accent-soft);
@@ -555,7 +555,7 @@
   flex: none;
   width: 46px;
   height: 18px;
-  padding-right: 8px;
+  padding-right: var(--pad-sm);
   border-right: 1px solid var(--cv-border-soft);
   line-height: 18px;
   text-align: right;
@@ -569,7 +569,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-left: 9px;
+  padding-left: var(--pad-sm);
   color: var(--cv-text-dim);
 }
 

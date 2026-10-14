@@ -83,8 +83,8 @@
 .nav-more-trigger {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 10px;
+  gap: var(--pad-sm);
+  padding: 0 var(--pad-sm);
   height: var(--nav-row-h);
   border-radius: var(--r-md);
   color: var(--sidebar-text, var(--text));
@@ -118,7 +118,7 @@
 /* Flyout menu — appears to the right-bottom on hover */
 .nav-more-menu {
   min-width: 168px;
-  padding: 4px;
+  padding: var(--pad-3xs);
   background: var(--panel-elev);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-md);
@@ -145,21 +145,21 @@
 // ─── 未登录时的占位头像（产品 logo，白底） ───────────────────────────────────
 
 .sidebar-user-guest .sidebar-user-avatar {
-  background: #ffffff;
+  background: var(--panel);
   border: 1px solid var(--color-border-2, #e5e7eb);
 }
 
 .sidebar-user-avatar-image-guest {
   object-fit: contain;
-  padding: 3px;
-  background: #ffffff;
+  padding: var(--pad-3xs);
+  background: var(--panel);
 }
 
 // ─── 登录菜单项（顶部带强调色） ─────────────────────────────────────────────
 
 .user-menu-login-item {
   font-weight: 500;
-  color: #2563eb !important;
+  color: var(--primary-hover) !important;
 
   &:hover {
     background: rgba(37, 99, 235, 0.08) !important;
@@ -168,7 +168,7 @@
 
 .spark-error-details {
   display: grid;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .spark-error-details p {
@@ -181,14 +181,14 @@
 .spark-error-details pre {
   max-height: min(46vh, 360px);
   margin: 0;
-  padding: 10px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-soft);
   color: var(--text);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -201,12 +201,12 @@
   align-items: center;
   justify-content: center;
   height: 18px;
-  padding: 0 6px;
+  padding: 0 var(--pad-xs);
   border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   color: var(--primary);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.08em;
@@ -220,8 +220,8 @@
 .sidebar-mode-switcher {
   display: flex;
   gap: 2px;
-  padding: 3px;
-  margin: 0 12px 6px;
+  padding: var(--pad-3xs);
+  margin: 0 var(--pad-md) var(--pad-xs);
   background: var(--bg-sunken);
   border-radius: var(--r-md);
   flex-shrink: 0;
@@ -239,9 +239,9 @@ html[data-theme='light'] .sidebar-mode-switcher,
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   height: 28px;
-  padding: 0 6px;
+  padding: 0 var(--pad-xs);
   border: none;
   background: transparent;
   border-radius: calc(var(--r-md) - 2px);
@@ -274,8 +274,8 @@ html[data-theme='light'] .sidebar-mode-switcher,
 
 // ─── L2 / L3 分组小标题 ────────────────────────────────────────────────────
 .sidebar-section-label {
-  padding: 6px 14px 3px;
-  font-size: 11px;
+  padding: var(--pad-xs) var(--pad-lg) var(--pad-3xs);
+  font-size: var(--font-xs);
   font-weight: 500;
   color: var(--text-faint);
   letter-spacing: 0.02em;
@@ -290,7 +290,7 @@ html[data-theme='light'] .sidebar-mode-switcher,
   align-items: center;
   justify-content: space-around;
   gap: 2px;
-  padding: 4px 12px 4px 12px;
+  padding: var(--pad-3xs) var(--pad-md) var(--pad-3xs) var(--pad-md);
   // border-top: 1px solid var(--divider);
   // 顶部浅阴影：让常驻底部的资源条从侧栏中轻微浮起（负 y 偏移向上投影）
   // box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
@@ -342,7 +342,7 @@ html[data-theme='light'] .sidebar-mode-switcher,
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 2px 8px 6px;
+  padding: 2px var(--pad-sm) var(--pad-xs);
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1;
@@ -352,8 +352,8 @@ html[data-theme='light'] .sidebar-mode-switcher,
 .canvas-sidebar-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
+  gap: var(--pad-sm);
+  padding: var(--pad-xs) var(--pad-sm);
   height: 46px;
   border: none;
   background: transparent;
@@ -431,8 +431,8 @@ html[data-theme='light'] .sidebar-mode-switcher,
   text-overflow: ellipsis;
   display: flex;
   align-items: center;
-  gap: 4px;
-  transition: color 0.12s ease;
+  gap: var(--pad-3xs);
+  transition: color var(--motion-instant) ease;
 }
 .canvas-sidebar-item-pin {
   color: var(--sidebar-text, var(--text));
@@ -440,10 +440,10 @@ html[data-theme='light'] .sidebar-mode-switcher,
   flex-shrink: 0;
 }
 .canvas-sidebar-item-meta {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-faint);
   display: flex;
-  gap: 8px;
+  gap: var(--pad-sm);
   white-space: nowrap;
   font-weight: 400;
 }
@@ -462,11 +462,11 @@ html[data-theme='light'] .sidebar-mode-switcher,
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px 12px;
+  padding: var(--pad-3xl) var(--pad-md);
   flex: 1;
 }
 .canvas-sidebar-list-empty .ant-empty-image {
-  margin-bottom: 4px;
+  margin-bottom: var(--pad-3xs);
 }
 
 // ─── 画布模式下，L1 主动作与 L3 之间的分隔由原有 divider 承担。

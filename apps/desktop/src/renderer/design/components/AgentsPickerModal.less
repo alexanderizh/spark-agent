@@ -6,7 +6,7 @@
 .agents-picker-modal {
   width: 720px;
   max-width: calc(100vw - 32px);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
 
   .ant-modal-header,
   .ant-modal-footer {
@@ -18,7 +18,7 @@
     flex-direction: column;
     max-height: calc(100vh - 48px);
     overflow: hidden;
-    border-radius: 12px;
+    border-radius: var(--r-lg);
   }
 
   .ant-modal-body {
@@ -104,7 +104,7 @@
   gap: 2px;
   padding: var(--pad-3xs);
   background: var(--color-fill-2);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   align-self: flex-start;
 }
 
@@ -116,7 +116,7 @@
   padding: 0 var(--pad-sm);
   border: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   font-size: var(--font-sm);
   color: var(--color-text-2);
   cursor: pointer;
@@ -165,7 +165,7 @@
 .agents-picker-table-wrap {
   margin: 0 var(--pad-xl);
   border: 1px solid var(--color-border-2);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   overflow: hidden;
   background: var(--color-bg-1);
   flex: 1 1 auto;

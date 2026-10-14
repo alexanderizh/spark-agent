@@ -1,6 +1,6 @@
 .sdk-install-progress {
   width: 100%;
-  margin-top: 10px;
+  margin-top: var(--pad-sm);
   color: var(--text-muted, #747b86);
 }
 
@@ -8,8 +8,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 11px;
+  gap: var(--pad-md);
+  font-size: var(--font-xs);
   line-height: 18px;
 }
 
@@ -24,16 +24,16 @@
   flex: 0 0 auto;
   color: var(--text, #20242a);
   font-family: var(--font-mono, monospace);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
 }
 
 .sdk-install-progress-track {
   position: relative;
   height: 6px;
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text, #20242a) 9%, transparent);
 }
 
@@ -41,7 +41,7 @@
   height: 100%;
   border-radius: inherit;
   background: var(--primary, #5876d8);
-  transition: width 0.2s ease;
+  transition: width var(--motion-base) ease;
 }
 
 .sdk-install-progress.is-done .sdk-install-progress-fill {
@@ -58,11 +58,11 @@
 }
 
 .sdk-install-progress.is-compact {
-  margin-top: 7px;
+  margin-top: var(--pad-sm);
 }
 
 .integrity-sdk-progress-wrap {
-  padding: 0 18px 14px;
+  padding: 0 var(--pad-xl) var(--pad-lg);
 }
 
 @keyframes sdk-install-progress-slide {

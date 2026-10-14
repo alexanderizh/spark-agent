@@ -6,7 +6,7 @@
   box-sizing: border-box;
   min-width: 80%;
   max-width: 150%;
-  padding: 7px 34px;
+  padding: var(--pad-sm) 34px;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel-elev, var(--bg)) 94%, transparent);
@@ -26,7 +26,7 @@
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 13px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel-elev, var(--bg)) 96%, transparent);
   color: var(--text);
   cursor: pointer;
@@ -62,7 +62,7 @@
   display: flex;
   overflow-x: auto;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   flex-wrap: nowrap;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
@@ -82,7 +82,7 @@
     overflow: hidden;
     padding: 0;
     border: 4px solid transparent;
-    border-radius: 10px;
+    border-radius: var(--r-lg);
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
@@ -110,7 +110,7 @@
     > .canvas-operation-output-thumbnail-placeholder {
       width: 100%;
       height: 100%;
-      border-radius: 6px;
+      border-radius: var(--r-sm);
     }
 
     > img,

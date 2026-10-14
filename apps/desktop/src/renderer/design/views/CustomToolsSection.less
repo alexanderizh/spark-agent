@@ -389,7 +389,7 @@
   overflow: auto;
   margin: var(--pad-sm) 0 var(--pad-md);
   padding: var(--pad-sm);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--hover);
   font-size: var(--font-xs);
   line-height: 1.5;
@@ -425,7 +425,7 @@
   margin-top: var(--pad-xs);
   resize: vertical;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: inherit;
   font:
@@ -442,7 +442,7 @@
   min-height: 360px;
   resize: vertical;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: inherit;
   font:
@@ -535,7 +535,7 @@
   place-items: center;
   color: var(--primary);
   background: var(--primary-soft);
-  border-radius: 8px;
+  border-radius: var(--r-md);
 
   &.is-provider-vision {
     color: #8b5cf6;
@@ -679,7 +679,7 @@
     text-align: left;
     background: transparent;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     cursor: pointer;
 
     &:hover,
@@ -1036,7 +1036,7 @@
 .ct_code_input textarea,
 .ct_code_input {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
-  font-size: 12px !important;
+  font-size: var(--font-sm) !important;
 }
 
 .ct_schema_editor {
@@ -1190,7 +1190,7 @@
     height: 42px;
     object-fit: cover;
     background: var(--hover);
-    border-radius: 4px;
+    border-radius: var(--r-xs);
   }
 
   span {

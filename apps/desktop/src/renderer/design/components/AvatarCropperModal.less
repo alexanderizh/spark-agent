@@ -12,7 +12,7 @@
     height: 320px;
     background: var(--color-fill-2, #0f172a);
     background: linear-gradient(135deg, #0f172a, #1e293b);
-    border-radius: 8px;
+    border-radius: var(--r-md);
     overflow: hidden;
     touch-action: none;
     user-select: none;
@@ -69,7 +69,7 @@
     color: var(--color-text-1, #0f172a);
     width: 32px;
     height: 32px;
-    border-radius: 8px;
+    border-radius: var(--r-md);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -82,8 +82,8 @@
 
     &:hover {
       background: var(--color-fill-2, #f1f5f9);
-      color: #2563eb;
-      border-color: #2563eb;
+      color: var(--primary-hover);
+      border-color: var(--primary-hover);
     }
 
     &:active {

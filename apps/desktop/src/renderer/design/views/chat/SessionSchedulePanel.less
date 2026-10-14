@@ -140,7 +140,7 @@ html[data-theme='light'] .session-schedule-panel,
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--schedule-accent) 18%, transparent);
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   color: var(--schedule-accent);
   background: var(--schedule-accent-soft);
 }
@@ -198,7 +198,7 @@ html[data-theme='light'] .session-schedule-panel,
   gap: var(--pad-3xs);
   overflow: hidden;
   border: 1px solid var(--schedule-divider);
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--schedule-sunken) 82%, var(--schedule-panel));
 }
 
@@ -264,7 +264,7 @@ html[data-theme='light'] .session-schedule-panel,
 .session-schedule-item {
   display: flex;
   border: 1px solid var(--schedule-divider);
-  border-radius: 13px;
+  border-radius: var(--r-lg);
   background: var(--schedule-panel-elevated);
   transition:
     border-color 150ms ease,
@@ -315,7 +315,7 @@ html[data-theme='light'] .session-schedule-panel,
 
 .session-schedule-item-error {
   display: block;
-  margin: -3px 0 8px;
+  margin: -3px 0 var(--pad-sm);
   overflow: hidden;
   color: var(--danger);
   font-size: var(--font-2xs);
@@ -397,7 +397,7 @@ html[data-theme='light'] .session-schedule-panel,
   flex-direction: column;
   gap: var(--pad-sm);
   border: 1px solid var(--schedule-divider);
-  border-radius: 13px;
+  border-radius: var(--r-lg);
   color: var(--schedule-text-muted);
   background:
     radial-gradient(circle at 50% 20%, var(--schedule-accent-soft), transparent 52%),
@@ -426,7 +426,7 @@ html[data-theme='light'] .session-schedule-panel,
   justify-content: center;
   gap: var(--pad-sm);
   border: 1px solid var(--schedule-accent);
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   outline: none;
   color: var(--schedule-accent-fg);
   background: var(--schedule-accent);
@@ -617,7 +617,7 @@ html[data-theme='light'] .session-schedule-panel,
     right: 7px;
     width: calc(100% - 14px);
     max-height: calc(100% - 58px);
-    border-radius: 15px;
+    border-radius: var(--r-xl);
   }
 }
 

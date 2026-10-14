@@ -198,7 +198,7 @@
   padding: var(--pad-md) var(--pad-lg);
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel-elev) 96%, transparent);
   box-shadow:
     0 14px 34px color-mix(in srgb, #000 20%, transparent),
@@ -275,6 +275,6 @@
   .chat-turn-marker-line,
   .chat-turn-marker-active-line,
   .chat-turn-more-dots i {
-    transition-duration: 0.06s;
+    transition-duration: var(--motion-instant);
   }
 }

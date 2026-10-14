@@ -4,8 +4,8 @@
     min-height: var(--window-titlebar-height);
     height: var(--window-titlebar-height);
     align-items: center;
-    gap: 16px;
-    padding: 0 14px 0 16px;
+    gap: var(--pad-lg);
+    padding: 0 var(--pad-lg) 0 var(--pad-lg);
     border-bottom: 1px solid var(--canvas-cinema-border);
     background: rgba(20, 20, 20, 0.97);
     box-shadow: 0 1px rgba(0, 0, 0, 0.55);
@@ -23,15 +23,15 @@
   }
 
   .canvas-workspace-title {
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .canvas-workspace-title > .ant-btn {
     height: 30px;
-    padding-inline: 7px 9px;
+    padding-inline: var(--pad-sm) var(--pad-sm);
     border-radius: var(--canvas-cinema-radius-sm);
     color: var(--canvas-cinema-text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
   }
 
   .canvas-workspace-title > .ant-btn:hover {
@@ -40,13 +40,13 @@
   }
 
   .canvas-workspace-heading {
-    gap: 9px;
+    gap: var(--pad-sm);
   }
 
   .canvas-workspace-title h2 {
     max-width: min(28vw, 360px);
     color: var(--canvas-cinema-text-strong);
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 650;
     letter-spacing: 0.01em;
   }
@@ -54,7 +54,7 @@
   .canvas-workspace-meta {
     color: var(--canvas-cinema-text-faint);
     font-family: 'DIN Alternate', 'Avenir Next', sans-serif;
-    font-size: 9px;
+    font-size: var(--font-2xs);
   }
 
   .canvas-toolbar {
@@ -65,10 +65,10 @@
   }
 
   .canvas-toolbar-save {
-    gap: 3px;
+    gap: var(--pad-3xs);
     padding: 2px;
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--r-lg);
     background: transparent;
     box-shadow: none;
     backdrop-filter: none;
@@ -79,15 +79,15 @@
     box-sizing: border-box;
     min-width: 74px;
     height: 27px;
-    margin: 0 4px 0 0;
+    margin: 0 var(--pad-3xs) 0 0;
     flex: 0 0 auto;
-    gap: 6px;
-    padding: 0 7px 0 15px;
+    gap: var(--pad-xs);
+    padding: 0 var(--pad-sm) 0 var(--pad-lg);
     border: 0;
     border-radius: var(--canvas-cinema-radius-sm);
     background: transparent;
     color: var(--canvas-cinema-success);
-    font-size: 9px;
+    font-size: var(--font-2xs);
     white-space: nowrap;
   }
 
@@ -104,8 +104,8 @@
 
   .canvas-toolbar-autosave {
     height: 28px;
-    gap: 5px;
-    padding: 0 6px;
+    gap: var(--pad-xs);
+    padding: 0 var(--pad-xs);
     border: 1px solid var(--canvas-cinema-border);
     border-radius: var(--canvas-cinema-radius-sm);
     background: var(--canvas-cinema-surface-1);
@@ -113,7 +113,7 @@
 
   .canvas-toolbar-autosave-label {
     color: var(--canvas-cinema-text-faint);
-    font-size: 9px;
+    font-size: var(--font-2xs);
   }
 
   .canvas-toolbar .ant-switch {
@@ -123,13 +123,13 @@
   .canvas-toolbar .ant-btn {
     min-width: 30px;
     height: 30px;
-    padding-inline: 8px;
+    padding-inline: var(--pad-sm);
     border-color: transparent;
     border-radius: var(--canvas-cinema-radius-sm);
     background: transparent;
     box-shadow: none;
     color: var(--canvas-cinema-text-muted);
-    font-size: 10px;
+    font-size: var(--font-2xs);
   }
 
   .canvas-toolbar .ant-btn:hover:not(:disabled) {
@@ -139,7 +139,7 @@
   }
 
   .canvas-toolbar .canvas-toolbar-agent-button {
-    padding-inline: 8px;
+    padding-inline: var(--pad-sm);
     border-color: rgba(119, 108, 246, 0.38);
     background: var(--canvas-cinema-accent-soft);
     color: #cecaff;
@@ -192,10 +192,10 @@
     width: 44px;
     max-height: calc(100% - 72px);
     flex-direction: column;
-    gap: 4px;
-    padding: 5px;
+    gap: var(--pad-3xs);
+    padding: var(--pad-xs);
     border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 14px;
+    border-radius: var(--r-lg);
     background: rgba(25, 25, 25, 0.72);
     box-shadow:
       0 18px 42px rgba(0, 0, 0, 0.34),
@@ -215,7 +215,7 @@
   .canvas-bottom-dock-group {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--pad-3xs);
   }
 
   .canvas-bottom-dock .ant-btn {
@@ -224,7 +224,7 @@
     height: 36px;
     padding: 0;
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--r-lg);
     background: transparent;
     color: var(--canvas-cinema-text-faint);
   }
@@ -243,7 +243,7 @@
   .canvas-bottom-dock-divider {
     width: 28px;
     height: 1px;
-    margin: 4px auto;
+    margin: var(--pad-3xs) auto;
     background: var(--canvas-cinema-border);
   }
 
@@ -265,7 +265,7 @@
     right: 14px !important;
     bottom: 10px !important;
     margin: 0 !important;
-    gap: 3px;
+    gap: var(--pad-3xs);
     padding: 0;
     border: 0;
     border-radius: 0;
@@ -274,8 +274,8 @@
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background: rgba(0, 0, 0, 0.8);
-    padding: 0 10px;
-    border-radius: 8px;
+    padding: 0 var(--pad-sm);
+    border-radius: var(--r-md);
   }
 
   .canvas-controls .canvas-controls-button {
@@ -286,7 +286,7 @@
     place-items: center;
     padding: 0;
     border: 0;
-    border-radius: 7px;
+    border-radius: var(--r-md);
     outline: none;
     background: transparent;
     color: var(--canvas-cinema-text-muted);
@@ -329,7 +329,7 @@
   .canvas-controls-divider {
     width: 1px;
     height: 18px;
-    margin: 7px 3px;
+    margin: var(--pad-sm) var(--pad-3xs);
     background: var(--canvas-cinema-border-strong);
   }
 
@@ -340,9 +340,9 @@
   .canvas-controls-zoom-label {
     min-width: 42px;
     height: 32px;
-    padding: 0 4px;
+    padding: 0 var(--pad-3xs);
     color: var(--canvas-cinema-text);
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 600;
     line-height: 32px;
     letter-spacing: 0.01em;
@@ -360,7 +360,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 36px 80px 80px;
+    padding: var(--pad-3xl) 80px 80px;
     pointer-events: none;
   }
 
@@ -374,17 +374,17 @@
     display: inline-flex;
     height: 24px;
     align-items: center;
-    gap: 7px;
-    padding: 0 9px;
+    gap: var(--pad-sm);
+    padding: 0 var(--pad-sm);
     border: 1px solid var(--canvas-cinema-border);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: rgba(20, 24, 29, 0.72);
     color: var(--canvas-cinema-text-muted);
-    font-size: 9px;
+    font-size: var(--font-2xs);
   }
 
   .canvas-cinematic-empty h1 {
-    margin: 18px 0 8px;
+    margin: var(--pad-xl) 0 var(--pad-sm);
     color: var(--canvas-cinema-text-strong);
     font-family: 'Songti SC', 'STSong', serif;
     font-size: clamp(28px, 3vw, 38px);
@@ -395,7 +395,7 @@
   .canvas-cinematic-empty p {
     margin: 0 auto 21px;
     color: var(--canvas-cinema-text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.8;
   }
 
@@ -404,10 +404,10 @@
     width: 100%;
     min-height: 72px;
     align-items: center;
-    gap: 10px;
-    padding: 12px 13px 12px 16px;
+    gap: var(--pad-sm);
+    padding: var(--pad-md) var(--pad-md) var(--pad-md) var(--pad-lg);
     border: 1px solid rgba(255, 255, 255, 0.11);
-    border-radius: 16px;
+    border-radius: var(--r-xl);
     background: rgba(21, 25, 30, 0.94);
     color: var(--canvas-cinema-accent-bright);
     cursor: pointer;
@@ -426,9 +426,9 @@
   }
 
   .canvas-cinematic-command-hint {
-    margin: 9px 0 0;
+    margin: var(--pad-sm) 0 0;
     color: var(--canvas-cinema-text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     line-height: 1.5;
   }
 
@@ -445,7 +445,7 @@
     color: var(--canvas-cinema-text-faint);
     cursor: text;
     font: inherit;
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.6;
   }
 
@@ -468,7 +468,7 @@
     height: 36px;
     flex: 0 0 auto;
     place-items: center;
-    border-radius: 10px;
+    border-radius: var(--r-lg);
     background: #f1f2f5;
     color: #111318;
     cursor: pointer;
@@ -481,8 +481,8 @@
 
   .canvas-cinematic-starters {
     display: grid;
-    margin-top: 10px;
-    gap: 8px;
+    margin-top: var(--pad-sm);
+    gap: var(--pad-sm);
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -491,8 +491,8 @@
     min-width: 0;
     min-height: 74px;
     align-items: flex-start;
-    gap: 9px;
-    padding: 12px;
+    gap: var(--pad-sm);
+    padding: var(--pad-md);
     border: 1px solid var(--canvas-cinema-border);
     border-radius: var(--canvas-cinema-radius-md);
     background: rgba(16, 19, 23, 0.74);
@@ -521,9 +521,9 @@
   }
 
   .canvas-cinematic-starters strong {
-    margin-bottom: 5px;
+    margin-bottom: var(--pad-xs);
     color: var(--canvas-cinema-text);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     font-weight: 620;
   }
 

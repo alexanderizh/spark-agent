@@ -4950,7 +4950,9 @@ export function ProviderEditPanel({
                   {invocationPreviewLoading ? '编译中…' : '编译请求预览'}
                 </button>
                 {invocationPreviewError && (
-                  <span style={{ color: '#cf1322', fontSize: 12 }}>{invocationPreviewError}</span>
+                  <span style={{ color: 'var(--danger)', fontSize: 12 }}>
+                    {invocationPreviewError}
+                  </span>
                 )}
               </div>
               {invocationPreview && (
@@ -5011,7 +5013,7 @@ export function ProviderEditPanel({
                   {dryRunLoading ? '运行中…' : '运行裁剪'}
                 </button>
                 {dryRunError && (
-                  <span style={{ color: '#cf1322', fontSize: 12 }}>{dryRunError}</span>
+                  <span style={{ color: 'var(--danger)', fontSize: 12 }}>{dryRunError}</span>
                 )}
               </div>
               {dryRunResult && (

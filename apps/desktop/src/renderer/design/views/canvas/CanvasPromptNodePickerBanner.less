@@ -6,10 +6,10 @@
   display: flex;
   min-height: 44px;
   align-items: center;
-  gap: 10px;
-  padding: 7px 8px 7px 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-sm) var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--primary) 55%, var(--border-strong));
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel-elev) 92%, transparent);
   box-shadow: var(--shadow-lg);
   color: var(--primary);
@@ -25,25 +25,25 @@
 }
 
 .canvas-prompt-node-picker-banner strong {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .canvas-prompt-node-picker-banner small {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .canvas-prompt-node-picker-banner button {
   min-width: 44px;
   min-height: 30px;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--bg-sunken);
   color: var(--text-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .canvas-prompt-node-picker-banner button:hover,

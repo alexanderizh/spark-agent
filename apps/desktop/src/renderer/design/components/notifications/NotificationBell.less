@@ -11,11 +11,11 @@
   right: -4px;
   min-width: 14px;
   height: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
+  padding: 0 var(--pad-3xs);
+  border-radius: var(--r-md);
   background: var(--danger);
-  color: #fff;
-  font-size: 9px;
+  color: var(--text-inverse);
+  font-size: var(--font-2xs);
   font-weight: 600;
   line-height: 14px;
   text-align: center;
@@ -50,7 +50,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px 8px;
+  padding: var(--pad-sm) var(--pad-md) var(--pad-sm);
 }
 
 .nb-quick-title {
@@ -62,15 +62,15 @@
 .nb-quick-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .nb-quick-action {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   height: 22px;
-  padding: 0 6px;
+  padding: 0 var(--pad-xs);
   border: none;
   border-radius: var(--r-sm);
   background: transparent;
@@ -92,8 +92,8 @@
 }
 
 .nb-quick-hint {
-  margin: 0 12px 8px;
-  padding: 8px 10px;
+  margin: 0 var(--pad-md) var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
   border-radius: var(--r-md);
   background: var(--bg-sunken);
   color: var(--text-muted);
@@ -101,8 +101,8 @@
 }
 
 .nb-quick-error {
-  margin: 0 12px 8px;
-  padding: 6px 10px;
+  margin: 0 var(--pad-md) var(--pad-sm);
+  padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-md);
   background: var(--warning-bg);
   color: var(--text-muted);
@@ -115,7 +115,7 @@
 .nb-quick-list {
   max-height: 320px;
   overflow-y: auto;
-  padding: 0 6px;
+  padding: 0 var(--pad-xs);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -127,13 +127,13 @@
   align-items: flex-start;
   gap: 2px;
   width: 100%;
-  padding: 8px 8px;
+  padding: var(--pad-sm) var(--pad-sm);
   border: none;
   border-radius: var(--r-md);
   background: transparent;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--motion-fast) ease;
 
   &:hover {
     background: var(--hover);
@@ -143,7 +143,7 @@
 .nb-quick-item-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   width: 100%;
   font-size: var(--font-sm);
   color: var(--text);
@@ -159,30 +159,30 @@
 
 .nb-quick-badge {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   height: 16px;
   line-height: 16px;
-  padding: 0 5px;
+  padding: 0 var(--pad-xs);
 }
 
 .nb-quick-item-sub {
   font-size: var(--font-xs);
   color: var(--text-faint);
-  padding-left: 12px;
+  padding-left: var(--pad-md);
 }
 
 .nb-quick-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   padding: 28px 0;
   color: var(--text-faint);
   font-size: var(--font-xs);
 }
 
 .nb-quick-footer {
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
   color: var(--text-muted);
   font-size: var(--font-xs);
 }

@@ -28,7 +28,7 @@
 .sidebar-sortable-project.is-dragging > .proj-group > .proj-head,
 .sidebar-sortable-session.is-dragging > .chat-item-compact {
   position: relative;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 14%, var(--bg-elevated));
   cursor: grabbing;
   opacity: 0.92;
@@ -207,7 +207,7 @@ button.session-terminal-indicator-btn {
   height: 5px;
   border-radius: var(--r-pill);
   background: var(--info);
-  color: #fff;
+  color: var(--text-inverse);
   font-size: 7.5px;
   font-weight: 600;
   line-height: 1;
@@ -514,7 +514,7 @@ button.session-terminal-indicator-btn {
   width: 42px;
   height: 42px;
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background:
     linear-gradient(
       180deg,
@@ -637,7 +637,7 @@ button.session-terminal-indicator-btn {
   justify-content: center;
   width: 34px;
   height: 34px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--primary-fg);
   background: var(--empty-accent);
 }
@@ -675,7 +675,7 @@ button.session-terminal-indicator-btn {
   width: 100%;
   padding: var(--pad-sm) var(--pad-sm);
   border: 1px solid var(--empty-line);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text);
   text-align: left;
   background: var(--empty-surface-muted);
@@ -1147,7 +1147,7 @@ button.session-terminal-indicator-btn {
   min-height: 26px;
   padding: 0 var(--pad-xs) 0 var(--pad-sm);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text-faint);
   background: var(--bg-elevated);
 }
@@ -1189,13 +1189,13 @@ button.session-terminal-indicator-btn {
   // antd 6 uses filter: drop-shadow on the Popover root rather than box-shadow.
   filter: none !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18) !important;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
 
   .ant-popover-container {
     padding: var(--pad-md);
     background: var(--panel-elev, var(--panel, var(--bg-soft)));
     border: 1px solid var(--border-subtle);
-    border-radius: 12px;
+    border-radius: var(--r-lg);
     overflow: hidden;
     filter: none !important;
     box-shadow: none !important;
@@ -1221,7 +1221,7 @@ button.session-terminal-indicator-btn {
   min-width: 176px;
   max-width: 244px;
   padding: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 
 // 悬浮卡标题排版常量：标题行、标记标签、编辑态输入框共用，避免字号/行高在多处各写一份
@@ -1271,7 +1271,7 @@ button.session-terminal-indicator-btn {
   color: var(--text);
   background: transparent;
   border: 1px solid var(--color-primary-5, rgba(74, 140, 255, 0.55));
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   outline: none;
   box-shadow: none;
 

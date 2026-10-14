@@ -61,7 +61,7 @@
     gap: var(--pad-3xs) var(--pad-sm);
     background: var(--bg-sunken);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--r-md);
     padding: var(--pad-sm) var(--pad-sm);
     margin-bottom: var(--pad-sm);
   }
@@ -157,7 +157,7 @@
     font-size: var(--font-xs);
     line-height: 1.5;
     padding: 2px var(--pad-sm);
-    border-radius: 12px;
+    border-radius: var(--r-lg);
     border: 1px solid var(--border);
     color: var(--text-muted, #555);
     background: var(--bg-soft, transparent);
@@ -175,7 +175,7 @@
     &.is-active {
       background: var(--primary);
       border-color: var(--primary);
-      color: #fff;
+      color: var(--text-inverse);
     }
   }
 
@@ -192,7 +192,7 @@
   &__search {
     font-size: var(--font-xs);
     padding: var(--pad-3xs) var(--pad-xs);
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     border: 1px solid var(--border);
     background: var(--bg-soft, transparent);
     color: var(--text-muted, #555);
@@ -223,7 +223,7 @@
   &__group {
     background: var(--bg-sunken);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--r-md);
     margin-bottom: var(--pad-sm);
     overflow: hidden;
 
@@ -315,7 +315,7 @@
   // 同样局部恢复细滚动条（>40 条裁剪到 440px，无滚动条时「加载更早」历史不可发现）。
   &__scroll {
     overflow-y: auto;
-    border-radius: 8px;
+    border-radius: var(--r-md);
     scrollbar-width: thin !important;
     scrollbar-color: color-mix(in srgb, var(--text-faint, #9b9489) 60%, transparent) transparent !important;
   }
@@ -373,7 +373,7 @@
 
   &__skeleton-row {
     height: 26px;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: var(--bg-sunken);
     margin: var(--pad-xs) 0;
     position: relative;
@@ -398,7 +398,7 @@
     color: var(--danger, #ef4444);
     background: color-mix(in srgb, var(--danger, #ef4444) 8%, transparent);
     border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 25%, transparent);
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     padding: var(--pad-xs) var(--pad-sm);
     margin: var(--pad-3xs) 0;
 
@@ -406,7 +406,7 @@
       flex: none;
       font-size: var(--font-xs);
       padding: 1px var(--pad-sm);
-      border-radius: 4px;
+      border-radius: var(--r-xs);
       border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 40%, transparent);
       background: transparent;
       color: var(--danger, #ef4444);
@@ -434,7 +434,7 @@
     color: var(--primary);
     background: transparent;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     padding: 2px var(--pad-sm);
     cursor: pointer;
 
@@ -537,7 +537,7 @@
   font-size: var(--font-2xs);
   line-height: 1.5;
   padding: 0 var(--pad-xs);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   flex: none;
   border: 1px solid var(--border);
   color: var(--text-muted, #888);
@@ -694,7 +694,7 @@
   color: var(--text-muted, #888);
   background: color-mix(in srgb, var(--bg-soft, #fff) 92%, transparent);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   padding: 1px var(--pad-sm);
   pointer-events: none;
 }
@@ -723,7 +723,7 @@
   color: var(--primary);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: var(--pad-3xs) var(--pad-md);
   cursor: pointer;
 
@@ -809,7 +809,7 @@
   font-size: var(--font-xs);
   color: var(--tl-err);
   background: color-mix(in srgb, var(--tl-err) 8%, transparent);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: var(--pad-xs) var(--pad-sm);
   font-family: var(--font-mono, monospace);
   line-height: 1.5;

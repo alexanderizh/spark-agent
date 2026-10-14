@@ -69,8 +69,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 0 12px;
+  gap: var(--pad-lg);
+  padding: 0 var(--pad-md);
   border-bottom: 1px solid var(--border);
   background: var(--annotation-bar-bg);
   backdrop-filter: blur(18px);
@@ -86,7 +86,7 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .canvas-annotation-topbar-actions {
@@ -98,7 +98,7 @@
   width: 1px;
   height: 20px;
   flex: 0 0 auto;
-  margin: 0 6px;
+  margin: 0 var(--pad-xs);
   background: var(--divider);
 }
 
@@ -112,7 +112,7 @@
     max-width: min(38vw, 480px);
     overflow: hidden;
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 600;
     line-height: 16px;
     text-overflow: ellipsis;
@@ -121,7 +121,7 @@
 
   span {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     line-height: 12px;
 
     &.is-draft-error {
@@ -136,7 +136,7 @@
   -webkit-app-region: no-drag;
   min-height: 34px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -166,9 +166,9 @@
   min-width: 36px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 0 8px;
-  font-size: 12px;
+  gap: var(--pad-xs);
+  padding: 0 var(--pad-sm);
+  font-size: var(--font-sm);
 
   &.is-square {
     width: 36px;
@@ -178,8 +178,8 @@
 
 .canvas-annotation-zoom {
   min-width: 48px;
-  padding: 0 6px;
-  font-size: 12px;
+  padding: 0 var(--pad-xs);
+  font-size: var(--font-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -188,13 +188,13 @@
   min-width: 78px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  margin-left: 6px;
-  padding: 0 14px;
+  gap: var(--pad-xs);
+  margin-left: var(--pad-xs);
+  padding: 0 var(--pad-lg);
   border-color: var(--primary);
   background: var(--primary);
   color: var(--primary-fg);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
 
   &:hover:not(:disabled) {
@@ -269,7 +269,7 @@
     display: block;
     padding: 0;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     outline: 0;
     background: var(--primary);
     box-shadow:
@@ -328,7 +328,7 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 9px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
   background: var(--bg-sunken);
 
@@ -338,13 +338,13 @@
 
   strong {
     color: var(--text);
-    font-size: 14px;
+    font-size: var(--font-md);
   }
 
   span {
     max-width: min(520px, 80vw);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
     text-align: center;
   }
 
@@ -360,12 +360,12 @@
   min-width: 82px;
   height: 32px;
   margin-top: 2px;
-  padding: 0 12px;
+  padding: 0 var(--pad-md);
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--panel-elev);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
 
   &:hover {
@@ -389,14 +389,14 @@
   max-width: min(620px, calc(100vw - 32px));
   min-height: 42px;
   align-items: center;
-  gap: 9px;
-  padding: 6px 7px 6px 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-xs) var(--pad-sm) var(--pad-xs) var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--danger) 48%, var(--border));
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel-elev) 94%, transparent);
   color: var(--danger);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
-  font-size: 12px;
+  font-size: var(--font-sm);
   transform: translateX(-50%);
   backdrop-filter: blur(16px);
 
@@ -411,9 +411,9 @@
   button {
     min-width: max-content;
     height: 30px;
-    padding: 0 10px;
+    padding: 0 var(--pad-sm);
     border: 1px solid color-mix(in srgb, var(--danger) 54%, transparent);
-    border-radius: 7px;
+    border-radius: var(--r-md);
     background: transparent;
     color: var(--danger);
     cursor: pointer;
@@ -445,7 +445,7 @@
   align-items: center;
   pointer-events: none;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .canvas-annotation-tool-dock,
@@ -464,8 +464,8 @@
   align-items: center;
   gap: 2px;
   overflow-x: auto;
-  padding: 4px;
-  border-radius: 12px;
+  padding: var(--pad-3xs);
+  border-radius: var(--r-lg);
   scrollbar-width: none;
 
   &::-webkit-scrollbar {
@@ -482,9 +482,9 @@
     justify-content: center;
     flex-direction: column;
     gap: 2px;
-    padding: 2px 5px;
+    padding: 2px var(--pad-xs);
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: var(--r-md);
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
@@ -494,7 +494,7 @@
       color 180ms ease;
 
     > span:last-child {
-      font-size: 9px;
+      font-size: var(--font-2xs);
       line-height: 11px;
       white-space: nowrap;
     }
@@ -526,7 +526,7 @@
   width: 18px;
   height: 18px;
   border: 1px solid currentColor;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background:
     linear-gradient(
       90deg,
@@ -545,9 +545,9 @@
   min-height: 40px;
   max-width: min(900px, calc(100vw - 40px));
   align-items: center;
-  gap: 5px;
-  padding: 4px 8px;
-  border-radius: 11px;
+  gap: var(--pad-xs);
+  padding: var(--pad-3xs) var(--pad-sm);
+  border-radius: var(--r-lg);
 
   &.is-padding {
     overflow-x: auto;
@@ -559,14 +559,14 @@
 .canvas-annotation-segments {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
 }
 
 .canvas-annotation-segments {
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: var(--bg-sunken);
 
   button {
@@ -575,13 +575,13 @@
     height: 30px;
     align-items: center;
     justify-content: center;
-    gap: 5px;
-    padding: 0 9px;
+    gap: var(--pad-xs);
+    padding: 0 var(--pad-sm);
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: transparent;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
     cursor: pointer;
 
     &:hover,
@@ -608,7 +608,7 @@
   min-width: 26px;
   padding: 0;
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--annotation-color);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
   cursor: pointer;
@@ -641,7 +641,7 @@
   justify-content: center;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -667,7 +667,7 @@
 .canvas-annotation-widths button span {
   min-width: 3px;
   min-height: 3px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: currentColor;
 }
 
@@ -676,10 +676,10 @@
   min-width: max-content;
   min-height: 32px;
   align-items: center;
-  gap: 8px;
-  padding: 0 4px;
+  gap: var(--pad-sm);
+  padding: 0 var(--pad-3xs);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
 
   input {
@@ -693,20 +693,20 @@
   display: inline-flex;
   min-width: max-content;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 
   input {
     width: 54px;
     height: 32px;
-    padding: 0 7px;
+    padding: 0 var(--pad-sm);
     border: 1px solid var(--border-strong);
-    border-radius: 7px;
+    border-radius: var(--r-md);
     outline: none;
     background: var(--bg-sunken);
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-variant-numeric: tabular-nums;
 
     &:focus {
@@ -723,24 +723,24 @@
 .canvas-annotation-padding-preset {
   width: auto;
   min-width: 42px;
-  padding: 0 7px;
+  padding: 0 var(--pad-sm);
   border-color: var(--border);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .canvas-annotation-crop-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px;
-  border-radius: 12px;
+  gap: var(--pad-xs);
+  padding: var(--pad-xs);
+  border-radius: var(--r-lg);
 
   button {
     min-width: 86px;
     height: 36px;
-    padding: 0 14px;
+    padding: 0 var(--pad-lg);
     border: 1px solid var(--border-strong);
-    border-radius: 8px;
+    border-radius: var(--r-md);
     background: transparent;
     color: var(--text);
     cursor: pointer;
@@ -764,31 +764,31 @@
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 10px;
-  padding: 0 10px;
+  gap: var(--pad-sm);
+  padding: 0 var(--pad-sm);
   border-top: 1px solid var(--border);
   background: var(--annotation-bar-bg);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
 
   > div {
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--pad-3xs);
   }
 
   button {
     display: inline-flex;
     height: 24px;
     align-items: center;
-    gap: 4px;
-    padding: 0 7px;
+    gap: var(--pad-3xs);
+    padding: 0 var(--pad-sm);
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: transparent;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
     cursor: pointer;
 
     &:hover:not(:disabled) {
@@ -817,10 +817,10 @@
   bottom: 24px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: var(--pad-md);
+  padding: var(--pad-md) var(--pad-lg);
   border: 1px solid var(--border-strong);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: var(--panel-elev);
   color: var(--text);
   box-shadow: var(--shadow-lg);
@@ -833,7 +833,7 @@
 
   span {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
   }
 
   button {
@@ -842,10 +842,10 @@
     height: 40px;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 0 12px;
+    gap: var(--pad-xs);
+    padding: 0 var(--pad-md);
     border: 1px solid var(--primary);
-    border-radius: 9px;
+    border-radius: var(--r-md);
     background: var(--primary);
     color: var(--primary-fg);
     cursor: pointer;
@@ -863,7 +863,7 @@
 
 @media (max-width: 900px) {
   .canvas-annotation-topbar {
-    padding: 0 10px;
+    padding: 0 var(--pad-sm);
   }
 
   .canvas-annotation-title span,
@@ -874,7 +874,7 @@
 
   .canvas-annotation-complete {
     min-width: 78px;
-    padding: 0 12px;
+    padding: 0 var(--pad-md);
   }
 
   .canvas-annotation-statusbar {
@@ -908,7 +908,7 @@
   }
 
   .canvas-annotation-statusbar {
-    padding: 0 6px;
+    padding: 0 var(--pad-xs);
 
     > span {
       display: none;
@@ -918,8 +918,8 @@
 
 @media (pointer: coarse) {
   .canvas-annotation-tool-dock {
-    gap: 6px;
-    padding: 7px;
+    gap: var(--pad-xs);
+    padding: var(--pad-sm);
 
     button {
       min-width: 60px;
@@ -929,7 +929,7 @@
 
   .canvas-annotation-property-panel {
     min-height: 56px;
-    padding: 6px 9px;
+    padding: var(--pad-xs) var(--pad-sm);
   }
 
   .canvas-annotation-color {

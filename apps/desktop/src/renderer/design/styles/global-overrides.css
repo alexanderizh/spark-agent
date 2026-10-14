@@ -175,7 +175,7 @@ textarea::-moz-selection,
   display: block !important;
   min-height: 36px;
   border: 2px solid transparent !important;
-  border-radius: 999px !important;
+  border-radius: var(--r-pill) !important;
   background: var(--border-strong) !important;
   background-clip: content-box !important;
   -webkit-appearance: none !important;
@@ -185,7 +185,7 @@ textarea::-moz-selection,
   display: block !important;
   min-height: 36px;
   border: 2px solid transparent !important;
-  border-radius: 999px !important;
+  border-radius: var(--r-pill) !important;
   background: var(--border-strong) !important;
   background-clip: content-box !important;
   -webkit-appearance: none !important;

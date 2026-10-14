@@ -139,7 +139,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 16px;
+  padding: var(--pad-3xs) var(--pad-lg);
   border-bottom: 1px solid var(--stage3d-panel-border);
   background: var(--stage3d-topbar-bg);
   -webkit-app-region: drag;
@@ -151,20 +151,20 @@ html[data-theme='light'] .stage3d-modal-overlay,
   }
 
   .stage3d-kicker {
-    font-size: 11px;
+    font-size: var(--font-xs);
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--stage3d-text-faint);
   }
   .stage3d-title {
-    font-size: 15px;
+    font-size: var(--font-lg);
     font-weight: 600;
     color: var(--stage3d-title);
   }
   .stage3d-topbar-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   // overlay 顶栏靠上时消费系统标题栏安全区，避免标题被原生按钮压住。
@@ -191,12 +191,12 @@ html[data-theme='light'] .stage3d-modal-overlay,
   flex-shrink: 0;
   min-height: 0;
   position: relative;
-  padding: 12px 12px 20px;
+  padding: var(--pad-md) var(--pad-md) var(--pad-xl);
   overflow-y: auto;
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
   background: var(--stage3d-panel-bg);
 }
 
@@ -226,7 +226,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   justify-content: center;
   margin: -4px -4px -6px 0;
   border: 1px solid var(--stage3d-panel-border);
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: var(--stage3d-panel-bg-strong);
   color: var(--stage3d-text-muted);
   cursor: pointer;
@@ -264,17 +264,17 @@ html[data-theme='light'] .stage3d-modal-overlay,
 }
 
 .stage3d-section-title {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--stage3d-text-muted);
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
   text-transform: uppercase;
 }
 
 .stage3d-tip,
 .stage3d-subtle {
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   color: var(--stage3d-text-faint);
 }
@@ -285,26 +285,26 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-scene-controls {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm);
   border: 1px solid var(--stage3d-panel-border);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--stage3d-panel-hover) 48%, transparent);
 }
 
 .stage3d-prim-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .stage3d-crowd-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: var(--pad-xs);
 
   .stage3d-field {
-    gap: 3px;
+    gap: var(--pad-3xs);
   }
 }
 
@@ -316,39 +316,39 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-furniture-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
   max-height: 300px;
   overflow-y: auto;
-  padding: 8px;
+  padding: var(--pad-sm);
   border: 1px solid var(--stage3d-panel-border);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel, #303030) 82%, transparent);
 }
 .stage3d-furniture-group-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--stage3d-text-muted);
-  margin-bottom: 4px;
+  margin-bottom: var(--pad-3xs);
 
   > span {
     color: var(--stage3d-text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
   }
 }
 .stage3d-furniture-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
+  gap: var(--pad-3xs);
 
   button {
-    padding: 5px 6px;
+    padding: var(--pad-xs) var(--pad-xs);
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: color-mix(in srgb, var(--panel-elev, #383838) 78%, transparent);
     color: var(--stage3d-text);
-    font-size: 11px;
+    font-size: var(--font-xs);
     cursor: pointer;
     text-align: center;
     white-space: nowrap;
@@ -366,21 +366,21 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-object-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
   max-height: 220px;
   overflow-y: auto;
 
   button {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     width: 100%;
-    padding: 6px 8px;
+    padding: var(--pad-xs) var(--pad-sm);
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: var(--r-md);
     background: color-mix(in srgb, var(--panel-elev, #383838) 72%, transparent);
     color: var(--stage3d-text);
-    font-size: 12px;
+    font-size: var(--font-sm);
     cursor: pointer;
     text-align: left;
 
@@ -404,14 +404,14 @@ html[data-theme='light'] .stage3d-modal-overlay,
 
 .stage3d-image-select-popup {
   .ant-select-item {
-    padding: 6px 10px;
+    padding: var(--pad-xs) var(--pad-sm);
   }
 }
 
 .stage3d-select-option {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -419,7 +419,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   width: 44px;
   height: 32px;
   flex-shrink: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   object-fit: cover;
   display: block;
   background: color-mix(in srgb, var(--bg-sunken, #1a1a1a) 82%, transparent);
@@ -428,7 +428,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-select-name {
   min-width: 0;
   color: var(--stage3d-title);
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -437,7 +437,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-swatch {
   width: 18px;
   height: 18px;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -452,7 +452,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   }
 }
 .stage3d-swatch-cam {
-  background: #fbbf24;
+  background: var(--warning);
 }
 
 .stage3d-viewport {
@@ -476,27 +476,27 @@ html[data-theme='light'] .stage3d-modal-overlay,
   z-index: 5;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   background: var(--stage3d-panel-bg-strong);
-  padding: 4px 6px;
-  border-radius: 8px;
+  padding: var(--pad-3xs) var(--pad-xs);
+  border-radius: var(--r-md);
   border: 1px solid var(--stage3d-panel-border);
 }
 
 .stage3d-toolbar-option {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 // 人偶名字标签（drei Html DOM 元素，替代 troika Text，规避 CSP 拦截 CDN 字体）
 .stage3d-actor-label {
-  padding: 1px 6px;
-  border-radius: 6px;
+  padding: 1px var(--pad-xs);
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--panel-elev, #383838) 88%, transparent);
   border: 1px solid var(--stage3d-panel-border);
   color: var(--stage3d-title);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.4;
   white-space: nowrap;
   user-select: none;
@@ -505,11 +505,11 @@ html[data-theme='light'] .stage3d-modal-overlay,
 
 // 摆姿势模式：拖拽旋转环/IK 时显示的角度浮层（drei Html）
 .stage3d-pose-anglelabel {
-  padding: 2px 7px;
-  border-radius: 6px;
+  padding: 2px var(--pad-sm);
+  border-radius: var(--r-sm);
   background: rgba(56, 189, 248, 0.92);
   color: #0b1220;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   line-height: 1.3;
   white-space: nowrap;
@@ -523,8 +523,8 @@ html[data-theme='light'] .stage3d-modal-overlay,
   right: 14px;
   bottom: 14px;
   width: min(310px, calc(100vw - 32px));
-  padding: 10px;
-  border-radius: 8px;
+  padding: var(--pad-sm);
+  border-radius: var(--r-md);
   border: 1px solid var(--stage3d-panel-border);
   background: var(--stage3d-panel-bg-strong);
   box-shadow: 0 14px 36px rgba(2, 6, 23, 0.34);
@@ -543,9 +543,9 @@ html[data-theme='light'] .stage3d-modal-overlay,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 12px;
+  gap: var(--pad-sm);
+  margin-bottom: var(--pad-sm);
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 
@@ -553,7 +553,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   width: 22px;
   height: 22px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: rgba(148, 163, 184, 0.14);
   color: #cbd5e1;
   cursor: pointer;
@@ -562,30 +562,30 @@ html[data-theme='light'] .stage3d-modal-overlay,
 
 .stage3d-pose-controller-close:hover {
   background: rgba(148, 163, 184, 0.24);
-  color: #ffffff;
+  color: var(--text-inverse);
 }
 
 .stage3d-pose-controller-axes {
   display: grid;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .stage3d-pose-controller-axis {
   display: grid;
   grid-template-columns: 16px 1fr 42px;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 28px;
 
   > span {
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 700;
   }
 
   > output {
     font-variant-numeric: tabular-nums;
     text-align: right;
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: #cbd5e1;
   }
 
@@ -597,17 +597,17 @@ html[data-theme='light'] .stage3d-modal-overlay,
 }
 
 .stage3d-pose-controller-axis.axis-x > span {
-  color: #f87171;
+  color: var(--danger);
 }
 .stage3d-pose-controller-axis.axis-y > span {
   color: #4ade80;
 }
 .stage3d-pose-controller-axis.axis-z > span {
-  color: #60a5fa;
+  color: var(--info);
 }
 
 .stage3d-pose-controller-axis.active > output {
-  color: #ffffff;
+  color: var(--text-inverse);
   font-weight: 700;
 }
 
@@ -620,19 +620,19 @@ html[data-theme='light'] .stage3d-modal-overlay,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 24px;
+  gap: var(--pad-sm);
+  padding: var(--pad-2xl);
   text-align: center;
   background: var(--stage3d-viewport-bg);
   color: var(--stage3d-text);
 }
 .stage3d-viewport-error-title {
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
-  color: #f87171;
+  color: var(--danger);
 }
 .stage3d-viewport-error-msg {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: #fca5a5;
   max-width: 80%;
 }
@@ -641,19 +641,19 @@ html[data-theme='light'] .stage3d-modal-overlay,
   max-height: 160px;
   overflow: auto;
   margin: 0;
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: var(--pad-sm) var(--pad-sm);
+  border-radius: var(--r-md);
   background: rgba(2, 6, 12, 0.6);
   border: 1px solid rgba(148, 163, 184, 0.16);
   color: var(--stage3d-text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   text-align: left;
   white-space: pre-wrap;
 }
 .stage3d-viewport-error-hint {
-  font-size: 11px;
-  color: #64748b;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
 }
 
 // 取景视角遮幅：中间保留画幅比例，四周半透明黑边
@@ -668,17 +668,17 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--pad-3xs);
+  font-size: var(--font-sm);
   color: var(--stage3d-text-muted);
 
   > span {
-    font-size: 11px;
+    font-size: var(--font-xs);
   }
 
   > .stage3d-field-hint {
     color: var(--stage3d-text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     line-height: 1.45;
   }
 }
@@ -686,7 +686,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-color-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: var(--pad-xs);
   align-items: center;
 
   input[type='color'] {
@@ -700,7 +700,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-color-chip {
   width: 20px;
   height: 20px;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   border: 2px solid transparent;
   cursor: pointer;
   &.active {
@@ -709,7 +709,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
 }
 
 .stage3d-prompt {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--stage3d-text) !important;
   background: color-mix(in srgb, var(--bg-sunken, #1a1a1a) 82%, transparent) !important;
   border-color: var(--stage3d-panel-border) !important;
@@ -719,35 +719,35 @@ html[data-theme='light'] .stage3d-modal-overlay,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
 }
 .stage3d-collapse-toggle {
   background: none;
   border: none;
   color: var(--stage3d-text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   padding: 2px 0;
 }
 
 .stage3d-joint-group {
-  margin-bottom: 6px;
+  margin-bottom: var(--pad-xs);
 }
 .stage3d-joint-group-title {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--stage3d-text-faint);
-  margin: 4px 0;
+  margin: var(--pad-3xs) 0;
 }
 .stage3d-joint-row {
   display: flex;
-  gap: 6px;
+  gap: var(--pad-xs);
   align-items: flex-start;
   margin-bottom: 2px;
 }
 .stage3d-joint-name {
   width: 48px;
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--stage3d-text-muted);
   padding-top: 2px;
 }
@@ -760,11 +760,11 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-joint-axis {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 
   > span {
     width: 10px;
-    font-size: 10px;
+    font-size: var(--font-2xs);
     color: var(--stage3d-text-faint);
   }
   .ant-slider {
@@ -781,26 +781,26 @@ html[data-theme='light'] .stage3d-modal-overlay,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   background: radial-gradient(circle at 50% 30%, rgba(56, 189, 248, 0.08), rgba(2, 6, 12, 0.4));
   color: #94a3b8;
-  padding: 8px;
+  padding: var(--pad-sm);
 }
 .canvas-node-stage3d-thumb {
   width: 100%;
   flex: 1;
   min-height: 0;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
 }
 .canvas-node-stage3d-stats {
   display: flex;
-  gap: 10px;
-  font-size: 12px;
+  gap: var(--pad-sm);
+  font-size: var(--font-sm);
 }
 .canvas-node-stage3d-hint {
-  font-size: 11px;
-  color: #64748b;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
 }
 
 // ─────────── C3 构图参考线（纯 DOM overlay，不进入离屏截图） ───────────
@@ -863,22 +863,22 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-shot-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
   max-height: 260px;
   overflow-y: auto;
 }
 .stage3d-shot-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
-  border-radius: 8px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-xs) var(--pad-sm);
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel-elev, #383838) 82%, transparent);
   border: 1px solid var(--stage3d-panel-border);
 }
 .stage3d-shot-row {
   display: flex;
-  gap: 6px;
+  gap: var(--pad-xs);
 
   .stage3d-shot-number {
     max-width: 64px;
@@ -893,7 +893,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
 // ─────────── C4 场记板 ───────────
 .stage3d-slate-row {
   display: flex;
-  gap: 6px;
+  gap: var(--pad-xs);
 
   > .stage3d-field {
     flex: 1;
@@ -926,100 +926,100 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-pose-editor-inspector {
   // 收窄右栏，给视口让出更多空间
   width: 280px;
-  padding: 12px 12px 20px;
+  padding: var(--pad-md) var(--pad-md) var(--pad-xl);
   overflow-y: auto;
 }
 
 .stage3d-pose-editor-toolbar {
   // 与原视口工具条一致：左下角浮层
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .stage3d-pose-editor-group-toggle {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--stage3d-text-muted);
-  padding: 4px 0;
+  padding: var(--pad-3xs) 0;
 }
 
 .stage3d-pose-editor-placeholder-title {
-  margin-top: 12px;
+  margin-top: var(--pad-md);
   opacity: 0.7;
 }
 
 .stage3d-pose-editor-tools {
   width: 232px;
-  padding: 12px 12px 20px;
+  padding: var(--pad-md) var(--pad-md) var(--pad-xl);
   overflow-y: auto;
 }
 
 .stage3d-pose-editor-quick-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--pad-xs);
+  margin-top: var(--pad-xs);
 }
 
 // ─────────── R2b：预设分组 / 姿势库 / 镜像 面板 ───────────
 
 .stage3d-pose-editor-preset-group {
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
 }
 
 .stage3d-pose-editor-preset-group.is-compact {
-  margin-top: 8px;
+  margin-top: var(--pad-sm);
 }
 
 .stage3d-pose-editor-preset-group-title {
-  font-size: 11px;
-  color: #64748b;
-  margin-bottom: 4px;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-bottom: var(--pad-3xs);
 }
 .stage3d-pose-editor-preset-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .stage3d-pose-editor-preset-group.is-compact .stage3d-pose-editor-preset-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 
 .stage3d-pose-editor-mirror-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
+  gap: var(--pad-3xs);
+  margin-top: var(--pad-xs);
 }
 
 .stage3d-pose-editor-save-row {
   display: flex;
-  gap: 4px;
-  margin-top: 6px;
+  gap: var(--pad-3xs);
+  margin-top: var(--pad-xs);
   align-items: center;
 }
 
 .stage3d-pose-editor-empty {
-  margin-top: 8px;
+  margin-top: var(--pad-sm);
   font-style: italic;
 }
 
 .stage3d-pose-editor-pose-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 6px;
+  gap: var(--pad-3xs);
+  margin-top: var(--pad-xs);
 }
 
 .stage3d-pose-editor-pose-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  padding: 4px 6px;
-  border-radius: 6px;
+  gap: var(--pad-xs);
+  padding: var(--pad-3xs) var(--pad-xs);
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--panel-elev, #383838) 76%, transparent);
 
   &:hover {
@@ -1028,7 +1028,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
 }
 
 .stage3d-pose-editor-pose-name {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--stage3d-text);
   flex: 1;
   min-width: 0;
@@ -1044,20 +1044,20 @@ html[data-theme='light'] .stage3d-modal-overlay,
 }
 
 .stage3d-pose-editor-inspector .stage3d-joint-group {
-  margin-bottom: 10px;
+  margin-bottom: var(--pad-sm);
 }
 
 .stage3d-pose-editor-inspector .stage3d-joint-row {
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: var(--pad-sm);
+  margin-bottom: var(--pad-sm);
 }
 
 .stage3d-pose-editor-inspector .stage3d-joint-sliders {
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .stage3d-pose-editor-inspector .stage3d-joint-axis .ant-slider {
-  margin: 6px 0;
+  margin: var(--pad-xs) 0;
 }
 
 // 锁定轴：灰掉、不出 Slider（接 JOINT_LIMITS 的 null 轴）
@@ -1065,8 +1065,8 @@ html[data-theme='light'] .stage3d-modal-overlay,
   opacity: 0.45;
   .stage3d-joint-locked {
     flex: 1;
-    font-size: 10px;
-    color: #64748b;
+    font-size: var(--font-2xs);
+    color: var(--text-muted);
     padding: 2px 0;
   }
 }
@@ -1078,7 +1078,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   justify-content: space-between;
 }
 .stage3d-pip-title {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--stage3d-text-muted);
@@ -1086,7 +1086,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
 }
 .stage3d-pip-collapse {
   border: 1px solid var(--stage3d-panel-border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--stage3d-control-bg);
   color: var(--stage3d-control-text-muted);
   width: 24px;
@@ -1102,7 +1102,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
 }
 .stage3d-pip-thumb {
   position: relative;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   overflow: hidden;
   border: 1px solid var(--stage3d-panel-border);
   background: #0b1220;
@@ -1120,11 +1120,11 @@ html[data-theme='light'] .stage3d-modal-overlay,
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   color: var(--stage3d-text-faint);
   text-align: center;
-  padding: 0 12px;
+  padding: 0 var(--pad-md);
 }
 .stage3d-pip-rec {
   position: absolute;
@@ -1132,12 +1132,12 @@ html[data-theme='light'] .stage3d-modal-overlay,
   left: 6px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: 999px;
+  gap: var(--pad-3xs);
+  padding: 2px var(--pad-sm);
+  border-radius: var(--r-pill);
   background: rgba(190, 18, 60, 0.85);
-  color: #fff;
-  font-size: 10px;
+  color: var(--text-inverse);
+  font-size: var(--font-2xs);
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1.4;
@@ -1164,7 +1164,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   bottom: 6px;
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid rgba(148, 163, 184, 0.4);
   background: rgba(15, 23, 42, 0.62);
   color: #e2e8f0;
@@ -1189,9 +1189,9 @@ html[data-theme='light'] .stage3d-modal-overlay,
   width: min(60vw, 880px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 14px;
+  gap: var(--pad-sm);
+  padding: var(--pad-md);
+  border-radius: var(--r-lg);
   border: 1px solid var(--stage3d-panel-border);
   background: var(--stage3d-panel-bg-strong);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
@@ -1201,40 +1201,40 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-motion-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 .stage3d-motion-summary {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 .stage3d-motion-summary-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   flex-wrap: wrap;
 }
 .stage3d-motion-summary-desc {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--stage3d-text-muted);
 }
 .stage3d-motion-progress {
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--stage3d-control-border) 55%, transparent);
   overflow: hidden;
 }
 .stage3d-motion-progress-bar {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--stage3d-control-primary);
-  transition: width 120ms linear;
+  transition: width var(--motion-fast) linear;
 }
 .stage3d-motion-duration {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: var(--pad-xs);
+  font-size: var(--font-xs);
   color: var(--stage3d-text-muted);
 }
 .stage3d-motion-duration > span:first-child {
@@ -1244,7 +1244,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
 // 运镜库弹层
 .stage3d-motion-library-popover {
   .ant-popover-inner {
-    padding: 10px;
+    padding: var(--pad-sm);
   }
 }
 .stage3d-motion-library {
@@ -1253,10 +1253,10 @@ html[data-theme='light'] .stage3d-modal-overlay,
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 .stage3d-motion-library-title {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--stage3d-text-faint);
@@ -1268,20 +1268,20 @@ html[data-theme='light'] .stage3d-modal-overlay,
   gap: 2px;
 }
 .stage3d-motion-library-group-title {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--stage3d-text-faint);
-  padding: 2px 4px;
+  padding: 2px var(--pad-3xs);
 }
 .stage3d-motion-library-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: transparent;
   color: var(--stage3d-control-text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   text-align: left;
 
@@ -1296,7 +1296,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   }
 }
 .stage3d-motion-library-duration {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--stage3d-text-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -1305,23 +1305,23 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-motion-keyframe-editor {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm);
   border: 1px solid var(--stage3d-panel-border);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--stage3d-panel-hover) 48%, transparent);
 }
 .stage3d-motion-kf-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--stage3d-text-muted);
 }
 .stage3d-motion-kf-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
 
   .ant-input-number {
     width: 64px;
@@ -1330,19 +1330,19 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-motion-kf-index {
   width: 18px;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--stage3d-text-faint);
   font-variant-numeric: tabular-nums;
 }
 .stage3d-motion-kf-unit {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--stage3d-text-faint);
 }
 .stage3d-motion-kf-duration {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: var(--pad-xs);
+  font-size: var(--font-xs);
   color: var(--stage3d-text-muted);
 
   > span:first-child {
@@ -1353,13 +1353,13 @@ html[data-theme='light'] .stage3d-modal-overlay,
   }
 }
 .stage3d-motion-kf-tip {
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   color: var(--stage3d-text-faint);
 }
 .stage3d-motion-kf-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 // ─────────── 运镜视频录制浮层 ───────────
@@ -1372,9 +1372,9 @@ html[data-theme='light'] .stage3d-modal-overlay,
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-radius: 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-lg);
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, #0f172a 78%, transparent);
   border: 1px solid rgba(148, 163, 184, 0.35);
   backdrop-filter: blur(4px);
@@ -1383,9 +1383,9 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-record-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: #fecdd3;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -1399,32 +1399,32 @@ html[data-theme='light'] .stage3d-modal-overlay,
 .stage3d-record-progress {
   width: 220px;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: rgba(148, 163, 184, 0.3);
   overflow: hidden;
 }
 .stage3d-record-progress-bar {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: #f43f5e;
-  transition: width 120ms linear;
+  transition: width var(--motion-fast) linear;
 }
 
 // ─────────── 相机属性面板：向量坐标行 / 只读信息 ───────────
 .stage3d-vec3-row {
   display: flex;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 .stage3d-vec3-item {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--pad-3xs);
 
   > em {
     font-style: normal;
-    font-size: 10px;
+    font-size: var(--font-2xs);
     color: var(--stage3d-text-faint);
   }
   .ant-input-number {
@@ -1432,7 +1432,7 @@ html[data-theme='light'] .stage3d-modal-overlay,
   }
 }
 .stage3d-vec3-readonly {
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   color: var(--stage3d-text-faint);
   font-variant-numeric: tabular-nums;
@@ -1445,10 +1445,10 @@ html[data-theme='light'] .stage3d-modal-overlay,
 
 // ─────────── 镜头卡片：运镜标记 ───────────
 .stage3d-shot-motion-tag {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--stage3d-control-primary);
   display: flex;
-  gap: 4px;
+  gap: var(--pad-3xs);
   align-items: center;
 
   span {

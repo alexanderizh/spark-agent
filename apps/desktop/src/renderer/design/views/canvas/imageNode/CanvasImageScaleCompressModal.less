@@ -19,22 +19,22 @@
 .canvas-image-sc-modal-title {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .image-sc-body {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 16px 20px 20px;
+  gap: var(--pad-xl);
+  padding: var(--pad-lg) var(--pad-xl) var(--pad-xl);
 }
 
 .image-sc-source {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
-  padding-bottom: 12px;
+  padding-bottom: var(--pad-md);
   border-bottom: 1px solid var(--border);
 
   .image-sc-source-name {
@@ -62,7 +62,7 @@
 .image-sc-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
 
   .image-sc-field-head {
     display: flex;
@@ -83,12 +83,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--pad-md);
 
     .image-sc-hint {
       flex: 1;
       text-align: right;
-      font-size: 12px;
+      font-size: var(--font-sm);
       opacity: 0.6;
       white-space: nowrap;
       overflow: hidden;
@@ -103,7 +103,7 @@
   gap: 2px;
 
   .image-sc-progress-stage {
-    font-size: 12px;
+    font-size: var(--font-sm);
     opacity: 0.55;
     overflow: hidden;
     text-overflow: ellipsis;

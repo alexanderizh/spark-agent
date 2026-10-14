@@ -3,10 +3,10 @@
   min-height: 148px;
   align-items: stretch;
   justify-content: center;
-  gap: 16px;
-  padding: 18px;
+  gap: var(--pad-lg);
+  padding: var(--pad-xl);
   border: 1px dashed rgb(255 255 255 / 16%);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: rgb(255 255 255 / 2%);
 }
 
@@ -16,7 +16,7 @@
   flex: 1;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: var(--pad-lg);
   color: var(--spark-text-secondary, rgb(255 255 255 / 56%));
 }
 
@@ -29,7 +29,7 @@
   width: 112px;
   height: 112px;
   flex: 0 0 auto;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   object-fit: cover;
   background: rgb(0 0 0 / 24%);
 }
@@ -39,7 +39,7 @@
   width: 58px;
   height: 58px;
   place-items: center;
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: rgb(124 92 255 / 12%);
   color: rgb(161 139 255);
 }
@@ -48,26 +48,26 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 
 .canvas-operation-media-input-meta strong {
   overflow: hidden;
   color: var(--spark-text-primary, rgb(255 255 255 / 88%));
-  font-size: 14px;
+  font-size: var(--font-md);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .canvas-operation-media-input-meta span {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .canvas-operation-media-input-actions {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-wrap: wrap;
 }
 

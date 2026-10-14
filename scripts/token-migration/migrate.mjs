@@ -50,8 +50,14 @@ const PROP_RULES = [
   },
 ]
 
+/** 判断文件是否属于画布域（scope: non-canvas 条目跳过、canvas 条目仅此处生效） */
+function isInCanvasScope(file) {
+  return file.includes('/views/canvas/')
+}
+
 /** 对单文件执行替换，返回 {replaced, reviewCounts, byToken} */
-function migrateSource(src) {
+function migrateSource(src, file) {
+  const inCanvas = isInCanvasScope(file)
   const stats = { replaced: 0, review: 0, byToken: new Map() }
   const lines = src.split('\n')
   const out = lines.map((line) => {
@@ -91,28 +97,54 @@ function migrateSource(src) {
           return `var(${entry.token})`
         })
       } else {
-        const entry = table[newValue.trim()]
-        if (entry) {
-          stats.replaced += 1
-          stats.byToken.set(entry.token, (stats.byToken.get(entry.token) ?? 0) + 1)
-          newValue = `var(${entry.token})`
+        // 整值精确匹配；`!important` 后缀不参与查表但保留原位
+        const vm = newValue.match(/^\s*([^!]+?)\s*( !important)?\s*$/)
+        if (vm) {
+          const entry = table[vm[1].trim()]
+          if (entry) {
+            stats.replaced += 1
+            stats.byToken.set(entry.token, (stats.byToken.get(entry.token) ?? 0) + 1)
+            newValue = `var(${entry.token})${vm[2] ?? ''}`
+          }
         }
       }
       break
     }
 
-    // 3) 颜色 REVIEW 条目仅计数（不自动替换，人工逐条判定）
-    if (map.color && /(^|[-a-z])(color|background|border|stroke|fill|outline)$/.test(prop)) {
-      for (const entry of Object.values(map.color)) {
-        if (entry.token === 'REVIEW') continue
-      }
-      const line2 = `${indent}${prop}: ${newValue};${tail}`
+    // 3) 颜色替换（Phase 3 补齐）：非 REVIEW 条目按 scope 生效；REVIEW 仅计数留人审
+    // 「var(--token, #hex)」带 fallback 的行本身已是 token 优先形态，跳过（fallback 语义不可劣化）
+    if (
+      map.color &&
+      !/var\(--[a-z0-9-]+,\s*#/.test(newValue) &&
+      /(^|[-a-z])(color|background|background-color|border|border-top|border-right|border-bottom|border-left|stroke|fill|outline|box-shadow|text-shadow|caret-color)$/.test(
+        prop,
+      )
+    ) {
+      let reviewed = false
       for (const [hex, entry] of Object.entries(map.color)) {
-        if (entry.token !== 'REVIEW') continue
         const bare = hex.split(';')[0]
-        if (newValue.toLowerCase().includes(bare)) stats.review += 1
+        // `;bg` / `;fg` 上下文后缀：bare hex 两种上下文都可命中时消歧
+        const wantBg = hex.includes(';bg') ? /^(background|box-shadow)/.test(prop) : true
+        const wantFg = hex.includes(';fg') ? /^(color|caret-color)/.test(prop) : true
+        if (!wantBg || !wantFg) continue
+        const scopeOk =
+          entry.scope === 'global' ||
+          (entry.scope === 'non-canvas' && !inCanvas) ||
+          (entry.scope === 'canvas' && inCanvas)
+        const re = new RegExp(`(?<![\\w-])${bare.replace('#', '#')}(?![\\w])`, 'gi')
+        if (!re.test(newValue)) continue
+        if (entry.token === 'REVIEW' || !scopeOk) {
+          reviewed = true
+          continue
+        }
+        newValue = newValue.replace(re, () => {
+          stats.replaced += 1
+          stats.byToken.set(entry.token, (stats.byToken.get(entry.token) ?? 0) + 1)
+          return `var(${entry.token})`
+        })
       }
-      return line2
+      if (reviewed) stats.review += 1
+      return `${indent}${prop}: ${newValue};${tail}`
     }
 
     if (newValue !== value) {
@@ -129,7 +161,7 @@ const allByToken = new Map()
 for (const target of targets) {
   for (const file of collectFiles(target)) {
     const src = readFileSync(file, 'utf8')
-    const { source, stats } = migrateSource(src)
+    const { source, stats } = migrateSource(src, file)
     if (stats.replaced === 0 && stats.review === 0) continue
     console.log(
       `${write ? '✏️ ' : '👀'} ${file}: 替换 ${stats.replaced} 处${

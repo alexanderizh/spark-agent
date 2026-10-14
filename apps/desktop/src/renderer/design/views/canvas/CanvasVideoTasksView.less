@@ -16,8 +16,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 18px 24px 16px;
+  gap: var(--pad-xl);
+  padding: var(--pad-xl) var(--pad-2xl) var(--pad-lg);
   border-bottom: 1px solid var(--color-border-2);
 }
 
@@ -25,21 +25,21 @@
   min-width: 0;
 
   h2 {
-    margin: 2px 0 4px;
-    font-size: 22px;
+    margin: 2px 0 var(--pad-3xs);
+    font-size: var(--font-xl);
     font-weight: 650;
     letter-spacing: -0.02em;
   }
   p {
     margin: 0;
     color: var(--color-text-3);
-    font-size: 13px;
+    font-size: var(--font-base);
   }
 }
 
 .canvas-video-tasks-kicker {
   color: var(--primary);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   letter-spacing: 0.16em;
 }
@@ -49,19 +49,19 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--pad-lg);
   overflow: auto;
-  padding: 0px 24px 24px;
+  padding: 0px var(--pad-2xl) var(--pad-2xl);
 }
 
 .canvas-video-tasks-toolbar {
   display: flex;
   align-items: flex-end;
-  gap: 12px;
+  gap: var(--pad-md);
   flex-wrap: wrap;
   padding: 0;
   border: 1px solid var(--color-border-2);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--color-bg-2) 90%, transparent);
 }
 
@@ -69,11 +69,11 @@
   display: flex;
   min-width: 180px;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--pad-xs);
 
   label {
     color: var(--color-text-3);
-    font-size: 11px;
+    font-size: var(--font-xs);
     letter-spacing: 0.04em;
   }
 }
@@ -87,28 +87,28 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
   color: var(--color-text-3);
-  font-size: 12px;
+  font-size: var(--font-sm);
 
   > div {
     display: flex;
     align-items: baseline;
-    gap: 10px;
+    gap: var(--pad-sm);
   }
   strong {
     color: var(--color-text-1);
-    font-size: 14px;
+    font-size: var(--font-md);
   }
 }
 
 .canvas-video-tasks-error {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 18px;
+  gap: var(--pad-md);
+  padding: var(--pad-xl);
   border: 1px solid color-mix(in srgb, #f04444 40%, var(--color-border-2));
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   color: #ff8d8d;
   background: color-mix(in srgb, #f04444 8%, var(--color-bg-2));
 
@@ -116,13 +116,13 @@
     color: #ffb2b2;
   }
   p {
-    margin: 6px 0;
+    margin: var(--pad-xs) 0;
     color: var(--color-text-2);
     line-height: 1.5;
   }
   span {
     color: var(--color-text-3);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 }
 
@@ -132,7 +132,7 @@
   align-items: center;
   justify-content: center;
   border: 1px dashed var(--color-border-2);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
 }
 
 .video-task-id {
@@ -152,7 +152,7 @@
 .video-task-detail-result {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   border: 0;
   color: var(--primary);
   background: transparent;
@@ -174,7 +174,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: var(--pad-md);
   padding-top: 2px;
 
   span {
@@ -187,40 +187,40 @@
 .video-task-detail {
   position: relative;
   min-height: 160px;
-  padding: 4px;
+  padding: var(--pad-3xs);
 }
 .video-task-detail-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 14px;
-  padding-bottom: 18px;
+  gap: var(--pad-lg);
+  padding-bottom: var(--pad-xl);
   border-bottom: 1px solid var(--color-border-2);
 }
 .video-task-detail-head > div {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 .video-task-detail-head strong {
   overflow: hidden;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
+  font-size: var(--font-base);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .video-task-detail-label {
   color: var(--primary);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   letter-spacing: 0.14em;
 }
 .video-task-detail dl {
   display: grid;
   grid-template-columns: 130px minmax(0, 1fr);
-  gap: 12px 18px;
-  margin: 18px 0;
-  font-size: 13px;
+  gap: var(--pad-md) var(--pad-xl);
+  margin: var(--pad-xl) 0;
+  font-size: var(--font-base);
 }
 .video-task-detail dt {
   color: var(--color-text-3);
@@ -232,15 +232,15 @@
   overflow-wrap: anywhere;
 }
 .video-task-detail-result {
-  padding: 10px 0;
+  padding: var(--pad-sm) 0;
   font-weight: 600;
 }
 
 @media (max-width: 760px) {
   .canvas-video-tasks-header,
   .canvas-video-tasks-main {
-    padding-left: 14px;
-    padding-right: 14px;
+    padding-left: var(--pad-lg);
+    padding-right: var(--pad-lg);
   }
   .video-task-search {
     width: 100%;

@@ -581,7 +581,7 @@
 .git-goal-summary {
   margin-top: var(--pad-xs);
   padding: var(--pad-xs) var(--pad-sm);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--surface-soft, rgba(120, 120, 130, 0.1));
   color: var(--text-muted);
   font-size: var(--font-xs);
@@ -602,7 +602,7 @@
   gap: var(--pad-3xs);
   padding: var(--pad-3xs) var(--pad-sm);
   border: 1px solid var(--border-subtle, rgba(120, 120, 130, 0.25));
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--text);
   font-size: var(--font-xs);
@@ -909,7 +909,7 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   font-size: var(--font-2xs);
   font-weight: 700;
   line-height: 1;
@@ -1965,17 +1965,17 @@ body.git-review-tree-resizing {
 }
 
 .git-review-file-badge.tone-blue {
-  background: color-mix(in srgb, #3b82f6 16%, var(--panel));
-  color: #2563eb;
+  background: color-mix(in srgb, var(--primary) 16%, var(--panel));
+  color: var(--primary-hover);
 }
 
 .git-review-file-badge.tone-amber {
-  background: color-mix(in srgb, #f59e0b 18%, var(--panel));
-  color: #b45309;
+  background: color-mix(in srgb, var(--warning) 18%, var(--panel));
+  color: var(--warning);
 }
 
 .git-review-file-badge.tone-green {
-  background: color-mix(in srgb, #22c55e 16%, var(--panel));
+  background: color-mix(in srgb, var(--success) 16%, var(--panel));
   color: #15803d;
 }
 
@@ -2565,7 +2565,7 @@ body.git-review-tree-resizing {
   justify-content: center;
   gap: var(--pad-sm);
   padding: var(--pad-2xl) 30px;
-  border-radius: 20px;
+  border-radius: var(--r-xl);
   background: color-mix(in srgb, var(--panel) 38%, transparent);
   color: var(--text);
   box-shadow: 0 18px 50px color-mix(in srgb, var(--primary) 9%, transparent);
@@ -2605,7 +2605,7 @@ body.git-review-tree-resizing {
   align-items: center;
   gap: var(--pad-sm);
   padding: var(--pad-2xl) 30px;
-  border-radius: 20px;
+  border-radius: var(--r-xl);
   background: color-mix(in srgb, var(--panel) 42%, transparent);
   color: var(--text);
   box-shadow: 0 18px 50px color-mix(in srgb, #b06dff 14%, transparent);
@@ -2643,7 +2643,7 @@ body.git-review-tree-resizing {
   justify-content: center;
   width: 64px;
   height: 64px;
-  border-radius: 20px;
+  border-radius: var(--r-xl);
   background: color-mix(in srgb, var(--primary) 12%, var(--panel));
   color: color-mix(in srgb, var(--primary) 76%, var(--text));
   box-shadow: 0 12px 34px color-mix(in srgb, var(--primary) 13%, transparent);
@@ -3110,7 +3110,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   .composer-actions-trigger {
     width: 28px;
     height: 28px;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -3464,7 +3464,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-select-icon.is-team-badge {
   width: 20px;
   height: 20px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 14%, transparent);
 }
@@ -3514,7 +3514,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 14%, transparent);
   flex-shrink: 0;
@@ -4070,7 +4070,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   gap: var(--pad-3xs);
   font-size: var(--font-base);
   padding: 2px var(--pad-sm);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   color: var(--text-secondary, #888);
   user-select: none;
@@ -4114,7 +4114,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   gap: var(--pad-3xs);
   font-size: var(--font-base);
   padding: 0 var(--pad-xs);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 0;
   background: transparent;
   justify-content: center;
@@ -4170,7 +4170,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
     height: 22px;
     padding: 0 var(--pad-sm);
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--r-md);
     font-size: var(--font-sm);
     font-weight: 500;
     line-height: 1;
@@ -4293,7 +4293,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   justify-content: center;
   width: 38px;
   height: 38px;
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   padding: 2px;
   background: color-mix(in srgb, var(--primary) 12%, var(--panel));
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
@@ -4302,21 +4302,21 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   .spark-avatar-fallback {
     width: 100%;
     height: 100%;
-    border-radius: 12px;
+    border-radius: var(--r-lg);
     object-fit: cover;
   }
 
   &.host {
     width: 58px;
     height: 58px;
-    border-radius: 18px;
+    border-radius: var(--r-xl);
     box-shadow:
       0 18px 52px color-mix(in srgb, var(--primary) 20%, transparent),
       0 0 0 8px color-mix(in srgb, var(--primary) 8%, transparent);
 
     img,
     .spark-avatar-fallback {
-      border-radius: 16px;
+      border-radius: var(--r-xl);
     }
   }
 
@@ -4371,7 +4371,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   color: var(--primary);
   border: 1px dashed color-mix(in srgb, var(--primary) 34%, var(--border));
   background: color-mix(in srgb, var(--primary) 8%, var(--panel));
@@ -4852,7 +4852,7 @@ body.side-chat-resizing {
   padding: var(--pad-3xs) var(--pad-sm);
   margin-left: -8px; // 抵消自身 padding，与原标题左边缘(18px)对齐
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--text);
   font-size: var(--font-md);
@@ -5442,7 +5442,7 @@ body.side-chat-resizing {
   gap: var(--pad-xs);
   padding: 0 var(--pad-xs) 0 var(--pad-sm);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: transparent;
   color: var(--text-muted);
   font-size: var(--font-sm);
@@ -5475,7 +5475,7 @@ body.side-chat-resizing {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: var(--text-muted);
 }
 
@@ -5670,7 +5670,7 @@ body.side-chat-resizing {
   gap: var(--pad-lg);
   padding: 0 var(--pad-xl);
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--text) 5%, transparent);
   color: var(--text);
   font-size: var(--font-md);
@@ -6043,7 +6043,7 @@ body.side-chat-resizing {
   border: 1.5px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--panel-elev);
-  color: #fff;
+  color: var(--text-inverse);
   cursor: pointer;
   user-select: none;
   transition:

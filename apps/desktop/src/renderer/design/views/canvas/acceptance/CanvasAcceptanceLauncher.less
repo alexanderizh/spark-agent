@@ -8,26 +8,26 @@
 .canvas-acceptance-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 18px;
+  gap: var(--pad-md);
+  margin-top: var(--pad-xl);
 }
 
 .canvas-acceptance-section-title {
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
 .canvas-acceptance-stage-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 20px;
+  gap: var(--pad-sm) var(--pad-xl);
 }
 
 .canvas-acceptance-runtime-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--pad-md);
 
   > .ant-select,
   > label .ant-select {
@@ -37,9 +37,9 @@
   > label {
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: var(--pad-sm);
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 }
 
@@ -50,13 +50,13 @@
 .canvas-acceptance-verification-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
+  gap: var(--pad-xl);
 }
 
 .canvas-acceptance-matrix-section {
-  padding: 14px;
+  padding: var(--pad-lg);
   border: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--primary) 5%, transparent);
 }
 

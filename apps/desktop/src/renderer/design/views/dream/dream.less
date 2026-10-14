@@ -37,7 +37,7 @@
 /* 总开关开启后的小徽标：弱化主色，不与危险项混淆 */
 .dream_set_badge {
   padding: 0 var(--pad-xs);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   color: var(--primary);
   font-size: var(--font-xs);
@@ -258,7 +258,7 @@
   flex-shrink: 0;
   padding: 2px var(--pad-sm);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--primary);
   font-size: var(--font-sm);
@@ -313,7 +313,7 @@
   padding: var(--pad-sm) var(--pad-sm) var(--pad-sm) var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
   border-left-width: 3px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--text) 2%, transparent);
 
   &.is-ok {
@@ -405,7 +405,7 @@
     max-height: 200px;
     margin: var(--pad-xs) 0 0;
     padding: var(--pad-sm);
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: color-mix(in srgb, var(--text) 5%, transparent);
     color: var(--text);
     font-size: var(--font-xs);

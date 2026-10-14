@@ -111,7 +111,7 @@
   gap: var(--pad-lg);
   padding: var(--pad-lg);
   border: 1px solid var(--plugin-line);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--plugin-panel);
   transition:
     border-color 0.15s ease,
@@ -135,7 +135,7 @@
   overflow: hidden;
   color: color-mix(in srgb, var(--primary) 72%, white);
   border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
 }
 .plugin-card-icon.market {
@@ -249,7 +249,7 @@
   height: 20px;
   padding: 0 var(--pad-sm);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: #a9b2c2;
   background: rgba(255, 255, 255, 0.035);
   font-weight: 600;
@@ -271,7 +271,7 @@
   min-height: 20px;
   padding: 0 var(--pad-sm);
   border: 1px solid rgba(143, 181, 232, 0.14);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: #9baeca;
   background: rgba(143, 181, 232, 0.055);
   white-space: nowrap;
@@ -288,7 +288,7 @@
   align-items: center;
   padding: 0 var(--pad-sm);
   border: 1px solid var(--plugin-line);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: #aeb7c6;
   background: rgba(255, 255, 255, 0.025);
 }
@@ -364,7 +364,7 @@
   padding: var(--pad-3xs) var(--pad-sm);
   color: color-mix(in srgb, var(--primary) 76%, white);
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
   cursor: pointer;
   font-size: var(--font-2xs);
@@ -430,7 +430,7 @@
   justify-content: center;
   gap: var(--pad-xs);
   border: 1px dashed rgba(255, 255, 255, 0.15);
-  border-radius: 13px;
+  border-radius: var(--r-lg);
   background: rgba(255, 255, 255, 0.025);
   text-align: center;
 }
@@ -555,7 +555,7 @@
   margin-top: var(--pad-md);
   padding: var(--pad-sm) var(--pad-sm);
   color: #9a6518;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: rgba(245, 176, 65, 0.12);
   font-size: var(--font-sm);
 }
@@ -648,7 +648,7 @@
   gap: var(--pad-3xs);
   margin: 0 0 var(--pad-lg);
   padding: var(--pad-3xs);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--bg-elevated);
 }
 .plugin-runtime-mode-switch button {
@@ -657,7 +657,7 @@
   padding: var(--pad-sm) var(--pad-sm);
   color: var(--text-tertiary);
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   cursor: pointer;
   font-size: var(--font-sm);

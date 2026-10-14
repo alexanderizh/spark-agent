@@ -13,8 +13,8 @@
   height: var(--window-titlebar-height);
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  padding: 14px 28px;
+  gap: var(--pad-xl);
+  padding: var(--pad-lg) 28px;
   border-bottom: 1px solid var(--divider, rgba(255, 255, 255, 0.1));
 }
 
@@ -33,7 +33,7 @@
 }
 
 .canvas-prompt-library-title-wrap {
-  gap: 10px;
+  gap: var(--pad-sm);
   min-width: 0;
   color: var(--primary, #8b7cff);
 }
@@ -42,13 +42,13 @@
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
-  gap: 3px;
+  gap: var(--pad-3xs);
 }
 
 .canvas-prompt-library-title-wrap h2 {
   margin: 0;
   color: var(--text-strong, #f5f7fb);
-  font-size: 17px;
+  font-size: var(--font-lg);
   font-weight: 720;
   letter-spacing: -0.02em;
 }
@@ -57,26 +57,26 @@
   overflow: hidden;
   max-width: 52vw;
   color: var(--text-muted, #9298a6);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .canvas-prompt-library-header-actions {
   flex-shrink: 0;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .canvas-prompt-library-shortcut {
   color: var(--text-faint, #717887);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .canvas-prompt-library-content {
   width: min(1320px, 100%);
   min-height: 0;
   margin: 0 auto;
-  padding: 22px 28px 36px;
+  padding: 22px 28px var(--pad-3xl);
   overflow: auto;
 }
 
@@ -85,15 +85,15 @@
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: var(--pad-md);
+  margin-bottom: var(--pad-xl);
 }
 
 .canvas-prompt-library-toolbar-tools {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .canvas-prompt-library-search {
@@ -105,7 +105,7 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -118,15 +118,15 @@
   display: inline-flex;
   height: 24px;
   align-items: center;
-  gap: 5px;
-  padding: 0 9px;
+  gap: var(--pad-xs);
+  padding: 0 var(--pad-sm);
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted, #9298a6);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
   white-space: nowrap;
 }
 
@@ -143,7 +143,7 @@
 }
 
 .canvas-prompt-library-categories > button.manage {
-  margin-left: 4px;
+  margin-left: var(--pad-3xs);
   border-left-color: var(--divider, #303541);
   border-radius: 0 7px 7px 0;
   color: var(--text-faint, #717887);
@@ -151,32 +151,32 @@
 
 .canvas-prompt-library-categories small {
   min-width: 16px;
-  padding: 1px 4px;
-  border-radius: 5px;
+  padding: 1px var(--pad-3xs);
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, currentColor 12%, transparent);
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .canvas-prompt-library-source-filter {
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .canvas-prompt-library-source-filter > button {
   display: inline-flex;
   height: 24px;
   align-items: center;
-  gap: 5px;
-  padding: 0 9px;
+  gap: var(--pad-xs);
+  padding: 0 var(--pad-sm);
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted, #9298a6);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
   white-space: nowrap;
 }
 
@@ -194,16 +194,16 @@
 
 .canvas-prompt-library-source-filter small {
   min-width: 16px;
-  padding: 1px 4px;
-  border-radius: 5px;
+  padding: 1px var(--pad-3xs);
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, currentColor 12%, transparent);
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .canvas-prompt-library-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .canvas-prompt-library-card {
@@ -307,12 +307,12 @@
   height: 100%;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   color: rgba(226, 230, 238, 0.74);
 }
 
 .canvas-prompt-library-card-cover-fallback span {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
   text-shadow: 0 1px 10px rgba(0, 0, 0, 0.32);
 }
@@ -323,7 +323,7 @@
   right: 10px;
   bottom: 9px;
   color: rgba(255, 255, 255, 0.76);
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .canvas-prompt-library-card-body {
@@ -331,11 +331,11 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  padding: 8px;
+  padding: var(--pad-sm);
 }
 
 .canvas-prompt-library-card-title-row {
-  gap: 8px;
+  gap: var(--pad-sm);
   justify-content: space-between;
 }
 
@@ -344,7 +344,7 @@
   margin: 0;
   overflow: hidden;
   color: var(--text-strong, #f5f7fb);
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -357,7 +357,7 @@
   color: var(--primary, #8b7cff);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 650;
   white-space: nowrap;
 }
@@ -378,20 +378,20 @@
 .canvas-prompt-library-card-body > p {
   display: -webkit-box;
   min-height: 46px;
-  margin: 6px 0 4px;
+  margin: var(--pad-xs) 0 var(--pad-3xs);
   overflow: hidden;
   color: var(--text-muted, #9298a6);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.55;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
 
 .canvas-prompt-library-card-meta {
-  gap: 7px;
+  gap: var(--pad-sm);
   color: var(--text-faint, #717887);
-  font-size: 10px;
-  margin-bottom: 4px;
+  font-size: var(--font-2xs);
+  margin-bottom: var(--pad-3xs);
 }
 
 .canvas-prompt-library-card-meta .ant-tag {
@@ -399,14 +399,14 @@
   border: 0;
   background: color-mix(in srgb, var(--primary, #8b7cff) 12%, transparent);
   color: var(--primary, #8b7cff);
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .canvas-prompt-library-card-actions {
   justify-content: flex-end;
-  gap: 12px;
+  gap: var(--pad-md);
   margin-top: 0;
-  padding-top: 12px;
+  padding-top: var(--pad-md);
   border-top: 1px solid var(--divider, rgba(255, 255, 255, 0.1));
 }
 
@@ -428,7 +428,7 @@
 }
 
 .canvas-prompt-editor-modal {
-  padding-top: 4px;
+  padding-top: var(--pad-3xs);
 }
 
 .canvas-prompt-editor-grid {
@@ -442,15 +442,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 7px;
+  margin-bottom: var(--pad-sm);
   color: var(--text-muted, #9298a6);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 650;
 }
 
 .canvas-prompt-editor-field {
   display: block;
-  margin-bottom: 14px;
+  margin-bottom: var(--pad-lg);
 }
 
 .canvas-prompt-editor-field .ant-input,
@@ -467,7 +467,7 @@
   padding: 0;
   overflow: hidden;
   border: 1px dashed color-mix(in srgb, var(--primary, #8b7cff) 42%, var(--divider, #303541));
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--primary, #8b7cff) 6%, var(--bg-sunken, #101216));
   color: var(--text-muted, #9298a6);
   cursor: pointer;
@@ -488,9 +488,9 @@
   height: 100%;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   flex-direction: column;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .canvas-prompt-cover-actions {
@@ -500,25 +500,25 @@
   left: 8px;
   display: flex;
   justify-content: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .canvas-prompt-cover-actions span {
-  padding: 5px 8px;
-  border-radius: 5px;
+  padding: var(--pad-xs) var(--pad-sm);
+  border-radius: var(--r-sm);
   background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  color: var(--text-inverse);
   cursor: pointer;
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .canvas-prompt-cover-generator {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   width: 100%;
-  margin-top: 8px;
+  margin-top: var(--pad-sm);
 }
 
 .canvas-prompt-cover-generator-model {
@@ -538,14 +538,14 @@
   color: var(--primary, #8b7cff);
   cursor: pointer;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
 }
 
 .canvas-prompt-inline-category {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
   margin-top: 2px;
 }
@@ -554,25 +554,25 @@
   min-width: 0;
   flex: 1;
   height: 32px;
-  border-radius: 7px;
+  border-radius: var(--r-md);
 }
 
 .canvas-prompt-inline-category .ant-btn {
   flex: 0 0 auto;
   height: 32px;
-  border-radius: 7px;
+  border-radius: var(--r-md);
 }
 
 .canvas-prompt-text-label {
-  margin-top: 16px;
+  margin-top: var(--pad-lg);
 }
 
 .canvas-prompt-editor-source,
 .canvas-prompt-editor-hint,
 .canvas-prompt-category-manager > p {
-  margin-top: 7px;
+  margin-top: var(--pad-sm);
   color: var(--text-faint, #717887);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.5;
 }
 
@@ -580,7 +580,7 @@
   display: grid;
   max-height: 420px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--pad-sm);
   overflow: auto;
 }
 
@@ -588,10 +588,10 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
-  padding: 7px;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm);
   border: 1px solid var(--divider, #303541);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--panel, #171a21);
   color: var(--text-muted, #9298a6);
   cursor: pointer;
@@ -606,13 +606,13 @@
 .canvas-prompt-source-card img {
   width: 100%;
   aspect-ratio: 1.35;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   object-fit: cover;
 }
 
 .canvas-prompt-source-card span {
   overflow: hidden;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -620,16 +620,16 @@
 .canvas-prompt-text-source-list {
   display: grid;
   max-height: 430px;
-  gap: 8px;
+  gap: var(--pad-sm);
   overflow: auto;
 }
 
 .canvas-prompt-text-source-list button {
   display: grid;
-  gap: 4px;
-  padding: 10px 11px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-sm) var(--pad-md);
   border: 1px solid var(--divider, #303541);
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: var(--panel, #171a21);
   color: var(--text-strong, #f5f7fb);
   cursor: pointer;
@@ -645,7 +645,7 @@
   display: -webkit-box;
   overflow: hidden;
   color: var(--text-muted, #9298a6);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.45;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -653,11 +653,11 @@
 
 .canvas-prompt-category-manager {
   display: grid;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .canvas-prompt-category-create {
-  gap: 7px;
+  gap: var(--pad-sm);
 }
 
 .canvas-prompt-category-create .ant-input {
@@ -668,17 +668,17 @@
 .canvas-prompt-category-list {
   display: grid;
   max-height: 300px;
-  gap: 6px;
+  gap: var(--pad-xs);
   overflow: auto;
 }
 
 .canvas-prompt-category-row {
   min-height: 36px;
   justify-content: space-between;
-  gap: 8px;
-  padding: 0 9px;
+  gap: var(--pad-sm);
+  padding: 0 var(--pad-sm);
   border: 1px solid var(--divider, #303541);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
 }
 
 .canvas-prompt-category-row > span {
@@ -686,17 +686,17 @@
   min-width: 0;
   flex-direction: column;
   color: var(--text-strong, #f5f7fb);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .canvas-prompt-category-row > span small {
   color: var(--text-faint, #717887);
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .canvas-prompt-category-row > div {
   flex-shrink: 0;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .canvas-prompt-category-row button {
@@ -706,7 +706,7 @@
   color: var(--primary, #8b7cff);
   cursor: pointer;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .canvas-prompt-category-row button.danger {
@@ -723,7 +723,7 @@
 
 .canvas-prompt-quick-use-modal .ant-modal-header {
   margin: 0;
-  padding: 0px 18px 8px 0;
+  padding: 0px var(--pad-xl) var(--pad-sm) 0;
   margin-top: -4px;
 }
 
@@ -733,39 +733,39 @@
 
 .canvas-prompt-quick-use-title {
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .canvas-prompt-quick-use-title > div {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex-direction: column;
 }
 
 .canvas-prompt-quick-use-title strong {
   color: var(--text-strong, #f5f7fb);
-  font-size: 15px;
+  font-size: var(--font-lg);
 }
 
 .canvas-prompt-quick-use-title span {
   color: var(--text-muted, #9298a6);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 400;
 }
 
 .canvas-prompt-quick-use-title kbd {
-  padding: 4px 7px;
+  padding: var(--pad-3xs) var(--pad-sm);
   border: 1px solid var(--divider, #303541);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   color: var(--text-faint, #717887);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 500;
 }
 
 .canvas-prompt-quick-use-panel {
   max-height: min(680px, 72vh);
-  padding: 14px 12px 18px;
+  padding: var(--pad-lg) var(--pad-md) var(--pad-xl);
   overflow: auto;
 }
 
@@ -774,7 +774,7 @@
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .canvas-prompt-quick-use-panel .canvas-prompt-library-source-filter {
@@ -786,7 +786,7 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   margin-left: auto;
 }
 
@@ -802,8 +802,8 @@
 @media (max-width: 720px) {
   .canvas-prompt-library-page-header,
   .canvas-prompt-library-content {
-    padding-right: 16px;
-    padding-left: 16px;
+    padding-right: var(--pad-lg);
+    padding-left: var(--pad-lg);
   }
 
   .canvas-prompt-library-shortcut {
@@ -840,7 +840,7 @@
   min-width: 0;
   align-items: center;
   flex-direction: row;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 // Prompt cards are used both in the resource center and in the quick-use modal.
@@ -851,7 +851,7 @@
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .canvas-prompt-library-panel .canvas-prompt-library-list {
@@ -884,7 +884,7 @@
 .canvas-prompt-library-panel.canvas-node-edit-prompt-library-compact .canvas-prompt-library-entry {
   min-height: 230px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   transition:
     background-color 0.15s ease,
     box-shadow 0.15s ease;
@@ -908,7 +908,7 @@
 .canvas-prompt-library-panel.canvas-node-edit-prompt-library-compact
   .canvas-prompt-library-entry-prompt-preview {
   border: 0;
-  background: color-mix(in srgb, #ffffff 3.5%, transparent);
+  background: color-mix(in srgb, var(--panel) 3.5%, transparent);
 }
 
 .canvas-prompt-library-panel.canvas-film-prompt-library .canvas-prompt-library-entry {
@@ -932,15 +932,15 @@
 
 .canvas-prompt-library-panel .canvas-prompt-library-entry-body {
   flex: 1 1 auto;
-  gap: 7px;
-  padding: 10px 11px 9px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-md) var(--pad-sm);
 }
 
 .canvas-prompt-library-panel .canvas-prompt-library-entry-title-row {
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(58px, auto) minmax(0, 1fr);
-  gap: 7px;
+  gap: var(--pad-sm);
 }
 
 .canvas-prompt-library-panel .canvas-prompt-library-entry-group {
@@ -964,7 +964,7 @@
 .canvas-prompt-library-entry-project {
   overflow: hidden;
   color: var(--text-faint, var(--text-muted));
-  font-size: 10px;
+  font-size: var(--font-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -974,16 +974,16 @@
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 4px;
-  padding: 7px 8px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-sm) var(--pad-sm);
   border: 1px solid color-mix(in srgb, var(--primary) 12%, var(--border));
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--primary) 4%, var(--surface-muted));
 }
 
 .canvas-prompt-library-entry-prompt-preview > span {
   color: var(--text-faint, var(--text-muted));
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -992,7 +992,7 @@
 .canvas-prompt-library-panel .canvas-prompt-library-entry-text {
   min-height: 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   -webkit-line-clamp: 3;
 }
@@ -1000,8 +1000,8 @@
 .canvas-prompt-library-panel .canvas-prompt-library-entry-actions {
   align-items: center;
   justify-content: flex-end;
-  gap: 7px;
-  padding: 0 11px 11px;
+  gap: var(--pad-sm);
+  padding: 0 var(--pad-md) var(--pad-md);
 }
 
 .canvas-prompt-library-panel .canvas-prompt-library-entry-actions > * {
@@ -1017,7 +1017,7 @@
 }
 
 .canvas-prompt-library-panel .canvas-prompt-library-entry-copy {
-  padding-inline: 4px;
+  padding-inline: var(--pad-3xs);
   color: var(--primary);
   white-space: nowrap;
 }
@@ -1026,7 +1026,7 @@
   .canvas-prompt-quick-use-panel .canvas-prompt-library-filter-row {
     align-items: stretch;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .canvas-prompt-quick-use-panel .canvas-prompt-library-filter-tools {
@@ -1055,9 +1055,9 @@
 .canvas-prompt-library-selection-bar {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin: 0 0 12px;
-  padding: 10px 14px;
+  gap: var(--pad-lg);
+  margin: 0 0 var(--pad-md);
+  padding: var(--pad-sm) var(--pad-lg);
   border: 1px solid
     color-mix(in srgb, var(--primary, #8b7cff) 36%, var(--divider, rgba(255, 255, 255, 0.1)));
   border-radius: var(--r-sm);
@@ -1067,22 +1067,22 @@
 .canvas-prompt-library-selection-all {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   color: var(--text-muted, #9298a6);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   user-select: none;
 }
 
 .canvas-prompt-library-selection-count {
   color: var(--text-strong, #f5f7fb);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
 .canvas-prompt-library-selection-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--pad-sm);
   margin-left: auto;
 }
 
@@ -1112,7 +1112,7 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: rgba(12, 14, 18, 0.72);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
 }

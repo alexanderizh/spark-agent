@@ -32,8 +32,8 @@
     flex: 0 0 auto;
     height: var(--window-titlebar-height);
     align-items: center;
-    gap: 16px;
-    padding: 0 14px 0 16px;
+    gap: var(--pad-lg);
+    padding: 0 var(--pad-lg) 0 var(--pad-lg);
     border-bottom: 1px solid var(--canvas-cinema-border);
     // 暗色默认值与画布顶栏一致（cinematic/shell.less）；浅色窗口主题的覆盖
     // 在 cinematic/window-theme.less（与 .canvas-workspace-header 同组），两模式顶栏同步变色。
@@ -60,15 +60,15 @@
     flex: 1 1 auto;
     min-width: 200px;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .step-studio-title > .ant-btn {
     height: 30px;
-    padding-inline: 7px 9px;
+    padding-inline: var(--pad-sm) var(--pad-sm);
     border-radius: var(--canvas-cinema-radius-sm);
     color: var(--canvas-cinema-text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
   }
 
   .step-studio-title > .ant-btn:hover {
@@ -79,7 +79,7 @@
   .step-studio-heading {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: var(--pad-sm);
     min-width: 0;
   }
 
@@ -88,7 +88,7 @@
     overflow: hidden;
     margin: 0;
     color: var(--canvas-cinema-text-strong);
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 650;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -96,12 +96,12 @@
 
   .step-studio-mode-tag {
     flex: 0 0 auto;
-    padding: 2px 7px;
+    padding: 2px var(--pad-sm);
     border: 1px solid var(--canvas-cinema-border);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--canvas-cinema-surface-2);
     color: var(--canvas-cinema-text-muted);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     line-height: 1.5;
   }
 
@@ -116,14 +116,14 @@
     z-index: 1;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--pad-xs);
     transform: translate(-50%, -50%);
   }
 
   .step-studio-stage-nav-item {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--pad-xs);
   }
 
   .step-studio-stage-connector {
@@ -135,13 +135,13 @@
   .step-studio-stage {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    padding: 5px 12px;
+    gap: var(--pad-sm);
+    padding: var(--pad-xs) var(--pad-md);
     border: 1px solid transparent;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: transparent;
     color: var(--canvas-cinema-text-faint);
-    font-size: 12px;
+    font-size: var(--font-sm);
     cursor: pointer;
     transition:
       background var(--canvas-cinema-motion-fast) ease,
@@ -164,10 +164,10 @@
     width: 18px;
     height: 18px;
     place-items: center;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--canvas-cinema-surface-3);
     color: var(--canvas-cinema-text-muted);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     font-weight: 600;
     line-height: 1;
   }
@@ -189,7 +189,7 @@
 
   .step-studio-stage.is-active .step-studio-stage-index {
     background: var(--canvas-cinema-accent);
-    color: #ffffff;
+    color: var(--text-inverse);
   }
 
   // ── 顶栏右侧：模式切换器 + 主题 + 窗口控件 ──
@@ -198,30 +198,30 @@
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 10px;
+    gap: var(--pad-sm);
   }
 
   .step-mode-switcher {
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    padding: 3px;
+    padding: var(--pad-3xs);
     border: 1px solid var(--canvas-cinema-border);
-    border-radius: 10px;
+    border-radius: var(--r-lg);
     background: var(--canvas-cinema-surface-2);
   }
 
   .step-mode-switcher-option {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--pad-xs);
     height: 26px;
-    padding: 0 10px;
+    padding: 0 var(--pad-sm);
     border: 0;
-    border-radius: 7px;
+    border-radius: var(--r-md);
     background: transparent;
     color: var(--canvas-cinema-text-faint);
-    font-size: 11px;
+    font-size: var(--font-xs);
     cursor: pointer;
     transition:
       background var(--canvas-cinema-motion-fast) ease,
@@ -276,8 +276,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 48px 24px;
+    gap: var(--pad-sm);
+    padding: var(--pad-3xl) var(--pad-2xl);
     color: var(--canvas-cinema-text-muted);
     text-align: center;
   }
@@ -287,7 +287,7 @@
     width: 52px;
     height: 52px;
     place-items: center;
-    margin-bottom: 6px;
+    margin-bottom: var(--pad-xs);
     border: 1px solid var(--canvas-cinema-border);
     border-radius: var(--canvas-cinema-radius-lg);
     background: var(--canvas-cinema-surface-2);
@@ -297,24 +297,24 @@
   .step-studio-placeholder h3 {
     margin: 0;
     color: var(--canvas-cinema-text-strong);
-    font-size: 15px;
+    font-size: var(--font-lg);
     font-weight: 650;
   }
 
   .step-studio-placeholder p {
     max-width: 420px;
     margin: 0;
-    font-size: 12px;
+    font-size: var(--font-sm);
     line-height: 1.7;
   }
 
   .step-studio-placeholder-tag {
-    margin-top: 10px;
-    padding: 2px 9px;
+    margin-top: var(--pad-sm);
+    padding: 2px var(--pad-sm);
     border: 1px solid var(--canvas-cinema-border);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     color: var(--canvas-cinema-text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     line-height: 1.6;
   }
 
@@ -334,8 +334,8 @@
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
+    gap: var(--pad-md);
+    padding: var(--pad-sm) var(--pad-lg);
     border-bottom: 1px solid var(--ast-border);
   }
 
@@ -344,7 +344,7 @@
     flex: 1 1 auto;
     min-width: 0;
     align-items: center;
-    gap: 4px;
+    gap: var(--pad-3xs);
     overflow-x: auto;
   }
 
@@ -352,13 +352,13 @@
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 7px;
-    padding: 6px 12px;
+    gap: var(--pad-sm);
+    padding: var(--pad-xs) var(--pad-md);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--r-md);
     background: transparent;
     color: var(--ast-text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 600;
     cursor: pointer;
     transition:
@@ -377,25 +377,25 @@
   }
 
   .step-setup-kind-count {
-    padding: 0 6px;
-    border-radius: 999px;
+    padding: 0 var(--pad-xs);
+    border-radius: var(--r-pill);
     background: var(--ast-surface-3);
     color: var(--ast-text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     font-weight: 500;
     line-height: 1.6;
   }
 
   .step-setup-kind-tab.is-active .step-setup-kind-count {
     background: var(--ast-accent);
-    color: #ffffff;
+    color: var(--text-inverse);
   }
 
   .step-setup-toolbar-actions {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .step-setup-search {
@@ -417,7 +417,7 @@
     background: var(--ast-surface-2);
     border-color: var(--ast-border);
     color: var(--ast-text);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 
   .step-setup-grid {
@@ -450,9 +450,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 10px 10px 14px;
+    padding: var(--pad-sm) var(--pad-sm) var(--pad-sm) var(--pad-lg);
     color: var(--ast-text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 600;
     letter-spacing: 0.04em;
   }
@@ -463,7 +463,7 @@
     min-height: 0;
     flex-direction: column;
     gap: 2px;
-    padding: 0 8px 10px;
+    padding: 0 var(--pad-sm) var(--pad-sm);
     overflow-y: auto;
   }
 
@@ -471,13 +471,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
-    padding: 7px 10px;
+    gap: var(--pad-xs);
+    padding: var(--pad-sm) var(--pad-sm);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--r-md);
     background: transparent;
     color: var(--ast-text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
     text-align: left;
     cursor: pointer;
     transition:
@@ -506,7 +506,7 @@
   .step-sequence-item-count {
     flex: 0 0 auto;
     color: var(--ast-text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
   }
 
   .step-storyboard-main {
@@ -521,8 +521,8 @@
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
+    gap: var(--pad-sm);
+    padding: var(--pad-sm) var(--pad-lg);
     border-bottom: 1px solid var(--ast-border);
 
     .ant-input,
@@ -532,7 +532,7 @@
       background: var(--ast-surface-2);
       border-color: var(--ast-border);
       color: var(--ast-text);
-      font-size: 12px;
+      font-size: var(--font-sm);
     }
   }
 
@@ -553,8 +553,8 @@
     flex: 1 1 auto;
     min-height: 0;
     flex-direction: column;
-    gap: 12px;
-    padding: 14px 16px 24px;
+    gap: var(--pad-md);
+    padding: var(--pad-lg) var(--pad-lg) var(--pad-2xl);
     overflow-y: auto;
 
     > .ant-spin-nested-loading {
@@ -562,26 +562,26 @@
       min-height: 0;
       flex: 1 1 auto;
       flex-direction: column;
-      gap: 12px;
+      gap: var(--pad-md);
 
       > .ant-spin-container {
         display: flex;
         min-height: 0;
         flex: 1 1 auto;
         flex-direction: column;
-        gap: 12px;
+        gap: var(--pad-md);
       }
     }
   }
 
   .step-storyboard-empty {
-    padding: 48px 24px;
+    padding: var(--pad-3xl) var(--pad-2xl);
     color: var(--ast-text-faint);
-    font-size: 12px;
+    font-size: var(--font-sm);
     text-align: center;
 
     p {
-      margin: 12px 0 0;
+      margin: var(--pad-md) 0 0;
     }
   }
 
@@ -590,7 +590,7 @@
     flex: 0 0 auto;
     flex-direction: column;
     border: 1px solid var(--ast-border);
-    border-radius: 10px;
+    border-radius: var(--r-lg);
     background: var(--ast-surface-1);
 
     &.is-generating {
@@ -614,7 +614,7 @@
     height: 18px;
     padding: 0;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--r-xs);
     background: transparent;
     color: var(--ast-text-faint);
     cursor: grab;
@@ -638,8 +638,8 @@
   .step-segment-card-head {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
+    gap: var(--pad-sm);
+    padding: var(--pad-sm) var(--pad-md);
     border-bottom: 1px solid var(--ast-border);
   }
 
@@ -649,18 +649,18 @@
     justify-content: center;
     width: 20px;
     height: 20px;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: var(--ast-surface-3);
     color: var(--ast-text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 600;
   }
 
   .step-segment-status {
     flex: 0 0 auto;
-    padding: 1px 8px;
-    border-radius: 999px;
-    font-size: 10px;
+    padding: 1px var(--pad-sm);
+    border-radius: var(--r-pill);
+    font-size: var(--font-2xs);
     font-weight: 500;
     line-height: 1.7;
 
@@ -695,8 +695,8 @@
   .step-segment-card-body {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 12px;
+    gap: var(--pad-sm);
+    padding: var(--pad-md);
   }
 
   .step-segment-script {
@@ -705,7 +705,7 @@
       background: var(--ast-surface-2);
       border-color: var(--ast-border);
       color: var(--ast-text);
-      font-size: 12px;
+      font-size: var(--font-sm);
       line-height: 1.7;
 
       &::placeholder {
@@ -730,7 +730,7 @@
     max-width: 300px;
     flex-direction: column;
     gap: 1px;
-    padding: 4px;
+    padding: var(--pad-3xs);
     border: 1px solid var(--ast-border-strong);
     border-radius: var(--ast-radius-sm);
     background: var(--ast-surface-2);
@@ -742,13 +742,13 @@
     width: 100%;
     min-width: 0;
     align-items: center;
-    gap: 8px;
-    padding: 5px 8px;
+    gap: var(--pad-sm);
+    padding: var(--pad-xs) var(--pad-sm);
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: transparent;
     color: var(--ast-text);
-    font-size: 12px;
+    font-size: var(--font-sm);
     text-align: left;
     cursor: pointer;
 
@@ -789,27 +789,27 @@
   .segment-mention-kind {
     flex: 0 0 auto;
     color: var(--ast-text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
   }
 
   .segment-mention-empty {
-    padding: 6px 8px;
+    padding: var(--pad-xs) var(--pad-sm);
     color: var(--ast-text-faint);
-    font-size: 11px;
+    font-size: var(--font-xs);
   }
 
   .segment-mention-hint {
     margin-top: 2px;
-    padding: 4px 8px 2px;
+    padding: var(--pad-3xs) var(--pad-sm) 2px;
     border-top: 1px solid var(--ast-border);
     color: var(--ast-text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
   }
 
   .step-segment-cast-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .step-segment-cast-select {
@@ -820,7 +820,7 @@
       background: var(--ast-surface-2);
       border-color: var(--ast-border);
       color: var(--ast-text);
-      font-size: 12px;
+      font-size: var(--font-sm);
     }
   }
 
@@ -828,7 +828,7 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: var(--pad-sm);
   }
 
   .step-segment-gen-mode {
@@ -836,7 +836,7 @@
       background: var(--ast-surface-2);
       border-color: var(--ast-border);
       color: var(--ast-text-muted);
-      font-size: 12px;
+      font-size: var(--font-sm);
 
       &::before {
         background: var(--ast-border);
@@ -867,13 +867,13 @@
   .step-segment-frames {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .step-segment-frames-arrow {
     flex: 0 0 auto;
     color: var(--ast-text-faint);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 
   .step-segment-frame-select {
@@ -883,17 +883,17 @@
       background: var(--ast-surface-2);
       border-color: var(--ast-border);
       color: var(--ast-text);
-      font-size: 12px;
+      font-size: var(--font-sm);
     }
   }
 
   .step-segment-error {
     margin: 0;
-    padding: 6px 10px;
-    border-radius: 6px;
+    padding: var(--pad-xs) var(--pad-sm);
+    border-radius: var(--r-sm);
     background: rgba(239, 107, 118, 0.1);
     color: var(--ast-danger);
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.6;
     word-break: break-all;
     display: -webkit-box;
@@ -907,7 +907,7 @@
       display: block;
       width: 100%;
       max-width: 460px;
-      border-radius: 8px;
+      border-radius: var(--r-md);
       background: #000000;
     }
   }
@@ -929,21 +929,21 @@
     flex: 0 0 auto;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 10px 16px;
+    gap: var(--pad-md);
+    padding: var(--pad-sm) var(--pad-lg);
     border-bottom: 1px solid var(--ast-border);
   }
 
   .step-assembly-summary-stats {
     display: flex;
     align-items: baseline;
-    gap: 14px;
+    gap: var(--pad-lg);
     min-width: 0;
     flex-wrap: wrap;
   }
 
   .step-assembly-stat {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--ast-text-muted);
 
     b {
@@ -956,7 +956,7 @@
   .step-assembly-summary-actions {
     display: flex;
     flex: 0 0 auto;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .step-assembly-empty {
@@ -966,16 +966,16 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--pad-xs);
     color: var(--ast-text-muted);
 
     p {
       margin: 0;
-      font-size: 13px;
+      font-size: var(--font-base);
     }
 
     .is-muted {
-      font-size: 11px;
+      font-size: var(--font-xs);
       opacity: 0.75;
     }
   }
@@ -995,8 +995,8 @@
 
     h4 {
       margin: 0;
-      padding: 10px 14px;
-      font-size: 11px;
+      padding: var(--pad-sm) var(--pad-lg);
+      font-size: var(--font-xs);
       font-weight: 600;
       letter-spacing: 0.04em;
       color: var(--ast-text-muted);
@@ -1010,7 +1010,7 @@
     flex-direction: column;
     gap: 2px;
     margin: 0;
-    padding: 0 8px 10px;
+    padding: 0 var(--pad-sm) var(--pad-sm);
     list-style: none;
     overflow-y: auto;
   }
@@ -1018,12 +1018,12 @@
   .step-assembly-track-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 8px;
-    border-radius: 6px;
+    gap: var(--pad-sm);
+    padding: var(--pad-sm) var(--pad-sm);
+    border-radius: var(--r-sm);
     cursor: pointer;
     color: var(--ast-text);
-    font-size: 12px;
+    font-size: var(--font-sm);
 
     &:hover {
       background: var(--ast-surface-hover);
@@ -1039,7 +1039,7 @@
     flex: 0 0 auto;
     min-width: 18px;
     text-align: center;
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--ast-text-muted);
 
     .is-playing & {
@@ -1057,7 +1057,7 @@
 
   .step-assembly-track-duration {
     flex: 0 0 auto;
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--ast-text-muted);
   }
 
@@ -1069,8 +1069,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 18px;
+    gap: var(--pad-sm);
+    padding: var(--pad-xl);
   }
 
   .step-assembly-preview-video {
@@ -1078,13 +1078,13 @@
     width: 100%;
     max-width: 720px;
     max-height: 100%;
-    border-radius: 10px;
+    border-radius: var(--r-lg);
     background: #000000;
   }
 
   .step-assembly-preview-caption {
     margin: 0;
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--ast-text-muted);
   }
 }
@@ -1112,9 +1112,9 @@
   .ast-token-scope();
 
   .step-breakdown-hint {
-    margin: 0 0 10px;
+    margin: 0 0 var(--pad-sm);
     color: var(--ast-text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
     line-height: 1.6;
   }
 }

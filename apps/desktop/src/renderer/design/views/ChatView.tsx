@@ -5319,246 +5319,242 @@ function ChatStream({
             <ComputerActivitySegmentsBridge messages={displayMessages}>
               {(segmentsFor) => {
                 const renderAfterItem = (msg: UIMessage, index: number) => {
-                    const marker = modelSwitchMarkers.find((item) => item.afterMessageId === msg.id)
-                    const segments = segmentsFor(msg.id)
-                    const waitingAfterLastMessage =
-                      index === displayMessages.length - 1 ? waitingAgentMessage : null
-                    // 路由提示条：下一条消息是新轮次首条 user 消息且该轮有分流决策时，
-                    // 渲染在该 user 消息上方（轮次边界）。仅当本轮实际模型与上一轮不同
-                    // （或降级/失配/首轮）才显示，连续同强度不刷屏。
-                    const nextMsg = displayMessages[index + 1]
-                    const nextDecision =
-                      nextMsg?.turnId != null &&
-                      nextMsg.role === 'user' &&
-                      msg.turnId !== nextMsg.turnId
-                        ? autoRouterDecisionByTurn.get(nextMsg.turnId)
-                        : undefined
-                    let showRouterNotice = nextDecision != null
-                    if (nextDecision != null) {
-                      const decisionIndex = autoRouterDecisions.findIndex(
-                        (item) => item.turnId === nextDecision.turnId,
-                      )
-                      const prevDecision =
-                        decisionIndex > 0 ? autoRouterDecisions[decisionIndex - 1] : undefined
-                      // 降级状态翻转必须可见：上轮降级、本轮恢复正常（模型恰好相同）时
-                      // 也要显示，否则用户以为仍在降级（实测踩坑：连续降级提示后恢复
-                      // 轮静默，用户无从知道分流已正常）。健康避让同理：全冻结
-                      // best-effort 轮与避让恢复轮（模型恰好相同）都必须展示，
-                      // 否则最需要「故障避让」提示的场景反而不渲染。
-                      showRouterNotice =
-                        prevDecision == null ||
-                        prevDecision.resolvedModelId !== nextDecision.resolvedModelId ||
-                        prevDecision.fallbackUsed ||
-                        nextDecision.fallbackUsed ||
-                        prevDecision.healthFallbackUsed === true ||
-                        nextDecision.healthFallbackUsed === true ||
-                        (prevDecision.skippedFrozenExecutors?.length ?? 0) > 0 ||
-                        (nextDecision.skippedFrozenExecutors?.length ?? 0) > 0 ||
-                        nextDecision.adapterMismatch === true
-                    }
-                    // 轮次 meta 常驻标识（显示点 3）：该轮最后一条消息（assistant）后
-                    // 渲染 ●强度色点 + 模型名，每轮可见（无 decision 则不渲染，零侵入）。
-                    const isTurnTail =
-                      msg.turnId != null &&
-                      msg.role === 'assistant' &&
-                      (nextMsg == null || nextMsg.turnId !== msg.turnId)
-                    const tailDecision =
-                      isTurnTail && msg.turnId != null
-                        ? autoRouterDecisionByTurn.get(msg.turnId)
-                        : undefined
-                    if (
-                      marker == null &&
-                      segments.length === 0 &&
-                      waitingAfterLastMessage == null &&
-                      !showRouterNotice &&
-                      tailDecision == null
+                  const marker = modelSwitchMarkers.find((item) => item.afterMessageId === msg.id)
+                  const segments = segmentsFor(msg.id)
+                  const waitingAfterLastMessage =
+                    index === displayMessages.length - 1 ? waitingAgentMessage : null
+                  // 路由提示条：下一条消息是新轮次首条 user 消息且该轮有分流决策时，
+                  // 渲染在该 user 消息上方（轮次边界）。仅当本轮实际模型与上一轮不同
+                  // （或降级/失配/首轮）才显示，连续同强度不刷屏。
+                  const nextMsg = displayMessages[index + 1]
+                  const nextDecision =
+                    nextMsg?.turnId != null &&
+                    nextMsg.role === 'user' &&
+                    msg.turnId !== nextMsg.turnId
+                      ? autoRouterDecisionByTurn.get(nextMsg.turnId)
+                      : undefined
+                  let showRouterNotice = nextDecision != null
+                  if (nextDecision != null) {
+                    const decisionIndex = autoRouterDecisions.findIndex(
+                      (item) => item.turnId === nextDecision.turnId,
                     )
-                      return null
-                    return (
-                      <>
-                        {showRouterNotice && nextDecision != null && (
-                          <AutoRouterDecisionNotice decision={nextDecision} />
-                        )}
-                        {tailDecision != null && (
-                          <div className="auto-router-turn-tail">
-                            <AutoRouterTurnMetaTag decision={tailDecision} />
-                          </div>
-                        )}
-                        {marker != null && <ModelSwitchNotice marker={marker} />}
-                        {segments.map((view) => (
-                          <ComputerActivitySegmentCard key={view.key} view={view} />
-                        ))}
-                        {waitingAfterLastMessage != null && (
-                          <div style={{ marginTop: 16 }}>{waitingAfterLastMessage}</div>
-                        )}
-                      </>
-                    )
+                    const prevDecision =
+                      decisionIndex > 0 ? autoRouterDecisions[decisionIndex - 1] : undefined
+                    // 降级状态翻转必须可见：上轮降级、本轮恢复正常（模型恰好相同）时
+                    // 也要显示，否则用户以为仍在降级（实测踩坑：连续降级提示后恢复
+                    // 轮静默，用户无从知道分流已正常）。健康避让同理：全冻结
+                    // best-effort 轮与避让恢复轮（模型恰好相同）都必须展示，
+                    // 否则最需要「故障避让」提示的场景反而不渲染。
+                    showRouterNotice =
+                      prevDecision == null ||
+                      prevDecision.resolvedModelId !== nextDecision.resolvedModelId ||
+                      prevDecision.fallbackUsed ||
+                      nextDecision.fallbackUsed ||
+                      prevDecision.healthFallbackUsed === true ||
+                      nextDecision.healthFallbackUsed === true ||
+                      (prevDecision.skippedFrozenExecutors?.length ?? 0) > 0 ||
+                      (nextDecision.skippedFrozenExecutors?.length ?? 0) > 0 ||
+                      nextDecision.adapterMismatch === true
+                  }
+                  // 轮次 meta 常驻标识（显示点 3）：该轮最后一条消息（assistant）后
+                  // 渲染 ●强度色点 + 模型名，每轮可见（无 decision 则不渲染，零侵入）。
+                  const isTurnTail =
+                    msg.turnId != null &&
+                    msg.role === 'assistant' &&
+                    (nextMsg == null || nextMsg.turnId !== msg.turnId)
+                  const tailDecision =
+                    isTurnTail && msg.turnId != null
+                      ? autoRouterDecisionByTurn.get(msg.turnId)
+                      : undefined
+                  if (
+                    marker == null &&
+                    segments.length === 0 &&
+                    waitingAfterLastMessage == null &&
+                    !showRouterNotice &&
+                    tailDecision == null
+                  )
+                    return null
+                  return (
+                    <>
+                      {showRouterNotice && nextDecision != null && (
+                        <AutoRouterDecisionNotice decision={nextDecision} />
+                      )}
+                      {tailDecision != null && (
+                        <div className="auto-router-turn-tail">
+                          <AutoRouterTurnMetaTag decision={tailDecision} />
+                        </div>
+                      )}
+                      {marker != null && <ModelSwitchNotice marker={marker} />}
+                      {segments.map((view) => (
+                        <ComputerActivitySegmentCard key={view.key} view={view} />
+                      ))}
+                      {waitingAfterLastMessage != null && (
+                        <div style={{ marginTop: 16 }}>{waitingAfterLastMessage}</div>
+                      )}
+                    </>
+                  )
                 }
                 const renderItem = (msg: UIMessage, index: number) => {
-                    const nextMessage = displayMessages[index + 1]
-                    const isTurnEnd = msg.turnId != null && nextMessage?.turnId !== msg.turnId
-                    const turnNavItem =
-                      msg.turnId == null
-                        ? undefined
-                        : turnNavItems.find((item) => item.turnId === msg.turnId)
-                    const onFork =
-                      onRequestFork != null &&
-                      isTurnEnd &&
-                      turnNavItem != null &&
-                      turnNavItem.status !== 'streaming'
-                        ? () => onRequestFork(msg.turnId as TurnId, turnNavItem.ordinal)
-                        : undefined
+                  const nextMessage = displayMessages[index + 1]
+                  const isTurnEnd = msg.turnId != null && nextMessage?.turnId !== msg.turnId
+                  const turnNavItem =
+                    msg.turnId == null
+                      ? undefined
+                      : turnNavItems.find((item) => item.turnId === msg.turnId)
+                  const onFork =
+                    onRequestFork != null &&
+                    isTurnEnd &&
+                    turnNavItem != null &&
+                    turnNavItem.status !== 'streaming'
+                      ? () => onRequestFork(msg.turnId as TurnId, turnNavItem.ordinal)
+                      : undefined
 
-                    return msg.role === 'user' ? (
-                      <Fragment key={msg.id}>
-                        {msg.turnSource === 'scheduled_task' ? (
-                          <ScheduledWakeDivider timestamp={msg.timestamp} />
-                        ) : null}
-                        {msg.turnSource === 'voice' ? <VoiceTurnDivider /> : null}
-                        <UserMsg
-                          timestamp={msg.timestamp}
+                  return msg.role === 'user' ? (
+                    <Fragment key={msg.id}>
+                      {msg.turnSource === 'scheduled_task' ? (
+                        <ScheduledWakeDivider timestamp={msg.timestamp} />
+                      ) : null}
+                      {msg.turnSource === 'voice' ? <VoiceTurnDivider /> : null}
+                      <UserMsg
+                        timestamp={msg.timestamp}
+                        blocks={msg.blocks}
+                        {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
+                        {...(msg.sessionReferences != null && msg.sessionReferences.length > 0
+                          ? {
+                              sessionReferences: msg.sessionReferences.map((reference) => ({
+                                sourceSessionId: reference.sourceSessionId,
+                                title:
+                                  reference.title ??
+                                  sessions.find((item) => item.id === reference.sourceSessionId)
+                                    ?.title ??
+                                  '未命名会话',
+                              })),
+                            }
+                          : {})}
+                        {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
+                          ? {
+                              mentionAgentName:
+                                agents.find((a) => a.id === msg.mentionAgentId)?.name ??
+                                msg.mentionAgentId,
+                            }
+                          : {})}
+                        {...(msg.deliveryState != null ? { deliveryState: msg.deliveryState } : {})}
+                        {...(msg.deliveryError != null ? { deliveryError: msg.deliveryError } : {})}
+                        {...(msg.eventIds.length > 0 || isDeletableOptimisticUserMessage(msg)
+                          ? {
+                              onDelete: () =>
+                                handleDeleteMessage(msg.id, msg.eventIds, msg.clientId),
+                            }
+                          : {})}
+                        selectionMode={multiSelectMode}
+                        selected={selectedMessageIds.has(msg.id)}
+                        onToggleSelected={() => toggleMessageSelected(msg.id)}
+                        onStartMultiSelect={() => enterMultiSelectMode(msg.id)}
+                        {...(onReplyTo != null
+                          ? {
+                              onReply: (selectedText?: string) =>
+                                onReplyTo(msg, undefined, undefined, selectedText),
+                            }
+                          : {})}
+                        {...(onResendMessage != null
+                          ? {
+                              onResend: () =>
+                                onResendMessage(
+                                  buildUserMessagePrefillPayload(
+                                    msg,
+                                    extractTextFromBlocks(msg.blocks),
+                                    sessions,
+                                  ),
+                                ),
+                            }
+                          : {})}
+                        {...(onEditMessage != null &&
+                        msg.id === lastEditableUserMessageId &&
+                        msg.turnId != null
+                          ? {
+                              onEdit: (text: string) =>
+                                onEditMessage(
+                                  buildUserMessageRevisionPayload(
+                                    sessionId,
+                                    msg as UIMessage & { turnId: string },
+                                    text,
+                                    sessions,
+                                  ),
+                                ),
+                            }
+                          : {})}
+                      >
+                        {renderBlocks(msg.blocks, {
+                          detectDocumentOutput: false,
+                          ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
+                          ...(onFilePreview != null ? { onFilePreview } : {}),
+                        })}
+                      </UserMsg>
+                    </Fragment>
+                  ) : (
+                    (() => {
+                      const identity = resolveAssistantIdentity(
+                        msg,
+                        agents,
+                        assistantAgentId,
+                        assistantName,
+                        assistantAvatarSrc,
+                      )
+                      const retryPayload = buildErrorRetryPayload(displayMessages, index)
+                      const sessionTaskEntry = sessionTaskTimeline.get(msg.id)
+                      return (
+                        <AssistantMessageRows
+                          key={msg.id}
+                          sessionId={sessionId}
+                          workspaceRootPath={workspaceRootPath}
+                          messageId={msg.id}
                           blocks={msg.blocks}
-                          {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
-                          {...(msg.sessionReferences != null && msg.sessionReferences.length > 0
+                          {...(sessionTaskEntry != null ? { sessionTaskEntry } : {})}
+                          messageStatus={msg.status}
+                          isLatest={expandedAssistantMessageIds.has(msg.id)}
+                          sessionRunning={agentIsRunning || persistedSessionStatus === 'running'}
+                          assistantId={identity.id}
+                          assistantName={identity.name}
+                          assistantAvatarSrc={identity.avatarSrc}
+                          showIdentity={shouldShowAssistantIdentity(
+                            teamConfig.enabled,
+                            identity.id,
+                            assistantAgentId,
+                          )}
+                          teamModeActive={teamConfig.enabled}
+                          {...(onFilePreview != null ? { onFilePreview } : {})}
+                          {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
+                          {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
+                          {...(msg.durationMs != null ? { turnDurationMs: msg.durationMs } : {})}
+                          {...(msg.status !== 'streaming'
                             ? {
-                                sessionReferences: msg.sessionReferences.map((reference) => ({
-                                  sourceSessionId: reference.sourceSessionId,
-                                  title:
-                                    reference.title ??
-                                    sessions.find((item) => item.id === reference.sourceSessionId)
-                                      ?.title ??
-                                    '未命名会话',
-                                })),
+                                onDelete: () => handleDeleteMessage(msg.id, msg.eventIds),
+                                selectionMode: multiSelectMode,
+                                selected: selectedMessageIds.has(msg.id),
+                                onToggleSelected: () => toggleMessageSelected(msg.id),
+                                onStartMultiSelect: () => enterMultiSelectMode(msg.id),
                               }
                             : {})}
-                          {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
-                            ? {
-                                mentionAgentName:
-                                  agents.find((a) => a.id === msg.mentionAgentId)?.name ??
-                                  msg.mentionAgentId,
-                              }
-                            : {})}
-                          {...(msg.deliveryState != null
-                            ? { deliveryState: msg.deliveryState }
-                            : {})}
-                          {...(msg.deliveryError != null
-                            ? { deliveryError: msg.deliveryError }
-                            : {})}
-                          {...(msg.eventIds.length > 0 || isDeletableOptimisticUserMessage(msg)
-                            ? {
-                                onDelete: () =>
-                                  handleDeleteMessage(msg.id, msg.eventIds, msg.clientId),
-                              }
-                            : {})}
-                          selectionMode={multiSelectMode}
-                          selected={selectedMessageIds.has(msg.id)}
-                          onToggleSelected={() => toggleMessageSelected(msg.id)}
-                          onStartMultiSelect={() => enterMultiSelectMode(msg.id)}
-                          {...(onReplyTo != null
+                          {...(onFork != null ? { onFork } : {})}
+                          {...(onReplyTo != null && msg.status !== 'streaming'
                             ? {
                                 onReply: (selectedText?: string) =>
-                                  onReplyTo(msg, undefined, undefined, selectedText),
+                                  onReplyTo(msg, identity.id, identity.name, selectedText),
                               }
                             : {})}
-                          {...(onResendMessage != null
+                          {...(retryPayload != null && onResendMessage != null
+                            ? { onRetry: () => onResendMessage(retryPayload) }
+                            : {})}
+                          {...(msg.status !== 'streaming' && onReplyToMember != null
                             ? {
-                                onResend: () =>
-                                  onResendMessage(
-                                    buildUserMessagePrefillPayload(
-                                      msg,
-                                      extractTextFromBlocks(msg.blocks),
-                                      sessions,
-                                    ),
-                                  ),
+                                onReplyToMember,
+                                onDeleteMemberMessage: handleDeleteMemberMessage,
                               }
                             : {})}
-                          {...(onEditMessage != null &&
-                          msg.id === lastEditableUserMessageId &&
-                          msg.turnId != null
-                            ? {
-                                onEdit: (text: string) =>
-                                  onEditMessage(
-                                    buildUserMessageRevisionPayload(
-                                      sessionId,
-                                      msg as UIMessage & { turnId: string },
-                                      text,
-                                      sessions,
-                                    ),
-                                  ),
-                              }
-                            : {})}
-                        >
-                          {renderBlocks(msg.blocks, {
-                            detectDocumentOutput: false,
-                            ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
-                            ...(onFilePreview != null ? { onFilePreview } : {}),
-                          })}
-                        </UserMsg>
-                      </Fragment>
-                    ) : (
-                      (() => {
-                        const identity = resolveAssistantIdentity(
-                          msg,
-                          agents,
-                          assistantAgentId,
-                          assistantName,
-                          assistantAvatarSrc,
-                        )
-                        const retryPayload = buildErrorRetryPayload(displayMessages, index)
-                        const sessionTaskEntry = sessionTaskTimeline.get(msg.id)
-                        return (
-                          <AssistantMessageRows
-                            key={msg.id}
-                            sessionId={sessionId}
-                            workspaceRootPath={workspaceRootPath}
-                            messageId={msg.id}
-                            blocks={msg.blocks}
-                            {...(sessionTaskEntry != null ? { sessionTaskEntry } : {})}
-                            messageStatus={msg.status}
-                            isLatest={expandedAssistantMessageIds.has(msg.id)}
-                            sessionRunning={agentIsRunning || persistedSessionStatus === 'running'}
-                            assistantId={identity.id}
-                            assistantName={identity.name}
-                            assistantAvatarSrc={identity.avatarSrc}
-                            showIdentity={shouldShowAssistantIdentity(
-                              teamConfig.enabled,
-                              identity.id,
-                              assistantAgentId,
-                            )}
-                            teamModeActive={teamConfig.enabled}
-                            {...(onFilePreview != null ? { onFilePreview } : {})}
-                            {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
-                            {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
-                            {...(msg.durationMs != null ? { turnDurationMs: msg.durationMs } : {})}
-                            {...(msg.status !== 'streaming'
-                              ? {
-                                  onDelete: () => handleDeleteMessage(msg.id, msg.eventIds),
-                                  selectionMode: multiSelectMode,
-                                  selected: selectedMessageIds.has(msg.id),
-                                  onToggleSelected: () => toggleMessageSelected(msg.id),
-                                  onStartMultiSelect: () => enterMultiSelectMode(msg.id),
-                                }
-                              : {})}
-                            {...(onFork != null ? { onFork } : {})}
-                            {...(onReplyTo != null && msg.status !== 'streaming'
-                              ? {
-                                  onReply: (selectedText?: string) =>
-                                    onReplyTo(msg, identity.id, identity.name, selectedText),
-                                }
-                              : {})}
-                            {...(retryPayload != null && onResendMessage != null
-                              ? { onRetry: () => onResendMessage(retryPayload) }
-                              : {})}
-                            {...(msg.status !== 'streaming' && onReplyToMember != null
-                              ? {
-                                  onReplyToMember,
-                                  onDeleteMemberMessage: handleDeleteMemberMessage,
-                                }
-                              : {})}
-                          />
-                        )
-                      })()
-                    )
+                        />
+                      )
+                    })()
+                  )
                 }
                 const shareMessages =
                   shareCaptureHost == null ? [] : displayMessages.slice(shareOmitCount)
@@ -7324,7 +7320,7 @@ function RetryTrailCard({ block }: { block: Extract<UIBlock, { kind: 'retry_trai
             padding: '2px 8px',
             borderRadius: 4,
             background: outcomeColor,
-            color: '#fff',
+            color: 'var(--text-inverse)',
             fontSize: 11,
             fontWeight: 600,
           }}

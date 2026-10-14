@@ -1660,7 +1660,7 @@ body.sidebar-resizing {
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  animation: fadeIn 0.15s ease;
+  animation: common-fade-in 0.15s ease;
 }
 
 .image-lightbox-topbar {
@@ -1949,7 +1949,7 @@ body.sidebar-resizing {
   flex-shrink: 0;
   padding: 1px var(--pad-xs);
   border: 1px solid var(--border, #e8e5df);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   color: var(--text-muted);
   font-size: var(--font-2xs);
 }
@@ -2697,7 +2697,7 @@ body.sidebar-resizing {
   color: #60a5fa;
 }
 .terminal .dim {
-  color: #71717a;
+  color: var(--text-muted);
 }
 
 /* Composer — 底部输入区域 */
@@ -3520,7 +3520,7 @@ body.sidebar-resizing {
   border: 0;
   border-radius: 50%;
   background: color-mix(in srgb, var(--panel) 82%, black 18%);
-  color: #fff;
+  color: var(--text-inverse);
   box-shadow: 0 8px 18px color-mix(in srgb, black 18%, transparent);
   cursor: pointer;
   opacity: 0;
@@ -3840,7 +3840,7 @@ body.sidebar-resizing {
 .composer-approval-btn.primary {
   border-color: var(--primary);
   background: var(--primary);
-  color: #fff;
+  color: var(--text-inverse);
   box-shadow: 0 8px 16px color-mix(in srgb, var(--primary) 24%, transparent);
 }
 .composer-approval-btn.primary:hover:not(:disabled) {
@@ -4125,7 +4125,7 @@ body.sidebar-resizing {
 }
 .composer-send-round.is-stopping {
   background: var(--danger);
-  color: #fff;
+  color: var(--text-inverse);
 }
 .composer-send-round.is-stopping:hover:not(:disabled) {
   background: color-mix(in srgb, var(--danger) 86%, #000);
@@ -4263,7 +4263,7 @@ body.sidebar-resizing {
   stroke-width: 2.05;
 }
 .adapter-brand-codex {
-  color: #ffffff;
+  color: var(--text-inverse);
 }
 .adapter-brand-codex rect {
   fill: #f7fbff;
@@ -5857,7 +5857,7 @@ body.inspector-resizing {
   flex-shrink: 0;
 }
 .inspector-plan-item.done .inspector-plan-dot {
-  color: #fff;
+  color: var(--text-inverse);
   background: var(--success);
   border-color: var(--success);
 }
@@ -5866,7 +5866,7 @@ body.inspector-resizing {
   flex-shrink: 0;
 }
 .inspector-plan-item.running .inspector-plan-dot {
-  color: #fff;
+  color: var(--text-inverse);
   background: var(--info);
   border-color: var(--info);
 }
@@ -6492,7 +6492,7 @@ body.inspector-resizing {
   align-items: center;
   height: 15px;
   padding: 0 var(--pad-xs);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   font-size: var(--font-2xs);
   font-weight: 600;
   line-height: 1;
@@ -6609,24 +6609,24 @@ body.inspector-resizing {
 }
 /* file-type accent colors */
 .block-file-change-card.type-code .ffc-icon {
-  color: #3b82f6;
+  color: var(--primary);
 }
 .block-file-change-card.type-style .ffc-icon {
   color: #0891b2;
 }
 .block-file-change-card.type-script .ffc-icon,
 .block-file-change-card.type-json .ffc-icon {
-  color: #d97706;
+  color: var(--warning);
 }
 .block-file-change-card.type-doc .ffc-icon {
-  color: #2563eb;
+  color: var(--primary-hover);
 }
 .block-file-change-card.type-sheet .ffc-icon {
-  color: #16a34a;
+  color: var(--success);
 }
 .block-file-change-card.type-slides .ffc-icon,
 .block-file-change-card.type-pdf .ffc-icon {
-  color: #dc2626;
+  color: var(--danger);
 }
 .block-file-change-card.type-image .ffc-icon {
   color: #9333ea;
@@ -6638,10 +6638,10 @@ body.inspector-resizing {
   color: #db2777;
 }
 .block-file-change-card.type-archive .ffc-icon {
-  color: #b45309;
+  color: var(--warning);
 }
 .block-file-change-card.type-config .ffc-icon {
-  color: #64748b;
+  color: var(--text-muted);
 }
 .block-change-type {
   font-size: var(--font-2xs);
@@ -6773,7 +6773,7 @@ body.inspector-resizing {
   padding: var(--pad-sm) var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-left: 3px solid var(--text-muted);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--panel) 88%, transparent);
   color: var(--text);
 }
@@ -7414,7 +7414,7 @@ body.inspector-resizing {
 }
 
 .user-question-btn.primary {
-  color: white;
+  color: var(--text-inverse);
   background: linear-gradient(135deg, var(--primary), var(--primary-hover));
   box-shadow: 0 5px 14px color-mix(in srgb, var(--primary) 20%, transparent);
 }
@@ -8140,7 +8140,7 @@ body.inspector-resizing {
 .team-dispatch-card-avatar .spark-avatar-fallback {
   width: 100%;
   height: 100%;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   object-fit: cover;
 }
 .team-dispatch-card-chevron {
@@ -8211,7 +8211,7 @@ body.inspector-resizing {
   margin: var(--pad-sm) 0 0 var(--pad-3xl);
   padding: var(--pad-sm) var(--pad-md) var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--member-accent, var(--primary)) 22%, var(--border));
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background:
     linear-gradient(
       180deg,
@@ -8258,7 +8258,7 @@ body.inspector-resizing {
   font-size: var(--font-xs);
   color: var(--text-muted);
   border-color: color-mix(in srgb, var(--member-accent, var(--primary)) 18%, var(--border));
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 2px var(--pad-sm);
 }
 .team-dispatch-card-status {
@@ -8589,8 +8589,8 @@ body.inspector-resizing {
   color: var(--c-err);
 }
 .goal-iteration-divider.stopped .goal-iteration-divider-label {
-  background: color-mix(in srgb, #f59e0b 12%, var(--panel));
-  color: #f59e0b;
+  background: color-mix(in srgb, var(--warning) 12%, var(--panel));
+  color: var(--warning);
 }
 .goal-iteration-divider-summary {
   display: flex;
@@ -8646,7 +8646,7 @@ body.inspector-resizing {
   font-weight: 600;
 }
 .team-discussion-status.max_rounds {
-  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
 }
 .team-discussion-status.canceled {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
@@ -9211,18 +9211,18 @@ body.inspector-resizing {
   color: var(--text);
 }
 .log-viewer .log-event-request {
-  border-color: color-mix(in srgb, #2563eb 35%, transparent);
-  background: color-mix(in srgb, #2563eb 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary-hover) 35%, transparent);
+  background: color-mix(in srgb, var(--primary-hover) 12%, transparent);
   color: #1d4ed8;
 }
 .log-viewer .log-event-response {
-  border-color: color-mix(in srgb, #16a34a 35%, transparent);
-  background: color-mix(in srgb, #16a34a 12%, transparent);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
   color: #166534;
 }
 .log-viewer .log-event-failed {
-  border-color: color-mix(in srgb, #dc2626 40%, transparent);
-  background: color-mix(in srgb, #dc2626 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: #b91c1c;
 }
 .log-viewer .log-event-lifecycle {

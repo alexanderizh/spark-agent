@@ -1,0 +1,20 @@
+/**
+ * 画布域 token（方案 §3.2「局部体系允许独立」：todo/2026-10-14-设计Token收敛与动效规范落地方案.md）
+ *
+ * 收编范围：画布特有的舞台/暗底场景色与 zinc 中灰节点文字色；
+ * 纯中性灰、语义色（primary/success/warning/danger）一律走全局 tokens.css，不在此重复定义。
+ *
+ * 主题策略（Phase 3 落地时为零视觉变化）：
+ *  - 舞台色为恒定暗底，明暗主题同值；
+ *  - --canvas-text-secondary 现网两种主题同为 zinc-600（canvas 样式无暗色覆盖块），
+ *    后续暖灰体系校准时再补暗色提亮值。
+ */
+:root {
+  /* 舞台 / 影视暗底场景（stage3d、cinematic、videoWorkbench） */
+  --canvas-stage-bg: #07090b;
+  --canvas-stage-bg-2: #101318;
+  --canvas-stage-bg-3: #15181d;
+
+  /* 画布节点次级文字（zinc-600，全局暖灰无同深度档，作为域色保留原值） */
+  --canvas-text-secondary: #52525b;
+}

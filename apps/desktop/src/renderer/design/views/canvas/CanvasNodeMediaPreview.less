@@ -16,7 +16,7 @@
 
 // 媒体节点预览态：弹窗正文只剩 tab + 预览区，压缩 6px 默认 gap 让预览拿到更多垂直空间。
 .canvas-node-edit-dialog.is-media-preview {
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .canvas-node-edit-dialog.is-media-preview .canvas-node-media-edit-tabs .ant-tabs-content-holder {
@@ -65,9 +65,9 @@
 .canvas-node-media-preview-viewport.is-empty,
 .canvas-node-media-preview-viewport.is-error {
   align-content: center;
-  gap: 10px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-align: center;
 }
 
@@ -94,11 +94,11 @@
 .canvas-node-media-preview-loading {
   position: absolute;
   z-index: 1;
-  padding: 6px 10px;
+  padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--canvas-v4-radius-xs, 6px);
   background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   pointer-events: none;
 }
 

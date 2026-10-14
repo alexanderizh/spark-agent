@@ -64,7 +64,7 @@
   align-items: center;
   gap: var(--pad-sm);
   padding: var(--pad-xs) var(--pad-md);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--color-warning-bg, rgba(255, 200, 0, 0.12));
   font-size: var(--font-base);
 
@@ -87,7 +87,7 @@
   justify-content: space-between;
   gap: var(--pad-md);
   padding: var(--pad-sm) var(--pad-md);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   cursor: pointer;
   transition: background 0.15s;
@@ -172,7 +172,7 @@
 
 .mp_warn {
   padding: var(--pad-sm) var(--pad-sm);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--color-warning-bg, rgba(255, 200, 0, 0.12));
   color: var(--color-warning-text, #b8860b);
   font-size: var(--font-sm);
@@ -211,7 +211,7 @@
     gap: var(--pad-sm);
     padding: var(--pad-md);
     border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-    border-radius: 8px;
+    border-radius: var(--r-md);
 
     h4 {
       margin: 0 0 var(--pad-3xs);
@@ -236,7 +236,7 @@
     line-height: 1.6;
     padding: var(--pad-sm) var(--pad-sm);
     background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
-    border-radius: 6px;
+    border-radius: var(--r-sm);
   }
   &_hint_inline {
     font-size: var(--font-sm);
@@ -279,7 +279,7 @@
   flex: 1;
   min-width: 0;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   transition: background 0.15s;
   /* 内边距给 hover 色块呼吸空间，同 .mp_row 先例的 padding: 10px 12px 思路 */
   padding: var(--pad-3xs) var(--pad-sm);
@@ -328,7 +328,7 @@
   margin: var(--pad-3xs) 0 var(--pad-md);
   padding: var(--pad-sm) var(--pad-md);
   background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   font-size: var(--font-base);
   line-height: 1.7;
   white-space: pre-wrap;
@@ -346,7 +346,7 @@
   margin-bottom: var(--pad-md);
   padding: var(--pad-sm) var(--pad-md);
   background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   font-size: var(--font-base);
   line-height: 1.6;
   color: var(--color-text-secondary, #888);
@@ -356,7 +356,7 @@
   margin: var(--pad-3xs) 0 var(--pad-md);
   padding: var(--pad-sm) var(--pad-md);
   background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   font-size: var(--font-base);
   line-height: 1.6;
   color: var(--color-text-secondary, #888);
@@ -371,7 +371,7 @@
   font-size: var(--font-sm);
   color: var(--color-text-secondary, #888);
   background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   a {
     cursor: pointer;
     flex-shrink: 0;
@@ -395,7 +395,7 @@
 }
 .mp_history_open {
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  border-radius: 8px;
+  border-radius: var(--r-md);
   padding: var(--pad-sm) var(--pad-md);
 }
 .mp_history_header {
@@ -414,7 +414,7 @@
   gap: var(--pad-3xs);
 }
 .mp_history_item {
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   transition: background 0.15s;
   &:hover {
     background: var(--color-fill-2, rgba(0, 0, 0, 0.03));

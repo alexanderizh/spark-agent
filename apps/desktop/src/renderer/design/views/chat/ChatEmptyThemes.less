@@ -235,7 +235,7 @@
 .chat-main-empty[data-empty-theme] .composer.composer-v2 {
   overflow: visible;
   border: 1px solid color-mix(in srgb, var(--eh-accent) 19%, var(--eh-line));
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--eh-surface-strong) 94%, transparent);
   /* 输入区阴影保持中性灰发散，不随主题色染色（与暗色基线一致）。 */
   box-shadow:
@@ -393,7 +393,7 @@
 
 .chat-main-empty[data-empty-theme] .composer-send-round {
   background: linear-gradient(145deg, var(--eh-accent), var(--eh-accent-2));
-  color: #fff;
+  color: var(--text-inverse);
   box-shadow: 0 8px 20px color-mix(in srgb, var(--eh-accent) 30%, transparent);
 }
 

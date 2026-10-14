@@ -165,7 +165,7 @@
   // top 由渲染层按来源索引计算（槽位 74px，卡高 64px），此处不再逐来源写死
   padding: var(--pad-md) var(--pad-lg);
   border: 1px solid var(--border, #e4e4e7);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--panel-elev, #fff);
   box-shadow: var(--shadow-sm);
 }
@@ -212,7 +212,7 @@
   height: 3px;
   margin-top: var(--pad-sm);
   overflow: hidden;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--divider, #efede8);
 
   span {
@@ -378,7 +378,7 @@
       position: absolute;
       left: 12px;
       height: 6px;
-      border-radius: 4px;
+      border-radius: var(--r-xs);
       background: color-mix(in srgb, var(--primary) 22%, var(--divider));
     }
 
@@ -428,7 +428,7 @@
   height: 7px;
   margin-top: var(--pad-xl);
   overflow: hidden;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--divider, #efede8);
 
   span {
@@ -663,7 +663,7 @@
   height: 22px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted, #6f6a61);
   cursor: pointer;
@@ -873,7 +873,7 @@
     display: grid;
     place-items: center;
     margin-bottom: var(--pad-md);
-    border-radius: 14px;
+    border-radius: var(--r-lg);
     background: var(--bg-sunken, #f7f6f4);
     color: var(--text-muted, #6f6a61);
   }
@@ -1031,7 +1031,7 @@
   display: grid;
   place-items: center;
   border: 3px solid var(--panel, #fff);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--text-muted, #6f6a61);
   color: var(--text-inverse, #fff);
   font-size: 8px;
@@ -1044,7 +1044,7 @@
 }
 .hi-msg-assistant .hi-msg-avatar {
   background: var(--success);
-  color: #fff;
+  color: var(--text-inverse);
 }
 .hi-msg-content {
   min-width: 0;
@@ -1221,7 +1221,7 @@
   height: 48px;
   display: grid;
   place-items: center;
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: var(--primary-soft);
   color: var(--primary);
 

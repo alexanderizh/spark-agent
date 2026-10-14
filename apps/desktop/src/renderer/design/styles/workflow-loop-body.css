@@ -2,7 +2,7 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .workflow-builder-v2 .wf-loop-back-button,
@@ -11,13 +11,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-height: 30px;
-  padding: 5px 10px;
+  padding: var(--pad-xs) var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
@@ -37,9 +37,9 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
@@ -65,8 +65,8 @@
 
 .wf-loop-summary {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--warning) 32%, var(--border));
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--warning) 6%, var(--panel));
@@ -76,29 +76,29 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .wf-loop-summary-head > div {
   display: grid;
-  gap: 3px;
+  gap: var(--pad-3xs);
 }
 
 .wf-loop-summary-head strong {
   color: var(--text-strong);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .wf-loop-summary-head span {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.45;
 }
 
 .wf-loop-summary-orientation {
   flex-shrink: 0;
-  padding: 2px 7px;
-  border-radius: 999px;
+  padding: 2px var(--pad-sm);
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--warning) 14%, transparent);
   color: var(--warning) !important;
   font-weight: 600;
@@ -107,23 +107,23 @@
 .wf-loop-summary-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .wf-loop-summary-stats span {
-  padding: 7px 5px;
+  padding: var(--pad-sm) var(--pad-xs);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--panel);
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   text-align: center;
 }
 
 .wf-loop-summary-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .workflow-builder-v2 .wf-loop-open-button {
@@ -137,13 +137,13 @@
 }
 
 .wf-loop-json-details {
-  padding-top: 8px;
+  padding-top: var(--pad-sm);
   border-top: 1px solid var(--border);
 }
 
 .wf-loop-json-details summary {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   cursor: pointer;
   user-select: none;
 }
@@ -151,8 +151,8 @@
 .wf-loop-json-details textarea {
   width: 100%;
   min-height: 180px;
-  margin-top: 8px;
-  padding: 9px 10px;
+  margin-top: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
   resize: vertical;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -160,7 +160,7 @@
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
 }
 

@@ -202,7 +202,7 @@ export function CanvasBottomDock({
               type="text"
               shape="circle"
               danger
-              icon={<Icons.Trash style={{ color: '#f87171' }} size={14} />}
+              icon={<Icons.Trash style={{ color: 'var(--danger)' }} size={14} />}
               aria-label="删除选中节点"
               disabled={selectedCount === 0}
               onClick={() => closeAddMenuAndRun(onDeleteSelected)}

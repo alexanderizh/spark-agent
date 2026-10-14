@@ -60,7 +60,7 @@
   font-size: var(--font-xs);
   font-weight: 600;
   line-height: 1;
-  color: #fff;
+  color: var(--text-inverse);
   background: var(--primary);
   border-radius: var(--r-pill);
 }
@@ -355,11 +355,11 @@
 
   &.mv_dot_pulse {
     box-shadow: 0 0 0 0 currentColor;
-    animation: mvPulse 1.6s ease-out infinite;
+    animation: mcp-dot-pulse 1.6s ease-out infinite;
   }
 }
 
-@keyframes mvPulse {
+@keyframes mcp-dot-pulse {
   0% {
     box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 40%, transparent);
   }
@@ -647,7 +647,7 @@
 .mv_connector_logo {
   width: 42px;
   height: 42px;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--bg-soft);
   color: var(--text-strong);
   display: inline-flex;

@@ -92,7 +92,7 @@
   &::-webkit-scrollbar-thumb {
     min-height: 28px;
     border: 2px solid transparent !important;
-    border-radius: 999px !important;
+    border-radius: var(--r-pill) !important;
     background: var(--border-strong) !important;
     background-clip: content-box !important;
   }
@@ -135,7 +135,7 @@
 .ant-dropdown-menu-submenu-popup .canvas-node-context-menu.ant-dropdown-menu {
   min-width: min(196px, calc(100dvw - 32px));
   max-width: min(240px, calc(100dvw - 32px));
-  padding: 8px;
+  padding: var(--pad-sm);
 }
 
 .canvas-pane-context-menu button,
@@ -150,10 +150,10 @@
   .canvas-node-context-menu.ant-dropdown-menu
   .ant-dropdown-menu-submenu-title {
   min-height: 38px;
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border-radius: var(--canvas-cinema-radius-sm, var(--r-sm, 8px));
   color: var(--canvas-cinema-text, var(--text, #cccccc));
-  font-size: 14px;
+  font-size: var(--font-md);
   line-height: 20px;
 }
 
@@ -162,7 +162,7 @@
 .canvas-edge-context-menu button,
 .canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-item,
 .canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-submenu-title {
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .canvas-pane-context-menu button > svg,
@@ -186,14 +186,14 @@
 .canvas-context-menu-divider,
 .canvas-node-context-menu.ant-dropdown-menu .ant-dropdown-menu-divider {
   height: 1px;
-  margin: 6px 4px;
+  margin: var(--pad-xs) var(--pad-3xs);
   background: var(--canvas-cinema-border, var(--divider, rgba(255, 255, 255, 0.08)));
 }
 
 .canvas-pane-context-section-title {
-  margin: 8px 8px 4px;
+  margin: var(--pad-sm) var(--pad-sm) var(--pad-3xs);
   color: var(--canvas-cinema-text-strong, var(--text-strong, #f1f1f1));
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -203,7 +203,7 @@
 .canvas-node-context-submenu-popup .ant-dropdown-menu {
   min-width: min(160px, calc(100dvw - 40px));
   max-width: min(192px, calc(100dvw - 40px));
-  padding: 6px;
+  padding: var(--pad-xs);
   border-radius: var(--canvas-cinema-radius-md, var(--r-md, 11px)) !important;
 }
 
@@ -214,10 +214,10 @@
   box-sizing: border-box;
   height: 34px;
   min-height: 34px;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--canvas-cinema-radius-xs, var(--r-xs, 6px));
   color: var(--canvas-cinema-text, var(--text, #cccccc));
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 18px;
 }
 
@@ -225,7 +225,7 @@
 .canvas-context-submenu-panel .canvas-context-menu-item,
 .canvas-node-context-submenu-popup .ant-dropdown-menu .ant-dropdown-menu-item,
 .canvas-node-context-submenu-popup .ant-dropdown-menu .ant-dropdown-menu-submenu-title {
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .canvas-pane-context-submenu-panel button > svg,
@@ -267,9 +267,9 @@
 }
 
 .canvas-node-context-submenu-popup .ant-dropdown-menu .ant-dropdown-menu-item-group-title {
-  padding: 8px 8px 4px;
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-3xs);
   color: var(--canvas-cinema-text-muted, var(--text-muted, #8a8a8a));
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   line-height: 16px;
 }
@@ -279,16 +279,16 @@
   box-sizing: border-box;
   height: 20px;
   min-height: 20px;
-  margin: 8px 8px 4px;
+  margin: var(--pad-sm) var(--pad-sm) var(--pad-3xs);
   padding: 0;
   color: var(--canvas-cinema-text-strong, var(--text-strong, #f1f1f1));
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
   line-height: 20px;
 }
 
 .canvas-pane-context-submenu-panel .canvas-pane-context-group + .canvas-pane-context-group {
-  margin-top: 4px;
+  margin-top: var(--pad-3xs);
 }
 
 .canvas-node-context-submenu-popup .ant-dropdown-menu .canvas-menu-item,

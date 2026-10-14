@@ -2,12 +2,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 
   .canvas-grid-selection-matrix {
     display: grid;
-    gap: 3px;
-    padding: 6px;
+    gap: var(--pad-3xs);
+    padding: var(--pad-xs);
     border-radius: var(--canvas-cinema-radius-sm, 8px);
     background: var(--canvas-cinema-surface-1, #191919);
     border: 1px solid var(--canvas-cinema-border, rgba(255, 255, 255, 0.08));
@@ -19,7 +19,7 @@
   .canvas-grid-selection-cell {
     width: var(--canvas-grid-cell, 18px);
     height: var(--canvas-grid-cell, 18px);
-    border-radius: 3px;
+    border-radius: var(--r-xs);
     background: var(--canvas-cinema-surface-3, #292929);
     border: 1px solid var(--canvas-cinema-border, rgba(255, 255, 255, 0.08));
     cursor: pointer;
@@ -38,7 +38,7 @@
   }
 
   .canvas-grid-selection-hint {
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--canvas-cinema-text-muted, #8a8a8a);
     text-align: center;
     min-height: 14px;

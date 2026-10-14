@@ -5,92 +5,459 @@
     "执行纪律：migrate.mjs 默认 dry-run；按文件分批 --write，diff 人工 review 后合入。"
   ],
   "fontSize": {
-    "9px": { "token": "--font-2xs", "direction": "up" },
-    "9.5px": { "token": "--font-2xs", "direction": "down" },
-    "10px": { "token": "--font-2xs", "direction": "near" },
-    "10.5px": { "token": "--font-xs", "direction": "up" },
-    "11px": { "token": "--font-xs", "direction": "near" },
-    "11.5px": { "token": "--font-sm", "direction": "up" },
-    "12px": { "token": "--font-sm", "direction": "near" },
-    "12.5px": { "token": "--font-base", "direction": "down" },
-    "13px": { "token": "--font-base", "direction": "near" },
-    "13.5px": { "token": "--font-base", "direction": "down" },
-    "14px": { "token": "--font-md", "direction": "near" },
-    "15px": { "token": "--font-lg", "direction": "down" },
-    "16px": { "token": "--font-lg", "direction": "near" },
-    "17px": { "token": "--font-lg", "direction": "down" },
-    "18px": { "token": "--font-xl", "direction": "up" },
-    "20px": { "token": "--font-xl", "direction": "near" },
-    "22px": { "token": "--font-xl", "direction": "down" }
+    "9px": {
+      "token": "--font-2xs",
+      "direction": "up"
+    },
+    "9.5px": {
+      "token": "--font-2xs",
+      "direction": "down"
+    },
+    "10px": {
+      "token": "--font-2xs",
+      "direction": "near"
+    },
+    "10.5px": {
+      "token": "--font-xs",
+      "direction": "up"
+    },
+    "11px": {
+      "token": "--font-xs",
+      "direction": "near"
+    },
+    "11.5px": {
+      "token": "--font-sm",
+      "direction": "up"
+    },
+    "12px": {
+      "token": "--font-sm",
+      "direction": "near"
+    },
+    "12.5px": {
+      "token": "--font-base",
+      "direction": "down"
+    },
+    "13px": {
+      "token": "--font-base",
+      "direction": "near"
+    },
+    "13.5px": {
+      "token": "--font-base",
+      "direction": "down"
+    },
+    "14px": {
+      "token": "--font-md",
+      "direction": "near"
+    },
+    "15px": {
+      "token": "--font-lg",
+      "direction": "down"
+    },
+    "16px": {
+      "token": "--font-lg",
+      "direction": "near"
+    },
+    "17px": {
+      "token": "--font-lg",
+      "direction": "down"
+    },
+    "18px": {
+      "token": "--font-xl",
+      "direction": "up"
+    },
+    "20px": {
+      "token": "--font-xl",
+      "direction": "near"
+    },
+    "22px": {
+      "token": "--font-xl",
+      "direction": "down"
+    }
   },
   "spacing": {
-    "3px": { "token": "--pad-3xs", "direction": "up" },
-    "4px": { "token": "--pad-3xs", "direction": "near" },
-    "5px": { "token": "--pad-xs", "direction": "up" },
-    "6px": { "token": "--pad-xs", "direction": "near" },
-    "7px": { "token": "--pad-sm", "direction": "down" },
-    "8px": { "token": "--pad-sm", "direction": "near" },
-    "9px": { "token": "--pad-sm", "direction": "up" },
-    "10px": { "token": "--pad-sm", "direction": "up" },
-    "11px": { "token": "--pad-md", "direction": "down" },
-    "12px": { "token": "--pad-md", "direction": "near" },
-    "13px": { "token": "--pad-md", "direction": "down" },
-    "14px": { "token": "--pad-lg", "direction": "down" },
-    "15px": { "token": "--pad-lg", "direction": "down" },
-    "16px": { "token": "--pad-lg", "direction": "near" },
-    "18px": { "token": "--pad-xl", "direction": "down" },
-    "20px": { "token": "--pad-xl", "direction": "near" },
-    "24px": { "token": "--pad-2xl", "direction": "near" },
-    "32px": { "token": "--pad-3xl", "direction": "near" },
-    "36px": { "token": "--pad-3xl", "direction": "down" },
-    "40px": { "token": "--pad-3xl", "direction": "down" },
-    "48px": { "token": "--pad-3xl", "direction": "down" }
+    "3px": {
+      "token": "--pad-3xs",
+      "direction": "up"
+    },
+    "4px": {
+      "token": "--pad-3xs",
+      "direction": "near"
+    },
+    "5px": {
+      "token": "--pad-xs",
+      "direction": "up"
+    },
+    "6px": {
+      "token": "--pad-xs",
+      "direction": "near"
+    },
+    "7px": {
+      "token": "--pad-sm",
+      "direction": "down"
+    },
+    "8px": {
+      "token": "--pad-sm",
+      "direction": "near"
+    },
+    "9px": {
+      "token": "--pad-sm",
+      "direction": "up"
+    },
+    "10px": {
+      "token": "--pad-sm",
+      "direction": "up"
+    },
+    "11px": {
+      "token": "--pad-md",
+      "direction": "down"
+    },
+    "12px": {
+      "token": "--pad-md",
+      "direction": "near"
+    },
+    "13px": {
+      "token": "--pad-md",
+      "direction": "down"
+    },
+    "14px": {
+      "token": "--pad-lg",
+      "direction": "down"
+    },
+    "15px": {
+      "token": "--pad-lg",
+      "direction": "down"
+    },
+    "16px": {
+      "token": "--pad-lg",
+      "direction": "near"
+    },
+    "18px": {
+      "token": "--pad-xl",
+      "direction": "down"
+    },
+    "20px": {
+      "token": "--pad-xl",
+      "direction": "near"
+    },
+    "24px": {
+      "token": "--pad-2xl",
+      "direction": "near"
+    },
+    "32px": {
+      "token": "--pad-3xl",
+      "direction": "near"
+    },
+    "36px": {
+      "token": "--pad-3xl",
+      "direction": "down"
+    },
+    "40px": {
+      "token": "--pad-3xl",
+      "direction": "down"
+    },
+    "48px": {
+      "token": "--pad-3xl",
+      "direction": "down"
+    }
   },
   "radius": {
-    "3px": { "token": "--r-xs", "direction": "up" },
-    "5px": { "token": "--r-sm", "direction": "up" },
-    "7px": { "token": "--r-md", "direction": "down" },
-    "9px": { "token": "--r-md", "direction": "down" },
-    "10px": { "token": "--r-lg", "direction": "down" },
-    "999px": { "token": "--r-pill", "direction": "near" }
+    "3px": {
+      "token": "--r-xs",
+      "direction": "up"
+    },
+    "5px": {
+      "token": "--r-sm",
+      "direction": "up"
+    },
+    "7px": {
+      "token": "--r-md",
+      "direction": "down"
+    },
+    "9px": {
+      "token": "--r-md",
+      "direction": "down"
+    },
+    "10px": {
+      "token": "--r-lg",
+      "direction": "down"
+    },
+    "999px": {
+      "token": "--r-pill",
+      "direction": "near"
+    },
+    "4px": {
+      "token": "--r-xs",
+      "direction": "near"
+    },
+    "6px": {
+      "token": "--r-sm",
+      "direction": "near"
+    },
+    "8px": {
+      "token": "--r-md",
+      "direction": "near"
+    },
+    "12px": {
+      "token": "--r-lg",
+      "direction": "near"
+    },
+    "16px": {
+      "token": "--r-xl",
+      "direction": "near"
+    },
+    "11px": {
+      "token": "--r-lg",
+      "direction": "up"
+    },
+    "14px": {
+      "token": "--r-lg",
+      "direction": "down"
+    },
+    "13px": {
+      "token": "--r-lg",
+      "direction": "down"
+    },
+    "15px": {
+      "token": "--r-xl",
+      "direction": "up"
+    },
+    "99px": {
+      "token": "--r-pill",
+      "direction": "near"
+    },
+    "9999px": {
+      "token": "--r-pill",
+      "direction": "near"
+    }
   },
   "color": {
-    "#71717a": { "token": "--text-muted", "scope": "global" },
-    "#9ca3af": { "token": "--text-muted", "scope": "global" },
-    "#a1a1aa": { "token": "--text-faint", "scope": "global" },
-    "#71717a;bg": { "token": "--divider", "scope": "global" },
-    "#e4e4e7": { "token": "--border-strong", "scope": "global" },
-    "#d4d4d8": { "token": "--border-strong", "scope": "global" },
-    "#ef4444": { "token": "--danger", "scope": "global" },
-    "#16a34a": { "token": "--success", "scope": "global" },
-    "#22c55e": { "token": "--success", "scope": "global" },
-    "#f59e0b": { "token": "--warning", "scope": "global" },
-    "#d97706": { "token": "--warning", "scope": "global" },
-    "#3b82f6": { "token": "--primary", "scope": "non-canvas" },
-    "#2563eb": { "token": "--primary-hover", "scope": "non-canvas" },
+    "#71717a": {
+      "token": "--text-muted",
+      "scope": "global"
+    },
+    "#9ca3af": {
+      "token": "--text-muted",
+      "scope": "global"
+    },
+    "#a1a1aa": {
+      "token": "--text-faint",
+      "scope": "global"
+    },
+    "#71717a;bg": {
+      "token": "--divider",
+      "scope": "global"
+    },
+    "#e4e4e7": {
+      "token": "--border-strong",
+      "scope": "global"
+    },
+    "#d4d4d8": {
+      "token": "--border-strong",
+      "scope": "global"
+    },
+    "#ef4444": {
+      "token": "--danger",
+      "scope": "global"
+    },
+    "#16a34a": {
+      "token": "--success",
+      "scope": "global"
+    },
+    "#22c55e": {
+      "token": "--success",
+      "scope": "global"
+    },
+    "#f59e0b": {
+      "token": "--warning",
+      "scope": "global"
+    },
+    "#d97706": {
+      "token": "--warning",
+      "scope": "global"
+    },
+    "#3b82f6": {
+      "token": "--primary",
+      "scope": "non-canvas"
+    },
+    "#2563eb": {
+      "token": "--primary-hover",
+      "scope": "non-canvas"
+    },
     "#6366f1": {
       "token": "REVIEW",
       "scope": "non-canvas",
       "note": "品牌相关→--primary；功能色→域 token，逐条人审"
     },
-    "#8b5cf6": { "token": "REVIEW", "scope": "non-canvas", "note": "同上" },
+    "#8b5cf6": {
+      "token": "REVIEW",
+      "scope": "non-canvas",
+      "note": "同上"
+    },
     "#0f172a": {
       "token": "REVIEW",
       "scope": "global",
       "note": "深底→--bg-sunken 或域 token，逐条人审"
     },
-    "#1a1a1a": { "token": "REVIEW", "scope": "global", "note": "同上" }
+    "#1a1a1a": {
+      "token": "REVIEW",
+      "scope": "global",
+      "note": "同上"
+    },
+    "#fff;bg": {
+      "token": "--panel",
+      "scope": "global"
+    },
+    "#fff;fg": {
+      "token": "--text-inverse",
+      "scope": "global"
+    },
+    "#ffffff;bg": {
+      "token": "--panel",
+      "scope": "global"
+    },
+    "#ffffff;fg": {
+      "token": "--text-inverse",
+      "scope": "global"
+    },
+    "white;bg": {
+      "token": "--panel",
+      "scope": "global"
+    },
+    "white;fg": {
+      "token": "--text-inverse",
+      "scope": "global"
+    },
+    "#dc2626": {
+      "token": "--danger",
+      "direction": "down",
+      "scope": "global"
+    },
+    "#f0a020": {
+      "token": "--warning",
+      "direction": "near",
+      "scope": "global"
+    },
+    "#b45309": {
+      "token": "--warning",
+      "direction": "down",
+      "scope": "global"
+    },
+    "#34c77b": {
+      "token": "--success",
+      "direction": "near",
+      "scope": "global"
+    },
+    "#64748b": {
+      "token": "--text-muted",
+      "direction": "down",
+      "scope": "global"
+    },
+    "#3f3f46": {
+      "token": "--text",
+      "direction": "up",
+      "scope": "global"
+    },
+    "#27272a": {
+      "token": "--text-strong",
+      "direction": "up",
+      "scope": "global"
+    },
+    "#18181b": {
+      "token": "--text-strong",
+      "direction": "near",
+      "scope": "global"
+    },
+    "#09090b": {
+      "token": "--text-strong",
+      "direction": "near",
+      "scope": "global"
+    },
+    "#fafafa": {
+      "token": "--bg",
+      "direction": "near",
+      "scope": "global"
+    },
+    "#f4f4f5": {
+      "token": "--bg-sunken",
+      "direction": "near",
+      "scope": "global"
+    },
+    "#3d8eff": {
+      "token": "--info",
+      "direction": "near",
+      "scope": "global"
+    },
+    "#60a5fa": {
+      "token": "--info",
+      "direction": "up",
+      "scope": "canvas"
+    },
+    "#f87171": {
+      "token": "--danger",
+      "direction": "up",
+      "scope": "global"
+    },
+    "#fbbf24": {
+      "token": "--warning",
+      "direction": "up",
+      "scope": "global"
+    },
+    "#52525b": {
+      "token": "--canvas-text-secondary",
+      "direction": "near",
+      "scope": "canvas"
+    },
+    "#07090b": {
+      "token": "--canvas-stage-bg",
+      "direction": "near",
+      "scope": "canvas"
+    },
+    "#101318": {
+      "token": "--canvas-stage-bg-2",
+      "direction": "near",
+      "scope": "canvas"
+    },
+    "#15181d": {
+      "token": "--canvas-stage-bg-3",
+      "direction": "near",
+      "scope": "canvas"
+    }
   },
   "transition": {
-    "0.1s": { "token": "--motion-instant" },
-    "0.12s": { "token": "--motion-instant", "direction": "up" },
-    "0.15s": { "token": "--motion-fast" },
-    "120ms": { "token": "--motion-fast", "direction": "near" },
-    "140ms": { "token": "--motion-fast", "direction": "near" },
-    "160ms": { "token": "--motion-base", "direction": "down" },
-    "0.2s": { "token": "--motion-base" },
-    "0.25s": { "token": "--motion-slow", "direction": "down" },
-    "0.3s": { "token": "--motion-slow" },
-    "0.4s": { "token": "--motion-slower" }
+    "0.1s": {
+      "token": "--motion-instant"
+    },
+    "0.12s": {
+      "token": "--motion-instant",
+      "direction": "up"
+    },
+    "0.15s": {
+      "token": "--motion-fast"
+    },
+    "120ms": {
+      "token": "--motion-fast",
+      "direction": "near"
+    },
+    "140ms": {
+      "token": "--motion-fast",
+      "direction": "near"
+    },
+    "160ms": {
+      "token": "--motion-base",
+      "direction": "down"
+    },
+    "0.2s": {
+      "token": "--motion-base"
+    },
+    "0.25s": {
+      "token": "--motion-slow",
+      "direction": "down"
+    },
+    "0.3s": {
+      "token": "--motion-slow"
+    },
+    "0.4s": {
+      "token": "--motion-slower"
+    }
   }
 }

@@ -13,7 +13,11 @@
       "customSyntax": "postcss-less"
     },
     {
-      "files": ["**/design/styles/tokens.css", "**/design/styles/motion.css"],
+      "files": [
+        "**/design/styles/tokens.css",
+        "**/design/styles/motion.css",
+        "**/design/styles/canvas-tokens.css"
+      ],
       "rules": {}
     }
   ],
@@ -33,11 +37,22 @@
           "transparent",
           "none",
           "inherit",
+          "currentColor",
           "/^url\\(/",
           "/gradient\\(/",
-          "/^color-mix\\(/"
+          "/^color-mix\\(/",
+          "/^rgb\\(var\\(--/",
+          "/^rgba\\(var\\(--/"
         ],
-        "border": ["/^var\\(--/", "none", "0", "/ solid var\\(--/"],
+        "border": [
+          "/^var\\(--/",
+          "none",
+          "0",
+          "/(solid|dashed|dotted) var\\(--/",
+          "/(solid|dashed|dotted) transparent$/",
+          "/(solid|dashed|dotted) currentColor$/",
+          "/(solid|dashed|dotted) color-mix\\(/"
+        ],
         "border-color": [
           "/^var\\(--/",
           "transparent",
@@ -46,7 +61,7 @@
           "/^color-mix\\(/"
         ],
         "font-size": ["/^var\\(--/", "inherit"],
-        "transition-duration": ["/^var\\(--/", "0s", "0ms"],
+        "transition-duration": ["/^var\\(--/", "0s", "0ms", "0.01ms"],
         "transition-timing-function": [
           "/^var\\(--ease/",
           "linear",
@@ -56,9 +71,35 @@
           "ease-in-out",
           "inherit"
         ],
-        "border-radius": ["/^var\\(--/", "50%", "999px", "0"]
+        "border-radius": [
+          "/^var\\(--/",
+          "50%",
+          "999px",
+          "0",
+          "inherit",
+          "unset",
+          "/^calc\\(.*var\\(--/",
+          "1px",
+          "1.5px",
+          "2px",
+          "2.5px",
+          "17px",
+          "18px",
+          "19px",
+          "20px",
+          "22px",
+          "24px",
+          "38px"
+        ]
       },
       { "severity": "warning" }
+    ],
+    "declaration-property-value-disallowed-list": [
+      {
+        "border-radius": ["/^(?!(1|1\\.5|2|2\\.5|17|18|19|20|22|24|38)px$)\\d+(\\.\\d+)?px$/"],
+        "transition-duration": ["/^(?!(0s|0ms|0\\.01ms)$)\\d+(\\.\\d+)?(ms|s)$/"]
+      },
+      { "severity": "error" }
     ]
   }
 }

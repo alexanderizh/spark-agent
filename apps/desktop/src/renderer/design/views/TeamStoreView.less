@@ -60,7 +60,7 @@
 .team-store-warn-line {
   padding: var(--pad-sm) var(--pad-lg);
   border: 1px dashed var(--dividing-line-1, rgba(128, 128, 128, 0.2));
-  border-radius: 8px;
+  border-radius: var(--r-md);
   font-size: var(--font-sm);
   opacity: 0.8;
 }
@@ -79,7 +79,7 @@
   display: flex;
   overflow: hidden;
   border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.2));
-  border-radius: 8px;
+  border-radius: var(--r-md);
 
   button {
     padding: var(--pad-3xs) var(--pad-md);
@@ -239,7 +239,7 @@
   gap: var(--pad-sm);
   padding: var(--pad-lg) var(--pad-lg);
   border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.2));
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--color-bg-1, transparent);
   cursor: pointer;
   transition:
@@ -273,7 +273,7 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
 
   &--app {
     color: #4a9eff;
@@ -284,7 +284,7 @@
     background: rgba(168, 120, 255, 0.12);
   }
   &--agent {
-    color: #34c77b;
+    color: var(--success);
     background: rgba(52, 199, 123, 0.12);
   }
   &--skill {
@@ -322,7 +322,7 @@
     background: rgba(168, 120, 255, 0.12);
   }
   &--agent {
-    color: #34c77b;
+    color: var(--success);
     background: rgba(52, 199, 123, 0.12);
   }
   &--skill {
@@ -404,7 +404,7 @@
   }
 
   &--ok {
-    color: #34c77b;
+    color: var(--success);
     background: rgba(52, 199, 123, 0.12);
   }
 }
@@ -480,7 +480,7 @@
 .tsd-hint {
   margin: 0;
   padding: var(--pad-sm) var(--pad-md);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--color-bg-2, rgba(128, 128, 128, 0.06));
   font-size: var(--font-sm);
   line-height: 1.6;
@@ -504,7 +504,7 @@
 .team-store-pub-hint {
   margin: 0;
   padding: var(--pad-sm) var(--pad-md);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--color-bg-2, rgba(128, 128, 128, 0.06));
   font-size: var(--font-sm);
   line-height: 1.7;
@@ -516,7 +516,7 @@
   overflow: hidden;
   width: fit-content;
   border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.2));
-  border-radius: 8px;
+  border-radius: var(--r-md);
 
   button {
     padding: var(--pad-xs) var(--pad-lg);
@@ -610,12 +610,12 @@
 .team-store-pub-result {
   margin-top: var(--pad-sm);
   padding: var(--pad-sm) var(--pad-sm);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: rgba(52, 199, 123, 0.08);
   font-size: var(--font-sm);
 
   b {
-    color: #34c77b;
+    color: var(--success);
   }
 }
 
@@ -678,7 +678,7 @@
   padding: 0 var(--pad-3xs);
   border-radius: var(--r-pill);
   background: var(--color-primary, #4a9eff);
-  color: #fff;
+  color: var(--text-inverse);
   font-size: var(--font-2xs);
   font-weight: 600;
   line-height: 1;
@@ -705,7 +705,7 @@
   margin-left: auto;
   padding: 2px var(--pad-sm);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--color-primary, #4a9eff);
   font-size: var(--font-sm);

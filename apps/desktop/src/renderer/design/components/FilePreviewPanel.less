@@ -18,7 +18,7 @@
   flex-direction: column;
   isolation: isolate;
   overflow: hidden;
-  animation: slideInRight 0.2s ease-out;
+  animation: common-slide-in-right 0.2s ease-out;
 }
 
 @media (max-width: 900px) {
@@ -81,7 +81,7 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.18);
 }
 
-@keyframes slideInRight {
+@keyframes common-slide-in-right {
   from {
     transform: translateX(100%);
     opacity: 0;

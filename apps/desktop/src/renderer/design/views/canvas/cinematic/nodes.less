@@ -38,7 +38,7 @@
     position: absolute;
     z-index: var(--z-canvas-selection);
     inset: -4px;
-    padding: 3px;
+    padding: var(--pad-3xs);
     border-radius: inherit;
     background: conic-gradient(
       from var(--canvas-cinema-running-angle, 0deg),
@@ -85,14 +85,14 @@
     height: 32px;
     min-height: 32px;
     flex: 0 0 32px;
-    gap: 7px;
-    padding: 0 9px;
+    gap: var(--pad-sm);
+    padding: 0 var(--pad-sm);
     // border-bottom: 1px solid rgba(255, 255, 255, 0.055);
     background: var(--canvas-cinema-surface-2);
   }
 
   .canvas-node-meta-title {
-    gap: 6px;
+    gap: var(--pad-xs);
     color: var(--canvas-cinema-text-muted);
   }
 
@@ -105,7 +105,7 @@
 
   .canvas-node-kind-label {
     color: var(--canvas-cinema-text);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     font-weight: 610;
   }
 
@@ -151,7 +151,7 @@
     // Handle 与 NodeResizer 会跨出节点边界；媒体内容仍由 .canvas-node-core 裁切。
     overflow: visible;
     border-color: rgba(255, 255, 255, 0.09);
-    background: #07090b;
+    background: var(--canvas-stage-bg);
   }
 
   .canvas-node-media-full-bleed .canvas-node-meta-bar {
@@ -169,7 +169,7 @@
     height: 100%;
     flex: 1 1 100%;
     border-radius: inherit;
-    background: #07090b;
+    background: var(--canvas-stage-bg);
   }
 
   .canvas-node-media-full-bleed .canvas-node-body {
@@ -177,7 +177,7 @@
     inset: 0;
     width: 100%;
     height: 100%;
-    background: #07090b;
+    background: var(--canvas-stage-bg);
   }
 
   .canvas-node-media-full-bleed .canvas-node-image-wrap,
@@ -193,7 +193,7 @@
     box-sizing: border-box;
     border: 0;
     border-radius: inherit;
-    padding: 46px 16px 58px;
+    padding: 46px var(--pad-lg) 58px;
     background:
       radial-gradient(circle at 50% 38%, rgba(119, 108, 246, 0.13), transparent 38%), #101319;
   }
@@ -223,7 +223,7 @@
 
   .canvas-node-media-full-bleed .canvas-node-body,
   .canvas-node-media-full-bleed .canvas-node-image-wrap {
-    background: #07090b;
+    background: var(--canvas-stage-bg);
   }
 
   .canvas-node-image-overlay-footer {
@@ -237,8 +237,8 @@
     min-height: 42px;
     align-items: center;
     justify-content: flex-end;
-    gap: 10px;
-    padding: 8px 9px;
+    gap: var(--pad-sm);
+    padding: var(--pad-sm) var(--pad-sm);
     border: 0;
     background: linear-gradient(transparent, rgba(5, 7, 9, 0.84));
     backdrop-filter: none;
@@ -247,7 +247,7 @@
   .canvas-node-image-overlay-footer button,
   .canvas-node-quick-footer button {
     min-height: 24px;
-    padding: 0 7px;
+    padding: 0 var(--pad-sm);
     border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: var(--canvas-cinema-radius-xs);
     background: rgba(9, 11, 14, 0.68);
@@ -303,8 +303,8 @@
     flex-basis: 34px;
     align-items: center;
     justify-content: flex-end;
-    gap: 12px;
-    padding: 0 9px;
+    gap: var(--pad-md);
+    padding: 0 var(--pad-sm);
     background: var(--canvas-cinema-surface-2);
   }
 
@@ -332,7 +332,7 @@
     flex: 0 0 auto;
     align-items: center;
     justify-content: flex-end;
-    gap: 6px;
+    gap: var(--pad-xs);
     padding: 0;
     background: transparent;
   }
@@ -343,14 +343,14 @@
     height: auto;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--pad-xs);
     min-height: 26px;
-    padding: 6px 10px;
+    padding: var(--pad-xs) var(--pad-sm);
     border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: color-mix(in srgb, rgba(10, 14, 24, 0.88) 90%, var(--canvas-node-body-bg));
     color: #f8fbff;
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1;
     cursor: pointer;
     transition:
@@ -362,7 +362,7 @@
   .canvas-node-task-image-actions button:hover {
     border-color: color-mix(in srgb, var(--primary) 64%, transparent);
     background: color-mix(in srgb, rgba(18, 28, 44, 0.94) 92%, var(--canvas-node-body-bg));
-    color: #fff;
+    color: var(--text-inverse);
   }
 
   .canvas-node-task-image-actions button.is-danger {
@@ -406,13 +406,13 @@
     height: 40px;
     min-height: 40px;
     flex-basis: 40px;
-    padding: 8px 10px;
+    padding: var(--pad-sm) var(--pad-sm);
     background: var(--canvas-cinema-surface-2);
   }
 
   .canvas-node-content-title strong {
     color: var(--canvas-cinema-text-strong);
-    font-size: 11px;
+    font-size: var(--font-xs);
   }
 
   .canvas-node-content-title span {
@@ -424,16 +424,16 @@
   // owner 明确接管正文间距，避免历史样式里被注释的 padding 再次造成贴边。
   .canvas-node-text {
     box-sizing: border-box;
-    padding: 14px 16px 18px;
+    padding: var(--pad-lg) var(--pad-lg) var(--pad-xl);
   }
 
   .canvas-node-text.canvas-node-text-long {
-    padding: 18px 20px 22px;
+    padding: var(--pad-xl) var(--pad-xl) 22px;
   }
 
   .canvas-operation-empty-state {
-    gap: 9px;
-    padding: 12px;
+    gap: var(--pad-sm);
+    padding: var(--pad-md);
     background: var(--canvas-cinema-surface-2);
     .canvas-node-task-msg {
       text-align: center;
@@ -447,7 +447,7 @@
   .canvas-node-task-msg,
   .canvas-node-task-meta {
     color: var(--canvas-cinema-text-muted);
-    font-size: 9px;
+    font-size: var(--font-2xs);
     line-height: 1.6;
   }
 
@@ -537,9 +537,9 @@
 
   .canvas-floating-toolbar-shell {
     min-height: 36px;
-    padding: 3px;
+    padding: var(--pad-3xs);
     border-color: var(--canvas-cinema-border-strong);
-    border-radius: 9px;
+    border-radius: var(--r-md);
     backdrop-filter: blur(12px);
   }
 
@@ -548,7 +548,7 @@
     min-width: 28px;
     border-radius: var(--canvas-cinema-radius-xs);
     color: var(--canvas-cinema-text-muted);
-    font-size: 9px;
+    font-size: var(--font-2xs);
   }
 
   .canvas-floating-toolbar-shell .ant-btn:hover {
@@ -567,7 +567,7 @@
       min-height: 32px;
       flex-basis: 32px;
       justify-content: center;
-      padding-block: 4px;
+      padding-block: var(--pad-3xs);
     }
   }
 
@@ -583,11 +583,11 @@
       height: 26px;
       min-height: 26px;
       flex-basis: 26px;
-      padding-inline: 7px;
+      padding-inline: var(--pad-sm);
     }
 
     .canvas-node-kind-label {
-      font-size: 9px;
+      font-size: var(--font-2xs);
     }
 
     .canvas-node-quick-footer {
@@ -600,7 +600,7 @@
 
     .canvas-node-image-overlay-footer {
       min-height: 28px;
-      padding: 5px 7px;
+      padding: var(--pad-xs) var(--pad-sm);
     }
   }
 }

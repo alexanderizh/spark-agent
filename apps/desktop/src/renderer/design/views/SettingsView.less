@@ -132,7 +132,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--text-inverse);
 }
 .color-swatch-circle.active {
   /* box-shadow is set via inline style for dynamic color */
@@ -281,7 +281,7 @@
 }
 .model-cap-tag.thinking {
   background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  color: var(--warning);
 }
 .model-cap-tag.ctx {
   background: rgba(148, 163, 184, 0.1);
@@ -366,7 +366,7 @@
 }
 .profile-chip.active .profile-chip-icon {
   background: var(--primary);
-  color: #fff;
+  color: var(--text-inverse);
 }
 .profile-chip-name {
   font-size: var(--font-base);
@@ -431,7 +431,7 @@
 }
 .runtime-permission-option.active .runtime-permission-icon {
   background: var(--primary);
-  color: #fff;
+  color: var(--text-inverse);
 }
 .runtime-permission-option.tone-danger .runtime-permission-icon {
   color: var(--danger);
@@ -439,7 +439,7 @@
 }
 .runtime-permission-option.tone-danger.active .runtime-permission-icon {
   background: var(--danger);
-  color: #fff;
+  color: var(--text-inverse);
 }
 .runtime-permission-copy {
   display: flex;
@@ -558,7 +558,7 @@
 }
 .usage-heatmap-loading span {
   display: block;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--bg-soft) 78%, var(--primary));
   animation: usage-heatmap-pulse 1.2s ease-in-out infinite alternate;
 }
@@ -724,7 +724,7 @@
 .usage-stat-icon {
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1094,7 +1094,7 @@
   justify-content: flex-end;
   z-index: 95;
   background: rgb(0 0 0 / 30%);
-  animation: fadeIn 0.15s;
+  animation: common-fade-in 0.15s;
 }
 
 .slide-panel {
@@ -1105,7 +1105,7 @@
   background: var(--panel);
   border-left: none;
   box-shadow: var(--shadow-lg);
-  animation: slideRight 0.2s;
+  animation: settings-slide-right 0.2s;
 }
 
 @media (min-width: 1600px) {
@@ -1114,7 +1114,7 @@
   }
 }
 
-@keyframes slideRight {
+@keyframes settings-slide-right {
   from {
     transform: translateX(40px);
     opacity: 0;
@@ -1880,7 +1880,7 @@ body.settings-nav-resizing .settings-nav-resizer {
   width: 34px;
   height: 34px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--bg);
   display: inline-flex;
   align-items: center;

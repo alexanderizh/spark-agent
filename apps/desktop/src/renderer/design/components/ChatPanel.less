@@ -19,7 +19,7 @@
   justify-content: center;
   gap: var(--pad-xs);
   border: 1px dashed color-mix(in srgb, var(--primary) 68%, var(--divider));
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--panel-elev) 92%, var(--primary) 8%);
   box-shadow: 0 12px 32px color-mix(in srgb, #000 20%, transparent);
   color: var(--primary);
@@ -69,7 +69,7 @@
   background: var(--danger-bg);
   color: var(--danger);
   font-size: var(--font-sm);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   margin: var(--pad-sm);
 }
 
@@ -257,7 +257,7 @@
     gap: var(--pad-3xs);
     padding: 0 var(--pad-sm);
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: transparent;
     color: var(--text-faint);
     cursor: pointer;
@@ -505,7 +505,7 @@
     width: auto;
     height: auto;
     object-fit: contain;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: #050505;
   }
 
@@ -515,7 +515,7 @@
     justify-content: center;
     width: 220px;
     height: 120px;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: color-mix(in srgb, var(--bg-sunken) 60%, transparent);
     color: var(--text-muted);
     font-size: var(--font-sm);
@@ -676,7 +676,7 @@
   width: 100%;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel) 42%, transparent);
   color: var(--text-muted);
 
@@ -795,7 +795,7 @@
   overflow: hidden;
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--divider));
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel) 52%, transparent);
 }
 
@@ -1019,7 +1019,7 @@
   padding: var(--pad-xs) var(--pad-sm);
   background: var(--danger-bg);
   color: var(--danger);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   font-size: var(--font-sm);
 }
 
@@ -1027,7 +1027,7 @@
   width: min(100%, 560px);
   padding: var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--divider));
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel) 88%, var(--bg-soft));
   box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow, #000) 9%, transparent);
 }
@@ -1137,7 +1137,7 @@
   width: 100%;
   padding: var(--pad-sm) var(--pad-3xl) var(--pad-sm) var(--pad-sm);
   border: 1px solid color-mix(in srgb, var(--border-strong) 42%, transparent);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--panel) 92%, transparent);
   color: var(--text);
   text-align: left;
@@ -1179,7 +1179,7 @@
   width: 100%;
   padding: var(--pad-sm) var(--pad-sm);
   border: 1px solid color-mix(in srgb, var(--border-strong) 52%, transparent);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--panel) 92%, var(--bg-soft));
   color: var(--text);
   font: inherit;
@@ -1258,7 +1258,7 @@ textarea.chat-panel-question-answer {
   min-height: 28px;
   padding: 0 var(--pad-sm);
   border: 1px solid color-mix(in srgb, var(--border-strong) 46%, transparent);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -1279,7 +1279,7 @@ textarea.chat-panel-question-answer {
 
 .chat-panel-question-summary {
   padding: var(--pad-sm) var(--pad-sm);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--text) 5%, transparent);
 }
 

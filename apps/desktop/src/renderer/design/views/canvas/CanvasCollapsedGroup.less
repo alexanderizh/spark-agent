@@ -261,7 +261,7 @@
   padding: 0;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 13px;
+  border-radius: var(--r-lg);
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -298,7 +298,7 @@
 .canvas-collapsed-group-copy small {
   display: block;
   overflow: hidden;
-  font-size: 15px;
+  font-size: var(--font-lg);
   font-weight: 560;
   letter-spacing: 0.025em;
   opacity: 0.66;
@@ -310,7 +310,7 @@
   display: block;
   width: 100%;
   margin-top: 2px;
-  padding: 2px 4px;
+  padding: 2px var(--pad-3xs);
   color: inherit;
   font-size: 23px;
   font-weight: 720;
@@ -322,7 +322,7 @@
   height: 36px;
   margin-top: 2px;
   color: var(--group-ink);
-  font-size: 20px;
+  font-size: var(--font-xl);
   font-weight: 700;
   background: rgba(255, 255, 255, 0.58);
   border-color: var(--group-stroke);
@@ -342,7 +342,7 @@
   padding: 0;
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 15px;
+  border-radius: var(--r-xl);
   color: var(--group-ink);
   background: rgba(255, 255, 255, 0.34);
   box-shadow:
@@ -377,8 +377,8 @@
   bottom: 55px;
   display: grid;
   grid-template-columns: repeat(5, 24px);
-  gap: 8px;
-  padding: 11px;
+  gap: var(--pad-sm);
+  padding: var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
   border-radius: 17px;
   background: color-mix(in srgb, var(--panel-elev) 94%, transparent);

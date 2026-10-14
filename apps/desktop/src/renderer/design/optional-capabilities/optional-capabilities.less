@@ -218,7 +218,7 @@
   height: 36px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
   color: var(--primary);
 }
@@ -258,7 +258,7 @@
   width: min(340px, calc(100vw - 36px));
   padding: var(--pad-lg);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: var(--panel-elev);
   box-shadow: 0 14px 40px rgb(0 0 0 / 16%);
 }
@@ -438,9 +438,9 @@
     justify-self: center;
     padding: var(--pad-sm) var(--pad-lg);
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--r-md);
     background: var(--primary);
-    color: white;
+    color: var(--text-inverse);
     cursor: pointer;
   }
 

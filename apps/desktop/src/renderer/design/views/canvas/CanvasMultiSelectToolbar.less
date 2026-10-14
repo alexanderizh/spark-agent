@@ -1,8 +1,8 @@
 .canvas-node-toolbar-surface.canvas-multi-select-toolbar {
   max-width: min(100%, 760px);
   min-height: 36px;
-  padding: 3px;
-  border-radius: 9px;
+  padding: var(--pad-3xs);
+  border-radius: var(--r-md);
 }
 
 .canvas-multi-select-toolbar-btn.ant-btn {
@@ -10,7 +10,7 @@
   min-width: 28px;
   height: 28px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: var(--canvas-cinema-text, #cccccc);
 }
 
@@ -27,19 +27,19 @@
 .canvas-multi-select-align-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 4px 2px;
+  gap: var(--pad-sm);
+  padding: var(--pad-3xs) 2px;
   width: 196px;
 
   .canvas-multi-select-align-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
 
     .canvas-multi-select-align-label {
       flex: 0 0 auto;
       width: 28px;
-      font-size: 11px;
+      font-size: var(--font-xs);
       color: var(--canvas-cinema-text-muted, #8a8a8a);
     }
 

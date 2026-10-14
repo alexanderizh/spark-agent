@@ -7,7 +7,7 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  padding: 0 18px 18px;
+  padding: 0 var(--pad-xl) var(--pad-xl);
   background: transparent;
 }
 
@@ -23,7 +23,7 @@
   min-height: 48px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .quick-create-output-meta > .quick-create-task-status {
@@ -34,7 +34,7 @@
   min-width: 0;
   margin-right: auto;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .quick-create-output-stage {
@@ -42,15 +42,15 @@
   min-height: 0;
   flex: 1;
   align-items: stretch;
-  padding: 6px 0 2px;
+  padding: var(--pad-xs) 0 2px;
 }
 
 // 多图时的缩略图条：选中项用描边高亮
 .quick-create-output-thumbs {
   display: flex;
   flex-shrink: 0;
-  gap: 6px;
-  padding: 8px 0 2px;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm) 0 2px;
   overflow-x: auto;
 }
 
@@ -61,7 +61,7 @@
   padding: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: var(--bg-sunken);
   cursor: pointer;
   opacity: 0.55;
@@ -100,8 +100,8 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 40px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-3xl);
   color: var(--text-faint);
   text-align: center;
 }
@@ -125,15 +125,15 @@
 .quick-create-output-empty {
   width: min(360px, 100%);
   align-items: center;
-  gap: 9px;
-  padding: 18px 0;
+  gap: var(--pad-sm);
+  padding: var(--pad-xl) 0;
   text-align: center;
 }
 
 .quick-create-output-empty-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
 }
 
@@ -143,26 +143,26 @@
 
 .quick-create-output-empty strong {
   color: var(--text-strong);
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 650;
 }
 
 .quick-create-output-empty > span:last-child {
   max-width: none;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.6;
   text-align: center;
 }
 
 .quick-create-output-pending strong {
   color: var(--text-muted);
-  font-size: 15px;
+  font-size: var(--font-lg);
 }
 
 .quick-create-output-pending > span {
   max-width: 390px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.7;
 }
 
@@ -170,14 +170,14 @@
   display: inline-flex;
   height: 28px;
   align-items: flex-end;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .quick-create-output-loader i {
   display: block;
   width: 5px;
   height: 9px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--quick-accent);
   animation: quick-create-output-wave 1s ease-in-out infinite;
 }
@@ -196,7 +196,7 @@
   width: min(220px, 70%);
   height: 3px;
   overflow: hidden;
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--quick-accent) 14%, var(--divider));
 }
 
@@ -219,7 +219,7 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  padding-top: 8px;
+  padding-top: var(--pad-sm);
 }
 
 .quick-create-output-text-head {
@@ -228,20 +228,20 @@
   min-height: 26px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .quick-create-output-text-head > span {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .quick-create-output-text-head .ant-btn.ant-btn-text {
   height: 24px;
-  padding: 0 8px;
-  border-radius: 5px;
+  padding: 0 var(--pad-sm);
+  border-radius: var(--r-sm);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .quick-create-output-text-head .ant-btn.ant-btn-text:hover:not(:disabled),
@@ -254,14 +254,14 @@
   min-height: 0;
   max-height: 100%;
   flex: 1;
-  margin: 6px 0 14px;
-  padding: 12px 14px;
+  margin: var(--pad-xs) 0 var(--pad-lg);
+  padding: var(--pad-md) var(--pad-lg);
   overflow: auto;
   border-left: 2px solid var(--quick-accent);
   color: var(--text-muted);
   background: var(--bg-sunken);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.6;
   white-space: pre-wrap;
 }

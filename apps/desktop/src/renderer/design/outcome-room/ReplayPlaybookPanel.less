@@ -14,7 +14,7 @@
   color: var(--replay-panel-text);
   background: var(--replay-panel-bg);
   border-top: 1px solid var(--replay-panel-border);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
 
   *,
   *::before,
@@ -33,7 +33,7 @@
     color: inherit;
     background: var(--replay-panel-bg);
     border: 1px solid var(--replay-panel-border);
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     cursor: pointer;
   }
 
@@ -61,7 +61,7 @@
     color: inherit;
     background: var(--replay-panel-bg);
     border: 1px solid var(--replay-panel-border);
-    border-radius: 6px;
+    border-radius: var(--r-sm);
   }
 
   h2,
@@ -143,7 +143,7 @@
     color: var(--replay-panel-muted);
     text-align: center;
     background: var(--replay-panel-subtle);
-    border-radius: 8px;
+    border-radius: var(--r-md);
   }
 
   &__timeline {
@@ -162,7 +162,7 @@
     min-width: 0;
     padding: var(--pad-sm);
     background: var(--replay-panel-subtle);
-    border-radius: 8px;
+    border-radius: var(--r-md);
     overflow-wrap: anywhere;
 
     time,
@@ -212,7 +212,7 @@
     padding: var(--pad-md);
     background: var(--replay-panel-subtle);
     border: 1px solid var(--replay-panel-border);
-    border-radius: 8px;
+    border-radius: var(--r-md);
 
     p {
       margin-top: var(--pad-3xs);
@@ -242,7 +242,7 @@
 
 @media (max-width: 767px) {
   .replay-playbook-panel {
-    border-radius: 8px;
+    border-radius: var(--r-md);
 
     &__header,
     &__replay,

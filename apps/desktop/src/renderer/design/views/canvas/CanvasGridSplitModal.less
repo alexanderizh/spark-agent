@@ -27,10 +27,10 @@
 .canvas-grid-split-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--pad-md);
   justify-content: space-between;
   flex-wrap: wrap;
-  padding: 14px 16px;
+  padding: var(--pad-lg) var(--pad-lg);
   border-bottom: 1px solid var(--border);
   background: var(--panel);
 }
@@ -42,20 +42,23 @@
 .canvas-grid-split-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .canvas-grid-split-chip,
 .canvas-grid-split-mini-btn,
 .canvas-grid-split-action {
   height: 34px;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   border: 1px solid transparent;
   background: transparent;
   color: var(--text);
-  padding: 0 12px;
+  padding: 0 var(--pad-md);
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition:
+    background var(--motion-instant) ease,
+    border-color var(--motion-instant) ease,
+    color var(--motion-instant) ease;
 }
 
 .canvas-grid-split-chip:hover,
@@ -72,7 +75,7 @@
 
 .canvas-grid-split-mini-btn {
   height: 30px;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   color: var(--text-muted);
 }
 
@@ -87,9 +90,9 @@
   align-items: center;
   justify-content: center;
   overflow: auto;
-  padding: 24px;
-  background:
-    repeating-conic-gradient(var(--bg-sunken) 0% 25%, var(--bg-soft) 0% 50%) 0 0 / 24px 24px;
+  padding: var(--pad-2xl);
+  background: repeating-conic-gradient(var(--bg-sunken) 0% 25%, var(--bg-soft) 0% 50%) 0 0 / 24px
+    24px;
 }
 
 .canvas-grid-split-preview-frame {
@@ -126,9 +129,12 @@
   position: relative;
   border: 1px solid rgba(255, 255, 255, 0.42);
   background: rgba(15, 23, 42, 0.34);
-  color: #fff;
+  color: var(--text-inverse);
   cursor: pointer;
-  transition: background 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  transition:
+    background var(--motion-instant) ease,
+    box-shadow var(--motion-instant) ease,
+    border-color var(--motion-instant) ease;
 }
 
 .canvas-grid-split-cell:hover {
@@ -145,10 +151,10 @@
   position: absolute;
   left: 12px;
   top: 12px;
-  padding: 6px 10px;
-  border-radius: 10px;
+  padding: var(--pad-xs) var(--pad-sm);
+  border-radius: var(--r-lg);
   background: rgba(15, 23, 42, 0.62);
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
   line-height: 1;
 }
@@ -159,7 +165,7 @@
   bottom: 10px;
   width: 28px;
   height: 28px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -172,7 +178,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: var(--pad-md);
   color: var(--text-muted);
 }
 
@@ -192,16 +198,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
   flex-wrap: wrap;
-  padding: 14px 16px;
+  padding: var(--pad-lg) var(--pad-lg);
   border-top: 1px solid var(--border);
   background: var(--panel);
 }
 
 .canvas-grid-split-summary {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .canvas-grid-split-action.is-ghost {
@@ -214,9 +220,9 @@
   color: var(--primary-fg);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   font-weight: 600;
-  padding: 0 16px;
+  padding: 0 var(--pad-lg);
 }
 
 .canvas-grid-split-action.is-primary:hover:not(:disabled) {

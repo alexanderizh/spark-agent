@@ -108,7 +108,7 @@ html[data-theme='dark'] .wiki_modal,
   width: 20px;
   height: 20px;
   flex: 0 0 auto;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--primary-soft);
   color: var(--primary);
 }
@@ -141,7 +141,7 @@ html[data-theme='dark'] .wiki_modal,
   padding: var(--pad-3xs) var(--pad-xs);
   margin: -3px -5px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: inherit;
   font-family: inherit;
@@ -167,7 +167,7 @@ html[data-theme='dark'] .wiki_modal,
   height: 24px;
   flex: 0 0 auto;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--wiki-t3);
   cursor: pointer;
@@ -238,7 +238,7 @@ html[data-theme='dark'] .wiki_modal,
   flex: 0 0 auto;
   padding: 1px var(--pad-3xs);
   border: 1px solid var(--wiki-border);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   color: var(--wiki-t4);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--wiki-fs-cap);
@@ -269,7 +269,7 @@ html[data-theme='dark'] .wiki_modal,
   gap: var(--pad-3xs);
   padding: 2px var(--pad-xs);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--wiki-t3);
   font-size: var(--font-xs);
@@ -299,7 +299,7 @@ html[data-theme='dark'] .wiki_modal,
   gap: var(--pad-xs);
   height: var(--wiki-tree-row-h);
   padding-right: var(--pad-xs);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: var(--wiki-t2);
   cursor: pointer;
   user-select: none;
@@ -479,7 +479,7 @@ html[data-theme='dark'] .wiki_modal,
   width: 24px;
   height: 24px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--wiki-t3);
   cursor: pointer;
@@ -512,7 +512,7 @@ html[data-theme='dark'] .wiki_modal,
   height: 30px;
   padding: 0 var(--pad-sm);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--wiki-t2);
   font-size: var(--wiki-fs-meta);
@@ -623,7 +623,7 @@ html[data-theme='dark'] .wiki_modal,
 
   &.is-on {
     background: var(--primary);
-    color: #fff;
+    color: var(--text-inverse);
     cursor: default;
   }
 
@@ -641,7 +641,7 @@ html[data-theme='dark'] .wiki_modal,
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--wiki-t3);
   cursor: pointer;
@@ -708,7 +708,7 @@ html[data-theme='dark'] .wiki_modal,
   height: 32px;
   padding: 0 var(--pad-lg);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--primary);
   color: var(--primary-fg);
   font-size: var(--font-base);
@@ -730,7 +730,7 @@ html[data-theme='dark'] .wiki_modal,
   height: 32px;
   padding: 0 var(--pad-md);
   border: 1px solid var(--wiki-border);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: transparent;
   color: var(--wiki-t2);
   font-size: var(--font-base);
@@ -832,7 +832,7 @@ html[data-theme='dark'] .wiki_modal,
   height: 22px;
   padding: 0 var(--pad-sm);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--wiki-sunken);
   color: var(--wiki-t2);
   font-size: var(--font-sm);
@@ -914,7 +914,7 @@ html[data-theme='dark'] .wiki_modal,
 
 .wiki_article_body code {
   padding: 1.5px var(--pad-xs);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--wiki-sunken);
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -995,7 +995,7 @@ html[data-theme='dark'] .wiki_modal,
   min-width: 0;
   padding: var(--pad-xs) var(--pad-sm);
   border: 1px solid var(--wiki-border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   color: var(--text);
   font-size: var(--wiki-fs-meta);
@@ -1090,7 +1090,7 @@ textarea.wiki_editor_input {
   flex-direction: column;
   gap: var(--pad-3xs);
   padding: var(--pad-md) var(--pad-md);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   cursor: pointer;
   transition: background var(--motion-fast) cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -1269,7 +1269,7 @@ textarea.wiki_editor_input {
   padding: var(--pad-xs) var(--pad-sm);
   border: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   text-align: left;
   font-size: var(--wiki-fs-meta);
@@ -1406,7 +1406,7 @@ textarea.wiki_editor_input {
 
 .wiki_set_phase {
   padding: 0 var(--pad-xs);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--wiki-sunken);
   color: var(--wiki-t3);
   font-size: var(--wiki-fs-cap);
@@ -1429,7 +1429,7 @@ textarea.wiki_editor_input {
   max-width: 280px;
   padding: var(--pad-xs) var(--pad-sm);
   border: 1px solid var(--wiki-border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   color: var(--text);
   font-family: var(--font-mono);
@@ -1492,7 +1492,7 @@ textarea.wiki_editor_input {
   min-width: 18px;
   height: 16px;
   padding: 0 var(--pad-xs);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--primary-soft);
   color: var(--primary);
   font-size: var(--font-xs);
@@ -1546,7 +1546,7 @@ textarea.wiki_editor_input {
 
 .wiki_cand_kind {
   padding: 1px var(--pad-xs);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--wiki-sunken);
   color: var(--wiki-t3);
   font-size: var(--font-xs);
@@ -1555,7 +1555,7 @@ textarea.wiki_editor_input {
 /* 低置信标注：模型自评不足时显式提示，不放过大模型自信 */
 .wiki_cand_lowconf {
   padding: 1px var(--pad-xs);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   border: 1px solid var(--wiki-border);
   color: var(--wiki-t3);
   font-size: var(--font-xs);
@@ -1582,7 +1582,7 @@ textarea.wiki_editor_input {
   gap: var(--pad-xs);
   margin-top: var(--pad-3xs);
   padding: var(--pad-md);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--wiki-sunken);
 }
 
@@ -1622,7 +1622,7 @@ textarea.wiki_editor_input {
   display: inline-block;
   margin-right: var(--pad-xs);
   padding: 0 var(--pad-xs);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--wiki-act);
   color: var(--wiki-t2);
   font-size: var(--font-xs);
@@ -1691,7 +1691,7 @@ textarea.wiki_editor_input {
   font-family: var(--font-code, monospace);
   font-size: var(--font-xs);
   padding: 1px var(--pad-xs);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--text) 6%, transparent);
   word-break: break-all;
 }
@@ -1709,7 +1709,7 @@ textarea.wiki_editor_input {
   resize: vertical;
   padding: var(--pad-sm) var(--pad-sm);
   border: 1px solid var(--wiki-border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-sunken, transparent);
   color: var(--text);
   font-family: inherit;
@@ -1752,7 +1752,7 @@ textarea.wiki_editor_input {
   height: 26px;
   padding: 0 var(--pad-md);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--wiki-t3);
   font-size: var(--font-base);
@@ -1860,7 +1860,7 @@ textarea.wiki_editor_input {
   max-width: 700px;
   margin: var(--pad-xl) var(--pad-xl) var(--pad-2xl);
   padding: var(--pad-sm) var(--pad-md);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   font-size: var(--font-sm);
   line-height: 1.7;
   color: var(--wiki-t3);
@@ -1872,7 +1872,7 @@ textarea.wiki_editor_input {
 .wiki_repo_enrich {
   margin: var(--pad-xs) 0 var(--pad-xl);
   padding: var(--pad-md) var(--pad-lg) var(--pad-lg);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--wiki-sunken);
   animation: wiki-enrich-in 160ms ease-out;
 }
@@ -1992,7 +1992,7 @@ textarea.wiki_editor_input {
   /* sunken 容器内的行内 code 加深一档保持可辨 */
   code {
     padding: 1px var(--pad-3xs);
-    border-radius: 4px;
+    border-radius: var(--r-xs);
     background: color-mix(in srgb, var(--text) 8%, transparent);
     color: var(--text);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2070,7 +2070,7 @@ textarea.wiki_editor_input {
 
 .wiki_repo_enrich_sk {
   height: 9px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--wiki-hover);
   animation: wiki-enrich-sk 1.6s ease-in-out infinite;
 
@@ -2156,7 +2156,7 @@ textarea.wiki_editor_input {
   width: 100%;
   padding: var(--pad-sm) var(--pad-sm);
   border: 1px solid var(--wiki-border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-sunken, transparent);
   color: var(--text);
   font-family: inherit;
@@ -2229,7 +2229,7 @@ textarea.wiki_editor_input {
   width: 100%;
   padding: var(--pad-sm) var(--pad-sm);
   border: 1px solid var(--wiki-border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-sunken, transparent);
   color: var(--text);
   font-family: inherit;

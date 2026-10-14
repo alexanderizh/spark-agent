@@ -9,7 +9,7 @@
 
   .canvas-projects-header {
     min-height: var(--window-titlebar-height);
-    padding: 4px 28px;
+    padding: var(--pad-3xs) 28px;
     border-bottom: 0;
     display: flex;
     justify-content: space-between;
@@ -19,15 +19,15 @@
   .canvas-projects-heading {
     > span {
       color: var(--text-faint);
-      font-size: 9px;
+      font-size: var(--font-2xs);
       font-weight: 650;
       letter-spacing: 0.09em;
     }
 
     h2 {
-      margin: 2px 0 3px;
+      margin: 2px 0 var(--pad-3xs);
       color: var(--text-strong);
-      font-size: 18px;
+      font-size: var(--font-xl);
       font-weight: 680;
       letter-spacing: -0.025em;
     }
@@ -35,12 +35,12 @@
     p {
       margin: 0;
       color: var(--text-faint);
-      font-size: 10px;
+      font-size: var(--font-2xs);
     }
   }
 
   .canvas-projects-header-actions {
-    gap: 7px;
+    gap: var(--pad-sm);
 
     .ant-btn {
       min-height: 34px;
@@ -51,7 +51,7 @@
 
   .canvas-projects-toolbar {
     min-height: 54px;
-    padding: 9px 28px;
+    padding: var(--pad-sm) 28px;
     border-top: 1px solid var(--divider);
     border-bottom: 1px solid var(--divider);
     background: var(--canvas-ui-surface);
@@ -70,11 +70,11 @@
 
   .canvas-projects-grid {
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 16px;
+    gap: var(--pad-lg);
   }
 
   .canvas-projects-main {
-    padding: 22px 28px 32px;
+    padding: 22px 28px var(--pad-3xl);
     background: var(--bg);
   }
 
@@ -123,45 +123,45 @@
     align-items: center;
     justify-content: center;
     flex-direction: column;
-    gap: 7px;
+    gap: var(--pad-sm);
     color: var(--text-faint);
 
     svg {
-      margin-bottom: 3px;
+      margin-bottom: var(--pad-3xs);
       color: color-mix(in srgb, var(--text-muted) 82%, var(--primary) 18%);
       stroke-width: 1.45;
     }
 
     strong {
       color: var(--text-muted);
-      font-size: 11px;
+      font-size: var(--font-xs);
       font-weight: 620;
     }
 
     span {
-      font-size: 9px;
+      font-size: var(--font-2xs);
     }
   }
 
   .canvas-project-card-body {
-    padding: 14px;
+    padding: var(--pad-lg);
   }
 
   .canvas-project-card-top h3 {
     color: var(--text-strong);
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 650;
   }
 
   .canvas-project-card-meta {
-    gap: 12px;
+    gap: var(--pad-md);
     color: var(--text-faint);
-    font-size: 9px;
+    font-size: var(--font-2xs);
   }
 
   .canvas-project-card-foot {
-    margin-top: 12px;
-    padding-top: 11px;
+    margin-top: var(--pad-md);
+    padding-top: var(--pad-md);
     border-top: 1px solid var(--divider);
   }
 
@@ -176,7 +176,7 @@
 
   // ── 详情模式 main：滚动容器，留更多内边距 ──────────────────────────────
   .canvas-projects-detail-main {
-    padding: 24px 32px 48px;
+    padding: var(--pad-2xl) var(--pad-3xl) var(--pad-3xl);
     overflow-y: auto;
     background: none;
   }
@@ -187,7 +187,7 @@
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: var(--pad-xl);
   }
 
   .canvas-detail-cover {
@@ -240,7 +240,7 @@
     right: 10px;
     bottom: 10px;
     display: flex;
-    gap: 6px;
+    gap: var(--pad-xs);
     opacity: 0;
     transform: translateY(4px);
     pointer-events: none;
@@ -256,19 +256,19 @@
   .canvas-detail-cover-tool {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--pad-xs);
     min-height: 32px;
-    padding: 0 10px;
+    padding: 0 var(--pad-sm);
     border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: var(--canvas-ui-radius-sm);
     background: rgba(18, 18, 22, 0.78);
-    color: #fff;
-    font-size: 12px;
+    color: var(--text-inverse);
+    font-size: var(--font-sm);
     cursor: pointer;
     pointer-events: auto;
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    transition: background 0.12s ease;
+    transition: background var(--motion-instant) ease;
     &:hover {
       background: rgba(18, 18, 22, 0.94);
     }
@@ -286,9 +286,9 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     color: var(--text-faint);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
   button.canvas-detail-cover-empty {
     cursor: pointer;
@@ -307,7 +307,7 @@
     -webkit-backdrop-filter: blur(8px);
     color: var(--text);
     cursor: pointer;
-    transition: background 0.12s ease;
+    transition: background var(--motion-instant) ease;
     &:hover {
       background: color-mix(in srgb, var(--panel) 95%, transparent);
     }
@@ -320,24 +320,24 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: var(--pad-lg);
   }
   .canvas-detail-header-left {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--pad-sm);
     flex: 1;
     min-width: 0; // 允许标题 ellipsis
   }
   .canvas-detail-header-right {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--pad-xs);
     flex-shrink: 0; // 打开按钮不被超长标题挤走
   }
   .canvas-detail-title {
     margin: 0;
-    font-size: 22px;
+    font-size: var(--font-xl);
     font-weight: 680;
     color: var(--text-strong);
     letter-spacing: -0.02em;
@@ -353,7 +353,7 @@
   .canvas-detail-description {
     margin: 0;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-base);
     line-height: 1.6;
   }
 
@@ -392,16 +392,16 @@
   .canvas-detail-assets {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--pad-md);
   }
   .canvas-detail-assets-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--pad-md);
     h3 {
       margin: 0;
-      font-size: 14px;
+      font-size: var(--font-md);
       font-weight: 650;
       color: var(--text-strong);
     }
@@ -414,12 +414,12 @@
     border-radius: var(--canvas-ui-radius-sm);
   }
   .canvas-detail-asset-filter {
-    padding: 4px 12px;
+    padding: var(--pad-3xs) var(--pad-md);
     border: none;
     background: transparent;
     border-radius: calc(var(--canvas-ui-radius-sm) - 2px);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 500;
     cursor: pointer;
     transition:
@@ -439,9 +439,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 32px 12px;
+    padding: var(--pad-3xl) var(--pad-md);
     color: var(--text-faint);
-    font-size: 12px;
+    font-size: var(--font-sm);
     border-radius: var(--canvas-ui-radius-md);
     background: var(--canvas-ui-surface-muted);
     border: 1px dashed var(--canvas-ui-border);
@@ -450,7 +450,7 @@
   // 顺序列优先（从上到下、再左到右），如需行优先 masonry 需要 JS 计算。
   .canvas-detail-asset-grid {
     column-width: 210px;
-    column-gap: 12px;
+    column-gap: var(--pad-md);
   }
   // 批量操作栏：有选中项时出现在筛选 tab 下方、网格上方。
   // 视觉与 stat 卡片接近：扁平 + 浅边框 + 软背景，避免和资源网格抢视觉。
@@ -458,21 +458,21 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 9px 14px;
+    gap: var(--pad-md);
+    padding: var(--pad-sm) var(--pad-lg);
     border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--canvas-ui-border));
     border-radius: var(--canvas-ui-radius-sm);
     background: color-mix(in srgb, var(--primary) 7%, var(--canvas-ui-surface));
   }
   .canvas-detail-asset-batchbar-count {
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 540;
   }
   .canvas-detail-asset-batchbar-actions {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--pad-3xs);
     flex-wrap: wrap;
     justify-content: flex-end;
   }
@@ -482,13 +482,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 4px auto 0;
-    padding: 9px 22px;
+    margin: var(--pad-3xs) auto 0;
+    padding: var(--pad-sm) 22px;
     width: fit-content;
     border-radius: var(--canvas-ui-radius-sm);
     background: var(--canvas-ui-surface);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
     cursor: pointer;
     transition:
       border-color 0.12s ease,
@@ -503,7 +503,7 @@
     position: relative;
     display: block;
     break-inside: avoid;
-    margin: 0 0 12px;
+    margin: 0 0 var(--pad-md);
     min-height: 80px; // 兜底：图片未加载/加载失败时保证最小高度，防止瀑布流塌缩
     border-radius: var(--canvas-ui-radius-sm);
     background: var(--canvas-ui-surface-muted);
@@ -538,11 +538,11 @@
     z-index: 2;
     display: flex;
     padding: 2px;
-    border-radius: 4px;
+    border-radius: var(--r-xs);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
     opacity: 0.55;
-    transition: opacity 0.12s ease;
+    transition: opacity var(--motion-instant) ease;
     .canvas-detail-asset-tile:hover &,
     .canvas-detail-asset-tile.is-selected & {
       opacity: 1;
@@ -570,14 +570,14 @@
     height: 20px;
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.55);
-    color: #fff;
+    color: var(--text-inverse);
   }
 
   .canvas-detail-times {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 14px 16px;
+    gap: var(--pad-xs);
+    padding: var(--pad-lg) var(--pad-lg);
     border-radius: var(--canvas-ui-radius-md);
     background: var(--canvas-ui-surface-muted);
     border: 1px solid var(--canvas-ui-border);
@@ -585,8 +585,8 @@
   .canvas-detail-time-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 12px;
+    gap: var(--pad-sm);
+    font-size: var(--font-sm);
   }
   .canvas-detail-time-icon {
     color: var(--text-faint);
@@ -604,14 +604,14 @@
   // ── 工作流库弹窗：内边距适配 ──────────────────────────────────────────
   .canvas-workflow-lib-modal {
     .ant-modal-body {
-      padding: 16px 20px 24px;
+      padding: var(--pad-lg) var(--pad-xl) var(--pad-2xl);
     }
   }
 }
 
 /* ─── 项目封面完整预览（Modal portal 到 body，全局样式） ─── */
 .canvas-detail-cover-preview-modal .ant-modal-body {
-  padding: 12px;
+  padding: var(--pad-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -622,13 +622,13 @@
   max-width: 88vw;
   max-height: calc(92vh - 100px);
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   display: block;
 }
 
 /* ─── 资源预览 lightbox（Modal portal 到 body，全局样式） ─── */
 .canvas-detail-preview-modal .ant-modal-body {
-  padding: 12px;
+  padding: var(--pad-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -640,7 +640,7 @@
   max-width: 86vw;
   max-height: calc(90vh - 100px); // 减去 header + body padding，保证不溢出
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   display: block;
 }
 
@@ -665,9 +665,9 @@
   border: none;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.42);
-  color: #fff;
+  color: var(--text-inverse);
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background var(--motion-instant) ease;
   -webkit-app-region: no-drag;
   &:hover {
     background: rgba(0, 0, 0, 0.66);

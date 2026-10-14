@@ -358,7 +358,7 @@
   &:focus-visible {
     outline: 2px solid color-mix(in srgb, var(--primary, #6366f1) 60%, transparent);
     outline-offset: 2px;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
   }
 }
 
@@ -579,7 +579,11 @@
   padding: var(--pad-xl);
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   border-radius: 22px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, white 8%), var(--panel));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--panel) 92%, var(--panel) 8%),
+    var(--panel)
+  );
   box-shadow: 0 24px 64px rgba(10, 18, 32, 0.24);
   overflow: hidden;
 }
@@ -689,7 +693,7 @@
   flex-direction: column;
   gap: var(--pad-xs);
   padding: var(--pad-md) var(--pad-lg);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: var(--bg-sunken);
   color: var(--text);
   text-align: left;
@@ -729,7 +733,7 @@
 
 .agents-quickchat-empty {
   padding: var(--pad-md) var(--pad-lg);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: var(--bg-soft);
   color: var(--text-muted);
   font-size: var(--font-base);
@@ -1586,7 +1590,7 @@
 
 .mcp-picker-group {
   border: 1px solid var(--color-border-2);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--color-bg-1);
   overflow: hidden;
   display: flex;
@@ -1688,7 +1692,7 @@
   display: inline-block;
   margin-left: var(--pad-xs);
   padding: 0 var(--pad-xs);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--color-fill-2);
   color: var(--color-text-3);
   font-size: var(--font-2xs);
@@ -1740,7 +1744,7 @@
   width: 22px;
   height: 22px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--color-text-4);
   cursor: pointer;

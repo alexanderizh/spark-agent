@@ -121,7 +121,7 @@
   align-items: center;
   gap: var(--pad-3xs);
   padding: var(--pad-3xs);
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--border) 50%, var(--bg-soft));
 }
 
@@ -129,7 +129,7 @@
   min-height: 32px;
   padding: 0 var(--pad-md);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: transparent;
   color: var(--text-muted, var(--text));
   font-size: var(--font-sm);
@@ -178,7 +178,7 @@
   max-width: 1240px;
   margin: 0 auto var(--pad-lg);
   padding: var(--pad-sm) var(--pad-lg);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   font-size: var(--font-base);
   color: var(--danger, #ef4444);
   background: var(--danger-bg, rgb(239 68 68 / 10%));
@@ -308,11 +308,11 @@
   width: 46px;
   height: 46px;
   flex: none;
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   font-size: 21px;
   color: var(--sa-accent);
   border: 1px solid color-mix(in srgb, var(--sa-accent) 22%, var(--border));
-  background: color-mix(in srgb, var(--panel) 72%, white 28%);
+  background: color-mix(in srgb, var(--panel) 72%, var(--panel) 28%);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 45%);
   overflow: hidden;
 
@@ -387,7 +387,7 @@
 .sa-surface-tag {
   padding: 2px var(--pad-sm);
   border: 1px solid color-mix(in srgb, var(--sa-accent) 20%, var(--border));
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: var(--text-muted, var(--text));
   background: color-mix(in srgb, var(--sa-accent) 7%, var(--panel));
 }
@@ -448,7 +448,7 @@
   position: absolute;
   width: 74%;
   height: 84%;
-  border-radius: 13px;
+  border-radius: var(--r-lg);
   background: rgb(255 255 255 / 72%);
   box-shadow: 0 18px 34px color-mix(in srgb, var(--sa-accent) 14%, transparent);
 }
@@ -621,7 +621,7 @@
   gap: var(--pad-sm);
   padding: var(--pad-md);
   border: 1px solid var(--border, rgb(128 128 128 / 18%));
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--panel);
 }
 

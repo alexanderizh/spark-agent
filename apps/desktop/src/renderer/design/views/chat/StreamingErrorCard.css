@@ -5,7 +5,7 @@
   margin: var(--pad-sm) 0;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border, #dfe3e8) 78%, transparent);
-  border-radius: 16px;
+  border-radius: var(--r-xl);
   background: color-mix(in srgb, var(--panel, #ffffff) 96%, var(--bg, #ffffff));
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   color: var(--text, #20242a);
@@ -45,7 +45,7 @@
   width: 38px;
   height: 38px;
   place-items: center;
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   background: var(--diagnostic-accent-soft);
 }
 
@@ -290,7 +290,7 @@
 
 .codex-runtime-install-button {
   background: var(--primary, #5876d8);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .codex-runtime-install-button:hover:not(:disabled) {

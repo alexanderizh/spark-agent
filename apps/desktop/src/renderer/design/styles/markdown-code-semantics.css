@@ -6,7 +6,7 @@
 
 .md-code-semantic {
   margin: 0;
-  padding: 10px 0;
+  padding: var(--pad-sm) 0;
   background: transparent;
   color: var(--code-fg);
   overflow: auto;
@@ -30,7 +30,7 @@
   display: grid;
   grid-template-columns: 28px 1fr;
   align-items: start;
-  column-gap: 4px;
+  column-gap: var(--pad-3xs);
   min-width: max-content;
 }
 
@@ -40,8 +40,8 @@
 
 /* ---- diff ---- */
 .md-code-semantic--diff {
-  padding-left: 6px;
-  padding-right: 6px;
+  padding-left: var(--pad-xs);
+  padding-right: var(--pad-xs);
 }
 
 .md-code-diff-marker {
@@ -71,14 +71,14 @@
 .md-code-diff-line--hunk {
   background: var(--bg-soft);
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   border-block: 1px solid var(--md-divider, var(--border));
-  margin-block: 4px;
+  margin-block: var(--pad-3xs);
   padding-block: 2px;
 }
 .md-code-diff-line--hunk .md-code-semantic-text {
   grid-column: 1 / -1;
-  padding-inline: 6px;
+  padding-inline: var(--pad-xs);
 }
 
 .md-code-diff-line--file,
@@ -100,7 +100,7 @@
 .md-code-diff-line--file-new .md-code-semantic-text,
 .md-code-diff-line--meta .md-code-semantic-text {
   grid-column: 1 / -1;
-  padding-inline: 6px;
+  padding-inline: var(--pad-xs);
 }
 
 .md-code-diff-line--notice {
@@ -109,7 +109,7 @@
 }
 .md-code-diff-line--notice .md-code-semantic-text {
   grid-column: 1 / -1;
-  padding-inline: 6px;
+  padding-inline: var(--pad-xs);
 }
 
 .md-code-diff-line--context {
@@ -120,7 +120,7 @@
 .md-code-semantic--terminal {
   background: var(--term-bg);
   color: var(--term-fg);
-  padding: 10px 12px;
+  padding: var(--pad-sm) var(--pad-md);
 }
 
 .md-code-terminal-line {
@@ -172,11 +172,11 @@
 
 /* ---- log ---- */
 .md-code-semantic--log {
-  padding: 10px 0;
+  padding: var(--pad-sm) 0;
 }
 
 .md-code-log-line {
-  padding-inline: 12px 0;
+  padding-inline: var(--pad-md) 0;
   border-left: 2px solid transparent;
 }
 .md-code-semantic-line--neutral {

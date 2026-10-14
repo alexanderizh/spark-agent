@@ -18,7 +18,7 @@
   .ant-modal-header {
     flex: 0 0 auto;
     margin: 0;
-    padding: 18px 20px 14px;
+    padding: var(--pad-xl) var(--pad-xl) var(--pad-lg);
     border-bottom: 1px solid var(--batch-border);
   }
 
@@ -37,7 +37,7 @@
     width: 30px;
     height: 30px;
     color: var(--batch-muted);
-    border-radius: 7px;
+    border-radius: var(--r-md);
 
     &:hover {
       color: var(--text);
@@ -59,11 +59,15 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 14px;
+  padding: var(--pad-lg);
   overflow: hidden;
   border-right: 1px solid var(--batch-border);
   background:
-    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--batch-accent) 8%, transparent), transparent 36%),
+    radial-gradient(
+      circle at 12% 0%,
+      color-mix(in srgb, var(--batch-accent) 8%, transparent),
+      transparent 36%
+    ),
     var(--batch-panel);
 }
 
@@ -71,9 +75,9 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: var(--pad-md);
   color: var(--batch-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 
   div {
     display: flex;
@@ -83,19 +87,19 @@
 
   strong {
     color: var(--text);
-    font-size: 14px;
+    font-size: var(--font-md);
   }
 }
 
 .canvas-batch-task-groups {
   flex: 1 1 auto;
   min-height: 0;
-  margin-top: 12px;
+  margin-top: var(--pad-md);
   overflow: auto;
 }
 
 .canvas-batch-task-group {
-  margin-bottom: 12px;
+  margin-bottom: var(--pad-md);
 }
 
 .canvas-batch-task-group-button,
@@ -105,7 +109,7 @@
   align-items: center;
   justify-content: space-between;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   color: inherit;
   background: transparent;
   cursor: pointer;
@@ -113,7 +117,7 @@
 }
 
 .canvas-batch-task-group-button {
-  padding: 7px 8px;
+  padding: var(--pad-sm) var(--pad-sm);
   font-weight: 650;
 
   &.is-active {
@@ -124,8 +128,8 @@
 
 .canvas-batch-task-node-button {
   min-height: 48px;
-  margin-top: 4px;
-  padding: 7px 9px 7px 14px;
+  margin-top: var(--pad-3xs);
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-sm) var(--pad-lg);
   border: 1px solid transparent;
 
   &:hover,
@@ -165,14 +169,14 @@
 .canvas-batch-task-error-count {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--pad-3xs);
 }
 
 .canvas-batch-task-editor {
   grid-row: 1;
   min-width: 0;
   min-height: 0;
-  padding: 18px 20px;
+  padding: var(--pad-xl) var(--pad-xl);
   overflow: auto;
 }
 
@@ -180,7 +184,7 @@
   .canvas-batch-task-sidebar,
   .canvas-batch-task-editor {
     pointer-events: none;
-    opacity: .72;
+    opacity: 0.72;
   }
 }
 
@@ -188,34 +192,34 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding-bottom: 14px;
+  gap: var(--pad-xl);
+  padding-bottom: var(--pad-lg);
   border-bottom: 1px solid var(--batch-border);
 
   h3 {
-    margin: 3px 0 0;
-    font-size: 18px;
+    margin: var(--pad-3xs) 0 0;
+    font-size: var(--font-xl);
   }
 }
 
 .canvas-batch-task-kicker {
   color: var(--batch-muted);
-  font-size: 11px;
-  letter-spacing: .06em;
+  font-size: var(--font-xs);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .canvas-batch-task-scope-tabs {
   display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 999px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-3xs);
+  border-radius: var(--r-pill);
   background: var(--batch-panel);
 
   button {
-    padding: 5px 10px;
+    padding: var(--pad-xs) var(--pad-sm);
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: transparent;
     cursor: pointer;
 
@@ -229,22 +233,22 @@
 .canvas-batch-task-fields {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding-top: 18px;
+  gap: var(--pad-lg);
+  padding-top: var(--pad-xl);
 }
 
 .canvas-batch-task-runtime-grid,
 .canvas-batch-task-extra-params {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--pad-md);
 
   label {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: var(--pad-xs);
     color: var(--batch-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 }
 
@@ -254,18 +258,18 @@
 }
 
 .canvas-batch-task-issues {
-  margin-top: 18px;
-  padding: 12px;
+  margin-top: var(--pad-xl);
+  padding: var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--danger);
   background: var(--danger-bg);
 
   > div {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-top: 6px;
+    gap: var(--pad-xs);
+    margin-top: var(--pad-xs);
   }
 }
 
@@ -275,19 +279,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 18px;
+  padding: var(--pad-md) var(--pad-xl);
   border-top: 1px solid var(--batch-border);
   background: var(--panel);
   position: sticky;
   bottom: 0;
   > span {
     color: var(--batch-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 
   > div {
     display: flex;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 }
 
@@ -298,20 +302,20 @@
   width: 100%;
   min-height: 0;
   overflow: auto;
-  padding: 20px;
+  padding: var(--pad-xl);
 }
 
 .canvas-batch-confirm-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: var(--pad-sm);
 
   > div {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 13px;
-    border-radius: 9px;
+    gap: var(--pad-3xs);
+    padding: var(--pad-md);
+    border-radius: var(--r-md);
     color: var(--text);
     background: var(--batch-panel);
 
@@ -337,13 +341,13 @@
 
 .canvas-batch-confirm-list,
 .canvas-batch-result-list {
-  margin-top: 16px;
+  margin-top: var(--pad-lg);
   overflow: hidden;
   border: 1px solid var(--batch-border);
-  border-radius: 9px;
+  border-radius: var(--r-md);
 
   > div {
-    padding: 10px 12px;
+    padding: var(--pad-sm) var(--pad-md);
     border-bottom: 1px solid var(--batch-border);
 
     &:last-child {
@@ -357,32 +361,32 @@
   > div > p {
     display: flex;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--pad-md);
   }
 
   p {
-    margin: 5px 0 0;
+    margin: var(--pad-xs) 0 0;
     color: var(--batch-muted);
   }
 }
 
 .canvas-batch-confirm-parameter-preference {
   /* 原有「不再确认」偏好块被移除后，这里保留与上方内容一致的呼吸间距 */
-  margin-top: 16px;
+  margin-top: var(--pad-lg);
 }
 
 .canvas-batch-confirm footer,
 .canvas-batch-result footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 18px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-xl);
 }
 
 .canvas-batch-result-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   color: var(--success);
 
   span {

@@ -8,9 +8,9 @@
   gap: 2px;
   max-width: min(760px, calc(100vw - 24px));
   min-height: 36px;
-  padding: 3px;
+  padding: var(--pad-3xs);
   border: 1px solid var(--canvas-cinema-border-strong, rgba(255, 255, 255, 0.16));
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: var(--canvas-cinema-surface-2, rgba(30, 30, 30, 0.92));
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
   transform: translateX(-50%);
@@ -23,11 +23,11 @@
   min-width: 28px;
   height: 28px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: var(--canvas-cinema-text, #cccccc);
 
   &.is-danger {
-    color: #f87171;
+    color: var(--danger);
   }
 
   &:hover,
@@ -39,14 +39,14 @@
   &.is-danger:hover,
   &.is-danger:focus-visible {
     background: rgba(239, 68, 68, 0.16);
-    color: #f87171;
+    color: var(--danger);
   }
 }
 
 .canvas-node-selection-toolbar-divider {
   width: 1px;
   height: 18px;
-  margin: 0 4px;
+  margin: 0 var(--pad-3xs);
   flex: 0 0 1px;
   background: var(--canvas-cinema-border-strong, rgba(255, 255, 255, 0.16));
 }
@@ -57,19 +57,19 @@
   gap: 2px;
   min-width: 188px;
   max-height: 360px;
-  padding: 3px;
+  padding: var(--pad-3xs);
   overflow-y: auto;
 }
 
 .canvas-node-selection-toolbar-menu .canvas-node-selection-toolbar-button.ant-btn {
   width: 100%;
   justify-content: flex-start;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   text-align: left;
 
   &::after {
     content: attr(aria-label);
-    margin-left: 6px;
-    font-size: 12px;
+    margin-left: var(--pad-xs);
+    font-size: var(--font-sm);
   }
 }

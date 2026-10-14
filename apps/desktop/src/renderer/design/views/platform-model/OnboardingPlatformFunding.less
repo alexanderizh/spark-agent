@@ -3,7 +3,7 @@
   margin-top: var(--pad-2xl);
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  border-radius: 16px;
+  border-radius: var(--r-xl);
   background: color-mix(in srgb, var(--panel) 96%, var(--primary) 4%);
   box-shadow: 0 18px 48px color-mix(in srgb, var(--text-strong) 8%, transparent);
 }
@@ -29,7 +29,7 @@
 }
 
 .onboarding-platform-funding__identity {
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 .onboarding-platform-funding__identity > div {
   display: grid;
@@ -37,11 +37,11 @@
 }
 .onboarding-platform-funding__identity strong {
   color: var(--text-strong);
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 .onboarding-platform-funding__identity span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .onboarding-platform-funding__status {
@@ -50,16 +50,16 @@
   height: 30px;
   place-items: center;
   border-radius: var(--r-lg);
-  color: #fff;
+  color: var(--text-inverse);
   background: var(--success);
 }
 
 .onboarding-platform-funding__balance {
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 .onboarding-platform-funding__balance > span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .onboarding-platform-funding__balance > strong {
   color: var(--text-strong);
@@ -73,7 +73,7 @@
   padding: 0;
   place-items: center;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
@@ -105,30 +105,30 @@
 
 .onboarding-platform-funding__section-title > div {
   display: grid;
-  gap: 3px;
+  gap: var(--pad-3xs);
 }
 .onboarding-platform-funding__section-title strong {
   color: var(--text-strong);
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 .onboarding-platform-funding__section-title span,
 .onboarding-platform-funding__empty,
 .onboarding-platform-funding__footer > span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .onboarding-platform-funding__channels {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 .onboarding-platform-funding__redeem {
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 .onboarding-platform-funding__redeem .ant-input {
   height: 40px;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
 }
 .onboarding-platform-funding__redeem > :first-child {
   flex: 1;

@@ -53,9 +53,9 @@ export function SubAppExportModal({
   const [includeData, setIncludeData] = React.useState(true)
   const [includeFiles, setIncludeFiles] = React.useState(true)
   const [busy, setBusy] = React.useState(false)
-  const [result, setResult] = React.useState<Awaited<ReturnType<typeof subAppClient.shareExport>> | null>(
-    null,
-  )
+  const [result, setResult] = React.useState<Awaited<
+    ReturnType<typeof subAppClient.shareExport>
+  > | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
   const handleExport = async (): Promise<void> => {
@@ -172,9 +172,9 @@ export function SubAppImportModal({
   const [preview, setPreview] = React.useState<SubAppShareImportPreviewResponse | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
-  const [done, setDone] = React.useState<Awaited<ReturnType<typeof subAppClient.shareImportApply>> | null>(
-    null,
-  )
+  const [done, setDone] = React.useState<Awaited<
+    ReturnType<typeof subAppClient.shareImportApply>
+  > | null>(null)
 
   const reset = React.useCallback((): void => {
     setPreview(null)
@@ -281,7 +281,7 @@ export function SubAppImportModal({
                   <p style={{ margin: '4px 0' }}>覆盖前的本机应用已备份：{done.backupPath}</p>
                 ) : null}
                 {done.warnings.map((warning) => (
-                  <p key={warning} style={{ margin: '4px 0', color: '#d46b08' }}>
+                  <p key={warning} style={{ margin: '4px 0', color: 'var(--warning)' }}>
                     {warning}
                   </p>
                 ))}
@@ -309,8 +309,7 @@ export function SubAppImportModal({
               <p>
                 {preview.packageSummary.counts.releases} 个发布版本 ·{' '}
                 {preview.packageSummary.counts.dataEntries} 条数据 ·{' '}
-                {preview.packageSummary.counts.files} 个文件 ·{' '}
-                {formatBytes(preview.byteSize ?? 0)}
+                {preview.packageSummary.counts.files} 个文件 · {formatBytes(preview.byteSize ?? 0)}
               </p>
               <p>
                 <Text type="secondary">

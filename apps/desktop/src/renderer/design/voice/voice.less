@@ -18,7 +18,7 @@
   height: 28px;
   padding: 0;
   margin-right: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 0;
   background: transparent;
   color: var(--text);
@@ -148,9 +148,9 @@
   kbd {
     padding: var(--pad-3xs) var(--pad-xs);
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    color: var(--text-inverse);
     font-family: inherit;
     font-size: var(--font-xs);
     font-weight: 600;
@@ -291,7 +291,7 @@
   background: transparent;
   color: var(--text-tertiary, rgba(255, 255, 255, 0.5));
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 
   &:hover {
     background: var(--bg-hover, rgba(255, 255, 255, 0.08));
@@ -333,7 +333,7 @@
   button {
     padding: var(--pad-3xs) var(--pad-md);
     font-size: var(--font-sm);
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     border: 1px solid var(--border, rgba(255, 255, 255, 0.16));
     background: var(--bg-hover, rgba(255, 255, 255, 0.06));
     color: var(--text-primary, #fff);

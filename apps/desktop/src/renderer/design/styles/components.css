@@ -8,14 +8,14 @@
 
 :root {
   /* Component tokens: keep repeated geometry in one place. */
-  --component-control-gap: 6px;
+  --component-control-gap: var(--pad-xs);
   --component-control-height: 30px;
   --component-control-radius: var(--r-md);
   --component-icon-button-size: 28px;
   --component-card-radius: var(--r-lg);
   --component-card-padding: var(--pad-lg);
   --form-grid-label-width: 220px;
-  --form-grid-column-gap: 24px;
+  --form-grid-column-gap: var(--pad-2xl);
 }
 
 /* ============================================================
@@ -108,9 +108,9 @@
 }
 
 .btn.lg {
-  gap: 8px;
-  padding: 8px 24px;
-  font-size: 14px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-2xl);
+  font-size: var(--font-md);
 }
 
 .btn.icon {
@@ -179,14 +179,14 @@
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   height: 20px;
-  padding: 0 7px;
+  padding: 0 var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--bg-soft);
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -236,20 +236,20 @@
   justify-content: center;
   min-width: 18px;
   height: 18px;
-  padding: 0 4px;
+  padding: 0 var(--pad-3xs);
   border: 1px solid var(--border);
   border-bottom-width: 2px;
   border-radius: var(--r-xs);
   background: var(--bg-soft);
   color: var(--text-muted);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 500;
 }
 
 .sidebar-kbd {
   margin-left: auto;
-  font-size: 9px;
+  font-size: var(--font-2xs);
   opacity: 0.6;
 }
 
@@ -330,7 +330,7 @@
 .empty-state {
   justify-content: center;
   gap: var(--pad-lg);
-  padding: 40px 20px;
+  padding: var(--pad-3xl) var(--pad-xl);
 }
 
 .empty-state .empty-icon,
@@ -346,7 +346,7 @@
 .empty-state .empty-icon {
   width: 56px;
   height: 56px;
-  margin-bottom: 4px;
+  margin-bottom: var(--pad-3xs);
   border-radius: var(--r-lg);
 }
 
@@ -370,16 +370,16 @@
 
 .empty-state .empty-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-3xs);
 }
 
 .empty-state .empty-action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   height: 32px;
-  padding: 0 14px;
+  padding: 0 var(--pad-lg);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
@@ -403,8 +403,8 @@
 }
 
 .empty-compact {
-  gap: 10px;
-  padding: 28px 16px;
+  gap: var(--pad-sm);
+  padding: 28px var(--pad-lg);
 }
 
 .empty-compact .empty-icon {
@@ -448,10 +448,10 @@
 .search-input {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 200px;
   height: var(--component-control-height);
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: var(--component-control-radius);
   background: var(--bg-soft);
@@ -490,12 +490,12 @@
 .form-grid {
   display: grid;
   grid-template-columns: var(--form-grid-label-width) minmax(0, 1fr);
-  gap: 14px var(--form-grid-column-gap);
+  gap: var(--pad-lg) var(--form-grid-column-gap);
   align-items: start;
 }
 
 .form-grid > label {
-  padding-top: 8px;
+  padding-top: var(--pad-sm);
   color: var(--text);
   font-size: var(--font-sm);
   font-weight: 500;
@@ -516,7 +516,7 @@
 .form-grid > textarea:not(.ant-input) {
   width: 100%;
   height: var(--control-h-form);
-  padding: 0 12px;
+  padding: 0 var(--pad-md);
   border: none;
   border-radius: var(--r-md);
   outline: none;
@@ -532,7 +532,7 @@
 .form-grid > textarea:not(.ant-input) {
   height: auto;
   min-height: 84px;
-  padding: 10px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   resize: vertical;
   line-height: 1.55;
 }
@@ -553,7 +553,7 @@
 .form-grid > .control {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   height: auto;
   padding: 0;
   border: none;
@@ -644,8 +644,8 @@
 .spark-avatar-fallback {
   display: grid;
   place-items: center;
-  color: #fff;
-  font-size: 13px;
+  color: var(--text-inverse);
+  font-size: var(--font-base);
   font-weight: 750;
   line-height: 1;
   user-select: none;
@@ -665,7 +665,7 @@
   resize: vertical;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 9px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   background: var(--bg);
   color: var(--text);
   font: inherit;
@@ -687,7 +687,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: fadeIn 0.15s;
+  animation: common-fade-in 0.15s;
 }
 .modal {
   width: min(520px, 90vw);
@@ -700,8 +700,8 @@
 .modal-h {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 18px;
+  gap: var(--pad-sm);
+  padding: var(--pad-lg) var(--pad-xl);
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
 }
 .modal-h-icon {
@@ -715,7 +715,7 @@
   justify-content: center;
 }
 .modal-h .modal-title {
-  font-size: 15px;
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -725,16 +725,16 @@
   margin-top: 1px;
 }
 .modal-body {
-  padding: 18px;
+  padding: var(--pad-xl);
   display: flex;
   flex-direction: column;
   gap: var(--pad-md);
 }
 .modal-foot {
   display: flex;
-  gap: 8px;
+  gap: var(--pad-sm);
   align-items: center;
-  padding: 12px 18px;
+  padding: var(--pad-md) var(--pad-xl);
   border-top: 1px solid var(--border);
   background: var(--bg-soft);
 }
@@ -770,7 +770,7 @@
 }
 
 .provider-logo-fallback {
-  color: #fff;
+  color: var(--text-inverse);
   font-size: 0.6em;
   font-weight: 700;
   letter-spacing: 0;
@@ -841,7 +841,7 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 4px;
+  gap: var(--pad-3xs);
   height: var(--component-control-height);
   padding: 0 var(--pad-md);
   border: none;
@@ -872,11 +872,11 @@
 }
 
 .chip-list-empty {
-  padding: 6px 4px 2px;
+  padding: var(--pad-xs) var(--pad-3xs) 2px;
 }
 
 .chip-list-empty-text {
-  padding: 4px 6px;
+  padding: var(--pad-3xs) var(--pad-xs);
   color: var(--text-faint);
   font-size: var(--font-xs);
   font-style: italic;
@@ -892,10 +892,10 @@
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   max-width: 100%;
   height: 26px;
-  padding: 0 6px 0 8px;
+  padding: 0 var(--pad-xs) 0 var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--bg-soft);
@@ -973,8 +973,8 @@
 
 .chip-list-compact .chip {
   height: 22px;
-  padding: 0 4px 0 6px;
-  font-size: 10.5px;
+  padding: 0 var(--pad-3xs) 0 var(--pad-xs);
+  font-size: var(--font-xs);
 }
 
 .chip-list-compact .chip-list-input {
@@ -993,7 +993,7 @@
 .composer-cli-model-submenu .composer-model-item .composer-menu-item {
   flex: 1 1 auto;
   min-width: 0;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .composer-model-menu .composer-model-item .composer-menu-item,
@@ -1033,11 +1033,11 @@
 .composer-model-search {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   height: 36px;
   flex-shrink: 0;
-  margin: 0 0 4px;
-  padding: 0 8px;
+  margin: 0 0 var(--pad-3xs);
+  padding: 0 var(--pad-sm);
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--text) 4%, transparent);
   color: var(--text-faint);
@@ -1091,7 +1091,7 @@
 
 .arm_layout {
   display: flex;
-  gap: 20px;
+  gap: var(--pad-xl);
   min-height: 420px;
   max-height: 70vh;
 }
@@ -1102,19 +1102,19 @@
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
-  padding-right: 16px;
+  padding-right: var(--pad-lg);
 }
 
 .arm_sidebar_header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text-secondary);
-  padding-bottom: 8px;
+  padding-bottom: var(--pad-sm);
   border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
+  margin-bottom: var(--pad-sm);
 }
 
 .arm_router_list {
@@ -1132,9 +1132,9 @@
 .arm_router_item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
   align-items: flex-start;
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border: none;
   border-radius: var(--r-md, 8px);
   background: transparent;
@@ -1155,7 +1155,7 @@
 }
 
 .arm_router_name {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--text);
 }
@@ -1166,7 +1166,7 @@
 
 .arm_router_meta {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex-wrap: wrap;
 }
 
@@ -1175,23 +1175,23 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--pad-lg);
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: var(--pad-3xs);
 }
 
 .arm_section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .arm_section_title {
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text-muted);
   letter-spacing: 0.02em;
-  padding-bottom: 6px;
+  padding-bottom: var(--pad-xs);
   border-bottom: 1px solid var(--border);
 }
 
@@ -1200,17 +1200,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .arm_section .ant-alert {
-  margin-top: 8px;
+  margin-top: var(--pad-sm);
 }
 
 .arm_form_grid {
   display: grid;
   grid-template-columns: 110px 1fr;
-  gap: 8px 12px;
+  gap: var(--pad-sm) var(--pad-md);
   align-items: center;
 }
 
@@ -1223,14 +1223,14 @@
 }
 
 .arm_form_label {
-  font-size: 12.5px;
+  font-size: var(--font-base);
   color: var(--text-secondary);
 }
 
 .arm_executors {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
   align-items: flex-start;
 }
 
@@ -1242,7 +1242,7 @@
      推理强度 132px（2026-09 新增执行器推理强度配置；触发器需完整显示
      「推理·跟随会话」，下拉选项另由 popupMatchSelectWidth=false 自适应） */
   grid-template-columns: 56px minmax(110px, 1.2fr) minmax(110px, 1.2fr) 84px 132px auto auto auto;
-  gap: 8px;
+  gap: var(--pad-sm);
   align-items: center;
   width: 100%;
 }
@@ -1282,13 +1282,13 @@
 }
 
 .arm_empty {
-  font-size: 12.5px;
+  font-size: var(--font-base);
   color: var(--text-muted);
-  padding: 8px 0;
+  padding: var(--pad-sm) 0;
 }
 
 .arm_hint {
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   color: var(--text-muted);
   line-height: 1.6;
 }
@@ -1302,8 +1302,8 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-top: 10px;
+  gap: var(--pad-sm);
+  padding-top: var(--pad-sm);
   border-top: 1px solid var(--border);
 }
 

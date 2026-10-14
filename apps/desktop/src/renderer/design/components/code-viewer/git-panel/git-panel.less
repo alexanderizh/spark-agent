@@ -12,7 +12,7 @@
   min-height: 0;
   background: transparent;
   color: var(--cv-text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   user-select: none;
 }
 
@@ -24,15 +24,15 @@
   justify-content: space-between;
   height: 34px;
   flex: none;
-  padding: 0 6px 0 10px;
+  padding: 0 var(--pad-xs) 0 var(--pad-sm);
   border-bottom: 1px solid var(--cv-border);
 }
 
 .gp-header-title {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--pad-xs);
+  font-size: var(--font-sm);
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--cv-text);
@@ -54,9 +54,9 @@
   justify-content: center;
   flex: 1;
   min-height: 0;
-  padding: 20px 12px;
+  padding: var(--pad-xl) var(--pad-md);
   color: var(--cv-text-faint);
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-align: center;
 }
 
@@ -67,13 +67,13 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-lg) var(--pad-md);
 }
 
 .gp-skeleton {
   height: 12px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: linear-gradient(
     90deg,
     var(--cv-bg-3) 25%,
@@ -99,8 +99,8 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 10px 6px;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-xs);
 }
 
 .gp-commit-input {
@@ -108,11 +108,11 @@
   resize: none;
   background: var(--cv-bg);
   border: 1px solid var(--cv-border-soft);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   color: var(--cv-text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   outline: none;
   font-family: inherit;
   user-select: text;
@@ -134,15 +134,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   width: 100%;
   height: 28px;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--cv-accent);
   color: var(--cv-accent-fg);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
   cursor: pointer;
 
@@ -164,11 +164,11 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 6px 0 8px;
+  padding: var(--pad-xs) 0 var(--pad-sm);
 }
 
 .gp-group {
-  margin-bottom: 4px;
+  margin-bottom: var(--pad-3xs);
 
   &:last-child {
     margin-bottom: 0;
@@ -179,11 +179,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: var(--pad-3xs);
   height: 28px;
-  padding: 0 6px 0 8px;
+  padding: 0 var(--pad-xs) 0 var(--pad-sm);
   flex: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 
   &:hover {
     background: var(--cv-bg-3);
@@ -194,7 +194,7 @@
     align-items: center;
     gap: 2px;
     opacity: 0;
-    transition: opacity 0.12s ease;
+    transition: opacity var(--motion-instant) ease;
   }
 
   &:hover .gp-group-actions,
@@ -206,14 +206,14 @@
 .gp-group-title {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   flex: 1;
   min-width: 0;
   height: 100%;
   border: none;
   background: transparent;
   color: var(--cv-text-dim);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -223,7 +223,7 @@
 .gp-chevron {
   flex: none;
   color: var(--cv-text-faint);
-  transition: transform 0.12s ease;
+  transition: transform var(--motion-instant) ease;
 }
 
 .gp-group.collapsed .gp-chevron {
@@ -257,7 +257,7 @@
   flex: none;
   color: var(--cv-text-faint);
   font-weight: 500;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -265,27 +265,27 @@
   display: inline-flex;
   align-items: center;
   color: var(--cv-accent);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
 }
 
 .gp-group-body {
-  padding: 2px 4px 4px;
+  padding: 2px var(--pad-3xs) var(--pad-3xs);
 }
 
 .gp-group-empty {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+  gap: var(--pad-xs);
+  padding: var(--pad-3xs) var(--pad-sm);
   color: var(--cv-text-faint);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .gp-group-error {
-  padding: 4px 10px;
+  padding: var(--pad-3xs) var(--pad-sm);
   color: var(--cv-red);
-  font-size: 12px;
+  font-size: var(--font-sm);
   word-break: break-all;
 }
 
@@ -294,10 +294,10 @@
 .gp-file-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   height: 26px;
-  padding: 0 6px;
-  border-radius: 4px;
+  padding: 0 var(--pad-xs);
+  border-radius: var(--r-xs);
 
   &:hover {
     background: var(--cv-bg-3);
@@ -307,9 +307,9 @@
   .gp-file-stats {
     display: inline-flex;
     flex: none;
-    gap: 4px;
+    gap: var(--pad-3xs);
     font-family: var(--cv-mono);
-    font-size: 11px;
+    font-size: var(--font-xs);
   }
 
   .gp-file-actions {
@@ -331,7 +331,7 @@
 .gp-file-main {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   flex: 1;
   min-width: 0;
   height: 100%;
@@ -339,7 +339,7 @@
   background: transparent;
   padding: 0;
   color: var(--cv-text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   text-align: left;
 
@@ -364,15 +364,15 @@
 .gp-tree-dir {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   width: 100%;
   height: 26px;
-  padding-right: 6px;
+  padding-right: var(--pad-xs);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--cv-text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   text-align: left;
 
@@ -384,7 +384,7 @@
   .gp-tree-dir-main {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--pad-xs);
     flex: 1;
     min-width: 0;
     height: 100%;
@@ -425,7 +425,7 @@
 .gp-tree-chevron {
   flex: none;
   color: var(--cv-text-faint);
-  transition: transform 0.12s ease;
+  transition: transform var(--motion-instant) ease;
 
   &.open {
     transform: rotate(90deg);
@@ -437,7 +437,7 @@
   width: 12px;
   text-align: center;
   font-family: var(--cv-mono);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
 
   &.add {
@@ -460,7 +460,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--cv-text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .gp-file-name {
@@ -483,7 +483,7 @@
 .gp-stash-main {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   flex: 1;
   min-width: 0;
 }
@@ -495,7 +495,7 @@
 
 .gp-stash-time {
   color: var(--cv-text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-family: inherit;
 }
 
@@ -508,12 +508,12 @@
 .gp-commit-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   width: 100%;
   height: 28px;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--cv-text-dim);
   font: inherit;
@@ -533,7 +533,7 @@
 .gp-commit-chevron {
   flex: none;
   color: var(--cv-text-faint);
-  transition: transform 0.12s ease;
+  transition: transform var(--motion-instant) ease;
 
   &.open {
     transform: rotate(90deg);
@@ -555,7 +555,7 @@
 .gp-commit-hash {
   flex: none;
   font-family: var(--cv-mono);
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--cv-text-faint);
 }
 
@@ -565,15 +565,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .gp-commit-meta {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: var(--pad-xs);
+  font-size: var(--font-xs);
   color: var(--cv-text-faint);
 }
 
@@ -598,11 +598,11 @@
 .gp-commit-files-state {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-height: 24px;
-  padding: 2px 10px 4px 32px;
+  padding: 2px var(--pad-sm) var(--pad-3xs) var(--pad-3xl);
   color: var(--cv-text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
 
   &.error {
     color: var(--cv-red);
@@ -611,9 +611,9 @@
 }
 
 .gp-commit-files {
-  padding: 2px 0 4px 20px;
+  padding: 2px 0 var(--pad-3xs) var(--pad-xl);
   border-left: 1px solid var(--cv-border-soft);
-  margin-left: 16px;
+  margin-left: var(--pad-lg);
 }
 
 .gp-commit-file-group {
@@ -623,13 +623,13 @@
 .gp-commit-file-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   width: 100%;
   min-width: 0;
   height: 25px;
-  padding: 0 8px 0 4px;
+  padding: 0 var(--pad-sm) 0 var(--pad-3xs);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--cv-text-dim);
   font: inherit;
@@ -650,7 +650,7 @@
 .gp-commit-file-chevron {
   flex: none;
   color: var(--cv-text-faint);
-  transition: transform 0.12s ease;
+  transition: transform var(--motion-instant) ease;
 
   &.open {
     transform: rotate(90deg);
@@ -658,19 +658,19 @@
 }
 
 .gp-commit-file-history {
-  margin: 1px 0 3px 17px;
-  padding: 1px 0 1px 12px;
+  margin: 1px 0 var(--pad-3xs) 17px;
+  padding: 1px 0 1px var(--pad-md);
   border-left: 1px solid var(--cv-border);
 }
 
 .gp-commit-history-state {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   min-height: 23px;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   color: var(--cv-text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
 
   &.error {
     color: var(--cv-red);
@@ -687,13 +687,13 @@
 .gp-commit-history-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   width: 100%;
   min-width: 0;
   min-height: 24px;
-  padding: 2px 8px;
+  padding: 2px var(--pad-sm);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--cv-text-dim);
   font: inherit;
@@ -713,7 +713,7 @@
 .gp-commit-history-hash {
   flex: none;
   font-family: var(--cv-mono);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--cv-accent);
 }
 
@@ -723,7 +723,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .gp-commit-history-meta {
@@ -733,7 +733,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--cv-text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 /* ---------- foot 栏 ---------- */
@@ -741,18 +741,18 @@
 .gp-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex: none;
   height: 30px;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   border-top: 1px solid var(--cv-border);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .gp-footer-branch {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex: 1;
   min-width: 0;
   color: var(--cv-accent);
@@ -769,7 +769,7 @@
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   color: var(--cv-text-faint);
   font-variant-numeric: tabular-nums;
 
@@ -789,15 +789,15 @@
 .gp-sync-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex: none;
   height: 24px;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--cv-text-dim);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
 
   &:hover:not(:disabled) {
@@ -825,7 +825,7 @@
   height: 22px;
   flex: none;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--cv-text-dim);
   cursor: pointer;
@@ -865,27 +865,27 @@
   max-width: calc(100vw - 16px);
   max-height: min(420px, 70vh);
   overflow-y: auto;
-  padding: 10px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   border-radius: var(--r-md, 8px);
   border: 1px solid var(--border-strong, #d7d2c9);
   background: var(--panel-elev, #fafafa);
   box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.12));
   color: var(--text, #23231f);
-  font-size: 12px;
+  font-size: var(--font-sm);
   user-select: text;
 }
 
 .gp-cpop-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 
 .gp-cpop-short {
   flex: none;
   font-family: var(--font-mono, monospace);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--primary, #6366f1);
 }
@@ -917,8 +917,8 @@
 .gp-cpop-refs {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 8px;
+  gap: var(--pad-3xs);
+  margin-top: var(--pad-sm);
 }
 
 .gp-cpop-ref {
@@ -926,17 +926,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 1px 6px;
+  padding: 1px var(--pad-xs);
   border: 1px solid var(--border, #f6f3ec);
   border-radius: var(--r-xs, 4px);
   font-family: var(--font-mono, monospace);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   color: var(--text-muted, #b2a997);
 }
 
 .gp-cpop-message {
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: var(--pad-sm);
+  padding-top: var(--pad-sm);
   border-top: 1px solid var(--divider, #efede8);
 }
 
@@ -948,7 +948,7 @@
 }
 
 .gp-cpop-body {
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.6;
@@ -959,10 +959,10 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: var(--pad-sm);
+  padding-top: var(--pad-sm);
   border-top: 1px solid var(--divider, #efede8);
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-muted, #b2a997);
 }
 
@@ -983,5 +983,5 @@
 /* 提交行右键菜单：复用全局 .action-menu / .action-menu-item 外观，
    仅收敛条目高度（提交行较多、菜单项少，紧凑一些更贴合面板节奏）。 */
 .gp-commit-menu .action-menu-item {
-  padding: 7px 9px;
+  padding: var(--pad-sm) var(--pad-sm);
 }

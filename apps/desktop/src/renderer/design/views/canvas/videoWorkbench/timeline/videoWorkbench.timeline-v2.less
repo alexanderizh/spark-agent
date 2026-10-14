@@ -16,13 +16,13 @@
 
 .vwb-mt-toolbar {
   min-height: 38px;
-  padding: 4px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--pad-sm);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: #15181d;
+  background: var(--canvas-stage-bg-3);
 }
 
 .vwb-mt-toolbar-group {
@@ -41,7 +41,7 @@
   }
 
   .ant-btn:not(:disabled):hover {
-    color: #fff;
+    color: var(--text-inverse);
     background: rgba(255, 255, 255, 0.08);
   }
 }
@@ -49,17 +49,17 @@
 .vwb-mt-toolbar-divider {
   width: 1px;
   height: 16px;
-  margin: 0 4px;
+  margin: 0 var(--pad-3xs);
   background: rgba(255, 255, 255, 0.1);
 }
 
 .vwb-mt-switch {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   white-space: nowrap;
   color: rgba(255, 255, 255, 0.56);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .vwb-mt-track-actions button,
@@ -83,9 +83,9 @@
 }
 
 .vwb-mt-selection-count {
-  margin-left: 4px;
+  margin-left: var(--pad-3xs);
   color: #7dd6bb;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   white-space: nowrap;
 }
 
@@ -94,11 +94,11 @@
 }
 
 .vwb-mt-readonly-note {
-  padding: 6px 10px;
+  padding: var(--pad-xs) var(--pad-sm);
   border-bottom: 1px solid rgba(255, 178, 92, 0.25);
   background: rgba(255, 178, 92, 0.08);
   color: #ffc07a;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .vwb-mt-viewport {
@@ -121,7 +121,7 @@
   top: 0;
   z-index: 8;
   min-height: 28px;
-  background: #15181d;
+  background: var(--canvas-stage-bg-3);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -132,17 +132,17 @@
   z-index: 6;
   box-sizing: border-box;
   width: var(--vwb-mt-head-width);
-  background: #15181d;
+  background: var(--canvas-stage-bg-3);
   border-right: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 .vwb-mt-ruler-head {
-  padding: 0 9px;
+  padding: 0 var(--pad-sm);
   display: flex;
   align-items: center;
   justify-content: space-between;
   color: rgba(255, 255, 255, 0.64);
-  font-size: 11px;
+  font-size: var(--font-xs);
 
   small {
     color: rgba(255, 255, 255, 0.36);
@@ -152,7 +152,7 @@
 .vwb-mt-ruler {
   position: relative;
   height: 28px;
-  background: #15181d;
+  background: var(--canvas-stage-bg-3);
   cursor: pointer;
   touch-action: none;
 
@@ -173,7 +173,7 @@
       left: 4px;
       bottom: 9px;
       color: rgba(255, 255, 255, 0.44);
-      font-size: 9px;
+      font-size: var(--font-2xs);
       white-space: nowrap;
       font-variant-numeric: tabular-nums;
     }
@@ -191,10 +191,10 @@
 
 .vwb-mt-track-head {
   min-height: inherit;
-  padding: 5px 6px 5px 4px;
+  padding: var(--pad-xs) var(--pad-xs) var(--pad-xs) var(--pad-3xs);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .vwb-mt-track-color {
@@ -260,23 +260,23 @@
   button,
   input {
     color: rgba(255, 255, 255, 0.8);
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 600;
   }
 
   input {
     width: 100%;
     box-sizing: border-box;
-    padding: 1px 3px;
+    padding: 1px var(--pad-3xs);
     border: 1px solid rgba(125, 214, 187, 0.58);
-    border-radius: 3px;
+    border-radius: var(--r-xs);
     outline: none;
     background: #101216;
   }
 
   small {
     color: rgba(255, 255, 255, 0.34);
-    font-size: 9px;
+    font-size: var(--font-2xs);
   }
 }
 
@@ -304,12 +304,12 @@
     padding: 0;
     display: grid;
     place-items: center;
-    border-radius: 4px;
-    font-size: 10px;
+    border-radius: var(--r-xs);
+    font-size: var(--font-2xs);
 
     &:hover:not(:disabled),
     &.is-active {
-      color: #fff;
+      color: var(--text-inverse);
       background: rgba(255, 255, 255, 0.09);
     }
 
@@ -333,14 +333,14 @@
 
 .vwb-project-warning {
   min-height: 32px;
-  padding: 5px 12px;
+  padding: var(--pad-xs) var(--pad-md);
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   border-bottom: 1px solid rgba(255, 178, 92, 0.25);
   background: #282016;
   color: #ffc07a;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .vwb-audio-preview {
@@ -348,7 +348,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: var(--pad-md);
   color: rgba(255, 255, 255, 0.72);
 
   strong {
@@ -368,7 +368,7 @@
   left: calc(var(--vwb-mt-head-width) + 14px);
   top: 20px;
   color: rgba(255, 255, 255, 0.22);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   pointer-events: none;
 }
 
@@ -381,7 +381,7 @@
   align-items: stretch;
   overflow: hidden;
   border: 1px solid rgba(63, 184, 148, 0.58);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: #193a34;
   cursor: grab;
   touch-action: none;
@@ -429,12 +429,12 @@
   }
 
   &.is-task-running::after {
-    background: #fbbf24;
+    background: var(--warning);
     animation: vwb-mt-clip-task-pulse 1.6s ease-in-out infinite;
   }
 
   &.is-task-failed::after {
-    background: #ef4444;
+    background: var(--danger);
     box-shadow: 0 0 4px rgba(239, 68, 68, 0.8);
   }
 
@@ -493,7 +493,7 @@
 .vwb-mt-clip-copy {
   min-width: 0;
   flex: 1;
-  padding: 5px 6px;
+  padding: var(--pad-xs) var(--pad-xs);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -506,13 +506,13 @@
   }
 
   strong {
-    font-size: 10px;
+    font-size: var(--font-2xs);
     font-weight: 600;
   }
 
   small {
     color: rgba(255, 255, 255, 0.48);
-    font-size: 9px;
+    font-size: var(--font-2xs);
     font-variant-numeric: tabular-nums;
   }
 }
@@ -530,8 +530,8 @@
     padding: 0;
     display: grid;
     place-items: center;
-    border-radius: 4px;
-    color: #fff;
+    border-radius: var(--r-xs);
+    color: var(--text-inverse);
     background: rgba(0, 0, 0, 0.36);
   }
 }
@@ -608,7 +608,7 @@
   padding: 30px;
   color: rgba(255, 255, 255, 0.36);
   text-align: center;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 @container video-workbench-timeline (min-width: 761px) and (max-width: 1040px) {
@@ -629,7 +629,7 @@
   .vwb-mt-toolbar {
     align-items: stretch;
     flex-wrap: wrap;
-    padding-block: 6px;
+    padding-block: var(--pad-xs);
   }
 
   .vwb-mt-toolbar-group {
@@ -658,8 +658,8 @@
   }
 
   .vwb-mt-toolbar-group.is-secondary .ant-btn {
-    padding-inline: 6px;
-    font-size: 11px;
+    padding-inline: var(--pad-xs);
+    font-size: var(--font-xs);
   }
 
   .vwb-mt-switch {

@@ -102,7 +102,7 @@ body.terminal-resizing {
   border: none;
   background: transparent;
   color: var(--text-muted);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   cursor: pointer;
   transition:
     background-color var(--motion-fast) ease,
@@ -127,7 +127,7 @@ body.terminal-resizing {
   color: var(--text-muted);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   transition:
     background-color var(--motion-fast) ease,
@@ -178,7 +178,7 @@ body.terminal-resizing {
   border: none;
   background: transparent;
   color: var(--text-muted);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   cursor: pointer;
   opacity: 0.75;
   transition:
@@ -208,7 +208,7 @@ body.terminal-resizing {
   height: 26px;
   padding: 0 var(--pad-sm);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--panel);
   color: var(--text);
   font-size: var(--font-sm);
@@ -267,7 +267,7 @@ body.terminal-resizing {
 }
 .builtin-terminal-panel .xterm-viewport::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--text) 18%, transparent);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 }
 .builtin-terminal-panel .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--text) 30%, transparent);
@@ -300,7 +300,7 @@ body.terminal-resizing {
   background: var(--primary-soft, color-mix(in srgb, var(--primary) 12%, transparent));
   color: var(--primary);
   border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   font-size: var(--font-xs);
   cursor: pointer;
 }

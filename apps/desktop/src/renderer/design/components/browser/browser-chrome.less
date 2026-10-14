@@ -8,16 +8,16 @@
   min-width: 0;
   background: var(--panel);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 /* ─── Tab 条 ─── */
 .browser-tabsbar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   height: 30px;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   border-bottom: 1px solid var(--divider);
   position: relative;
   z-index: 6;
@@ -27,7 +27,7 @@
 .browser-tabsbar-scroll {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex: 1;
   min-width: 0;
   height: 100%;
@@ -42,12 +42,12 @@
 .browser-tab {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   height: 24px;
   max-width: 180px;
   min-width: 96px;
-  padding: 0 6px 0 9px;
-  border-radius: 6px;
+  padding: 0 var(--pad-xs) 0 var(--pad-sm);
+  border-radius: var(--r-sm);
   border: 1px solid transparent;
   cursor: pointer;
   color: var(--text-muted);
@@ -89,7 +89,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
+  font-size: var(--font-sm);
 }
 
 .browser-tab-close {
@@ -101,7 +101,7 @@
   height: 16px;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: transparent;
   color: var(--text-faint);
   cursor: pointer;
@@ -149,7 +149,7 @@
   max-width: 360px;
   max-height: 320px;
   overflow-y: auto;
-  padding: 4px;
+  padding: var(--pad-3xs);
   border-radius: var(--r-md);
   border: 1px solid var(--border-strong);
   background: var(--panel-elev);
@@ -160,9 +160,9 @@
   appearance: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border: none;
   border-radius: var(--r-sm);
   background: transparent;
@@ -181,7 +181,7 @@
 .browser-tabs-list-index {
   flex-shrink: 0;
   width: 16px;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-faint);
   text-align: right;
 }
@@ -200,7 +200,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   color: var(--text-faint);
 }
 
@@ -208,9 +208,9 @@
 .browser-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-height: 40px;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border-bottom: 1px solid var(--divider);
   flex-shrink: 0;
   position: relative;
@@ -258,14 +258,14 @@
     flex: 1;
     min-width: 0;
     height: 26px;
-    padding: 0 10px;
+    padding: 0 var(--pad-sm);
     border: 1px solid var(--border);
-    border-radius: 13px;
+    border-radius: var(--r-lg);
     outline: none;
     background: var(--bg-sunken);
     color: var(--text);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--font-sm);
     &:focus {
       border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
       box-shadow: 0 0 0 2px var(--primary-soft);
@@ -308,7 +308,7 @@
   right: 0;
   z-index: 30;
   min-width: 190px;
-  padding: 4px;
+  padding: var(--pad-3xs);
   border-radius: var(--r-md);
   border: 1px solid var(--border-strong);
   background: var(--panel-elev);
@@ -319,9 +319,9 @@
   appearance: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border: none;
   border-radius: var(--r-sm);
   background: transparent;
@@ -329,7 +329,7 @@
   cursor: pointer;
   text-align: left;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   &:hover {
     background: var(--hover);
   }
@@ -352,7 +352,7 @@
 
 .browser-menu-divider {
   height: 1px;
-  margin: 4px 6px;
+  margin: var(--pad-3xs) var(--pad-xs);
   background: var(--divider);
 }
 
@@ -397,7 +397,7 @@
   // Electron 的 <webview> 内部用 shadow iframe 承载页面。宿主必须保持 flex，
   // 否则内部 iframe 会停留在默认固有高度，即使 webview 自身已经是 100%。
   display: flex;
-  background: #fff;
+  background: var(--panel);
 }
 
 /* ─── 当前网页的内嵌 DevTools ─── */
@@ -439,9 +439,9 @@
 .browser-devtools-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   height: 30px;
-  padding: 0 6px 0 10px;
+  padding: 0 var(--pad-xs) 0 var(--pad-sm);
   flex: 0 0 auto;
   border-bottom: 1px solid var(--divider);
   user-select: none;
@@ -454,7 +454,7 @@
 
 .browser-devtools-target {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .browser-devtools-close {
@@ -498,35 +498,35 @@ body.browser-devtools-resizing {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 24px;
+  gap: var(--pad-sm);
+  padding: var(--pad-2xl);
   background: var(--panel);
   text-align: center;
 }
 
 .browser-tab-loaderror-title {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--text);
 }
 
 .browser-tab-loaderror-desc {
   max-width: 360px;
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   color: var(--text-muted);
   word-break: break-all;
 }
 
 .browser-tab-loaderror-retry {
   appearance: none;
-  margin-top: 4px;
-  padding: 5px 16px;
+  margin-top: var(--pad-3xs);
+  padding: var(--pad-xs) var(--pad-lg);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-sm);
   background: var(--panel-elev);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   &:hover {
     background: var(--hover);
@@ -554,7 +554,7 @@ body.browser-devtools-resizing {
 
 .browser-window-invalid {
   margin: auto;
-  padding: 40px;
+  padding: var(--pad-3xl);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-base);
 }

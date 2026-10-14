@@ -590,10 +590,10 @@
   --pv-kind-color: #06b6d4;
 }
 .pv_kind--voice {
-  --pv-kind-color: #f59e0b;
+  --pv-kind-color: var(--warning);
 }
 .pv_kind--text {
-  --pv-kind-color: #3b82f6;
+  --pv-kind-color: var(--primary);
 }
 
 /* ─── 行 1：图标 + (名称 + 状态 tag) + 操作按钮 ─── */
@@ -1615,7 +1615,7 @@
   min-height: 420px;
   resize: vertical;
   border: 1px solid var(--spark-border, rgba(127, 127, 127, 0.28));
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: var(--pad-md);
   background: var(--spark-surface, transparent);
   color: inherit;
@@ -1721,7 +1721,7 @@
   height: 22px;
   padding: 0 var(--pad-3xs);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   color: var(--text-muted);
   font-size: var(--font-xs);
@@ -1758,7 +1758,7 @@
   height: 24px;
   padding: 0 var(--pad-xs);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--panel);
   color: var(--text-strong);
   font-size: var(--font-sm);
@@ -1795,7 +1795,7 @@
   font-size: var(--font-2xs);
   color: var(--text-muted);
   border: 1px dashed color-mix(in srgb, var(--text-muted) 36%, transparent);
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   padding: 0 var(--pad-3xs);
   line-height: 16px;
 }
@@ -1809,7 +1809,7 @@
   width: 22px;
   height: 22px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -1944,7 +1944,7 @@
   gap: var(--pad-xs);
   padding: 0 var(--pad-sm);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   font: inherit;
   font-size: var(--font-sm);
   font-weight: 600;
@@ -1953,7 +1953,7 @@
 
 .pv_codex_runtime_notice_install {
   background: var(--primary);
-  color: #fff;
+  color: var(--text-inverse);
 
   &:hover:not(:disabled) {
     background: color-mix(in srgb, var(--primary) 88%, #000);

@@ -568,7 +568,7 @@
   min-width: 30px;
   height: 20px;
   padding: 0 var(--pad-3xs);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
   background: color-mix(in srgb, currentColor 12%, transparent);
   color: currentColor;
@@ -578,14 +578,14 @@
   line-height: 1;
 }
 .document-file-icon--word {
-  color: #2563eb;
+  color: var(--primary-hover);
 }
 .document-file-icon--excel {
-  color: #16a34a;
+  color: var(--success);
 }
 .document-file-icon--powerpoint,
 .document-file-icon--pdf {
-  color: #dc2626;
+  color: var(--danger);
 }
 .file-type-text-tag {
   display: inline-flex;
@@ -593,7 +593,7 @@
   justify-content: center;
   height: 20px;
   padding: 0 var(--pad-3xs);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
   background: color-mix(in srgb, currentColor 12%, transparent);
   color: var(--text-muted);
@@ -606,24 +606,24 @@
   z-index: 2;
 }
 .file-type-text-tag--code {
-  color: #3b82f6;
+  color: var(--primary);
 }
 .file-type-text-tag--style {
   color: #0891b2;
 }
 .file-type-text-tag--script,
 .file-type-text-tag--json {
-  color: #d97706;
+  color: var(--warning);
 }
 .file-type-text-tag--doc {
-  color: #2563eb;
+  color: var(--primary-hover);
 }
 .file-type-text-tag--sheet {
-  color: #16a34a;
+  color: var(--success);
 }
 .file-type-text-tag--slides,
 .file-type-text-tag--pdf {
-  color: #dc2626;
+  color: var(--danger);
 }
 .file-type-text-tag--image {
   color: #9333ea;
@@ -635,10 +635,10 @@
   color: #db2777;
 }
 .file-type-text-tag--archive {
-  color: #b45309;
+  color: var(--warning);
 }
 .file-type-text-tag--config {
-  color: #64748b;
+  color: var(--text-muted);
 }
 
 /* === Document output cards (agent-produced document links) === */
@@ -714,7 +714,7 @@
 }
 .document-output-card-lines span {
   height: 5px;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text-muted) 12%, transparent);
 }
 .document-output-card-main {
@@ -763,14 +763,14 @@
   font-weight: 700;
 }
 .document-output-card.type-doc {
-  color: #2563eb;
+  color: var(--primary-hover);
 }
 .document-output-card.type-sheet {
-  color: #16a34a;
+  color: var(--success);
 }
 .document-output-card.type-slides,
 .document-output-card.type-pdf {
-  color: #dc2626;
+  color: var(--danger);
 }
 
 @media (max-width: 720px) {
@@ -785,24 +785,24 @@
   }
 }
 .turn-summary-file-row .file-type-badge.type-code {
-  color: #3b82f6;
+  color: var(--primary);
 }
 .turn-summary-file-row .file-type-badge.type-style {
   color: #0891b2;
 }
 .turn-summary-file-row .file-type-badge.type-script,
 .turn-summary-file-row .file-type-badge.type-json {
-  color: #d97706;
+  color: var(--warning);
 }
 .turn-summary-file-row .file-type-badge.type-doc {
-  color: #2563eb;
+  color: var(--primary-hover);
 }
 .turn-summary-file-row .file-type-badge.type-sheet {
-  color: #16a34a;
+  color: var(--success);
 }
 .turn-summary-file-row .file-type-badge.type-slides,
 .turn-summary-file-row .file-type-badge.type-pdf {
-  color: #dc2626;
+  color: var(--danger);
 }
 .turn-summary-file-row .file-type-badge.type-image {
   color: #9333ea;
@@ -814,10 +814,10 @@
   color: #db2777;
 }
 .turn-summary-file-row .file-type-badge.type-archive {
-  color: #b45309;
+  color: var(--warning);
 }
 .turn-summary-file-row .file-type-badge.type-config {
-  color: #64748b;
+  color: var(--text-muted);
 }
 .turn-summary-file-row .file-path {
   flex: 1;
@@ -945,7 +945,7 @@
 .plan-item.done .check {
   background: var(--success);
   border-color: var(--success);
-  color: white;
+  color: var(--text-inverse);
 }
 .plan-item.done .check svg {
   width: 8px;
@@ -965,7 +965,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: white;
+  background: var(--panel);
   animation: pulse 1.6s infinite;
 }
 .plan-item .meta {
@@ -1403,7 +1403,7 @@
 .pw-button.primary {
   background: var(--primary);
   border-color: var(--primary);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .pw-button.enabled {
@@ -1455,7 +1455,7 @@
 
 .playwright-segmented button.active {
   background: var(--primary);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .playwright-segmented button:disabled {
