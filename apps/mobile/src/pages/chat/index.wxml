@@ -8,7 +8,7 @@
       <view wx:if="{{loading}}" class="loading-tip">加载历史…</view>
 
       <empty-state
-        wx:elif="{{messages.length === 0}}"
+        wx:elif="{{items.length === 0}}"
         icon="chat"
         title="开始新的对话"
         desc="发送的消息会直达桌面端同一会话，回复实时流式回传"
@@ -21,6 +21,23 @@
 
           <!-- 用户消息：右侧灰色气泡 -->
           <view wx:elif="{{item.kind === 'user'}}" class="msg-row msg-row--user">
+            <!-- 附件 chips（本次会话内发送的图片/文件） -->
+            <view wx:if="{{item.attachments.length > 0}}" class="msg-attach row">
+              <block wx:for="{{item.attachments}}" wx:for-item="att" wx:key="path">
+                <image
+                  wx:if="{{att.type === 'image'}}"
+                  class="msg-attach-thumb"
+                  src="{{att.previewUrl}}"
+                  mode="aspectFill"
+                  data-url="{{att.previewUrl}}"
+                  bindtap="onPreviewAttachment"
+                />
+                <view wx:else class="msg-attach-file row">
+                  <view class="icon icon-file"></view>
+                  <text class="ellipsis">{{att.name}}</text>
+                </view>
+              </block>
+            </view>
             <view class="bubble-user">
               <text user-select>{{item.text}}</text>
             </view>
@@ -61,9 +78,44 @@
       value="{{inputText}}"
       placeholder="继续对话…"
       running="{{running}}"
+      chips="{{chips}}"
+      attachments="{{attachments}}"
+      commands="{{showCommands ? commands : []}}"
+      recording="{{recording}}"
+      transcribing="{{transcribing}}"
       bind:input="onInput"
       bind:send="onSend"
       bind:stop="onCancel"
+      bind:chip="onChipTap"
+      bind:addattach="onAddAttachment"
+      bind:removeattach="onRemoveAttachment"
+      bind:voicestart="onVoiceStart"
+      bind:voiceend="onVoiceEnd"
+      bind:voicefile="onVoiceFile"
+      bind:voiceerror="onVoiceError"
+      bind:commandpick="onCommandPick"
     />
   </view>
+
+  <!-- 配置选择面板（助手/模型/权限/推理/工作流/项目） -->
+  <sheet-panel
+    show="{{panelShow}}"
+    title="{{panelTitle}}"
+    mode="{{panelMode}}"
+    options="{{panelOptions}}"
+    loading="{{panelLoading}}"
+    emptyText="{{panelEmpty}}"
+    sliderOptions="{{panelSliderOptions}}"
+    sliderIndex="{{panelSliderIndex}}"
+    bind:close="closePanel"
+    bind:select="onPanelSelect"
+    bind:sliderchange="onPanelSliderChange"
+  />
+
+  <!-- 会话内定时任务面板 -->
+  <session-tasks-panel
+    show="{{tasksShow}}"
+    sessionId="{{sessionId}}"
+    bind:close="onTasksClose"
+  />
 </view>

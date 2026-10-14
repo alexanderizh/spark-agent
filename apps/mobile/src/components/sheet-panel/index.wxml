@@ -1,0 +1,61 @@
+<!-- 半屏选择面板：列表选择（单选高亮）/ 滑块调节（推理强度）两种模式 -->
+
+<view wx:if="{{show}}" class="sheet-mask" bindtap="onClose" catchtouchmove="noop">
+  <view class="sheet" catchtap="noop">
+    <view class="sheet-head row">
+      <text class="sheet-title">{{title}}</text>
+      <view class="sheet-close" hover-class="hover-dim" bindtap="onClose">
+        <view class="icon icon-close"></view>
+      </view>
+    </view>
+
+    <view wx:if="{{loading}}" class="sheet-loading">
+      <view class="status-spinner"></view>
+      <text class="t-caption">加载中…</text>
+    </view>
+
+    <!-- 列表模式 -->
+    <scroll-view wx:elif="{{mode === 'list'}}" class="sheet-list" scroll-y>
+      <view wx:if="{{options.length === 0}}" class="sheet-empty">
+        <text class="t-caption">{{emptyText || '暂无可选项'}}</text>
+      </view>
+      <view
+        wx:for="{{options}}"
+        wx:key="id"
+        class="sheet-option row {{item.checked ? 'sheet-option--checked' : ''}} {{item.disabled ? 'sheet-option--disabled' : ''}}"
+        hover-class="hover-dim"
+        data-id="{{item.id}}"
+        data-disabled="{{item.disabled}}"
+        bindtap="onSelect"
+      >
+        <view class="sheet-option-main grow">
+          <text class="sheet-option-label">{{item.label}}</text>
+          <text wx:if="{{item.sub}}" class="sheet-option-sub">{{item.sub}}</text>
+        </view>
+        <view wx:if="{{item.checked}}" class="icon icon-check"></view>
+      </view>
+    </scroll-view>
+
+    <!-- 滑块模式（推理强度） -->
+    <view wx:elif="{{mode === 'slider'}}" class="sheet-slider">
+      <view class="sheet-slider-value">
+        <text class="sheet-slider-current">{{sliderLabel}}</text>
+      </view>
+      <slider
+        min="0"
+        max="{{sliderMax}}"
+        step="1"
+        value="{{sliderIndex}}"
+        activeColor="#1a1a1a"
+        backgroundColor="#e8e5e0"
+        block-size="22"
+        block-color="#ffffff"
+        bindchange="onSliderChange"
+        bindchanging="onSliderChanging"
+      />
+      <view class="sheet-slider-ticks row">
+        <text wx:for="{{sliderTicks}}" wx:key="*this" class="t-caption sheet-slider-tick">{{item}}</text>
+      </view>
+    </view>
+  </view>
+</view>

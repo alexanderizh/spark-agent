@@ -22,9 +22,10 @@
   background: #fff;
   border: 1rpx solid #e9e6e1;
   border-radius: 48rpx;
-  padding: 10rpx 10rpx 10rpx 28rpx;
+  padding: 10rpx 10rpx 10rpx 16rpx;
   box-shadow: 0 4rpx 20rpx rgba(26, 26, 26, 0.06);
-  align-items: flex-end;
+  /* 原生 textarea 不遵守撑大的 line-height，文字对齐靠外层居中而非盒内定位 */
+  align-items: center;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .composer--focus .composer-shell {
@@ -32,14 +33,203 @@
   box-shadow: 0 6rpx 24rpx rgba(26, 26, 26, 0.08);
 }
 
+/* 左侧功能钮：语音 / 加号 */
+.composer-side {
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin-right: 6rpx;
+}
+.composer-side--rec {
+  background: #fdecec;
+}
+.composer-side--rec .icon-mic {
+  filter: hue-rotate(0deg);
+}
+
+/* 语音录入 / 转写覆盖层 */
+.voice-overlay {
+  flex: 1;
+  align-items: center;
+  gap: 12rpx;
+  min-height: 40rpx;
+  padding: 0 8rpx;
+}
+.voice-pulse {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+  background: #dc2626;
+  animation: voice-pulse 1s ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.35);
+  }
+}
+.voice-hint {
+  font-size: 25rpx;
+  color: #8f8b85;
+}
+
+/* 附件条 */
+.attach-bar {
+  margin-bottom: 12rpx;
+  white-space: nowrap;
+}
+.attach-bar-row {
+  gap: 14rpx;
+  display: inline-flex;
+}
+.attach-chip {
+  position: relative;
+  align-items: center;
+  gap: 10rpx;
+  background: #fff;
+  border: 1rpx solid #e9e6e1;
+  border-radius: 20rpx;
+  padding: 10rpx 52rpx 10rpx 12rpx;
+  max-width: 320rpx;
+  display: inline-flex;
+}
+.attach-thumb {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 12rpx;
+  flex: none;
+}
+.attach-file-icon {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 12rpx;
+  background-color: #f2f0ed;
+  flex: none;
+}
+.icon-file {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z'/%3E%3Cpath d='M14 2v6h6'/%3E%3C/svg%3E");
+}
+.attach-name {
+  font-size: 23rpx;
+  color: #1a1a1a;
+  max-width: 160rpx;
+}
+.attach-uploading {
+  position: absolute;
+  inset: 0;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.attach-remove {
+  position: absolute;
+  top: -10rpx;
+  right: -10rpx;
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  background: #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-close-sm {
+  width: 20rpx;
+  height: 20rpx;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6L6 18M6 6l12 12'/%3E%3C/svg%3E");
+  background-color: transparent;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* 配置条 chips */
+.chip-bar {
+  margin-top: 12rpx;
+  white-space: nowrap;
+}
+.chip-bar-row {
+  gap: 12rpx;
+  display: inline-flex;
+}
+.config-chip {
+  align-items: center;
+  gap: 8rpx;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1rpx solid #e9e6e1;
+  border-radius: 999rpx;
+  padding: 8rpx 18rpx;
+  display: inline-flex;
+  max-width: 340rpx;
+}
+.config-chip-label {
+  font-size: 22rpx;
+  color: #8f8b85;
+  flex: none;
+}
+.config-chip-value {
+  font-size: 22rpx;
+  color: #1a1a1a;
+  font-weight: 500;
+  max-width: 180rpx;
+}
+.config-chip-chevron {
+  width: 22rpx;
+  height: 22rpx;
+  flex: none;
+  opacity: 0.5;
+}
+
+/* 命令补全面板 */
+.cmd-panel {
+  background: #fff;
+  border: 1rpx solid #e9e6e1;
+  border-radius: 24rpx;
+  box-shadow: 0 8rpx 32rpx rgba(26, 26, 26, 0.1);
+  margin-bottom: 12rpx;
+  max-height: 380rpx;
+  overflow: hidden;
+}
+.cmd-item {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 24rpx;
+  border-bottom: 1rpx solid #f2f0ed;
+}
+.cmd-item:last-child {
+  border-bottom: none;
+}
+.cmd-name {
+  font-size: 25rpx;
+  color: #1a1a1a;
+  font-weight: 600;
+  flex: none;
+}
+.cmd-desc {
+  font-size: 23rpx;
+  color: #8f8b85;
+  flex: 1;
+}
+
 .composer-input {
   flex: 1;
-  /* 单行时与 68rpx 发送按钮等高（6+56+6），文字垂直居中；多行时对称 padding 不偏移 */
-  min-height: 68rpx;
+  /* 盒高贴自然内容（单行≈40rpx），垂直居中交给外层 flex；auto-height 多行时自然长高 */
   max-height: 320rpx;
   font-size: 30rpx;
-  line-height: 56rpx;
-  padding: 6rpx 0;
+  line-height: 40rpx;
+  padding: 0;
   color: #1a1a1a;
   width: 100%;
 }

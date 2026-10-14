@@ -53,6 +53,44 @@
   word-break: break-all;
 }
 
+/* 用户消息附件 chips（气泡上方） */
+.msg-attach {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+.msg-attach-thumb {
+  width: 132rpx;
+  height: 132rpx;
+  border-radius: 16rpx;
+  background: #e9e6e1;
+}
+.msg-attach-file {
+  gap: 8rpx;
+  background: #fff;
+  border: 1rpx solid #e9e6e1;
+  border-radius: 14rpx;
+  padding: 12rpx 20rpx;
+  max-width: 320rpx;
+}
+.msg-attach-file .icon-file {
+  width: 28rpx;
+  height: 28rpx;
+  flex: none;
+  background-color: transparent;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+.msg-attach-file text {
+  font-size: 23rpx;
+  color: #1a1a1a;
+}
+.icon-file {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z'/%3E%3Cpath d='M14 2v6h6'/%3E%3C/svg%3E");
+}
+
 /* AI 回复：全宽无气泡 */
 .msg-row--assistant {
   padding: 4rpx 0;
