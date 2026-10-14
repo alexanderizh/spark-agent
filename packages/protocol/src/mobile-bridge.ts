@@ -50,6 +50,21 @@ export interface MobileBridgeProjectListResponse {
 
 // ─── 会话 ─────────────────────────────────────────────────────────────────────
 
+/** 会话运行配置摘要（列表/详情共用；移动端配置条的数据源） */
+export interface MobileBridgeSessionRuntime {
+  providerProfileId?: string
+  modelId?: string | null
+  agentAdapter?: string
+  agentId?: string | null
+  permissionMode?: string
+  reasoningEffort?: string
+  chatMode?: string
+  /** 所属项目（workspace）id；'default' = 未归属 */
+  projectId?: string
+  /** 工作流绑定摘要（null = 未绑定） */
+  workflowBinding?: { mode: 'inherit' | 'override' | 'disabled'; workflowId: string | null } | null
+}
+
 export interface MobileBridgeSessionSummary {
   id: string
   title: string
@@ -60,6 +75,8 @@ export interface MobileBridgeSessionSummary {
   /** 所属项目 id（project_id 即主 workspace id，'default' 表示未归属项目） */
   projectId?: string
   pinnedAt?: string | null
+  /** 当前运行配置（配置条展示/回显；缺省表示桌面端旧版本） */
+  runtime?: MobileBridgeSessionRuntime
 }
 
 export interface MobileBridgeSessionListResponse {
@@ -78,10 +95,199 @@ export interface MobileBridgeUpdateSessionRequest {
   title?: string
   pinned?: boolean
   archived?: boolean
+  // ── 运行时配置（会话内切换，与桌面端 session:update 同语义） ──
+  providerProfileId?: string
+  /** null = 跟随渠道默认模型 */
+  modelId?: string | null
+  agentAdapter?: string
+  agentId?: string | null
+  permissionMode?: string
+  reasoningEffort?: string
+  chatMode?: string
+  /** 切换所属项目（workspace id） */
+  projectId?: string
 }
 
 export interface MobileBridgeCreateSessionResponse {
   session: MobileBridgeSessionSummary
+}
+
+// ─── 选项目录（聊天页进入时一次拉全） ─────────────────────────────────────────
+
+export interface MobileBridgeCatalogAgent {
+  id: string
+  name: string
+  description: string
+  agentAdapter: string
+  providerProfileId?: string | null
+  modelId?: string | null
+  permissionMode?: string
+  reasoningEffort?: string
+  isDefault: boolean
+}
+
+export interface MobileBridgeCatalogWorkflow {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+}
+
+export interface MobileBridgeCatalogProvider {
+  id: string
+  name: string
+  providerType: string
+  /** 是否自动路由渠道（AutoRouter 本身不可手选单模型） */
+  isAutoRouter: boolean
+  models: { id: string; name: string }[]
+}
+
+export interface MobileBridgeCatalog {
+  agents: MobileBridgeCatalogAgent[]
+  workflows: MobileBridgeCatalogWorkflow[]
+  /** 仅对话可用渠道（剔除 embedding/纯多媒体），模型选择器数据源 */
+  providers: MobileBridgeCatalogProvider[]
+  /** 各 adapter 合法的权限策略枚举（权限面板按当前 adapter 过滤） */
+  permissionModes: Record<string, string[]>
+  /** 推理强度枚举（面板滑块） */
+  reasoningEfforts: string[]
+}
+
+// ─── 工作流绑定 ───────────────────────────────────────────────────────────────
+
+export interface MobileBridgeWorkflowBindingResponse {
+  binding: { mode: 'inherit' | 'override' | 'disabled'; workflowId: string | null } | null
+  /** 生效摘要（inherit 时为继承来源） */
+  effectiveName: string | null
+  canChange: boolean
+  error: string | null
+}
+
+export interface MobileBridgeSetWorkflowBindingRequest {
+  mode: 'inherit' | 'override' | 'disabled'
+  workflowId?: string
+}
+
+// ─── 附件 ─────────────────────────────────────────────────────────────────────
+
+export interface MobileBridgeAttachment {
+  type: 'image' | 'file'
+  path: string
+  name?: string
+}
+
+export interface MobileBridgeUploadAttachmentsRequest {
+  files: { name: string; mimeType?: string; dataBase64: string }[]
+}
+
+export interface MobileBridgeUploadAttachmentsResponse {
+  attachments: MobileBridgeAttachment[]
+}
+
+// ─── 语音转写 ─────────────────────────────────────────────────────────────────
+
+export interface MobileBridgeTranscribeRequest {
+  /** 音频 base64（wav/mp3/m4a/ogg…，桌面端 ffmpeg 解码） */
+  audioBase64: string
+  mimeType?: string
+}
+
+export interface MobileBridgeTranscribeResponse {
+  text: string
+  engine: 'local' | 'cloud'
+}
+
+// ─── 会话内定时任务（session 作用域） ──────────────────────────────────────────
+
+export interface MobileBridgeScheduledTask {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  triggerType: 'interval' | 'cron' | 'once'
+  intervalSeconds?: number | null
+  cronExpression?: string | null
+  runAt?: string | null
+  prompt: string
+  status: string
+  executionCount: number
+  lastRunAt?: string | null
+  nextRunAt?: string | null
+  lastError?: string | null
+}
+
+export interface MobileBridgeScheduledTaskListResponse {
+  tasks: MobileBridgeScheduledTask[]
+}
+
+export interface MobileBridgeCreateScheduledTaskRequest {
+  name: string
+  prompt: string
+  triggerType: 'interval' | 'cron' | 'once'
+  intervalSeconds?: number
+  cronExpression?: string
+  runAt?: string
+  /** 模型限制 LLM；缺省跟随会话当前模型 */
+  modelId?: string | null
+  timeoutSeconds?: number
+  maxRetries?: number
+}
+
+export interface MobileBridgeUpdateScheduledTaskRequest {
+  name?: string
+  prompt?: string
+  triggerType?: 'interval' | 'cron' | 'once'
+  intervalSeconds?: number | null
+  cronExpression?: string | null
+  runAt?: string | null
+  enabled?: boolean
+}
+
+export interface MobileBridgeScheduledTaskMutationResponse {
+  task: MobileBridgeScheduledTask
+}
+
+// ─── 斜杠命令 ─────────────────────────────────────────────────────────────────
+
+export interface MobileBridgeCommandItem {
+  name: string
+  description: string
+  /** 命令层级（builtin/sdk/skill/custom） */
+  layer: string
+  usage?: string
+}
+
+export interface MobileBridgeCommandListResponse {
+  commands: MobileBridgeCommandItem[]
+}
+
+export interface MobileBridgeExecuteCommandRequest {
+  /** 以 / 开头的完整命令文本 */
+  raw: string
+}
+
+export interface MobileBridgeExecuteCommandResponse {
+  /** 命令已识别并执行（false = 不是命令，按普通消息处理） */
+  isCommand: boolean
+  /** true = 命令转发给 agent 执行（如技能命令），事件经流推送 */
+  forwardToAgent: boolean
+  message?: string
+}
+
+// ─── 回合 ─────────────────────────────────────────────────────────────────────
+
+export interface MobileBridgeSubmitTurnRequest {
+  text: string
+  /** 附件路径（必须来自本服务 POST /attachments 返回的 path，拒绝任意路径注入） */
+  attachmentPaths?: string[]
+}
+
+export interface MobileBridgeSubmitTurnResponse {
+  turnId: string
+}
+
+export interface MobileBridgeCancelResponse {
+  cancelled: boolean
 }
 
 // ─── 对话事件（AgentEvent 的移动端子集） ──────────────────────────────────────

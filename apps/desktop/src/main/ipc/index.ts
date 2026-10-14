@@ -453,7 +453,10 @@ import { registerImageProcessIpc } from './registerImageProcessIpc.js'
 import { resolveBrowserAutomationMcpServerPath } from '../services/BrowserAutomationMcpRuntime.js'
 import { resolveStandaloneNodeRuntimePath } from '../services/StandaloneNodeRuntime.js'
 import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
-import { createRemoteVoiceTranscriber } from '../services/remoteVoiceTranscription.js'
+import {
+  createRemoteVoiceTranscriber,
+  type RemoteVoiceTranscriber,
+} from '../services/remoteVoiceTranscription.js'
 import { formatRemoteConnectionCapabilityStatus } from '../services/remoteConnectionStatus.js'
 import { deliverRemoteTurnReply } from '../services/remoteTurnReply.js'
 import {
@@ -3657,10 +3660,7 @@ async function createMobileBridgeSession(
 async function validateMobileAccountToken(
   token: string,
 ): Promise<{ userId: string; account: string } | null> {
-  const base = getAuthService()
-    .getEduClient()
-    .getBaseUrl()
-    .replace(/\/+$/, '')
+  const base = getAuthService().getEduClient().getBaseUrl().replace(/\/+$/, '')
   try {
     const res = await fetch(`${base}/api/v1/me`, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
@@ -5474,6 +5474,8 @@ export function registerAllIpcHandlers(): void {
     })
 
   // 移动桥接（SparkWork 小程序直连桌面端）：配对/项目/会话/流式。设置里关闭时不监听。
+  // 语音转写与远程连接同链路：本地 SenseVoice 优先，云渠道 audio.transcription 兜底。
+  let mobileVoiceTranscriber: RemoteVoiceTranscriber | null = null
   registerMobileBridgeIpc({
     getSessionService,
     getSettingsService,
@@ -5482,6 +5484,17 @@ export function registerAllIpcHandlers(): void {
     getScheduledTaskService,
     validateAccountToken: validateMobileAccountToken,
     createMobileSession: createMobileBridgeSession,
+    getProviderService,
+    getVoiceTranscriber: () => {
+      if (mobileVoiceTranscriber == null) {
+        mobileVoiceTranscriber = createRemoteVoiceTranscriber({
+          resolveMediaProviders: resolveCanvasMediaProviders,
+          mediaRouter: getMediaRouterService(),
+          workDir: path.join(app.getPath('userData'), 'attachments', 'mobile', 'voice-transcribe'),
+        })
+      }
+      return mobileVoiceTranscriber
+    },
   })
 
   // 启动时仅在宿主机存在对应 CLI 时补种内置本地 provider。

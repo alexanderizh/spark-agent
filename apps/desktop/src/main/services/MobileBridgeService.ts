@@ -14,19 +14,33 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { networkInterfaces } from 'node:os'
+import { networkInterfaces, tmpdir } from 'node:os'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { createLogger } from '@spark/shared'
 import type {
+  MobileBridgeAttachment,
+  MobileBridgeCatalog,
+  MobileBridgeCommandItem,
+  MobileBridgeCreateScheduledTaskRequest,
   MobileBridgeCreateSessionResponse,
   MobileBridgeEvent,
   MobileBridgeHistoryResponse,
   MobileBridgePairResponse,
   MobileBridgeProjectListResponse,
+  MobileBridgeScheduledTask,
   MobileBridgeSessionListResponse,
+  MobileBridgeSessionRuntime,
   MobileBridgeSessionSummary,
+  MobileBridgeSetWorkflowBindingRequest,
   MobileBridgeSettings,
   MobileBridgeStatus,
+  MobileBridgeSubmitTurnRequest,
+  MobileBridgeUpdateScheduledTaskRequest,
+  MobileBridgeUpdateSessionRequest,
+  MobileBridgeUploadAttachmentsRequest,
+  MobileBridgeWorkflowBindingResponse,
 } from '@spark/protocol'
 
 const log = createLogger('mobile-bridge')
@@ -35,9 +49,13 @@ const log = createLogger('mobile-bridge')
 const STREAM_POLL_INTERVAL_MS = 500
 /** 单次 getHistory 拉取上限（保底，正常远小于此） */
 const HISTORY_LIMIT = 400
+/** 回合终态后的轮询宽限期：等 settle 阶段补发事件（如滞后 agent_error）到齐再回收 */
+const TERMINAL_GRACE_MS = 5_000
 /** 单个 WebSocket 连接最大静默期（无事件 10 分钟即回收，由 ping 保活） */
 const WS_IDLE_TIMEOUT_MS = 10 * 60 * 1000
 const MAX_BODY_BYTES = 256 * 1024
+/** 附件上传 / 语音转写路由单独放宽的 body 上限（base64 膨胀后 ≈ 原始 8MB） */
+const MAX_UPLOAD_BODY_BYTES = 12 * 1024 * 1024
 
 /**
  * 局域网 IPv4 地址（用于生成小程序可访问的 localUrl）。
@@ -75,10 +93,10 @@ export interface MobileBridgeDeps {
   ): Promise<{ sessions: MobileBridgeSessionSummary[]; total: number }>
   /** 新建会话（默认渠道/默认 Agent，标题缺省「移动端会话」；projectId 归属项目） */
   createSession(input: { title?: string; projectId?: string }): Promise<MobileBridgeSessionSummary>
-  /** 重命名 / 置顶 / 归档会话（仅透传需要修改的字段） */
+  /** 重命名 / 置顶 / 归档 / 运行时配置 / 项目归属（仅透传需要修改的字段） */
   updateSession(
     sessionId: string,
-    patch: { title?: string; pinned?: boolean; archived?: boolean },
+    patch: MobileBridgeUpdateSessionRequest,
   ): Promise<MobileBridgeSessionSummary>
   /** 删除会话（含终端等副作用清理） */
   deleteSession(sessionId: string): Promise<{ deleted: boolean }>
@@ -87,12 +105,74 @@ export interface MobileBridgeDeps {
     sessionId: string,
     limit: number,
   ): Promise<{ events: MobileBridgeEvent[]; running: boolean }>
-  /** 提交回合（消息进入会话，等同桌面端发送） */
-  submitTurn(sessionId: string, text: string): Promise<{ turnId: string }>
+  /** 提交回合（消息进入会话，等同桌面端发送；attachmentPaths 须来自 saveAttachments） */
+  submitTurn(
+    sessionId: string,
+    text: string,
+    attachmentPaths?: string[],
+  ): Promise<{ turnId: string }>
   /** 取消进行中的回合 */
   cancelTurn(sessionId: string): Promise<void>
   /** 桌面端信息（配对回显） */
   getDesktopInfo(): { name: string; version: string }
+
+  // ─── 会话内配置与输入能力扩展（2026-10-14） ──────────────────────────────────
+
+  /** 选项目录：agents + workflows + 对话可用渠道（剔除 embedding/纯多媒体） */
+  getCatalog(): Promise<MobileBridgeCatalog>
+  /** 会话运行配置摘要（配置条回显；null = 旧数据缺失，端上按默认渲染） */
+  getSessionRuntime(sessionId: string): Promise<MobileBridgeSessionRuntime | null>
+  /** 工作流绑定读取 */
+  getWorkflowBinding(sessionId: string): Promise<MobileBridgeWorkflowBindingResponse>
+  /** 工作流绑定写入（mode=override 时 workflowId 必填） */
+  setWorkflowBinding(
+    sessionId: string,
+    request: MobileBridgeSetWorkflowBindingRequest,
+  ): Promise<MobileBridgeWorkflowBindingResponse>
+  /** 附件落盘（base64 → userData/attachments 白名单目录；图片压缩到 ≤2000px） */
+  saveAttachments(
+    sessionId: string,
+    files: MobileBridgeUploadAttachmentsRequest['files'],
+  ): Promise<MobileBridgeAttachment[]>
+  /** 附件内容读取（仅白名单目录内路径；null = 路径非法或不存在） */
+  readAttachmentContent(path: string): Promise<{ data: Buffer; mimeType: string } | null>
+  /** 语音转写（本地 SenseVoice → 云渠道兜底） */
+  transcribeAudio(input: {
+    audioPath: string
+    mimeType?: string
+  }): Promise<
+    { kind: 'ok'; text: string; engine: 'local' | 'cloud' } | { kind: 'failed'; message: string }
+  >
+  /** session 作用域定时任务列表 */
+  listSessionTasks(sessionId: string): Promise<MobileBridgeScheduledTask[]>
+  /** 创建 session 作用域定时任务（模型仅 LLM；缺省跟随会话模型） */
+  createSessionTask(
+    sessionId: string,
+    request: MobileBridgeCreateScheduledTaskRequest,
+  ): Promise<MobileBridgeScheduledTask>
+  /** 更新任务（名称/提示词/触发方式/启停） */
+  updateSessionTask(
+    taskId: string,
+    request: MobileBridgeUpdateScheduledTaskRequest,
+  ): Promise<MobileBridgeScheduledTask | null>
+  /** 删除任务 */
+  deleteSessionTask(taskId: string): Promise<boolean>
+  /** 启停任务 */
+  toggleSessionTask(taskId: string, enabled: boolean): Promise<MobileBridgeScheduledTask | null>
+  /** 立即执行一次 */
+  runSessionTaskNow(taskId: string): Promise<{ started: boolean }>
+  /** 斜杠命令目录（会话上下文相关，含技能命令） */
+  listCommands(sessionId: string): Promise<MobileBridgeCommandItem[]>
+  /** 执行斜杠命令（设置型在主进程内生效，操作型转发 agent；运行中排队 queued=true） */
+  executeCommand(
+    sessionId: string,
+    raw: string,
+  ): Promise<{
+    isCommand: boolean
+    forwardToAgent: boolean
+    queued?: boolean
+    message?: string
+  }>
 }
 
 interface PairedDeviceRecord {
@@ -260,6 +340,38 @@ export class MobileBridgeService {
       return
     }
 
+    // 附件内容预览：wx.previewImage 不支持自定义 header，故本路由额外接受 query token
+    if (path === '/v1/attachments/content' && req.method === 'GET') {
+      const queryToken = (url.searchParams.get('token') ?? '').trim()
+      const deviceByQuery =
+        queryToken != null && queryToken.length > 0
+          ? (this.store.devices.find((device) => device.deviceToken === queryToken) ?? null)
+          : null
+      const deviceForContent = deviceByQuery ?? this.authenticate(req)
+      if (deviceForContent == null) {
+        this.sendJson(res, 401, {
+          error: { code: 'UNAUTHORIZED', message: '设备令牌无效，请重新配对' },
+        })
+        return
+      }
+      this.touchDevice(deviceForContent)
+      const requestedPath = (url.searchParams.get('path') ?? '').trim()
+      if (!requestedPath) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '缺少 path' } })
+        return
+      }
+      const content = await this.requireDeps().readAttachmentContent(requestedPath)
+      if (content == null) {
+        this.sendJson(res, 404, {
+          error: { code: 'NOT_FOUND', message: '附件不存在或不在白名单内' },
+        })
+        return
+      }
+      res.writeHead(200, { 'Content-Type': content.mimeType })
+      res.end(content.data)
+      return
+    }
+
     // 其余接口均需设备令牌
     const device = this.authenticate(req)
     if (device == null) {
@@ -276,6 +388,58 @@ export class MobileBridgeService {
       const limit = Math.min(Number(url.searchParams.get('limit') ?? '50') || 50, 200)
       const body = await this.requireDeps().listProjects(limit)
       this.sendJson(res, 200, body)
+      return
+    }
+
+    // ─── 选项目录（配置条数据源） ─────────────────────────────────────────────
+
+    if (path === '/v1/catalog' && req.method === 'GET') {
+      const body = await this.requireDeps().getCatalog()
+      this.sendJson(res, 200, body)
+      return
+    }
+
+    // ─── 语音转写（本地 SenseVoice → 云渠道兜底） ──────────────────────────────
+
+    if (path === '/v1/transcribe' && req.method === 'POST') {
+      const payload = await this.readJson<{ audioBase64?: string; mimeType?: string }>(
+        req,
+        MAX_UPLOAD_BODY_BYTES,
+      )
+      const audioBase64 = (payload.audioBase64 ?? '').trim()
+      if (!audioBase64) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '缺少 audioBase64' } })
+        return
+      }
+      let audioPath: string
+      try {
+        audioPath = await writeBase64TempFile(audioBase64, payload.mimeType)
+      } catch {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '音频数据无效' } })
+        return
+      }
+      try {
+        const outcome = await this.requireDeps().transcribeAudio({
+          audioPath,
+          ...(payload.mimeType != null ? { mimeType: payload.mimeType } : {}),
+        })
+        if (outcome.kind === 'ok') {
+          this.sendJson(res, 200, { text: outcome.text, engine: outcome.engine })
+        } else {
+          this.sendJson(res, 422, { error: { code: 'BAD_REQUEST', message: outcome.message } })
+        }
+      } finally {
+        fs.unlink(audioPath).catch(() => undefined)
+      }
+      return
+    }
+
+    // ─── 斜杠命令 ─────────────────────────────────────────────────────────────
+
+    if (path === '/v1/commands' && req.method === 'GET') {
+      const sessionId = (url.searchParams.get('sessionId') ?? '').trim()
+      const commands = await this.requireDeps().listCommands(sessionId)
+      this.sendJson(res, 200, { commands })
       return
     }
 
@@ -327,19 +491,45 @@ export class MobileBridgeService {
         return
       }
       const sessionId = decodeURIComponent(rawId)
-      const payload = await this.readJson<{ title?: string; pinned?: boolean; archived?: boolean }>(
-        req,
-      )
-      const patch: { title?: string; pinned?: boolean; archived?: boolean } = {}
-      if (typeof payload.title === 'string' && payload.title.trim()) patch.title = payload.title.trim()
+      const payload = await this.readJson<MobileBridgeUpdateSessionRequest>(req)
+      const patch: MobileBridgeUpdateSessionRequest = {}
+      if (typeof payload.title === 'string' && payload.title.trim())
+        patch.title = payload.title.trim()
       if (typeof payload.pinned === 'boolean') patch.pinned = payload.pinned
       if (typeof payload.archived === 'boolean') patch.archived = payload.archived
+      // ── 运行时配置（与桌面端 session:update 同语义；仅透传显式给出的字段） ──
+      if (typeof payload.providerProfileId === 'string' && payload.providerProfileId) {
+        patch.providerProfileId = payload.providerProfileId
+      }
+      if (payload.modelId !== undefined) {
+        patch.modelId = typeof payload.modelId === 'string' ? payload.modelId : null
+      }
+      if (typeof payload.agentAdapter === 'string' && payload.agentAdapter) {
+        patch.agentAdapter = payload.agentAdapter
+      }
+      if (payload.agentId !== undefined) {
+        patch.agentId =
+          typeof payload.agentId === 'string' && payload.agentId ? payload.agentId : null
+      }
+      if (typeof payload.permissionMode === 'string' && payload.permissionMode) {
+        patch.permissionMode = payload.permissionMode
+      }
+      if (typeof payload.reasoningEffort === 'string' && payload.reasoningEffort) {
+        patch.reasoningEffort = payload.reasoningEffort
+      }
+      if (typeof payload.chatMode === 'string' && payload.chatMode) {
+        patch.chatMode = payload.chatMode
+      }
+      if (typeof payload.projectId === 'string' && payload.projectId) {
+        patch.projectId = payload.projectId
+      }
       if (Object.keys(patch).length === 0) {
         this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '没有需要修改的字段' } })
         return
       }
       const session = await this.requireDeps().updateSession(sessionId, patch)
-      this.sendJson(res, 200, { session })
+      const runtime = await this.requireDeps().getSessionRuntime(sessionId)
+      this.sendJson(res, 200, { session: { ...session, ...(runtime != null ? { runtime } : {}) } })
       return
     }
 
@@ -382,13 +572,21 @@ export class MobileBridgeService {
         return
       }
       const sessionId = decodeURIComponent(rawId)
-      const payload = await this.readJson<{ text?: string }>(req)
+      const payload = await this.readJson<MobileBridgeSubmitTurnRequest>(req)
       const text = (payload.text ?? '').trim()
       if (!text) {
         this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '消息不能为空' } })
         return
       }
-      const result = await this.requireDeps().submitTurn(sessionId, text)
+      // 附件路径仅接受本服务 /attachments 端点落盘产生的路径（装配层再做白名单校验）
+      const attachmentPaths = Array.isArray(payload.attachmentPaths)
+        ? payload.attachmentPaths.filter((item): item is string => typeof item === 'string')
+        : undefined
+      const result = await this.requireDeps().submitTurn(
+        sessionId,
+        text,
+        attachmentPaths != null && attachmentPaths.length > 0 ? attachmentPaths : undefined,
+      )
       // 新回合：确保该会话轮询器在跑（终态后可能已停）
       this.ensurePoller(sessionId)
       this.sendJson(res, 200, result)
@@ -405,6 +603,223 @@ export class MobileBridgeService {
       const sessionId = decodeURIComponent(rawId)
       await this.requireDeps().cancelTurn(sessionId)
       this.sendJson(res, 200, { cancelled: true })
+      return
+    }
+
+    // ─── 会话运行配置摘要（详情回显） ──────────────────────────────────────────
+
+    const sessionRuntimeMatch = /^\/v1\/sessions\/([^/]+)\/runtime$/.exec(path)
+    if (sessionRuntimeMatch && req.method === 'GET') {
+      const rawId = sessionRuntimeMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const sessionId = decodeURIComponent(rawId)
+      const runtime = await this.requireDeps().getSessionRuntime(sessionId)
+      this.sendJson(res, 200, { runtime: runtime ?? {} })
+      return
+    }
+
+    // ─── 工作流绑定 ───────────────────────────────────────────────────────────
+
+    const workflowMatch = /^\/v1\/sessions\/([^/]+)\/workflow$/.exec(path)
+    if (workflowMatch && req.method === 'GET') {
+      const rawId = workflowMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const body = await this.requireDeps().getWorkflowBinding(decodeURIComponent(rawId))
+      this.sendJson(res, 200, body)
+      return
+    }
+    if (workflowMatch && req.method === 'PUT') {
+      const rawId = workflowMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const sessionId = decodeURIComponent(rawId)
+      const payload = await this.readJson<MobileBridgeSetWorkflowBindingRequest>(req)
+      if (
+        payload.mode !== 'inherit' &&
+        payload.mode !== 'override' &&
+        payload.mode !== 'disabled'
+      ) {
+        this.sendJson(res, 400, {
+          error: { code: 'BAD_REQUEST', message: 'mode 必须是 inherit/override/disabled' },
+        })
+        return
+      }
+      if (
+        payload.mode === 'override' &&
+        !(typeof payload.workflowId === 'string' && payload.workflowId)
+      ) {
+        this.sendJson(res, 400, {
+          error: { code: 'BAD_REQUEST', message: 'mode=override 时必须提供 workflowId' },
+        })
+        return
+      }
+      const body = await this.requireDeps().setWorkflowBinding(sessionId, payload)
+      this.sendJson(res, body.error != null ? 409 : 200, body)
+      return
+    }
+
+    // ─── 附件上传（base64 → 桌面端白名单目录落盘） ────────────────────────────
+
+    const attachmentsMatch = /^\/v1\/sessions\/([^/]+)\/attachments$/.exec(path)
+    if (attachmentsMatch && req.method === 'POST') {
+      const rawId = attachmentsMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const sessionId = decodeURIComponent(rawId)
+      const payload = await this.readJson<MobileBridgeUploadAttachmentsRequest>(
+        req,
+        MAX_UPLOAD_BODY_BYTES,
+      )
+      if (!Array.isArray(payload.files) || payload.files.length === 0) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '缺少 files' } })
+        return
+      }
+      if (payload.files.length > 20) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '单次最多 20 个附件' } })
+        return
+      }
+      const attachments = await this.requireDeps().saveAttachments(sessionId, payload.files)
+      this.sendJson(res, 200, { attachments })
+      return
+    }
+
+    // ─── 会话内定时任务（session 作用域） ──────────────────────────────────────
+
+    const sessionTasksMatch = /^\/v1\/sessions\/([^/]+)\/tasks$/.exec(path)
+    if (sessionTasksMatch && req.method === 'GET') {
+      const rawId = sessionTasksMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const tasks = await this.requireDeps().listSessionTasks(decodeURIComponent(rawId))
+      this.sendJson(res, 200, { tasks })
+      return
+    }
+    if (sessionTasksMatch && req.method === 'POST') {
+      const rawId = sessionTasksMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const sessionId = decodeURIComponent(rawId)
+      const payload = await this.readJson<MobileBridgeCreateScheduledTaskRequest>(req)
+      if (!(typeof payload.name === 'string' && payload.name.trim())) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '缺少任务名称' } })
+        return
+      }
+      if (!(typeof payload.prompt === 'string' && payload.prompt.trim())) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '缺少提示词' } })
+        return
+      }
+      if (
+        payload.triggerType !== 'interval' &&
+        payload.triggerType !== 'cron' &&
+        payload.triggerType !== 'once'
+      ) {
+        this.sendJson(res, 400, {
+          error: { code: 'BAD_REQUEST', message: 'triggerType 必须是 interval/cron/once' },
+        })
+        return
+      }
+      const task = await this.requireDeps().createSessionTask(sessionId, payload)
+      this.sendJson(res, 200, { task })
+      return
+    }
+
+    // ─── 斜杠命令执行 ─────────────────────────────────────────────────────────
+
+    const sessionCommandsMatch = /^\/v1\/sessions\/([^/]+)\/commands$/.exec(path)
+    if (sessionCommandsMatch && req.method === 'POST') {
+      const rawId = sessionCommandsMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const sessionId = decodeURIComponent(rawId)
+      const payload = await this.readJson<{ raw?: string }>(req)
+      const raw = (payload.raw ?? '').trim()
+      if (!raw.startsWith('/')) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '必须以 / 开头' } })
+        return
+      }
+      const body = await this.requireDeps().executeCommand(sessionId, raw)
+      this.sendJson(res, 200, body)
+      return
+    }
+
+    // ─── 定时任务项操作（更新/删除/启停/立即执行） ─────────────────────────────
+
+    const taskItemMatch = /^\/v1\/tasks\/([^/]+)$/.exec(path)
+    if (taskItemMatch && req.method === 'PATCH') {
+      const rawId = taskItemMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const payload = await this.readJson<MobileBridgeUpdateScheduledTaskRequest>(req)
+      const task = await this.requireDeps().updateSessionTask(decodeURIComponent(rawId), payload)
+      if (task == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '任务不存在' } })
+        return
+      }
+      this.sendJson(res, 200, { task })
+      return
+    }
+    if (taskItemMatch && req.method === 'DELETE') {
+      const rawId = taskItemMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const deleted = await this.requireDeps().deleteSessionTask(decodeURIComponent(rawId))
+      this.sendJson(
+        res,
+        deleted ? 200 : 404,
+        deleted ? { deleted: true } : { error: { code: 'NOT_FOUND', message: '任务不存在' } },
+      )
+      return
+    }
+
+    const taskToggleMatch = /^\/v1\/tasks\/([^/]+)\/toggle$/.exec(path)
+    if (taskToggleMatch && req.method === 'POST') {
+      const rawId = taskToggleMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const payload = await this.readJson<{ enabled?: boolean }>(req)
+      const task = await this.requireDeps().toggleSessionTask(
+        decodeURIComponent(rawId),
+        payload.enabled !== false,
+      )
+      if (task == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '任务不存在' } })
+        return
+      }
+      this.sendJson(res, 200, { task })
+      return
+    }
+
+    const taskRunMatch = /^\/v1\/tasks\/([^/]+)\/run$/.exec(path)
+    if (taskRunMatch && req.method === 'POST') {
+      const rawId = taskRunMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const body = await this.requireDeps().runSessionTaskNow(decodeURIComponent(rawId))
+      this.sendJson(res, 200, body)
       return
     }
 
@@ -537,11 +952,7 @@ export class MobileBridgeService {
       clients?.delete(connection)
       if (clients != null && clients.size === 0) {
         this.streamClients.delete(sessionId)
-        const timer = this.streamPollers.get(sessionId)
-        if (timer) {
-          clearInterval(timer)
-          this.streamPollers.delete(sessionId)
-        }
+        this.stopPoller(sessionId)
       }
     })
     socket.on('error', () => connection.close())
@@ -585,19 +996,30 @@ export class MobileBridgeService {
     if (deps == null) return
     // 基线：客户端已从 /messages 取过全量，轮询器先同步一次当前最大 seq，避免重复推送
     let lastSeq = -1
+    // 终态宽限：completed 后 settle 阶段还可能补发 agent_error（实测 seq 1121 晚于 1118
+    // completed），立即停轮询会漏推，导致客户端 running 卡死。终态后静默满宽限期才回收。
+    let terminalSince: number | null = null
     const timer = setInterval(() => {
       void (async () => {
         if (this.deps == null) return
         try {
           const history = await this.deps.getHistory(sessionId, HISTORY_LIMIT)
           const fresh = history.events.filter((event) => event.seq > lastSeq)
-          if (fresh.length === 0) return
+          if (fresh.length === 0) {
+            // 无新事件时也可能到达回收条件（终态在上一拍已推完）
+            if (terminalSince != null && Date.now() - terminalSince >= TERMINAL_GRACE_MS) {
+              this.stopPoller(sessionId)
+            }
+            return
+          }
           lastSeq = Math.max(...fresh.map((event) => event.seq))
+          terminalSince = null
           const clients = this.streamClients.get(sessionId)
-          if (clients == null || clients.size === 0) return
-          const payload = JSON.stringify({ type: 'events', sessionId, events: fresh })
-          for (const client of clients) client.send(payload)
-          // 回合终态：idle/completed/cancelled/error 且会话已停止 → 停轮询省资源
+          if (clients != null && clients.size > 0) {
+            const payload = JSON.stringify({ type: 'events', sessionId, events: fresh })
+            for (const client of clients) client.send(payload)
+          }
+          // 回合终态：不立即停，进入宽限期等 settle 补发；宽限期内再有新事件则重置
           const terminal = fresh.some(
             (event) =>
               event.type === 'agent_status' &&
@@ -607,11 +1029,7 @@ export class MobileBridgeService {
                 event.status === 'error'),
           )
           if (terminal && !history.running) {
-            const timerRef = this.streamPollers.get(sessionId)
-            if (timerRef) {
-              clearInterval(timerRef)
-              this.streamPollers.delete(sessionId)
-            }
+            terminalSince = Date.now()
           }
         } catch (error) {
           log.warn(
@@ -633,6 +1051,14 @@ export class MobileBridgeService {
     this.streamPollers.set(sessionId, timer)
   }
 
+  /** 停止并回收指定会话的轮询器 */
+  private stopPoller(sessionId: string): void {
+    const timer = this.streamPollers.get(sessionId)
+    if (timer == null) return
+    clearInterval(timer)
+    this.streamPollers.delete(sessionId)
+  }
+
   // ─── 工具 ───────────────────────────────────────────────────────────────────
 
   private requireDeps(): MobileBridgeDeps {
@@ -640,12 +1066,12 @@ export class MobileBridgeService {
     return this.deps
   }
 
-  private async readJson<T>(req: IncomingMessage): Promise<T> {
+  private async readJson<T>(req: IncomingMessage, maxBytes: number = MAX_BODY_BYTES): Promise<T> {
     const chunks: Buffer[] = []
     let size = 0
     for await (const chunk of req) {
       size += (chunk as Buffer).length
-      if (size > MAX_BODY_BYTES) throw new Error('请求体过大')
+      if (size > maxBytes) throw new Error('请求体过大')
       chunks.push(chunk as Buffer)
     }
     if (chunks.length === 0) return {} as T
@@ -691,6 +1117,30 @@ interface WsConnection {
   sessionId: string
   send(data: string): void
   close(): void
+}
+
+/** base64 音频落盘为临时文件（转写端点用；调用方负责删除） */
+async function writeBase64TempFile(base64: string, mimeType?: string): Promise<string> {
+  const buffer = Buffer.from(base64, 'base64')
+  if (buffer.length === 0) throw new Error('empty audio payload')
+  const ext = mimeTypeToAudioExtension(mimeType)
+  const dir = path.join(tmpdir(), 'spark-mobile-voice')
+  await fs.mkdir(dir, { recursive: true })
+  const filePath = path.join(dir, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`)
+  await fs.writeFile(filePath, buffer)
+  return filePath
+}
+
+function mimeTypeToAudioExtension(mimeType?: string): string {
+  const normalized = (mimeType ?? '').toLowerCase()
+  if (normalized.includes('wav')) return 'wav'
+  if (normalized.includes('mp3') || normalized.includes('mpeg')) return 'mp3'
+  if (normalized.includes('aac')) return 'aac'
+  if (normalized.includes('ogg')) return 'ogg'
+  if (normalized.includes('flac')) return 'flac'
+  if (normalized.includes('webm')) return 'webm'
+  if (normalized.includes('m4a') || normalized.includes('mp4')) return 'm4a'
+  return 'bin'
 }
 
 /** 空闲 WS 兜底回收（客户端 ping 由小程序侧 keep-alive 触发） */
