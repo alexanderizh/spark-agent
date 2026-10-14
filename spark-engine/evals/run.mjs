@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
-import { loadEvalSettings, preview, redactSecrets } from './lib/config.mjs'
+import { describeThinking, loadEvalSettings, preview, redactSecrets } from './lib/config.mjs'
 import { hashFiles } from './lib/files.mjs'
 import { renderMarkdown } from './lib/report.mjs'
 import { scoreStaticChecks, taskPassed } from './lib/score.mjs'
@@ -37,6 +37,12 @@ Required environment for a live run or --dry-run:
 Optional:
   SPARK_EVAL_PROTOCOL          openai-responses (default) | anthropic-messages
   SPARK_EVAL_EFFORT            off (default) | low | medium | high | max
+  SPARK_EVAL_THINKING          omit | disabled
+                               glm on https://ark.cn-beijing.volces.com/api/coding
+                               with anthropic-messages defaults to omit, so the
+                               CLI does not send thinking.type=disabled.
+                               Other models default to disabled. Official Claude
+                               keeps the explicit disabled block.
   SPARK_EVAL_TIMEOUT_MS        overrides every task timeout
   SPARK_EVAL_CONTEXT_WINDOW    default 128000
   SPARK_EVAL_MAX_TOKENS        default 16000
@@ -135,6 +141,7 @@ function printDryRun(settings, sparkBin, tasks) {
       `base url: ${settings.baseUrl}`,
       `resolved endpoint: ${settings.endpoint}`,
       `effort: ${settings.effort}`,
+      `thinking: ${describeThinking(settings.protocol, settings.thinking)}`,
       'api key: set (value hidden)',
       `spark: ${process.execPath} ${sparkBin} --model ark --permission-mode bypass --effort ${settings.effort} --output-format stream-json -p <prompt>`,
       `tasks: ${tasks.map((task) => task.id).join(', ')}`,
@@ -162,6 +169,7 @@ async function runLive(settings, sparkBin, tasks, args) {
     upstreamModel: settings.model,
     resolvedEndpoint: settings.endpoint,
     effort: settings.effort,
+    thinking: settings.thinking,
     warnings: settings.warnings,
     summary: { passed, failed: results.length - passed, total: results.length },
     tasks: results,
@@ -206,7 +214,7 @@ async function runTask(task, settings, sparkBin, args) {
       {
         cwd: workspace,
         timeoutMs,
-        env: agentEnv(sparkHome),
+        env: agentEnv(sparkHome, settings),
       },
     )
     const latencyMs = Date.now() - started
@@ -282,13 +290,14 @@ function failedTask(task, error) {
   }
 }
 
-function agentEnv(sparkHome) {
+function agentEnv(sparkHome, settings) {
   const env = {
     ...process.env,
     HOME: sparkHome,
     SPARK_HOME: sparkHome,
     SPARK_UPDATE_CHECK: '0',
     CI: '1',
+    SPARK_EVAL_THINKING: settings.thinking,
   }
   delete env.SPARK_FAILOVER_MODELS
   delete env.SPARK_EVAL_GIT_HEAD

@@ -63,6 +63,28 @@ Volcengine Ark bases in this repo are not that Responses root:
 
 `--dry-run` and a live run both exit `2` for a refused base. They do not write config or a report. Setting `SPARK_EVAL_PROTOCOL=openai-responses` explicitly does not override the refusal; the protocol has to be one the CLI can actually address, or the base has to already end in `/v1`.
 
+### Thinking when effort is off
+
+`--effort off` (the eval default, `SPARK_EVAL_EFFORT`) means "do not spend a reasoning budget."
+
+| Protocol                                                                                                       | Default body when effort is off                                                                                                            |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `openai-responses`                                                                                             | `reasoning` is left out. Gateways that reject `reasoning.effort` still get a plain request.                                                |
+| `anthropic-messages` on official Claude                                                                        | `thinking: { "type": "disabled" }`. Claude accepts that explicit block.                                                                    |
+| `anthropic-messages` + `https://ark.cn-beijing.volces.com/api/coding` + a `glm…` model such as `glm-5.3-flash` | The `thinking` field is left out. This model answers `thinking.type disabled is not supported by this model` and then makes no tool calls. |
+
+`SPARK_EVAL_THINKING=omit|disabled` overrides the default. `omit` leaves the field out of the Messages body whenever the CLI would have sent `thinking.type=disabled`. `disabled` sends the explicit block, including for `glm-5.3-flash`. Effort `low` and above still sends an enabled thinking budget; `omit` only drops the unsupported disabled type.
+
+For a Volcengine Coding Plan run of `glm-5.3-flash`:
+
+```bash
+export ARK_BASE_URL='https://ark.cn-beijing.volces.com/api/coding'
+export ARK_MODEL='glm-5.3-flash'
+export SPARK_EVAL_PROTOCOL=anthropic-messages
+# SPARK_EVAL_THINKING defaults to omit for this pair. Set it to disabled to
+# force the explicit block, or to omit for any other model that returns the same error.
+```
+
 Other CLI env vars that are not the eval contract: `SPARK_FAILOVER_MODELS`, `SPARK_RELEASE_BASE`, `SPARK_INSTALL_BASE`, `SPARK_EDUGEN_BASE_URL`, `SPARK_WEB_LOGIN_URL`.
 
 ## What already exists in the repo
@@ -106,6 +128,7 @@ export ARK_MODEL='your-model-id'
 # optional:
 # export SPARK_EVAL_PROTOCOL=openai-responses   # or anthropic-messages
 # export SPARK_EVAL_EFFORT=off                  # off|low|medium|high|max
+# export SPARK_EVAL_THINKING=omit               # or disabled; glm on Ark /api/coding defaults to omit
 # export SPARK_EVAL_TIMEOUT_MS=180000
 
 cd spark-engine
@@ -127,7 +150,7 @@ Each live task:
 2. Runs `setup.mjs` when the task has one (`05` creates a local git repo).
 3. Writes the temp Spark config, with web search, web fetch, task subagents, and memory disabled so the case stays local.
 4. Sets `SPARK_HOME` and `HOME` to a temp directory, and `SPARK_UPDATE_CHECK=0`.
-5. Runs the built CLI with `--permission-mode bypass`, `--effort` from `SPARK_EVAL_EFFORT` (default `off`, so a gateway that rejects `reasoning.effort` still gets a plain request), and `--output-format stream-json`.
+5. Runs the built CLI with `--permission-mode bypass`, `--effort` from `SPARK_EVAL_EFFORT` (default `off`), `SPARK_EVAL_THINKING` (`omit` for GLM on Ark `/api/coding`, otherwise `disabled`), and `--output-format stream-json`.
 6. Grades the workspace and writes `report.json` plus `report.md`.
 
 Exit codes: `0` all selected tasks passed (or `--list` / `--self-test` / `--dry-run` succeeded), `1` a task or self-test failed, `2` usage or missing configuration.

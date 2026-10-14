@@ -8,6 +8,7 @@ export function renderMarkdown(report) {
     `- Upstream model: \`${report.upstreamModel}\``,
     `- Resolved endpoint: \`${report.resolvedEndpoint}\``,
     `- Effort: \`${report.effort}\``,
+    ...(report.thinking ? [`- Thinking: \`${report.thinking}\``] : []),
     `- API key: present in the environment, not recorded`,
     `- Passed: ${report.summary.passed} / ${report.summary.total}`,
     '',

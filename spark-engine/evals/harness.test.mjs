@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   buildProjectConfig,
+  describeThinking,
   endpointRefusal,
   loadEvalSettings,
   redactSecrets,
@@ -96,6 +97,62 @@ test('dry-run exits non-zero for an /api/coding base and does not print the key'
   assert.match(result.stderr, /anthropic-messages/u)
   assert.equal(`${result.stdout}${result.stderr}`.includes(secret), false)
   assert.doesNotMatch(result.stdout, /base_url = /u)
+})
+
+test('glm on Ark coding anthropic omits disabled thinking unless the env forces it', () => {
+  const secret = 'sk-test-secret-value'
+  const coding = {
+    ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/coding',
+    ARK_API_KEY: secret,
+    ARK_MODEL: 'glm-5.3-flash',
+    SPARK_EVAL_PROTOCOL: 'anthropic-messages',
+  }
+  const omitted = loadEvalSettings(coding)
+  assert.equal(omitted.thinking, 'omit')
+  assert.match(describeThinking(omitted.protocol, omitted.thinking), /leaves out thinking/u)
+  assert.equal(omitted.toml.includes(secret), false)
+
+  assert.equal(
+    loadEvalSettings({ ...coding, SPARK_EVAL_THINKING: 'disabled' }).thinking,
+    'disabled',
+  )
+  assert.equal(
+    loadEvalSettings({
+      ...coding,
+      ARK_BASE_URL: 'https://api.anthropic.com',
+      ARK_MODEL: 'claude-sonnet-4-5',
+    }).thinking,
+    'disabled',
+  )
+  assert.equal(
+    loadEvalSettings({
+      ARK_BASE_URL: 'https://api.openai.com/v1',
+      ARK_API_KEY: secret,
+      ARK_MODEL: 'gpt-test',
+    }).thinking,
+    'disabled',
+  )
+  assert.throws(() => loadEvalSettings({ ...coding, SPARK_EVAL_THINKING: 'adaptive' }), /omit/u)
+})
+
+test('dry-run of glm on /api/coding prints omit and hides the key', () => {
+  const secret = 'sk-test-secret-value'
+  const result = spawnSync(process.execPath, ['evals/run.mjs', '--dry-run'], {
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
+    env: {
+      ...process.env,
+      ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/coding',
+      ARK_API_KEY: secret,
+      ARK_MODEL: 'glm-5.3-flash',
+      SPARK_EVAL_PROTOCOL: 'anthropic-messages',
+      SPARK_EVAL_THINKING: '',
+    },
+    encoding: 'utf8',
+  })
+  assert.equal(result.status, 0)
+  assert.match(result.stdout, /thinking: omit/u)
+  assert.match(result.stdout, /anthropic-messages/u)
+  assert.equal(`${result.stdout}${result.stderr}`.includes(secret), false)
 })
 
 test('project config names the key variable and does not embed the secret', () => {

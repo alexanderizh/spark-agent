@@ -1,5 +1,6 @@
 import { KernelError } from '../../kernel/errors.js'
 import { anthropicAuthHeaders } from './auth-headers.js'
+import { resolveDisabledThinkingWire, type DisabledThinkingWire } from './disabled-thinking.js'
 import type { LlmCallContext, LlmService } from '../../seams.js'
 import { safeDiagnosticText, safeProviderError } from '../error-detail.js'
 import { asRecord, numberValue, openSse, stringValue, type FetchLike } from '../http/client.js'
@@ -15,6 +16,16 @@ export interface AnthropicMessagesOptions {
   readonly version?: string
   readonly fetch?: FetchLike
   readonly promptCaching?: boolean
+  /**
+   * `omit` drops `thinking.type=disabled`. `disabled` sends it.
+   * Unset reads `SPARK_EVAL_THINKING`, then omits for GLM on Ark `/api/coding`.
+   */
+  readonly disabledThinking?: DisabledThinkingWire
+}
+
+export interface AnthropicWireOptions {
+  /** Drop `{ type: "disabled" }` and leave enabled/adaptive thinking in place. */
+  readonly omitDisabledThinking?: boolean
 }
 
 export class AnthropicMessagesService implements LlmService {
@@ -40,7 +51,14 @@ export class AnthropicMessagesService implements LlmService {
         ...anthropicAuthHeaders(this.#options.baseUrl, this.#options.apiKey),
         'anthropic-version': this.#options.version ?? '2023-06-01',
       },
-      body: toAnthropicRequest(request, this.#options.model, this.#options.promptCaching ?? true),
+      body: toAnthropicRequest(request, this.#options.model, this.#options.promptCaching ?? true, {
+        omitDisabledThinking:
+          resolveDisabledThinkingWire({
+            baseUrl: this.#options.baseUrl,
+            model: this.#options.model,
+            override: this.#options.disabledThinking ?? process.env.SPARK_EVAL_THINKING,
+          }) === 'omit',
+      }),
       signal: context.signal,
       ...(this.#options.fetch ? { fetch: this.#options.fetch } : {}),
     })
@@ -55,6 +73,7 @@ export function toAnthropicRequest(
   request: LlmRequest,
   model: string,
   promptCaching: boolean,
+  wire: AnthropicWireOptions = {},
 ): Record<string, unknown> {
   const system: Record<string, unknown>[] = request.system.map((section) => ({
     type: 'text',
@@ -93,10 +112,19 @@ export function toAnthropicRequest(
     messages,
     ...(tools.length === 0 ? {} : { tools }),
     ...(request.stopSequences?.length ? { stop_sequences: request.stopSequences } : {}),
-    ...(request.thinking
-      ? { thinking: toThinking(request.thinking, request.maxTokens, tools.length > 0) }
-      : {}),
+    ...anthropicThinkingField(request, tools.length > 0, wire),
   }
+}
+
+function anthropicThinkingField(
+  request: LlmRequest,
+  hasTools: boolean,
+  wire: AnthropicWireOptions,
+): { readonly thinking: Record<string, unknown> } | Record<string, never> {
+  if (!request.thinking) return {}
+  const thinking = toThinking(request.thinking, request.maxTokens, hasTools)
+  if (wire.omitDisabledThinking === true && thinking.type === 'disabled') return {}
+  return { thinking }
 }
 
 function lastStableIndex(sections: LlmRequest['system']): number {

@@ -8,6 +8,8 @@
 
 const PROTOCOLS = ['openai-responses', 'anthropic-messages']
 const EFFORTS = ['off', 'low', 'medium', 'high', 'max']
+const THINKING_WIRES = ['omit', 'disabled']
+const GLM_MODEL = /^glm(?:[-_.]|$)/iu
 const SECRET_QUERY = new Set(['key', 'api_key', 'apikey', 'token', 'access_token', 'api-key'])
 
 export function resolveEndpoint(baseUrl, protocol) {
@@ -90,6 +92,45 @@ export function endpointRefusal(baseUrl, protocol) {
 export function endpointWarnings(baseUrl, protocol) {
   const refusal = endpointRefusal(baseUrl, protocol)
   return refusal ? [refusal] : []
+}
+
+/**
+ * Keep this GLM + Ark `/api/coding` check aligned with
+ * spark-engine/src/llm/anthropic/disabled-thinking.ts. Official Claude keeps
+ * an explicit `thinking.type=disabled` block. glm-5.3-flash on the Coding Plan
+ * root rejects that block, so effort off leaves the field out.
+ */
+export function glmOnArkCoding(baseUrl, model) {
+  if (!GLM_MODEL.test(String(model).trim())) return false
+  let path
+  try {
+    path = new URL(baseUrl).pathname.replace(/\/+$/u, '')
+  } catch {
+    return false
+  }
+  return /\/api\/coding(?:\/v1(?:\/messages)?)?$/iu.test(path)
+}
+
+export function resolveEvalThinking(protocol, baseUrl, model, override) {
+  const explicit = override?.trim()
+  if (explicit) {
+    if (!THINKING_WIRES.includes(explicit)) {
+      throw new Error(`Unsupported SPARK_EVAL_THINKING: ${explicit} (omit | disabled)`)
+    }
+    return explicit
+  }
+  if (protocol === 'anthropic-messages' && glmOnArkCoding(baseUrl, model)) return 'omit'
+  return 'disabled'
+}
+
+export function describeThinking(protocol, thinking) {
+  if (thinking === 'omit') {
+    return 'omit (Messages request leaves out thinking when effort is off)'
+  }
+  if (protocol === 'openai-responses') {
+    return 'disabled (Responses request leaves out reasoning when effort is off)'
+  }
+  return 'disabled (Messages request sends thinking type disabled)'
 }
 
 export function assertPublicBaseUrl(raw) {
@@ -197,6 +238,12 @@ export function loadEvalSettings(env) {
     throw new Error(`Unsupported SPARK_EVAL_PROTOCOL: ${protocol}`)
   }
   if (!EFFORTS.includes(effort)) throw new Error(`Unsupported SPARK_EVAL_EFFORT: ${effort}`)
+  const thinking = resolveEvalThinking(
+    protocol,
+    env.ARK_BASE_URL.trim(),
+    env.ARK_MODEL.trim(),
+    env.SPARK_EVAL_THINKING,
+  )
   const contextWindow = env.SPARK_EVAL_CONTEXT_WINDOW
     ? Number(env.SPARK_EVAL_CONTEXT_WINDOW)
     : 128_000
@@ -228,6 +275,7 @@ export function loadEvalSettings(env) {
     model: env.ARK_MODEL.trim(),
     protocol,
     effort,
+    thinking,
     contextWindow,
     maxTokens,
     endpoint: resolveEndpoint(baseUrl, protocol),

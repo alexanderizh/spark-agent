@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { toOpenAiRequest } from '../../src/llm/openai/responses.js'
+import { resolveDisabledThinkingWire } from '../../src/llm/anthropic/disabled-thinking.js'
 import { toAnthropicRequest } from '../../src/llm/anthropic/messages.js'
+import { toOpenAiRequest } from '../../src/llm/openai/responses.js'
 import {
   EFFORT_BUDGET_TOKENS,
   isReasoningEffort,
@@ -117,6 +118,72 @@ describe('reasoning effort mapping', () => {
       true,
     )
     expect(tooSmallForThinking.thinking).toEqual({ type: 'disabled' })
+  })
+
+  it('omits thinking.type disabled when the provider rejects it and keeps the explicit block otherwise', () => {
+    const off = { ...baseRequest(), thinking: thinkingConfigFor('off') }
+    const omitted = toAnthropicRequest(off, 'glm-5.3-flash', true, {
+      omitDisabledThinking: true,
+    })
+    expect(omitted.thinking).toBeUndefined()
+    expect(JSON.stringify(omitted)).not.toContain('disabled')
+
+    const official = toAnthropicRequest(off, 'claude-sonnet', true)
+    expect(official.thinking).toEqual({ type: 'disabled' })
+
+    const forced = toAnthropicRequest(off, 'glm-5.3-flash', true)
+    expect(forced.thinking).toEqual({ type: 'disabled' })
+
+    const enabled = toAnthropicRequest(
+      { ...baseRequest(), maxTokens: 8_192 * 16, thinking: thinkingConfigFor('high') },
+      'glm-5.3-flash',
+      true,
+      { omitDisabledThinking: true },
+    )
+    expect(enabled.thinking).toEqual({
+      type: 'enabled',
+      budget_tokens: EFFORT_BUDGET_TOKENS.high,
+    })
+
+    expect(toOpenAiRequest(off, 'gpt-test').reasoning).toBeUndefined()
+  })
+
+  it('omits disabled thinking for GLM on Ark coding unless SPARK_EVAL_THINKING says otherwise', () => {
+    const coding = 'https://ark.cn-beijing.volces.com/api/coding'
+    expect(resolveDisabledThinkingWire({ baseUrl: coding, model: 'glm-5.3-flash' })).toBe('omit')
+    expect(
+      resolveDisabledThinkingWire({
+        baseUrl: `${coding}/v1/messages`,
+        model: 'GLM-5.3-flash',
+      }),
+    ).toBe('omit')
+    expect(
+      resolveDisabledThinkingWire({ baseUrl: 'https://api.anthropic.com', model: 'glm-5.3-flash' }),
+    ).toBe('disabled')
+    expect(resolveDisabledThinkingWire({ baseUrl: coding, model: 'claude-sonnet-4-5' })).toBe(
+      'disabled',
+    )
+    expect(
+      resolveDisabledThinkingWire({
+        baseUrl: coding,
+        model: 'glm-5.3-flash',
+        override: 'disabled',
+      }),
+    ).toBe('disabled')
+    expect(
+      resolveDisabledThinkingWire({
+        baseUrl: 'https://api.anthropic.com',
+        model: 'claude-sonnet-4-5',
+        override: 'omit',
+      }),
+    ).toBe('omit')
+    expect(() =>
+      resolveDisabledThinkingWire({
+        baseUrl: coding,
+        model: 'glm-5.3-flash',
+        override: 'adaptive',
+      }),
+    ).toThrow(/SPARK_EVAL_THINKING/u)
   })
 
   it('coarsens the max budget onto the OpenAI high effort bucket', () => {
