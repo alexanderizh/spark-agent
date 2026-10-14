@@ -9,9 +9,7 @@
   ],
   "overrides": [
     {
-      "files": [
-        "**/*.less"
-      ],
+      "files": ["**/*.less"],
       "customSyntax": "postcss-less"
     },
     {
@@ -71,16 +69,8 @@
           "/^rgb\\(var\\(--/",
           "/^@[\\w-]+$/"
         ],
-        "font-size": [
-          "/^var\\(--/",
-          "inherit"
-        ],
-        "transition-duration": [
-          "/^var\\(--/",
-          "0s",
-          "0ms",
-          "0.01ms"
-        ],
+        "font-size": ["/^var\\(--/", "inherit"],
+        "transition-duration": ["/^var\\(--/", "0s", "0ms", "0.01ms"],
         "transition-timing-function": [
           "/^var\\(--ease/",
           "linear",
@@ -117,30 +107,17 @@
     ],
     "declaration-property-value-disallowed-list": [
       {
-        "border-radius": [
-          "/^(?!(1|1\\.5|2|2\\.5|17|18|19|20|22|24|38)px$)\\d+(\\.\\d+)?px$/"
-        ],
-        "transition-duration": [
-          "/^(?!(0s|0ms|0\\.01ms)$)\\d+(\\.\\d+)?(ms|s)$/"
-        ],
-        "color": [
-          "/^#/",
-          "/^rgba?\\(\\d/"
-        ],
-        "background": [
-          "/^#/",
-          "/^rgba?\\(\\d/"
-        ],
+        "border-radius": ["/^(?!(1|1\\.5|2|2\\.5|17|18|19|20|22|24|38)px$)\\d+(\\.\\d+)?px$/"],
+        "transition-duration": ["/^(?!(0s|0ms|0\\.01ms)$)\\d+(\\.\\d+)?(ms|s)$/"],
+        "color": ["/^#/", "/^rgba?\\(\\d/"],
+        "background": ["/^#/", "/^rgba?\\(\\d/"],
         "border": [
           "/^#/",
           "/^rgba?\\(\\d/",
           "/(solid|dashed|dotted) #/",
           "/(solid|dashed|dotted) rgba?\\(\\d/"
         ],
-        "border-color": [
-          "/^#/",
-          "/^rgba?\\(\\d/"
-        ]
+        "border-color": ["/^#/", "/^rgba?\\(\\d/"]
       },
       {
         "severity": "error"

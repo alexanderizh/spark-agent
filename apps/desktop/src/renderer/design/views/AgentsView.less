@@ -4,7 +4,6 @@
  * Agents 列表屏与编辑器的页面样式均归属于本文件；仅跨页面的 Team 时间线等样式继续留在历史兼容层。
  */
 
-
 /* 数据色板（agv 域分类色，恒值；由色值残留清理收编，值零变化） */
 :root {
   --agv-cyan: #10b981;
@@ -1557,7 +1556,8 @@
   align-items: center;
   gap: var(--pad-sm);
   padding: var(--pad-sm) 0;
-  border-bottom: 1px dashed var(--border-color, color-mix(in srgb, var(--gray-mid) 15%, transparent));
+  border-bottom: 1px dashed
+    var(--border-color, color-mix(in srgb, var(--gray-mid) 15%, transparent));
 }
 
 .agent-hooks-row:last-child {

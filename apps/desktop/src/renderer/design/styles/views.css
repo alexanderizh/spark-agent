@@ -3050,8 +3050,16 @@ body.sidebar-resizing {
   inset: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(to right, var(--hero-grid-color, color-mix(in srgb, var(--app-sand) 7%, transparent)) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--hero-grid-color, color-mix(in srgb, var(--app-sand) 7%, transparent)) 1px, transparent 1px);
+    linear-gradient(
+      to right,
+      var(--hero-grid-color, color-mix(in srgb, var(--app-sand) 7%, transparent)) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      var(--hero-grid-color, color-mix(in srgb, var(--app-sand) 7%, transparent)) 1px,
+      transparent 1px
+    );
   background-size:
     36px 36px,
     36px 36px;
@@ -7101,7 +7109,11 @@ body.inspector-resizing {
   border-radius: var(--r-lg) var(--r-lg) 0 0;
   background: var(--panel);
   box-shadow: 0 -8px 28px
-    color-mix(in srgb, var(--shadow-color, color-mix(in srgb, var(--black) 12%, transparent)) 48%, transparent);
+    color-mix(
+      in srgb,
+      var(--shadow-color, color-mix(in srgb, var(--black) 12%, transparent)) 48%,
+      transparent
+    );
   overflow: hidden;
   flex-shrink: 0;
   animation: user-question-slide-up 0.28s cubic-bezier(0.22, 1, 0.36, 1);

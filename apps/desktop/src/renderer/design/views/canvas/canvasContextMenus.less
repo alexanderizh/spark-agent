@@ -118,7 +118,8 @@
 .canvas-node-context-menu.ant-dropdown-menu,
 .ant-dropdown-menu-submenu-popup .canvas-node-context-menu.ant-dropdown-menu,
 .canvas-node-context-submenu-popup .ant-dropdown-menu {
-  border: 1px solid var(--canvas-cinema-border-strong, var(--border-strong, rgba(255, 255, 255, 0.14))) !important;
+  border: 1px solid
+    var(--canvas-cinema-border-strong, var(--border-strong, rgba(255, 255, 255, 0.14))) !important;
   border-radius: var(--canvas-cinema-radius-lg, var(--r-lg, 14px)) !important;
   // 不让 Ant Design Dropdown 使用 colorBgElevated；节点菜单是 Portal，必须和
   // 工作台内部的空白画布菜单显式使用同一根节点背景。

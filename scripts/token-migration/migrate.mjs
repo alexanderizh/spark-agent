@@ -116,9 +116,20 @@ function migrateSource(src, file) {
     // color-mix() 内的 white/#fff 是「提亮方向常量」：换成主题翻转 token 会在暗色把提亮反转成压暗
     // （2026-10-15 事故：16 处 white→--panel/--text-inverse 混色反转），mix 上下文一律只放行恒值 token
     const FLIP_TOKENS = new Set([
-      '--panel', '--text-inverse', '--bg', '--bg-sunken', '--bg-soft', '--bg-elevated',
-      '--text', '--text-secondary', '--text-primary', '--border', '--border-strong',
-      '--border-subtle', '--border-soft', '--bg-hover',
+      '--panel',
+      '--text-inverse',
+      '--bg',
+      '--bg-sunken',
+      '--bg-soft',
+      '--bg-elevated',
+      '--text',
+      '--text-secondary',
+      '--text-primary',
+      '--border',
+      '--border-strong',
+      '--border-subtle',
+      '--border-soft',
+      '--bg-hover',
     ])
     if (
       map.color &&

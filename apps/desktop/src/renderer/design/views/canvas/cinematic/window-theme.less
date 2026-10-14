@@ -38,13 +38,17 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   --canvas-float-hover: color-mix(in srgb, var(--canvas-ink-700) 6%, transparent);
   --canvas-float-active: color-mix(in srgb, var(--canvas-indigo-600) 10%, transparent);
   --canvas-float-shadow:
-    0 20px 52px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent), 0 8px 18px color-mix(in srgb, var(--canvas-ink-600) 8%, transparent),
+    0 20px 52px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent),
+    0 8px 18px color-mix(in srgb, var(--canvas-ink-600) 8%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--white) 82%, transparent);
   --canvas-node-bg: #ffffff;
   --canvas-node-head-bg: #faf9f6;
   --canvas-node-body-bg: #ffffff;
-  --canvas-node-shadow: 0 16px 32px color-mix(in srgb, var(--canvas-ink-900) 8%, transparent), 0 2px 8px color-mix(in srgb, var(--canvas-ink-900) 6%, transparent);
-  --canvas-node-shadow-selected: 0 18px 44px color-mix(in srgb, var(--canvas-ink-900) 14%, transparent);
+  --canvas-node-shadow:
+    0 16px 32px color-mix(in srgb, var(--canvas-ink-900) 8%, transparent),
+    0 2px 8px color-mix(in srgb, var(--canvas-ink-900) 6%, transparent);
+  --canvas-node-shadow-selected: 0 18px 44px
+    color-mix(in srgb, var(--canvas-ink-900) 14%, transparent);
   --canvas-node-edge: color-mix(in srgb, var(--canvas-ink-700) 12%, transparent);
 }
 
@@ -171,13 +175,17 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
   --canvas-float-hover: color-mix(in srgb, var(--canvas-ink-700) 6%, transparent);
   --canvas-float-active: color-mix(in srgb, var(--canvas-indigo-600) 10%, transparent);
   --canvas-float-shadow:
-    0 20px 52px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent), 0 8px 18px color-mix(in srgb, var(--canvas-ink-600) 8%, transparent),
+    0 20px 52px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent),
+    0 8px 18px color-mix(in srgb, var(--canvas-ink-600) 8%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--white) 82%, transparent);
   --canvas-node-bg: #ffffff;
   --canvas-node-head-bg: #faf9f6;
   --canvas-node-body-bg: #ffffff;
-  --canvas-node-shadow: 0 16px 32px color-mix(in srgb, var(--canvas-ink-900) 8%, transparent), 0 2px 8px color-mix(in srgb, var(--canvas-ink-900) 6%, transparent);
-  --canvas-node-shadow-selected: 0 18px 44px color-mix(in srgb, var(--canvas-ink-900) 14%, transparent);
+  --canvas-node-shadow:
+    0 16px 32px color-mix(in srgb, var(--canvas-ink-900) 8%, transparent),
+    0 2px 8px color-mix(in srgb, var(--canvas-ink-900) 6%, transparent);
+  --canvas-node-shadow-selected: 0 18px 44px
+    color-mix(in srgb, var(--canvas-ink-900) 14%, transparent);
   --canvas-node-edge: color-mix(in srgb, var(--canvas-ink-700) 12%, transparent);
   --success: var(--cwt-cyan-3);
   --success-bg: color-mix(in srgb, var(--cwt-cyan-3) 10%, transparent);
@@ -215,12 +223,20 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
 
   .canvas-stage {
     background:
-      radial-gradient(circle at 58% 42%, color-mix(in srgb, var(--canvas-indigo-600) 7%, transparent), transparent 36%),
+      radial-gradient(
+        circle at 58% 42%,
+        color-mix(in srgb, var(--canvas-indigo-600) 7%, transparent),
+        transparent 36%
+      ),
       var(--canvas-cinema-stage);
   }
 
   .canvas-stage::before {
-    background-image: radial-gradient(circle, color-mix(in srgb, var(--cwt-sand) 16%, transparent) 0 0.7px, transparent 0.8px);
+    background-image: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--cwt-sand) 16%, transparent) 0 0.7px,
+      transparent 0.8px
+    );
   }
 
   .canvas-bottom-dock {
@@ -354,7 +370,8 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
     --canvas-float-hover: color-mix(in srgb, var(--canvas-ink-700) 6%, transparent);
     --canvas-float-active: color-mix(in srgb, var(--canvas-indigo-600) 10%, transparent);
     --canvas-float-shadow:
-      0 20px 52px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent), 0 8px 18px color-mix(in srgb, var(--canvas-ink-600) 8%, transparent),
+      0 20px 52px color-mix(in srgb, var(--canvas-ink-600) 14%, transparent),
+      0 8px 18px color-mix(in srgb, var(--canvas-ink-600) 8%, transparent),
       inset 0 1px 0 color-mix(in srgb, var(--white) 82%, transparent);
   }
 

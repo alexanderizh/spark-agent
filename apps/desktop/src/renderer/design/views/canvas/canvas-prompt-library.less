@@ -468,7 +468,11 @@
   overflow: hidden;
   border: 1px dashed color-mix(in srgb, var(--primary, #8b7cff) 42%, var(--divider, #303541));
   border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--primary, #8b7cff) 6%, var(--bg-sunken, var(--canvas-stage-bg-2)));
+  background: color-mix(
+    in srgb,
+    var(--primary, #8b7cff) 6%,
+    var(--bg-sunken, var(--canvas-stage-bg-2))
+  );
   color: var(--text-muted, #9298a6);
   cursor: pointer;
 }
@@ -1058,7 +1062,8 @@
   gap: var(--pad-lg);
   margin: 0 0 var(--pad-md);
   padding: var(--pad-sm) var(--pad-lg);
-  border: 1px solid color-mix(in srgb, var(--primary, #8b7cff) 36%, var(--divider, rgba(255, 255, 255, 0.1)));
+  border: 1px solid
+    color-mix(in srgb, var(--primary, #8b7cff) 36%, var(--divider, rgba(255, 255, 255, 0.1)));
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--primary, #8b7cff) 10%, var(--panel, #171a21));
 }

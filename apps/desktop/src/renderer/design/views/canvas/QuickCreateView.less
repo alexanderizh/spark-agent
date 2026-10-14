@@ -1,4 +1,3 @@
-
 /* 数据色板（qcv 域分类色，恒值；色值残留清理收编，值零变化） */
 :root {
   --qcv-mint: #dfe8e5;
@@ -1243,7 +1242,11 @@
   flex-direction: column;
   gap: 2px;
   padding: 22px var(--pad-sm) var(--pad-sm);
-  background: linear-gradient(to top, color-mix(in srgb, var(--canvas-stage-bg) 88%, transparent), transparent);
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--canvas-stage-bg) 88%, transparent),
+    transparent
+  );
   opacity: 0;
   transition: opacity var(--motion-fast) ease;
 }
@@ -1715,7 +1718,11 @@
   bottom: 0;
   left: 0;
   height: 36px;
-  background: linear-gradient(to top, color-mix(in srgb, var(--black) 76%, transparent), transparent);
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--black) 76%, transparent),
+    transparent
+  );
   content: '';
 }
 

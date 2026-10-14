@@ -14,7 +14,11 @@
       color-mix(in srgb, var(--brand, var(--accent)) 22%, transparent),
       transparent 34%
     ),
-    color-mix(in srgb, var(--bg, var(--white)) 32%, color-mix(in srgb, var(--ink-slate) 18%, transparent));
+    color-mix(
+      in srgb,
+      var(--bg, var(--white)) 32%,
+      color-mix(in srgb, var(--ink-slate) 18%, transparent)
+    );
   backdrop-filter: blur(18px) saturate(1.25);
   -webkit-backdrop-filter: blur(18px) saturate(1.25);
 }
@@ -84,7 +88,11 @@
 }
 
 .quick-task-input:focus {
-  border-color: color-mix(in srgb, var(--brand, var(--accent)) 68%, var(--border, var(--canvas-slate-300)));
+  border-color: color-mix(
+    in srgb,
+    var(--brand, var(--accent)) 68%,
+    var(--border, var(--canvas-slate-300))
+  );
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand, var(--accent)) 16%, transparent);
 }
 

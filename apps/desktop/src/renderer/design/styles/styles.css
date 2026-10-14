@@ -224,8 +224,17 @@ summary:focus {
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(1200px 800px at 20% 10%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 60%),
-    radial-gradient(1000px 700px at 80% 90%, color-mix(in srgb, var(--violet) 10%, transparent), transparent 65%), #0e0e12;
+    radial-gradient(
+      1200px 800px at 20% 10%,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      1000px 700px at 80% 90%,
+      color-mix(in srgb, var(--violet) 10%, transparent),
+      transparent 65%
+    ),
+    #0e0e12;
   overflow: hidden;
 }
 .scene-scale {
@@ -1224,9 +1233,15 @@ html[data-theme='dark'] .spark-icon-tooltip {
    button is unreachable — Electron intercepts the mouse for window dragging. */
 .spark-lobe-toast-host,
 .spark-lobe-toast-host * {
-  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, var(--white)) 97%, var(--bg-soft, #fefefe));
+  --spark-toast-bg: color-mix(
+    in srgb,
+    var(--panel-elev, var(--white)) 97%,
+    var(--bg-soft, #fefefe)
+  );
   --spark-toast-border: color-mix(in srgb, var(--border-strong, #d7d2c9) 42%, transparent);
-  --spark-toast-shadow: 0 1px 2px color-mix(in srgb, var(--ink-slate) 6%, transparent), 0 10px 26px color-mix(in srgb, var(--ink-slate) 12%, transparent);
+  --spark-toast-shadow:
+    0 1px 2px color-mix(in srgb, var(--ink-slate) 6%, transparent),
+    0 10px 26px color-mix(in srgb, var(--ink-slate) 12%, transparent);
   --spark-toast-backdrop: none;
 
   -webkit-app-region: no-drag;
@@ -1239,7 +1254,9 @@ html[data-theme='dark'] .spark-icon-tooltip {
 html[data-theme='dark'] .spark-lobe-toast-host {
   --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #383838) 96%, var(--bg-soft, #2c2c2c));
   --spark-toast-border: color-mix(in srgb, var(--border-strong, #4a4a4a) 54%, transparent);
-  --spark-toast-shadow: 0 1px 2px color-mix(in srgb, var(--black) 22%, transparent), 0 12px 28px color-mix(in srgb, var(--black) 34%, transparent);
+  --spark-toast-shadow:
+    0 1px 2px color-mix(in srgb, var(--black) 22%, transparent),
+    0 12px 28px color-mix(in srgb, var(--black) 34%, transparent);
 }
 
 html[data-backdrop-blur='1'] .spark-lobe-toast-host {

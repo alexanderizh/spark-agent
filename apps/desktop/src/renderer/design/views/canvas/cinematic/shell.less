@@ -1,4 +1,3 @@
-
 /* 数据色板（csh 域分类色，恒值；由色值残留清理收编，值零变化） */
 :root {
   /* 含 2 个 ΔE<3 族内近似色合并 */
@@ -178,12 +177,20 @@
     --canvas-dot-grid-size: 18px;
     --canvas-dot-grid-offset: 9px;
     background:
-      radial-gradient(circle at 58% 42%, color-mix(in srgb, var(--white) 1.8%, transparent), transparent 36%),
+      radial-gradient(
+        circle at 58% 42%,
+        color-mix(in srgb, var(--white) 1.8%, transparent),
+        transparent 36%
+      ),
       var(--canvas-cinema-stage);
   }
 
   .canvas-stage::before {
-    background-image: radial-gradient(circle, color-mix(in srgb, var(--white) 12%, transparent) 0 0.7px, transparent 0.8px);
+    background-image: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--white) 12%, transparent) 0 0.7px,
+      transparent 0.8px
+    );
   }
 
   .canvas-stage-quick-actions {

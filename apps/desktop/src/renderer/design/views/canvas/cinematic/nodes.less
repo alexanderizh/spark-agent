@@ -1,4 +1,3 @@
-
 /* 数据色板（cn 域分类色，恒值；由色值残留清理收编，值零变化） */
 :root {
   --cn-blue-1: #f8fbff;
@@ -179,7 +178,11 @@
     right: 0;
     left: 0;
     border: 0;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--cn-blue-9) 82%, transparent), color-mix(in srgb, var(--cn-blue-9) 0%, transparent));
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--cn-blue-9) 82%, transparent),
+      color-mix(in srgb, var(--cn-blue-9) 0%, transparent)
+    );
   }
 
   .canvas-node-media-full-bleed .canvas-node-core {
@@ -213,7 +216,12 @@
     border-radius: inherit;
     padding: 46px var(--pad-lg) 58px;
     background:
-      radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--canvas-indigo-500) 13%, transparent), transparent 38%), var(--cn-blue-8);
+      radial-gradient(
+        circle at 50% 38%,
+        color-mix(in srgb, var(--canvas-indigo-500) 13%, transparent),
+        transparent 38%
+      ),
+      var(--cn-blue-8);
   }
 
   .canvas-node-media-full-bleed .canvas-node-image-placeholder > svg {
@@ -366,7 +374,11 @@
     padding: var(--pad-xs) var(--pad-sm);
     border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
     border-radius: var(--r-pill);
-    background: color-mix(in srgb, color-mix(in srgb, var(--cn-blue-8) 88%, transparent) 90%, var(--canvas-node-body-bg));
+    background: color-mix(
+      in srgb,
+      color-mix(in srgb, var(--cn-blue-8) 88%, transparent) 90%,
+      var(--canvas-node-body-bg)
+    );
     color: var(--cn-blue-1);
     font-size: var(--font-xs);
     line-height: 1;
@@ -379,7 +391,11 @@
 
   .canvas-node-task-image-actions button:hover {
     border-color: color-mix(in srgb, var(--primary) 64%, transparent);
-    background: color-mix(in srgb, color-mix(in srgb, var(--cn-blue-7) 94%, transparent) 92%, var(--canvas-node-body-bg));
+    background: color-mix(
+      in srgb,
+      color-mix(in srgb, var(--cn-blue-7) 94%, transparent) 92%,
+      var(--canvas-node-body-bg)
+    );
     color: var(--text-inverse);
   }
 

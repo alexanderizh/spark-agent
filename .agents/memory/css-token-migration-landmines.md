@@ -4,7 +4,7 @@
 
 ## 地雷一：styles.css 的 @import 前不得插入任何样式规则
 
-- CSS 规范要求 `@import` 位于所有规则之前（仅 @charset/@layer 例外），违规后**其后所有 import 静默失效**——tokens.css/motion.css/canvas-tokens.css/components.css 整包不加载，全站 var(--*) 变 undefined，表现为「有主色有字号（JS 注入链路）但无背景无间距」的半残形态。
+- CSS 规范要求 `@import` 位于所有规则之前（仅 @charset/@layer 例外），违规后**其后所有 import 静默失效**——tokens.css/motion.css/canvas-tokens.css/components.css 整包不加载，全站 var(--\*) 变 undefined，表现为「有主色有字号（JS 注入链路）但无背景无间距」的半残形态。
 - 事故根因：token 收编脚本按「跳过文件头注释块」找插入位，把新增 `:root` 块插在了 styles.css 头部注释与 @import 之间。
 - 规则：**向 styles.css 新增 token 定义一律写进 tokens.css（它没有 @import，位置无关）；styles.css 头部注释区到 import 区之间是禁区。**
 - .less 文件不受此限（less 的 @import 是构建期内联，不遵循运行时规范）。
