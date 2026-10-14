@@ -119,7 +119,19 @@ Each task is a directory under `tasks/<id>/` with `task.json`, `prompt.md`, `gra
 | `13-mask-secret`            | constraint-heavy create    | code-point mask, short strings, emoji, and idempotence; timeout 240s                      |
 | `14-live-path-bug`          | search the live path       | digits survive `normalizeId` on the `src/index.js` import, not the decoy copies           |
 
-`01`–`08` are the smoke tier. One live `glm-5.3-flash` run scored 8/8 there. That single pass is not a ranking. `09`–`14` are harder drafts for adversarial fairness review. `--self-test` covers them. This change does not live-score them.
+`01`–`08` are `"tier": "smoke"`. One live `glm-5.3-flash` run scored 8/8 there. That single pass is not a ranking. `09`–`14` are `"tier": "hard"` drafts for adversarial fairness review. `--self-test` covers both tiers. This change does not live-score the hard drafts.
+
+A live run, `--dry-run`, and `--list` default to `--tier smoke`, so the pass/fail total is only `01`–`08`. Hard drafts stay out of that total.
+
+```bash
+node evals/run.mjs --tier hard          # 09–14 only
+node evals/run.mjs --task 09-14         # same six tasks
+node evals/run.mjs --task 09,10         # comma list
+node evals/run.mjs --tier all           # both tiers; report.json summary.byTier splits the counts
+node evals/run.mjs --list --tier all
+```
+
+`--task` replaces the smoke default. `--tier` and `--task` together intersect. `--self-test` still defaults to every task.
 
 `07` is a few hundred lines, enough to bury the contract under background notes. It is not a 100k-token stress test; grow `SPEC.md` in place when that becomes the question. `13` stays a short spec so it does not repeat `08`'s long runtime.
 
@@ -140,9 +152,10 @@ export ARK_MODEL='your-model-id'
 # export SPARK_EVAL_TIMEOUT_MS=180000
 
 cd spark-engine
-npm run eval:self-test          # no key; graders and endpoint helpers
-node evals/run.mjs --dry-run    # prints the resolved URL and config; hides the key
-node evals/run.mjs              # all tasks
+npm run eval:self-test          # no key; all tiers; graders and endpoint helpers
+node evals/run.mjs --dry-run    # smoke tier; prints the resolved URL and hides the key
+node evals/run.mjs              # smoke tier only (01–08)
+node evals/run.mjs --tier hard  # hard drafts only (09–14)
 node evals/run.mjs --task 01-file-edit --task 03-terminal-command
 ```
 
@@ -184,5 +197,5 @@ A fair run against Cursor CLI, Codex CLI, and Claude Code is not this harness. W
 1. Create `tasks/<id>/` whose `task.json` `id` matches the directory name.
 2. Put the starting tree in `workspace/`, including `"type": "module"` in `package.json` so copied `.js` files stay ESM outside this package.
 3. Add `prompt.md`, `grade.mjs` (print `{ "ok", "checks": [{ "name", "passed", "detail" }] }` via `finish()`), and `oracle.mjs`.
-4. List files the model must not touch in `frozen`. Add `requireTools` only for capabilities that are the tool call itself.
+4. Set `"tier"` to `"smoke"` or `"hard"`. List files the model must not touch in `frozen`. Add `requireTools` only for capabilities that are the tool call itself.
 5. Run `npm run eval:self-test` and confirm the unfixed fixture fails and the oracle passes.

@@ -15,7 +15,7 @@ import {
 import { renderMarkdown } from './lib/report.mjs'
 import { scoreStaticChecks, taskPassed } from './lib/score.mjs'
 import { parseSparkStream } from './lib/stream.mjs'
-import { parsePrepareOutput } from './lib/tasks.mjs'
+import { loadTasks, parsePrepareOutput, selectTasks } from './lib/tasks.mjs'
 
 test('resolves OpenAI Responses and Anthropic message endpoints the way the CLI does', () => {
   assert.equal(
@@ -256,6 +256,67 @@ test('markdown report records the endpoint and states that no key is stored', ()
   assert.match(markdown, /https:\/\/example\.test\/v1\/responses/u)
   assert.match(markdown, /not recorded/u)
   assert.match(markdown, /not a comparison/u)
+})
+
+test('defaults a run to the smoke tier and can select hard tasks without mixing', async () => {
+  const tasks = await loadTasks(fileURLToPath(new URL('.', import.meta.url)))
+  const smoke = selectTasks(tasks, {})
+  assert.equal(smoke.tier, 'smoke')
+  assert.deepEqual(
+    smoke.tasks.map((task) => task.id.slice(0, 2)),
+    ['01', '02', '03', '04', '05', '06', '07', '08'],
+  )
+  assert.ok(smoke.tasks.every((task) => task.tier === 'smoke'))
+
+  const hard = selectTasks(tasks, { tier: 'hard' })
+  assert.equal(hard.tier, 'hard')
+  assert.deepEqual(
+    hard.tasks.map((task) => task.id.slice(0, 2)),
+    ['09', '10', '11', '12', '13', '14'],
+  )
+
+  const range = selectTasks(tasks, { ids: ['09-14'] })
+  assert.equal(range.tier, 'all')
+  assert.deepEqual(
+    range.tasks.map((task) => task.id),
+    hard.tasks.map((task) => task.id),
+  )
+  const listed = selectTasks(tasks, { ids: ['09,10'] })
+  assert.deepEqual(
+    listed.tasks.map((task) => task.id.slice(0, 2)),
+    ['09', '10'],
+  )
+  const globbed = selectTasks(tasks, { tier: 'hard', ids: ['09-*'] })
+  assert.equal(globbed.tasks.length, 1)
+  assert.equal(globbed.tasks[0].id, '09-misleading-contract')
+
+  assert.throws(
+    () => selectTasks(tasks, { tier: 'hard', ids: ['01-file-edit'] }),
+    /No tasks matched/u,
+  )
+  assert.throws(() => selectTasks(tasks, { tier: 'nope' }), /Unsupported --tier/u)
+})
+
+test('list defaults to smoke and --tier hard prints only the hard ids', () => {
+  const list = (args) =>
+    spawnSync(process.execPath, ['evals/run.mjs', '--list', ...args], {
+      cwd: fileURLToPath(new URL('..', import.meta.url)),
+      encoding: 'utf8',
+    })
+  const smoke = list([])
+  assert.equal(smoke.status, 0)
+  assert.match(smoke.stdout, /^01-file-edit\tsmoke\t/mu)
+  assert.doesNotMatch(smoke.stdout, /09-misleading-contract/u)
+  const hard = list(['--tier', 'hard'])
+  assert.equal(hard.status, 0)
+  assert.match(hard.stdout, /^09-misleading-contract\thard\t/mu)
+  assert.match(hard.stdout, /^14-live-path-bug\thard\t/mu)
+  assert.doesNotMatch(hard.stdout, /01-file-edit/u)
+  const range = list(['--task', '09-14'])
+  assert.equal(range.status, 0)
+  assert.match(range.stdout, /09-misleading-contract/u)
+  assert.match(range.stdout, /14-live-path-bug/u)
+  assert.doesNotMatch(range.stdout, /01-file-edit/u)
 })
 
 test('prepare output exposes the baseline commit', () => {

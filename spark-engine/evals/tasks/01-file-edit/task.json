@@ -1,5 +1,6 @@
 {
   "id": "01-file-edit",
+  "tier": "smoke",
   "title": "Fix a single-file arithmetic bug",
   "capability": "file-edit",
   "timeoutMs": 180000,

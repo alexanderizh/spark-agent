@@ -1,5 +1,6 @@
 {
   "id": "07-long-context",
+  "tier": "smoke",
   "title": "Follow a buried contract and ignore an abandoned draft",
   "capability": "long-context-instructions",
   "timeoutMs": 240000,

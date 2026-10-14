@@ -1,5 +1,6 @@
 {
   "id": "10-cross-file-invariant",
+  "tier": "hard",
   "title": "Make invoice and receipt match the frozen snapshots",
   "capability": "cross-file-invariant",
   "timeoutMs": 240000,
@@ -13,5 +14,10 @@
     "golden/invoice.txt",
     "golden/receipt.txt"
   ],
-  "requireTools": [{ "name": "bash", "argsMatch": "test/render.test.mjs" }]
+  "requireTools": [
+    {
+      "name": "bash",
+      "argsMatch": "test/render.test.mjs"
+    }
+  ]
 }

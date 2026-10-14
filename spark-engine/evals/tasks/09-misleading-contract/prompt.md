@@ -1,3 +1,3 @@
-The ledger total is wrong. Make `applyEntries` match `docs/ledger/SPEC.md`, and re-run `node --test test/ledger.test.mjs` until it exits 0.
+The ledger balance is wrong. Make `node --test test/ledger.test.mjs` exit 0.
 
-Do not modify the spec, the test, `README.md`, or `package.json`.
+Do not modify the test or `package.json`.

@@ -1,5 +1,6 @@
 {
   "id": "02-multi-file-refactor",
+  "tier": "smoke",
   "title": "Rename a function across source files",
   "capability": "multi-file-refactor",
   "timeoutMs": 180000,

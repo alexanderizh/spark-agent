@@ -10,7 +10,9 @@ export function renderMarkdown(report) {
     `- Effort: \`${report.effort}\``,
     ...(report.thinking ? [`- Thinking: \`${report.thinking}\``] : []),
     `- API key: present in the environment, not recorded`,
+    ...(report.summary.tier ? [`- Tier: \`${report.summary.tier}\``] : []),
     `- Passed: ${report.summary.passed} / ${report.summary.total}`,
+    ...tierLines(report.summary.byTier),
     '',
   ]
   if (report.warnings.length > 0) {
@@ -58,6 +60,13 @@ export function renderMarkdown(report) {
     '',
   )
   return lines.join('\n')
+}
+
+function tierLines(byTier) {
+  if (!byTier) return []
+  return Object.entries(byTier).map(
+    ([tier, bucket]) => `- ${tier}: ${bucket.passed} / ${bucket.total}`,
+  )
 }
 
 function oneLine(value) {

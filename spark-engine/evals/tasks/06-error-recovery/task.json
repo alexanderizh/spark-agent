@@ -1,5 +1,6 @@
 {
   "id": "06-error-recovery",
+  "tier": "smoke",
   "title": "Recover from a misleading crash hint",
   "capability": "error-recovery",
   "timeoutMs": 180000,

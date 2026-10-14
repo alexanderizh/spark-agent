@@ -21,10 +21,16 @@ function helpText() {
   return `spark-engine programming evals
 
 Usage:
-  node evals/run.mjs --list
-  node evals/run.mjs --self-test
-  node evals/run.mjs --dry-run
-  node evals/run.mjs [--task <id>]... [--timeout <ms>] [--out <dir>]
+  node evals/run.mjs --list [--tier smoke|hard|all]
+  node evals/run.mjs --self-test [--tier smoke|hard|all]
+  node evals/run.mjs --dry-run [--tier smoke|hard|all]
+  node evals/run.mjs [--tier smoke|hard|all] [--task <selector>]... [--timeout <ms>] [--out <dir>]
+
+Selection:
+  A live run, --dry-run, and --list default to --tier smoke (tasks 01–08).
+  --self-test defaults to all tasks. Pass --tier hard for tasks 09–14 only.
+  --task replaces that default. Repeat it, or use a comma list (09,10),
+  a two-digit range (09-14), or a glob (09-*). --tier and --task intersect.
 
 Required environment for a live run or --dry-run:
   ARK_BASE_URL   Responses root ending in /v1, or the Anthropic Coding Plan root
@@ -66,6 +72,7 @@ function parseRunnerArgs(argv) {
       'self-test': { type: 'boolean', default: false },
       'dry-run': { type: 'boolean', default: false },
       task: { type: 'string', multiple: true },
+      tier: { type: 'string' },
       timeout: { type: 'string' },
       out: { type: 'string' },
     },
@@ -80,6 +87,7 @@ function parseRunnerArgs(argv) {
     selfTest: parsed.values['self-test'] ?? false,
     dryRun: parsed.values['dry-run'] ?? false,
     tasks: parsed.values.task ?? [],
+    ...(parsed.values.tier === undefined ? {} : { tier: parsed.values.tier }),
     timeoutMs,
     out: parsed.values.out,
   }
@@ -91,10 +99,14 @@ async function main() {
     process.stdout.write(helpText())
     return 0
   }
-  const tasks = selectTasks(await loadTasks(evalsRoot), args.tasks)
+  const selection = selectTasks(await loadTasks(evalsRoot), {
+    ids: args.tasks,
+    ...(args.tier !== undefined ? { tier: args.tier } : args.selfTest ? { tier: 'all' } : {}),
+  })
+  const tasks = selection.tasks
   if (args.list) {
     for (const task of tasks) {
-      process.stdout.write(`${task.id}\t${task.capability}\t${task.title}\n`)
+      process.stdout.write(`${task.id}\t${task.tier}\t${task.capability}\t${task.title}\n`)
     }
     return 0
   }
@@ -113,7 +125,7 @@ async function main() {
         `warning: spark CLI is not built at ${sparkBin}. A live run needs npm install && npm run build.\n`,
       )
     }
-    printDryRun(settings, sparkBin, tasks)
+    printDryRun(settings, sparkBin, tasks, selection.tier)
     return 0
   }
   const outDir =
@@ -123,7 +135,11 @@ async function main() {
   await mkdir(outDir, { recursive: true })
   const keepDir = process.env.SPARK_EVAL_KEEP === '1' ? join(outDir, 'workspaces') : undefined
   if (keepDir) await mkdir(keepDir, { recursive: true })
-  const report = await runLive(settings, sparkBin, tasks, { ...args, keepDir })
+  const report = await runLive(settings, sparkBin, tasks, {
+    ...args,
+    keepDir,
+    tier: selection.tier,
+  })
   await writeFile(join(outDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`)
   await writeFile(join(outDir, 'report.md'), renderMarkdown(report))
   process.stdout.write(
@@ -132,10 +148,11 @@ async function main() {
   return report.summary.failed === 0 ? 0 : 1
 }
 
-function printDryRun(settings, sparkBin, tasks) {
+function printDryRun(settings, sparkBin, tasks, tier) {
   process.stdout.write(
     [
       'spark eval dry-run',
+      `tier: ${tier}`,
       `protocol: ${settings.protocol}`,
       `upstream model: ${settings.model}`,
       `base url: ${settings.baseUrl}`,
@@ -151,6 +168,19 @@ function printDryRun(settings, sparkBin, tasks) {
     ].join('\n'),
   )
   for (const warning of settings.warnings) process.stderr.write(`warning: ${warning}\n`)
+}
+
+function summaryByTier(results) {
+  const byTier = {}
+  for (const task of results) {
+    const tier = task.tier ?? 'unknown'
+    const bucket = byTier[tier] ?? { passed: 0, failed: 0, total: 0 }
+    bucket.total += 1
+    if (task.passed) bucket.passed += 1
+    else bucket.failed += 1
+    byTier[tier] = bucket
+  }
+  return byTier
 }
 
 async function runLive(settings, sparkBin, tasks, args) {
@@ -171,7 +201,13 @@ async function runLive(settings, sparkBin, tasks, args) {
     effort: settings.effort,
     thinking: settings.thinking,
     warnings: settings.warnings,
-    summary: { passed, failed: results.length - passed, total: results.length },
+    summary: {
+      tier: args.tier,
+      passed,
+      failed: results.length - passed,
+      total: results.length,
+      byTier: summaryByTier(results),
+    },
     tasks: results,
     note: 'spark-engine CLI only; not a comparison against Cursor CLI, Codex CLI, or Claude Code',
   }
@@ -240,6 +276,7 @@ async function runTask(task, settings, sparkBin, args) {
     if (args.keepDir) await cp(workspace, join(args.keepDir, task.id), { recursive: true })
     return {
       id: task.id,
+      tier: task.tier,
       title: task.title,
       capability: task.capability,
       passed,
@@ -274,6 +311,7 @@ function publicNote(note) {
 function failedTask(task, error) {
   return {
     id: task.id,
+    tier: task.tier,
     title: task.title,
     capability: task.capability,
     passed: false,

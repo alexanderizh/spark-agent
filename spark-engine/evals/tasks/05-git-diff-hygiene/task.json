@@ -1,5 +1,6 @@
 {
   "id": "05-git-diff-hygiene",
+  "tier": "smoke",
   "title": "Fix a bug without committing or staging unrelated edits",
   "capability": "git-diff-hygiene",
   "timeoutMs": 180000,

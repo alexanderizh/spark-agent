@@ -1,5 +1,6 @@
 {
   "id": "03-terminal-command",
+  "tier": "smoke",
   "title": "Run a command and record its stdout",
   "capability": "terminal-command",
   "timeoutMs": 180000,
@@ -7,5 +8,10 @@
   "grade": "grade.mjs",
   "oracle": "oracle.mjs",
   "frozen": ["package.json", "bin/token.mjs", "bin/seed.txt"],
-  "requireTools": [{ "name": "bash", "argsMatch": "bin/token.mjs" }]
+  "requireTools": [
+    {
+      "name": "bash",
+      "argsMatch": "bin/token.mjs"
+    }
+  ]
 }

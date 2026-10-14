@@ -1,5 +1,6 @@
 {
   "id": "11-partial-fix-regression",
+  "tier": "hard",
   "title": "Fix cell formatting without letting blank names back in",
   "capability": "partial-failure-recovery",
   "timeoutMs": 300000,
@@ -7,5 +8,10 @@
   "grade": "grade.mjs",
   "oracle": "oracle.mjs",
   "frozen": ["package.json", "test/rows.test.mjs"],
-  "requireTools": [{ "name": "bash", "argsMatch": "test/rows.test.mjs" }]
+  "requireTools": [
+    {
+      "name": "bash",
+      "argsMatch": "test/rows.test.mjs"
+    }
+  ]
 }

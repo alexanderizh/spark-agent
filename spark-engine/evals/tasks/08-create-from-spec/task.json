@@ -1,5 +1,6 @@
 {
   "id": "08-create-from-spec",
+  "tier": "smoke",
   "title": "Create a module that matches a short spec and test",
   "capability": "file-create",
   "timeoutMs": 180000,
