@@ -1,0 +1,11 @@
+{
+  "id": "13-mask-secret",
+  "title": "Mask secrets by code point, including empty and idempotent cases",
+  "capability": "constraint-heavy-create",
+  "timeoutMs": 240000,
+  "promptFile": "prompt.md",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": ["package.json", "SPEC.md", "test/mask.test.mjs"],
+  "requireTools": [{ "name": "bash", "argsMatch": "test/mask.test.mjs" }]
+}

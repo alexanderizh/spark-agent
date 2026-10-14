@@ -102,18 +102,26 @@ No in-repo suite was running the `spark` binary against programming fixtures bef
 
 Each task is a directory under `tasks/<id>/` with `task.json`, `prompt.md`, `grade.mjs`, `oracle.mjs`, and a `workspace/` fixture. `oracle.mjs` is only for `--self-test`. The model never sees it. Graders check behavior. The runner additionally hashes `frozen` files and, where `requireTools` is set, requires a matching tool call in the stream.
 
-| Id                       | Capability                | Pass condition                                                                            |
-| ------------------------ | ------------------------- | ----------------------------------------------------------------------------------------- |
-| `01-file-edit`           | file edit                 | `sum` adds; the test file is unchanged                                                    |
-| `02-multi-file-refactor` | multi-file refactor       | `formatName` becomes `formatDisplayName` across `src/`; `greet()` still passes            |
-| `03-terminal-command`    | terminal                  | `out/token.txt` matches `node bin/token.mjs`, and a `bash` call ran that script           |
-| `04-test-run-loop`       | test-run loop             | `parsePort` satisfies the existing test, and a `bash` call ran that test                  |
-| `05-git-diff-hygiene`    | git / diff hygiene        | `clamp` is fixed, HEAD is unchanged, the scratch line in `notes.txt` stays unstaged       |
-| `06-error-recovery`      | error recovery            | `node src/main.js` prints `ready:3`; the YAML comment is a decoy; `src/main.js` stays put |
-| `07-long-context`        | long-context instructions | `SPEC.md` section 4 (`ID:…\|ROLE:…`) wins over the abandoned JSON draft in section 9      |
-| `08-create-from-spec`    | file create               | new `src/slug.js` matches `SPEC.md` and the untouched test                                |
+| Id                          | Capability                 | Pass condition                                                                            |
+| --------------------------- | -------------------------- | ----------------------------------------------------------------------------------------- |
+| `01-file-edit`              | file edit                  | `sum` adds; the test file is unchanged                                                    |
+| `02-multi-file-refactor`    | multi-file refactor        | `formatName` becomes `formatDisplayName` across `src/`; `greet()` still passes            |
+| `03-terminal-command`       | terminal                   | `out/token.txt` matches `node bin/token.mjs`, and a `bash` call ran that script           |
+| `04-test-run-loop`          | test-run loop              | `parsePort` satisfies the existing test, and a `bash` call ran that test                  |
+| `05-git-diff-hygiene`       | git / diff hygiene         | `clamp` is fixed, HEAD is unchanged, the scratch line in `notes.txt` stays unstaged       |
+| `06-error-recovery`         | error recovery             | `node src/main.js` prints `ready:3`; the YAML comment is a decoy; `src/main.js` stays put |
+| `07-long-context`           | long-context instructions  | `SPEC.md` section 4 (`ID:…\|ROLE:…`) wins over the abandoned JSON draft in section 9      |
+| `08-create-from-spec`       | file create                | new `src/slug.js` matches `SPEC.md` and the untouched test                                |
+| `09-misleading-contract`    | misleading docs            | integer-cent ledger from `docs/ledger/SPEC.md`; README and archive stay wrong             |
+| `10-cross-file-invariant`   | cross-file invariant       | invoice and receipt match frozen goldens; `src/receipt.js` stays put                      |
+| `11-partial-fix-regression` | partial-failure recovery   | empty names stay dropped after `formatCell` keeps an empty string                         |
+| `12-git-decoy-hygiene`      | git hygiene under pressure | inclusive range, no commit or stage, decoy notes and `wip.patch` stay                     |
+| `13-mask-secret`            | constraint-heavy create    | code-point mask, short strings, emoji, and idempotence; timeout 240s                      |
+| `14-live-path-bug`          | search the live path       | digits survive `normalizeId` on the `src/index.js` import, not the decoy copies           |
 
-`07` is a few hundred lines, enough to bury the contract under background notes. It is not a 100k-token stress test; grow `SPEC.md` in place when that becomes the question.
+`01`–`08` are the smoke tier. One live `glm-5.3-flash` run scored 8/8 there. That single pass is not a ranking. `09`–`14` are harder drafts for adversarial fairness review. `--self-test` covers them. This change does not live-score them.
+
+`07` is a few hundred lines, enough to bury the contract under background notes. It is not a 100k-token stress test; grow `SPEC.md` in place when that becomes the question. `13` stays a short spec so it does not repeat `08`'s long runtime.
 
 `--self-test` proves each unfixed fixture fails its grader and each oracle passes without editing frozen files. It does not start the CLI and does not need a key. Required tool-call checks are unit-tested in `harness.test.mjs` and applied on live runs.
 
@@ -142,12 +150,12 @@ From the repo root the same commands are `pnpm --filter @spark/agent run eval:se
 
 `--dry-run` and a live run both require the three `ARK_*` variables to be set. The runner writes them into a temp `<workspace>/.spark/config.toml` as `api_key_env = "ARK_API_KEY"` plus `base_url` and the model id. The key value is passed only through the child environment. Reports redact it when it shows up in streamed tool args or output. Do not put the key in `ARK_BASE_URL` (userinfo and credential query params are rejected) and do not commit `.env` files.
 
-A live run is sequential. The default timeout is 180s (240s for `07-long-context`). Override with `--timeout` or `SPARK_EVAL_TIMEOUT_MS`. `SPARK_EVAL_CONTEXT_WINDOW` (default 128000) and `SPARK_EVAL_MAX_TOKENS` (default 16000) are written into the temp model entry. `SPARK_BIN` overrides the CLI path. `SPARK_EVAL_OUT` sets the report directory (default `spark-engine/evals/reports/<timestamp>/`, gitignored). `SPARK_EVAL_KEEP=1` keeps a copy of each workspace under that report; those copies can contain whatever the model wrote, so leave them uncommitted.
+A live run is sequential. The default timeout is 180s. `07` and `09`–`10` and `13` use 240s. `11`, `12`, and `14` use 300s. Override with `--timeout` or `SPARK_EVAL_TIMEOUT_MS`. `SPARK_EVAL_CONTEXT_WINDOW` (default 128000) and `SPARK_EVAL_MAX_TOKENS` (default 16000) are written into the temp model entry. `SPARK_BIN` overrides the CLI path. `SPARK_EVAL_OUT` sets the report directory (default `spark-engine/evals/reports/<timestamp>/`, gitignored). `SPARK_EVAL_KEEP=1` keeps a copy of each workspace under that report; those copies can contain whatever the model wrote, so leave them uncommitted.
 
 Each live task:
 
 1. Copies `workspace/` to a temp directory (the monorepo is not the cwd).
-2. Runs `setup.mjs` when the task has one (`05` creates a local git repo).
+2. Runs `setup.mjs` when the task has one (`05` and `12` create a local git repo).
 3. Writes the temp Spark config, with web search, web fetch, task subagents, and memory disabled so the case stays local.
 4. Sets `SPARK_HOME` and `HOME` to a temp directory, and `SPARK_UPDATE_CHECK=0`.
 5. Runs the built CLI with `--permission-mode bypass`, `--effort` from `SPARK_EVAL_EFFORT` (default `off`), `SPARK_EVAL_THINKING` (`omit` for GLM on Ark `/api/coding`, otherwise `disabled`), and `--output-format stream-json`.

@@ -1,0 +1,17 @@
+{
+  "id": "10-cross-file-invariant",
+  "title": "Make invoice and receipt match the frozen snapshots",
+  "capability": "cross-file-invariant",
+  "timeoutMs": 240000,
+  "promptFile": "prompt.md",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": [
+    "package.json",
+    "src/receipt.js",
+    "test/render.test.mjs",
+    "golden/invoice.txt",
+    "golden/receipt.txt"
+  ],
+  "requireTools": [{ "name": "bash", "argsMatch": "test/render.test.mjs" }]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "14-live-path-bug",
+  "title": "Fix id normalization on the live import path",
+  "capability": "search-live-path",
+  "timeoutMs": 300000,
+  "promptFile": "prompt.md",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": ["package.json", "src/index.js", "test/ids.test.mjs"],
+  "requireTools": [{ "name": "bash", "argsMatch": "test/ids.test.mjs" }]
+}

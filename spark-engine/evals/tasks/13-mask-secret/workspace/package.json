@@ -1,0 +1,5 @@
+{
+  "name": "spark-eval-mask-secret",
+  "private": true,
+  "type": "module"
+}
