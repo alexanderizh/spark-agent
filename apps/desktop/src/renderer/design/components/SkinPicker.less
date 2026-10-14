@@ -1,0 +1,77 @@
+/*
+ * 设置-外观「皮肤」选择器样式。组件级 LESS，由 SkinPicker.tsx 直接 import，
+ * 不得把规则追加到 styles/views.css 等历史全局文件。
+ */
+.skin-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.skin-picker-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.skin-picker-card:hover {
+  border-color: var(--primary-soft);
+}
+
+.skin-picker-card[aria-pressed='true'] {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+.skin-picker-thumb {
+  display: block;
+  aspect-ratio: 16 / 10;
+  border-radius: 8px;
+  border: 1px solid var(--divider);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+/* 插画缺失或尚未随包时的同色相占位，保证缩略图不会是一片空白。 */
+.skin-picker-thumb-none {
+  background-color: var(--bg-soft);
+}
+
+.skin-picker-thumb-verdant {
+  background-color: #eef5ee;
+}
+
+.skin-picker-thumb-dawnmelt {
+  background-color: #faf3e8;
+}
+
+.skin-picker-thumb-deepspace {
+  background-color: #141a28;
+}
+
+.skin-picker-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.skin-picker-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skin-picker-card {
+    transition: none;
+  }
+}
