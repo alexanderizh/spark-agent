@@ -21,10 +21,6 @@ interface SessionRow extends BridgeSessionSummary {
   timeLabel: string
 }
 
-interface ProjectRow extends BridgeProjectSummary {
-  countLabel: string
-}
-
 /** 会话分组：项目组可跳转项目页；临时/其他组仅作容器 */
 interface SessionGroup {
   key: string
@@ -49,7 +45,7 @@ interface HomeData {
   avatarUrl: string
   accountLabel: string
   stats: { total: number; running: number; error: number; projects: number }
-  projects: ProjectRow[]
+  projects: BridgeProjectSummary[]
   /** 项目列表加载失败（多为桌面端未更新重启），列表区展示重试提示 */
   projectsError: boolean
   /** 按项目分组的会话（临时会话/未知归属单独成组，置底） */
@@ -61,7 +57,8 @@ interface HomeData {
 }
 
 function sessionRow(item: BridgeSessionSummary): SessionRow {
-  const statusLabel = item.status === 'running' ? '进行中' : item.status === 'error' ? '异常' : '空闲'
+  const statusLabel =
+    item.status === 'running' ? '进行中' : item.status === 'error' ? '异常' : '空闲'
   const dotClass =
     item.status === 'running' ? 'dot-info' : item.status === 'error' ? 'dot-danger' : 'dot-neutral'
   return { ...item, statusLabel, dotClass, timeLabel: formatRelativeTime(item.updatedAt) }
@@ -79,7 +76,10 @@ const UNKNOWN_GROUP_KEY = '__unknown__'
  * 会话按项目分组：项目组顺序与项目列表一致，
  * 无归属会话归「临时会话」、归属项目不在列表（已归档/加载失败）归「其他会话」，两组置底。
  */
-function buildSessionGroups(sessions: SessionRow[], projects: BridgeProjectSummary[]): SessionGroup[] {
+function buildSessionGroups(
+  sessions: SessionRow[],
+  projects: BridgeProjectSummary[],
+): SessionGroup[] {
   const projectById = new Map(projects.map((project) => [project.id, project]))
   const buckets = new Map<string, SessionRow[]>()
   for (const row of sessions) {
@@ -96,16 +96,34 @@ function buildSessionGroups(sessions: SessionRow[], projects: BridgeProjectSumma
   for (const project of projects) {
     const bucket = buckets.get(project.id)
     if (bucket?.length) {
-      groups.push({ key: project.id, name: project.name, projectId: project.id, isTemp: false, sessions: bucket })
+      groups.push({
+        key: project.id,
+        name: project.name,
+        projectId: project.id,
+        isTemp: false,
+        sessions: bucket,
+      })
     }
   }
   const temp = buckets.get(TEMP_GROUP_KEY)
   if (temp?.length) {
-    groups.push({ key: TEMP_GROUP_KEY, name: '临时会话', projectId: null, isTemp: true, sessions: temp })
+    groups.push({
+      key: TEMP_GROUP_KEY,
+      name: '临时会话',
+      projectId: null,
+      isTemp: true,
+      sessions: temp,
+    })
   }
   const unknown = buckets.get(UNKNOWN_GROUP_KEY)
   if (unknown?.length) {
-    groups.push({ key: UNKNOWN_GROUP_KEY, name: '其他会话', projectId: null, isTemp: false, sessions: unknown })
+    groups.push({
+      key: UNKNOWN_GROUP_KEY,
+      name: '其他会话',
+      projectId: null,
+      isTemp: false,
+      sessions: unknown,
+    })
   }
   return groups
 }
@@ -146,11 +164,25 @@ Page({
       serverUrl: bridge.getServerUrl(),
     })
     if (!bridge.getServerUrl()) {
-      this.setData({ gate: 'no-url', loading: false, projects: [], projectsError: false, sessionGroups: [], sessionTotal: 0 })
+      this.setData({
+        gate: 'no-url',
+        loading: false,
+        projects: [],
+        projectsError: false,
+        sessionGroups: [],
+        sessionTotal: 0,
+      })
       return
     }
     if (!bridge.isPaired()) {
-      this.setData({ gate: 'no-pair', loading: false, projects: [], projectsError: false, sessionGroups: [], sessionTotal: 0 })
+      this.setData({
+        gate: 'no-pair',
+        loading: false,
+        projects: [],
+        projectsError: false,
+        sessionGroups: [],
+        sessionTotal: 0,
+      })
       return
     }
     void this.load()
@@ -189,19 +221,15 @@ Page({
       const statsProjects = projectsResult.ok
         ? projects.length
         : // 回退：按本页会话的项目归属去重计数（列表拉不到时兜底，只统计可见页，比恒 0 诚实）
-          new Set(
-            sessions.filter((item) => !isTempSession(item)).map((item) => item.projectId),
-          ).size
+          new Set(sessions.filter((item) => !isTempSession(item)).map((item) => item.projectId))
+            .size
       this.setData({
         gate: 'ok',
         errorText: '',
         errorHint: '',
         stats: { total: sessionsResult.total, running, error, projects: statsProjects },
         projectsError: !projectsResult.ok,
-        projects: projects.map((item) => ({
-          ...item,
-          countLabel: `${item.sessionCount} 会话`,
-        })),
+        projects,
         sessionGroups: buildSessionGroups(sessions, projects),
         sessionTotal: sessions.length,
       })
@@ -244,7 +272,13 @@ Page({
       this.setData({ gate: 'ok', errorText: '', errorHint: '' })
       void this.load()
     } else {
-      this.setData({ gate: 'no-pair', projects: [], projectsError: false, sessionGroups: [], sessionTotal: 0 })
+      this.setData({
+        gate: 'no-pair',
+        projects: [],
+        projectsError: false,
+        sessionGroups: [],
+        sessionTotal: 0,
+      })
     }
   },
 
@@ -306,7 +340,10 @@ Page({
   },
   /** 分组头点击：项目组跳项目会话列表；临时/其他组无项目页可去，忽略 */
   onOpenGroup(e: WechatMiniprogram.CustomEvent) {
-    const { projectId, name } = e.currentTarget.dataset as { projectId: string | null; name: string }
+    const { projectId, name } = e.currentTarget.dataset as {
+      projectId: string | null
+      name: string
+    }
     if (!projectId) return
     wx.navigateTo({
       url: `/pages/project-sessions/index?projectId=${encodeURIComponent(projectId)}&projectName=${encodeURIComponent(name)}`,

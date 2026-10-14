@@ -74,8 +74,8 @@
 /* ─── 项目行（Cursor Workspaces 式单行：图标 + 名称 + chevron） ────────────── */
 
 .home-row {
-  min-height: 112rpx;
-  padding: 24rpx 0;
+  min-height: 96rpx;
+  padding: 16rpx 0;
 }
 .home-row-icon {
   flex: none;
