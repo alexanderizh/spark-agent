@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -16,6 +17,7 @@ import { renderMarkdown } from './lib/report.mjs'
 import { scoreStaticChecks, taskPassed } from './lib/score.mjs'
 import { parseSparkStream } from './lib/stream.mjs'
 import { loadTasks, parsePrepareOutput, selectTasks } from './lib/tasks.mjs'
+import { readmeDropsOutdir } from './tasks/15-rename-syncs-docs/readme-outdir.mjs'
 
 test('resolves OpenAI Responses and Anthropic message endpoints the way the CLI does', () => {
   assert.equal(
@@ -322,4 +324,48 @@ test('list defaults to smoke and --tier hard prints only the hard ids', () => {
 test('prepare output exposes the baseline commit', () => {
   assert.equal(parsePrepareOutput('HEAD abcdef1\n').head, 'abcdef1')
   assert.equal(parsePrepareOutput('nope').head, undefined)
+})
+
+test('15 readme-drops-outdir allows a migration note and rejects stale usage or table', () => {
+  const fixture = readFileSync(
+    fileURLToPath(new URL('./tasks/15-rename-syncs-docs/workspace/README.md', import.meta.url)),
+    'utf8',
+  )
+  assert.match(fixture, /```bash\r?\npack --outdir build/u)
+  assert.match(fixture, /\| `--outdir <dir>` \|/u)
+  assert.equal(readmeDropsOutdir(fixture), false)
+
+  const documented = `# pack
+
+## Usage
+
+\`\`\`bash
+pack --dest build alpha beta
+\`\`\`
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| \`--dest <dir>\` | \`dist\` | Directory for bundle.txt. |
+
+\`--outdir\` was renamed to \`--dest\`.
+`
+  assert.match(documented, /--outdir\b/u)
+  assert.equal(readmeDropsOutdir(documented), true)
+
+  const staleUsage = documented.replace('pack --dest build', 'pack --outdir build')
+  assert.notEqual(staleUsage, documented)
+  assert.equal(readmeDropsOutdir(staleUsage), false)
+
+  const staleTable = documented.replace('| `--dest <dir>` |', '| `--outdir <dir>` |')
+  assert.notEqual(staleTable, documented)
+  assert.equal(readmeDropsOutdir(staleTable), false)
+
+  for (const marker of ['renamed', 'removed', 'deprecated', 'replaced', '改名']) {
+    const noted = documented.replace(
+      '| `--dest <dir>` | `dist` | Directory for bundle.txt. |',
+      `| \`--outdir <dir>\` | \`dist\` | ${marker} to \`--dest\`. |`,
+    )
+    assert.notEqual(noted, documented, marker)
+    assert.equal(readmeDropsOutdir(noted), true, marker)
+  }
 })
