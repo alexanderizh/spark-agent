@@ -141,9 +141,14 @@ Page({
         : await bridge.listProjectSessions(this.data.projectId, 100)
       const rows = result.sessions.map((item) => ({
         ...item,
-        statusLabel: item.status === 'running' ? '进行中' : item.status === 'error' ? '异常' : '空闲',
+        statusLabel:
+          item.status === 'running' ? '进行中' : item.status === 'error' ? '异常' : '空闲',
         dotClass:
-          item.status === 'running' ? 'dot-info' : item.status === 'error' ? 'dot-danger' : 'dot-neutral',
+          item.status === 'running'
+            ? 'dot-info'
+            : item.status === 'error'
+              ? 'dot-danger'
+              : 'dot-neutral',
         timeLabel: formatRelativeTime(item.updatedAt),
       }))
       this.allRows = rows
@@ -183,6 +188,11 @@ Page({
   },
 
   // ─── 会话操作 ───────────────────────────────────────────────────────────────
+
+  /** 授信设备管理（云端中继的桌面设备列表与吊销） */
+  onOpenBridgeDevices() {
+    wx.navigateTo({ url: '/pages/bridge-devices/index' })
+  },
 
   onOpenSession(e: WechatMiniprogram.CustomEvent) {
     const { id, title } = e.currentTarget.dataset as { id: string; title: string }

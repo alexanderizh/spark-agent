@@ -6,6 +6,7 @@
   <!-- 大标题（项目名 / 全部会话） -->
   <view class="ps-title-row">
     <text class="page-title ellipsis">{{allMode ? '全部会话' : projectName}}</text>
+    <view class="ps-title-action" bindtap="onOpenBridgeDevices">授信设备</view>
   </view>
 
   <!-- 筛选 + 搜索行 -->

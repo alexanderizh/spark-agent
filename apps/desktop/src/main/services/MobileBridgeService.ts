@@ -14,6 +14,7 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { Readable, PassThrough } from 'node:stream'
 import { networkInterfaces, tmpdir } from 'node:os'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -195,6 +196,32 @@ interface BridgeStore {
 
 const DEFAULT_SETTINGS: MobileBridgeSettings = { enabled: false, port: 3721 }
 
+/**
+ * 云端中继的虚拟设备：请求已经由 edu-server 按账号鉴权并转发过来了，
+ * 不需要（也没有）设备令牌。单独用一个哨兵对象，避免污染真实的配对设备列表，
+ * touchDevice 也会跳过它（否则每次调用都写一遍设置）。
+ */
+const RELAY_DEVICE: PairedDeviceRecord = {
+  deviceId: 'cloud-relay',
+  deviceToken: '__relay__',
+  account: '',
+  userId: '',
+  deviceLabel: '云端中继',
+  pairedAt: '',
+  lastSeenAt: '',
+}
+
+/**
+ * handleHttpRequest 的调用来源标记，是中继免鉴权的唯一信任依据：
+ *   relay=true  仅限进程内的云端中继合成请求（invokeRelay → runSyntheticRequest）
+ *               传入，edu-server 已按账号鉴权并只转发给本人；
+ *   relay=false LAN HTTP 监听到的一切外部请求（默认值），只认设备令牌。
+ * 鉴权绝不信任任何请求头——网络侧请求可随意伪造 header（安全修复 F1）。
+ */
+interface HttpRequestOrigin {
+  relay: boolean
+}
+
 export class MobileBridgeService {
   private server: Server | null = null
   private runtimePort: number | null = null
@@ -316,7 +343,11 @@ export class MobileBridgeService {
 
   // ─── HTTP ───────────────────────────────────────────────────────────────────
 
-  private async handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  private async handleHttpRequest(
+    req: IncomingMessage,
+    res: ServerResponse,
+    origin: HttpRequestOrigin = { relay: false },
+  ): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const path = url.pathname.replace(/\/+$/, '') || '/'
 
@@ -347,7 +378,7 @@ export class MobileBridgeService {
         queryToken != null && queryToken.length > 0
           ? (this.store.devices.find((device) => device.deviceToken === queryToken) ?? null)
           : null
-      const deviceForContent = deviceByQuery ?? this.authenticate(req)
+      const deviceForContent = deviceByQuery ?? this.authenticate(req, origin)
       if (deviceForContent == null) {
         this.sendJson(res, 401, {
           error: { code: 'UNAUTHORIZED', message: '设备令牌无效，请重新配对' },
@@ -373,7 +404,7 @@ export class MobileBridgeService {
     }
 
     // 其余接口均需设备令牌
-    const device = this.authenticate(req)
+    const device = this.authenticate(req, origin)
     if (device == null) {
       this.sendJson(res, 401, {
         error: { code: 'UNAUTHORIZED', message: '设备令牌无效，请重新配对' },
@@ -872,7 +903,11 @@ export class MobileBridgeService {
     this.sendJson(res, 200, body)
   }
 
-  private authenticate(req: IncomingMessage): PairedDeviceRecord | null {
+  private authenticate(req: IncomingMessage, origin: HttpRequestOrigin): PairedDeviceRecord | null {
+    // 云端中继：edu-server 已用账号 JWT 鉴权并只转发给本人，这里直接放行。
+    // 信任依据是进程内显式传入的 origin.relay（仅 invokeRelay 合成请求会置 true），
+    // 不是请求头——LAN 上的外部请求可随意伪造 header（安全修复 F1）。
+    if (origin.relay) return RELAY_DEVICE
     const header = req.headers.authorization
     if (header == null || !header.startsWith('Bearer ')) return null
     const token = header.slice('Bearer '.length).trim()
@@ -880,10 +915,171 @@ export class MobileBridgeService {
   }
 
   private touchDevice(device: PairedDeviceRecord): void {
+    if (device === RELAY_DEVICE) return
     const now = new Date().toISOString()
     if (device.lastSeenAt === now) return
     device.lastSeenAt = now
     this.writeStore(this.store)
+  }
+
+  // ─── 云端中继：把既有 HTTP 处理器复用为「方法调用」 ──────────────────────────
+  //
+  // 中继收到的每一帧都是 { m: HTTP method, p: path, b: body }，
+  // 与其重写一遍路由表，不如用一对内存里的 req/res 直接喂给 handleHttpRequest：
+  // 全部既有接口（含附件上传、语音转写、定时任务、斜杠命令）天然可用，零重复实现。
+
+  /**
+   * 中继调用入口。返回 HTTP 语义的 { status, body }，由中继客户端回成 res 帧。
+   * 附件内容路由特殊处理：云端模式下小程序拿不到局域网地址，改为返回 base64。
+   */
+  async invokeRelay(
+    method: string,
+    urlPath: string,
+    body: unknown,
+  ): Promise<{ status: number; body: unknown }> {
+    const pathOnly = (urlPath ?? '').split('?')[0] ?? ''
+    if (method === 'GET' && pathOnly === '/v1/attachments/content') {
+      return this.readRelayAttachment(urlPath)
+    }
+    return this.runSyntheticRequest(method, urlPath, body)
+  }
+
+  private async readRelayAttachment(urlPath: string): Promise<{ status: number; body: unknown }> {
+    const query = new URL(urlPath, 'http://localhost').searchParams
+    const requestedPath = (query.get('path') ?? '').trim()
+    if (!requestedPath) {
+      return { status: 400, body: { error: { code: 'BAD_REQUEST', message: '缺少 path' } } }
+    }
+    try {
+      const content = await this.requireDeps().readAttachmentContent(requestedPath)
+      if (content == null) {
+        return {
+          status: 404,
+          body: { error: { code: 'NOT_FOUND', message: '附件不存在或不在白名单内' } },
+        }
+      }
+      return {
+        status: 200,
+        body: {
+          base64: content.data.toString('base64'),
+          mimeType: content.mimeType,
+        },
+      }
+    } catch (error) {
+      return {
+        status: 500,
+        body: {
+          error: {
+            code: 'INTERNAL',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        },
+      }
+    }
+  }
+
+  private async runSyntheticRequest(
+    method: string,
+    urlPath: string,
+    body: unknown,
+  ): Promise<{ status: number; body: unknown }> {
+    const payload = body == null || method === 'GET' ? '' : JSON.stringify(body)
+    const req = Readable.from(
+      payload ? [Buffer.from(payload, 'utf8')] : [],
+    ) as unknown as IncomingMessage
+    req.method = method
+    req.url = urlPath
+    req.headers = {
+      authorization: 'Bearer relay',
+      // 仅作日志/排障线索保留；鉴权信任来自下方 origin 参数，与请求头无关
+      'x-spark-relay': '1',
+      'content-type': 'application/json',
+    }
+
+    // 用对象装结果：直接 let 会被控制流分析收敛成 null（赋值发生在闭包里，TS 看不到）
+    const sink: { status: number; raw: string | Buffer | null } = { status: 500, raw: null }
+    const res = {
+      writeHead(code: number) {
+        sink.status = code
+        return res
+      },
+      setHeader() {
+        /* CORS 头，中继场景不需要 */
+      },
+      end(data?: string | Buffer) {
+        sink.raw = data ?? null
+      },
+    } as unknown as ServerResponse
+
+    try {
+      // 唯一的 relay=true 调用点：本函数只被进程内 invokeRelay 触达，
+      // 该合成请求不可能来自网络，信任参数无法被外部伪造。
+      await this.handleHttpRequest(req, res, { relay: true })
+    } catch (error) {
+      return {
+        status: 500,
+        body: {
+          error: {
+            code: 'INTERNAL',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        },
+      }
+    }
+
+    let parsed: unknown = null
+    if (sink.raw != null) {
+      const text = typeof sink.raw === 'string' ? sink.raw : sink.raw.toString('utf8')
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        parsed = text
+      }
+    }
+    return { status: sink.status, body: parsed }
+  }
+
+  /**
+   * 中继订阅者：小程序在云端模式下也要收到会话事件流。
+   * 复用既有 streamClients + 轮询广播，只是把「发送」换成中继帧。
+   * 返回的句柄用于取消订阅。
+   */
+  addRelaySubscriber(
+    sessionId: string,
+    sendEvents: (events: MobileBridgeEvent[]) => void,
+  ): () => void {
+    const connection: WsConnection = {
+      socket: new PassThrough() as unknown as import('node:stream').Duplex,
+      deviceId: RELAY_DEVICE.deviceId,
+      sessionId,
+      send: (data: string) => {
+        try {
+          const parsed = JSON.parse(data) as { events?: MobileBridgeEvent[] }
+          if (Array.isArray(parsed.events) && parsed.events.length > 0) sendEvents(parsed.events)
+        } catch {
+          /* 忽略无法解析的帧 */
+        }
+      },
+      close: () => unsubscribe(),
+    }
+    /** 摘掉订阅者；会话上没人订阅时回收轮询器（箭头函数捕获 this，避免 this 别名） */
+    const unsubscribe = (): void => {
+      const clients = this.streamClients.get(sessionId)
+      if (clients == null) return
+      clients.delete(connection)
+      if (clients.size === 0) {
+        this.streamClients.delete(sessionId)
+        this.stopPoller(sessionId)
+      }
+    }
+    let clients = this.streamClients.get(sessionId)
+    if (clients == null) {
+      clients = new Set()
+      this.streamClients.set(sessionId, clients)
+    }
+    clients.add(connection)
+    this.ensurePoller(sessionId)
+    return unsubscribe
   }
 
   // ─── WebSocket 流 ───────────────────────────────────────────────────────────

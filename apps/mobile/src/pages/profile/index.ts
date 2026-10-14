@@ -5,6 +5,7 @@
  */
 
 import * as authApi from '../../api/auth'
+import * as bridge from '../../api/bridge'
 import { getConfig } from '../../config'
 import { getState, logout, patchUser, subscribe } from '../../store/auth'
 import { ensureAuthenticated } from '../../utils/auth-guard'
@@ -22,6 +23,17 @@ interface ProfilePageData {
   uploadingAvatar: boolean
   /** 小程序版本号（正式/体验版取后台版本，开发环境显示 dev） */
   appVersion: string
+  // ── 远程会话 ──
+  /** 云端中继开关（默认开：跨网络可用，无需同 Wi-Fi / 公网 IP） */
+  relayEnabled: boolean
+  /** 中继长连接是否已建立 */
+  relayConnected: boolean
+  /** 电脑端是否经中继在线（null = 还没收到服务端状态） */
+  relayDesktopOnline: boolean | null
+  /** WXML 不支持三元以外的表达，状态文案在这里预计算 */
+  relayStatusLabel: string
+  desktopStatusLabel: string
+  bridgeUrlLabel: string
 }
 
 /** 读取小程序版本号；getAccountInfoSync 在低版本基础库可能缺失，失败回退 em dash */
@@ -47,6 +59,12 @@ Page({
     serverUrl: '',
     uploadingAvatar: false,
     appVersion: '—',
+    relayEnabled: true,
+    relayConnected: false,
+    relayDesktopOnline: null,
+    relayStatusLabel: '未连接',
+    desktopStatusLabel: '—',
+    bridgeUrlLabel: '未设置',
   } as ProfilePageData,
 
   onShow() {
@@ -56,6 +74,59 @@ Page({
     }
     this.applyUser()
     this.setData({ serverUrl: getConfig().baseUrl, appVersion: resolveAppVersion() })
+    this.applyRelayState()
+  },
+
+  /** 中继状态：连接状态与电脑端在线状态都只做展示，不阻塞页面 */
+  applyRelayState() {
+    const enabled = bridge.isRelayEnabled()
+    const connected = bridge.isRelayConnected()
+    const online = bridge.isRelayDesktopOnline()
+    const bridgeUrl = bridge.getServerUrl()
+    this.setData({
+      relayEnabled: enabled,
+      relayConnected: connected,
+      relayDesktopOnline: online,
+      relayStatusLabel: !enabled ? '已关闭（走局域网直连）' : connected ? '已连接' : '未连接',
+      desktopStatusLabel: online == null ? '未知' : online ? '在线' : '离线',
+      bridgeUrlLabel: bridgeUrl || '未设置',
+    })
+  },
+
+  onToggleRelay(e: WechatMiniprogram.SwitchChange) {
+    const enabled = e.detail.value === true
+    bridge.setRelayEnabled(enabled)
+    this.applyRelayState()
+    wx.showToast({
+      title: enabled ? '已开启云端中继' : '已切换到局域网直连',
+      icon: 'none',
+    })
+  },
+
+  /** 关闭中继后需要手填局域网地址；这里复用一个简易输入弹窗 */
+  onEditBridgeUrl() {
+    wx.showModal({
+      title: '局域网直连地址',
+      content: bridge.getServerUrl(),
+      editable: true,
+      placeholderText: '如 http://192.168.1.5:3721',
+      success: (res) => {
+        if (!res.confirm) return
+        const text = (res.content ?? '').trim()
+        if (!text) {
+          bridge.setServerUrl('')
+          this.applyRelayState()
+          return
+        }
+        const url = bridge.normalizeBridgeUrl(text)
+        if (!url) {
+          wx.showToast({ title: '地址格式如 http://192.168.1.5:3721', icon: 'none' })
+          return
+        }
+        bridge.setServerUrl(url)
+        this.applyRelayState()
+      },
+    })
   },
 
   onUnload() {

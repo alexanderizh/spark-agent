@@ -8770,6 +8770,8 @@ export interface IpcStreamChannelMap {
   'stream:session:queue-changed': SessionGetQueueResponse
   /** Session 标题被异步重命名（首轮完成后 LLM 总结）*/
   'stream:session:renamed': { sessionId: string; title: string }
+  /** Wiki 里程碑沉淀产出候选（inserted>0 才推；右上角 toast + 候选区徽标刷新） */
+  'stream:wiki:candidates-ready': { sessionId: string; inserted: number }
   /** Session 的引擎级 worktree 状态变化（agent 工具上报或运行时检测）；worktree 为 null 表示已退出 */
   'stream:session:worktree-changed': {
     sessionId: string

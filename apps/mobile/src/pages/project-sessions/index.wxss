@@ -7,9 +7,27 @@
 
 .ps-title-row {
   padding: 16rpx 32rpx 8rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
 }
 .ps-title-row .page-title {
   display: block;
+  flex: 1;
+  min-width: 0;
+}
+.ps-title-action {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  color: #3b82f6;
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  background: #eef4fe;
+}
+
+.ps-title-action:active {
+  opacity: 0.7;
 }
 
 /* ─── 筛选 + 搜索 ──────────────────────────────────────────────────────────── */

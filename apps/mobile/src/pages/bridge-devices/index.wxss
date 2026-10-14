@@ -1,0 +1,173 @@
+/* 授信设备管理：与项目会话列表同一套中性灰 + #3b82f6 点缀 */
+@import '../../app.wxss';
+
+.bd-page {
+  padding: 0 20rpx 48rpx;
+}
+
+.bd-title-row {
+  padding: 8rpx 8rpx 0;
+}
+
+.bd-lede {
+  margin: 12rpx 8rpx 24rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #8a8782;
+}
+
+.bd-lede-strong {
+  color: #d97706;
+}
+
+.bd-count {
+  margin: 0 8rpx 16rpx;
+  font-size: 24rpx;
+  color: #8a8782;
+}
+
+.bd-error,
+.bd-empty {
+  padding: 48rpx 0;
+}
+
+/* ── 设备卡片 ── */
+
+.bd-card {
+  background: #ffffff;
+  border-radius: 20rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  border: 1rpx solid #eceae6;
+}
+
+.bd-card--revoked {
+  opacity: 0.72;
+  background: #faf9f7;
+}
+
+.bd-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.bd-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.bd-card-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #26241f;
+}
+
+.bd-card-sub {
+  font-size: 22rpx;
+  color: #a5a29c;
+  font-family: monospace;
+}
+
+.bd-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  margin-top: 16rpx;
+  font-size: 22rpx;
+  color: #8a8782;
+}
+
+/* ── 状态标签 ── */
+
+.bd-tag {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  line-height: 1;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+}
+
+.bd-tag--online {
+  color: #16a34a;
+  background: #e8f7ee;
+}
+
+.bd-tag--active {
+  color: #8a8782;
+  background: #f2f0ec;
+}
+
+.bd-tag--revoked {
+  color: #b91c1c;
+  background: #fdeeee;
+}
+
+/* ── 吊销操作（行内二次确认） ── */
+
+.bd-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid #f2f0ec;
+  min-height: 56rpx;
+}
+
+.bd-btn-revoke {
+  font-size: 24rpx;
+  color: #b91c1c;
+  padding: 10rpx 24rpx;
+  border-radius: 12rpx;
+  background: #fdeeee;
+}
+
+.bd-btn-revoke:active {
+  opacity: 0.7;
+}
+
+.bd-confirm-text {
+  flex: 1;
+  font-size: 22rpx;
+  color: #b91c1c;
+  margin-right: 16rpx;
+  line-height: 1.5;
+}
+
+.bd-btn-group {
+  display: flex;
+  gap: 12rpx;
+  flex-shrink: 0;
+}
+
+.bd-btn-cancel {
+  font-size: 24rpx;
+  color: #6b6862;
+  padding: 10rpx 24rpx;
+  border-radius: 12rpx;
+  background: #f2f0ec;
+}
+
+.bd-btn-confirm {
+  font-size: 24rpx;
+  color: #ffffff;
+  padding: 10rpx 24rpx;
+  border-radius: 12rpx;
+  background: #b91c1c;
+}
+
+.bd-btn-cancel:active,
+.bd-btn-confirm:active {
+  opacity: 0.7;
+}
+
+.bd-card-note {
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid #f2f0ec;
+  font-size: 22rpx;
+  color: #b3b0ab;
+}

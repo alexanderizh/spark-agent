@@ -397,4 +397,108 @@ export interface MobileBridgeIpcChannelMap {
   'mobile-bridge:get-status': [{}, MobileBridgeStatus]
   'mobile-bridge:update-settings': [Partial<MobileBridgeSettings>, MobileBridgeStatus]
   'mobile-bridge:revoke-device': [{ deviceId: string }, MobileBridgeStatus]
+  'mobile-bridge:get-relay-status': [{}, MobileBridgeRelayStatus]
+  'mobile-bridge:update-relay-settings': [
+    Partial<MobileBridgeRelaySettings>,
+    MobileBridgeRelayStatus,
+  ]
+  /** 设备被吊销后重新授信：生成全新设备身份并立即重连 */
+  'mobile-bridge:reset-relay-identity': [{}, MobileBridgeRelayStatus]
+}
+
+// ─── 云端中继（跨网络：桌面端与小程序都只连 edu-server） ───────────────────────
+//
+// 局域网直连要求两端同网、且小程序体验版强制 https/wss，天然不可用。
+// 中继模式：桌面端**出网**连 edu-server（无需公网 IP、无需开端口），
+// 小程序也连 edu-server，服务端按 userId 配对转发 → 账户即达、跨网络可用。
+//
+// 帧协议（JSON，两端对称）：
+//   → auth     桌面端连接后第一帧：设备凭据认证（deviceSecret 不走 URL query，
+//              避免 nginx access log 落盘长期凭据）；通过后服务端才注册进中继
+//   → hello    认证通过（收到 welcome）后发送，带设备标识
+//   ← welcome  服务端回连接 id + 当前桌面端在线状态（对桌面端 = 认证已通过）
+//   ← req      服务端→桌面端：转发小程序的调用（m=HTTP method，p=path，b=body）
+//   → res      桌面端→服务端：{ id, s: HTTP 状态码, b: 响应体 }
+//   → sub      小程序→服务端：订阅某会话的事件流（unsub 取消）
+//   ← event    服务端→小程序：{ sessionId, events }
+//   ← presence 桌面端上下线时广播给该用户所有小程序连接
+//   ↔ ping/pong
+//
+// ⚠️ 帧结构必须与 edu-server `src/service/mobile-bridge/relay-hub.ts` 保持一致。
+
+export interface MobileBridgeRelaySettings {
+  /** 总开关（关闭时桌面端不连中继，小程序回落局域网直连） */
+  enabled: boolean
+  /** 中继服务地址（https/wss 基址，缺省取账号服务 baseUrl） */
+  baseUrl: string
+}
+
+export interface MobileBridgeRelayStatus {
+  /** 中继开关 */
+  enabled: boolean
+  /** 实际使用的 wss 基址 */
+  baseUrl: string
+  /** 是否已与 edu-server 建立长连接 */
+  connected: boolean
+  /** 最近一次连接失败原因（连接成功时为 null） */
+  lastError: string | null
+  /** 服务端为该连接分配的 id */
+  connectionId: string | null
+  /** 服务端最近一次心跳/交互时间 */
+  lastSeenAt: string | null
+  /** 本机授信设备 ID（账号下的设备身份，可在小程序端管理） */
+  deviceId: string | null
+  /**
+   * 设备是否被吊销（close 4403）。吊销后不再自动重连，
+   * 需用户在桌面端「重新授信」（生成全新设备身份）。
+   */
+  revoked: boolean
+}
+
+export interface MobileBridgeRelayDesktopPresence {
+  online: boolean
+  deviceId: string | null
+  label: string | null
+  version: string | null
+  lastSeenAt: string | null
+}
+
+export type MobileBridgeRelayFrame =
+  | {
+      /** 首帧认证：WS 建立后、任何业务帧之前发送（服务端默认 10s 未收到即断开） */
+      t: 'auth'
+      deviceId: string
+      /** 设备密钥（授信凭据）。绝不放进 URL query，只走本帧 */
+      secret: string
+      label?: string
+      version?: string
+    }
+  | {
+      t: 'hello'
+      deviceId?: string
+      label?: string
+      version?: string
+    }
+  | { t: 'welcome'; connId: string; desktop: MobileBridgeRelayDesktopPresence }
+  | { t: 'req'; id: string; m: string; p: string; b?: unknown }
+  | { t: 'res'; id: string; s: number; b?: unknown }
+  | { t: 'sub'; sessionId: string }
+  | { t: 'unsub' }
+  | { t: 'event'; sessionId: string; events: unknown[] }
+  | { t: 'presence'; desktop: MobileBridgeRelayDesktopPresence }
+  | { t: 'ping' }
+  | { t: 'pong' }
+  | { t: 'error'; code?: string; message: string }
+
+/** 中继错误码（小程序侧据此给出可执行的提示） */
+export type MobileBridgeRelayErrorCode =
+  | 'DESKTOP_OFFLINE'
+  | 'UNAUTHORIZED'
+  | 'TIMEOUT'
+  | 'BAD_REQUEST'
+  | 'INTERNAL'
+
+export const DEFAULT_MOBILE_BRIDGE_RELAY_SETTINGS: MobileBridgeRelaySettings = {
+  enabled: true,
+  baseUrl: '',
 }

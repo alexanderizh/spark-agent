@@ -1,0 +1,8 @@
+{
+  "navigationStyle": "custom",
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "safe-nav-bar": "../../components/safe-nav-bar/index",
+    "empty-state": "../../components/empty-state/index"
+  }
+}

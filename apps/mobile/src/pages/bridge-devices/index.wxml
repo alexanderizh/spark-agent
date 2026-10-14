@@ -1,0 +1,66 @@
+<!-- 授信设备管理：列表卡片 + 行内二次确认吊销 -->
+
+<view class="bd-page">
+  <safe-nav-bar title="授信设备" />
+
+  <view class="bd-title-row">
+    <text class="page-title">授信设备</text>
+  </view>
+
+  <view class="bd-lede">
+    通过云端中继访问你会话的桌面设备。首次连接自动授信；<text class="bd-lede-strong">吊销后立即断开且不可恢复</text>，被吊销的电脑需在桌面端「重新授信」。
+  </view>
+
+  <view wx:if="{{loading}}" class="loading-tip">加载中…</view>
+
+  <view wx:elif="{{errorText}}" class="bd-error">
+    <empty-state icon="monitor" title="加载失败" desc="{{errorText}}" />
+  </view>
+
+  <view wx:elif="{{devices.length === 0}}" class="bd-empty">
+    <empty-state
+      icon="monitor"
+      title="还没有授信设备"
+      desc="在电脑端 SparkWork 打开「设置 → 生态 → 移动端桥接 → 云端中继」，用同一账号登录后即自动授信"
+    />
+  </view>
+
+  <block wx:else>
+    <view class="bd-count">已授信 {{activeCount}} 台</view>
+
+    <view
+      wx:for="{{devices}}"
+      wx:key="deviceId"
+      class="bd-card {{item.status === 'revoked' ? 'bd-card--revoked' : ''}}"
+    >
+      <view class="bd-card-head">
+        <view class="bd-card-title-row">
+          <text class="bd-card-title ellipsis">{{item.label}}</text>
+          <text
+            class="bd-tag {{item.online ? 'bd-tag--online' : (item.status === 'active' ? 'bd-tag--active' : 'bd-tag--revoked')}}"
+          >{{item.statusLabel}}</text>
+        </view>
+        <text class="bd-card-sub">{{item.shortId}}{{item.versionLabel ? ' · ' + item.versionLabel : ''}}</text>
+      </view>
+
+      <view class="bd-card-meta">
+        <text>最近活跃 {{item.lastSeenLabel}}</text>
+        <text>授信于 {{item.firstSeenLabel}}</text>
+      </view>
+
+      <view wx:if="{{item.status === 'active'}}" class="bd-card-actions">
+        <block wx:if="{{pendingRevoke !== item.deviceId}}">
+          <view class="bd-btn-revoke" data-id="{{item.deviceId}}" bindtap="onAskRevoke">吊销</view>
+        </block>
+        <block wx:else>
+          <text class="bd-confirm-text">吊销后此设备立即断开、不可恢复，确定？</text>
+          <view class="bd-btn-group">
+            <view class="bd-btn-cancel" bindtap="onCancelRevoke">取消</view>
+            <view class="bd-btn-confirm" bindtap="onConfirmRevoke">确认吊销</view>
+          </view>
+        </block>
+      </view>
+      <view wx:else class="bd-card-note">已吊销 · {{item.lastSeenLabel}}</view>
+    </view>
+  </block>
+</view>

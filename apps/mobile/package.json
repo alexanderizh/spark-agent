@@ -10,7 +10,9 @@
     "verify": "node scripts/verify-dist.mjs && node scripts/verify-wxml-methods.mjs",
     "smoke": "node scripts/smoke-api.mjs",
     "smoke:boot": "node scripts/smoke-boot.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "smoke:relay": "node scripts/smoke-relay.mjs",
+    "e2e:relay": "node scripts/e2e-relay-prod.mjs"
   },
   "devDependencies": {
     "miniprogram-api-typings": "^3.12.3",

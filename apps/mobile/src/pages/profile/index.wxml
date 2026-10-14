@@ -40,6 +40,35 @@
     </view>
   </view>
 
+      <!-- 远程会话 -->
+      <view class="card">
+        <view class="card-head">
+          <text class="card-title">远程会话</text>
+        </view>
+        <view class="list-row">
+          <view class="grow col gap-4">
+            <text class="list-row-label">云端中继</text>
+            <text class="t-caption">
+              开启后小程序经服务器中转接管电脑上的会话：不需要同一 Wi-Fi、电脑也不需要公网 IP，登录同一账号即可。
+            </text>
+          </view>
+          <switch checked="{{relayEnabled}}" bindchange="onToggleRelay" color="#3b82f6" />
+        </view>
+        <view class="list-row">
+          <text class="list-row-label grow">中继连接</text>
+          <text class="list-row-value">{{relayStatusLabel}}</text>
+        </view>
+        <view class="list-row">
+          <text class="list-row-label grow">电脑端</text>
+          <text class="list-row-value">{{desktopStatusLabel}}</text>
+        </view>
+        <view class="list-row" bindtap="onEditBridgeUrl">
+          <text class="list-row-label grow">局域网直连地址</text>
+          <text class="list-row-value t-mono ellipsis" style="max-width: 320rpx;">{{bridgeUrlLabel}}</text>
+          <text class="t-faint">›</text>
+        </view>
+      </view>
+
       <!-- 同步与设备 -->
       <view class="card">
         <view class="card-head">

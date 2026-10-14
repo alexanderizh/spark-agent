@@ -284,7 +284,13 @@ Page({
     if (attachments == null || attachments.length === 0) return item
     const views = attachments.map((att) => ({
       ...att,
-      previewUrl: att.type === 'image' ? bridge.buildAttachmentPreviewUrl(att.path) : '',
+      // 中继模式下小程序访问不到桌面端的局域网地址，直接预览手机本地那份原图
+      previewUrl:
+        att.type === 'image'
+          ? bridge.isRelayEnabled()
+            ? ((att as { localPath?: string }).localPath ?? '')
+            : bridge.buildAttachmentPreviewUrl(att.path)
+          : '',
     }))
     return { ...item, attachments: views } as TimelineItem
   },

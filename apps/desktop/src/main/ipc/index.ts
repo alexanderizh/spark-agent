@@ -3153,6 +3153,10 @@ function getSessionService(): SessionService {
     _sessionService.setSessionWorktreeChangedHandler((sessionId, worktree) => {
       pushStreamEvent('stream:session:worktree-changed', { sessionId, worktree })
     })
+    // Wiki 里程碑沉淀产出候选 → 推流渲染层弹右上角 toast + 候选区徽标刷新
+    _sessionService.setWikiCandidatesReadyHandler((sessionId, inserted) => {
+      pushStreamEvent('stream:wiki:candidates-ready', { sessionId, inserted })
+    })
     // Hook V2：挂生命周期桥（发射七类 MVP 事件）并启动崩溃恢复 + Worker 轮询
     getHookSystemV2({
       db: getDatabase(),
@@ -5495,6 +5499,19 @@ export function registerAllIpcHandlers(): void {
       }
       return mobileVoiceTranscriber
     },
+    getRelayAccessToken: async () => {
+      const auth = getAuthService()
+      if (auth.getAccessToken() == null) return null
+      // WebSocket 握手不走 HTTP 401 续期链路：过期 token 会被服务端直接断连。
+      // 先打一次 /me 让 EduServerClient 有机会续期，再取最新 token。
+      try {
+        await auth.getMe()
+      } catch {
+        // 网络不可用时沿用已有 token 试一次
+      }
+      return auth.getAccessToken()
+    },
+    getRelayBaseUrl: () => getAuthService().getEduClient().getBaseUrl(),
   })
 
   // 启动时仅在宿主机存在对应 CLI 时补种内置本地 provider。

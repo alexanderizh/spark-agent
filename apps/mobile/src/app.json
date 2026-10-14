@@ -4,6 +4,7 @@
     "pages/login/index",
     "pages/home/index",
     "pages/project-sessions/index",
+    "pages/bridge-devices/index",
     "pages/chat/index",
     "pages/profile/index",
     "pages/sync/index",

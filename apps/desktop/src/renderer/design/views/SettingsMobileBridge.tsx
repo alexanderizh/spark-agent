@@ -14,7 +14,11 @@ import { Button, Tag } from '@lobehub/ui'
 import { Switch } from 'antd'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { DEFAULT_MOBILE_BRIDGE_SETTINGS } from '@spark/protocol'
-import type { MobileBridgePairedDevice, MobileBridgeStatus } from '@spark/protocol'
+import type {
+  MobileBridgePairedDevice,
+  MobileBridgeRelayStatus,
+  MobileBridgeStatus,
+} from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 
@@ -30,6 +34,11 @@ function SettingsRow({ title, desc, right }: { title: string; desc?: string; rig
   )
 }
 
+/** wss://host → https://host（设置页输入框与展示用的都是 http 形式） */
+function toHttpUrl(url: string): string {
+  return (url ?? '').replace(/^wss:\/\//i, 'https://').replace(/^ws:\/\//i, 'http://')
+}
+
 function formatTime(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return '—'
@@ -42,11 +51,16 @@ export function MobileBridgeSettingsSection() {
   const { invoke: getStatus } = useIpcInvoke('mobile-bridge:get-status')
   const { invoke: updateSettings } = useIpcInvoke('mobile-bridge:update-settings')
   const { invoke: revokeDevice } = useIpcInvoke('mobile-bridge:revoke-device')
+  const { invoke: getRelayStatus } = useIpcInvoke('mobile-bridge:get-relay-status')
+  const { invoke: updateRelaySettings } = useIpcInvoke('mobile-bridge:update-relay-settings')
+  const { invoke: resetRelayIdentity } = useIpcInvoke('mobile-bridge:reset-relay-identity')
 
   const [status, setStatus] = useState<MobileBridgeStatus | null>(null)
+  const [relay, setRelay] = useState<MobileBridgeRelayStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [portDraft, setPortDraft] = useState(String(DEFAULT_MOBILE_BRIDGE_SETTINGS.port))
+  const [relayUrlDraft, setRelayUrlDraft] = useState('')
   const [pendingRevoke, setPendingRevoke] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -55,16 +69,48 @@ export function MobileBridgeSettingsSection() {
       const next = await getStatus({})
       setStatus(next)
       setPortDraft(String(next?.settings?.port ?? DEFAULT_MOBILE_BRIDGE_SETTINGS.port))
+      const relayNext = await getRelayStatus({})
+      setRelay(relayNext)
+      // 状态里回的是实际连接地址（wss://…），输入框要的是 http(s) 形式
+      setRelayUrlDraft(toHttpUrl(relayNext?.baseUrl ?? ''))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '读取移动端桥接状态失败')
     } finally {
       setLoading(false)
     }
-  }, [getStatus, toast])
+  }, [getStatus, getRelayStatus, toast])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  // 中继是长连接，状态会自己变（掉线重连）；设置页停留时每 5s 轮询一次即可
+  useEffect(() => {
+    const timer = setInterval(() => {
+      getRelayStatus({})
+        .then(setRelay)
+        .catch(() => undefined)
+    }, 5_000)
+    return () => clearInterval(timer)
+  }, [getRelayStatus])
+
+  const applyRelay = useCallback(
+    async (patch: { enabled?: boolean; baseUrl?: string }) => {
+      setBusy(true)
+      try {
+        const next = await updateRelaySettings(patch)
+        setRelay(next)
+        if (patch.baseUrl !== undefined) setRelayUrlDraft(patch.baseUrl)
+        toast.success('已保存')
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '保存失败')
+        void load()
+      } finally {
+        setBusy(false)
+      }
+    },
+    [load, toast, updateRelaySettings],
+  )
 
   const apply = useCallback(
     async (patch: { enabled?: boolean; port?: number }) => {
@@ -126,15 +172,124 @@ export function MobileBridgeSettingsSection() {
     }
   }
 
+  const applyResetIdentity = useCallback(async () => {
+    setBusy(true)
+    try {
+      const next = await resetRelayIdentity({})
+      setRelay(next)
+      toast.success('已生成新设备身份并重连')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '重新授信失败')
+    } finally {
+      setBusy(false)
+    }
+  }, [resetRelayIdentity, toast])
+
   const enabled = status?.settings.enabled === true
   const devices = status?.pairedDevices ?? []
+  const relayRevoked = relay?.revoked === true
 
   return (
     <div className="settings-section">
       <h2>移动端桥接</h2>
       <div className="lede">
-        把本机会话暴露到局域网，微信小程序用同一个账号登录即可接续会话、新建远程会话并实时跟流。
-        关闭后小程序无法连接，已配对设备保留但全部失效。
+        让微信小程序用同一个 edu-server 账号接管本机会话：接续对话、新建远程会话、实时跟流。
+        <strong>推荐用云端中继</strong>（跨网络可用，无需同 Wi-Fi、无需公网
+        IP）；局域网直连仅作备用。
+      </div>
+
+      {/* ─── 云端中继 ─── */}
+      <h3>云端中继（推荐）</h3>
+      <div className="settings-card">
+        <SettingsRow
+          title="启用云端中继"
+          desc="桌面端主动出网连 edu-server 并保持长连接，小程序也连 edu-server，服务端按账号配对转发。电脑不需要公网 IP、不需要开端口、手机不需要和电脑同一个 Wi-Fi。"
+          right={
+            <Switch
+              size="middle"
+              loading={busy}
+              disabled={loading || relay == null}
+              checked={relay?.enabled === true}
+              onChange={(checked) => void applyRelay({ enabled: checked })}
+            />
+          }
+        />
+
+        <SettingsRow
+          title="连接状态"
+          desc={
+            relay?.lastError
+              ? relay.lastError
+              : '与 edu-server 的长连接状态；断线会自动按 1s→30s 退避重连。'
+          }
+          right={
+            relay?.connected ? (
+              <Tag size="small" color="green">
+                已连接 · {toHttpUrl(relay.baseUrl).replace(/^https?:\/\//, '')}
+              </Tag>
+            ) : relayRevoked ? (
+              <Tag size="small" color="red">
+                设备已被吊销
+              </Tag>
+            ) : (
+              <Tag size="small">未连接</Tag>
+            )
+          }
+        />
+
+        <SettingsRow
+          title="授信设备"
+          desc={
+            relayRevoked
+              ? '此设备已在小程序端被吊销，中继已停止。点击「重新授信」生成新设备身份并重连；旧身份会被服务端永久拒绝。'
+              : '本机在中继服务上的设备身份（首次连接自动授信）。可在小程序「远程会话」的设备管理中查看与吊销所有授信设备。'
+          }
+          right={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Tag size="small">{relay?.deviceId ? `${relay.deviceId.slice(0, 8)}…` : '—'}</Tag>
+              {relayRevoked && (
+                <Button size="small" loading={busy} onClick={() => void applyResetIdentity()}>
+                  重新授信
+                </Button>
+              )}
+            </div>
+          }
+        />
+
+        <SettingsRow
+          title="中继服务地址"
+          desc="留空则跟随账号服务地址（https://www.yiqibyte.com）。仅在自建 edu-server 时填写，必须以 http:// 或 https:// 开头。"
+          right={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                className="mobile-bridge-port"
+                style={{ width: 260 }}
+                placeholder="留空 = 账号服务地址"
+                value={relayUrlDraft}
+                disabled={loading || busy}
+                onChange={(e) => setRelayUrlDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void applyRelay({ baseUrl: relayUrlDraft.trim() })
+                }}
+              />
+              <Button
+                size="small"
+                loading={busy}
+                disabled={loading}
+                onClick={() => void applyRelay({ baseUrl: relayUrlDraft.trim() })}
+              >
+                应用
+              </Button>
+            </div>
+          }
+        />
+      </div>
+
+      {/* ─── 局域网直连（备用） ─── */}
+      <h3 style={{ marginTop: 20 }}>局域网直连（备用）</h3>
+      <div className="lede" style={{ marginBottom: 8 }}>
+        手机与电脑在同一 Wi-Fi 时才可用。小程序体验版强制 https/wss，真机上一般连不通，
+        仅用于开发者工具「不校验合法域名」时联调。
       </div>
 
       <div className="settings-card">

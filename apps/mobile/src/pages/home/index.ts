@@ -40,6 +40,8 @@ interface HomeData {
   errorText: string
   errorHint: string
   serverUrl: string
+  /** 是否走云端中继（开启时不需要填地址/配对，登录即达） */
+  relayEnabled: boolean
   pairing: boolean
   urlDialog: { visible: boolean; value: string }
   avatarUrl: string
@@ -137,6 +139,7 @@ Page({
     errorText: '',
     errorHint: '',
     serverUrl: '',
+    relayEnabled: true,
     pairing: false,
     urlDialog: { visible: false, value: '' },
     avatarUrl: '',
@@ -162,7 +165,13 @@ Page({
       avatarUrl: user?.avatarUrl ?? '',
       accountLabel: user?.nickname ?? user?.account ?? '',
       serverUrl: bridge.getServerUrl(),
+      relayEnabled: bridge.isRelayEnabled(),
     })
+    // 云端中继：登录同一个账号即达，不需要「填地址 + 配对」两步
+    if (bridge.isRelayEnabled()) {
+      void this.load()
+      return
+    }
     if (!bridge.getServerUrl()) {
       this.setData({
         gate: 'no-url',
@@ -307,6 +316,21 @@ Page({
     const accountToken = getItem<string>(StorageKeys.token)
     if (!accountToken) {
       wx.reLaunch({ url: '/pages/login/index' })
+      return
+    }
+    // 中继模式下 pair() 只负责确认链路已通（不需要换设备令牌）
+    if (bridge.isRelayEnabled()) {
+      this.setData({ pairing: true })
+      try {
+        await bridge.pair(accountToken, '微信小程序')
+        this.setData({ gate: 'ok', errorText: '', errorHint: '' })
+        await this.load()
+      } catch (error) {
+        const { message, hint } = describeBridgeError(error)
+        this.setData({ gate: 'error', errorText: message, errorHint: hint })
+      } finally {
+        this.setData({ pairing: false })
+      }
       return
     }
     if (!bridge.getServerUrl()) {

@@ -11,7 +11,10 @@
  * 服务端地址在「我的 → 移动桥接」里配置（如 http://192.168.1.5:3721）。
  */
 
-import { getItem, removeItem, setItem } from '../utils/storage'
+import { getItem, removeItem, setItem, StorageKeys } from '../utils/storage'
+import * as relay from './relay'
+import { BridgeError, BRIDGE_HINTS } from './bridge-error'
+import type { BridgeErrorReason } from './bridge-error'
 
 const BridgeKeys = {
   serverUrl: 'spark-mobile:bridge-url',
@@ -207,43 +210,50 @@ export function isPaired(): boolean {
   return getDeviceToken() != null
 }
 
+// ─── 云端中继开关 ─────────────────────────────────────────────────────────────
+// 中继是默认且推荐的通路：只要登录了同一账号就能接管桌面端会话，不受网络位置限制。
+
+export function isRelayEnabled(): boolean {
+  return relay.isRelayEnabled()
+}
+
+export function setRelayEnabled(enabled: boolean): void {
+  relay.setRelayEnabled(enabled)
+}
+
+export function isRelayConnected(): boolean {
+  return relay.isRelayConnected()
+}
+
+/** 桌面端是否经中继在线（null = 尚未收到服务端状态） */
+export function isRelayDesktopOnline(): boolean | null {
+  return relay.isDesktopOnline()
+}
+
+/** 关闭中继连接（页面 onUnload 时调用，避免后台空转） */
+export function closeRelay(): void {
+  relay.closeRelay()
+}
+
+/**
+ * 是否已经可以发起会话调用。
+ * 中继模式下不需要「填地址 + 配对」两步 —— 登录即达，所以只要求已登录。
+ */
+export function isReady(): boolean {
+  if (isRelayEnabled()) return getItem<string>(StorageKeys.token) != null
+  return getServerUrl() !== '' && isPaired()
+}
+
 // ─── 错误分类 ─────────────────────────────────────────────────────────────────
 // 只抛一句「配对失败」没有任何排查价值，所以把失败原因分类并带上可执行的提示。
+// 定义挪到了 ./bridge-error.ts（直连与云端中继共用），这里再导出一次，
+// 既有页面的 import 路径不用动。
 
-export type BridgeErrorReason =
-  | 'NO_URL'
-  | 'NETWORK'
-  | 'DOMAIN'
-  | 'DISABLED'
-  | 'EXPIRED'
-  | 'AUTH'
-  | 'SERVER'
-  | 'UNKNOWN'
+export { BridgeError, describeBridgeError } from './bridge-error'
+export type { BridgeErrorReason } from './bridge-error'
 
-export class BridgeError extends Error {
-  readonly reason: BridgeErrorReason
-  /** 给用户的下一步建议 */
-  readonly hint: string
-
-  constructor(reason: BridgeErrorReason, message: string, hint: string) {
-    super(message)
-    this.name = 'BridgeError'
-    this.reason = reason
-    this.hint = hint
-  }
-}
-
-const HINTS: Record<BridgeErrorReason, string> = {
-  NO_URL: '先在下方填写桌面端地址，或点「扫码」扫设置页的二维码',
-  NETWORK: '确认手机与电脑在同一 Wi-Fi、桌面端「移动端桥接」已开启、端口未被防火墙拦截',
-  DOMAIN:
-    '开发期请在开发者工具「详情 → 本地设置」勾选「不校验合法域名」；正式版需在 mp 后台配置 request 合法域名',
-  DISABLED: '请到桌面端「设置 → 生态 → 移动端桥接」打开开关',
-  EXPIRED: '设备令牌已失效，请重新配对',
-  AUTH: '两端必须登录同一个 edu-server 账号，请检查后重新配对',
-  SERVER: '桌面端返回了错误，可在桌面端日志中查看原因',
-  UNKNOWN: '可重试一次，仍失败请查看桌面端日志',
-}
+/** HINTS 现在由 bridge-error.ts 提供（原 HINTS 常量改名 BRIDGE_HINTS） */
+const HINTS = BRIDGE_HINTS
 
 /**
  * 解析响应体。wx.request 在响应为 JSON（Content-Type: application/json）时会
@@ -272,18 +282,6 @@ function classifyNetwork(errMsg: string): { reason: BridgeErrorReason; message: 
   return { reason: 'NETWORK', message: '无法连接桌面端' }
 }
 
-function normalize(error: unknown): BridgeError {
-  if (error instanceof BridgeError) return error
-  const message = error instanceof Error ? error.message : String(error)
-  return new BridgeError('UNKNOWN', message, HINTS.UNKNOWN)
-}
-
-/** 把任意错误转成一段可直接展示给用户的文案 */
-export function describeBridgeError(error: unknown): { message: string; hint: string } {
-  const e = normalize(error)
-  return { message: e.message, hint: e.hint }
-}
-
 // ─── 请求 ─────────────────────────────────────────────────────────────────────
 
 function buildUrl(path: string): string {
@@ -297,39 +295,30 @@ function authHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-function request<T>(path: string, method: string, data?: Record<string, unknown>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
+/** 一次调用的结果（HTTP 语义，便于直连与中继共用同一套判定逻辑） */
+interface ExchangeResult {
+  status: number
+  body: unknown
+}
+
+/** 局域网直连：wx.request 包成 ExchangeResult */
+function httpExchange(
+  path: string,
+  method: string,
+  data: Record<string, unknown> | undefined,
+  timeoutMs: number,
+): Promise<ExchangeResult> {
+  return new Promise<ExchangeResult>((resolve, reject) => {
     wx.request({
       url: buildUrl(path),
-      method: method as 'GET' | 'POST',
-      timeout: 30_000,
+      // wx.request 的类型枚举里没有 PATCH，运行时是支持的
+      // （会话重命名走的就是 PATCH /v1/sessions/:id）
+      method: method as 'POST',
+      timeout: timeoutMs,
       data,
       header: { 'Content-Type': 'application/json', ...authHeader() },
       success: (res) => {
-        if (res.statusCode === 401) {
-          clearDevice()
-          reject(new BridgeError('EXPIRED', '设备配对已失效，请重新配对', HINTS.EXPIRED))
-          return
-        }
-        const body = parseBody<{ error?: { code?: string; message?: string } }>(res.data)
-        if (!body) {
-          reject(new BridgeError('SERVER', `桌面端响应异常 (${res.statusCode})`, HINTS.SERVER))
-          return
-        }
-        if (res.statusCode >= 400) {
-          const code = body?.error?.code
-          const reason: BridgeErrorReason =
-            code === 'BRIDGE_DISABLED' ? 'DISABLED' : code === 'UNAUTHORIZED' ? 'AUTH' : 'SERVER'
-          reject(
-            new BridgeError(
-              reason,
-              body?.error?.message ?? `请求失败 (${res.statusCode})`,
-              HINTS[reason],
-            ),
-          )
-          return
-        }
-        resolve(body as unknown as T)
+        resolve({ status: res.statusCode, body: parseBody<unknown>(res.data) })
       },
       fail: (err) => {
         const { reason, message } = classifyNetwork(err.errMsg || '')
@@ -339,8 +328,73 @@ function request<T>(path: string, method: string, data?: Record<string, unknown>
   })
 }
 
-/** 配对：用 edu-server 账号 token 换设备令牌 */
+/**
+ * 传输层选择：云端中继优先，未开启时回落局域网直连。
+ *
+ * 中继模式下小程序只连 edu-server，桌面端也只连 edu-server，
+ * 两边不需要在同一网络，也不需要电脑有可达端口。
+ */
+async function exchange(
+  path: string,
+  method: string,
+  data?: Record<string, unknown>,
+  timeoutMs = 30_000,
+): Promise<ExchangeResult> {
+  if (isRelayEnabled()) {
+    const result = await relay.relayExchange(path, method, data, timeoutMs)
+    // 503 DESKTOP_OFFLINE 是最常见也最需要明确指引的一种：转成中文原因 + 可执行提示
+    const offline = relay.describeRelayStatus(result.status, result.body)
+    if (offline != null) throw offline
+    return result
+  }
+  return httpExchange(path, method, data, timeoutMs)
+}
+
+/** 状态码 → 业务结果 / BridgeError（直连与中继共用） */
+function unwrap<T>(result: ExchangeResult): T {
+  if (result.status === 401) {
+    clearDevice()
+    throw new BridgeError('EXPIRED', '设备配对已失效，请重新配对', HINTS.EXPIRED)
+  }
+  if (result.body == null) {
+    throw new BridgeError('SERVER', `桌面端响应异常 (${result.status})`, HINTS.SERVER)
+  }
+  if (result.status >= 400) {
+    const body = result.body as { error?: { code?: string; message?: string } }
+    const code = body?.error?.code
+    const reason: BridgeErrorReason =
+      code === 'BRIDGE_DISABLED' ? 'DISABLED' : code === 'UNAUTHORIZED' ? 'AUTH' : 'SERVER'
+    throw new BridgeError(
+      reason,
+      body?.error?.message ?? `请求失败 (${result.status})`,
+      HINTS[reason],
+    )
+  }
+  return result.body as unknown as T
+}
+
+function request<T>(path: string, method: string, data?: Record<string, unknown>): Promise<T> {
+  return exchange(path, method, data).then(unwrap<T>)
+}
+
+/**
+ * 配对：用 edu-server 账号 token 换设备令牌（仅局域网直连需要）。
+ *
+ * 云端中继模式下没有「配对」这一步：edu-server 用账号 JWT 鉴权，
+ * 只把调用转发给本人名下的桌面端，所以这里只需确认中继链路已通。
+ */
 export function pair(accountToken: string, deviceLabel?: string): Promise<BridgePairResult> {
+  if (isRelayEnabled()) {
+    return relay.ensureRelayConnected().then(
+      () =>
+        ({
+          deviceToken: '',
+          deviceId: 'cloud-relay',
+          account: '',
+          desktop: { name: '云端中继', version: '' },
+        }) satisfies BridgePairResult,
+    )
+  }
   return new Promise<BridgePairResult>((resolve, reject) => {
     wx.request({
       url: buildUrl('/v1/pair'),
@@ -452,37 +506,9 @@ export function renameSession(
 }
 
 export function deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
-  return new Promise<{ deleted: boolean }>((resolve, reject) => {
-    wx.request({
-      url: buildUrl(`/v1/sessions/${encodeURIComponent(sessionId)}`),
-      method: 'DELETE',
-      timeout: 30_000,
-      header: { ...authHeader() },
-      success: (res) => {
-        if (res.statusCode === 401) {
-          clearDevice()
-          reject(new BridgeError('EXPIRED', '设备配对已失效，请重新配对', HINTS.EXPIRED))
-          return
-        }
-        const body = parseBody<{ deleted?: boolean; error?: { message?: string } }>(res.data)
-        if (res.statusCode >= 400 || body == null) {
-          reject(
-            new BridgeError(
-              'SERVER',
-              body?.error?.message ?? `删除失败 (${res.statusCode})`,
-              HINTS.SERVER,
-            ),
-          )
-          return
-        }
-        resolve({ deleted: body.deleted !== false })
-      },
-      fail: (err) => {
-        const { reason, message } = classifyNetwork(err.errMsg || '')
-        reject(new BridgeError(reason, message, HINTS[reason]))
-      },
-    })
-  })
+  return exchange(`/v1/sessions/${encodeURIComponent(sessionId)}`, 'DELETE')
+    .then(unwrap<{ deleted?: boolean }>)
+    .then((body) => ({ deleted: body?.deleted !== false }))
 }
 
 export function getMessages(
@@ -519,6 +545,11 @@ export function cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
 
 /** 探测桌面端是否可达（健康检查） */
 export function ping(): Promise<boolean> {
+  if (isRelayEnabled()) {
+    return exchange('/v1/health', 'GET', undefined, 5_000)
+      .then((result) => result.status === 200)
+      .catch(() => false)
+  }
   return new Promise((resolve) => {
     wx.request({
       url: buildUrl('/v1/health'),
@@ -533,38 +564,7 @@ export function ping(): Promise<boolean> {
 
 /** 大 body 专用请求（附件上传/语音转写，放宽超时） */
 function largeRequest<T>(path: string, data: Record<string, unknown>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    wx.request({
-      url: buildUrl(path),
-      method: 'POST',
-      timeout: 120_000,
-      data,
-      header: { 'Content-Type': 'application/json', ...authHeader() },
-      success: (res) => {
-        if (res.statusCode === 401) {
-          clearDevice()
-          reject(new BridgeError('EXPIRED', '设备配对已失效，请重新配对', HINTS.EXPIRED))
-          return
-        }
-        const body = parseBody<{ error?: { code?: string; message?: string } }>(res.data)
-        if (!body || res.statusCode >= 400) {
-          reject(
-            new BridgeError(
-              'SERVER',
-              body?.error?.message ?? `请求失败 (${res.statusCode})`,
-              HINTS.SERVER,
-            ),
-          )
-          return
-        }
-        resolve(body as unknown as T)
-      },
-      fail: (err) => {
-        const { reason, message } = classifyNetwork(err.errMsg || '')
-        reject(new BridgeError(reason, message, HINTS[reason]))
-      },
-    })
-  })
+  return exchange(path, 'POST', data, 120_000).then(unwrap<T>)
 }
 
 /** 选项目录（助手/工作流/对话渠道/权限与推理枚举），聊天页进入时一次拉全 */
@@ -617,10 +617,39 @@ export function uploadAttachments(
   )
 }
 
-/** 附件预览地址（wx.previewImage 无法带 header，走 query token） */
+/** 附件预览地址（wx.previewImage 无法带 header，走 query token；仅局域网直连可用） */
 export function buildAttachmentPreviewUrl(path: string): string {
   const token = getDeviceToken() ?? ''
   return `${buildUrl('/v1/attachments/content')}?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`
+}
+
+/**
+ * 云端模式下取附件内容：小程序访问不到桌面端的局域网地址，
+ * 改为经中继取回 base64 并落成本地临时文件，返回可直接用于预览的 wxfile:// 路径。
+ * 失败返回 null（调用方回退成「仅显示文件名」）。
+ */
+export function fetchRelayAttachmentTempPath(path: string): Promise<string | null> {
+  return exchange(`/v1/attachments/content?path=${encodeURIComponent(path)}`, 'GET')
+    .then(unwrap<{ base64?: string; mimeType?: string }>)
+    .then((body) => {
+      if (body?.base64 == null) return null
+      const ext = mimeToExt(body.mimeType)
+      const filePath = `${wx.env.USER_DATA_PATH}/relay-att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+      const fs = wx.getFileSystemManager()
+      fs.writeFileSync(filePath, body.base64, 'base64')
+      return filePath
+    })
+    .catch(() => null)
+}
+
+function mimeToExt(mimeType?: string): string {
+  const value = (mimeType ?? '').toLowerCase()
+  if (value.includes('png')) return 'png'
+  if (value.includes('jpeg') || value.includes('jpg')) return 'jpg'
+  if (value.includes('gif')) return 'gif'
+  if (value.includes('webp')) return 'webp'
+  if (value.includes('pdf')) return 'pdf'
+  return 'bin'
 }
 
 /** 语音转写（本地 SenseVoice → 云渠道兜底） */
@@ -683,32 +712,9 @@ export function updateSessionTask(
 }
 
 export function deleteSessionTask(taskId: string): Promise<{ deleted: boolean }> {
-  return new Promise<{ deleted: boolean }>((resolve, reject) => {
-    wx.request({
-      url: buildUrl(`/v1/tasks/${encodeURIComponent(taskId)}`),
-      method: 'DELETE',
-      timeout: 30_000,
-      header: { ...authHeader() },
-      success: (res) => {
-        const body = parseBody<{ deleted?: boolean; error?: { message?: string } }>(res.data)
-        if (res.statusCode >= 400 || body == null) {
-          reject(
-            new BridgeError(
-              'SERVER',
-              body?.error?.message ?? `删除失败 (${res.statusCode})`,
-              HINTS.SERVER,
-            ),
-          )
-          return
-        }
-        resolve({ deleted: body.deleted !== false })
-      },
-      fail: (err) => {
-        const { reason, message } = classifyNetwork(err.errMsg || '')
-        reject(new BridgeError(reason, message, HINTS[reason]))
-      },
-    })
-  })
+  return exchange(`/v1/tasks/${encodeURIComponent(taskId)}`, 'DELETE')
+    .then(unwrap<{ deleted?: boolean }>)
+    .then((body) => ({ deleted: body?.deleted !== false }))
 }
 
 export function toggleSessionTask(
@@ -760,6 +766,16 @@ export interface StreamHandlers {
  * 返回关闭函数；聊天页 onUnload 统一关闭。
  */
 export function connectStream(sessionId: string, handlers: StreamHandlers): () => void {
+  // 云端中继：复用同一条 WS 订阅会话事件流（小程序对并发连接数敏感，不做第二条）
+  if (isRelayEnabled()) {
+    return relay.relaySubscribe(sessionId, {
+      onOpen: handlers.onOpen,
+      onEvent: (events) => handlers.onEvent(events as BridgeEvent[]),
+      onError: handlers.onError,
+      onClose: handlers.onClose,
+    })
+  }
+
   const base = getServerUrl()
   if (!base) {
     handlers.onError('尚未配置桌面端地址')

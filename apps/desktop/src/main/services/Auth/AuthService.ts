@@ -199,6 +199,16 @@ export class AuthService {
   }
 
   /**
+   * 当前 access token（未登录返回 null）。
+   * 供需要以「本人身份」建立长连接的场景使用（如移动端桥接的云端中继握手）。
+   * 注意：token 会由 EduServerClient 在 401 时自动续期，所以每次要用现取，
+   * 不要缓存到调用方；长连接握手用一次即可，过期后由调用方重新握手。
+   */
+  getAccessToken(): string | null {
+    return this.tokenStore.get().token ?? null
+  }
+
+  /**
    * 暴露内部 EduServerClient 供其他主进程服务复用（如消息通知轮询）。
    * 同一实例共享 401 续期的模块级单飞锁，避免并发 refresh 触发服务端轮换冲突。
    */

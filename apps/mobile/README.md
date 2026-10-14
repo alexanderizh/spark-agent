@@ -9,7 +9,7 @@ SparkWork 桌面端的移动伴侣小程序。需求来源：scene#58「小程�
 - **账号登录同步** — 与桌面端、edu-web 共用同一 edu-server 账号体系（`/api/v1/auth/*`）
 - **桌面端会话/信息管理** — 查看账号同步状态、同步历史、通过同步记录识别的桌面端设备
 - **双向互通** — 桌面端与移动端登录同一账户后，7 类数据（自定义命令/提示词/长期记忆/助手/工作流/外观/提示词库）经服务端双向流转；移动端实时呈现同步态势
-- **远程会话（MobileBridge）** — 直连桌面端，**接续已有会话或新建远程会话**，实时跟流 assistant 增量回复、工具调用与运行状态，可中途停止
+- **远程会话（MobileBridge）** — **云端中继优先**：小程序与桌面端都只连 edu-server，服务端按账号配对转发，登录同一账号即可**接续已有会话或新建远程会话**，实时跟流 assistant 增量回复、工具调用与运行状态，可中途停止；局域网直连作为备用通路保留
 
 ## 快速开始
 
@@ -45,18 +45,94 @@ pnpm --filter @spark/mobile build
 pnpm --filter @spark/mobile build        # 构建 + 产物完整性
 pnpm --filter @spark/mobile smoke:boot   # 启动链路（app.js + 全部页面 + 组件）
 pnpm --filter @spark/mobile smoke        # 请求层 10 条断言
+pnpm --filter @spark/mobile smoke:relay  # 云端中继端到端 19 条断言（真 RelayHub + 真 bridge/relay）
 ```
+
+## 远程会话的两条通路
+
+| 通路                 | 怎么走                                                                 | 什么时候用                                                                            |
+| -------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **云端中继（默认）** | 小程序 ──wss──> edu-server <──wss── 桌面端，服务端按 `userId` 配对转发 | 默认。不需要同一 Wi-Fi、不需要电脑有公网 IP 或开端口，只要两端都登录同一账号          |
+| 局域网直连（备用）   | 小程序 ──http/ws──> 桌面端本机端口                                     | 仅在开发者工具「不校验合法域名」下联调；体验版/正式版强制 https+wss，真机上一般连不通 |
+
+### 云端中继的链路
+
+```
+小程序 api/relay.ts ──wss /ws/bridge/client?token=<JWT>──┐
+                                                          ├─ edu-server RelayHub（按 userId 配对）
+桌面端 MobileBridgeRelayClient ──wss /ws/bridge/desktop──┘
+```
+
+- **鉴权**：两端都是 edu-server 账号 JWT，在 WS upgrade 阶段校验（`jwt.verify(token, JWT_SECRET).sub`）；
+  桌面端侧不再校验设备令牌（请求头带 `x-spark-relay: 1` 直通）。
+- **调用**：帧是 `{ t:'req', id, m: HTTP method, p: path, b: body }`，桌面端用一对内存里的
+  req/res 直接喂给既有 HTTP 处理器 → **所有既有接口（含附件上传、语音转写、定时任务、斜杠命令）零改动可用**。
+- **事件流**：小程序 `sub` → 服务端转发 `sub` → 桌面端复用既有轮询广播 → `event` 回推。
+  桌面端重连时服务端会补发订阅，避免「连上了但不推流」。
+- **离线**：桌面端不在线时返回 `503 DESKTOP_OFFLINE`，小程序转成中文提示
+  「电脑端没连上云端中继：请在桌面端…确认云端中继已开启」。挂起的调用在桌面端掉线时**立即失败**，不会干等到超时。
+- **在线状态**：Redis `bridge:relay:desktop:<userId>`（TTL 120s），跨实例可见；Redis 不可用时退化为本进程可见。
+
+### 开关位置
+
+- 小程序：我的 → 远程会话 → 「云端中继」开关（默认开）；关掉才需要填「局域网直连地址」。
+- 桌面端：设置 → 生态 → 移动端桥接 → 云端中继（开关 / 连接状态 / 服务地址）。
+
+### 常见故障
+
+| 现象                                     | 原因与处理                                                                                                   |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 「电脑端没连上云端中继」                 | 桌面端「设置 → 生态 → 移动端桥接 → 云端中继」没开，或电脑没联网；开开关后看状态变「已连接」                  |
+| 一直「未连接」且提示未登录               | 桌面端没登录 edu-server 账号；登录后最多等 30s 自动连上                                                      |
+| 能连上但会话列表空                       | 两端不是同一账号                                                                                             |
+| 桌面端提示「此设备已被吊销」             | 该电脑的设备身份在小程序端被吊销。确认是本人操作后，在桌面端该设置页点「重新授信」（生成全新设备身份并重连） |
+| 桌面端提示「设备密钥校验失败（4401）」   | 本机设备身份数据异常。桌面端「重新授信」即可                                                                 |
+| 桌面端提示「授信设备数已达上限（4429）」 | 账号下 active 设备超过 20 台。去小程序「远程会话 → 授信设备」吊销不用的设备                                  |
+| 上传大图很慢                             | 附件 base64 走 WS，过大的图建议先压缩（已知限制，后续可改走服务端 HTTP 中转）                                |
+
+### 授信设备管理（账号隔离 + 设备信任）
+
+云端中继按**登录账号硬隔离**：每条连接经 JWT 鉴权绑定 userId，调用转发、事件扇出、在线广播、应答匹配都只发生在同一账号内；跨账号请求无处可去。
+
+桌面端接入需要**双因子**：账号 JWT（身份）+ `deviceSecret`（授信设备凭据，服务端只存 SHA-256 哈希）：
+
+- **首次连接即授信**：桌面端本地生成 `deviceId + secret`，连接 edu-server 时自动注册为授信设备（前提是已通过账号鉴权）
+- **吊销不可逆**：小程序「远程会话 → 授信设备」中吊销后，该设备在线连接立即断开（close 4403）、deviceId 永久拒绝重连；被吊销的电脑需在桌面端「设置 → 移动端桥接」点**重新授信**（生成全新设备身份）
+- **隐私边界（零留存）**：中继纯转发，会话数据只在内存中转（应答或超时后立即释放）；Redis 仅存在线状态元数据；DB 设备表只存 deviceId/secret 哈希/展示名/时间戳，**不含任何会话内容**
+- 单账号 active 设备上限 20 台
+
+**⚠️ 部署顺序（强制）**：桌面端必须**先于** edu-server 升级到带设备凭据的版本——服务端一旦启用握手验证，不带 `secret` 的旧桌面端会被 4400 拒绝。服务端部署后跑 `e2e:relay`（含 4400/4403 拒绝断言）确认。
+
+### 生产部署与验证（2026-10-15 已上线）
+
+链路：`小程序 wss → 1Panel openresty(443, root.conf 已透传 Upgrade) → edu-web nginx(38080, /ws/ → edu-server:7002, read_timeout 24h) → edu-server RelayHub`。
+**nginx 两层均为既有配置，`/ws/bridge/*` 落在现成 `/ws/` location 内，无需任何改动**（已实测握手验证）。
+
+部署步骤：`spark-edugen` 仓库 `bash build-script/build-edu-server.sh`（构建 + 推 TCR）→ 服务器 `/root/spark-tool-prod` 下 `sudo ./deploy.sh upgrade edu-server` → 看容器日志出现 `[WS] 已挂载通道: … /ws/bridge/desktop, /ws/bridge/client` 即新镜像生效。
+
+生产链路端到端验证（真实公网双 WS 连接，13 条断言）：
+
+```bash
+# token 在服务器容器内签发（JWT_SECRET 不出服务器）：
+# sudo docker exec prod-edu-server node -e \
+#   "console.log(require('jsonwebtoken').sign({sub:'e2e-relay-test'}, process.env.JWT_SECRET, {expiresIn:'15m'}))"
+TOKEN=<上一步输出> pnpm --filter @spark/mobile e2e:relay
+```
+
+小程序后台域名白名单（mp.weixin.qq.com → 开发 → 开发设置 → 服务器域名）：request/uploadFile/downloadFile 三栏加 `https://www.yiqibyte.com`，**socket 合法域名栏加 `wss://www.yiqibyte.com`**（与 request 是两栏，体验版强制校验）。
 
 常用命令：
 
-| 命令                                     | 说明                                                                |
-| ---------------------------------------- | ------------------------------------------------------------------- |
-| `pnpm --filter @spark/mobile dev`        | watch 模式（tsc --watch + 静态资产变更拷贝）                        |
-| `pnpm --filter @spark/mobile build`      | 构建 + dist 产物完整性校验                                          |
-| `pnpm --filter @spark/mobile typecheck`  | 纯类型检查                                                          |
-| `pnpm --filter @spark/mobile smoke`      | 请求层冒烟测试（mock wx + 本地 HTTP，10 条断言，需先 build）        |
-| `pnpm --filter @spark/mobile smoke:boot` | 启动冒烟（mock 运行时逐页 require，抓白屏类加载期异常，需先 build） |
-| `pnpm --filter @spark/mobile icons`      | 重新生成 tabBar 图标（依赖根 node_modules 的 sharp）                |
+| 命令                                      | 说明                                                                          |
+| ----------------------------------------- | ----------------------------------------------------------------------------- |
+| `pnpm --filter @spark/mobile dev`         | watch 模式（tsc --watch + 静态资产变更拷贝）                                  |
+| `pnpm --filter @spark/mobile build`       | 构建 + dist 产物完整性校验                                                    |
+| `pnpm --filter @spark/mobile typecheck`   | 纯类型检查                                                                    |
+| `pnpm --filter @spark/mobile smoke`       | 请求层冒烟测试（mock wx + 本地 HTTP，10 条断言，需先 build）                  |
+| `pnpm --filter @spark/mobile smoke:boot`  | 启动冒烟（mock 运行时逐页 require，抓白屏类加载期异常，需先 build）           |
+| `pnpm --filter @spark/mobile smoke:relay` | 云端中继端到端冒烟（真实 edu-server RelayHub + 真实 bridge/relay，19 条断言） |
+| `pnpm --filter @spark/mobile e2e:relay`   | 生产链路端到端验证（真实公网 wss 双端连接，13 条断言，需 TOKEN）              |
+| `pnpm --filter @spark/mobile icons`       | 重新生成 tabBar 图标（依赖根 node_modules 的 sharp）                          |
 
 ## 技术选型
 
