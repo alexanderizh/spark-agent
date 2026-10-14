@@ -48,12 +48,20 @@ Permission modes are `manual` (default), `auto`, and `bypass`. `bypass` is requi
 
 The CLI does not read `ARK_*` itself. It reads `~/.spark/config.toml` and `<cwd>/.spark/config.toml` (project wins). Credentials are an environment-variable **name** in `api_key_env`, never the secret. `SPARK_HOME` moves the `~/.spark` data root. `SPARK_MODEL` selects a configured model id when `--model` is absent (`--model` wins). `SPARK_UPDATE_CHECK=0` skips the release notice.
 
-Supported provider protocols are only:
+Supported provider protocols are only the two the CLI implements. This harness does not add a Chat Completions adapter.
 
-- `openai-responses` — POST `{base}/responses` after ensuring a `/v1` segment. `https://api.openai.com/v1` becomes `https://api.openai.com/v1/responses`. A root without `/v1` gets `/v1/responses` appended. The default key variable is `OPENAI_API_KEY`.
+- `openai-responses` — the CLI posts `{base}/responses` after ensuring a `/v1` segment. A base that already ends in `/v1` is the supported shape: `https://api.openai.com/v1` becomes `https://api.openai.com/v1/responses`. Any other root gets `/v1` inserted first, so `https://example.test` becomes `https://example.test/v1/responses`. The default key variable is `OPENAI_API_KEY`.
 - `anthropic-messages` — exactly one `/v1/messages` call. A root, a `…/v1` URL, or a full `…/v1/messages` URL are all accepted. The default key is `ANTHROPIC_API_KEY`, with `ANTHROPIC_AUTH_TOKEN` as a fallback unless `api_key_env` names a variable explicitly.
 
-There is no Chat Completions adapter. A Volcengine Ark-style base such as `https://ark.cn-beijing.volces.com/api/v3` (which serves `/chat/completions`) will not be called as chat completions; the runner prints a warning and the CLI still posts to `…/v1/responses`. Use a Responses-capable endpoint, or set `SPARK_EVAL_PROTOCOL=anthropic-messages` for an Anthropic-compatible gateway.
+Volcengine Ark bases in this repo are not that Responses root:
+
+| Base                                              | In-repo meaning                                                                                                                      | This harness                                                                                          |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `https://ark.cn-beijing.volces.com/api/coding`    | Anthropic Coding Plan (`volcengine-ark-anthropic` in `packages/protocol/src/provider-presets.ts`)                                    | Allowed only with `SPARK_EVAL_PROTOCOL=anthropic-messages`. The CLI calls `…/api/coding/v1/messages`. |
+| `https://ark.cn-beijing.volces.com/api/coding/v3` | OpenAI Coding preset. The desktop client posts `…/v3/responses` for responses, or `…/v3/chat/completions` when the wire API is chat. | Refused. The CLI joiner would post `…/v3/v1/responses`, and there is no chat adapter to send instead. |
+| `https://ark.cn-beijing.volces.com/api/v3`        | Chat Completions (`volcengine-ark-seed21`, `codexApiKind: chat`)                                                                     | Refused on `openai-responses`. The CLI would post `…/api/v3/v1/responses`.                            |
+
+`--dry-run` and a live run both exit `2` for a refused base. They do not write config or a report. Setting `SPARK_EVAL_PROTOCOL=openai-responses` explicitly does not override the refusal; the protocol has to be one the CLI can actually address, or the base has to already end in `/v1`.
 
 Other CLI env vars that are not the eval contract: `SPARK_FAILOVER_MODELS`, `SPARK_RELEASE_BASE`, `SPARK_INSTALL_BASE`, `SPARK_EDUGEN_BASE_URL`, `SPARK_WEB_LOGIN_URL`.
 
@@ -135,6 +143,10 @@ A task passes only when the CLI exits 0, the turn status is `completed`, every g
 `bypass` plus the `bash` tool is not a sandbox. The shell starts in the temp workspace, and a command can still reach anything the OS user can reach. Run live evals on a disposable machine or CI runner. The runner itself only writes the temp copy, the temp `SPARK_HOME`, and the report directory.
 
 CI runs `npm run eval:self-test` in the Spark engine job. It does not call a model.
+
+## Later comparison
+
+A fair run against Cursor CLI, Codex CLI, and Claude Code is not this harness. When that comparison happens, use these same tasks and the same graders, pin one reasoning effort for every CLI, and repeat each task at least three times. A single live pass/fail is not a ranking.
 
 ## Adding a task
 

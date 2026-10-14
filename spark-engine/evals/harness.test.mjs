@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+
 import {
   buildProjectConfig,
-  endpointWarnings,
+  endpointRefusal,
   loadEvalSettings,
   redactSecrets,
   resolveEndpoint,
@@ -32,10 +35,67 @@ test('resolves OpenAI Responses and Anthropic message endpoints the way the CLI 
   )
 })
 
-test('warns when a Chat Completions style base URL is paired with the Responses protocol', () => {
-  const warnings = endpointWarnings('https://ark.example/api/v3', 'openai-responses')
-  assert.equal(warnings.length, 1)
-  assert.equal(endpointWarnings('https://api.openai.com/v1', 'openai-responses').length, 0)
+test('refuses Ark coding and Chat Completions bases instead of rewriting them to /v1/responses', () => {
+  const coding = 'https://ark.cn-beijing.volces.com/api/coding'
+  const versioned = 'https://ark.cn-beijing.volces.com/api/coding/v3'
+  const chat = 'https://ark.cn-beijing.volces.com/api/v3'
+  const secret = 'sk-test-secret-value'
+
+  const bare = endpointRefusal(coding, 'openai-responses')
+  assert.ok(bare)
+  assert.match(bare, /\/v1\/responses/u)
+  assert.match(bare, /anthropic-messages/u)
+  assert.match(bare, /chat\/completions/u)
+  assert.equal(bare.includes(secret), false)
+
+  assert.equal(endpointRefusal(coding, 'anthropic-messages'), null)
+  assert.equal(
+    resolveEndpoint(coding, 'anthropic-messages'),
+    'https://ark.cn-beijing.volces.com/api/coding/v1/messages',
+  )
+
+  const v3 = endpointRefusal(versioned, 'openai-responses')
+  assert.ok(v3)
+  assert.match(v3, /v3\/v1\/responses/u)
+  assert.match(endpointRefusal(versioned, 'anthropic-messages') ?? '', /Anthropic Coding Plan/u)
+
+  const standard = endpointRefusal(chat, 'openai-responses')
+  assert.ok(standard)
+  assert.match(standard, /Chat Completions/u)
+  assert.equal(endpointRefusal('https://api.openai.com/v1', 'openai-responses'), null)
+  assert.equal(
+    endpointRefusal('https://ark.cn-beijing.volces.com/api/coding/v1', 'openai-responses'),
+    null,
+  )
+
+  assert.throws(
+    () =>
+      loadEvalSettings({
+        ARK_BASE_URL: coding,
+        ARK_API_KEY: secret,
+        ARK_MODEL: 'demo-model',
+      }),
+    /Refusing ARK_BASE_URL/u,
+  )
+})
+
+test('dry-run exits non-zero for an /api/coding base and does not print the key', () => {
+  const secret = 'sk-test-secret-value'
+  const result = spawnSync(process.execPath, ['evals/run.mjs', '--dry-run'], {
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
+    env: {
+      ...process.env,
+      ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/coding',
+      ARK_API_KEY: secret,
+      ARK_MODEL: 'demo-model',
+    },
+    encoding: 'utf8',
+  })
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /api\/coding/u)
+  assert.match(result.stderr, /anthropic-messages/u)
+  assert.equal(`${result.stdout}${result.stderr}`.includes(secret), false)
+  assert.doesNotMatch(result.stdout, /base_url = /u)
 })
 
 test('project config names the key variable and does not embed the secret', () => {

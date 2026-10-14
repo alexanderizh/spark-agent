@@ -24,14 +24,72 @@ export function resolveEndpoint(baseUrl, protocol) {
   return `${withV1}/responses`
 }
 
-export function endpointWarnings(baseUrl, protocol) {
-  if (protocol !== 'openai-responses') return []
-  if (/\/chat\/completions\b/u.test(baseUrl) || /\/api\/v3\b/u.test(baseUrl)) {
+const ARK_CODING_ANTHROPIC = 'https://ark.cn-beijing.volces.com/api/coding'
+const ARK_CODING_OPENAI = 'https://ark.cn-beijing.volces.com/api/coding/v3'
+
+/**
+ * Fail closed before a live or dry run when the base URL is an Ark-style coding
+ * or Chat Completions root that spark-engine would mis-address.
+ *
+ * In-repo evidence (do not invent a third protocol here):
+ * - packages/protocol/src/provider-presets.ts `volcengine-ark-anthropic` uses
+ *   exactly `https://ark.cn-beijing.volces.com/api/coding` with provider anthropic.
+ * - The same file's `volcengine-ark-openai` uses `…/api/coding/v3` with
+ *   codexApiKind `responses`. The desktop client posts `{base}/responses` when
+ *   the path already ends in `vN`, or `{base}/chat/completions` for chat.
+ *   spark-engine's CLI joiner always inserts `/v1` (`responsesEndpoint`), so
+ *   `…/api/coding/v3` would become `…/v3/v1/responses`.
+ * - `volcengine-ark-seed21` uses `…/api/v3` with codexApiKind `chat`.
+ *   spark-engine has no Chat Completions adapter
+ *   (`resolveSparkUpstreamProtocol` rejects `chat`).
+ */
+export function endpointRefusal(baseUrl, protocol) {
+  const path = new URL(baseUrl).pathname.replace(/\/+$/u, '')
+  const codingFamily = /\/api\/coding(?:\/|$)/iu.test(path) || /\/coding\/v\d+$/iu.test(path)
+  const bareCodingPlan = /\/api\/coding$/iu.test(path)
+  const responsesRoot = /\/v1$/iu.test(path)
+  const would = resolveEndpoint(baseUrl, protocol)
+
+  if (protocol === 'anthropic-messages' && bareCodingPlan) return null
+  if (protocol === 'openai-responses' && responsesRoot) return null
+
+  if (codingFamily && protocol === 'openai-responses') {
     return [
-      'spark-engine speaks the OpenAI Responses API (POST …/responses), not Chat Completions. Volcengine Ark and many "OpenAI-compatible" gateways only expose /chat/completions; the URL above will not hit that route. Point ARK_BASE_URL at a Responses-capable root, or set SPARK_EVAL_PROTOCOL=anthropic-messages for an Anthropic-compatible gateway.',
-    ]
+      `Refusing ARK_BASE_URL ${baseUrl} with SPARK_EVAL_PROTOCOL=openai-responses.`,
+      `spark-engine would POST ${would}. That is not an Ark Coding request this repo sends.`,
+      `${ARK_CODING_ANTHROPIC} is the Anthropic Coding Plan preset (volcengine-ark-anthropic). Set SPARK_EVAL_PROTOCOL=anthropic-messages. The CLI then calls ${ARK_CODING_ANTHROPIC}/v1/messages.`,
+      `${ARK_CODING_OPENAI} is the OpenAI Coding preset. This repo's provider client posts ${ARK_CODING_OPENAI}/responses when the API kind is responses, or ${ARK_CODING_OPENAI}/chat/completions when the wire API is chat. spark-engine's CLI config path always inserts /v1 and has no Chat Completions adapter, so this harness will not send the call.`,
+      'openai-responses here requires a base that already ends in /v1, for example https://api.openai.com/v1, which is called as https://api.openai.com/v1/responses.',
+    ].join('\n')
   }
-  return []
+
+  if (codingFamily && protocol === 'anthropic-messages') {
+    return [
+      `Refusing ARK_BASE_URL ${baseUrl} with SPARK_EVAL_PROTOCOL=anthropic-messages.`,
+      `spark-engine would POST ${would}.`,
+      `The in-repo Anthropic Coding Plan base is exactly ${ARK_CODING_ANTHROPIC} with no /v3 segment. A versioned /api/coding/vN or /coding/vN URL is the OpenAI preset, not that Anthropic root.`,
+      `Set ARK_BASE_URL=${ARK_CODING_ANTHROPIC} with SPARK_EVAL_PROTOCOL=anthropic-messages, or point openai-responses at a base that already ends in /v1.`,
+    ].join('\n')
+  }
+
+  if (
+    protocol === 'openai-responses' &&
+    (/\/chat\/completions\b/iu.test(path) || /\/api\/v3(?:\/|$)/iu.test(path))
+  ) {
+    return [
+      `Refusing ARK_BASE_URL ${baseUrl} with SPARK_EVAL_PROTOCOL=openai-responses.`,
+      `spark-engine would POST ${would}.`,
+      'Paths containing /api/v3 or /chat/completions are Chat Completions in this repo (volcengine-ark-seed21 uses https://ark.cn-beijing.volces.com/api/v3 with codexApiKind chat). spark-engine has no chat/completions adapter.',
+      `Use a Responses base that already ends in /v1, or ${ARK_CODING_ANTHROPIC} with SPARK_EVAL_PROTOCOL=anthropic-messages.`,
+    ].join('\n')
+  }
+
+  return null
+}
+
+export function endpointWarnings(baseUrl, protocol) {
+  const refusal = endpointRefusal(baseUrl, protocol)
+  return refusal ? [refusal] : []
 }
 
 export function assertPublicBaseUrl(raw) {
@@ -144,6 +202,15 @@ export function loadEvalSettings(env) {
     : 128_000
   const maxTokens = env.SPARK_EVAL_MAX_TOKENS ? Number(env.SPARK_EVAL_MAX_TOKENS) : 16_000
   const baseUrl = assertPublicBaseUrl(env.ARK_BASE_URL.trim())
+  const refusal = endpointRefusal(baseUrl, protocol)
+  if (refusal) {
+    if (refusal.includes(env.ARK_API_KEY.trim())) {
+      throw new Error(
+        'Refusing this base URL, and the explanation unexpectedly contained ARK_API_KEY',
+      )
+    }
+    throw new Error(refusal)
+  }
   const toml = buildProjectConfig({
     baseUrl,
     apiKeyEnv: 'ARK_API_KEY',

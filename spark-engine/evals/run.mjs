@@ -27,7 +27,10 @@ Usage:
   node evals/run.mjs [--task <id>]... [--timeout <ms>] [--out <dir>]
 
 Required environment for a live run or --dry-run:
-  ARK_BASE_URL   OpenAI Responses or Anthropic-compatible base URL
+  ARK_BASE_URL   Responses root ending in /v1, or the Anthropic Coding Plan root
+                 with SPARK_EVAL_PROTOCOL=anthropic-messages.
+                 https://ark.cn-beijing.volces.com/api/coding is rejected on the
+                 default openai-responses protocol (it would be mis-routed).
   ARK_API_KEY    credential; referenced by name in the temp config, never stored
   ARK_MODEL      upstream model id
 
