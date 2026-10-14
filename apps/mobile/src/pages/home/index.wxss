@@ -58,20 +58,61 @@
 /* ─── 分组 ─────────────────────────────────────────────────────────────────── */
 
 .home-group {
-  padding: 24rpx 32rpx 8rpx;
+  padding: 32rpx 32rpx 8rpx;
 }
 .home-group-head {
   margin-bottom: 8rpx;
 }
 .home-group .group-title {
   display: block;
+  margin-bottom: 4rpx;
+}
+.home-group-title {
   margin-bottom: 8rpx;
+}
+
+/* ─── 项目行（Cursor Workspaces 式单行：图标 + 名称 + chevron） ────────────── */
+
+.home-row {
+  min-height: 112rpx;
+  padding: 24rpx 0;
+}
+.home-row-icon {
+  flex: none;
+}
+.home-row-icon--accent {
+  /* 「新建项目」行的加号跟随文字主色 */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E");
+}
+.home-row-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 30rpx;
+  color: #1a1a1a;
+  margin: 0 20rpx;
+}
+.home-row-title--action {
+  flex: none;
+}
+
+/* 参考图式缩进分割线：从图标右侧开始，不通到左缘 */
+.home-row + .home-row {
+  border-top: none;
+  position: relative;
+}
+.home-row + .home-row::after {
+  content: '';
+  position: absolute;
+  left: 60rpx;
+  right: 0;
+  top: 0;
+  border-top: 1rpx solid #ececec;
 }
 
 /* 会话分组的项目小标题行 */
 .home-group-subhead {
-  min-height: 72rpx;
-  padding: 8rpx 0;
+  min-height: 76rpx;
+  padding: 12rpx 0;
 }
 .home-subhead-text {
   align-items: center;
@@ -80,6 +121,8 @@
 }
 .home-subhead-title {
   font-size: 28rpx;
+  font-weight: 500;
+  color: #1a1a1a;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -114,7 +157,6 @@
   line-height: 1.6;
 }
 
-.home-project-text,
 .home-session-text {
   margin: 0 20rpx;
 }

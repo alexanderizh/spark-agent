@@ -58,27 +58,35 @@
 
   <!-- ─── 内容态 ──────────────────────────────────────────────────────────── -->
   <block wx:else>
-    <!-- 2×2 状态仪表盘（紧凑横排） -->
+    <!-- 2×2 状态仪表盘（Cursor Inbox 式竖排白卡） -->
     <view class="stat-grid" wx:if="{{!loading || sessionTotal > 0}}">
       <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
         <view class="icon icon-chat stat-card-icon"></view>
-        <view class="stat-card-label">全部会话</view>
-        <view class="stat-card-count">{{stats.total}}</view>
+        <view class="stat-card-foot">
+          <text class="stat-card-label">全部会话</text>
+          <text class="stat-card-count">{{stats.total}}</text>
+        </view>
       </view>
       <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
         <view class="icon icon-working stat-card-icon"></view>
-        <view class="stat-card-label">进行中</view>
-        <view class="stat-card-count">{{stats.running}}</view>
+        <view class="stat-card-foot">
+          <text class="stat-card-label">进行中</text>
+          <text class="stat-card-count">{{stats.running}}</text>
+        </view>
       </view>
       <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
         <view class="icon icon-bell stat-card-icon"></view>
-        <view class="stat-card-label">异常</view>
-        <view class="stat-card-count">{{stats.error}}</view>
+        <view class="stat-card-foot">
+          <text class="stat-card-label">异常</text>
+          <text class="stat-card-count">{{stats.error}}</text>
+        </view>
       </view>
       <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
         <view class="icon icon-review stat-card-icon"></view>
-        <view class="stat-card-label">项目</view>
-        <view class="stat-card-count">{{stats.projects}}</view>
+        <view class="stat-card-foot">
+          <text class="stat-card-label">项目</text>
+          <text class="stat-card-count">{{stats.projects}}</text>
+        </view>
       </view>
     </view>
 
@@ -91,23 +99,28 @@
       </view>
     </view>
 
-    <!-- 项目分组 -->
-    <view class="home-group" wx:if="{{projects.length > 0}}">
-      <view class="group-title">项目</view>
+    <!-- 项目分组（Cursor Workspaces 式：新建行 + 单行项目条目，缩进分割线） -->
+    <view class="home-group" wx:if="{{projects.length > 0 || projectsError}}">
+      <view class="group-title home-group-title">项目</view>
+      <view
+        class="list-row home-row"
+        hover-class="list-row--hover"
+        bindtap="onNewProjectHint"
+      >
+        <view class="icon icon-plus home-row-icon home-row-icon--accent"></view>
+        <text class="home-row-title home-row-title--action">新建项目</text>
+      </view>
       <view
         wx:for="{{projects}}"
         wx:key="id"
-        class="list-row"
+        class="list-row home-row"
         hover-class="list-row--hover"
         data-id="{{item.id}}"
         data-name="{{item.name}}"
         bindtap="onOpenProject"
       >
-        <view class="icon icon-folder"></view>
-        <view class="grow col gap-8 home-project-text">
-          <text class="t-strong ellipsis">{{item.name}}</text>
-          <text class="t-caption">{{item.countLabel}}</text>
-        </view>
+        <view class="icon icon-folder home-row-icon"></view>
+        <text class="home-row-title ellipsis">{{item.name}}</text>
         <view class="icon icon-chevron"></view>
       </view>
     </view>
@@ -128,7 +141,7 @@
         >
           <view class="row gap-8 home-subhead-text">
             <view wx:if="{{!group.isTemp}}" class="icon icon-folder-small"></view>
-            <text class="t-strong home-subhead-title">{{group.name}}</text>
+            <text class="home-subhead-title">{{group.name}}</text>
           </view>
           <text class="t-caption">{{group.sessions.length}} 条{{group.projectId ? ' ›' : ''}}</text>
         </view>
