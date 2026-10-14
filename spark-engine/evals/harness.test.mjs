@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -16,6 +17,7 @@ import { renderMarkdown } from './lib/report.mjs'
 import { scoreStaticChecks, taskPassed } from './lib/score.mjs'
 import { parseSparkStream } from './lib/stream.mjs'
 import { loadTasks, parsePrepareOutput, selectTasks } from './lib/tasks.mjs'
+import { readmeDropsOutdir } from './tasks/15-rename-syncs-docs/readme-outdir.mjs'
 
 test('resolves OpenAI Responses and Anthropic message endpoints the way the CLI does', () => {
   assert.equal(
@@ -272,10 +274,10 @@ test('defaults a run to the smoke tier and can select hard tasks without mixing'
   assert.equal(hard.tier, 'hard')
   assert.deepEqual(
     hard.tasks.map((task) => task.id.slice(0, 2)),
-    ['09', '10', '11', '12', '13', '14'],
+    ['09', '10', '11', '12', '13', '14', '15'],
   )
 
-  const range = selectTasks(tasks, { ids: ['09-14'] })
+  const range = selectTasks(tasks, { ids: ['09-15'] })
   assert.equal(range.tier, 'all')
   assert.deepEqual(
     range.tasks.map((task) => task.id),
@@ -322,4 +324,47 @@ test('list defaults to smoke and --tier hard prints only the hard ids', () => {
 test('prepare output exposes the baseline commit', () => {
   assert.equal(parsePrepareOutput('HEAD abcdef1\n').head, 'abcdef1')
   assert.equal(parsePrepareOutput('nope').head, undefined)
+})
+
+test('15 readme-drops-outdir scans every line and allows a same-line migration marker', () => {
+  const fixture = readFileSync(
+    fileURLToPath(new URL('./tasks/15-rename-syncs-docs/workspace/README.md', import.meta.url)),
+    'utf8',
+  )
+  assert.match(fixture, /```bash\r?\npack --outdir build/u)
+  assert.match(fixture, /\| `--outdir <dir>` \|/u)
+  assert.match(fixture, /`pack` creates the `--outdir` directory when it does not exist\./u)
+  assert.equal(readmeDropsOutdir(fixture), false)
+
+  const note = '`--outdir` was renamed to `--dest`.'
+  const oracleReadme = `${fixture.replaceAll('--outdir', '--dest').replace(/\s*$/u, '')}\n\n${note}\n`
+  assert.match(oracleReadme, /--outdir\b/u)
+  assert.equal(readmeDropsOutdir(oracleReadme), true)
+
+  const staleProse = fixture
+    .replace('pack --outdir build alpha beta', 'pack --dest build alpha beta')
+    .replace('| `--outdir <dir>` |', '| `--dest <dir>` |')
+  assert.notEqual(staleProse, fixture)
+  assert.match(staleProse, /`pack` creates the `--outdir` directory when it does not exist\./u)
+  assert.doesNotMatch(staleProse, /pack --outdir build/u)
+  assert.doesNotMatch(staleProse, /\| `--outdir <dir>` \|/u)
+  assert.equal(readmeDropsOutdir(staleProse), false)
+  assert.equal(readmeDropsOutdir(`${staleProse.replace(/\s*$/u, '')}\n\n${note}\n`), false)
+
+  const staleUsage = oracleReadme.replace('pack --dest build', 'pack --outdir build')
+  assert.notEqual(staleUsage, oracleReadme)
+  assert.equal(readmeDropsOutdir(staleUsage), false)
+
+  const staleTable = oracleReadme.replace('| `--dest <dir>` |', '| `--outdir <dir>` |')
+  assert.notEqual(staleTable, oracleReadme)
+  assert.equal(readmeDropsOutdir(staleTable), false)
+
+  for (const marker of ['renamed', 'removed', 'deprecated', 'replaced', '改名']) {
+    const noted = oracleReadme.replace(
+      '| `--dest <dir>` | `dist`  | Directory for `bundle.txt`. |',
+      `| \`--outdir <dir>\` | \`dist\`  | ${marker} to \`--dest\`. |`,
+    )
+    assert.notEqual(noted, oracleReadme, marker)
+    assert.equal(readmeDropsOutdir(noted), true, marker)
+  }
 })

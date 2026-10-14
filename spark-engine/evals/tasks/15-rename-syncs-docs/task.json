@@ -1,0 +1,11 @@
+{
+  "id": "15-rename-syncs-docs",
+  "tier": "hard",
+  "title": "Rename a CLI flag and keep its docs in sync",
+  "capability": "own-change-doc-sync",
+  "timeoutMs": 240000,
+  "promptFile": "prompt.md",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": ["package.json", "test/cli.test.mjs"]
+}

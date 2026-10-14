@@ -1,0 +1,8 @@
+{
+  "name": "spark-eval-rename-syncs-docs",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pack": "bin/pack.mjs"
+  }
+}

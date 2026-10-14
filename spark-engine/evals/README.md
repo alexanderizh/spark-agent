@@ -118,20 +118,23 @@ Each task is a directory under `tasks/<id>/` with `task.json`, `prompt.md`, `gra
 | `12-git-decoy-hygiene`      | git hygiene under pressure | inclusive range, no commit or stage, decoy notes and `wip.patch` stay                     |
 | `13-mask-secret`            | constraint-heavy create    | code-point mask, short strings, emoji, and idempotence; timeout 240s                      |
 | `14-live-path-bug`          | search the live path       | digits survive `normalizeId` on the `src/index.js` import, not the decoy copies           |
+| `15-rename-syncs-docs`      | own-change doc sync        | `--outdir` becomes `--dest`; README documents `--dest`, and every `--outdir` line also carries a same-line migration marker (renamed, removed, deprecated, replaced, 改名) |
 
-`01`–`08` are `"tier": "smoke"`. One live `glm-5.3-flash` run scored 8/8 there. That single pass is not a ranking. `09`–`14` are `"tier": "hard"` drafts for adversarial fairness review. `--self-test` covers both tiers. This change does not live-score the hard drafts.
+`01`–`08` are `"tier": "smoke"`. One live `glm-5.3-flash` run scored 8/8 there. That single pass is not a ranking. `09`–`15` are `"tier": "hard"` drafts for adversarial fairness review. `--self-test` covers both tiers. This change does not live-score the hard drafts.
 
 A live run, `--dry-run`, and `--list` default to `--tier smoke`, so the pass/fail total is only `01`–`08`. Hard drafts stay out of that total.
 
 ```bash
-node evals/run.mjs --tier hard          # 09–14 only
-node evals/run.mjs --task 09-14         # same six tasks
+node evals/run.mjs --tier hard          # 09–15 only
+node evals/run.mjs --task 09-15         # same seven tasks
 node evals/run.mjs --task 09,10         # comma list
 node evals/run.mjs --tier all           # both tiers; report.json summary.byTier splits the counts
 node evals/run.mjs --list --tier all
 ```
 
 `--task` replaces the smoke default. `--tier` and `--task` together intersect. `--self-test` still defaults to every task.
+
+`15` is the reverse control for `09`: the prompt never mentions docs, but the rename makes the README stale, so the agent has to update docs its own change broke while `09` checks it leaves pre-existing doc conflicts alone.
 
 `07` is a few hundred lines, enough to bury the contract under background notes. It is not a 100k-token stress test; grow `SPEC.md` in place when that becomes the question. `13` stays a short spec so it does not repeat `08`'s long runtime.
 
@@ -155,7 +158,7 @@ cd spark-engine
 npm run eval:self-test          # no key; all tiers; graders and endpoint helpers
 node evals/run.mjs --dry-run    # smoke tier; prints the resolved URL and hides the key
 node evals/run.mjs              # smoke tier only (01–08)
-node evals/run.mjs --tier hard  # hard drafts only (09–14)
+node evals/run.mjs --tier hard  # hard drafts only (09–15)
 node evals/run.mjs --task 01-file-edit --task 03-terminal-command
 ```
 
@@ -163,7 +166,7 @@ From the repo root the same commands are `pnpm --filter @spark/agent run eval:se
 
 `--dry-run` and a live run both require the three `ARK_*` variables to be set. The runner writes them into a temp `<workspace>/.spark/config.toml` as `api_key_env = "ARK_API_KEY"` plus `base_url` and the model id. The key value is passed only through the child environment. Reports redact it when it shows up in streamed tool args or output. Do not put the key in `ARK_BASE_URL` (userinfo and credential query params are rejected) and do not commit `.env` files.
 
-A live run is sequential. The default timeout is 180s. `07` and `09`–`10` and `13` use 240s. `11`, `12`, and `14` use 300s. Override with `--timeout` or `SPARK_EVAL_TIMEOUT_MS`. `SPARK_EVAL_CONTEXT_WINDOW` (default 128000) and `SPARK_EVAL_MAX_TOKENS` (default 16000) are written into the temp model entry. `SPARK_BIN` overrides the CLI path. `SPARK_EVAL_OUT` sets the report directory (default `spark-engine/evals/reports/<timestamp>/`, gitignored). `SPARK_EVAL_KEEP=1` keeps a copy of each workspace under that report; those copies can contain whatever the model wrote, so leave them uncommitted.
+A live run is sequential. The default timeout is 180s. `07`, `09`–`10`, `13`, and `15` use 240s. `11`, `12`, and `14` use 300s. Override with `--timeout` or `SPARK_EVAL_TIMEOUT_MS`. `SPARK_EVAL_CONTEXT_WINDOW` (default 128000) and `SPARK_EVAL_MAX_TOKENS` (default 16000) are written into the temp model entry. `SPARK_BIN` overrides the CLI path. `SPARK_EVAL_OUT` sets the report directory (default `spark-engine/evals/reports/<timestamp>/`, gitignored). `SPARK_EVAL_KEEP=1` keeps a copy of each workspace under that report; those copies can contain whatever the model wrote, so leave them uncommitted.
 
 Each live task:
 
