@@ -143,6 +143,7 @@ import type { ToolPackageRuntimeEvent, ToolPackagesIpcChannelMap } from '../tool
 import type { NotificationsIpcChannelMap } from '../notifications.js'
 import type { HookV2IpcChannelMap } from '../hooks-v2.js'
 import type { AccountSyncIpcChannelMap } from '../account-sync.js'
+import type { MobileBridgeIpcChannelMap } from '../mobile-bridge.js'
 import type { WorkflowBundleIpcChannelMap } from '../workflow-bundle-ipc.js'
 import type { SessionWorkflowBindingIpcChannelMap } from '../session-workflow-binding.js'
 import type { SessionWorkflowBindingCreate } from '../session-workflow-binding.js'
@@ -7648,6 +7649,7 @@ export interface IpcChannelMap
     NotificationsIpcChannelMap,
     HookV2IpcChannelMap,
     AccountSyncIpcChannelMap,
+    MobileBridgeIpcChannelMap,
     WorkflowBundleIpcChannelMap,
     SessionWorkflowBindingIpcChannelMap,
     WikiIpcChannelMap,

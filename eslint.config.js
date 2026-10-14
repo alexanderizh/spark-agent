@@ -58,8 +58,9 @@ export default tseslint.config(
       'packages/agent-runtime/src/__tests__/tools/fixtures/**/*.mjs',
       'packages/agent-runtime/src/__tests__/sdk/fixtures/**/*.mjs',
       'scripts/**/*.mjs',
-      // SparkWork 移动端（apps/mobile）的构建/校验脚本同样跑在 Node ESM 下
+      // SparkWork 移动端（apps/mobile）与桌面端（apps/desktop）的构建/校验脚本同样跑在 Node ESM 下
       'apps/mobile/scripts/**/*.mjs',
+      'apps/desktop/scripts/**/*.mjs',
     ],
     languageOptions: {
       globals: {
@@ -72,10 +73,12 @@ export default tseslint.config(
         global: 'readonly',
         globalThis: 'readonly',
         structuredClone: 'readonly',
+        clearInterval: 'readonly',
         clearTimeout: 'readonly',
         console: 'readonly',
         fetch: 'readonly',
         process: 'readonly',
+        setInterval: 'readonly',
         setTimeout: 'readonly',
       },
     },
