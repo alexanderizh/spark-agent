@@ -12,7 +12,7 @@
   height: 100%;
   background: var(--text-faint);
   border-radius: 2px;
-  transition: width 0.2s ease;
+  transition: width var(--motion-base) ease;
 }
 
 .account-sync-quota-bar.is-ok .account-sync-quota-bar-fill {
@@ -33,13 +33,13 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--pad-xs);
+  margin-top: var(--pad-sm);
 }
 
 .account-sync-quota-inline-copy {
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -56,23 +56,23 @@
 .account-sync-quota-panel {
   display: flex;
   flex-direction: column;
-  margin-top: 12px;
+  margin-top: var(--pad-md);
 }
 
 .account-sync-quota-panel-empty {
-  padding: 14px 0;
+  padding: var(--pad-lg) 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .account-sync-quota-panel-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 0;
+  gap: var(--pad-md);
+  padding: var(--pad-sm) 0;
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 70%, transparent);
-  font-size: 12.5px;
+  font-size: var(--font-base);
 }
 
 .account-sync-quota-panel-row:last-of-type {
@@ -105,21 +105,21 @@
 }
 
 .account-sync-quota-panel-meter {
-  margin-top: 14px;
+  margin-top: var(--pad-lg);
 }
 
 .account-sync-quota-panel-meter-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 7px;
+  gap: var(--pad-md);
+  margin-bottom: var(--pad-sm);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .account-sync-quota-panel-meter-head strong {
-  font-size: 12.5px;
+  font-size: var(--font-base);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text);
@@ -134,9 +134,9 @@
 }
 
 .account-sync-quota-panel-note {
-  margin: 10px 0 0;
+  margin: var(--pad-sm) 0 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }

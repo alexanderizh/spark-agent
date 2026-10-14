@@ -2,7 +2,7 @@
 .avatar-picker {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--pad-md);
   min-width: 0;
 }
 .avatar-picker-preview {
@@ -25,21 +25,21 @@
 }
 .avatar-picker-main {
   display: grid;
-  gap: 5px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 .avatar-picker-title {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 650;
   color: var(--text-strong);
 }
 .avatar-picker-desc {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-muted);
 }
 .avatar-picker-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--pad-xs);
   flex-wrap: wrap;
 }
 .avatar-picker-file {
@@ -47,24 +47,24 @@
 }
 .avatar-library {
   display: grid;
-  gap: 18px;
+  gap: var(--pad-xl);
   max-height: 62vh;
   overflow: auto;
-  padding: 2px 4px 4px;
+  padding: 2px var(--pad-3xs) var(--pad-3xs);
 }
 .avatar-library-section {
   display: grid;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 .avatar-library-title {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 700;
   color: var(--text-muted);
 }
 .avatar-library-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(54px, 1fr));
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 .avatar-library-item {
   width: 54px;
@@ -94,7 +94,7 @@
 }
 .avatar-cropper {
   display: grid;
-  gap: 16px;
+  gap: var(--pad-lg);
 }
 .avatar-crop-stage {
   width: 240px;
@@ -127,21 +127,21 @@
 }
 .avatar-crop-controls {
   display: grid;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 .avatar-crop-controls label {
   display: grid;
   grid-template-columns: 48px 1fr;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 /* ── V2 drag-to-move cropper ── */
 .avatar-cropper-v2 {
   display: grid;
-  gap: 16px;
+  gap: var(--pad-lg);
 }
 .avatar-crop-stage-v2 {
   width: 280px;
@@ -177,7 +177,7 @@
   bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: rgba(255, 255, 255, 0.6);
   pointer-events: none;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -185,13 +185,13 @@
 }
 .avatar-crop-controls-v2 {
   display: grid;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 .avatar-crop-controls-v2 label {
   display: grid;
   grid-template-columns: 48px 1fr;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }

@@ -3,10 +3,10 @@
   --runtime-surface: var(--bg-soft, rgba(127, 142, 170, 0.08));
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--pad-md);
   min-width: 0;
-  margin: 0 0 14px;
-  padding: 14px;
+  margin: 0 0 var(--pad-lg);
+  padding: var(--pad-lg);
   color: var(--text);
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--runtime-surface) 68%, transparent);
@@ -34,7 +34,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .team-runtime-panel__header > div,
@@ -46,7 +46,7 @@
 .team-runtime-panel__eyebrow {
   display: block;
   color: var(--runtime-accent);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 750;
   letter-spacing: 0.13em;
 }
@@ -59,9 +59,9 @@
 
 .team-runtime-panel h3 {
   // 对齐侧栏统一小节标题（.inspector-section h4 / .config-panel-header）
-  margin: 2px 0 3px;
+  margin: 2px 0 var(--pad-3xs);
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   line-height: 1.35;
   letter-spacing: 0.07em;
@@ -71,7 +71,7 @@
 .team-runtime-panel h4 {
   margin: 2px 0 0;
   color: var(--text-strong, var(--text));
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 650;
 }
 
@@ -79,7 +79,7 @@
   max-width: 62ch;
   margin: 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
 }
 
@@ -91,10 +91,10 @@
 .team-runtime-panel__state {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--pad-sm);
   min-width: 0;
   min-height: 84px;
-  padding: 18px;
+  padding: var(--pad-xl);
   color: var(--text-muted);
   border: 1px dashed var(--border);
   border-radius: 12px;
@@ -103,11 +103,11 @@
 
 .team-runtime-panel__state strong {
   color: var(--text-strong, var(--text));
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .team-runtime-panel__state span:last-child {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .team-runtime-panel__state.is-empty {
@@ -141,11 +141,11 @@
 .team-runtime-panel__notice {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-md);
   color: var(--danger, #b42318);
   border: 1px solid color-mix(in srgb, var(--danger, #b42318) 35%, var(--border));
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--danger, #b42318) 8%, transparent);
 }
 
@@ -165,7 +165,7 @@
 
 .team-runtime-panel__notice span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   overflow-wrap: anywhere;
 }
 
@@ -174,7 +174,7 @@
 .team-runtime-deliberation__actions button,
 .team-runtime-deliberation__conflict button {
   min-height: 32px;
-  padding: 5px 10px;
+  padding: var(--pad-xs) var(--pad-sm);
   color: var(--text-strong, var(--text));
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -192,8 +192,8 @@
 
 .team-runtime-panel__tabs {
   display: flex;
-  gap: 4px;
-  padding: 3px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-3xs);
   border-radius: 11px;
   background: var(--runtime-surface);
 }
@@ -202,11 +202,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   min-height: 38px;
   min-width: 44px;
   flex: 1;
-  padding: 7px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   color: var(--text-muted);
   border: 1px solid transparent;
   border-radius: 8px;
@@ -227,16 +227,16 @@
   justify-content: center;
   min-width: 20px;
   min-height: 20px;
-  padding: 0 5px;
-  border-radius: 10px;
+  padding: 0 var(--pad-xs);
+  border-radius: var(--r-lg);
   background: var(--runtime-surface);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .team-runtime-panel__content {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -246,7 +246,7 @@
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: var(--border);
 }
 
@@ -255,19 +255,19 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  padding: 9px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   background: var(--bg, transparent);
 }
 
 .team-runtime-panel__summary span {
   color: var(--text-faint, var(--text-muted));
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .team-runtime-panel__summary strong {
   // 数字指标对齐侧栏 .token-stat-value
   color: var(--text-strong, var(--text));
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -276,15 +276,15 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--pad-md);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .team-runtime-panel__graph-legend span {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 
 .team-runtime-panel__sync {
@@ -310,7 +310,7 @@
 .team-runtime-panel__record-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -333,11 +333,11 @@
 .team-runtime-node__rail {
   display: flex;
   justify-content: center;
-  padding-top: 13px;
+  padding-top: var(--pad-md);
   color: var(--runtime-accent);
   border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--runtime-accent) 8%, transparent);
-  font-size: 16px;
+  font-size: var(--font-lg);
   font-weight: 700;
 }
 
@@ -358,13 +358,13 @@
 }
 
 .team-runtime-node__body {
-  padding: 11px 12px;
+  padding: var(--pad-md) var(--pad-md);
 }
 
 .team-runtime-node__topline strong {
   display: block;
   color: var(--text-strong, var(--text));
-  font-size: 12px;
+  font-size: var(--font-sm);
   overflow-wrap: anywhere;
 }
 
@@ -373,7 +373,7 @@
   display: inline-block;
   max-width: 100%;
   color: var(--text-faint, var(--text-muted));
-  font-size: 10px;
+  font-size: var(--font-2xs);
   overflow-wrap: anywhere;
 }
 
@@ -385,20 +385,20 @@
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  gap: 4px;
-  padding: 3px 7px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-3xs) var(--pad-sm);
   color: var(--runtime-accent);
   border: 1px solid currentColor;
   border-radius: 20px;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   white-space: nowrap;
 }
 
 .team-runtime-node__body > p,
 .team-runtime-deliberation__proposal p {
-  margin: 6px 0;
+  margin: var(--pad-xs) 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 
@@ -406,24 +406,24 @@
 .team-runtime-deliberation__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px 14px;
+  gap: var(--pad-sm) var(--pad-lg);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .team-runtime-node__dependencies {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--pad-xs);
+  margin-top: var(--pad-sm);
   color: var(--runtime-accent);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .team-runtime-node__dependencies code {
-  padding: 2px 5px;
-  border-radius: 5px;
+  padding: 2px var(--pad-xs);
+  border-radius: var(--r-sm);
   background: var(--runtime-surface);
 }
 
@@ -431,85 +431,85 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 10px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-sm);
 }
 
 .team-runtime-node__actions button,
 .team-runtime-deliberation__actions button {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 
 .team-runtime-node__assign {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   margin-left: auto;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .team-runtime-node__assign input {
   width: 108px;
   min-height: 32px;
-  padding: 5px 7px;
+  padding: var(--pad-xs) var(--pad-sm);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: var(--runtime-surface);
 }
 
 .team-runtime-panel__limit-note {
   margin: 0;
   color: var(--text-faint, var(--text-muted));
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .team-runtime-deliberation {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-md);
 }
 
 .team-runtime-deliberation__proposal {
-  padding: 9px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border-left: 3px solid var(--runtime-accent);
   background: var(--runtime-surface);
 }
 
 .team-runtime-deliberation__proposal strong {
   color: var(--text-strong, var(--text));
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.45;
 }
 
 .team-runtime-deliberation__columns {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .team-runtime-deliberation__list {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--pad-xs);
   min-width: 0;
-  padding: 8px;
+  padding: var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
 
 .team-runtime-deliberation__list strong {
   color: var(--text-strong, var(--text));
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .team-runtime-deliberation__list span {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -521,24 +521,24 @@
 .team-runtime-deliberation__decision {
   display: flex;
   align-items: flex-start;
-  gap: 5px;
+  gap: var(--pad-xs);
   margin: 0;
-  padding: 7px 9px;
+  padding: var(--pad-sm) var(--pad-sm);
   color: var(--success, #1f845a);
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--success, #1f845a) 9%, transparent);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .team-runtime-deliberation__conflict {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   min-width: 0;
-  padding: 8px 9px;
+  padding: var(--pad-sm) var(--pad-sm);
   color: var(--warning, #9a6700);
   background: color-mix(in srgb, var(--warning, #9a6700) 9%, transparent);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .team-runtime-deliberation__conflict span {
@@ -549,17 +549,17 @@
 
 .team-runtime-deliberation__actions {
   border-top: 1px solid var(--border);
-  padding-top: 8px;
+  padding-top: var(--pad-sm);
 }
 
 .team-runtime-deliberation__actions summary {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   min-height: 32px;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .team-runtime-deliberation__actions[open] summary svg {
@@ -569,8 +569,8 @@
 .team-runtime-deliberation__actions > div {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 6px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-xs);
 }
 
 @keyframes runtime-spin {
@@ -581,7 +581,7 @@
 
 @media (max-width: 767px) {
   .team-runtime-panel {
-    padding: 12px;
+    padding: var(--pad-md);
   }
   .team-runtime-panel__summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));

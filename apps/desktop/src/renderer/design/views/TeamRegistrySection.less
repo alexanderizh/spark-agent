@@ -6,7 +6,7 @@
 }
 
 .team-registry-status {
-  margin: 4px 0 16px;
+  margin: var(--pad-3xs) 0 var(--pad-lg);
 }
 
 .team-registry-status__item {
@@ -26,10 +26,10 @@
 .team-registry-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px 16px;
-  margin-bottom: 16px;
+  gap: var(--pad-md) var(--pad-lg);
+  margin-bottom: var(--pad-lg);
   overflow: hidden;
-  padding: 14px 16px;
+  padding: var(--pad-lg) var(--pad-lg);
   border: none;
   border-radius: var(--r-md);
   background: var(--bg-sunken);
@@ -59,7 +59,7 @@
 .team-registry-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 
@@ -69,8 +69,8 @@
 }
 
 .team-registry-inline-status {
-  margin: 0 0 12px;
-  padding: 8px 12px;
+  margin: 0 0 var(--pad-md);
+  padding: var(--pad-sm) var(--pad-md);
   border-radius: var(--r-sm, 6px);
   font-size: var(--font-sm, 12px);
   line-height: 1.6;
@@ -94,12 +94,12 @@
 
 .team-registry-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--pad-sm);
   align-items: center;
 }
 
 .team-registry-note {
-  margin-top: 16px;
+  margin-top: var(--pad-lg);
   font-size: var(--font-sm, 12px);
   color: var(--text-faint);
   line-height: 1.7;
@@ -115,25 +115,25 @@
 // ─── 团队资产总览（五类资产可更新计数） ─────────────────────────────────
 
 .team-registry-overview {
-  margin-top: 16px;
+  margin-top: var(--pad-lg);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .team-registry-overview__title {
   font-size: var(--font-sm, 12px);
   font-weight: 600;
   color: var(--text-secondary);
-  margin-right: 4px;
+  margin-right: var(--pad-3xs);
 }
 
 .team-registry-overview__chip {
   display: inline-flex;
   align-items: center;
-  padding: 2px 10px;
-  border-radius: 999px;
+  padding: 2px var(--pad-sm);
+  border-radius: var(--r-pill);
   font-size: var(--font-xs, 11px);
   border: 1px solid var(--border-color, rgba(128, 128, 128, 0.25));
   color: var(--text-secondary);

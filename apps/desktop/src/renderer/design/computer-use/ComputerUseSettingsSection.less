@@ -6,19 +6,19 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
+  gap: var(--pad-xl);
 }
 
 .computer-use-heading h2 {
-  margin: 0 0 6px;
+  margin: 0 0 var(--pad-xs);
 }
 
 .computer-use-summary {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
   margin-top: 22px;
-  padding: 12px 0;
+  padding: var(--pad-md) 0;
   border-top: 1px solid var(--line, rgba(127, 127, 127, 0.2));
   border-bottom: 1px solid var(--line, rgba(127, 127, 127, 0.2));
 }
@@ -31,12 +31,12 @@
 
 .computer-use-summary strong {
   color: var(--text, #1f2328);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .computer-use-summary span {
   color: var(--muted, #6b7280);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .computer-use-status-dot {
@@ -52,11 +52,11 @@
 }
 
 .computer-use-error {
-  margin-top: 12px;
-  padding-left: 10px;
+  margin-top: var(--pad-md);
+  padding-left: var(--pad-sm);
   border-left: 2px solid #dc2626;
   color: #dc2626;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.6;
 }
 
@@ -73,9 +73,9 @@
 .computer-use-diagnostic {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--pad-md);
   min-height: 68px;
-  padding: 10px 16px;
+  padding: var(--pad-sm) var(--pad-lg);
   border-bottom: 1px solid var(--line, rgba(127, 127, 127, 0.2));
 }
 
@@ -100,24 +100,24 @@
 
 .computer-use-permission-title {
   color: var(--text, #1f2328);
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
 }
 
 .computer-use-permission-description {
-  margin-top: 3px;
+  margin-top: var(--pad-3xs);
   color: var(--muted, #6b7280);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 
 .computer-use-state {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   flex: 0 0 auto;
   color: #b45309;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .computer-use-state::before {
@@ -135,7 +135,7 @@
 .computer-use-diagnostic {
   align-items: flex-start;
   overflow: hidden;
-  padding-block: 14px;
+  padding-block: var(--pad-lg);
   border: none;
   border-radius: var(--r-md);
   background: var(--bg-sunken);
@@ -143,17 +143,17 @@
 
 .computer-use-diagnostic-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex: 0 0 auto;
 }
 
 .computer-use-diagnostic-result {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
-  margin-top: 8px;
+  gap: var(--pad-xs) var(--pad-md);
+  margin-top: var(--pad-sm);
   color: var(--muted, #6b7280);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 @media (max-width: 760px) {

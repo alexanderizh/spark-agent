@@ -13,9 +13,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-wrap: wrap;
-  padding: 8px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   /* 52px：整条承担 macOS 窗口拖拽 + 双击最大化（App.tsx 跳过公用拖拽条），
    * 拖拽热区与内容留白都比原 48px 更从容 */
   min-height: 52px;
@@ -25,7 +25,7 @@
 .sar-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -37,7 +37,7 @@
   height: 24px;
   flex: none;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: var(--font-md);
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 12%, var(--panel));
   overflow: hidden;
@@ -52,13 +52,13 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
 .sar-name {
   max-width: 320px;
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -68,7 +68,7 @@
 .sar-header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-wrap: wrap;
 }
 
@@ -92,10 +92,10 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 24px;
+  gap: var(--pad-md);
+  padding: var(--pad-2xl);
   text-align: center;
-  font-size: 13.5px;
+  font-size: var(--font-base);
   color: var(--text-muted, var(--text));
 
   p {
@@ -118,7 +118,7 @@
 
 .sar-error-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 /* ─── macOS 窗口拖拽 ───────────────────────────────────────────────────────── */
@@ -144,8 +144,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  font-size: 13.5px;
+  gap: var(--pad-md);
+  font-size: var(--font-base);
   color: var(--text-muted, var(--text));
 
   p {

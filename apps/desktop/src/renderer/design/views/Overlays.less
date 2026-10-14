@@ -38,8 +38,8 @@
 .palette-search {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: var(--pad-sm);
+  padding: var(--pad-lg) var(--pad-lg);
   border-bottom: 1px solid var(--border);
 }
 .palette-search svg {
@@ -52,7 +52,7 @@
   border: none;
   outline: none;
   background: transparent;
-  font-size: 15px;
+  font-size: var(--font-lg);
   color: var(--text);
   font-family: inherit;
 }
@@ -61,7 +61,7 @@
   border: none;
   outline: none;
   background: transparent;
-  font-size: 15px;
+  font-size: var(--font-lg);
   color: var(--text);
   font-family: inherit;
 }
@@ -71,21 +71,21 @@
 .palette-results {
   overflow: auto;
   flex: 1;
-  padding: 6px;
+  padding: var(--pad-xs);
 }
 .palette-group {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-faint);
-  padding: 8px 10px 4px;
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-3xs);
 }
 .palette-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
   border-radius: var(--r-sm);
   font-size: var(--font-base);
   color: var(--text);
@@ -126,30 +126,30 @@
 }
 .palette-item .kbds {
   display: flex;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .palette-foot {
-  padding: 8px 14px;
+  padding: var(--pad-sm) var(--pad-lg);
   border-top: 1px solid var(--border);
   background: var(--bg-soft);
   display: flex;
   align-items: center;
-  gap: 14px;
-  font-size: 11px;
+  gap: var(--pad-lg);
+  font-size: var(--font-xs);
   color: var(--text-muted);
 }
 .palette-foot .seg {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 .palette-empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 24px 16px;
+  gap: var(--pad-sm);
+  padding: var(--pad-2xl) var(--pad-lg);
   font-size: var(--font-sm);
   color: var(--text-muted);
 }

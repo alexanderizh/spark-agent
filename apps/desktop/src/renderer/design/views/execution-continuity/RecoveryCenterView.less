@@ -16,7 +16,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px 12px;
+  padding: var(--pad-lg) var(--pad-xl) var(--pad-md);
   border-bottom: 1px solid var(--border-strong);
   flex-shrink: 0;
 }
@@ -24,18 +24,18 @@
 .rc-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
 .rc-title {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-lg);
   font-weight: 600;
 }
 
 .rc-subtitle {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
@@ -46,9 +46,9 @@
 .rc-startup-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 20px;
-  font-size: 12.5px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-xl);
+  font-size: var(--font-base);
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -63,8 +63,8 @@
 }
 
 .rc-action-message {
-  padding: 6px 20px;
-  font-size: 12.5px;
+  padding: var(--pad-xs) var(--pad-xl);
+  font-size: var(--font-base);
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -75,21 +75,21 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 0 16px;
+  padding: var(--pad-3xs) 0 var(--pad-lg);
 }
 
 .rc-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 48px 24px;
+  gap: var(--pad-sm);
+  padding: var(--pad-3xl) var(--pad-2xl);
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .rc-empty-note {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-tertiary);
   max-width: 420px;
   text-align: center;
@@ -99,16 +99,16 @@
 /* ── 分组：分割线 + 色点 + 小标题，不使用盒子 ── */
 .rc-group {
   &:not(:first-child) {
-    margin-top: 4px;
+    margin-top: var(--pad-3xs);
   }
 }
 
 .rc-group-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 20px 6px;
-  font-size: 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-xl) var(--pad-xs);
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text-secondary);
   letter-spacing: 0.02em;
@@ -140,14 +140,14 @@
 .rc-run-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
   width: 100%;
-  padding: 9px 20px;
+  padding: var(--pad-sm) var(--pad-xl);
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--border);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
   cursor: pointer;
   text-align: left;
 
@@ -188,7 +188,7 @@
 .rc-run-kind {
   flex-shrink: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .rc-run-title {
@@ -202,7 +202,7 @@
 
 .rc-run-status {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-secondary);
 
   &-needs_attention,
@@ -213,18 +213,18 @@
 
 .rc-run-level {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   color: var(--text-tertiary);
   border: 1px solid var(--border-strong);
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 0 var(--pad-3xs);
   line-height: 16px;
 }
 
 .rc-run-flag {
   flex-shrink: 0;
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   color: var(--text-tertiary);
 
   &-warn {
@@ -234,14 +234,14 @@
 
 .rc-run-time {
   flex-shrink: 0;
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   color: var(--text-tertiary);
 }
 
 .rc-run-chevron {
   flex-shrink: 0;
   color: var(--text-tertiary);
-  transition: transform 0.15s ease;
+  transition: transform var(--motion-fast) ease;
 }
 
 .rc-run-chevron-open {
@@ -250,60 +250,60 @@
 
 /* ── 详情：缩进展开区，同样不用盒子 ── */
 .rc-run-detail {
-  padding: 10px 20px 14px 38px;
+  padding: var(--pad-sm) var(--pad-xl) var(--pad-lg) 38px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--text) 2%, transparent);
 }
 
 .rc-detail-loading {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-tertiary);
 }
 
 .rc-detail-section {
   & + & {
-    margin-top: 10px;
-    padding-top: 10px;
+    margin-top: var(--pad-sm);
+    padding-top: var(--pad-sm);
     border-top: 1px dashed var(--border);
   }
 }
 
 .rc-detail-label {
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text-tertiary);
-  margin-bottom: 4px;
+  margin-bottom: var(--pad-3xs);
   letter-spacing: 0.03em;
 }
 
 .rc-detail-body {
-  font-size: 12.5px;
+  font-size: var(--font-base);
   color: var(--text-secondary);
 }
 
 .rc-detail-counts {
   display: flex;
-  gap: 14px;
+  gap: var(--pad-lg);
   flex-wrap: wrap;
 }
 
 .rc-level-badge {
   display: inline-block;
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--primary, #4f6ef7);
-  margin-right: 6px;
+  margin-right: var(--pad-xs);
 }
 
 .rc-level-note {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-tertiary);
 }
 
 .rc-degradation-list {
-  margin: 6px 0 0;
-  padding-left: 16px;
-  font-size: 12px;
+  margin: var(--pad-xs) 0 0;
+  padding-left: var(--pad-lg);
+  font-size: var(--font-sm);
   color: var(--text-secondary);
 
   li {
@@ -312,28 +312,28 @@
 }
 
 .rc-interruption {
-  margin-top: 6px;
-  font-size: 12px;
+  margin-top: var(--pad-xs);
+  font-size: var(--font-sm);
   color: var(--text-tertiary);
 }
 
 .rc-effects {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--pad-3xs);
 }
 
 .rc-effect-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12.5px;
+  gap: var(--pad-sm);
+  font-size: var(--font-base);
 }
 
 .rc-effect-phase {
   flex-shrink: 0;
   min-width: 92px;
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   color: var(--text-secondary);
 
   &-unknown,
@@ -352,40 +352,40 @@
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--font-mono, monospace);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .rc-effect-policy {
   flex-shrink: 0;
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   color: var(--text-tertiary);
 }
 
 .rc-effect-more {
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   color: var(--text-tertiary);
 }
 
 .rc-checkpoints {
-  font-size: 12.5px;
+  font-size: var(--font-base);
 }
 
 .rc-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-wrap: wrap;
-  margin-top: 12px;
-  padding-top: 10px;
+  margin-top: var(--pad-md);
+  padding-top: var(--pad-sm);
   border-top: 1px dashed var(--border);
 }
 
 /* ── Footer 语义说明 ── */
 .rc-footer {
   flex-shrink: 0;
-  padding: 8px 20px;
+  padding: var(--pad-sm) var(--pad-xl);
   border-top: 1px solid var(--border);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   color: var(--text-tertiary);
   line-height: 1.5;
 }

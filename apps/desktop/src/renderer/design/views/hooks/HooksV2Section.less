@@ -8,21 +8,21 @@
 .hookv2-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 0;
+  gap: var(--pad-md);
+  padding: var(--pad-sm) 0;
   border-bottom: 1px solid var(--divider);
 }
 
 .hookv2-toolbar-hint {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .hookv2-empty-block {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 36px 0;
+  gap: var(--pad-xs);
+  padding: var(--pad-3xl) 0;
   text-align: center;
 }
 
@@ -42,8 +42,8 @@
 .hookv2-def-line {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 4px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-3xs);
   border-radius: var(--r-xs);
 }
 
@@ -63,7 +63,7 @@
 .hookv2-def-main {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex: 1;
   min-width: 0;
   background: none;
@@ -77,12 +77,12 @@
 .hookv2-def-name {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   font-weight: 600;
 }
 
 .hookv2-def-sub {
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -91,12 +91,12 @@
 .hookv2-def-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   flex-shrink: 0;
 }
 
 .hookv2-def-body {
-  padding: 4px 4px 14px 24px;
+  padding: var(--pad-3xs) var(--pad-3xs) var(--pad-lg) var(--pad-2xl);
 }
 
 .rot90 {
@@ -107,8 +107,8 @@
 
 .hookv2-subhead {
   font-weight: 600;
-  font-size: 13px;
-  padding: 8px 0 6px;
+  font-size: var(--font-base);
+  padding: var(--pad-sm) 0 var(--pad-xs);
 }
 
 .hookv2-bindings {
@@ -118,8 +118,8 @@
 .hookv2-binding-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 0;
+  gap: var(--pad-md);
+  padding: var(--pad-sm) 0;
   border-bottom: 1px dashed var(--divider);
 }
 
@@ -130,12 +130,12 @@
 .hookv2-binding-scope {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: var(--pad-xs);
+  font-size: var(--font-base);
 }
 
 .hookv2-binding-sub {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .hookv2-binding-meta {
@@ -147,26 +147,26 @@
 .hookv2-binding-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-shrink: 0;
 }
 
 .hookv2-binding-add {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-top: 8px;
+  gap: var(--pad-sm);
+  padding-top: var(--pad-sm);
 }
 
 .hookv2-empty {
-  padding: 10px 0;
-  font-size: 13px;
+  padding: var(--pad-sm) 0;
+  font-size: var(--font-base);
 }
 
 // ─── 运行记录 ────────────────────────────────────────────────────────────────
 
 .hookv2-runs {
-  margin-top: 18px;
+  margin-top: var(--pad-xl);
 }
 
 .hookv2-runs-head {
@@ -178,7 +178,7 @@
 .hookv2-runs-filters {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .hookv2-run-row {
@@ -188,33 +188,33 @@
 .hookv2-run-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
   border-radius: var(--r-xs);
-  padding: 8px 2px;
+  padding: var(--pad-sm) 2px;
   background: none;
   border: none;
   text-align: left;
   cursor: pointer;
   color: inherit;
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .hookv2-run-event {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .hookv2-run-time,
 .hookv2-run-attempts,
 .hookv2-run-duration {
-  font-size: 12px;
+  font-size: var(--font-sm);
   flex-shrink: 0;
 }
 
 .hookv2-run-error {
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--font-sm);
   margin-left: auto;
   white-space: nowrap;
   overflow: hidden;
@@ -222,18 +222,18 @@
 }
 
 .hookv2-run-detail {
-  padding: 4px 10px 14px 24px;
+  padding: var(--pad-3xs) var(--pad-sm) var(--pad-lg) var(--pad-2xl);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .hookv2-run-detail pre {
-  margin: 4px 0 0;
-  padding: 8px;
+  margin: var(--pad-3xs) 0 0;
+  padding: var(--pad-sm);
   background: var(--bg-soft);
   border-radius: var(--r-sm);
-  font-size: 12px;
+  font-size: var(--font-sm);
   max-height: 220px;
   overflow: auto;
 }
@@ -241,23 +241,23 @@
 .hookv2-run-detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 10px;
-  font-size: 12px;
+  gap: var(--pad-sm);
+  font-size: var(--font-sm);
 }
 
 .hookv2-run-detail-grid code {
-  font-size: 11px;
+  font-size: var(--font-xs);
   word-break: break-all;
 }
 
 .hookv2-run-error-message {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--danger);
 }
 
 .hookv2-run-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 // ─── 编辑器 ──────────────────────────────────────────────────────────────────
@@ -265,21 +265,21 @@
 .hookv2-editor {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-top: 4px;
+  gap: var(--pad-3xs);
+  padding-top: var(--pad-3xs);
 }
 
 .hookv2-form-row {
   display: flex;
-  gap: 12px;
-  padding: 6px 0;
+  gap: var(--pad-md);
+  padding: var(--pad-xs) 0;
   flex-wrap: wrap;
 }
 
 .hookv2-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
   min-width: 200px;
   flex: 1;
 }
@@ -289,22 +289,22 @@
 }
 
 .hookv2-field-label {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .hookv2-field-hint {
   font-weight: 400;
-  font-size: 11px;
+  font-size: var(--font-xs);
   opacity: 0.7;
 }
 
 .hookv2-field-meta {
   display: flex;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex-wrap: wrap;
   margin-top: 2px;
 }
@@ -312,8 +312,8 @@
 .hookv2-mapping-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 0;
+  gap: var(--pad-sm);
+  padding: var(--pad-3xs) 0;
 }
 
 .hookv2-mapping-row > *:first-child {
@@ -327,81 +327,81 @@
 }
 
 .hookv2-mapping-empty {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .hookv2-fold {
   border-top: 1px dashed var(--divider);
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: var(--pad-xs);
+  padding-top: var(--pad-xs);
 }
 
 .hookv2-fold-toggle {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   background: none;
   border: none;
-  padding: 4px 0;
-  font-size: 12px;
+  padding: var(--pad-3xs) 0;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: inherit;
   cursor: pointer;
 }
 
 .hookv2-fold-body {
-  padding: 6px 0 10px;
+  padding: var(--pad-xs) 0 var(--pad-sm);
 }
 
 .hookv2-toggle-line {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 13px;
-  padding: 4px 0;
+  font-size: var(--font-base);
+  padding: var(--pad-3xs) 0;
   max-width: 360px;
 }
 
 .hookv2-preview {
-  margin-top: 8px;
+  margin-top: var(--pad-sm);
   border: 1px solid var(--divider);
   border-radius: var(--r-md);
-  padding: 10px;
+  padding: var(--pad-sm);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .hookv2-preview-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--pad-xs);
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 
 .hookv2-preview-errors {
   margin: 0;
-  padding-left: 18px;
-  font-size: 12px;
+  padding-left: var(--pad-xl);
+  font-size: var(--font-sm);
   color: var(--danger);
 }
 
 .hookv2-preview-line {
-  font-size: 12px;
+  font-size: var(--font-sm);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   flex-wrap: wrap;
 }
 
 .hookv2-preview-line pre {
   margin: 0;
   width: 100%;
-  padding: 8px;
+  padding: var(--pad-sm);
   background: var(--code-bg);
   border-radius: var(--r-sm);
-  font-size: 12px;
+  font-size: var(--font-sm);
   max-height: 180px;
   overflow: auto;
 }
@@ -410,23 +410,23 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: var(--pad-sm);
+  padding-top: var(--pad-sm);
   border-top: 1px solid var(--divider);
 }
 
 .hookv2-editor-footer-left,
 .hookv2-editor-footer-right {
   display: flex;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 // ─── 经典通知（V1 兼容）─────────────────────────────────────────────────────
 
 .hookv2-legacy {
-  margin-top: 24px;
+  margin-top: var(--pad-2xl);
   border-top: 1px solid var(--divider);
-  padding-top: 8px;
+  padding-top: var(--pad-sm);
 }
 
 .hookv2-legacy-inner {
@@ -435,13 +435,13 @@
 }
 
 .hookv2-legacy-hint {
-  font-size: 12px;
-  margin-bottom: 8px;
+  font-size: var(--font-sm);
+  margin-bottom: var(--pad-sm);
 }
 
 .hookv2-legacy-head {
-  padding: 8px 0;
-  font-size: 13px;
+  padding: var(--pad-sm) 0;
+  font-size: var(--font-base);
 }
 
 /* 经典通知节点卡片：原先定义在 AgentsView.less（懒加载 chunk），
@@ -449,7 +449,7 @@
 .hook-nodes-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 .hook-node-card {
   background: var(--bg-sunken);
@@ -460,8 +460,8 @@
 .hook-node-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-lg);
   background: var(--hover);
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
 }
@@ -499,7 +499,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--pad-md);
-  padding: 8px 14px;
+  padding: var(--pad-sm) var(--pad-lg);
 }
 .hook-toggle-row + .hook-toggle-row {
   border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
@@ -507,7 +507,7 @@
 .hook-toggle-info {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 .hook-toggle-icon {
@@ -530,7 +530,7 @@
 .hook-node-footer {
   display: flex;
   justify-content: flex-end;
-  padding: 6px 14px 8px;
+  padding: var(--pad-xs) var(--pad-lg) var(--pad-sm);
   border-top: 1px solid color-mix(in srgb, var(--divider) 40%, transparent);
   background: color-mix(in srgb, var(--bg-soft) 40%, transparent);
 }

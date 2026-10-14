@@ -19,8 +19,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
+  gap: var(--pad-md);
+  padding: var(--pad-sm) var(--pad-lg);
   border-bottom: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
   background: var(--bg-soft);
 }
@@ -28,19 +28,19 @@
 .dream_set_title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
 /* 总开关开启后的小徽标：弱化主色，不与危险项混淆 */
 .dream_set_badge {
-  padding: 0 6px;
+  padding: 0 var(--pad-xs);
   border-radius: 4px;
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   color: var(--primary);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 500;
   line-height: 18px;
 }
@@ -53,8 +53,8 @@
 .dream_set_row {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 11px 16px;
+  gap: var(--pad-lg);
+  padding: var(--pad-md) var(--pad-lg);
   border-bottom: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
 
   &:last-child {
@@ -66,10 +66,10 @@
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 /* 标题旁 ⓘ 悬浮说明：默认弱化、悬浮提亮（与 wiki_set_help 同款交互） */
@@ -77,7 +77,7 @@
   flex: none;
   color: color-mix(in srgb, var(--text) 45%, transparent);
   cursor: help;
-  transition: color 0.15s ease;
+  transition: color var(--motion-fast) ease;
 
   &:hover {
     color: var(--text);
@@ -88,7 +88,7 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .dream_set_control_wide {
@@ -105,22 +105,22 @@
 .dream_set_unit {
   flex: none;
   color: color-mix(in srgb, var(--text) 55%, transparent);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 /* 累计整理消耗行：文本 + ⓘ 悬浮说明（说明收进 tooltip，不占版面） */
 .dream_set_usage {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 /* 运行状态条（R7）：转圈 + 阶段说明 + 取消按钮 */
 .dream_set_runbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-lg);
   background: color-mix(in srgb, var(--primary) 6%, transparent);
   border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
 }
@@ -145,15 +145,15 @@
   flex: 1;
   min-width: 0;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: var(--font-base);
 }
 
 /* 上次整理报告摘要（失败态红字） */
 .dream_set_report {
-  padding: 9px 16px;
+  padding: var(--pad-sm) var(--pad-lg);
   border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
   color: color-mix(in srgb, var(--text) 65%, transparent);
-  font-size: 12px;
+  font-size: var(--font-sm);
 
   &.is-error {
     color: var(--danger, #d4603d);
@@ -164,8 +164,8 @@
 .dream_set_actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-lg);
   border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
 }
 
@@ -190,8 +190,8 @@
 /* 记忆配置弹窗宿主变体（--bordered）：与 mp_settings_section 同款——
    透明底 + 1px 描边 + 圆角 8px + 12px 内边距，去灰底头带与全宽分隔带 */
 .dream_set_group--bordered {
-  gap: 6px;
-  padding: 12px;
+  gap: var(--pad-xs);
+  padding: var(--pad-md);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   background: transparent;
 
@@ -201,23 +201,23 @@
     background: transparent;
 
     .dream_set_title {
-      font-size: 13px;
+      font-size: var(--font-base);
     }
   }
 
   > .dream_set_rows .dream_set_row {
-    padding: 7px 0;
+    padding: var(--pad-sm) 0;
     border-bottom: none;
   }
 
   /* 运行状态条带底色，横向/底部需留白避免文字贴色块边缘；按钮行无底色，保持与行内容左对齐 */
   > .dream_set_runbar {
-    padding: 8px 12px;
+    padding: var(--pad-sm) var(--pad-md);
     border-top: none;
   }
 
   > .dream_set_actions {
-    padding: 8px 0 0;
+    padding: var(--pad-sm) 0 0;
     border-top: none;
   }
 
@@ -231,7 +231,7 @@
 .dream_set_cron_error {
   display: block;
   margin-top: 2px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--spark-text-danger, #e5484d);
 }
 
@@ -241,7 +241,7 @@
 .dream_set_report.has-audit {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .dream_set_report_text {
@@ -256,12 +256,12 @@
 
 .dream_set_report_link {
   flex-shrink: 0;
-  padding: 2px 8px;
+  padding: 2px var(--pad-sm);
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--primary);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
 
   &:hover {
@@ -279,19 +279,19 @@
 .dream_audit {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .dream_audit_runs {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .dream_audit_empty {
-  padding: 24px 0;
+  padding: var(--pad-2xl) 0;
   color: color-mix(in srgb, var(--text) 55%, transparent);
-  font-size: 12.5px;
+  font-size: var(--font-base);
   text-align: center;
 
   &.is-error {
@@ -302,7 +302,7 @@
 .dream_audit_list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
   max-height: 52vh;
   overflow-y: auto;
   padding-right: 2px;
@@ -310,7 +310,7 @@
 
 /* 审计行：左侧 3px 语义色条 + 头部四段信息（类型/去向/置信度/时间） */
 .dream_audit_row {
-  padding: 8px 10px 8px 12px;
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-sm) var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
   border-left-width: 3px;
   border-radius: 6px;
@@ -336,8 +336,8 @@
 .dream_audit_row_head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12px;
+  gap: var(--pad-sm);
+  font-size: var(--font-sm);
 }
 
 .dream_audit_kind {
@@ -346,7 +346,7 @@
 }
 
 .dream_audit_outcome {
-  font-size: 11.5px;
+  font-size: var(--font-sm);
 
   .is-ok & {
     color: var(--success);
@@ -368,31 +368,31 @@
 
 .dream_audit_conf {
   color: color-mix(in srgb, var(--text) 55%, transparent);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
 }
 
 .dream_audit_time {
   margin-left: auto;
   color: color-mix(in srgb, var(--text) 40%, transparent);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
 }
 
 /* 拒绝原因 / 执行说明 */
 .dream_audit_note {
-  margin-top: 4px;
+  margin-top: var(--pad-3xs);
   color: color-mix(in srgb, var(--text) 70%, transparent);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
   word-break: break-word;
 }
 
 /* 提案原文快照：默认折叠，展开后等宽字体滚动区（截断快照原样展示） */
 .dream_audit_payload {
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
 
   summary {
     color: color-mix(in srgb, var(--text) 50%, transparent);
-    font-size: 11.5px;
+    font-size: var(--font-sm);
     cursor: pointer;
     user-select: none;
 
@@ -403,12 +403,12 @@
 
   pre {
     max-height: 200px;
-    margin: 6px 0 0;
-    padding: 8px;
+    margin: var(--pad-xs) 0 0;
+    padding: var(--pad-sm);
     border-radius: 6px;
     background: color-mix(in srgb, var(--text) 5%, transparent);
     color: var(--text);
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.5;
     overflow: auto;
     white-space: pre-wrap;

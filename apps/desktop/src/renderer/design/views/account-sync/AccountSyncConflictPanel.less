@@ -1,23 +1,23 @@
 .account-sync-conflict {
-  padding: 18px 0 22px;
+  padding: var(--pad-xl) 0 22px;
   border-top: 1px solid var(--account-sync-line);
 }
 
 .account-sync-conflict-entry {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--pad-lg);
 }
 
 .account-sync-conflict-entry-hint {
   min-width: 0;
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 
 .account-sync-conflict-panel {
-  margin-top: 14px;
+  margin-top: var(--pad-lg);
   border-top: 1px solid var(--account-sync-line);
   border-bottom: 1px solid var(--account-sync-line);
 }
@@ -30,27 +30,27 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: var(--pad-lg);
   min-height: 56px;
-  padding: 12px 0;
+  padding: var(--pad-md) 0;
   border-bottom: 1px solid var(--account-sync-line);
 }
 
 .account-sync-conflict-toolbar strong {
   color: var(--text-strong);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .account-sync-conflict-batch {
   display: flex;
   flex: 0 0 auto;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .account-sync-conflict-hint {
-  padding: 10px 0;
+  padding: var(--pad-sm) 0;
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   border-bottom: 1px solid var(--account-sync-line);
 }
 
@@ -65,23 +65,23 @@
 .account-sync-conflict-category-heading {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 10px 0 2px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) 0 2px;
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
 .account-sync-conflict-category-count {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 400;
 }
 
 .account-sync-conflict-category-errors {
   min-width: 0;
   color: var(--warning);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 400;
 }
 
@@ -89,8 +89,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 18px;
-  padding: 10px 0;
+  gap: var(--pad-xl);
+  padding: var(--pad-sm) 0;
   border-bottom: 1px solid var(--account-sync-line);
 }
 
@@ -102,13 +102,13 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--pad-3xs);
 }
 
 .account-sync-conflict-info strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: var(--font-base);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -117,7 +117,7 @@
 .account-sync-conflict-preview {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -126,38 +126,38 @@
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--pad-3xs);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-align: right;
 }
 
 .account-sync-conflict-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 0;
+  gap: var(--pad-md);
+  padding: var(--pad-lg) 0;
 }
 
 .account-sync-conflict-actions-hint {
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
 }
 
 .account-sync-conflict-empty {
   display: flex;
   align-items: center;
   min-height: 56px;
-  padding: 12px 0;
+  padding: var(--pad-md) 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 720px) {
   .account-sync-conflict-entry {
     align-items: flex-start;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .account-sync-conflict-toolbar {

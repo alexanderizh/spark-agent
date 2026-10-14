@@ -5,8 +5,8 @@
 
 .computer-activity-list {
   display: grid;
-  gap: 4px;
-  margin: 8px 0;
+  gap: var(--pad-3xs);
+  margin: var(--pad-sm) 0;
 }
 
 .computer-activity-load-error {
@@ -33,7 +33,7 @@
 .computer-activity-card summary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-height: 24px;
   padding: 0;
   border: 0;
@@ -58,7 +58,7 @@
 .computer-activity-status-dot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--c-brand, var(--text-faint));
   flex-shrink: 0;
 }
@@ -87,15 +87,15 @@
 .computer-activity-elapsed {
   margin-left: auto;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
 }
 
 .computer-activity-events {
   display: grid;
-  gap: 4px;
-  margin: 4px 0 6px;
-  padding: 4px 0 4px 22px;
+  gap: var(--pad-3xs);
+  margin: var(--pad-3xs) 0 var(--pad-xs);
+  padding: var(--pad-3xs) 0 var(--pad-3xs) 22px;
   color: var(--text-muted);
   font-size: var(--font-sm, 12px);
   line-height: 1.6;
@@ -114,16 +114,16 @@
 }
 .computer-activity-events time {
   float: right;
-  margin-left: 12px;
+  margin-left: var(--pad-md);
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
 }
 
 .computer-activity-controls {
   display: grid;
-  gap: 6px;
-  padding: 4px 0 0;
+  gap: var(--pad-xs);
+  padding: var(--pad-3xs) 0 0;
 }
 
 .computer-activity-target {
@@ -139,7 +139,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 // lobe Button(type=text) 自带外观，这里不再覆盖；
@@ -148,7 +148,7 @@
   min-height: 24px;
   min-width: 0;
   flex: 1 1 220px;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   border: 1px solid var(--border-subtle, var(--border, rgb(128 128 128 / 18%)));
   border-radius: var(--r-md, 6px);
   background: transparent;

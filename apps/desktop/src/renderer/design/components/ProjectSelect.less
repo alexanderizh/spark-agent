@@ -9,20 +9,20 @@
 .ps-popup-divider {
   height: 1px;
   background: var(--divider);
-  margin: 4px 0;
+  margin: var(--pad-3xs) 0;
 }
 
 .ps-create-entry {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   background: transparent;
   border: none;
   color: var(--primary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-base);
 
   &:hover {
     background: var(--hover);
@@ -53,8 +53,8 @@
 .ps-modal-h {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: var(--pad-sm);
+  padding: var(--pad-lg) var(--pad-lg);
   border-bottom: 1px solid var(--divider);
 }
 
@@ -68,13 +68,13 @@
 }
 
 .ps-modal-title {
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
   color: var(--text-strong);
 }
 
 .ps-modal-sub {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-muted);
   margin-top: 2px;
 }
@@ -92,29 +92,29 @@
 }
 
 .ps-modal-body {
-  padding: 14px 16px;
+  padding: var(--pad-lg) var(--pad-lg);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .ps-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--pad-xs);
+  font-size: var(--font-sm);
   color: var(--text-secondary);
 }
 
 .ps-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 7px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   background: var(--hover);
   border: 1px solid var(--divider);
   border-radius: var(--r-md);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
   outline: none;
 
   &:focus {
@@ -124,7 +124,7 @@
 
 .ps-path-picker {
   display: flex;
-  gap: 8px;
+  gap: var(--pad-sm);
 
   .ps-input {
     flex: 1;
@@ -134,26 +134,26 @@
 .ps-notice {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--pad-xs);
+  font-size: var(--font-sm);
   color: var(--danger);
   background: var(--danger-bg);
-  padding: 6px 10px;
+  padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-md);
 }
 
 .ps-modal-foot {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: var(--pad-sm);
+  padding: var(--pad-md) var(--pad-lg);
   border-top: 1px solid var(--divider);
 }
 
 .ps-btn {
-  padding: 6px 14px;
+  padding: var(--pad-xs) var(--pad-lg);
   border-radius: var(--r-md);
-  font-size: 13px;
+  font-size: var(--font-base);
   cursor: pointer;
   border: 1px solid transparent;
 

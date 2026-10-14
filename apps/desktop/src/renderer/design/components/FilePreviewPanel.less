@@ -97,7 +97,7 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   align-items: center;
   justify-content: space-between;
   height: var(--chat-header-height);
-  padding: 0 16px;
+  padding: 0 var(--pad-lg);
   background: var(--panel, #fff);
   position: relative;
   z-index: 5;
@@ -109,7 +109,7 @@ body.file-preview-resizing .file-preview-resize-handle::before {
 .file-preview-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
   flex: 1;
   -webkit-app-region: drag;
@@ -138,7 +138,7 @@ body.file-preview-resizing .file-preview-resize-handle::before {
 }
 
 .file-preview-name {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 500;
   color: var(--color-text-1);
   overflow: hidden;
@@ -149,7 +149,7 @@ body.file-preview-resizing .file-preview-resize-handle::before {
 .file-preview-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
@@ -165,7 +165,7 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   border-radius: var(--r-xs);
   color: var(--color-text-3);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--motion-fast) ease;
 
   &:hover {
     background: var(--color-fill-2);
@@ -195,10 +195,10 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: var(--pad-md);
   height: 200px;
   color: var(--color-text-3);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .file-preview-error {
@@ -211,7 +211,7 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   justify-content: center;
   min-height: 200px;
   height: 100%;
-  padding: 16px;
+  padding: var(--pad-lg);
   background: var(--panel, #fff);
 
   img {
@@ -227,7 +227,7 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   justify-content: center;
   min-height: 160px;
   height: 100%;
-  padding: 24px 16px;
+  padding: var(--pad-2xl) var(--pad-lg);
   background: var(--panel, #fff);
 
   audio {
@@ -241,7 +241,7 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   justify-content: center;
   min-height: 200px;
   height: 100%;
-  padding: 16px;
+  padding: var(--pad-lg);
   background: var(--panel, #fff);
 
   video {
@@ -262,19 +262,19 @@ body.file-preview-resizing .file-preview-resize-handle::before {
 
 .file-preview-markdown {
   /* Markdown 预览使用 FileMarkdownView（react-markdown 完整管线），排版皮肤继承 .md-surface */
-  padding: 16px;
+  padding: var(--pad-lg);
   background: var(--panel, #fff);
 }
 
 .file-preview-text {
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.6;
   color: var(--color-text-1);
   white-space: pre-wrap;
   word-wrap: break-word;
   margin: 0;
-  padding: 16px;
+  padding: var(--pad-lg);
   min-height: 100%;
   background: var(--panel, #fff);
 }

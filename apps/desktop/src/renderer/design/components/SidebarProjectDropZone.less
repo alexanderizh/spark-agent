@@ -26,8 +26,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 16px;
+  gap: var(--pad-xs);
+  padding: var(--pad-lg);
   color: var(--text);
   text-align: center;
   animation: sidebar-project-drop-rise 160ms ease-out;
@@ -49,7 +49,7 @@
   justify-content: center;
   width: 42px;
   height: 42px;
-  margin-bottom: 3px;
+  margin-bottom: var(--pad-3xs);
   border-radius: 14px;
   background: color-mix(in srgb, var(--primary) 13%, var(--panel));
   color: var(--primary);
@@ -62,7 +62,9 @@ html[data-theme='dark'] .sidebar-project-drop-overlay,
 }
 
 @keyframes sidebar-project-drop-fade {
-  from { opacity: 0; }
+  from {
+    opacity: 0;
+  }
 }
 
 @keyframes sidebar-project-drop-rise {

@@ -48,7 +48,7 @@
   justify-content: flex-end;
   flex-shrink: 0;
   height: 28px;
-  padding: 0 6px;
+  padding: 0 var(--pad-xs);
   background: var(--panel, #303030);
   color: var(--text, #e4e4e7);
   cursor: grab;
@@ -68,7 +68,7 @@
     height: 22px;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1;
 
     &:hover {
@@ -107,7 +107,7 @@
       bottom: 0;
       width: 2px;
       background: transparent;
-      transition: background 0.15s ease;
+      transition: background var(--motion-fast) ease;
     }
 
     &:hover::after,
@@ -131,7 +131,7 @@
       right: 0;
       height: 2px;
       background: transparent;
-      transition: background 0.15s ease;
+      transition: background var(--motion-fast) ease;
     }
 
     &:hover::after,
@@ -268,7 +268,7 @@
   cursor: col-resize;
   touch-action: none;
   z-index: 1;
-  transition: background 0.15s ease;
+  transition: background var(--motion-fast) ease;
 
   &::after {
     content: '';
@@ -278,7 +278,7 @@
     bottom: 0;
     width: 2px;
     background: transparent;
-    transition: background 0.15s ease;
+    transition: background var(--motion-fast) ease;
   }
 
   &:hover,
@@ -293,8 +293,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-md);
   // border-bottom: 1px solid var(--divider, #efede8);
 
   button {
@@ -306,7 +306,7 @@
     height: 22px;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 11px;
+    font-size: var(--font-xs);
 
     &:hover {
       opacity: 1;
@@ -316,7 +316,7 @@
 }
 
 .subapp-panel-name {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -344,8 +344,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  font-size: 13px;
+  padding: var(--pad-2xl);
+  font-size: var(--font-base);
   color: var(--text-muted, var(--text));
   text-align: center;
   overflow: auto;
@@ -359,8 +359,8 @@
 // ── 统一侧面板菜单：dock 头部 tab 切换侧板应用 ───────────────
 .subapp-panel-tabs {
   display: flex;
-  gap: 4px;
-  padding: 6px 8px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-xs) var(--pad-sm);
   border-bottom: 1px solid var(--divider, #efede8);
   overflow-x: auto;
   scrollbar-width: thin;
@@ -369,16 +369,16 @@
 .subapp-panel-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   flex-shrink: 0;
   max-width: 120px;
-  padding: 4px 10px;
+  padding: var(--pad-3xs) var(--pad-sm);
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: transparent;
   color: inherit;
   opacity: 0.72;
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   transition:
     background 0.15s ease,
@@ -417,7 +417,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
+  gap: var(--pad-sm);
   pointer-events: none;
 }
 
@@ -426,7 +426,7 @@
   position: relative;
   width: 44px;
   height: 44px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 0;
   background: var(--panel, #303030);
   color: var(--text, #e4e4e7);
@@ -457,11 +457,11 @@
   right: -4px;
   min-width: 16px;
   height: 16px;
-  padding: 0 4px;
-  border-radius: 999px;
+  padding: 0 var(--pad-3xs);
+  border-radius: var(--r-pill);
   background: var(--primary, #6366f1);
   color: #fff;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   line-height: 16px;
   text-align: center;
@@ -478,36 +478,36 @@
   background: var(--panel, #303030);
   color: var(--text, #e4e4e7);
   box-shadow: var(--shadow-lg);
-  padding: 6px;
+  padding: var(--pad-xs);
 }
 
 .subapp-launcher-group + .subapp-launcher-group {
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: var(--pad-xs);
+  padding-top: var(--pad-xs);
   border-top: 1px solid var(--divider, #efede8);
 }
 
 .subapp-launcher-group-title {
-  font-size: 11px;
+  font-size: var(--font-xs);
   opacity: 0.55;
-  padding: 4px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
   user-select: none;
 }
 
 .subapp-launcher-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
-  padding: 7px 8px;
+  padding: var(--pad-sm) var(--pad-sm);
   border: 0;
   border-radius: var(--r-md, 8px);
   background: transparent;
   color: inherit;
-  font-size: 13px;
+  font-size: var(--font-base);
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease;
+  transition: background var(--motion-fast) ease;
 
   &:hover {
     background: rgba(128, 128, 128, 0.14);
@@ -528,11 +528,11 @@
 
 .subapp-launcher-item-surface {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-xs);
   opacity: 0.5;
   border: 1px solid var(--border-strong, #4a4a4a);
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 0 var(--pad-3xs);
   user-select: none;
 }
 
@@ -540,6 +540,6 @@
   flex-shrink: 0;
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--primary, #6366f1);
 }

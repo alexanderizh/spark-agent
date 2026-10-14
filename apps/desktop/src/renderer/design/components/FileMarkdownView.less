@@ -10,7 +10,7 @@
 .file-markdown-view {
   max-width: 920px;
   margin: 0 auto;
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 /* ---------- 行内 code（.md-surface 未覆盖，预览文档里高频出现） ---------- */
@@ -73,7 +73,7 @@
   list-style: none;
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .file-markdown-view li.task-list-item > input[type='checkbox'] {
@@ -106,7 +106,7 @@
 /* ---------- 语义标签（kbd / mark / details） ---------- */
 .file-markdown-view kbd {
   display: inline-block;
-  padding: 1px 5px;
+  padding: 1px var(--pad-xs);
   border: 1px solid var(--md-block-border);
   border-bottom-width: 2px;
   border-radius: var(--r-xs);
@@ -148,7 +148,7 @@
 .file-markdown-view h4,
 .file-markdown-view h5,
 .file-markdown-view h6 {
-  scroll-margin-top: 16px;
+  scroll-margin-top: var(--pad-lg);
 }
 
 /* ---------- 链接兜底 ---------- */
@@ -182,6 +182,6 @@
 /* 窄面板（tab 形态）下收紧阅读宽度与字号，避免横向溢出 */
 @media (max-width: 720px) {
   .file-markdown-view {
-    font-size: 13px;
+    font-size: var(--font-base);
   }
 }

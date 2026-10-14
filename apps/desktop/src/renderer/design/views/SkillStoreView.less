@@ -2,19 +2,19 @@
 
 // ── Page shell ──
 .card-error {
-  margin-bottom: 14px;
-  padding: 10px 12px;
+  margin-bottom: var(--pad-lg);
+  padding: var(--pad-sm) var(--pad-md);
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .skill-store-page {
   display: flex;
   flex-direction: column;
-  gap: var(--pad-sm, 8px);
+  gap: var(--pad-sm, var(--pad-sm));
   flex: 1;
   min-height: 0;
-  padding: 8px var(--pad-lg, 16px);
+  padding: var(--pad-sm) var(--pad-lg, var(--pad-lg));
   overflow-y: auto;
 }
 
@@ -23,8 +23,8 @@
   overflow: hidden;
 }
 .skills-view {
-  padding: var(--pad-lg, 16px);
-  padding-top: 5px;
+  padding: var(--pad-lg, var(--pad-lg));
+  padding-top: var(--pad-xs);
   // 升级为定高 flex 容器：把滚动轴从 .view-body 下放到各 Tab 根容器，
   // 这样 installed 的左右两列才能各自独立滚动（详见 .skill-store-shell）。
   height: 100%;
@@ -42,8 +42,8 @@
 .skill-store-tabs {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-3xs);
   background: var(--bg-soft, rgba(0, 0, 0, 0.04));
   border-radius: 0;
   width: 100%;
@@ -55,12 +55,12 @@
   border: none;
   background: transparent;
   color: var(--text-muted, rgba(0, 0, 0, 0.65));
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 500;
-  padding: 6px 14px;
+  padding: var(--pad-xs) var(--pad-lg);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--motion-fast) ease;
 
   &:hover {
     color: var(--text, rgba(0, 0, 0, 0.88));
@@ -83,14 +83,14 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--pad-md, 12px);
+  gap: var(--pad-md, var(--pad-md));
   flex-shrink: 0;
 }
 
 .skill-store-actions {
   display: flex;
   align-items: center;
-  gap: var(--pad-sm, 8px);
+  gap: var(--pad-sm, var(--pad-sm));
   min-width: min(520px, 100%);
   justify-content: flex-end;
 
@@ -109,14 +109,14 @@
 .create-back-bar {
   display: flex;
   align-items: center;
-  margin-bottom: var(--pad-sm, 8px);
+  margin-bottom: var(--pad-sm, var(--pad-sm));
 }
 
 // ── Dual-page shell: card list (left) + detail (right) ──
 .skill-store-shell {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
-  gap: var(--pad-lg, 16px);
+  gap: var(--pad-lg, var(--pad-lg));
   // 占满 page 剩余高度；移除 align-items:start 让两列等高 stretch，
   // 配合下方 min-height:0 + overflow-y:auto 实现左右各自独立滚动。
   flex: 1;
@@ -133,27 +133,27 @@
 }
 
 .skill-store-list {
-  padding: var(--pad-lg, 16px);
+  padding: var(--pad-lg, var(--pad-lg));
   overflow-y: auto;
   min-height: 0;
 }
 
 .skill-store-detail-panel {
-  padding: var(--pad-lg, 16px);
+  padding: var(--pad-lg, var(--pad-lg));
   min-height: 0;
   overflow-y: auto;
 }
 
 // ── Section titles ──
 .skill-store-section + .skill-store-section {
-  margin-top: var(--pad-lg, 16px);
+  margin-top: var(--pad-lg, var(--pad-lg));
 }
 
 .skill-store-section-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--pad-sm, 8px);
+  margin-bottom: var(--pad-sm, var(--pad-sm));
   padding: 0 2px;
   font-size: var(--font-xs, 11px);
   font-weight: 700;
@@ -163,14 +163,14 @@
 
   &--with-tools {
     justify-content: flex-start;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .skill-store-section-tools {
     margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--pad-xs);
 
     .ant-input-affix-wrapper,
     input {
@@ -187,20 +187,20 @@
 .skill-store-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--pad-sm, 8px);
+  gap: var(--pad-sm, var(--pad-sm));
 }
 
 // ── Pagination footer ──
 .skill-store-pagination {
-  margin-top: var(--pad-md, 12px);
+  margin-top: var(--pad-md, var(--pad-md));
 }
 
 // ── Skill card (compact, small) ──
 .skill-store-card {
   display: flex;
   flex-direction: column;
-  gap: var(--pad-xs, 6px);
-  padding: var(--pad-md, 12px);
+  gap: var(--pad-xs, var(--pad-xs));
+  padding: var(--pad-md, var(--pad-md));
   border-radius: var(--r-lg, 12px);
   background: var(--bg-sunken);
   cursor: pointer;
@@ -220,7 +220,7 @@
 .skill-store-card-top {
   display: flex;
   align-items: center;
-  gap: var(--pad-sm, 8px);
+  gap: var(--pad-sm, var(--pad-sm));
 }
 
 .skill-store-card-icon {
@@ -256,7 +256,7 @@
 .skill-store-card-subtitle {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   font-size: var(--font-xs, 11px);
   color: var(--text-faint);
   overflow: hidden;
@@ -267,7 +267,7 @@
 .skill-store-card-dot {
   width: 3px;
   height: 3px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: currentColor;
 }
 
@@ -279,7 +279,7 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  padding: 4px 0 0 0;
+  padding: var(--pad-3xs) 0 0 0;
   overflow-y: auto;
 }
 
@@ -287,7 +287,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--pad-xs, 6px);
+  gap: var(--pad-xs, var(--pad-xs));
   margin-top: auto;
   flex-grow: 1;
 }
@@ -295,7 +295,7 @@
 .skill-store-card-tags {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex-wrap: wrap;
   flex-grow: 1;
 }
@@ -304,7 +304,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--pad-sm, 8px); // spacing between switch and delete
+  gap: var(--pad-sm, var(--pad-sm)); // spacing between switch and delete
 }
 
 // ── Installable card extras (download progress + source link) ──
@@ -315,7 +315,7 @@
 }
 
 .skill-store-card-link {
-  margin-top: var(--pad-sm, 8px);
+  margin-top: var(--pad-sm, var(--pad-sm));
   font-size: var(--font-xs, 11px);
 
   a {
@@ -332,8 +332,8 @@
 .skill-store-mgmt-bar {
   display: flex;
   align-items: center;
-  gap: var(--pad-sm, 8px);
-  padding: var(--pad-sm, 8px) var(--pad-md, 12px);
+  gap: var(--pad-sm, var(--pad-sm));
+  padding: var(--pad-sm, var(--pad-sm)) var(--pad-md, var(--pad-md));
   border: 1px solid var(--border);
   border-radius: var(--r-lg, 12px);
   background: var(--bg-soft);
@@ -356,8 +356,8 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: var(--pad-sm, 8px);
-  padding: var(--pad-lg, 16px);
+  gap: var(--pad-sm, var(--pad-sm));
+  padding: var(--pad-lg, var(--pad-lg));
   border: 1px solid var(--border);
   border-radius: var(--r-xl, 16px);
   background:
@@ -377,13 +377,13 @@
 .skill-store-detail {
   display: flex;
   flex-direction: column;
-  gap: var(--pad-md, 12px);
+  gap: var(--pad-md, var(--pad-md));
 }
 
 .skill-store-detail-hero {
   display: flex;
   align-items: flex-start;
-  gap: var(--pad-md, 12px);
+  gap: var(--pad-md, var(--pad-md));
 }
 
 .skill-store-detail-icon {
@@ -407,7 +407,7 @@
   flex: 1;
   min-width: 0;
   h3 {
-    margin: 0 0 4px;
+    margin: 0 0 var(--pad-3xs);
     font-size: var(--font-lg, 14px);
     color: var(--text-strong);
   }
@@ -427,8 +427,8 @@
 .skill-store-detail-assigned {
   display: flex;
   flex-direction: column;
-  gap: var(--pad-xs, 6px);
-  padding: var(--pad-sm, 8px) var(--pad-md, 12px);
+  gap: var(--pad-xs, var(--pad-xs));
+  padding: var(--pad-sm, var(--pad-sm)) var(--pad-md, var(--pad-md));
   border-radius: var(--r-md, 8px);
   background: var(--bg-soft);
   border: 1px solid var(--border);
@@ -444,16 +444,16 @@
 .skill-store-detail-assigned-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .skill-store-detail-assigned-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   max-width: 100%;
-  padding: 3px 8px 3px 3px;
-  border-radius: 999px;
+  padding: var(--pad-3xs) var(--pad-sm) var(--pad-3xs) var(--pad-3xs);
+  border-radius: var(--r-pill);
   border: 1px solid var(--border);
   /* 用 panel-elev 而非写死 #fff：暗色模式下 --bg-elevated 未定义，
      fallback 到 #fff 会导致白底白字不可读。panel-elev 在两套主题下均有定义。 */
@@ -479,7 +479,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   color: #fff;
   background: rgb(var(--arcoblue-6));
@@ -499,18 +499,18 @@
 .skill-store-detail-meta {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--pad-sm, 8px);
+  gap: var(--pad-sm, var(--pad-sm));
 }
 
 .skill-store-detail-stat {
-  padding: var(--pad-sm, 8px) var(--pad-md, 12px);
+  padding: var(--pad-sm, var(--pad-sm)) var(--pad-md, var(--pad-md));
   border-radius: var(--r-md, 8px);
   background: var(--bg-soft);
   border: 1px solid var(--border);
 
   span {
     display: block;
-    margin-bottom: 3px;
+    margin-bottom: var(--pad-3xs);
     font-size: var(--font-xs, 11px);
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -526,14 +526,14 @@
 .skill-store-detail-section {
   display: flex;
   flex-direction: column;
-  gap: var(--pad-xs, 6px);
+  gap: var(--pad-xs, var(--pad-xs));
 }
 
 .skill-store-detail-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--pad-sm, 8px);
+  gap: var(--pad-sm, var(--pad-sm));
 }
 
 .skill-store-detail-section-title {
@@ -546,7 +546,7 @@
 
 .skill-store-inline-code {
   display: block;
-  padding: var(--pad-sm, 8px) var(--pad-md, 12px);
+  padding: var(--pad-sm, var(--pad-sm)) var(--pad-md, var(--pad-md));
   border-radius: var(--r-md, 8px);
   border: 1px solid var(--border);
   background: var(--bg-soft);
@@ -559,16 +559,16 @@
 .skill-store-tag-list {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--pad-xs, 6px);
+  gap: var(--pad-xs, var(--pad-xs));
 }
 
 .skill-store-parameter-list {
   display: grid;
-  gap: var(--pad-sm, 8px);
+  gap: var(--pad-sm, var(--pad-sm));
 }
 
 .skill-store-parameter-item {
-  padding: var(--pad-md, 12px);
+  padding: var(--pad-md, var(--pad-md));
   border: 1px solid var(--border);
   border-radius: var(--r-md, 8px);
   background: var(--bg-soft);
@@ -577,8 +577,8 @@
 .skill-store-parameter-name {
   display: flex;
   align-items: center;
-  gap: var(--pad-xs, 6px);
-  margin-bottom: 4px;
+  gap: var(--pad-xs, var(--pad-xs));
+  margin-bottom: var(--pad-3xs);
   font-size: var(--font-sm, 12px);
   font-weight: 600;
   color: var(--text-strong);
@@ -598,7 +598,7 @@
 }
 
 .skill-store-prompt-preview {
-  padding: var(--pad-md, 12px) var(--pad-lg, 16px);
+  padding: var(--pad-md, var(--pad-md)) var(--pad-lg, var(--pad-lg));
   max-height: 600px;
   overflow: auto;
   border-radius: var(--r-md, 8px);
@@ -634,7 +634,7 @@
   .ant-modal-body {
     max-height: 86vh;
     overflow-y: auto;
-    padding-top: var(--pad-md, 12px);
+    padding-top: var(--pad-md, var(--pad-md));
   }
 }
 
@@ -682,7 +682,7 @@
 
 @media (max-width: 640px) {
   .skill-store-list {
-    padding: var(--pad-sm, 8px);
+    padding: var(--pad-sm, var(--pad-sm));
   }
   .skill-store-cards {
     grid-template-columns: 1fr;
@@ -698,12 +698,12 @@
 
   .skill-store-cards {
     grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
-    gap: var(--pad-md, 12px);
+    gap: var(--pad-md, var(--pad-md));
   }
 
   // 卡片更宽更舒展，min-height 营造接近 4:3 的观感（不强制 aspect-ratio，避免内容溢出）
   .skill-store-card {
-    padding: var(--pad-lg, 16px);
+    padding: var(--pad-lg, var(--pad-lg));
     min-height: 190px;
   }
 
@@ -748,9 +748,9 @@
 .skill-store-source-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 999px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-3xs) var(--pad-sm);
+  border-radius: var(--r-pill);
   border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border));
   background: color-mix(in srgb, var(--primary) 8%, transparent);
   color: var(--primary);
@@ -772,12 +772,12 @@
 .skill-store-hub-subtabs {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-3xs);
   background: var(--bg-soft, rgba(0, 0, 0, 0.04));
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   width: fit-content;
-  margin-bottom: var(--pad-sm, 8px);
+  margin-bottom: var(--pad-sm, var(--pad-sm));
 }
 
 .skill-store-hub-subtab {
@@ -785,12 +785,12 @@
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
-  padding: 4px 12px;
+  padding: var(--pad-3xs) var(--pad-md);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--motion-fast) ease;
 
   &:hover {
     color: var(--text);
@@ -807,11 +807,11 @@
 .skill-store-category-chips {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 4px 0 8px;
-  margin-bottom: var(--pad-sm, 8px);
+  padding: var(--pad-3xs) 0 var(--pad-sm);
+  margin-bottom: var(--pad-sm, var(--pad-sm));
   scrollbar-width: thin;
 
   &::-webkit-scrollbar {
@@ -829,13 +829,13 @@
   border: 1px solid var(--border);
   background: var(--panel, #fff);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
-  padding: 4px 12px;
-  border-radius: 999px;
+  padding: var(--pad-3xs) var(--pad-md);
+  border-radius: var(--r-pill);
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: all var(--motion-fast) ease;
 
   &:hover {
     color: var(--text);
@@ -852,14 +852,14 @@
 // ── 精选市场：原装精选卡片（slim 版）──────────────────────────────────
 .skill-store-card--installable {
   min-height: 168px;
-  padding: 12px 14px;
-  gap: 4px;
+  padding: var(--pad-md) var(--pad-lg);
+  gap: var(--pad-3xs);
 
   // 让 foot 行的「查看来源 ↗」和按钮挤在一行
   .skill-store-card-foot {
-    margin-top: 4px;
+    margin-top: var(--pad-3xs);
     flex-wrap: wrap;
-    row-gap: 4px;
+    row-gap: var(--pad-3xs);
   }
 
   // 描述最多 2 行（默认已是 2 行；这里明确并轻微紧一紧）
@@ -873,7 +873,7 @@
 .skill-store-card-foot--inline-link {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   font-size: var(--font-xs, 11px);
   color: var(--text-muted);
   text-decoration: none;
@@ -903,30 +903,30 @@
     font-size: var(--font-sm, 12px);
     font-weight: 600;
     color: var(--text-strong);
-    padding-bottom: 8px;
+    padding-bottom: var(--pad-sm);
     border-bottom: 1px solid var(--border);
-    margin-bottom: var(--pad-sm, 8px);
+    margin-bottom: var(--pad-sm, var(--pad-sm));
   }
 
   .skill-store-cards {
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: var(--pad-sm, 8px);
+    gap: var(--pad-sm, var(--pad-sm));
   }
 }
 
 // 已安装卡片：单行紧凑（略微放大，图标 + 字号更舒展）
 .skill-store-card--installed {
-  padding: 12px 14px;
+  padding: var(--pad-md) var(--pad-lg);
 
   .skill-store-card-icon {
     width: 38px;
     height: 38px;
   }
   .skill-store-card-title {
-    font-size: 13px;
+    font-size: var(--font-base);
   }
   .skill-store-card-subtitle {
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 }
 
@@ -942,7 +942,7 @@
   top: 0; // 配合 centered 居中，避免 antd 默认 100px top 在高弹窗时溢出
 
   .ant-modal-body {
-    padding-top: 20px;
+    padding-top: var(--pad-xl);
     max-height: 72vh;
     overflow-y: auto;
   }
@@ -950,8 +950,8 @@
   // footer 走 antd .ant-modal-footer（独立于 body），body 滚动时按钮固定底部
   .ant-modal-footer {
     border-top: 1px solid var(--border);
-    padding-top: var(--pad-sm, 8px);
-    padding-bottom: var(--pad-md, 12px);
+    padding-top: var(--pad-sm, var(--pad-sm));
+    padding-bottom: var(--pad-md, var(--pad-md));
   }
 
   // hero 图标圆形
@@ -961,8 +961,8 @@
 
   // 弹窗内 Tag 统一小号
   .ant-tag {
-    font-size: 11px;
-    padding: 0 6px;
+    font-size: var(--font-xs);
+    padding: 0 var(--pad-xs);
     line-height: 18px;
     border-radius: 4px;
   }
@@ -972,14 +972,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--pad-sm, 8px);
+  gap: var(--pad-sm, var(--pad-sm));
 }
 
 .skill-detail-modal-footer-left,
 .skill-detail-modal-footer-right {
   display: flex;
   align-items: center;
-  gap: var(--pad-sm, 8px);
+  gap: var(--pad-sm, var(--pad-sm));
 }
 
 /* SkillStoreView legacy create/import surfaces migrated out of views.css. */
@@ -987,8 +987,8 @@
 .create-mode-bar .store-tab {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm) var(--pad-lg);
   font-size: var(--font-sm);
   font-weight: 500;
   color: var(--text-muted);
@@ -1020,15 +1020,15 @@
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--panel);
-  margin: 0 0 12px;
+  margin: 0 0 var(--pad-md);
   overflow: hidden;
 }
 
 .create-panel-head {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: var(--pad-sm);
+  padding: var(--pad-md) var(--pad-lg);
   border-bottom: 1px solid var(--border);
   background: var(--bg-soft);
 }
@@ -1056,14 +1056,14 @@
 .create-panel-title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13.5px;
+  gap: var(--pad-xs);
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--text-strong);
 }
 
 .create-panel-desc {
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.55;
   color: var(--text-muted);
 }
@@ -1071,13 +1071,13 @@
 .create-panel-badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 5px;
+  gap: var(--pad-3xs);
+  margin-top: var(--pad-xs);
 }
 
 /* 头部右侧的次要说明文字 */
 .create-panel-hint-text {
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   color: var(--text-faint);
   white-space: nowrap;
 }
@@ -1086,7 +1086,7 @@
 .create-panel-head-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   flex-shrink: 0;
   margin-left: auto;
 }
@@ -1094,8 +1094,8 @@
 .create-panel-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 14px;
+  gap: var(--pad-lg);
+  padding: var(--pad-lg);
 }
 
 /* body 直接承载列表时去掉内边距，让行分隔线铺满卡片 */
@@ -1108,8 +1108,8 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 14px;
+  gap: var(--pad-sm);
+  padding: var(--pad-md) var(--pad-lg);
   border-top: 1px solid var(--border);
   background: var(--bg-soft);
 }
@@ -1117,13 +1117,13 @@
 .create-panel-form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .create-panel-input-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .create-panel-input {
@@ -1134,49 +1134,49 @@
 /* 只读的格式 / 结构示例 */
 .create-panel-code {
   margin: 0;
-  padding: 12px 14px;
+  padding: var(--pad-md) var(--pad-lg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-sunken);
   color: var(--text);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   line-height: 1.6;
   white-space: pre;
   overflow-x: auto;
 }
 
 .create-panel-field-title {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  margin-bottom: var(--pad-xs);
 }
 
 .create-panel-footnote {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 14px;
+  padding: var(--pad-sm) var(--pad-lg);
   border-top: 1px solid var(--border);
   color: var(--text-faint);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.6;
   word-break: break-all;
 }
 
 .create-panel-empty {
-  padding: 20px 14px;
+  padding: var(--pad-xl) var(--pad-lg);
   text-align: center;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-faint);
 }
 
 .local-skill-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 .local-skill-list {
   // 用 flex 纵向列表而非 grid 单列：grid 的 auto 轨道会被行的 min-content
@@ -1189,7 +1189,7 @@
 }
 .local-skill-row {
   min-height: 48px;
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   transition: background 0.12s;
   // 行宽由列表宽度决定（align-items:stretch），任何内容都不许把行撑宽
   min-width: 0;
@@ -1204,13 +1204,13 @@
   gap: 1px;
 }
 .local-skill-name {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
   line-height: 18px;
   color: var(--text-strong);
 }
 .local-skill-desc {
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 17px;
   color: var(--text-muted);
 }
@@ -1220,7 +1220,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 148px;
   margin-left: auto;
 }
@@ -1289,7 +1289,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -1298,8 +1298,8 @@
 .local-skill-filter-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
   border-bottom: 1px solid var(--border);
   background: var(--bg-soft);
 }
@@ -1307,40 +1307,40 @@
 .create-skill-layout {
   display: flex;
   flex-direction: column;
-  gap: var(--pad-sm, 8px);
+  gap: var(--pad-sm, var(--pad-sm));
   flex: 1;
   min-height: 0;
-  padding: 8px var(--pad-lg, 16px);
+  padding: var(--pad-sm) var(--pad-lg, var(--pad-lg));
   overflow-y: auto;
 }
 
 .create-mode-bar {
   display: flex;
-  gap: 4px;
-  padding-bottom: 12px;
+  gap: var(--pad-3xs);
+  padding-bottom: var(--pad-md);
   border-bottom: 1px solid var(--border);
 }
 
 .create-skill-form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .create-form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .form-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .form-label {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
   color: var(--text);
 }
@@ -1351,8 +1351,8 @@
 
 .form-input,
 .form-select {
-  padding: 8px 10px;
-  font-size: 13px;
+  padding: var(--pad-sm) var(--pad-sm);
+  font-size: var(--font-base);
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1381,8 +1381,8 @@
 
 .form-textarea {
   width: 100%;
-  padding: 10px 12px;
-  font-size: 13px;
+  padding: var(--pad-sm) var(--pad-md);
+  font-size: var(--font-base);
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
@@ -1405,11 +1405,11 @@
 .form-textarea-lg {
   min-height: 200px;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12.5px;
+  font-size: var(--font-base);
 }
 
 .form-hint {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   margin-top: 2px;
 }
@@ -1424,7 +1424,7 @@
 .team-market-tab {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--pad-md);
   min-height: 0;
 }
 
@@ -1440,10 +1440,10 @@
 
 .team-market-badge {
   display: inline-block;
-  margin-left: 6px;
-  padding: 1px 6px;
+  margin-left: var(--pad-xs);
+  padding: 1px var(--pad-xs);
   border-radius: var(--r-xs, 4px);
-  font-size: 11px;
+  font-size: var(--font-xs);
   vertical-align: 1px;
 }
 
@@ -1464,15 +1464,15 @@
 
 .team-market-meta {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-faint);
 }
 
 .team-publish-form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 4px 0;
+  gap: var(--pad-md);
+  padding: var(--pad-3xs) 0;
 }
 
 .team-publish-hint {
@@ -1485,13 +1485,13 @@
 .team-publish-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
   font-size: var(--font-sm, 12px);
   color: var(--text-muted);
 }
 
 .team-publish-error {
-  padding: 8px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   border-radius: var(--r-sm, 6px);
   font-size: var(--font-sm, 12px);
   color: var(--danger);
@@ -1502,14 +1502,14 @@
 .team-publish-result {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 4px 0;
+  gap: var(--pad-sm);
+  padding: var(--pad-3xs) 0;
 }
 
 .team-publish-result-row {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
   font-size: var(--font-sm, 12px);
 
   span {
@@ -1529,16 +1529,16 @@
 }
 
 .team-publish-skipped {
-  margin-top: 4px;
-  padding: 8px 12px;
+  margin-top: var(--pad-3xs);
+  padding: var(--pad-sm) var(--pad-md);
   border-radius: var(--r-sm, 6px);
   background: var(--bg-soft, rgba(128, 128, 128, 0.08));
   font-size: var(--font-sm, 12px);
   color: var(--text-muted);
 
   ul {
-    margin: 4px 0 0;
-    padding-left: 18px;
+    margin: var(--pad-3xs) 0 0;
+    padding-left: var(--pad-xl);
   }
 
   li {
@@ -1556,7 +1556,7 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin-bottom: 6px;
+  margin-bottom: var(--pad-xs);
   padding: 2px;
   border-radius: var(--r-sm, 6px);
   background: var(--bg-soft, rgba(0, 0, 0, 0.04));
@@ -1566,12 +1566,12 @@
   appearance: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
-  padding: 3px 12px;
+  font-size: var(--font-sm);
+  padding: var(--pad-3xs) var(--pad-md);
   border-radius: var(--r-xs, 4px);
   cursor: pointer;
   transition:
@@ -1598,11 +1598,11 @@
   min-height: 260px;
   max-height: 460px;
   overflow: auto;
-  padding: 12px 14px;
+  padding: var(--pad-md) var(--pad-lg);
   border: 1px solid var(--border);
   border-radius: var(--r-md, 8px);
   background: var(--panel);
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.72;
   color: var(--text);
   word-break: break-word;

@@ -1,29 +1,29 @@
 .team-p1-panel {
-  padding: 4px 14px;
+  padding: var(--pad-3xs) var(--pad-lg);
   border-bottom: 1px solid var(--border);
 
   // 状态提示（加载/错误/空态）对齐侧栏 .inspector-muted
   > p {
-    margin: 4px 0;
+    margin: var(--pad-3xs) 0;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 
   .team-p1-panel-no-content {
     text-align: center;
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 }
 .team-p1-panel header,
 .team-p1-panel article,
 .team-p1-panel__columns {
   display: flex;
-  gap: 10px;
+  gap: var(--pad-sm);
   align-items: center;
   h4 {
-    margin: 4px 0;
+    margin: var(--pad-3xs) 0;
     color: var(--text-strong);
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 650;
   }
 }
@@ -33,7 +33,7 @@
   // 面板标题对齐侧栏统一小节标题（.inspector-section h4）
   strong {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     font-weight: 600;
     letter-spacing: 0.07em;
     text-transform: uppercase;
@@ -41,7 +41,7 @@
 }
 .team-p1-panel__columns {
   align-items: flex-start;
-  margin-top: 10px;
+  margin-top: var(--pad-sm);
 }
 .team-p1-panel__columns > div {
   flex: 1;
@@ -49,18 +49,18 @@
 }
 .team-p1-panel article {
   flex-wrap: wrap;
-  padding: 8px 0;
+  padding: var(--pad-sm) 0;
   border-top: 1px solid var(--border);
 }
 .team-p1-panel article strong {
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 .team-p1-panel article span {
   flex: 1 1 100%;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .team-p1-panel button {
   cursor: pointer;

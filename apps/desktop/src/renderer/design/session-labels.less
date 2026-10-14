@@ -73,18 +73,18 @@ html[data-theme='dark'],
 .session-label-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   box-sizing: border-box; // 高度可被子容器（如悬浮卡标题行）精确约束以做中心对齐
   max-width: 100%;
-  padding: 0 6px;
+  padding: 0 var(--pad-xs);
   color: var(--session-label-color, var(--text-muted));
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1;
   white-space: nowrap;
   background: color-mix(in srgb, var(--session-label-color, var(--text-muted)) 12%, transparent);
   border: 1px solid
     color-mix(in srgb, var(--session-label-color, var(--text-muted)) 34%, transparent);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
 }
 
 .session-label-tag .session-label-dot {

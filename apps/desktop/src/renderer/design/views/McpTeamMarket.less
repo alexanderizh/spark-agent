@@ -2,18 +2,18 @@
 // 复用 McpView 的间距/圆角 token，窄屏下列表项纵向堆叠。
 
 .mcp-team-section {
-  margin: 0 0 16px;
+  margin: 0 0 var(--pad-lg);
   border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.2));
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: var(--color-bg-1, transparent);
   overflow: hidden;
 
   &--hint {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    font-size: 12px;
+    gap: var(--pad-sm);
+    padding: var(--pad-sm) var(--pad-lg);
+    font-size: var(--font-sm);
     opacity: 0.75;
   }
 }
@@ -21,15 +21,15 @@
 .mcp-team-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
-  padding: 10px 14px;
+  padding: var(--pad-sm) var(--pad-lg);
   border: none;
   background: transparent;
   cursor: pointer;
   text-align: left;
   color: inherit;
-  font-size: 13px;
+  font-size: var(--font-base);
 
   &:hover {
     background: var(--color-bg-2, rgba(128, 128, 128, 0.06));
@@ -47,20 +47,20 @@
 
 .mcp-team-count {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--font-sm);
   opacity: 0.6;
 }
 
 .mcp-team-caret {
-  font-size: 11px;
+  font-size: var(--font-xs);
   opacity: 0.6;
 }
 
 .mcp-team-badge {
   display: inline-block;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 11px;
+  padding: 1px var(--pad-sm);
+  border-radius: var(--r-pill);
+  font-size: var(--font-xs);
   line-height: 18px;
 
   &--update {
@@ -75,32 +75,32 @@
 }
 
 .mcp-team-body {
-  padding: 4px 14px 12px;
+  padding: var(--pad-3xs) var(--pad-lg) var(--pad-md);
 }
 
 .mcp-team-empty {
-  padding: 8px 0;
-  font-size: 12px;
+  padding: var(--pad-sm) 0;
+  font-size: var(--font-sm);
   opacity: 0.65;
 }
 
 .mcp-team-error {
-  padding: 8px 0;
-  font-size: 12px;
+  padding: var(--pad-sm) 0;
+  font-size: var(--font-sm);
   color: #ff4d4f;
 }
 
 .mcp-team-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .mcp-team-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: var(--pad-md);
+  padding: var(--pad-sm) var(--pad-md);
   border: 1px solid var(--dividing-line-1, rgba(128, 128, 128, 0.15));
   border-radius: 8px;
 
@@ -117,7 +117,7 @@
 .mcp-team-item-name {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -125,14 +125,14 @@
 }
 
 .mcp-team-item-version {
-  font-size: 11px;
+  font-size: var(--font-xs);
   opacity: 0.6;
   font-weight: 400;
 }
 
 .mcp-team-item-desc {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   opacity: 0.65;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -143,7 +143,7 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 // ─── 发布弹窗 ───────────────────────────────────────────────────────────
@@ -151,12 +151,12 @@
 .mcp-team-publish-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--pad-lg);
 }
 
 .mcp-team-publish-hint {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.6;
   opacity: 0.85;
 }
@@ -164,8 +164,8 @@
 .mcp-team-publish-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--pad-xs);
+  font-size: var(--font-sm);
 
   > span {
     opacity: 0.7;
@@ -173,25 +173,25 @@
 }
 
 .mcp-team-publish-error {
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border-radius: 6px;
   background: rgba(255, 77, 79, 0.1);
   color: #ff4d4f;
-  font-size: 12px;
+  font-size: var(--font-sm);
   word-break: break-all;
 }
 
 .mcp-team-publish-result {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .mcp-team-publish-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 13px;
+  gap: var(--pad-md);
+  font-size: var(--font-base);
 
   > span:first-child {
     flex-shrink: 0;
@@ -205,10 +205,10 @@
 }
 
 .mcp-team-publish-warn {
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border-radius: 6px;
   background: rgba(250, 173, 20, 0.12);
   color: #d48806;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.6;
 }

@@ -51,7 +51,7 @@
   transform: translateY(-50%);
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--text-muted);
   pointer-events: none;
   display: inline-flex;
@@ -116,7 +116,7 @@ button.session-terminal-indicator-btn {
   &:focus-visible {
     outline: 1px solid var(--primary);
     outline-offset: 1px;
-    border-radius: 3px;
+    border-radius: var(--r-xs);
   }
 }
 
@@ -127,7 +127,7 @@ button.session-terminal-indicator-btn {
   min-width: 10px;
   height: 10px;
   padding: 0 2px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--bg-elevated);
   color: inherit;
   font-size: 8px;
@@ -168,7 +168,7 @@ button.session-terminal-indicator-btn {
   width: 16px;
   height: 16px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   line-height: 1;
   flex-shrink: 0;
   font-size: var(--font-xs);
@@ -205,7 +205,7 @@ button.session-terminal-indicator-btn {
   justify-content: center;
   min-width: 5px;
   height: 5px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--info);
   color: #fff;
   font-size: 7.5px;
@@ -343,9 +343,9 @@ button.session-terminal-indicator-btn {
 
 .session-date-marker {
   height: 11px;
-  margin: 0 10px -1px 8px;
+  margin: 0 var(--pad-sm) -1px var(--pad-sm);
   color: color-mix(in srgb, var(--sidebar-text, var(--text)) 42%, transparent);
-  font-size: 9.5px;
+  font-size: var(--font-2xs);
   font-weight: 500;
   line-height: 11px;
   font-variant-numeric: tabular-nums;
@@ -380,7 +380,7 @@ button.session-terminal-indicator-btn {
   justify-content: space-between;
   min-height: 28px;
   padding: 0px 0px 0px 0px;
-  margin: 0 3px 1px 6px;
+  margin: 0 var(--pad-3xs) 1px var(--pad-xs);
   color: var(--text-muted);
   background: transparent;
 }
@@ -388,7 +388,7 @@ button.session-terminal-indicator-btn {
 .sidebar-project-toolbar-label {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   min-width: 0;
   color: var(--text-muted);
   font-size: var(--font-sm);
@@ -403,7 +403,7 @@ button.session-terminal-indicator-btn {
 .sidebar-project-toolbar-actions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   opacity: 1;
   pointer-events: auto;
   transform: none;
@@ -506,7 +506,7 @@ button.session-terminal-indicator-btn {
 .sidebar-empty-state {
   justify-content: center;
   min-height: 240px;
-  padding: 36px 18px 26px;
+  padding: var(--pad-3xl) var(--pad-xl) 26px;
   gap: 0;
 }
 
@@ -532,18 +532,18 @@ button.session-terminal-indicator-btn {
 }
 
 .sidebar-empty-state .empty-title {
-  margin-top: 15px;
-  font-size: 15px;
+  margin-top: var(--pad-lg);
+  font-size: var(--font-lg);
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--text);
 }
 
 .sidebar-empty-state .empty-desc {
-  margin-top: 20px;
+  margin-top: var(--pad-xl);
   max-width: 210px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.65;
   text-wrap: pretty;
 }
@@ -556,7 +556,7 @@ button.session-terminal-indicator-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   max-width: none;
   white-space: nowrap;
 }
@@ -565,7 +565,7 @@ button.session-terminal-indicator-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   margin: 0;
   padding: 0;
   color: color-mix(in srgb, var(--text) 86%, var(--text-muted));
@@ -614,7 +614,7 @@ button.session-terminal-indicator-btn {
   --empty-muted: color-mix(in srgb, var(--text) 62%, var(--panel));
   align-items: stretch;
   min-height: 280px;
-  padding: 24px 14px 20px;
+  padding: var(--pad-2xl) var(--pad-lg) var(--pad-xl);
   text-align: left;
 }
 
@@ -643,37 +643,37 @@ button.session-terminal-indicator-btn {
 }
 
 .sidebar-empty-state--projects .empty-title {
-  margin-top: 10px;
+  margin-top: var(--pad-sm);
   text-align: center;
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 650;
 }
 
 .sidebar-empty-state--projects .empty-desc {
   align-self: center;
-  margin-top: 4px;
+  margin-top: var(--pad-3xs);
   max-width: 232px;
   color: var(--empty-muted);
   text-align: center;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.45;
 }
 
 .empty-state-actions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
   width: 100%;
-  margin-top: 12px;
+  margin-top: var(--pad-md);
 }
 
 .empty-action-card {
   display: flex;
   min-height: 46px;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   width: 100%;
-  padding: 7px 8px;
+  padding: var(--pad-sm) var(--pad-sm);
   border: 1px solid var(--empty-line);
   border-radius: 8px;
   color: var(--text);
@@ -734,7 +734,7 @@ button.session-terminal-indicator-btn {
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   color: var(--empty-accent);
   background: color-mix(in srgb, var(--empty-accent) 11%, var(--empty-surface));
 }
@@ -754,7 +754,7 @@ button.session-terminal-indicator-btn {
 
 .empty-action-card__copy strong {
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 620;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -764,7 +764,7 @@ button.session-terminal-indicator-btn {
 .empty-action-card__copy small {
   overflow: hidden;
   color: var(--empty-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -794,12 +794,12 @@ button.session-terminal-indicator-btn {
 .empty-drop-hint {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
-  margin-top: 8px;
-  padding: 7px 8px;
+  margin-top: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
   border: 1px dashed var(--empty-line);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   color: var(--empty-muted);
   background: transparent;
 }
@@ -811,7 +811,7 @@ button.session-terminal-indicator-btn {
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   color: var(--empty-muted);
   background: var(--empty-surface-muted);
 }
@@ -825,13 +825,13 @@ button.session-terminal-indicator-btn {
 
 .empty-drop-hint strong {
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 580;
   line-height: 1.3;
 }
 
 .empty-drop-hint small {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.35;
 }
 
@@ -940,7 +940,7 @@ button.session-terminal-indicator-btn {
   display: flex;
   flex-direction: column;
   gap: var(--pad-lg);
-  padding: 12px 0;
+  padding: var(--pad-md) 0;
 }
 
 .project-create-modal .field {
@@ -1136,16 +1136,16 @@ button.session-terminal-indicator-btn {
 .sidebar-search-bar {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 4px 8px 3px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-3xs) var(--pad-sm) var(--pad-3xs);
 }
 
 .sidebar-search-input-wrap {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   min-height: 26px;
-  padding: 0 5px 0 8px;
+  padding: 0 var(--pad-xs) 0 var(--pad-sm);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   color: var(--text-faint);
@@ -1178,9 +1178,9 @@ button.session-terminal-indicator-btn {
 }
 
 .sidebar-search-count {
-  padding: 0 4px 1px;
+  padding: 0 var(--pad-3xs) 1px;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.2;
 }
 
@@ -1192,7 +1192,7 @@ button.session-terminal-indicator-btn {
   border-radius: 12px;
 
   .ant-popover-container {
-    padding: 12px;
+    padding: var(--pad-md);
     background: var(--panel-elev, var(--panel, var(--bg-soft)));
     border: 1px solid var(--border-subtle);
     border-radius: 12px;
@@ -1232,8 +1232,8 @@ button.session-terminal-indicator-btn {
 .session-hover-card-title {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  margin-bottom: 4px;
+  gap: var(--pad-xs);
+  margin-bottom: var(--pad-3xs);
   color: var(--text);
   font-size: @hover-card-title-font-size;
   font-weight: 600;
@@ -1264,7 +1264,7 @@ button.session-terminal-indicator-btn {
   flex: 1 1 auto; // 与标签同排：占满剩余宽度，让出标签自身宽度
   width: auto;
   min-width: 0;
-  padding: 1px 6px;
+  padding: 1px var(--pad-xs);
   font-size: @hover-card-title-font-size;
   font-weight: 600;
   line-height: @hover-card-title-line-height;
@@ -1297,14 +1297,14 @@ button.session-terminal-indicator-btn {
   flex-direction: column;
   gap: 2px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.6;
 }
 
 .session-hover-card-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
 
   > svg {

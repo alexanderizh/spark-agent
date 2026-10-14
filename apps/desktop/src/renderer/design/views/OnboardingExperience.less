@@ -1,7 +1,7 @@
 .experience-shell.onboarding-shell {
   grid-template-columns: minmax(260px, 40%) minmax(0, 1fr);
-  gap: 12px;
-  padding: 46px 14px 14px;
+  gap: var(--pad-md);
+  padding: 46px var(--pad-lg) var(--pad-lg);
   background: var(--bg);
 }
 .experience-shell::before {
@@ -15,7 +15,7 @@
   position: relative;
   overflow: hidden;
   border-radius: 12px;
-  padding: 30px 28px 20px;
+  padding: 30px 28px var(--pad-xl);
   background:
     radial-gradient(ellipse at 17% 44%, #bddcfa65, transparent 46%),
     radial-gradient(ellipse at 85% 35%, #f9c8b560, transparent 48%),
@@ -24,8 +24,8 @@
 .experience-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 20px;
+  gap: var(--pad-sm);
+  font-size: var(--font-xl);
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -58,21 +58,21 @@
   line-height: 1.25;
   letter-spacing: -1.5px;
   font-weight: 500;
-  margin: 0 0 16px;
+  margin: 0 0 var(--pad-lg);
 }
 .experience-story p {
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.9;
   color: var(--text-weight);
-  margin: 0 0 24px;
+  margin: 0 0 var(--pad-2xl);
 }
 .experience-banner footer {
   display: flex;
   justify-content: space-between;
   border-top: 1px solid var(--divider);
-  padding-top: 18px;
+  padding-top: var(--pad-xl);
   color: var(--text-faint);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   letter-spacing: 0.08em;
 }
 .experience-shell .onboarding-card {
@@ -80,7 +80,7 @@
 }
 .experience-shell .onboarding-copy {
   height: 100%;
-  padding: 12px clamp(22px, 4vw, 60px) 20px;
+  padding: var(--pad-md) clamp(22px, 4vw, 60px) var(--pad-xl);
 }
 .experience-shell .onboarding-copy-inner {
   padding-bottom: 0;
@@ -90,26 +90,26 @@
   font-size: 28px;
   line-height: 1.3;
   font-weight: 550;
-  margin: 0 0 12px;
+  margin: 0 0 var(--pad-md);
 }
 .experience-shell .lead {
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.8;
   color: var(--text-weight);
-  margin-bottom: 24px;
+  margin-bottom: var(--pad-2xl);
 }
 .experience-progress {
   display: flex;
-  gap: 24px;
-  margin: 0 0 18px;
+  gap: var(--pad-2xl);
+  margin: 0 0 var(--pad-xl);
   padding: 0;
   list-style: none;
 }
 .experience-progress li {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
+  gap: var(--pad-sm);
+  font-size: var(--font-xs);
   color: var(--text-faint);
 }
 .experience-progress li span {
@@ -119,7 +119,7 @@
   height: 22px;
   border: 1px solid var(--border-strong);
   border-radius: 50%;
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 .experience-progress .active {
   color: var(--text-strong);
@@ -132,17 +132,17 @@
 .experience-navigation {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 24px;
+  margin-bottom: var(--pad-2xl);
 }
 .experience-navigation button {
   background: none;
   border: 0;
   color: var(--text-weight);
-  font-size: 12px;
-  padding: 4px 0;
+  font-size: var(--font-sm);
+  padding: var(--pad-3xs) 0;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   cursor: pointer;
 }
 .experience-navigation button:disabled {
@@ -152,14 +152,14 @@
 .experience-choices {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--pad-md);
 }
 .experience-choice {
   position: relative;
   text-align: left;
   border: 1px solid var(--border-strong);
   border-radius: 12px;
-  padding: 18px;
+  padding: var(--pad-xl);
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
@@ -180,12 +180,12 @@
   display: block;
 }
 .experience-choice strong {
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 550;
-  margin: 12px 0 7px;
+  margin: var(--pad-md) 0 var(--pad-sm);
 }
 .experience-choice small {
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.6;
   color: var(--text-weight);
 }
@@ -226,15 +226,15 @@
 .experience-hint {
   margin: 22px 0;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .experience-shell .experience-continue {
   margin-top: auto;
   justify-content: flex-end;
-  padding-top: 20px;
+  padding-top: var(--pad-xl);
 }
 .experience-shell .onboarding-card .ant-btn {
-  border-radius: 9px;
+  border-radius: var(--r-md);
 }
 .experience-shell .onboarding-card .ant-btn-primary {
   background: var(--text-strong);
@@ -260,13 +260,13 @@ html[data-theme='dark'] .experience-banner {
     grid-template-columns: 30% minmax(0, 1fr);
   }
   .experience-banner {
-    padding: 24px 18px;
+    padding: var(--pad-2xl) var(--pad-xl);
   }
   .experience-story h2 {
     font-size: 27px;
   }
   .experience-progress {
-    gap: 12px;
+    gap: var(--pad-md);
   }
 }
 @media (max-width: 680px) {
@@ -286,16 +286,16 @@ html[data-theme='dark'] .experience-banner {
 }
 .experience-assistant {
   color: var(--text-weight);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .experience-template-options {
-  margin-bottom: 20px;
+  margin-bottom: var(--pad-xl);
   color: var(--text-weight);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .experience-template-options summary {
   cursor: pointer;
-  padding: 6px 0;
+  padding: var(--pad-xs) 0;
 }
 /* 第二步「选择你的 AI 模型」：复用第一步卡片网格，三张卡片与用途卡片同构 */
 .source-choice-primary {
@@ -303,7 +303,7 @@ html[data-theme='dark'] .experience-banner {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 18px;
+  gap: var(--pad-xl);
   cursor: default;
 }
 .source-choice-primary:hover {
@@ -315,27 +315,27 @@ html[data-theme='dark'] .experience-banner {
 .source-choice-primary .source-primary-title {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin-bottom: 5px;
+  gap: var(--pad-sm);
+  margin-bottom: var(--pad-xs);
 }
 .source-choice-primary .source-primary-title strong {
   color: var(--text-strong);
-  font-size: 15px;
+  font-size: var(--font-lg);
   margin: 0;
 }
 .source-choice-primary .source-primary-title em {
-  padding: 3px 7px;
-  border-radius: 5px;
+  padding: var(--pad-3xs) var(--pad-sm);
+  border-radius: var(--r-sm);
   color: var(--text-weight);
   background: var(--hover);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-style: normal;
   font-weight: 700;
   white-space: nowrap;
 }
 .source-choice-primary .source-primary-copy > span {
   color: var(--text-weight);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .source-choice-primary .ant-btn {
   min-width: 124px;
@@ -361,7 +361,7 @@ html[data-theme='dark'] .experience-banner {
 @media (max-width: 680px) {
   .source-choice-primary {
     grid-template-columns: auto minmax(0, 1fr);
-    gap: 14px;
+    gap: var(--pad-lg);
   }
   .source-choice-primary .ant-btn {
     grid-column: 1 / -1;
@@ -374,5 +374,5 @@ html[data-theme='dark'] .experience-banner {
 }
 .experience-shell .choice-card {
   box-shadow: none;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
 }

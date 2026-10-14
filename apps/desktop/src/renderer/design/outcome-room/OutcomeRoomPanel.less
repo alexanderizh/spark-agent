@@ -1,10 +1,10 @@
 .outcome-room {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--pad-md);
   min-width: 0;
-  padding: 12px;
-  margin: 8px 0 14px;
+  padding: var(--pad-md);
+  margin: var(--pad-sm) 0 var(--pad-lg);
   color: var(--text);
   border-bottom: 1px solid var(--border);
 
@@ -17,7 +17,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .outcome-room-heading {
@@ -25,9 +25,9 @@
 
   h3 {
     // 对齐侧栏统一小节标题（.inspector-section h4 / .config-panel-header）
-    margin: 2px 0 3px;
+    margin: 2px 0 var(--pad-3xs);
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     font-weight: 600;
     line-height: 1.35;
     letter-spacing: 0.07em;
@@ -41,7 +41,7 @@
   p {
     margin: 0;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
     line-height: 1.55;
   }
 }
@@ -49,7 +49,7 @@
 .outcome-room-kicker {
   display: block;
   color: var(--primary);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   letter-spacing: 0.14em;
 }
@@ -92,7 +92,7 @@
 .outcome-room-overview {
   display: grid;
   grid-template-columns: minmax(118px, 0.8fr) minmax(0, 2fr);
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 
   dl {
@@ -113,20 +113,20 @@
     justify-content: center;
     min-width: 0;
     min-height: 48px;
-    padding: 7px 9px;
+    padding: var(--pad-sm) var(--pad-sm);
     background: var(--bg-soft);
   }
 
   dt {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
   }
 
   dd {
     min-width: 0;
     margin: 2px 0 0;
     color: var(--text-strong);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 650;
     overflow-wrap: anywhere;
   }
@@ -135,9 +135,9 @@
 .outcome-room-health {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--pad-sm);
   min-width: 0;
-  padding: 10px;
+  padding: var(--pad-sm);
   border-left: 3px solid var(--primary);
   background: var(--bg-soft);
 
@@ -151,13 +151,13 @@
   small {
     display: block;
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
   }
 
   strong {
     display: block;
     margin-top: 2px;
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 }
 
@@ -184,19 +184,19 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--pad-sm);
 
   h4 {
     margin: 0;
     color: var(--text-strong);
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 650;
   }
 
   div > span,
   .outcome-room-sync {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     line-height: 1.45;
   }
 }
@@ -208,7 +208,7 @@
 .outcome-room-ledger-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -236,36 +236,36 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 11px 4px;
+  padding: var(--pad-md) var(--pad-3xs);
   color: var(--text-faint);
   border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg) 55%, var(--bg-soft));
 
   span {
-    padding: 2px 5px;
+    padding: 2px var(--pad-xs);
     font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: var(--font-2xs);
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
   }
 }
 
 .outcome-room-record-body {
   min-width: 0;
-  padding: 10px;
+  padding: var(--pad-sm);
 }
 
 .outcome-room-record-topline {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 
   code {
     min-width: 0;
     color: var(--text-strong);
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 650;
     overflow-wrap: anywhere;
   }
@@ -275,15 +275,15 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 4px;
+  gap: var(--pad-3xs);
 
   span {
-    padding: 2px 5px;
+    padding: 2px var(--pad-xs);
     color: var(--text-muted);
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--panel);
-    font-size: 9px;
+    font-size: var(--font-2xs);
     white-space: nowrap;
   }
 
@@ -299,52 +299,52 @@
 
 .outcome-room-record pre {
   max-height: 148px;
-  margin: 9px 0 8px;
+  margin: var(--pad-sm) 0 var(--pad-sm);
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--text-strong);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.55;
 }
 
 .outcome-room-record-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 9px;
+  gap: var(--pad-3xs) var(--pad-sm);
   color: var(--text-faint);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   overflow-wrap: anywhere;
 }
 
 .outcome-room-record-reason {
-  margin: 7px 0 0;
+  margin: var(--pad-sm) 0 0;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.5;
 }
 
 .outcome-room-record-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 9px;
+  gap: var(--pad-xs);
+  margin-top: var(--pad-sm);
 
   button,
   .outcome-room-secondary {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: var(--pad-3xs);
     min-height: 32px;
-    padding: 5px 8px;
+    padding: var(--pad-xs) var(--pad-sm);
     color: var(--text-muted);
     border: 1px solid var(--border);
     border-radius: var(--r-sm);
     background: var(--panel);
     cursor: pointer;
-    font-size: 10px;
+    font-size: var(--font-2xs);
     transition:
       color 160ms ease,
       border-color 160ms ease,
@@ -373,10 +373,10 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-height: 112px;
   justify-content: center;
-  padding: 14px;
+  padding: var(--pad-lg);
   color: var(--text-muted);
   border: 1px dashed var(--border);
   border-radius: var(--r-md);
@@ -391,11 +391,11 @@
 
   strong {
     color: var(--text-strong);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
   p {
     margin: 0;
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.55;
   }
 }
@@ -403,12 +403,12 @@
 .outcome-room-inline-error {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 8px;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm) var(--pad-sm);
   color: var(--danger);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
   border-radius: var(--r-sm);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .outcome-room-skeleton {
@@ -425,7 +425,7 @@
 
 .outcome-room-secondary {
   min-height: 34px;
-  padding: 6px 10px;
+  padding: var(--pad-xs) var(--pad-sm);
   color: var(--text-strong);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -436,18 +436,18 @@
 .outcome-room-correction-form {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: var(--pad-sm);
 
   label {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 
   textarea,
   input {
     width: 100%;
     box-sizing: border-box;
-    padding: 8px 9px;
+    padding: var(--pad-sm) var(--pad-sm);
     color: var(--text-strong);
     border: 1px solid var(--border-strong);
     border-radius: var(--r-sm);
@@ -478,7 +478,7 @@
 
 @media (max-width: 768px) {
   .outcome-room {
-    padding: 10px;
+    padding: var(--pad-sm);
   }
 
   .outcome-room-overview dl {

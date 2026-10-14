@@ -63,7 +63,7 @@
   align-items: center;
   justify-content: center;
   height: 136px;
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
   transition:
     opacity 0.2s ease,
     filter 0.2s ease;
@@ -137,7 +137,7 @@
 .voice-hud-grid {
   display: grid;
   grid-template-columns: repeat(4, 10px);
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex: none;
   color: var(--voice-viz);
 
@@ -199,17 +199,17 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   min-width: 0;
-  padding: 4px 18px 6px;
+  padding: var(--pad-3xs) var(--pad-xl) var(--pad-xs);
   text-align: center;
 }
 
 .voice-assistant-hud-label {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--pad-xs);
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text-strong, var(--text));
   line-height: 1.3;
@@ -225,7 +225,7 @@
 }
 
 .voice-assistant-hud-partial {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: color-mix(in srgb, var(--text) 64%, transparent);
   line-height: 1.35;
   max-width: 100%;
@@ -268,13 +268,13 @@
   width: 100%;
   max-width: 240px;
   margin-top: 2px;
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border-radius: 8px;
   background: color-mix(in srgb, var(--text) 5%, transparent);
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
+  gap: var(--pad-3xs);
   text-align: left;
   animation: voice-hud-queue-in 0.16s ease both;
 }
@@ -299,8 +299,8 @@
 .voice-hud-queue-prefix {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 11px;
+  gap: var(--pad-xs);
+  font-size: var(--font-xs);
   color: var(--text-muted);
   line-height: 1;
 }
@@ -308,10 +308,10 @@
 // 徽标 ×N（≥2 才渲染）：主色软底小胶囊
 .voice-hud-queue-badge {
   font-style: normal;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1;
-  padding: 2px 5px;
-  border-radius: 999px;
+  padding: 2px var(--pad-xs);
+  border-radius: var(--r-pill);
   background: var(--primary-soft);
   color: var(--primary);
   animation: voice-hud-badge-pop 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.35) 1 both;
@@ -329,7 +329,7 @@
 
 .voice-hud-queue-text {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text);
   line-height: 1.35;
   max-width: 100%;
@@ -342,7 +342,7 @@
 }
 
 .voice-hud-queue-hint {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   line-height: 1;
 }
@@ -354,7 +354,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--pad-xs);
   animation: voice-hud-queue-in 0.12s ease both;
 }
 
@@ -366,7 +366,7 @@
   height: 26px;
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: transparent;
   color: color-mix(in srgb, var(--text) 64%, transparent);
   cursor: pointer;
@@ -479,20 +479,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 0 16px;
+  padding: var(--pad-sm) 0 var(--pad-lg);
 }
 
 .voice-assistant-hud-stop {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   height: 30px;
-  padding: 0 16px;
+  padding: 0 var(--pad-lg);
   border-radius: 15px;
   border: 1px solid color-mix(in srgb, var(--danger) 36%, transparent);
   background: transparent;
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
@@ -544,7 +544,7 @@
 .voice-settings-label {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 
@@ -552,7 +552,7 @@
   flex: none;
   color: var(--text-muted);
   cursor: help;
-  transition: color 0.15s ease;
+  transition: color var(--motion-fast) ease;
 
   &:hover {
     color: var(--text);
@@ -620,8 +620,8 @@
   display: flex;
   flex-direction: column;
   // 10px 行距：真机反馈 6px 行距控件贴太近（27px 控件高下呼吸感不足）
-  gap: 10px;
-  padding: 10px 14px 8px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-lg) var(--pad-sm);
   border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
   background: transparent;
 }
@@ -629,7 +629,7 @@
 .voice-hud-tts-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 
@@ -637,7 +637,7 @@
 .voice-hud-tts-row-label {
   flex: none;
   width: 26px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1;
   color: var(--text-muted);
 }
@@ -667,7 +667,7 @@
     height: 100%;
     // 左 11px 与胶囊内边距一致；右侧 26px = 9px 箭头位 + ≥8px 间隙，
     // 保证超长值省略号不贴箭头
-    padding: 0 26px 0 11px;
+    padding: 0 26px 0 var(--pad-md);
     background: transparent;
   }
 
@@ -676,7 +676,7 @@
   .ant-select-selection-wrap {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--pad-xs);
   }
 
   // 值 12px 同正文色；v6 选中项文案容器 .ant-select-content（v5 selection-item 兜底）
@@ -684,7 +684,7 @@
   .ant-select-selection-item {
     min-width: 0;
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--font-sm);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -695,7 +695,7 @@
   .ant-select-arrow {
     right: 9px;
     color: var(--text-muted);
-    transition: transform 0.15s ease;
+    transition: transform var(--motion-fast) ease;
 
     svg {
       display: block;
@@ -714,7 +714,7 @@
 // 胶囊内嵌标签（Select prefix 渲染）：11px 弱化色，flex 不收缩不参与 ellipsis
 .voice-hud-tts-pill-label {
   flex: none;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1;
   color: var(--text-muted);
 }
@@ -769,7 +769,7 @@
   align-items: stretch;
   box-sizing: border-box;
   height: 27px;
-  padding: 3px;
+  padding: var(--pad-3xs);
   border-radius: 14px;
   background: color-mix(in srgb, var(--text) 5%, transparent);
 }
@@ -782,9 +782,9 @@
   justify-content: center;
   padding: 0;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 500;
   line-height: 1;
   color: var(--text-muted);
@@ -818,8 +818,8 @@
 // hook 侧已做乐观回滚 + 5s 自动清空，这里仅是展示位；同样不作为拖拽把手。
 .voice-hud-tts-error {
   flex: none;
-  padding: 0 14px;
-  font-size: 11px;
+  padding: 0 var(--pad-lg);
+  font-size: var(--font-xs);
   line-height: 1.4;
   color: var(--danger);
   word-break: break-all;

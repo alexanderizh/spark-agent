@@ -7,7 +7,7 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .media-artifact-viewer-stage {
@@ -41,9 +41,9 @@
 }
 
 .media-artifact-compare-pane figcaption {
-  padding: 8px 0 2px;
+  padding: var(--pad-sm) 0 2px;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .media-artifact-compare-pane img {
@@ -97,7 +97,7 @@
   width: 100%;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: var(--pad-lg);
   color: var(--text-faint);
 }
 
@@ -110,16 +110,16 @@
   min-height: 34px;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: var(--pad-lg);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .media-artifact-viewer-pager {
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -135,7 +135,7 @@
 .media-artifact-viewer-actions {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .media-artifact-viewer-toolbar button {
@@ -143,10 +143,10 @@
   min-height: 26px;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 0 7px;
+  gap: var(--pad-3xs);
+  padding: 0 var(--pad-sm);
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   color: inherit;
   background: transparent;
   cursor: pointer;

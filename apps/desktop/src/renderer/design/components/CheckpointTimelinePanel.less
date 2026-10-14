@@ -33,8 +33,8 @@
 .checkpoint-timeline-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 14px 14px 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-lg) var(--pad-lg) var(--pad-md);
   border-bottom: 1px solid var(--border);
 
   .checkpoint-timeline-head-icon {
@@ -43,7 +43,7 @@
   }
 
   .checkpoint-timeline-title {
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 600;
     color: var(--text-strong);
     flex: 1;
@@ -71,10 +71,10 @@
   .checkpoint-timeline-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--pad-xs);
 
     .checkpoint-timeline-toggle-label {
-      font-size: 11px;
+      font-size: var(--font-xs);
       color: var(--text-muted);
     }
   }
@@ -83,16 +83,16 @@
 .checkpoint-timeline-body {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 14px;
+  padding: var(--pad-md) var(--pad-lg);
 }
 
 .checkpoint-timeline-state {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: var(--text-muted);
-  font-size: 12px;
-  padding: 8px 2px;
+  font-size: var(--font-sm);
+  padding: var(--pad-sm) 2px;
 }
 
 .checkpoint-timeline-empty {
@@ -100,18 +100,18 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 6px;
-  padding: 48px 16px;
+  gap: var(--pad-xs);
+  padding: var(--pad-3xl) var(--pad-lg);
   color: var(--text-muted);
 
   p {
-    margin: 4px 0 0;
-    font-size: 13px;
+    margin: var(--pad-3xs) 0 0;
+    font-size: var(--font-base);
     color: var(--text);
   }
 
   span {
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.5;
     color: var(--text-faint);
   }
@@ -119,7 +119,7 @@
 
 .checkpoint-item {
   display: flex;
-  gap: 10px;
+  gap: var(--pad-sm);
 
   &.checkpoint-item-disabled {
     .checkpoint-item-main {
@@ -135,7 +135,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding-top: 5px;
+    padding-top: var(--pad-xs);
 
     .checkpoint-item-dot {
       width: 8px;
@@ -156,8 +156,8 @@
   .checkpoint-item-main {
     flex: 1;
     min-width: 0;
-    margin-bottom: 14px;
-    padding: 12px 12px 10px;
+    margin-bottom: var(--pad-lg);
+    padding: var(--pad-md) var(--pad-md) var(--pad-sm);
     border: 1px solid var(--border);
     border-radius: 12px;
     background: linear-gradient(180deg, var(--bg-soft) 0%, var(--panel) 100%);
@@ -168,25 +168,25 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--pad-xs);
 
     .checkpoint-item-seq {
-      font-size: 11px;
+      font-size: var(--font-xs);
       font-weight: 600;
       color: var(--text-faint);
       flex: none;
-      padding: 2px 6px;
-      border-radius: 999px;
+      padding: 2px var(--pad-xs);
+      border-radius: var(--r-pill);
       background: var(--bg-sunken);
     }
 
     .checkpoint-item-kind {
-      font-size: 11px;
+      font-size: var(--font-xs);
       font-weight: 600;
       color: var(--text-muted);
       flex: none;
-      padding: 2px 7px;
-      border-radius: 999px;
+      padding: 2px var(--pad-sm);
+      border-radius: var(--r-pill);
       border: 1px solid var(--border);
       background: var(--panel);
 
@@ -202,13 +202,13 @@
     }
 
     .checkpoint-item-invalid-tag {
-      font-size: 11px;
+      font-size: var(--font-xs);
       color: var(--danger);
       flex: none;
     }
 
     .checkpoint-item-label {
-      font-size: 13px;
+      font-size: var(--font-base);
       font-weight: 600;
       color: var(--text);
       flex: none;
@@ -216,16 +216,16 @@
 
     .checkpoint-item-id {
       font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-      font-size: 11px;
+      font-size: var(--font-xs);
       color: var(--accent);
-      padding: 2px 7px;
-      border-radius: 999px;
+      padding: 2px var(--pad-sm);
+      border-radius: var(--r-pill);
       background: color-mix(in srgb, var(--accent) 10%, transparent);
       border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
     }
 
     .checkpoint-item-time {
-      font-size: 11px;
+      font-size: var(--font-xs);
       color: var(--text-faint);
       flex: none;
       margin-left: auto;
@@ -235,8 +235,8 @@
   .checkpoint-item-meta {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-top: 10px;
+    gap: var(--pad-sm);
+    margin-top: var(--pad-sm);
     flex-wrap: wrap;
   }
 
@@ -245,9 +245,9 @@
     align-items: center;
     border: 1px solid var(--border);
     background: var(--panel);
-    padding: 5px 10px;
-    border-radius: 999px;
-    font-size: 11px;
+    padding: var(--pad-xs) var(--pad-sm);
+    border-radius: var(--r-pill);
+    font-size: var(--font-xs);
     color: var(--text-muted);
     cursor: pointer;
 
@@ -259,7 +259,7 @@
   }
 
   .checkpoint-item-files-none {
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-faint);
     padding: 0 2px;
   }
@@ -267,16 +267,16 @@
   .checkpoint-item-actions {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--pad-xs);
     margin-left: auto;
 
     .checkpoint-item-confirm-text {
-      font-size: 11px;
+      font-size: var(--font-xs);
       color: var(--danger);
     }
 
     .checkpoint-item-disabled-note {
-      font-size: 11px;
+      font-size: var(--font-xs);
       color: var(--text-faint);
     }
   }
@@ -286,9 +286,9 @@
     align-items: center;
     border: 1px solid var(--border);
     background: var(--panel);
-    padding: 5px 11px;
-    border-radius: 999px;
-    font-size: 11px;
+    padding: var(--pad-xs) var(--pad-md);
+    border-radius: var(--r-pill);
+    font-size: var(--font-xs);
     font-weight: 600;
     color: var(--text);
     cursor: pointer;
@@ -307,17 +307,17 @@
 
   .checkpoint-item-filelist {
     list-style: none;
-    margin: 10px 0 0;
-    padding: 6px 8px;
+    margin: var(--pad-sm) 0 0;
+    padding: var(--pad-xs) var(--pad-sm);
     background: var(--bg-sunken);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--r-lg);
 
     li {
       display: flex;
       align-items: center;
-      gap: 5px;
-      font-size: 11px;
+      gap: var(--pad-xs);
+      font-size: var(--font-xs);
       color: var(--text-muted);
       padding: 2px 0;
 
@@ -335,10 +335,10 @@
 .checkpoint-timeline-foot {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  padding: 10px 14px;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm) var(--pad-lg);
   border-top: 1px solid var(--border);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   color: var(--text-faint);
 }
@@ -346,31 +346,31 @@
 /* ── 还原预览（dry-run 分组） ── */
 
 .checkpoint-preview {
-  margin-top: 10px;
-  padding: 10px;
+  margin-top: var(--pad-sm);
+  padding: var(--pad-sm);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: var(--bg-sunken);
 
   .checkpoint-preview-loading {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 11px;
+    gap: var(--pad-xs);
+    font-size: var(--font-xs);
     color: var(--text-muted);
-    padding: 4px 0;
+    padding: var(--pad-3xs) 0;
   }
 
   .checkpoint-preview-title {
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 600;
     color: var(--text);
-    margin-bottom: 8px;
+    margin-bottom: var(--pad-sm);
   }
 }
 
 .checkpoint-preview-group {
-  margin-bottom: 6px;
+  margin-bottom: var(--pad-xs);
 
   &.warn .checkpoint-preview-group-title {
     color: var(--danger);
@@ -383,23 +383,23 @@
   .checkpoint-preview-group-title {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--pad-xs);
     width: 100%;
     border: none;
     background: transparent;
-    padding: 3px 0;
-    font-size: 11px;
+    padding: var(--pad-3xs) 0;
+    font-size: var(--font-xs);
     font-weight: 600;
     color: var(--text);
     cursor: pointer;
     text-align: left;
 
     .checkpoint-preview-group-count {
-      font-size: 10px;
+      font-size: var(--font-2xs);
       font-weight: 600;
       color: var(--text-muted);
-      padding: 0 6px;
-      border-radius: 999px;
+      padding: 0 var(--pad-xs);
+      border-radius: var(--r-pill);
       background: var(--panel);
       border: 1px solid var(--border);
     }
@@ -408,14 +408,14 @@
   .checkpoint-preview-files {
     list-style: none;
     margin: 2px 0 0;
-    padding: 4px 8px;
+    padding: var(--pad-3xs) var(--pad-sm);
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
 
     li {
       font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-      font-size: 10px;
+      font-size: var(--font-2xs);
       color: var(--text-muted);
       padding: 2px 0;
       white-space: nowrap;
@@ -430,7 +430,7 @@
     border: none;
     background: transparent;
     padding: 2px 0;
-    font-size: 10px;
+    font-size: var(--font-2xs);
     color: var(--accent);
     cursor: pointer;
   }
@@ -440,13 +440,13 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-  padding-top: 8px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-sm);
+  padding-top: var(--pad-sm);
   border-top: 1px dashed var(--border);
 
   .checkpoint-preview-confirm-text {
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.4;
     color: var(--text-faint);
     flex: 1;

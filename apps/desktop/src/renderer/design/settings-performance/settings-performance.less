@@ -15,8 +15,8 @@
 
   .lede {
     color: var(--text-muted);
-    font-size: 12px;
-    margin: 0 0 18px;
+    font-size: var(--font-sm);
+    margin: 0 0 var(--pad-xl);
   }
 
   /* 区块标题行（左标题 + 右分段控件/按钮）。上间距由行内标题的
@@ -28,15 +28,15 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--pad-md);
   }
 
   .subsec-h {
-    margin: 20px 0 10px;
-    padding-bottom: 6px;
+    margin: var(--pad-xl) 0 var(--pad-sm);
+    padding-bottom: var(--pad-xs);
     border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
     color: var(--text-faint);
-    font-size: 10.5px;
+    font-size: var(--font-xs);
     font-weight: 700;
     letter-spacing: 0.07em;
   }
@@ -46,15 +46,15 @@
      前者，使「历史趋势 / 性能保护」这类行首标题丢掉 20px 上间距，右侧
      分段控件随即贴到上方卡片底部（见 .subsec-row 注释）。 */
   .subsec-row > .subsec-h {
-    margin-top: 20px;
+    margin-top: var(--pad-xl);
   }
 
   /* 区块标题下的一行说明（如「活动治理」的统计范围）。上边距取负值抵消
      标题的 10px 下边距、压缩到 6px，使说明在视觉上归属标题而非游离在
      标题与卡片之间；下边距与标题节奏一致（10px 接卡片）。 */
   .subsec-desc {
-    margin: -4px 0 10px;
-    font-size: 11px;
+    margin: -4px 0 var(--pad-sm);
+    font-size: var(--font-xs);
     line-height: 1.5;
     color: var(--text-faint);
   }
@@ -78,9 +78,9 @@
     button {
       border: 0;
       background: transparent;
-      padding: 3px 10px;
+      padding: var(--pad-3xs) var(--pad-sm);
       border-radius: 6px;
-      font-size: 12px;
+      font-size: var(--font-sm);
       line-height: 18px;
       color: var(--text-muted);
       transition:
@@ -104,12 +104,12 @@
 
   .btn {
     height: 28px;
-    padding: 0 12px;
+    padding: 0 var(--pad-md);
     border: 1px solid var(--border-strong);
     border-radius: 6px;
     background: var(--panel);
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--font-sm);
     transition: border-color 0.15s;
     cursor: pointer;
 
@@ -138,7 +138,7 @@
       background: transparent;
       color: var(--primary);
       height: 24px;
-      padding: 0 4px;
+      padding: 0 var(--pad-3xs);
 
       &:hover {
         text-decoration: underline;
@@ -150,8 +150,8 @@
   .rowline {
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 12px 16px;
+    gap: var(--pad-lg);
+    padding: var(--pad-md) var(--pad-lg);
   }
 
   .rowline + .rowline,
@@ -167,14 +167,14 @@
   }
 
   .r-title {
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 600;
     color: var(--text);
   }
 
   .r-desc {
     margin-top: 2px;
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.55;
     color: var(--text-muted);
   }
@@ -183,7 +183,7 @@
     flex: none;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--pad-sm);
   }
 
   .disabled-zone {
@@ -196,9 +196,9 @@
   .status-line {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--pad-sm);
     flex-wrap: wrap;
-    padding: 10px 2px 12px;
+    padding: var(--pad-sm) 2px var(--pad-md);
   }
 
   .dot {
@@ -231,13 +231,13 @@
   }
 
   .status-level {
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 600;
     color: var(--text-strong);
   }
 
   .status-desc {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--text-muted);
   }
 
@@ -245,12 +245,12 @@
     margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .status-upd {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-faint);
   }
 
@@ -290,22 +290,22 @@
   .metric-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
-    gap: 10px;
-    margin-bottom: 10px;
+    gap: var(--pad-sm);
+    margin-bottom: var(--pad-sm);
   }
 
   .metric {
     background: var(--bg-sunken);
     border-radius: var(--r-md, 8px);
-    padding: 12px 14px 11px;
+    padding: var(--pad-md) var(--pad-lg) var(--pad-md);
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: var(--pad-3xs);
   }
 
   .m-label {
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 500;
     color: var(--text-faint);
   }
@@ -332,7 +332,7 @@
   }
 
   .m-sub {
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-muted);
     line-height: 1.5;
     min-height: 16px;
@@ -342,7 +342,7 @@
     color: var(--danger);
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--pad-3xs);
   }
 
   /* ---------- 子进程卡 ---------- */
@@ -353,9 +353,9 @@
   .proc-toggle {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--pad-md);
     width: 100%;
-    padding: 12px 16px;
+    padding: var(--pad-md) var(--pad-lg);
     border: 0;
     background: transparent;
     text-align: left;
@@ -375,32 +375,32 @@
 
   .proc-sum {
     margin-left: auto;
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--text);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
 
   .proc-detail {
-    padding: 2px 16px 13px;
+    padding: 2px var(--pad-lg) var(--pad-md);
     border-top: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
   }
 
   .stack {
     display: flex;
     height: 6px;
-    border-radius: 3px;
+    border-radius: var(--r-xs);
     overflow: hidden;
     background: color-mix(in srgb, var(--text) 8%, transparent);
-    margin: 10px 0 6px;
+    margin: var(--pad-sm) 0 var(--pad-xs);
   }
 
   .bd-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 5px 0;
-    font-size: 12px;
+    gap: var(--pad-sm);
+    padding: var(--pad-xs) 0;
+    font-size: var(--font-sm);
     color: var(--text-muted);
   }
 
@@ -411,7 +411,7 @@
   .bd-row .bd-v {
     margin-left: auto;
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--font-sm);
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
   }
@@ -427,14 +427,14 @@
   .trend-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
-    gap: 10px;
+    gap: var(--pad-sm);
   }
 
   .chart {
     position: relative;
     background: var(--bg-sunken);
     border-radius: var(--r-md, 8px);
-    padding: 11px 12px 8px;
+    padding: var(--pad-md) var(--pad-md) var(--pad-sm);
     min-width: 0;
   }
 
@@ -442,19 +442,19 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: var(--pad-sm);
+    margin-bottom: var(--pad-sm);
   }
 
   .c-label {
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 500;
     color: var(--text-faint);
   }
 
   .c-val {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 600;
     color: var(--text);
     font-variant-numeric: tabular-nums;
@@ -496,7 +496,7 @@
     z-index: 5;
     display: none;
     transform: translate(-50%, -120%);
-    padding: 3px 8px;
+    padding: var(--pad-3xs) var(--pad-sm);
     border-radius: 6px;
     background: var(--panel-elev);
     border: 1px solid var(--border-strong);
@@ -504,7 +504,7 @@
       0 0 0 1px rgba(0, 0, 0, 0.05),
       0 4px 16px rgba(0, 0, 0, 0.08);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text);
     white-space: nowrap;
     pointer-events: none;
@@ -513,9 +513,9 @@
   .chart-x {
     display: flex;
     justify-content: space-between;
-    font-size: 10px;
+    font-size: var(--font-2xs);
     color: var(--text-faint);
-    margin-top: 4px;
+    margin-top: var(--pad-3xs);
     font-variant-numeric: tabular-nums;
   }
 
@@ -523,7 +523,7 @@
     position: absolute;
     left: 0;
     font-family: var(--font-mono);
-    font-size: 9.5px;
+    font-size: var(--font-2xs);
     color: var(--text-faint);
     pointer-events: none;
 
@@ -539,8 +539,8 @@
   .meter-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 11px 16px;
+    gap: var(--pad-md);
+    padding: var(--pad-md) var(--pad-lg);
     flex-wrap: wrap;
   }
 
@@ -551,7 +551,7 @@
   .m-name {
     width: 88px;
     flex: none;
-    font-size: 13px;
+    font-size: var(--font-base);
     color: var(--text);
   }
 
@@ -576,7 +576,7 @@
   }
 
   .m-nums {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--text);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -588,9 +588,9 @@
 
   .state-pill {
     display: inline-flex;
-    padding: 1px 8px;
-    border-radius: 999px;
-    font-size: 11px;
+    padding: 1px var(--pad-sm);
+    border-radius: var(--r-pill);
+    font-size: var(--font-xs);
     line-height: 18px;
     white-space: nowrap;
 
@@ -608,10 +608,10 @@
   .ev {
     display: grid;
     grid-template-columns: 66px 92px minmax(110px, 0.9fr) minmax(160px, 1.5fr);
-    gap: 4px 12px;
+    gap: var(--pad-3xs) var(--pad-md);
     align-items: baseline;
-    padding: 9px 16px;
-    font-size: 12px;
+    padding: var(--pad-sm) var(--pad-lg);
+    font-size: var(--font-sm);
   }
 
   .ev + .ev {
@@ -620,7 +620,7 @@
 
   .ev-t {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-faint);
     font-variant-numeric: tabular-nums;
   }
@@ -628,8 +628,8 @@
   .ev-lv {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
+    gap: var(--pad-xs);
+    font-size: var(--font-sm);
     white-space: nowrap;
   }
 
@@ -643,37 +643,37 @@
   }
 
   .ev-empty {
-    padding: 22px 16px;
+    padding: 22px var(--pad-lg);
     text-align: center;
     color: var(--text-faint);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 
   /* ---------- 配置区 ---------- */
   .th-row {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: var(--pad-lg);
     flex-wrap: wrap;
-    padding: 11px 16px;
+    padding: var(--pad-md) var(--pad-lg);
   }
 
   .th-lv {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: var(--pad-sm);
     width: 176px;
     flex: none;
   }
 
   .th-name {
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 600;
     color: var(--text);
   }
 
   .th-desc {
-    font-size: 10.5px;
+    font-size: var(--font-xs);
     color: var(--text-faint);
     line-height: 1.4;
   }
@@ -681,7 +681,7 @@
   .th-steps {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: var(--pad-lg);
     flex-wrap: wrap;
     margin-left: auto;
   }
@@ -689,17 +689,17 @@
   .th-step {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--pad-sm);
 
     > span {
-      font-size: 11px;
+      font-size: var(--font-xs);
       color: var(--text-muted);
       white-space: nowrap;
     }
   }
 
   .th-none {
-    font-size: 11.5px;
+    font-size: var(--font-sm);
     color: var(--text-faint);
     margin-left: auto;
   }
@@ -707,7 +707,7 @@
   .cap-steps {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: var(--pad-lg);
     flex-wrap: wrap;
   }
 
@@ -728,7 +728,7 @@
     border: 0;
     background: transparent;
     color: var(--text-muted);
-    font-size: 15px;
+    font-size: var(--font-lg);
     line-height: 1;
     cursor: pointer;
 
@@ -747,18 +747,18 @@
     min-width: 62px;
     text-align: center;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--text);
     font-variant-numeric: tabular-nums;
   }
 
   /* ---------- 空态 / 加载 ---------- */
   .empty-card {
-    padding: 44px 24px;
+    padding: 44px var(--pad-2xl);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
+    gap: var(--pad-xs);
     text-align: center;
   }
 
@@ -771,17 +771,17 @@
     justify-content: center;
     background: color-mix(in srgb, var(--primary) 9%, transparent);
     color: var(--primary);
-    margin-bottom: 4px;
+    margin-bottom: var(--pad-3xs);
   }
 
   .empty-title {
-    font-size: 14px;
+    font-size: var(--font-md);
     font-weight: 600;
     color: var(--text-strong);
   }
 
   .empty-desc {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--text-muted);
     max-width: 400px;
   }
@@ -814,8 +814,8 @@
   }
 
   .footnote {
-    margin: 14px 2px 0;
-    font-size: 11px;
+    margin: var(--pad-lg) 2px 0;
+    font-size: var(--font-xs);
     line-height: 1.6;
     color: var(--text-faint);
   }

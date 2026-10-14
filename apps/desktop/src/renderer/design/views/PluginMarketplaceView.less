@@ -7,41 +7,41 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 18px 4px 32px;
+  padding: var(--pad-xl) var(--pad-3xs) var(--pad-3xl);
   color: var(--plugin-ink);
   background: transparent;
   scrollbar-gutter: stable;
 }
 
 .plugin-marketplace-view.is-embedded {
-  padding-top: 16px;
+  padding-top: var(--pad-lg);
 }
 .plugin-marketplace-header {
   width: 100%;
   max-width: 980px;
-  margin: 0 auto 12px;
+  margin: 0 auto var(--pad-md);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
-  padding: 0px 2px 10px;
+  gap: var(--pad-xl);
+  padding: 0px 2px var(--pad-sm);
   border-bottom: 1px solid var(--plugin-line);
 }
 .plugin-marketplace-header p {
   max-width: 560px;
-  margin: 6px 0 0;
+  margin: var(--pad-xs) 0 0;
   color: var(--plugin-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 .plugin-marketplace-header .ant-btn {
   flex: 0 0 auto;
   height: 30px;
   margin-top: 2px;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   color: color-mix(in srgb, var(--primary) 72%, white);
-  border-radius: 7px;
-  font-size: 12px;
+  border-radius: var(--r-md);
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 
@@ -54,29 +54,29 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 10px;
+  gap: var(--pad-lg);
+  margin-bottom: var(--pad-sm);
   padding: 0 2px;
 }
 .plugin-section-heading > div:first-child {
   display: flex;
   align-items: baseline;
-  gap: 9px;
+  gap: var(--pad-sm);
 }
 .plugin-section-heading h2 {
   margin: 0;
   color: var(--plugin-ink);
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 650;
   letter-spacing: -0.02em;
 }
 .plugin-section-heading span {
   color: var(--plugin-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .plugin-section-heading.is-installed span {
-  padding: 2px 7px;
-  border-radius: 999px;
+  padding: 2px var(--pad-sm);
+  border-radius: var(--r-pill);
   background: var(--hover, rgba(255, 255, 255, 0.06));
 }
 .plugin-market-search {
@@ -100,7 +100,7 @@
 .plugin-list {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: var(--pad-sm);
 }
 .plugin-card,
 .plugin-market-card {
@@ -108,8 +108,8 @@
   grid-template-columns: 48px minmax(0, 1fr);
   container-type: inline-size;
   min-width: 0;
-  gap: 14px;
-  padding: 16px;
+  gap: var(--pad-lg);
+  padding: var(--pad-lg);
   border: 1px solid var(--plugin-line);
   border-radius: 12px;
   background: var(--plugin-panel);
@@ -158,7 +158,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 .plugin-card-heading {
   flex: 1;
@@ -167,7 +167,7 @@
 .plugin-card-title {
   overflow: hidden;
   color: var(--plugin-ink);
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 650;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -175,9 +175,9 @@
 }
 .plugin-card-subtitle {
   overflow: hidden;
-  margin-top: 3px;
+  margin-top: var(--pad-3xs);
   color: var(--plugin-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -185,11 +185,11 @@
   display: flex;
   align-items: center;
   flex: 0 0 auto;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 .plugin-card-state {
   color: var(--plugin-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   white-space: nowrap;
 }
 .plugin-card-state.is-enabled {
@@ -204,7 +204,7 @@
   padding: 0;
   color: var(--plugin-faint);
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: transparent;
   cursor: pointer;
   transition:
@@ -221,10 +221,10 @@
   outline-offset: 2px;
 }
 .plugin-card-description {
-  margin: 9px 0 12px;
+  margin: var(--pad-sm) 0 var(--pad-md);
   overflow: hidden;
   color: var(--plugin-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.55;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -234,20 +234,20 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: var(--plugin-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 .plugin-card-meta .ant-tag {
   margin-inline-end: 0;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 18px;
 }
 .plugin-source-badge {
   display: inline-flex;
   align-items: center;
   height: 20px;
-  padding: 0 7px;
+  padding: 0 var(--pad-sm);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   color: #a9b2c2;
@@ -269,7 +269,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 20px;
-  padding: 0 7px;
+  padding: 0 var(--pad-sm);
   border: 1px solid rgba(143, 181, 232, 0.14);
   border-radius: 6px;
   color: #9baeca;
@@ -280,13 +280,13 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 .plugin-card-contributions span {
   height: 20px;
   display: inline-flex;
   align-items: center;
-  padding: 0 7px;
+  padding: 0 var(--pad-sm);
   border: 1px solid var(--plugin-line);
   border-radius: 6px;
   color: #aeb7c6;
@@ -295,9 +295,9 @@
 .plugin-card-permissions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   height: 20px;
-  padding: 0 6px;
+  padding: 0 var(--pad-xs);
   white-space: nowrap;
 }
 .plugin-card-muted {
@@ -307,14 +307,14 @@
   display: grid;
   grid-template-columns: 7px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px 10px;
-  margin-top: 12px;
-  padding: 9px 11px;
+  gap: var(--pad-sm) var(--pad-sm);
+  margin-top: var(--pad-md);
+  padding: var(--pad-sm) var(--pad-md);
   color: var(--plugin-muted);
   border: 1px solid rgba(203, 158, 89, 0.12);
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: rgba(203, 158, 89, 0.045);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
 }
 .plugin-card-availability.is-connected {
   border-color: rgba(95, 177, 132, 0.13);
@@ -339,7 +339,7 @@
   min-width: 0;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 3px 8px;
+  gap: var(--pad-3xs) var(--pad-sm);
   line-height: 1.45;
 }
 .plugin-card-availability-copy > span {
@@ -360,14 +360,14 @@
 .plugin-runtime-action {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 4px 7px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-3xs) var(--pad-sm);
   color: color-mix(in srgb, var(--primary) 76%, white);
   border: 0;
   border-radius: 6px;
   background: color-mix(in srgb, var(--primary) 10%, transparent);
   cursor: pointer;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -377,19 +377,19 @@
 .plugin-pending-permissions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  padding: 7px 9px;
+  gap: var(--pad-xs);
+  margin-top: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
   color: #c7a36e;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: rgba(205, 155, 83, 0.065);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
 }
 .plugin-market-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   align-items: start;
-  gap: 9px;
+  gap: var(--pad-sm);
 }
 .plugin-market-card-heading {
   flex: 1;
@@ -411,7 +411,7 @@
   .plugin-card-availability-copy {
     grid-column: 2;
     display: grid;
-    gap: 3px;
+    gap: var(--pad-3xs);
   }
   .plugin-card-availability-copy > span {
     flex: 0 1 auto;
@@ -428,7 +428,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   border: 1px dashed rgba(255, 255, 255, 0.15);
   border-radius: 13px;
   background: rgba(255, 255, 255, 0.025);
@@ -439,42 +439,42 @@
   height: 38px;
   display: grid;
   place-items: center;
-  margin-bottom: 3px;
+  margin-bottom: var(--pad-3xs);
   color: #8795be;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: rgba(110, 126, 220, 0.12);
 }
 .plugin-empty strong {
   color: #dce2ef;
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 .plugin-empty > span {
   color: var(--plugin-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .plugin-empty button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 8px;
+  gap: var(--pad-3xs);
+  margin-top: var(--pad-sm);
   padding: 0;
   border: 0;
   color: #aab7ff;
   background: transparent;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .plugin-market-status {
   min-height: 54px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 14px;
+  gap: var(--pad-sm);
+  padding: 0 var(--pad-lg);
   border: 1px solid var(--plugin-line);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   color: var(--plugin-muted);
   background: rgba(255, 255, 255, 0.025);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .plugin-market-status.error {
   color: #d8a8a8;
@@ -505,7 +505,7 @@
   color: #b8c2ff;
   background: none;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 .plugin-status-dot {
   width: 7px;
@@ -520,12 +520,12 @@
 }
 
 .plugin-inspection h3 {
-  margin: 0 0 10px;
+  margin: 0 0 var(--pad-sm);
   color: var(--text-primary);
 }
 .plugin-inspection h3 span {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 400;
 }
 .plugin-inspection p {
@@ -535,10 +535,10 @@
 .plugin-inspection-row {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
-  padding: 8px 0;
+  gap: var(--pad-lg);
+  padding: var(--pad-sm) 0;
   border-bottom: 1px solid var(--border-color);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 .plugin-inspection-row span {
   color: var(--text-tertiary);
@@ -547,17 +547,17 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 16px;
-  font-size: 13px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-lg);
+  font-size: var(--font-base);
 }
 .plugin-inspection-warning {
-  margin-top: 12px;
-  padding: 9px 10px;
+  margin-top: var(--pad-md);
+  padding: var(--pad-sm) var(--pad-sm);
   color: #9a6518;
   border-radius: 8px;
   background: rgba(245, 176, 65, 0.12);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .plugin-permission-confirm {
   line-height: 1.65;
@@ -567,27 +567,27 @@
   line-height: 1.65;
 }
 .plugin-runtime-modal p {
-  margin: 0 0 16px;
+  margin: 0 0 var(--pad-lg);
 }
 .plugin-runtime-accounts {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 0 0 16px;
+  gap: var(--pad-sm);
+  margin: 0 0 var(--pad-lg);
 }
 .plugin-runtime-subtitle {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
 }
 .plugin-runtime-account {
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 12px;
-  padding: 12px;
+  gap: var(--pad-md);
+  padding: var(--pad-md);
   border: 1px solid rgba(112, 200, 155, 0.2);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: rgba(112, 200, 155, 0.07);
 }
 .plugin-runtime-account-icon {
@@ -596,7 +596,7 @@
   display: grid;
   place-items: center;
   color: #9be2ba;
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: rgba(112, 200, 155, 0.14);
 }
 .plugin-runtime-account-icon img {
@@ -614,13 +614,13 @@
 }
 .plugin-runtime-account strong {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 .plugin-runtime-account span,
 .plugin-runtime-note {
   overflow-wrap: anywhere;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .plugin-runtime-account-status {
   color: #83c59e !important;
@@ -634,33 +634,33 @@
 .plugin-runtime-account-copy small {
   overflow: hidden;
   color: #b58b8b;
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .plugin-runtime-account .ant-btn {
   flex: 0 0 auto;
-  padding-inline: 4px;
-  font-size: 11px;
+  padding-inline: var(--pad-3xs);
+  font-size: var(--font-xs);
 }
 .plugin-runtime-mode-switch {
   display: flex;
-  gap: 4px;
-  margin: 0 0 14px;
-  padding: 3px;
+  gap: var(--pad-3xs);
+  margin: 0 0 var(--pad-lg);
+  padding: var(--pad-3xs);
   border-radius: 8px;
   background: var(--bg-elevated);
 }
 .plugin-runtime-mode-switch button {
   flex: 1 1 0;
   min-width: 0;
-  padding: 7px 8px;
+  padding: var(--pad-sm) var(--pad-sm);
   color: var(--text-tertiary);
   border: 0;
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .plugin-runtime-mode-switch button.is-active {
   color: var(--text-primary);
@@ -670,26 +670,26 @@
 .plugin-runtime-field {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  margin-top: 16px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-lg);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 .plugin-runtime-field-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 .plugin-runtime-auth-guide {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 3px 8px;
-  margin-top: 7px;
+  gap: var(--pad-3xs) var(--pad-sm);
+  margin-top: var(--pad-sm);
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 400;
 }
 .plugin-runtime-field-heading .plugin-runtime-auth-guide {
@@ -699,13 +699,13 @@
 .plugin-runtime-auth-guide button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   padding: 0;
   color: color-mix(in srgb, var(--primary) 78%, white);
   border: 0;
   background: transparent;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
 }
 .plugin-runtime-auth-guide button:hover {
@@ -713,7 +713,7 @@
 }
 .plugin-runtime-auth-guide small {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 400;
 }
 .plugin-runtime-field .ant-input-affix-wrapper {
@@ -723,7 +723,7 @@
 .plugin-runtime-path-field {
   display: flex;
   min-width: 0;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 .plugin-runtime-path-field .ant-input {
   min-width: 0;
@@ -735,27 +735,27 @@
   flex: 0 0 auto;
 }
 .plugin-runtime-note {
-  margin-top: 10px;
+  margin-top: var(--pad-sm);
 }
 .plugin-runtime-capabilities {
-  margin-top: 18px;
+  margin-top: var(--pad-xl);
 }
 .plugin-runtime-capability-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 7px;
+  gap: var(--pad-xs);
+  margin-top: var(--pad-sm);
 }
 .plugin-runtime-capability {
   max-width: 100%;
   overflow: hidden;
-  padding: 4px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
   color: var(--text-tertiary);
   border: 1px solid var(--border-color);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: transparent;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -776,7 +776,7 @@
 }
 .plugin-runtime-capability-list .ant-tag {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 @media (max-width: 720px) {
@@ -802,14 +802,14 @@
   }
   .plugin-card,
   .plugin-market-card {
-    padding: 15px;
+    padding: var(--pad-lg);
   }
   .plugin-market-status.error {
     align-items: flex-start;
     flex-wrap: wrap;
-    padding-block: 10px;
+    padding-block: var(--pad-sm);
   }
   .plugin-market-status.error button {
-    margin-left: 15px;
+    margin-left: var(--pad-lg);
   }
 }

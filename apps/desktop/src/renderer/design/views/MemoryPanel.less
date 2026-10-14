@@ -3,8 +3,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 16px 20px;
-  gap: 12px;
+  padding: var(--pad-lg) var(--pad-xl);
+  gap: var(--pad-md);
   overflow: hidden;
 }
 
@@ -12,18 +12,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
 
   .mp_title {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 16px;
+    gap: var(--pad-sm);
+    font-size: var(--font-lg);
     font-weight: 600;
   }
   .mp_actions {
     display: flex;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 }
 
@@ -32,7 +32,7 @@
   align-items: center;
   // 不换行：窄宽时优先让搜索框弹性收缩，再窄才横向滚动，避免筛选栏被挤成多行
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
   overflow-x: auto;
 
@@ -48,13 +48,13 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-right: 4px;
+  gap: var(--pad-xs);
+  padding-right: var(--pad-3xs);
 }
 
 .mp_list_header {
-  padding: 4px 12px;
-  font-size: 12px;
+  padding: var(--pad-3xs) var(--pad-md);
+  font-size: var(--font-sm);
   color: var(--color-text-secondary, #888);
   border-bottom: 1px dashed var(--color-border, rgba(0, 0, 0, 0.06));
 }
@@ -62,11 +62,11 @@
 .mp_batch_bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-xs) var(--pad-md);
   border-radius: 6px;
   background: var(--color-warning-bg, rgba(255, 200, 0, 0.12));
-  font-size: 13px;
+  font-size: var(--font-base);
 
   span:first-child {
     font-weight: 500;
@@ -78,15 +78,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 0;
+  padding: var(--pad-3xl) 0;
 }
 
 .mp_row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: var(--pad-md);
+  padding: var(--pad-sm) var(--pad-md);
   border-radius: 8px;
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   cursor: pointer;
@@ -114,8 +114,8 @@
   &_title {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 4px;
+    gap: var(--pad-xs);
+    margin-bottom: var(--pad-3xs);
   }
   &_name {
     font-weight: 500;
@@ -128,14 +128,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     vertical-align: middle;
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 16px;
-    padding: 0 6px;
+    padding: 0 var(--pad-xs);
     // 行内标题区 gap: 6px 已提供间距，去掉 Tag 自带外边距避免双份
     margin: 0;
   }
   &_desc {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--color-text-secondary, #888);
     white-space: nowrap;
     overflow: hidden;
@@ -145,7 +145,7 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--color-text-tertiary, #aaa);
     white-space: nowrap;
   }
@@ -156,26 +156,26 @@
 .mp_settings {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--pad-lg);
 }
 
 .mp_field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
 
   label {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--color-text-secondary, #888);
   }
 }
 
 .mp_warn {
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border-radius: 6px;
   background: var(--color-warning-bg, rgba(255, 200, 0, 0.12));
   color: var(--color-warning-text, #b8860b);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 // 【P0.3】详情内 supersededBy 可点击跳转链接
@@ -191,36 +191,36 @@
 .mp_meta_grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px 12px;
-  font-size: 11px;
+  gap: var(--pad-3xs) var(--pad-md);
+  font-size: var(--font-xs);
   color: var(--color-text-tertiary, #aaa);
-  padding: 8px 0;
+  padding: var(--pad-sm) 0;
   border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.06));
 }
 
 .mp_detail_actions {
   display: flex;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-3xs);
 }
 
 .mp_settings {
   &_section {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 12px;
+    gap: var(--pad-sm);
+    padding: var(--pad-md);
     border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
     border-radius: 8px;
 
     h4 {
-      margin: 0 0 4px;
-      font-size: 13px;
+      margin: 0 0 var(--pad-3xs);
+      font-size: var(--font-base);
       .mp_section_hint {
-        font-size: 11px;
+        font-size: var(--font-xs);
         font-weight: normal;
         color: var(--color-text-tertiary, #aaa);
-        margin-left: 4px;
+        margin-left: var(--pad-3xs);
       }
     }
   }
@@ -228,18 +228,18 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 13px;
+    font-size: var(--font-base);
   }
   &_hint {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--color-text-secondary, #888);
     line-height: 1.6;
-    padding: 8px 10px;
+    padding: var(--pad-sm) var(--pad-sm);
     background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
     border-radius: 6px;
   }
   &_hint_inline {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--color-text-tertiary, #aaa);
     line-height: 1.5;
   }
@@ -247,30 +247,30 @@
 
 // S2.3 候选确认区：扁平分组（分割线 + 文字明暗分层，不使用盒子卡片）
 .mp_candidate_section {
-  padding: 0 16px;
+  padding: 0 var(--pad-lg);
   border-bottom: 1px solid var(--line-2, rgba(128, 128, 128, 0.18));
 }
 .mp_candidate_header {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 10px 0 4px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) 0 var(--pad-3xs);
 }
 .mp_candidate_title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 .mp_candidate_hint {
-  font-size: 12px;
+  font-size: var(--font-sm);
   opacity: 0.55;
 }
 .mp_candidate_row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
   /* 垂直内边距移交 body（4px+4px），行高与「row 8px + body 0」基本持平 */
-  padding: 4px 0;
+  padding: var(--pad-3xs) 0;
   &:not(:last-child) {
     border-bottom: 1px dashed var(--line-1, rgba(128, 128, 128, 0.12));
   }
@@ -282,7 +282,7 @@
   border-radius: 6px;
   transition: background 0.15s;
   /* 内边距给 hover 色块呼吸空间，同 .mp_row 先例的 padding: 10px 12px 思路 */
-  padding: 4px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
 
   /* hover 语言与 .mp_row（既有记忆行）一致：整行背景变化 */
   &:hover {
@@ -292,13 +292,13 @@
 .mp_candidate_name {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: var(--pad-xs);
+  font-size: var(--font-base);
   font-weight: 500;
 }
 .mp_candidate_desc {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   opacity: 0.65;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -309,7 +309,7 @@
 }
 .mp_candidate_actions {
   display: flex;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-shrink: 0;
 }
 
@@ -317,19 +317,19 @@
 .mp_candidate_detail_tags {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: var(--pad-xs);
+  margin-bottom: var(--pad-md);
 }
 .mp_candidate_detail_label {
-  font-size: 12px;
+  font-size: var(--font-sm);
   opacity: 0.55;
 }
 .mp_candidate_detail_body {
-  margin: 4px 0 12px;
-  padding: 10px 12px;
+  margin: var(--pad-3xs) 0 var(--pad-md);
+  padding: var(--pad-sm) var(--pad-md);
   background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
@@ -337,27 +337,27 @@
   overflow-y: auto;
 }
 .mp_candidate_detail_text {
-  margin: 4px 0 12px;
-  font-size: 13px;
+  margin: var(--pad-3xs) 0 var(--pad-md);
+  font-size: var(--font-base);
   line-height: 1.6;
   opacity: 0.8;
 }
 .mp_candidate_detail_unparsed {
-  margin-bottom: 12px;
-  padding: 10px 12px;
+  margin-bottom: var(--pad-md);
+  padding: var(--pad-sm) var(--pad-md);
   background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.6;
   color: var(--color-text-secondary, #888);
 }
 // 【审查改进】delete 候选目标正文读取失败的详情提示（与 unparsed 同层级样式）
 .mp_candidate_detail_unreadable {
-  margin: 4px 0 12px;
-  padding: 10px 12px;
+  margin: var(--pad-3xs) 0 var(--pad-md);
+  padding: var(--pad-sm) var(--pad-md);
   background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.6;
   color: var(--color-text-secondary, #888);
 }
@@ -365,10 +365,10 @@
 .mp_candidate_error {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 0 16px 8px;
-  padding: 8px 10px;
-  font-size: 12px;
+  gap: var(--pad-sm);
+  margin: 0 var(--pad-lg) var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
+  font-size: var(--font-sm);
   color: var(--color-text-secondary, #888);
   background: var(--color-fill-1, rgba(0, 0, 0, 0.02));
   border-radius: 6px;
@@ -380,8 +380,8 @@
 .mp_candidate_detail_meta {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--pad-3xs);
+  font-size: var(--font-sm);
   line-height: 1.6;
   opacity: 0.65;
 }
@@ -391,27 +391,27 @@
 
 /* ──【P1-④】历史版本区（memory:history）：版本链 + 派生关系 + coverage ── */
 .mp_history_section {
-  margin: 12px 0 4px;
+  margin: var(--pad-md) 0 var(--pad-3xs);
 }
 .mp_history_open {
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: var(--pad-sm) var(--pad-md);
 }
 .mp_history_header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--pad-sm);
 }
 .mp_history_title {
   font-weight: 500;
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 .mp_history_list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 .mp_history_item {
   border-radius: 6px;
@@ -425,15 +425,15 @@
   &_head {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
+    gap: var(--pad-xs);
+    padding: var(--pad-xs) var(--pad-sm);
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 }
 .mp_history_version {
   font-weight: 500;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text-secondary, #888);
 }
 .mp_history_name {
@@ -444,18 +444,18 @@
   white-space: nowrap;
 }
 .mp_history_time {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-tertiary, #aaa);
   white-space: nowrap;
 }
 .mp_history_body {
-  padding: 4px 8px 8px;
-  font-size: 12px;
+  padding: var(--pad-3xs) var(--pad-sm) var(--pad-sm);
+  font-size: var(--font-sm);
   line-height: 1.6;
 }
 .mp_history_desc {
   color: var(--color-text-secondary, #888);
-  margin-bottom: 4px;
+  margin-bottom: var(--pad-3xs);
 }
 .mp_history_text {
   white-space: pre-wrap;
@@ -465,21 +465,21 @@
   opacity: 0.8;
 }
 .mp_history_note {
-  margin-top: 4px;
-  font-size: 11px;
+  margin-top: var(--pad-3xs);
+  font-size: var(--font-xs);
   color: var(--color-text-tertiary, #aaa);
 }
 .mp_history_deriv {
-  margin-top: 8px;
-  font-size: 12px;
+  margin-top: var(--pad-sm);
+  font-size: var(--font-sm);
   color: var(--color-text-secondary, #888);
 }
 .mp_history_deriv_ids {
   word-break: break-all;
 }
 .mp_history_coverage {
-  margin-top: 8px;
-  font-size: 12px;
+  margin-top: var(--pad-sm);
+  font-size: var(--font-sm);
   line-height: 1.6;
   color: var(--color-text-tertiary, #aaa);
 }

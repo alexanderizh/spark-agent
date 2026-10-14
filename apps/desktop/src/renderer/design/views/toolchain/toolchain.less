@@ -7,7 +7,7 @@
   .tc-toolbar-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .tc-search {
@@ -40,15 +40,15 @@
 
   // ─── 分组标题（四层工具面） ──────────────────────────────────────────────
   .tc-kind {
-    margin-top: var(--pad-lg, 16px);
+    margin-top: var(--pad-lg, var(--pad-lg));
   }
 
   .tc-kind-head {
-    margin: 0 0 8px;
+    margin: 0 0 var(--pad-sm);
   }
 
   .tc-kind-title {
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 600;
     color: var(--text-strong, var(--text));
   }
@@ -67,22 +67,22 @@
     overflow: hidden;
 
     & + .tc-card {
-      margin-top: 8px;
+      margin-top: var(--pad-sm);
     }
   }
 
   .tc-card-head {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     width: 100%;
-    padding: 10px 14px;
+    padding: var(--pad-sm) var(--pad-lg);
     border: none;
     background: transparent;
     cursor: pointer;
     text-align: left;
     color: var(--text);
-    transition: background 0.15s ease;
+    transition: background var(--motion-fast) ease;
 
     &:hover {
       background: color-mix(in srgb, var(--text) 4%, transparent);
@@ -98,7 +98,7 @@
     align-items: center;
     justify-content: center;
     color: var(--text-muted);
-    transition: transform 0.15s ease;
+    transition: transform var(--motion-fast) ease;
 
     &.open {
       transform: rotate(90deg);
@@ -108,7 +108,7 @@
   .tc-card-title {
     flex: 1 1 auto;
     min-width: 0;
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 600;
     color: var(--text-strong, var(--text));
     overflow: hidden;
@@ -119,11 +119,11 @@
   .tc-count {
     flex: 0 0 auto;
     min-width: 20px;
-    padding: 0 6px;
+    padding: 0 var(--pad-xs);
     height: 18px;
     line-height: 18px;
-    border-radius: 9px;
-    font-size: 11px;
+    border-radius: var(--r-md);
+    font-size: var(--font-xs);
     text-align: center;
     color: var(--text-muted);
     background: color-mix(in srgb, var(--text) 8%, transparent);
@@ -131,11 +131,11 @@
 
   .tc-status {
     flex: 0 0 auto;
-    padding: 0 6px;
+    padding: 0 var(--pad-xs);
     height: 18px;
     line-height: 18px;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: var(--font-xs);
 
     &.ok {
       color: var(--success, #2f9e44);
@@ -153,16 +153,16 @@
 
   .tc-adapter-badges {
     display: inline-flex;
-    gap: 4px;
+    gap: var(--pad-3xs);
     flex: 0 0 auto;
   }
 
   .tc-adapter {
-    padding: 0 6px;
+    padding: 0 var(--pad-xs);
     height: 18px;
     line-height: 17px;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-muted);
     border: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
 
@@ -175,13 +175,13 @@
 
   // ─── 说明区 ──────────────────────────────────────────────────────────────
   .tc-card-notes {
-    padding: 0 14px 8px 34px;
+    padding: 0 var(--pad-lg) var(--pad-sm) 34px;
   }
 
   .tc-note {
     display: flex;
     align-items: baseline;
-    gap: 6px;
+    gap: var(--pad-xs);
     font-size: var(--font-xs, 12px);
     line-height: 1.6;
     color: var(--text-muted);
@@ -193,10 +193,10 @@
 
   .tc-note-tag {
     flex: 0 0 auto;
-    font-size: 10px;
+    font-size: var(--font-2xs);
     line-height: 1.5;
-    padding: 0 4px;
-    border-radius: 3px;
+    padding: 0 var(--pad-3xs);
+    border-radius: var(--r-xs);
     color: var(--text-muted);
     background: color-mix(in srgb, var(--text) 8%, transparent);
   }
@@ -204,11 +204,11 @@
   // ─── 工具行 ──────────────────────────────────────────────────────────────
   .tc-card-body {
     border-top: 1px solid color-mix(in srgb, var(--divider) 35%, transparent);
-    padding: 4px 0;
+    padding: var(--pad-3xs) 0;
   }
 
   .tc-tool {
-    padding: 6px 14px 6px 34px;
+    padding: var(--pad-xs) var(--pad-lg) var(--pad-xs) 34px;
 
     &:hover {
       background: color-mix(in srgb, var(--text) 4%, transparent);
@@ -218,21 +218,21 @@
   .tc-tool-name-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     flex-wrap: wrap;
     min-width: 0;
   }
 
   .tc-tool-name {
     font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--text);
     word-break: break-all;
   }
 
   .tc-tool-alt {
     font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--accent, #4c6ef5);
     opacity: 0.85;
     word-break: break-all;
@@ -240,11 +240,11 @@
 
   .tc-auto-allow {
     flex: 0 0 auto;
-    padding: 0 5px;
+    padding: 0 var(--pad-xs);
     height: 16px;
     line-height: 15px;
-    border-radius: 3px;
-    font-size: 10px;
+    border-radius: var(--r-xs);
+    font-size: var(--font-2xs);
     color: var(--success, #2f9e44);
     background: color-mix(in srgb, var(--success, #2f9e44) 12%, transparent);
   }
@@ -261,15 +261,15 @@
   }
 
   .tc-empty-hint {
-    padding: 10px 14px 10px 34px;
+    padding: var(--pad-sm) var(--pad-lg) var(--pad-sm) 34px;
     font-size: var(--font-xs, 12px);
     color: var(--text-muted);
   }
 
   // ─── 页脚与状态 ──────────────────────────────────────────────────────────
   .tc-state {
-    margin-top: var(--pad-lg, 16px);
-    padding: var(--pad-lg, 16px);
+    margin-top: var(--pad-lg, var(--pad-lg));
+    padding: var(--pad-lg, var(--pad-lg));
     border-radius: var(--r-md, 8px);
     background: var(--bg-sunken);
     text-align: center;
@@ -278,7 +278,7 @@
   }
 
   .tc-footer {
-    margin-top: var(--pad-md, 12px);
+    margin-top: var(--pad-md, var(--pad-md));
     text-align: center;
     font-size: var(--font-xs, 12px);
     color: var(--text-muted);
@@ -303,15 +303,15 @@
     }
 
     .tc-card-notes {
-      padding-left: 14px;
+      padding-left: var(--pad-lg);
     }
 
     .tc-tool {
-      padding-left: 14px;
+      padding-left: var(--pad-lg);
     }
 
     .tc-empty-hint {
-      padding-left: 14px;
+      padding-left: var(--pad-lg);
     }
   }
 }

@@ -29,7 +29,7 @@
   .ant-modal-title {
     min-width: 0;
     flex: 1;
-    font-size: 14px;
+    font-size: var(--font-md);
     font-weight: 600;
     color: var(--text-strong);
   }
@@ -37,7 +37,7 @@
   .mv_settings_header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     min-width: 0;
   }
 
@@ -58,7 +58,7 @@
     width: 260px;
     max-width: 38%;
     flex: none;
-    margin-inline: auto 36px;
+    margin-inline: auto var(--pad-3xl);
   }
 
   // ─── 表头（吸顶）────────────────────────────────────────────────────
@@ -69,7 +69,7 @@
     display: grid;
     grid-template-columns: var(--mv-settings-columns);
     align-items: center;
-    column-gap: 12px;
+    column-gap: var(--pad-md);
     min-width: 0;
   }
 
@@ -77,27 +77,27 @@
     position: sticky;
     z-index: 2;
     top: 0;
-    padding: 0 var(--mv-settings-inset) 9px;
+    padding: 0 var(--mv-settings-inset) var(--pad-sm);
     border-bottom: 1px solid var(--divider);
     background: var(--panel);
     color: var(--text-faint);
-    font-size: 12px;
+    font-size: var(--font-sm);
     line-height: 18px;
     letter-spacing: 0.01em;
   }
 
   .mv_settings_group + .mv_settings_group {
-    margin-top: 12px;
+    margin-top: var(--pad-md);
     border-top: 1px solid var(--divider);
   }
 
   .mv_settings_group_title {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 16px var(--mv-settings-inset) 6px;
+    gap: var(--pad-sm);
+    padding: var(--pad-lg) var(--mv-settings-inset) var(--pad-xs);
     color: var(--text-faint);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 
   .mv_settings_group_icon {
@@ -129,10 +129,10 @@
   // 去掉行间 1px 淡线（分组线已承担结构分隔），改用更大的行距 + hover 圆角；
   // 行内容左边界 = 6px 外边距 + 18px 内边距 = 24px，与表头 / 组标题齐平。
   .mv_settings_row {
-    margin: 0 6px;
-    padding: 9px 18px;
+    margin: 0 var(--pad-xs);
+    padding: var(--pad-sm) var(--pad-xl);
     border-radius: var(--r-md);
-    font-size: 13px;
+    font-size: var(--font-base);
 
     &:hover {
       background: var(--hover);
@@ -159,9 +159,9 @@
   }
 
   .mv_settings_empty {
-    padding: 36px var(--mv-settings-inset);
+    padding: var(--pad-3xl) var(--mv-settings-inset);
     color: var(--text-faint);
-    font-size: 13px;
+    font-size: var(--font-base);
     text-align: center;
   }
 
@@ -169,7 +169,7 @@
   .mv_settings_footer {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--pad-md);
   }
 
   .mv_settings_footer_hint {
@@ -177,13 +177,13 @@
     flex: 1;
     overflow: hidden;
     color: var(--text-faint);
-    font-size: 12px;
+    font-size: var(--font-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .mv_settings_footer_sep {
-    margin: 0 5px;
+    margin: 0 var(--pad-xs);
     opacity: 0.6;
   }
 
@@ -191,13 +191,13 @@
     display: flex;
     flex: none;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   // lobehub 给 footer 的 padding 是 16px；与内容区 24px 基准对齐，并补一条分隔线
   .ant-modal-footer {
     margin: 0;
-    padding: 14px var(--mv-settings-inset);
+    padding: var(--pad-lg) var(--mv-settings-inset);
     border-top: 1px solid var(--divider);
   }
 }

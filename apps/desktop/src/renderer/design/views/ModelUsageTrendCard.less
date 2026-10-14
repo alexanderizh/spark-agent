@@ -5,46 +5,46 @@
   box-sizing: border-box;
   margin-bottom: var(--pad-lg);
   width: 100%;
-  padding: 16px;
+  padding: var(--pad-lg);
 }
 
 .usage-trend-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
+  gap: var(--pad-lg);
+  margin-bottom: var(--pad-lg);
 }
 
 .usage-trend-title {
   color: var(--text-strong);
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 
 .usage-trend-summary {
   color: var(--text-muted);
   font-size: var(--font-xs);
-  margin-top: 3px;
+  margin-top: var(--pad-3xs);
 }
 
 .usage-trend-header-actions {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .usage-trend-link {
   flex: 0 0 auto;
-  padding: 2px 4px;
+  padding: 2px var(--pad-3xs);
   border: 0;
   background: transparent;
   color: color-mix(in srgb, var(--primary) 78%, var(--text-muted));
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
-  transition: color 120ms ease;
+  transition: color var(--motion-fast) ease;
 }
 
 .usage-trend-link:hover,
@@ -58,8 +58,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 16px;
-  margin-bottom: 14px;
+  gap: var(--pad-xs) var(--pad-lg);
+  margin-bottom: var(--pad-lg);
   color: var(--text-muted);
   font-size: var(--font-xs);
 }
@@ -72,7 +72,7 @@
 .usage-trend-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 
@@ -81,7 +81,7 @@
   flex: 0 0 auto;
   width: 10px;
   height: 10px;
-  border-radius: 3px;
+  border-radius: var(--r-xs);
 }
 
 /* 数据可视化固定序列色：蓝 / 绿 / 红 / 橙 / 紫，明暗模式都可读 */
@@ -146,9 +146,9 @@
   display: block;
   flex: 0 0 18px;
   overflow: visible;
-  padding-top: 6px;
+  padding-top: var(--pad-xs);
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 12px;
   text-align: center;
   white-space: nowrap;
@@ -158,7 +158,7 @@
 .usage-trend-loading {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-height: 178px;
 }
 
@@ -202,7 +202,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
   min-height: 65px;
   color: var(--danger);
   font-size: var(--font-xs);
@@ -212,7 +212,7 @@
   flex: 0 0 auto;
   border: 0;
   border-radius: var(--r-xs);
-  padding: 4px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
   cursor: pointer;

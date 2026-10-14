@@ -29,14 +29,14 @@
 
 .platform-quota-guide__content {
   display: grid;
-  gap: 16px;
-  padding: 24px 28px 26px;
+  gap: var(--pad-lg);
+  padding: var(--pad-2xl) 28px 26px;
 }
 
 .platform-quota-guide__heading {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .platform-quota-guide__alert {
@@ -59,40 +59,49 @@
 }
 
 .platform-quota-guide__heading p {
-  margin: 7px 0 0;
+  margin: var(--pad-sm) 0 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.6;
 }
 
 .platform-quota-guide__balance {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
 }
 
-.platform-quota-guide__balance > svg { color: #34c7d9; }
-.platform-quota-guide__balance strong { color: var(--text-strong); font-size: 20px; font-variant-numeric: tabular-nums; }
+.platform-quota-guide__balance > svg {
+  color: #34c7d9;
+}
+.platform-quota-guide__balance strong {
+  color: var(--text-strong);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
 
 .platform-quota-guide__balance button,
 .platform-quota-guide__channels button {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   border: 0;
-  padding: 3px 5px;
+  padding: var(--pad-3xs) var(--pad-xs);
   color: #34c7d9;
   background: transparent;
   cursor: pointer;
 }
 
-.platform-quota-guide__balance button:disabled { cursor: wait; opacity: 0.6; }
+.platform-quota-guide__balance button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
 
 .platform-quota-guide__actions {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) minmax(150px, 1fr) auto;
-  gap: 10px;
+  gap: var(--pad-sm);
   align-items: center;
 }
 
@@ -100,29 +109,39 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .platform-quota-guide__redeem {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .platform-quota-guide__error {
-  padding: 9px 11px;
+  padding: var(--pad-sm) var(--pad-md);
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 9%, transparent);
   border-left: 3px solid var(--danger);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 720px) {
-  .platform-quota-guide-root .ant-modal { max-width: calc(100vw - 24px); }
-  .platform-quota-guide__poster { height: 170px; }
-  .platform-quota-guide__content { padding: 20px; }
-  .platform-quota-guide__actions { grid-template-columns: 1fr 1fr; }
-  .platform-quota-guide__actions > :last-child { grid-column: 1 / -1; }
+  .platform-quota-guide-root .ant-modal {
+    max-width: calc(100vw - 24px);
+  }
+  .platform-quota-guide__poster {
+    height: 170px;
+  }
+  .platform-quota-guide__content {
+    padding: 20px;
+  }
+  .platform-quota-guide__actions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .platform-quota-guide__actions > :last-child {
+    grid-column: 1 / -1;
+  }
 }

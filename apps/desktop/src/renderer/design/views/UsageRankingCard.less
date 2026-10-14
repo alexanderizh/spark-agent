@@ -6,27 +6,27 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
   flex-wrap: wrap;
 }
 .usage-rank-head-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-wrap: wrap;
 }
 
 /* 模型视图图例（渠道视图图例见 ProviderUsageBreakdown.less，规格一致）。 */
 .usage-rank-legend {
   display: flex;
-  gap: 16px;
-  padding: 8px var(--pad-lg) 10px;
+  gap: var(--pad-lg);
+  padding: var(--pad-sm) var(--pad-lg) var(--pad-sm);
   border-top: 1px solid var(--border);
 }
 .usage-rank-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   font-size: var(--font-xs);
   color: var(--text-faint);
 }

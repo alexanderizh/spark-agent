@@ -5,7 +5,7 @@
 // 因此这里所有尺寸都用固定变量表达，禁止出现会随内容变化的宽度（如 flex:1 + 条件文案）。
 .pv_mcw {
   --pv-mcw-slot: 76px; // 值槽固定宽度（三态共用）
-  --pv-mcw-gap: 8px; // 轨道与值槽间距
+  --pv-mcw-gap: var(--pad-sm); // 轨道与值槽间距
   --pv-mcw-track-h: 22px; // 命中区高度
   --pv-mcw-bar-h: 6px; // 视觉轨道高度（细胶囊，居中于命中区）
 
@@ -105,7 +105,7 @@
     border: none;
     background: none;
     overflow: hidden;
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.6;
     color: var(--text);
     text-align: right;
@@ -146,11 +146,11 @@
   .pv_mcw_input {
     width: 100%;
     height: 20px;
-    padding: 0 4px;
+    padding: 0 var(--pad-3xs);
     border: 1px solid var(--primary);
     border-radius: 4px;
     background: var(--bg-sunken);
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text);
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -180,7 +180,7 @@
   .pv_mcw_scale_label {
     position: absolute;
     top: 5px;
-    font-size: 10px;
+    font-size: var(--font-2xs);
     line-height: 1;
     color: var(--text-faint);
     white-space: nowrap;

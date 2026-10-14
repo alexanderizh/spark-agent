@@ -6,7 +6,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-right: 4px;
+  margin-right: var(--pad-3xs);
 }
 
 .composer-voice-btn {
@@ -46,7 +46,7 @@
   &.is-stopping,
   &.is-refining {
     width: 68px;
-    gap: 5px;
+    gap: var(--pad-xs);
     border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
     background: color-mix(in srgb, var(--primary) 9%, transparent);
     color: var(--primary);
@@ -56,7 +56,7 @@
     width: 116px;
     height: 32px;
     padding: 0;
-    gap: 7px;
+    gap: var(--pad-sm);
     border: 0;
     background: transparent;
     color: var(--danger);
@@ -83,7 +83,7 @@
 }
 
 .composer-voice-state-label {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -112,7 +112,7 @@
     width: 2px;
     min-height: 0;
     max-height: 16px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: currentColor;
     box-shadow: 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
     transition:
@@ -128,14 +128,14 @@
   z-index: 120;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 8px 6px 10px;
+  gap: var(--pad-sm);
+  padding: var(--pad-xs) var(--pad-sm) var(--pad-xs) var(--pad-sm);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: rgba(32, 32, 36, 0.96);
   color: rgba(255, 255, 255, 0.86);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1;
   white-space: nowrap;
   pointer-events: none;
@@ -146,13 +146,13 @@
     transform 0.14s ease;
 
   kbd {
-    padding: 3px 5px;
+    padding: var(--pad-3xs) var(--pad-xs);
     border: 0;
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.1);
     color: #fff;
     font-family: inherit;
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 600;
   }
 }
@@ -165,7 +165,7 @@
 .composer-voice-timer {
   min-width: 27px;
   color: color-mix(in srgb, var(--text) 78%, var(--danger));
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   text-align: center;
@@ -236,8 +236,8 @@
   right: 16px;
   z-index: 10000;
   width: 300px;
-  padding: 12px 14px;
-  border-radius: 10px;
+  padding: var(--pad-md) var(--pad-lg);
+  border-radius: var(--r-lg);
   background: var(--bg-panel, #1f1f24);
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
@@ -268,11 +268,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .voice-install-toast-title {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
 }
 
@@ -300,23 +300,23 @@
 }
 
 .voice-install-toast-bar {
-  margin-top: 10px;
+  margin-top: var(--pad-sm);
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   background: var(--bg-sunken, rgba(255, 255, 255, 0.08));
   overflow: hidden;
 }
 
 .voice-install-toast-bar-fill {
   height: 100%;
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   background: linear-gradient(90deg, var(--accent, #4f8cff), var(--accent-soft, #7aa8ff));
-  transition: width 0.2s ease;
+  transition: width var(--motion-base) ease;
 }
 
 .voice-install-toast-meta {
-  margin-top: 8px;
-  font-size: 12px;
+  margin-top: var(--pad-sm);
+  font-size: var(--font-sm);
   color: var(--text-secondary, rgba(255, 255, 255, 0.7));
 }
 
@@ -325,14 +325,14 @@
 }
 
 .voice-install-toast-actions {
-  margin-top: 10px;
+  margin-top: var(--pad-sm);
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--pad-sm);
 
   button {
-    padding: 4px 12px;
-    font-size: 12px;
+    padding: var(--pad-3xs) var(--pad-md);
+    font-size: var(--font-sm);
     border-radius: 6px;
     border: 1px solid var(--border, rgba(255, 255, 255, 0.16));
     background: var(--bg-hover, rgba(255, 255, 255, 0.06));
@@ -354,8 +354,8 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 20px;
-  margin-top: 16px;
+  gap: var(--pad-xl);
+  margin-top: var(--pad-lg);
 }
 
 .voice-integrity-heading {
@@ -364,13 +364,13 @@
 }
 
 .voice-integrity-heading h2 {
-  margin-bottom: 8px;
+  margin-bottom: var(--pad-sm);
 }
 
 .voice-integrity-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-wrap: wrap;
 }
 
@@ -382,28 +382,28 @@
 }
 
 .voice-integrity-desc {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-muted, rgba(255, 255, 255, 0.5));
   line-height: 1.45;
   margin-top: 2px;
 }
 
 .voice-integrity-progress-wrap {
-  padding: 0 var(--pad-lg, 18px) 14px;
+  padding: 0 var(--pad-lg, var(--pad-xl)) var(--pad-lg);
 }
 
 .voice-integrity-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-3xs);
 }
 
 // ── 安装进度条(与 sdk-install-progress 同构,仅换前缀) ──────────────────
 .voice-progress {
   width: 100%;
-  margin-top: 10px;
+  margin-top: var(--pad-sm);
   color: var(--text-muted, rgba(255, 255, 255, 0.55));
 }
 
@@ -411,8 +411,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 11px;
+  gap: var(--pad-md);
+  font-size: var(--font-xs);
   line-height: 18px;
 
   span {
@@ -426,7 +426,7 @@
     flex: 0 0 auto;
     color: var(--text-primary, #fff);
     font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 600;
   }
 }
@@ -434,9 +434,9 @@
 .voice-progress-track {
   position: relative;
   height: 6px;
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text-primary, #fff) 9%, transparent);
 }
 
@@ -444,7 +444,7 @@
   height: 100%;
   border-radius: inherit;
   background: var(--accent, #4f8cff);
-  transition: width 0.2s ease;
+  transition: width var(--motion-base) ease;
 }
 
 .voice-progress.is-done .voice-progress-fill {

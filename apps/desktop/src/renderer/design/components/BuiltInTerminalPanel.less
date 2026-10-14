@@ -65,8 +65,8 @@ body.terminal-resizing {
   flex: 0 0 var(--chat-header-height);
   display: flex;
   align-items: center;
-  padding: 0 6px;
-  gap: 6px;
+  padding: 0 var(--pad-xs);
+  gap: var(--pad-xs);
   background: transparent;
   -webkit-app-region: no-drag;
   user-select: none;
@@ -89,7 +89,7 @@ body.terminal-resizing {
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
-  margin-left: 4px;
+  margin-left: var(--pad-3xs);
 }
 
 .builtin-terminal-panel .terminal-tabbar-btn {
@@ -104,7 +104,9 @@ body.terminal-resizing {
   color: var(--text-muted);
   border-radius: 4px;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition:
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease;
 }
 .builtin-terminal-panel .terminal-tabbar-btn:hover {
   background: var(--hover, color-mix(in srgb, var(--text) 8%, transparent));
@@ -116,18 +118,21 @@ body.terminal-resizing {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 6px 0 10px;
+  gap: var(--pad-xs);
+  padding: 0 var(--pad-xs) 0 var(--pad-sm);
   height: 24px;
   max-width: 200px;
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   line-height: 1;
   color: var(--text-muted);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition:
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
   user-select: none;
 }
 .builtin-terminal-panel .terminal-tab:hover {
@@ -150,14 +155,14 @@ body.terminal-resizing {
   max-width: 140px;
 }
 .builtin-terminal-panel .terminal-tab-exited {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   opacity: 0.7;
 }
 .builtin-terminal-panel .terminal-tab-dot {
   flex: 0 0 auto;
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--primary, #60a5fa);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
 }
@@ -176,7 +181,10 @@ body.terminal-resizing {
   border-radius: 4px;
   cursor: pointer;
   opacity: 0.75;
-  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+  transition:
+    opacity var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease;
 }
 .builtin-terminal-panel .terminal-tab-close:hover {
   opacity: 1;
@@ -192,18 +200,18 @@ body.terminal-resizing {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  padding: 4px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
   background: transparent;
 }
 .builtin-terminal-panel .terminal-rename-bar input {
   flex: 1 1 auto;
   height: 26px;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--panel);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   outline: none;
 }
 .builtin-terminal-panel .terminal-rename-bar input:focus {
@@ -227,14 +235,14 @@ body.terminal-resizing {
   display: none;
   padding: 0;
   background: transparent;
-  .xterm{
+  .xterm {
     margin: 0;
     margin-top: 0;
     background: transparent;
     border: 0;
-    padding: 0 0px 10px 10px;
+    padding: 0 0px var(--pad-sm) var(--pad-sm);
     .xterm-scrollable-element > .scrollbar {
-      width: 8px!important;
+      width: 8px !important;
     }
   }
 }
@@ -268,7 +276,7 @@ body.terminal-resizing {
 /* 终端右键菜单分隔线（复用 .action-menu / .context-action-menu 全局样式） */
 .terminal-context-menu-divider {
   height: 1px;
-  margin: 4px 2px;
+  margin: var(--pad-3xs) 2px;
   background: var(--border);
 }
 
@@ -280,20 +288,20 @@ body.terminal-resizing {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .builtin-terminal-panel .terminal-empty-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-3xs) var(--pad-sm);
   background: var(--primary-soft, color-mix(in srgb, var(--primary) 12%, transparent));
   color: var(--primary);
   border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
   border-radius: 4px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   cursor: pointer;
 }
 .builtin-terminal-panel .terminal-empty-btn:hover {

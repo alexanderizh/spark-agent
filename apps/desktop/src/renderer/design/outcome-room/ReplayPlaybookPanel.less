@@ -29,7 +29,7 @@
 
   button:not(.ant-btn) {
     min-height: 32px;
-    padding: 5px 12px;
+    padding: var(--pad-xs) var(--pad-md);
     color: inherit;
     background: var(--replay-panel-bg);
     border: 1px solid var(--replay-panel-border);
@@ -57,7 +57,7 @@
     width: 100%;
     min-width: 0;
     min-height: 32px;
-    padding: 5px 8px;
+    padding: var(--pad-xs) var(--pad-sm);
     color: inherit;
     background: var(--replay-panel-bg);
     border: 1px solid var(--replay-panel-border);
@@ -74,7 +74,7 @@
   /* 面板标题对齐侧栏统一小节标题（.inspector-section h4 / .config-panel-header） */
   h2 {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     font-weight: 600;
     letter-spacing: 0.07em;
     text-transform: uppercase;
@@ -82,19 +82,19 @@
 
   h3 {
     color: var(--replay-panel-text, var(--text));
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 650;
   }
 
   h4 {
     color: var(--replay-panel-text, var(--text));
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 650;
   }
 
   > p[role='status'],
   > .replay-playbook-panel__error {
-    margin: 12px 16px 0;
+    margin: var(--pad-md) var(--pad-lg) 0;
   }
 
   &__header,
@@ -102,18 +102,18 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--pad-md);
   }
 
   &__header {
-    padding: 16px;
+    padding: var(--pad-lg);
     border-bottom: 1px solid var(--replay-panel-border);
   }
 
   &__replay,
   &__playbook {
     min-width: 0;
-    padding: 16px;
+    padding: var(--pad-lg);
   }
 
   &__playbook {
@@ -121,11 +121,11 @@
   }
 
   &__section-heading {
-    margin-bottom: 12px;
+    margin-bottom: var(--pad-md);
 
     span {
       color: var(--replay-panel-muted);
-      font-size: 12px;
+      font-size: var(--font-sm);
       text-align: right;
     }
   }
@@ -133,13 +133,13 @@
   &__error {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 8px;
+    gap: var(--pad-3xs) var(--pad-sm);
     color: var(--replay-panel-danger);
     overflow-wrap: anywhere;
   }
 
   &__empty {
-    padding: 16px;
+    padding: var(--pad-lg);
     color: var(--replay-panel-muted);
     text-align: center;
     background: var(--replay-panel-subtle);
@@ -148,19 +148,19 @@
 
   &__timeline {
     display: grid;
-    gap: 8px;
+    gap: var(--pad-sm);
     max-height: 280px;
     margin: 0;
-    padding: 0 0 0 20px;
+    padding: 0 0 0 var(--pad-xl);
     overflow: auto;
   }
 
   &__event {
     display: grid;
     grid-template-columns: minmax(110px, auto) minmax(72px, auto) 1fr;
-    gap: 6px 10px;
+    gap: var(--pad-xs) var(--pad-sm);
     min-width: 0;
-    padding: 10px;
+    padding: var(--pad-sm);
     background: var(--replay-panel-subtle);
     border-radius: 8px;
     overflow-wrap: anywhere;
@@ -173,7 +173,7 @@
 
     time,
     small {
-      font-size: 12px;
+      font-size: var(--font-sm);
     }
 
     small {
@@ -187,19 +187,19 @@
     display: flex;
     flex-wrap: wrap;
     align-items: end;
-    gap: 8px;
+    gap: var(--pad-sm);
     min-width: 0;
-    margin-top: 12px;
+    margin-top: var(--pad-md);
   }
 
   &__controls label,
   &__diff-controls label {
     display: grid;
     flex: 1 1 120px;
-    gap: 4px;
+    gap: var(--pad-3xs);
     min-width: 0;
     color: var(--replay-panel-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 
   &__controls > button,
@@ -209,13 +209,13 @@
 
   &__card {
     min-width: 0;
-    padding: 12px;
+    padding: var(--pad-md);
     background: var(--replay-panel-subtle);
     border: 1px solid var(--replay-panel-border);
     border-radius: 8px;
 
     p {
-      margin-top: 4px;
+      margin-top: var(--pad-3xs);
       color: var(--replay-panel-muted);
       overflow-wrap: anywhere;
     }
@@ -227,14 +227,14 @@
 
   &__playbook > ul {
     display: grid;
-    gap: 6px;
-    margin: 12px 0 0;
-    padding-left: 20px;
+    gap: var(--pad-xs);
+    margin: var(--pad-md) 0 0;
+    padding-left: var(--pad-xl);
     overflow-wrap: anywhere;
   }
 
   &__playbook > p {
-    margin-top: 10px;
+    margin-top: var(--pad-sm);
     color: var(--replay-panel-muted);
     overflow-wrap: anywhere;
   }
@@ -247,7 +247,7 @@
     &__header,
     &__replay,
     &__playbook {
-      padding: 12px;
+      padding: var(--pad-md);
     }
 
     &__header,
@@ -262,7 +262,7 @@
 
     &__event {
       grid-template-columns: 1fr;
-      gap: 3px;
+      gap: var(--pad-3xs);
     }
 
     &__event small {

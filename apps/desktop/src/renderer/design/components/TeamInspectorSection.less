@@ -10,49 +10,49 @@
 .team-inspector-title {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
-.team-inspector-section{
+.team-inspector-section {
   border-bottom: 1px solid var(--border);
 }
 .team-inspector-count {
   font-size: var(--font-xs);
   color: var(--text-muted);
   background: var(--bg-soft);
-  border-radius: 999px;
-  padding: 0 7px;
-  margin-left: 4px;
+  border-radius: var(--r-pill);
+  padding: 0 var(--pad-sm);
+  margin-left: var(--pad-3xs);
 }
 
 .team-roster {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 4px 0;
+  padding: var(--pad-3xs) 0;
 
   // ── 来源徽章：会话由长期团队应用而来时显示 ──
   &-source {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     flex-wrap: wrap;
-    padding: 6px 8px;
+    padding: var(--pad-xs) var(--pad-sm);
     margin-bottom: 0;
     border-radius: var(--r-sm);
     background: var(--bg-hover);
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-muted);
 
     &-label {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--pad-3xs);
       color: var(--text-faint);
     }
     &-name {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--pad-3xs);
       font-weight: 500;
       color: var(--text-default);
       flex: 1;
@@ -64,26 +64,29 @@
     &-tag {
       display: inline-flex;
       align-items: center;
-      padding: 0 5px;
+      padding: 0 var(--pad-xs);
       height: 14px;
       border-radius: var(--r-md);
       background: var(--bg-soft);
       color: var(--text-faint);
-      font-size: 9px;
+      font-size: var(--font-2xs);
       font-weight: 500;
     }
     &-action {
       display: inline-flex;
       align-items: center;
-      gap: 3px;
-      padding: 2px 8px;
+      gap: var(--pad-3xs);
+      padding: 2px var(--pad-sm);
       border: 1px solid var(--border-soft);
       border-radius: var(--r-lg);
       background: var(--bg-soft);
       color: var(--text-muted);
-      font-size: 11px;
+      font-size: var(--font-xs);
       cursor: pointer;
-      transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+      transition:
+        background var(--motion-instant) ease,
+        color var(--motion-instant) ease,
+        border-color var(--motion-instant) ease;
 
       &:hover:not(:disabled) {
         background: var(--bg-default);
@@ -105,16 +108,19 @@
   &-save-cta {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    margin: 6px 0;
-    padding: 6px 8px;
+    gap: var(--pad-3xs);
+    margin: var(--pad-xs) 0;
+    padding: var(--pad-xs) var(--pad-sm);
     border: 1px dashed var(--border-soft);
     border-radius: var(--r-sm);
     background: transparent;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
     cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+    transition:
+      background var(--motion-instant) ease,
+      color var(--motion-instant) ease,
+      border-color var(--motion-instant) ease;
 
     &:hover {
       border-color: @accent;
@@ -125,14 +131,14 @@
   &-save-form {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin: 6px 0;
-    padding: 8px;
+    gap: var(--pad-xs);
+    margin: var(--pad-xs) 0;
+    padding: var(--pad-sm);
     border-radius: var(--r-sm);
     background: var(--bg-hover);
 
     &-title {
-      font-size: 11px;
+      font-size: var(--font-xs);
       font-weight: 500;
       color: var(--text-muted);
       margin-bottom: 2px;
@@ -140,7 +146,7 @@
     &-actions {
       display: flex;
       justify-content: flex-end;
-      gap: 6px;
+      gap: var(--pad-xs);
       margin-top: 2px;
     }
   }
@@ -149,8 +155,8 @@
   &-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
+    gap: var(--pad-sm);
+    padding: var(--pad-xs) var(--pad-sm);
     border-radius: var(--r-sm);
 
     &:hover {
@@ -185,7 +191,7 @@
   &-name-line {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--pad-xs);
     min-width: 0;
   }
   &-name {
@@ -198,7 +204,7 @@
   &-running {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--pad-3xs);
     color: var(--text-muted);
     font-size: var(--font-xs);
     font-weight: 500;
@@ -219,28 +225,28 @@
     color: var(--text-muted);
     background: var(--bg-soft);
     border-radius: var(--r-sm);
-    padding: 1px 7px;
+    padding: 1px var(--pad-sm);
   }
   &-host-chev {
     color: var(--text-faint);
-    margin-left: 4px;
+    margin-left: var(--pad-3xs);
     flex-shrink: 0;
   }
   &-host-picker {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    margin: 2px 8px 6px;
-    padding: 4px;
+    margin: 2px var(--pad-sm) var(--pad-xs);
+    padding: var(--pad-3xs);
     background: var(--bg-soft);
     border-radius: var(--r-md);
   }
   &-host-option {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     width: 100%;
-    padding: 6px 8px;
+    padding: var(--pad-xs) var(--pad-sm);
     background: transparent;
     border: none;
     border-radius: var(--r-sm);
@@ -280,7 +286,10 @@
     cursor: pointer;
     flex-shrink: 0;
     opacity: 0;
-    transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+    transition:
+      opacity var(--motion-instant) ease,
+      background var(--motion-instant) ease,
+      color var(--motion-instant) ease;
 
     &:hover {
       background: color-mix(in srgb, var(--danger) 12%, transparent);
@@ -300,19 +309,19 @@
   &-empty {
     font-size: var(--font-xs);
     color: var(--text-faint);
-    padding: 6px 8px;
+    padding: var(--pad-xs) var(--pad-sm);
   }
 
   &-advanced-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--pad-xs);
     font-size: var(--font-xs);
     color: var(--text-muted);
     background: none;
     border: none;
     cursor: pointer;
-    padding: 6px 8px;
+    padding: var(--pad-xs) var(--pad-sm);
     align-self: flex-start;
 
     &:hover {
@@ -323,7 +332,7 @@
   // ── 邀请成员：主行动按钮（沿用组件库 Button 默认外观）+ 弹出浮层 ──
   &-invite-wrap {
     position: relative;
-    margin: 6px 4px 2px;
+    margin: var(--pad-xs) var(--pad-3xs) 2px;
   }
   &-invite-pop {
     position: absolute;
@@ -333,7 +342,7 @@
     z-index: 40;
     max-height: 256px;
     overflow: auto;
-    padding: 6px;
+    padding: var(--pad-xs);
     border: 1px solid var(--border);
     border-radius: var(--r-md);
     background: var(--panel);
@@ -348,7 +357,7 @@
     &-title {
       font-size: var(--font-xs);
       color: var(--text-faint);
-      padding: 4px 6px 6px;
+      padding: var(--pad-3xs) var(--pad-xs) var(--pad-xs);
     }
     &-list {
       display: flex;
@@ -359,9 +368,9 @@
   &-invite-option {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     width: 100%;
-    padding: 6px 8px;
+    padding: var(--pad-xs) var(--pad-sm);
     border: none;
     background: none;
     border-radius: var(--r-sm);
@@ -390,13 +399,13 @@
   &-advanced {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 4px 8px 8px;
+    gap: var(--pad-xs);
+    padding: var(--pad-3xs) var(--pad-sm) var(--pad-sm);
 
     &-row {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--pad-sm);
       font-size: var(--font-sm);
       color: var(--text-muted);
 
@@ -418,9 +427,9 @@
   &-detail {
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    margin: 0 8px 6px 40px;
-    padding: 6px 10px;
+    gap: var(--pad-3xs);
+    margin: 0 var(--pad-sm) var(--pad-xs) var(--pad-3xl);
+    padding: var(--pad-xs) var(--pad-sm);
     background: var(--bg-soft);
     border-radius: var(--r-sm);
 

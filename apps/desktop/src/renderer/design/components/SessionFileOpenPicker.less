@@ -21,12 +21,12 @@
 }
 
 .session-file-open-main {
-  gap: 4px;
+  gap: var(--pad-3xs);
   min-width: 58px;
-  padding: 0 9px;
+  padding: 0 var(--pad-sm);
   border-radius: var(--r-sm) 0 0 var(--r-sm);
   border-right: 0;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 500;
 }
 
@@ -48,7 +48,7 @@
 .session-file-open.is-compact .session-file-open-main {
   min-width: 0;
   height: 22px;
-  padding: 0 6px;
+  padding: 0 var(--pad-xs);
   font-size: 0;
 }
 
@@ -65,7 +65,7 @@
   position: fixed;
   z-index: 1000;
   width: 236px;
-  padding: 5px;
+  padding: var(--pad-xs);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
@@ -80,9 +80,9 @@
 }
 
 .session-file-open-menu-title {
-  padding: 7px 8px 4px;
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-3xs);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 700;
 }
 
@@ -90,14 +90,14 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--pad-sm);
   min-height: 30px;
-  padding: 5px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-align: left;
   cursor: pointer;
 }
@@ -108,7 +108,7 @@
 }
 
 .session-file-open-menu-item.is-refresh {
-  margin-top: 4px;
+  margin-top: var(--pad-3xs);
   border-top: 1px solid var(--border);
   border-radius: 0 0 var(--r-sm) var(--r-sm);
   color: var(--text-muted);
@@ -126,8 +126,8 @@
 .session-file-open-menu-state {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 8px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }

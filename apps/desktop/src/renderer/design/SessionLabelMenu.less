@@ -1,7 +1,7 @@
 /* SessionLabelMenu — 会话标记二级浮层（容器 chrome 与 .action-menu 一致，无 border） */
 .session-label-menu {
   min-width: 148px;
-  padding: 4px;
+  padding: var(--pad-3xs);
   background: var(--panel);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-lg);
@@ -12,9 +12,9 @@
 .session-label-menu-item {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--pad-sm);
   width: 100%;
-  padding: 8px 9px;
+  padding: var(--pad-sm) var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -48,7 +48,7 @@
 }
 
 .session-label-menu-divider {
-  margin: 4px 6px;
+  margin: var(--pad-3xs) var(--pad-xs);
   height: 1px;
   background: var(--border);
 }

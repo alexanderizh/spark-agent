@@ -242,7 +242,7 @@
   top: var(--pad-lg);
   right: var(--pad-xl);
   display: inline-flex;
-  padding: 3px;
+  padding: var(--pad-3xs);
   border-radius: 9999px;
   background: var(--bg-sunken);
   border: 1px solid var(--border);
@@ -333,7 +333,7 @@
 
 .auth-form-title {
   margin: 0 0 var(--pad-xs);
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: 700;
   color: var(--text-strong);
   letter-spacing: -0.015em;
@@ -387,7 +387,7 @@
 .auth-form-body--flat {
   display: flex;
   flex-direction: column;
-  margin-bottom: 16px;
+  margin-bottom: var(--pad-lg);
 }
 
 // 重置 antd Form.Item 默认间距，由 auth-field-row 统一控制
@@ -430,7 +430,7 @@
   align-items: center;
   padding: var(--pad-xs) 0 var(--pad-sm);
   border-bottom: 1px solid var(--border-strong);
-  transition: border-color 120ms ease;
+  transition: border-color var(--motion-fast) ease;
 }
 
 // 底线聚焦动画：从左滑入 primary 色
@@ -471,7 +471,7 @@
   color: var(--text-faint);
   margin-right: var(--pad-sm);
   flex-shrink: 0;
-  transition: color 120ms ease;
+  transition: color var(--motion-fast) ease;
 }
 
 .auth-input--flat:focus-within .auth-input-icon {
@@ -674,7 +674,7 @@
   align-items: center;
   padding: var(--pad-xs) 0 var(--pad-sm);
   border-bottom: 1px solid var(--border-strong);
-  transition: border-color 120ms ease;
+  transition: border-color var(--motion-fast) ease;
 }
 
 .auth-form-body--flat .captcha-btn-box::after {
@@ -827,7 +827,7 @@
   }
 
   .auth-brand-h {
-    font-size: 22px;
+    font-size: var(--font-xl);
   }
 
   .auth-brand-features {
@@ -938,7 +938,7 @@
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 0 var(--pad-3xs);
   text-decoration: none;
 }
 
@@ -1111,7 +1111,7 @@
 .auth-browser-waiting-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   margin-top: var(--pad-lg);
 }
 

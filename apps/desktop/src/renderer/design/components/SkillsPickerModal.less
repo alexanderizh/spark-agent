@@ -35,8 +35,8 @@
 .skills-picker-header {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 18px 20px 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-xl) var(--pad-xl) var(--pad-md);
   flex-shrink: 0;
 }
 
@@ -50,8 +50,8 @@
   > span:first-of-type {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 15px;
+    gap: var(--pad-xs);
+    font-size: var(--font-lg);
     font-weight: 600;
     color: var(--color-text-1);
     line-height: 1.4;
@@ -59,7 +59,7 @@
 }
 
 .skills-picker-subtitle {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 400;
   color: var(--color-text-3);
   line-height: 1.4;
@@ -77,7 +77,7 @@
   background: transparent;
   color: var(--color-text-3);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--motion-fast) ease;
 
   &:hover {
     background: var(--color-fill-3);
@@ -87,10 +87,10 @@
 
 // ---------- Toolbar（搜索 + Tab） ----------
 .skills-picker-toolbar {
-  padding: 0 20px 12px;
+  padding: 0 var(--pad-xl) var(--pad-md);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
   flex-shrink: 0;
 }
 
@@ -102,7 +102,7 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
+  padding: var(--pad-3xs);
   background: var(--color-fill-2);
   border-radius: 8px;
   align-self: flex-start;
@@ -111,16 +111,16 @@
 .skills-picker-tab {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   height: 26px;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   border: none;
   background: transparent;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text-2);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--motion-fast) ease;
 
   &:hover {
     color: var(--color-text-1);
@@ -135,7 +135,7 @@
 }
 
 .skills-picker-tab-count {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-3);
   font-variant-numeric: tabular-nums;
 
@@ -163,7 +163,7 @@
 
 // ---------- Table ----------
 .skills-picker-table-wrap {
-  margin: 0 20px;
+  margin: 0 var(--pad-xl);
   border: 1px solid var(--color-border-2);
   border-radius: 8px;
   overflow: hidden;
@@ -189,12 +189,12 @@
 }
 
 .skills-picker-cell {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text-2);
-  padding: 0 12px;
+  padding: 0 var(--pad-md);
 
   &--checkbox {
-    padding: 0 0 0 12px;
+    padding: 0 0 0 var(--pad-md);
     display: flex;
     align-items: center;
     justify-content: flex-start;
@@ -209,12 +209,12 @@
 
   &--status {
     text-align: right;
-    padding-right: 14px;
+    padding-right: var(--pad-lg);
   }
 }
 
 .skills-picker-table-head .skills-picker-cell {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 500;
   color: var(--color-text-3);
   text-transform: none;
@@ -233,7 +233,9 @@
   height: 40px;
   border-bottom: 1px solid var(--color-border-2);
   cursor: pointer;
-  transition: background 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    background var(--motion-instant) ease,
+    box-shadow var(--motion-instant) ease;
   position: relative;
 
   &:last-child {
@@ -281,8 +283,8 @@
 .skills-picker-status {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 12px;
+  gap: var(--pad-xs);
+  font-size: var(--font-sm);
   font-variant-numeric: tabular-nums;
 
   &--enabled {
@@ -296,7 +298,7 @@
 
 // ---------- Empty ----------
 .skills-picker-empty {
-  padding: 32px 16px;
+  padding: var(--pad-3xl) var(--pad-lg);
 }
 
 // ---------- Footer ----------
@@ -304,8 +306,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px 16px;
-  gap: 12px;
+  padding: var(--pad-md) var(--pad-xl) var(--pad-lg);
+  gap: var(--pad-md);
   flex-shrink: 0;
   border-top: 1px solid var(--color-border-2);
 }
@@ -313,17 +315,17 @@
 .skills-picker-footer-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .skills-picker-footer-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .skills-picker-footer-hint {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text-3);
   font-variant-numeric: tabular-nums;
 }

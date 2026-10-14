@@ -10,20 +10,20 @@
 .account-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 0 4px;
+  gap: var(--pad-lg);
+  padding: 0 var(--pad-3xs);
   max-width: 760px;
 
   h3.settings-section-title {
     margin: 0;
-    font-size: 16px;
+    font-size: var(--font-lg);
     font-weight: 600;
     color: var(--color-text-1, #0f172a);
   }
 
   h4 {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 600;
     color: var(--color-text-1, #0f172a);
   }
@@ -37,20 +37,20 @@
 .account-panel {
   background: var(--color-bg-2, #ffffff);
   border: 1px solid var(--color-border-1, #e2e8f0);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
 }
 
 .account-profile-card {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 18px;
+  gap: var(--pad-lg);
+  padding: var(--pad-xl);
 }
 
 .account-profile {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--pad-lg);
 }
 
 .account-profile-avatar {
@@ -61,7 +61,7 @@
   overflow: hidden;
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #ffffff;
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -72,12 +72,12 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
   min-width: 0;
 }
 
 .account-profile-nickname {
-  font-size: 17px;
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--color-text-1, #0f172a);
   overflow: hidden;
@@ -86,7 +86,7 @@
 }
 
 .account-profile-account {
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
   color: var(--color-text-3, #64748b);
   font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
@@ -98,7 +98,7 @@
 .account-profile-tags {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   flex-wrap: wrap;
 }
 
@@ -108,9 +108,9 @@
   display: inline-flex;
   align-items: center;
   min-height: 24px;
-  padding: 0 8px;
-  border-radius: 999px;
-  font-size: 11px;
+  padding: 0 var(--pad-sm);
+  border-radius: var(--r-pill);
+  font-size: var(--font-xs);
   line-height: 1;
 }
 
@@ -146,33 +146,33 @@
 .account-profile-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-shrink: 0;
 }
 
 .account-profile-meta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .account-profile-meta-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
-  padding: 12px;
+  padding: var(--pad-md);
   border-radius: 8px;
   background: var(--color-fill-1, #f8fafc);
 }
 
 .account-profile-meta-label {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-3, #64748b);
 }
 
 .account-profile-meta-value {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 500;
   line-height: 1.5;
   color: var(--color-text-1, #0f172a);
@@ -182,19 +182,19 @@
 }
 
 .account-panel {
-  padding: 16px;
+  padding: var(--pad-lg);
 }
 
 .account-panel-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--pad-md);
+  margin-bottom: var(--pad-md);
 
   p {
-    margin-top: 4px;
-    font-size: 12px;
+    margin-top: var(--pad-3xs);
+    font-size: var(--font-sm);
     line-height: 1.6;
     color: var(--color-text-3, #64748b);
   }
@@ -212,11 +212,11 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: var(--pad-md);
+  padding: var(--pad-md) var(--pad-lg);
   background: var(--color-bg-2, #ffffff);
   border-bottom: 1px solid var(--color-border-1, #e2e8f0);
-  font-size: 13px;
+  font-size: var(--font-base);
 
   &:last-child {
     border-bottom: none;
@@ -238,7 +238,7 @@
   padding: 0;
   color: #2563eb;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-base);
 
   &:hover {
     color: #1d4ed8;
@@ -249,16 +249,16 @@
 .account-baseurl-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
 
   code {
     flex: 1;
     min-width: 0;
-    padding: 8px 10px;
+    padding: var(--pad-sm) var(--pad-sm);
     border-radius: 8px;
     background: var(--color-fill-2, #f1f5f9);
     font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
-    font-size: 12px;
+    font-size: var(--font-sm);
     line-height: 1.5;
     color: var(--color-text-2, #475569);
     overflow: hidden;

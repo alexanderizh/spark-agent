@@ -8,14 +8,14 @@
 .pmc_catalog {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--pad-lg);
   min-width: 0;
 }
 
 .pmc_block {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -23,7 +23,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-wrap: wrap;
 }
 
@@ -32,32 +32,32 @@
   display: flex;
   flex-direction: column;
   /* 标题与提示行留出呼吸空间（2px 太挤，+4px） */
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 
 .pmc_title {
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   line-height: 24px;
 }
 
 .pmc_hint {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .pmc_section_action {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
+  gap: var(--pad-xs);
+  padding: var(--pad-3xs) var(--pad-sm);
   border: 1px solid transparent;
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.4;
   font-weight: 500;
   cursor: pointer;
@@ -86,7 +86,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -102,12 +102,12 @@
   display: inline-flex;
   align-items: center;
   height: 17px;
-  padding: 0 6px;
+  padding: 0 var(--pad-xs);
   border-radius: var(--r-xs);
   /* 实心主色徽标：14% 透明底在暗色主题下几乎不可感知，改为主色底 + 反色字保证状态可读 */
   background: var(--primary);
   color: var(--primary-fg);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   flex-shrink: 0;
@@ -128,9 +128,9 @@
 .pmc_model_row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 34px;
-  padding: 8px 4px 8px 2px;
+  padding: var(--pad-sm) var(--pad-3xs) var(--pad-sm) 2px;
   border-radius: var(--r-sm);
 
   // & + .pmc_model_row {
@@ -154,10 +154,10 @@
   height: 26px;
   flex-shrink: 0;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: transparent;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--motion-fast) ease;
 
   &:not(:disabled):hover .pmc_radio_dot {
     border-color: var(--primary);
@@ -182,9 +182,9 @@
   flex-shrink: 0;
   /* 未选态用 border-strong：暗色下 --border(#3d3d3d) 在 panel(#303030) 上几乎不可见 */
   border: 1.5px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: transparent;
-  transition: border-color 0.15s ease;
+  transition: border-color var(--motion-fast) ease;
 
   /* 选中中心点用独立实心圆（整数 6px + 百分比居中，无亚像素），
      替代 inset box-shadow 粗环：两图层抗锯齿在小尺寸 + 非整数缩放下
@@ -196,11 +196,11 @@
     left: 50%;
     width: 6px;
     height: 6px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--primary);
     transform: translate(-50%, -50%);
     opacity: 0;
-    transition: opacity 0.15s ease;
+    transition: opacity var(--motion-fast) ease;
   }
 
   /* 选中态：主色细环 + 中心实心圆点（标准 radio 观感，真圆点） */
@@ -220,7 +220,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
 
   .pmc_model_row.is-default & {
@@ -263,9 +263,9 @@
 }
 
 .pmc_empty {
-  padding: 12px 4px;
+  padding: var(--pad-md) var(--pad-3xs);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-align: center;
 }
 
@@ -275,14 +275,14 @@
 .pmc_add_row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
   height: var(--form-control-h, 32px);
-  padding: 0 4px 0 10px;
+  padding: 0 var(--pad-3xs) 0 var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
-  transition: border-color 0.15s ease;
+  transition: border-color var(--motion-fast) ease;
 
   &:focus-within {
     border-color: var(--primary);
@@ -306,7 +306,7 @@
   border: none;
   background: transparent;
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
   outline: none;
 
@@ -318,15 +318,17 @@
 
 .pmc_add_button {
   flex-shrink: 0;
-  padding: 4px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
   border: none;
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--primary);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease;
 
   &:not(:disabled):hover {
     background: var(--selected);
@@ -351,7 +353,7 @@
   border: 1px solid color-mix(in srgb, var(--primary) 26%, transparent);
   border-radius: var(--r-sm);
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 /* 表单网格把 selector 高度强制为 --form-control-h，多选 tag 默认顶格 —— 垂直居中对齐 */

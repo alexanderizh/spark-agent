@@ -12,9 +12,9 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 20px;
-  padding-top: 5px;
-  gap: 16px;
+  padding: var(--pad-xl);
+  padding-top: var(--pad-xs);
+  gap: var(--pad-lg);
   overflow: auto;
   background: var(--bg-soft);
 
@@ -22,19 +22,19 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 16px;
+    gap: var(--pad-lg);
     flex-shrink: 0;
   }
 
   &-title {
-    font-size: 18px;
+    font-size: var(--font-xl);
     font-weight: 600;
     color: var(--text);
     line-height: 1.3;
   }
   &-desc {
-    margin-top: 4px;
-    font-size: 12px;
+    margin-top: var(--pad-3xs);
+    font-size: var(--font-sm);
     color: var(--text-muted);
     line-height: 1.5;
     max-width: 640px;
@@ -42,12 +42,12 @@
   &-actions {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     flex-shrink: 0;
   }
 
   &-empty {
-    margin: 40px auto;
+    margin: var(--pad-3xl) auto;
     text-align: center;
     max-width: 360px;
     color: var(--text-muted);
@@ -55,7 +55,7 @@
     &-icon {
       width: 48px;
       height: 48px;
-      margin: 0 auto 12px;
+      margin: 0 auto var(--pad-md);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -64,17 +64,17 @@
       color: var(--text-faint);
     }
     &-title {
-      font-size: 14px;
+      font-size: var(--font-md);
       font-weight: 600;
       color: var(--text);
     }
     &-desc {
-      margin-top: 6px;
-      font-size: 12px;
+      margin-top: var(--pad-xs);
+      font-size: var(--font-sm);
       line-height: 1.5;
     }
     &-cta {
-      margin-top: 12px;
+      margin-top: var(--pad-md);
     }
   }
 }
@@ -83,14 +83,16 @@
 .teams-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 14px 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-lg) var(--pad-lg) var(--pad-md);
   border-radius: var(--r-lg);
   background: var(--bg-sunken);
   cursor: pointer;
   text-align: left;
   border: 0;
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease;
 
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
@@ -101,7 +103,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   &-avatar {
@@ -126,10 +128,10 @@
   }
 
   &-status {
-    font-size: 10px;
+    font-size: var(--font-2xs);
     font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 999px;
+    padding: 2px var(--pad-sm);
+    border-radius: var(--r-pill);
 
     &.enabled {
       color: var(--success, #16a34a);
@@ -142,13 +144,13 @@
   }
 
   &-name {
-    font-size: 14px;
+    font-size: var(--font-md);
     font-weight: 600;
     color: var(--text);
     line-height: 1.3;
   }
   &-desc {
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--text-muted);
     line-height: 1.45;
     display: -webkit-box;
@@ -160,8 +162,8 @@
   &-meta {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 11px;
+    gap: var(--pad-xs);
+    font-size: var(--font-xs);
     color: var(--text-faint);
     flex-wrap: wrap;
 
@@ -177,12 +179,12 @@
   &-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: var(--pad-3xs);
     margin-top: 2px;
   }
   &-tag {
-    font-size: 10px;
-    padding: 2px 8px;
+    font-size: var(--font-2xs);
+    padding: 2px var(--pad-sm);
     border-radius: var(--r-sm);
     background: var(--bg-sunken);
     color: var(--text-muted);
@@ -203,8 +205,8 @@
     z-index: 5;
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 20px;
+    gap: var(--pad-md);
+    padding: var(--pad-md) var(--pad-xl);
     background: var(--panel);
     border-bottom: 1px solid var(--divider);
     flex-shrink: 0;
@@ -213,16 +215,16 @@
   &-title {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 14px;
+    gap: var(--pad-sm);
+    font-size: var(--font-md);
     font-weight: 600;
     color: var(--text);
     flex: 1;
     min-width: 0;
   }
   &-title-tag {
-    font-size: 10px;
-    padding: 2px 6px;
+    font-size: var(--font-2xs);
+    padding: 2px var(--pad-xs);
     border-radius: var(--r-xs);
     background: var(--bg-sunken);
     color: var(--text-muted);
@@ -235,7 +237,7 @@
   &-actions {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     flex-shrink: 0;
   }
 
@@ -243,13 +245,13 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 20px;
+    padding: var(--pad-xl);
   }
 
   &-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
+    gap: var(--pad-lg);
     max-width: 920px;
     margin: 0 auto;
   }
@@ -259,11 +261,13 @@
 .teams-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 18px;
+  gap: var(--pad-md);
+  padding: var(--pad-lg) var(--pad-xl);
   background: var(--bg-sunken);
   border-radius: var(--r-lg);
-  transition: box-shadow 0.15s ease, background 0.15s ease;
+  transition:
+    box-shadow var(--motion-fast) ease,
+    background var(--motion-fast) ease;
 
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
@@ -274,36 +278,36 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--pad-md);
   }
   &-title {
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 600;
     color: var(--text);
   }
   &-hint {
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-faint);
   }
   &-count {
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-muted);
     background: var(--bg-sunken);
-    padding: 1px 8px;
-    border-radius: 999px;
+    padding: 1px var(--pad-sm);
+    border-radius: var(--r-pill);
   }
 }
 
 .teams-avatar-row {
-  margin-bottom: 14px;
-  padding-bottom: 14px;
+  margin-bottom: var(--pad-lg);
+  padding-bottom: var(--pad-lg);
   border-bottom: 1px solid var(--divider);
 }
 
 .teams-field-grid {
   display: grid;
   grid-template-columns: 1fr 200px;
-  gap: 12px 16px;
+  gap: var(--pad-md) var(--pad-lg);
   align-items: start;
 
   > .wide {
@@ -314,18 +318,18 @@
 .teams-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
 
   &-label {
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-weight: 500;
     color: var(--text-muted);
     letter-spacing: 0.02em;
     white-space: nowrap;
   }
   &-hint {
-    font-size: 11px;
+    font-size: var(--font-xs);
     color: var(--text-faint);
     line-height: 1.4;
   }
@@ -335,20 +339,23 @@
 .teams-members-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .teams-member-chip {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
   background: var(--bg-soft);
   border: 1px solid transparent;
   border-radius: var(--r-md);
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition:
+    background var(--motion-instant) ease,
+    border-color var(--motion-instant) ease,
+    color var(--motion-instant) ease;
   min-width: 0;
   color: var(--text);
 
@@ -388,7 +395,7 @@
   &-name {
     flex: 1;
     min-width: 0;
-    font-size: 12px;
+    font-size: var(--font-sm);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -403,11 +410,11 @@
 .teams-host-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
   background: var(--bg-soft);
   border-radius: var(--r-md);
-  margin-bottom: 8px;
+  margin-bottom: var(--pad-sm);
 
   &-avatar {
     width: 28px;
@@ -430,13 +437,13 @@
   }
   &-name {
     flex: 1;
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 500;
     color: var(--text);
   }
   &-builtin {
-    font-size: 10px;
-    padding: 1px 6px;
+    font-size: var(--font-2xs);
+    padding: 1px var(--pad-xs);
     border-radius: var(--r-xs);
     background: var(--bg-sunken);
     color: var(--text-faint);
@@ -447,6 +454,6 @@
 .teams-nesting-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--pad-lg);
   flex-wrap: wrap;
 }

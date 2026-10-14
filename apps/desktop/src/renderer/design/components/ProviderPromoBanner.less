@@ -2,17 +2,17 @@
 .ppb_group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .ppb_banner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
+  gap: var(--pad-sm);
+  padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-sm);
   background: var(--primary-soft);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
   min-width: 0;
 }
@@ -29,7 +29,7 @@
 .ppb_cta {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--pad-3xs);
   flex-shrink: 0;
   color: var(--primary);
   font-weight: 500;
@@ -44,12 +44,12 @@
 
 // 「一键使用」按钮形态：与外链入口并列，实底小按钮强调切换动作
 .ppb_cta_button {
-  padding: 2px 10px;
+  padding: 2px var(--pad-sm);
   border: none;
   border-radius: var(--r-sm);
   background: var(--primary);
   color: var(--bg);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
 
   &:hover {

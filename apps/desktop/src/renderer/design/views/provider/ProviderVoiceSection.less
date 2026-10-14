@@ -11,7 +11,7 @@
   min-width: 0;
 
   &:not(:empty) {
-    margin: 4px 0 10px;
+    margin: var(--pad-3xs) 0 var(--pad-sm);
     border-top: 1px solid var(--divider, var(--border));
   }
 }
@@ -20,9 +20,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
   min-width: 0;
-  padding: 9px 0;
+  padding: var(--pad-sm) 0;
 
   & + & {
     border-top: 1px solid var(--divider, var(--border));
@@ -40,8 +40,8 @@
 .pv_voice_row_title {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--pad-3xs);
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text);
 }
@@ -50,7 +50,7 @@
   flex: none;
   color: var(--text-muted);
   cursor: help;
-  transition: color 0.15s ease;
+  transition: color var(--motion-fast) ease;
 
   &:hover {
     color: var(--text);
@@ -58,7 +58,7 @@
 }
 
 .pv_voice_row_meta {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   line-height: 1.4;
 }
@@ -66,7 +66,7 @@
 .pv_voice_row_actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex: none;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -76,13 +76,13 @@
 .pv_voice_modal {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
 .pv_voice_modal_intro {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-secondary);
   line-height: 1.5;
 }
@@ -91,19 +91,19 @@
   display: grid;
   grid-template-columns: 110px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
 .pv_voice_modal_field_label {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
   color: var(--text-secondary);
 }
 
 .pv_voice_modal_hint {
   margin: -4px 0 0;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   line-height: 1.5;
 
@@ -114,14 +114,14 @@
 }
 
 .pv_voice_modal_hint--builtin {
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border-radius: 4px;
   background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .pv_voice_modal_error {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--red, #e5484d);
 }
 
@@ -129,21 +129,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
   width: 100%;
 }
 
 .pv_voice_modal_footer_right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 /* 窄面板：字段标签与输入竖排，避免 110px 标签把控件挤成一条 */
 @media (max-width: 720px) {
   .pv_voice_modal_field {
     grid-template-columns: 1fr;
-    gap: 4px;
+    gap: var(--pad-3xs);
   }
 
   .pv_voice_row {

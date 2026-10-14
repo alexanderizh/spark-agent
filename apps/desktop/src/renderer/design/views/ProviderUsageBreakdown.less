@@ -14,8 +14,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto auto;
   align-items: center;
-  gap: 14px;
-  padding: 10px var(--pad-lg);
+  gap: var(--pad-lg);
+  padding: var(--pad-sm) var(--pad-lg);
   cursor: pointer;
   user-select: none;
 }
@@ -34,8 +34,8 @@
 .provider-rank-fill {
   height: 100%;
   background: #64558f;
-  border-radius: 999px;
-  transition: width 0.3s ease;
+  border-radius: var(--r-pill);
+  transition: width var(--motion-slow) ease;
 }
 html[data-spark-theme='dark'] .provider-rank-fill {
   background: #8d7fc7;
@@ -52,19 +52,19 @@ html[data-spark-theme='dark'] .provider-rank-fill {
 /* 展开后的模型明细行：整体压暗一档 + 缩进，柱更细、主色减淡。 */
 .provider-rank-models {
   background: color-mix(in srgb, var(--bg-soft) 55%, transparent);
-  padding: 4px 0 6px;
+  padding: var(--pad-3xs) 0 var(--pad-xs);
 }
 .provider-rank-model-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto auto;
   align-items: center;
-  gap: 14px;
-  padding: 5px var(--pad-lg) 5px calc(var(--pad-lg) + 14px);
+  gap: var(--pad-lg);
+  padding: var(--pad-xs) var(--pad-lg) var(--pad-xs) calc(var(--pad-lg) + var(--pad-lg));
 }
 .provider-rank-model-name {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 .provider-rank-tree {
@@ -85,21 +85,21 @@ html[data-spark-theme='dark'] .provider-rank-fill {
 .provider-rank-model-fill {
   height: 6px;
   background: color-mix(in srgb, var(--primary) 55%, transparent);
-  border-radius: 999px;
-  transition: width 0.3s ease;
+  border-radius: var(--r-pill);
+  transition: width var(--motion-slow) ease;
 }
 
 /* 图例 */
 .provider-rank-legend {
   display: flex;
-  gap: 16px;
-  padding: 8px var(--pad-lg) 10px;
+  gap: var(--pad-lg);
+  padding: var(--pad-sm) var(--pad-lg) var(--pad-sm);
   border-top: 1px solid var(--border);
 }
 .provider-rank-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   font-size: var(--font-xs);
   color: var(--text-faint);
 }

@@ -8,7 +8,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding: 0 0px 20px;
+  padding: 0 0px var(--pad-xl);
 }
 
 /* ─── Header ──────────────────────────────────────────────────────────────── */
@@ -17,21 +17,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
+  padding: var(--pad-lg);
   border-bottom: 1px solid var(--color-border-2);
   flex-wrap: wrap;
-  gap: 8px;
-  padding-top: 5px;
+  gap: var(--pad-sm);
+  padding-top: var(--pad-xs);
 }
 
 .st-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 
   h2 {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--font-xl);
     font-weight: 600;
   }
 }
@@ -39,7 +39,7 @@
 .st-header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 /* ─── Filter Bar ──────────────────────────────────────────────────────────── */
@@ -48,8 +48,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  gap: 12px;
+  padding: var(--pad-md) var(--pad-lg);
+  gap: var(--pad-md);
 }
 
 .st-filter-tabs {
@@ -61,13 +61,13 @@
 .st-filter-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 16px;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm) var(--pad-lg);
   border: none;
   background: transparent;
   border-radius: var(--r-md);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 500;
   color: var(--text-muted);
   font-family: inherit;
@@ -91,9 +91,9 @@
 .st-content {
   display: flex;
   flex: 1;
-  gap: 16px;
+  gap: var(--pad-lg);
   overflow: hidden;
-  padding: 8px 16px;
+  padding: var(--pad-sm) var(--pad-lg);
 }
 
 .st-loading,
@@ -113,16 +113,16 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-right: 8px;
-  padding-left: 8px;
+  gap: var(--pad-xs);
+  padding-right: var(--pad-sm);
+  padding-left: var(--pad-sm);
   padding-top: 0px;
 
   // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
 
 .st-task-card {
-  padding: 10px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   border-radius: var(--r-md);
   cursor: pointer;
   transition:
@@ -144,7 +144,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: var(--pad-xs);
 }
 
 .st-task-name-row {
@@ -155,7 +155,7 @@
 }
 
 .st-task-name {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -165,15 +165,15 @@
 .st-task-meta {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-bottom: 6px;
+  gap: var(--pad-3xs);
+  margin-bottom: var(--pad-xs);
 }
 
 .st-task-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-3);
 }
 
@@ -186,8 +186,8 @@
 .st-task-stats {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: var(--pad-3xs);
+  font-size: var(--font-xs);
 }
 
 /* ─── Detail Panel (Right) ────────────────────────────────────────────────── */
@@ -207,23 +207,23 @@
 }
 
 .st-detail-content {
-  padding: 24px;
+  padding: var(--pad-2xl);
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--pad-2xl);
 }
 
 .st-detail-header {
   h3 {
     margin: 0;
-    font-size: 16px;
+    font-size: var(--font-lg);
     font-weight: 600;
   }
 }
 
 .st-detail-title {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-lg);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -235,21 +235,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: var(--pad-md);
+  margin-bottom: var(--pad-sm);
 }
 
 .st-detail-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex-shrink: 0;
 }
 
 .st-detail-desc {
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--color-text-2);
-  margin: 0 0 10px;
+  margin: 0 0 var(--pad-sm);
   line-height: 1.5;
 }
 
@@ -263,7 +263,7 @@
 .st-detail-stats {
   display: flex;
   gap: 0;
-  padding: 14px 0;
+  padding: var(--pad-lg) 0;
   background: var(--color-fill-1);
   border-radius: var(--r-lg);
 }
@@ -272,7 +272,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex: 1;
 
   & + & {
@@ -281,14 +281,14 @@
 }
 
 .st-stat-value {
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: 600;
   color: var(--color-text-1);
   font-variant-numeric: tabular-nums;
 }
 
 .st-stat-label {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-3);
   letter-spacing: 0.3px;
 }
@@ -297,8 +297,8 @@
 
 .st-detail-config {
   h4 {
-    margin: 0 0 10px;
-    font-size: 13px;
+    margin: 0 0 var(--pad-sm);
+    font-size: var(--font-base);
     font-weight: 500;
     color: var(--color-text-2);
   }
@@ -307,8 +307,8 @@
 .st-config-grid {
   display: grid;
   grid-template-columns: 80px 1fr;
-  gap: 6px 12px;
-  font-size: 12px;
+  gap: var(--pad-xs) var(--pad-md);
+  font-size: var(--font-sm);
 }
 
 .st-config-label {
@@ -322,15 +322,15 @@
 }
 
 .st-detail-error {
-  margin-top: 10px;
-  padding: 8px 12px;
+  margin-top: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-md);
   border-radius: var(--r-sm);
   background: var(--color-danger-light-1);
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-danger-6);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   word-break: break-all;
   line-height: 1.5;
 
@@ -344,8 +344,8 @@
 
 .st-detail-executions {
   h4 {
-    margin: 0 0 10px;
-    font-size: 13px;
+    margin: 0 0 var(--pad-sm);
+    font-size: var(--font-base);
     font-weight: 500;
     color: var(--color-text-2);
   }
@@ -354,16 +354,16 @@
 .st-execution-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .st-execution-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   border-radius: var(--r-sm);
-  font-size: 12px;
+  font-size: var(--font-sm);
   background: var(--color-fill-1);
 
   &:hover {
@@ -374,7 +374,7 @@
 .st-execution-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .st-execution-time {
@@ -384,7 +384,7 @@
 .st-execution-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .st-execution-duration {
@@ -409,7 +409,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 16px;
+  padding: var(--pad-lg) var(--pad-lg);
   border-bottom: 1px solid var(--color-border-2);
   flex-shrink: 0;
 }
@@ -417,7 +417,7 @@
 .st-form-page-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .st-form-page-title-text {
@@ -426,13 +426,13 @@
 
   h2 {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--font-xl);
     font-weight: 600;
   }
 }
 
 .st-form-page-subtitle {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   letter-spacing: 1.5px;
   color: var(--color-text-3);
   font-weight: 500;
@@ -441,7 +441,7 @@
 .st-form-page-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 /* ─── Form Body ───────────────────────────────────────────────────────────── */
@@ -449,10 +449,10 @@
 .st-form-page-body {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 16px 40px;
+  padding: var(--pad-xl) var(--pad-lg) var(--pad-3xl);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--pad-lg);
 
   // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
@@ -475,8 +475,8 @@
 .st-form-section-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 20px 12px;
+  gap: var(--pad-md);
+  padding: var(--pad-lg) var(--pad-xl) var(--pad-md);
 }
 
 .st-section-badge {
@@ -488,7 +488,7 @@
   border-radius: var(--r-md);
   background: var(--primary-soft);
   color: var(--primary);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 700;
   letter-spacing: 0.5px;
   flex-shrink: 0;
@@ -497,23 +497,23 @@
 .st-section-header-text {
   h3 {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--font-md);
     font-weight: 600;
     color: var(--color-text-1);
   }
 
   p {
     margin: 1px 0 0;
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--color-text-3);
   }
 }
 
 .st-form-section-body {
-  padding: 4px 20px 20px;
+  padding: var(--pad-3xs) var(--pad-xl) var(--pad-xl);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--pad-xl);
 }
 
 /* ─── Form Fields ─────────────────────────────────────────────────────────── */
@@ -521,13 +521,13 @@
 .st-form-field-group {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--pad-lg);
 }
 
 .st-form-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
 
   &--half {
     flex: 1;
@@ -541,7 +541,7 @@
 }
 
 .st-field-label {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
   color: var(--color-text-2);
   display: flex;
@@ -557,14 +557,14 @@
 .st-form-field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: var(--pad-xl);
 }
 
 /* Agent / Team 互斥：两列选择器 + 紧随其后的互斥说明 */
 .st-form-subject-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 /* ─── Switch Row ──────────────────────────────────────────────────────────── */
@@ -572,28 +572,28 @@
 .st-form-switch-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
   height: 36px;
 }
 
 .st-form-switch-hint {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text-3);
 }
 
 /* ─── Hint Text ───────────────────────────────────────────────────────────── */
 
 .st-form-hint {
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: var(--pad-3xs);
+  font-size: var(--font-sm);
   color: var(--color-text-3);
   font-variant-numeric: tabular-nums;
 
   code {
-    padding: 1px 4px;
+    padding: 1px var(--pad-3xs);
     border-radius: var(--r-xs);
     background: var(--color-fill-2);
-    font-size: 11px;
+    font-size: var(--font-xs);
     font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
   }
 }
@@ -603,11 +603,11 @@
 .st-interval-input-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .st-interval-hint {
-  font-size: 13px;
+  font-size: var(--font-base);
   color: var(--primary);
   font-weight: 500;
   white-space: nowrap;
@@ -617,8 +617,8 @@
 .st-quick-intervals {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 8px;
+  gap: var(--pad-3xs);
+  margin-top: var(--pad-sm);
 }
 
 /* ─── Trigger Type Cards ──────────────────────────────────────────────────── */
@@ -626,14 +626,14 @@
 .st-trigger-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .st-trigger-card {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-md);
   border-radius: var(--r-md);
   border: 1.5px solid var(--color-border-2);
   cursor: pointer;
@@ -661,7 +661,7 @@
   border-radius: var(--r-md);
   background: var(--color-fill-2);
   color: var(--color-text-2);
-  font-size: 18px;
+  font-size: var(--font-xl);
   flex-shrink: 0;
   transition: all 0.2s;
 
@@ -680,13 +680,13 @@
 }
 
 .st-trigger-card-title {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 500;
   color: var(--color-text-1);
 }
 
 .st-trigger-card-desc {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-text-3);
   white-space: nowrap;
   overflow: hidden;
@@ -696,7 +696,7 @@
 .st-trigger-card-check {
   display: flex;
   align-items: center;
-  font-size: 16px;
+  font-size: var(--font-lg);
   color: var(--primary);
   flex-shrink: 0;
 }
@@ -727,18 +727,18 @@
 .st-multi-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  margin: 8px 0;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-md);
+  margin: var(--pad-sm) 0;
   background: var(--color-fill-2);
   border-radius: var(--r-sm);
   border: 1px solid var(--color-border-2);
 }
 
 .st-multi-count {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text-2);
-  margin-right: 4px;
+  margin-right: var(--pad-3xs);
 
   strong {
     color: var(--primary);
@@ -776,7 +776,7 @@
   border: 1.5px solid var(--color-border-3);
   border-radius: var(--r-xs);
   background: var(--color-bg-1);
-  margin-right: 8px;
+  margin-right: var(--pad-sm);
   flex-shrink: 0;
   transition: all 0.15s;
 
@@ -792,41 +792,41 @@
 .st-import-modal-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   font-weight: 600;
 }
 
 .st-import-modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .st-import-modal-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--pad-lg);
 }
 
 .st-import-meta {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-sm) var(--pad-md);
   background: var(--color-fill-1);
   border-radius: var(--r-sm);
-  font-size: 12px;
+  font-size: var(--font-sm);
 
   > div {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--pad-3xs);
     min-width: 0;
   }
 
   .mono-sm {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12px;
+    font-size: var(--font-sm);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -840,9 +840,9 @@
 .st-import-conflict-warn {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 4px;
-  padding: 4px 8px;
+  gap: var(--pad-3xs);
+  margin-top: var(--pad-3xs);
+  padding: var(--pad-3xs) var(--pad-sm);
   background: var(--color-warning-light-1, #fff7e6);
   border-radius: var(--r-xs);
   color: var(--color-warning-6);
@@ -851,8 +851,8 @@
 .st-import-mode-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
+  gap: var(--pad-xs);
+  font-size: var(--font-base);
 
   .muted {
     color: var(--color-text-3);
@@ -862,11 +862,11 @@
 .st-import-list-header {
   display: grid;
   grid-template-columns: 2fr 1.2fr 1.2fr 0.8fr;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: var(--pad-sm);
+  padding: var(--pad-xs) var(--pad-sm);
   background: var(--color-fill-2);
   border-radius: var(--r-xs);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--color-text-3);
 }
@@ -883,10 +883,10 @@
 .st-import-list-row {
   display: grid;
   grid-template-columns: 2fr 1.2fr 1.2fr 0.8fr;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm);
   border-bottom: 1px solid var(--color-border-1);
-  font-size: 12px;
+  font-size: var(--font-sm);
   align-items: center;
 
   &:last-child {
@@ -919,20 +919,20 @@
 }
 
 .st-import-empty {
-  padding: 24px;
+  padding: var(--pad-2xl);
   text-align: center;
   color: var(--color-text-3);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .st-import-tip {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm) var(--pad-sm);
   background: var(--color-fill-1);
   border-radius: var(--r-xs);
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--color-text-3);
 
   strong {
@@ -981,7 +981,7 @@
 }
 
 .st-filter-tab {
-  padding: 5px var(--pad-md);
+  padding: var(--pad-xs) var(--pad-md);
   border-radius: var(--r-sm);
   font-size: var(--font-sm);
 }

@@ -4,7 +4,7 @@
   width: 100%;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
 
   &.is-disabled {
     opacity: 0.55;
@@ -17,11 +17,11 @@
     min-width: 0;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .pv_cw_value {
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 500;
     color: var(--text);
     font-variant-numeric: tabular-nums;
@@ -40,14 +40,14 @@
     display: flex;
     flex-shrink: 0;
     align-items: center;
-    gap: 10px;
+    gap: var(--pad-sm);
   }
 
   .pv_cw_action {
     padding: 0;
     border: none;
     background: none;
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.5;
     color: var(--primary);
     cursor: pointer;
@@ -133,7 +133,7 @@
   .pv_cw_scale_label {
     position: absolute;
     top: 8px;
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1;
     color: var(--text-faint);
     white-space: nowrap;

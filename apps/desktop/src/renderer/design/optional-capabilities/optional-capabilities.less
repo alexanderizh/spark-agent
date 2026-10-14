@@ -22,16 +22,16 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    padding: 8px 24px 18px;
+    padding: var(--pad-sm) var(--pad-2xl) var(--pad-xl);
   }
 
   .ant-modal-header {
-    padding-bottom: 8px;
+    padding-bottom: var(--pad-sm);
   }
 
   .ant-modal-footer {
     margin-top: 0;
-    padding-top: 14px;
+    padding-top: var(--pad-lg);
     border-top: 1px solid var(--border);
   }
 }
@@ -41,21 +41,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--pad-lg);
 }
 
 .optional-capability-prompt-intro {
-  margin-bottom: 12px;
+  margin-bottom: var(--pad-md);
 
   > span {
     flex: 0 0 auto;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 }
 
 .optional-capability-choice-list {
-  margin-bottom: 12px;
+  margin-bottom: var(--pad-md);
   border-block: 1px solid var(--border);
 
   .ant-checkbox-wrapper {
@@ -64,10 +64,10 @@
     align-items: flex-start;
     gap: 2px;
     margin: 0;
-    padding: 14px 4px;
+    padding: var(--pad-lg) var(--pad-3xs);
     border-bottom: 1px solid var(--border);
     border-radius: 0;
-    transition: background-color 160ms ease;
+    transition: background-color var(--motion-base) ease;
 
     &:last-child {
       border-bottom: 0;
@@ -88,7 +88,7 @@
     }
 
     .ant-checkbox {
-      margin-top: 3px;
+      margin-top: var(--pad-3xs);
     }
 
     > span:last-child {
@@ -110,7 +110,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--pad-lg);
 }
 
 .optional-capability-choice-main {
@@ -122,7 +122,7 @@
   flex: 0 0 auto;
   align-items: flex-end;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .optional-capability-choice-title {
@@ -133,17 +133,17 @@
 .optional-capability-choice-description,
 .optional-capability-choice-size,
 .optional-capability-progress-detail {
-  margin-top: 3px;
+  margin-top: var(--pad-3xs);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .optional-capability-status {
-  padding: 2px 7px;
-  border-radius: 999px;
+  padding: 2px var(--pad-sm);
+  border-radius: var(--r-pill);
   background: var(--bg-soft);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 18px;
 
   &.ready {
@@ -164,9 +164,9 @@
 
 .optional-capability-selection-summary {
   min-height: 30px;
-  margin-bottom: 8px;
+  margin-bottom: var(--pad-sm);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 
   strong {
     color: var(--text-primary);
@@ -176,13 +176,13 @@
 
 .optional-capability-reminder {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .optional-capability-empty {
-  padding: 28px 4px;
+  padding: 28px var(--pad-3xs);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-base);
   text-align: center;
 }
 
@@ -191,16 +191,16 @@
   width: 100%;
   min-height: 64px;
   align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  padding: 12px 4px;
+  gap: var(--pad-md);
+  margin-top: var(--pad-lg);
+  padding: var(--pad-md) var(--pad-3xs);
   border: 0;
   border-top: 1px solid var(--border);
   background: transparent;
   color: inherit;
   cursor: pointer;
   text-align: left;
-  transition: background-color 160ms ease;
+  transition: background-color var(--motion-base) ease;
 
   &:hover {
     background: color-mix(in srgb, var(--primary) 5%, transparent);
@@ -227,17 +227,17 @@
   display: grid;
   min-width: 0;
   flex: 1;
-  gap: 3px;
+  gap: var(--pad-3xs);
 
   strong {
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--font-base);
     font-weight: 600;
   }
 
   span {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 }
 
@@ -245,9 +245,9 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .optional-capability-progress-card {
@@ -256,7 +256,7 @@
   top: 52px;
   right: 18px;
   width: min(340px, calc(100vw - 36px));
-  padding: 14px;
+  padding: var(--pad-lg);
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--panel-elev);
@@ -266,7 +266,7 @@
 .optional-capability-progress-actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 8px;
+  margin-top: var(--pad-sm);
 }
 
 .optional-capability-progress-header,
@@ -274,7 +274,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .codex-runtime-actions,
@@ -282,7 +282,7 @@
 .codex-runtime-latency-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .codex-runtime-actions {
@@ -293,51 +293,51 @@
 .codex-runtime-health-copy {
   align-items: flex-start;
   flex-direction: column;
-  margin-bottom: 12px;
-  padding: 10px 12px;
+  margin-bottom: var(--pad-md);
+  padding: var(--pad-sm) var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--warning) 42%, var(--border));
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--warning) 8%, transparent);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .codex-runtime-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: var(--pad-sm);
+  margin-bottom: var(--pad-md);
 }
 
 .codex-runtime-summary-item {
   display: grid;
-  gap: 4px;
-  padding: 14px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-lg);
 
   span,
   small {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
 
   strong {
     color: var(--text-primary);
-    font-size: 20px;
+    font-size: var(--font-xl);
   }
 }
 
 .codex-runtime-latency-card {
-  margin-bottom: 12px;
-  padding: 4px 14px;
+  margin-bottom: var(--pad-md);
+  padding: var(--pad-3xs) var(--pad-lg);
 }
 
 .codex-runtime-latency-row {
   display: grid;
   grid-template-columns: minmax(140px, 1fr) repeat(3, minmax(76px, auto)) minmax(72px, auto);
-  padding: 10px 0;
+  padding: var(--pad-sm) 0;
   border-bottom: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 
   &:last-child {
     border-bottom: 0;
@@ -350,18 +350,18 @@
 }
 
 .codex-runtime-list {
-  margin-bottom: 10px;
+  margin-bottom: var(--pad-sm);
 }
 
 .codex-runtime-disabled {
-  padding: 16px;
+  padding: var(--pad-lg);
   color: var(--text-secondary);
 }
 
 .codex-runtime-footnote {
-  margin: 8px 0 0;
+  margin: var(--pad-sm) 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 900px) {
@@ -381,18 +381,18 @@
 
 @media (max-width: 560px) {
   .optional-capability-modal .ant-modal-body {
-    padding-inline: 16px;
+    padding-inline: var(--pad-lg);
   }
 
   .optional-capability-prompt-intro {
     align-items: flex-start;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--pad-xs);
   }
 
   .optional-capability-choice-content {
     flex-direction: column;
-    gap: 8px;
+    gap: var(--pad-sm);
   }
 
   .optional-capability-choice-meta {
@@ -413,30 +413,30 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 20px;
+  font-size: var(--font-xl);
 }
 
 .optional-capability-progress-item {
-  margin-top: 12px;
+  margin-top: var(--pad-md);
 }
 
 .office-viewer-capability-placeholder {
   display: grid;
   place-content: center;
-  gap: 10px;
+  gap: var(--pad-sm);
   min-height: 220px;
-  padding: 24px;
+  padding: var(--pad-2xl);
   color: var(--text-secondary);
   text-align: center;
 
   strong {
     color: var(--text-primary);
-    font-size: 15px;
+    font-size: var(--font-lg);
   }
 
   button {
     justify-self: center;
-    padding: 7px 14px;
+    padding: var(--pad-sm) var(--pad-lg);
     border: 0;
     border-radius: 8px;
     background: var(--primary);
@@ -451,6 +451,6 @@
 }
 
 .optional-capability-progress-label {
-  margin-bottom: 4px;
-  font-size: 13px;
+  margin-bottom: var(--pad-3xs);
+  font-size: var(--font-base);
 }
