@@ -316,6 +316,14 @@ export function WikiView() {
     void refreshCandidateCount()
   }, [refreshCandidateCount])
 
+  // 里程碑沉淀产出候选时刷新徽标（WikiView 挂载中才生效；不在本视图时下次进入自然刷新）。
+  useEffect(() => {
+    const unsubscribe = window.spark?.on?.('stream:wiki:candidates-ready', () => {
+      void refreshCandidateCount()
+    })
+    return () => unsubscribe?.()
+  }, [refreshCandidateCount])
+
   /** 技能提议待确认数量（S3 Badge）。 */
   const refreshSkillCount = useCallback(async () => {
     try {

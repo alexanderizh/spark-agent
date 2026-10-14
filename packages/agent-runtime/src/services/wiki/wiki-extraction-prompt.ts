@@ -67,6 +67,11 @@ export const WIKI_EXTRACTION_SYSTEM_PROMPT = [
   '- turnIndex 必须取自输入中标注的轮次编号；excerpt 必须是该轮里真实出现过的内容，不得改写或拼凑。',
   '- 没有值得沉淀的内容时输出空数组 []，不要硬凑。',
   '- 每条知识必须自洽：脱离对话也能读懂，不出现"如上所述""这个方案"之类指代。',
+  '',
+  '沉淀判定补充：',
+  '- kind 判定：缺陷修复类（现象→根因→修复方式）用 experience；方案取舍及理由用 knowledge；可复用的流程/操作步骤用 pattern；路径、版本、端点等事实参考用 reference。',
+  '- 修复类知识必须集齐现象、根因、修复方式三要素，缺一不提取。',
+  '- 用户未确认生效、测试未通过的修复结论不提取（未验证不沉淀）。',
 ].join('\n')
 
 export function buildWikiExtractionPrompt(renderedTurns: string): string {

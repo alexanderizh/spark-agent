@@ -267,4 +267,10 @@ describe('parseWikiExtractionResponse', () => {
     expect(WIKI_EXTRACTION_SYSTEM_PROMPT).toContain('turnIndex')
     expect(WIKI_EXTRACTION_SYSTEM_PROMPT).toContain('不要硬凑')
   })
+
+  it('系统提示词包含 S5 追加的沉淀判定约束（kind 判定 / 三要素门槛 / 未验证不沉淀）', () => {
+    expect(WIKI_EXTRACTION_SYSTEM_PROMPT).toContain('kind 判定')
+    expect(WIKI_EXTRACTION_SYSTEM_PROMPT).toContain('缺一不提取')
+    expect(WIKI_EXTRACTION_SYSTEM_PROMPT).toContain('未确认生效')
+  })
 })

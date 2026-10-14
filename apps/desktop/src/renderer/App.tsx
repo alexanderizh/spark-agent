@@ -13,6 +13,7 @@ import {
 } from './design/AppContext'
 import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSidebarContext'
 import { useTeamStoreBadge } from './design/hooks/useTeamStoreBadge'
+import { useWikiCandidatesToast } from './design/hooks/useWikiCandidatesToast'
 import { MemoryPendingBadge } from './design/MemoryPendingBadge'
 import { CanvasProjectSelectionProvider } from './design/views/canvas/CanvasProjectSelectionContext'
 import { SubAppSurfaceProvider } from './design/sub-app/SubAppSurfaceHost'
@@ -1356,6 +1357,13 @@ function Shell() {
   const { toast } = useToast()
   const scaleRef = useRef<HTMLDivElement>(null)
   useAppearanceEffects()
+  // wiki 里程碑沉淀产出候选 → 右上角 toast +「去确认」跳转知识库（任意视图常驻）
+  useWikiCandidatesToast({
+    onOpenWiki: () => {
+      setTweak('workspaceMode', 'workbench')
+      setTweak('view', 'wiki')
+    },
+  })
   const [approvalRequests, setApprovalRequests] = useState<
     Record<string, PermissionApprovalRequest>
   >({})

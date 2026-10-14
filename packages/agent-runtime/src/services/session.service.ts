@@ -552,6 +552,7 @@ import {
   resolveWikiBudgetFromSettings,
   type WikiServiceStack,
 } from './wiki/wiki-service-stack.js'
+import { WikiMilestoneTrigger, createWikiMilestoneRuntime } from './wiki/wiki-milestone-trigger.js'
 import { chargeTurnWikiTokens, resetTurnWikiBudget } from './wiki/wiki-context-budget.js'
 import {
   repoOwnershipFromSourceType,
@@ -1177,6 +1178,10 @@ export class SessionService {
   private sessionWorktreeChangedHandler?:
     | ((sessionId: string, worktree: SessionRuntimeWorktreeState | null) => void)
     | undefined
+  /** wiki 里程碑触发器（惰性创建，fire-and-forget，绝不阻塞主链） */
+  private wikiMilestoneTrigger: WikiMilestoneTrigger | undefined
+  /** 候选产出通知回调（desktop 注入 → renderer toast；零产出不打扰） */
+  private wikiCandidatesReadyHandler: ((sessionId: string, inserted: number) => void) | undefined
   /** 惰性创建的会话 worktree 状态服务（读写 metadata + git 校验） */
   private worktreeStateService: SessionWorktreeStateService | null = null
   /** checkpoint / 事件清理管理器（惰性创建，P1-W3-S3 迁出至 ./session/checkpoint.ts） */
@@ -1877,6 +1882,16 @@ export class SessionService {
     this.sessionWorktreeChangedHandler = handler ?? undefined
   }
 
+  /**
+   * 注入 wiki 候选产出通知回调（milestone 蒸馏 inserted>0 时由桌面侧推流：
+   * pushStreamEvent('stream:wiki:candidates-ready')）。
+   */
+  setWikiCandidatesReadyHandler(
+    handler: ((sessionId: string, inserted: number) => void) | null,
+  ): void {
+    this.wikiCandidatesReadyHandler = handler ?? undefined
+  }
+
   /** 注入应用内可见浏览器 MCP provider（主进程持有 BrowserWindow 桥后调用一次） */
   setBrowserAutomationMcpProvider(provider: BrowserAutomationMcpProvider | null): void {
     this.browserAutomationMcpProvider = provider
@@ -2035,6 +2050,25 @@ export class SessionService {
    * 的 agent 工具看到的记忆范围一致。
    */
   // ─── Wiki（知识库）：服务栈构造 + bridge（CLI 子进程路径） ─────────────
+
+  /**
+   * wiki 里程碑触发器（惰性单例）。独立装配并显式传 settingsGet（与手动蒸馏
+   * 入口同款），不触碰 buildWikiServices 的既有行为；设置逐次读取即时生效。
+   */
+  private getWikiMilestoneTrigger(): WikiMilestoneTrigger {
+    this.wikiMilestoneTrigger ??= new WikiMilestoneTrigger({
+      settingsGet: this.wikiSettingsGet,
+      turnRegistry: this.turnRegistry,
+      ...createWikiMilestoneRuntime({ db: this.db, settingsGet: this.wikiSettingsGet }),
+      notifyCandidatesReady: (sessionId, inserted) =>
+        this.wikiCandidatesReadyHandler?.(sessionId, inserted),
+    })
+    return this.wikiMilestoneTrigger
+  }
+
+  /** wiki 设置读取（(category, key) 二元组；新建仓储薄封装，与 buildWikiServices 同口径）。 */
+  private wikiSettingsGet = (category: string, key: string): unknown =>
+    new SettingsRepository(this.db).get(category, key)
 
   /**
    * 构造 wiki 服务栈（SDK in-process 与 bridge 两条路径共用，保证语义一致）。
@@ -5955,6 +5989,8 @@ export class SessionService {
     settleTerminalStatus: () => AgentStatusEvent['status'] | null
     /** claude 路径传：成功完成后重置 SDK resume 熔断器。 */
     onTurnSucceeded?: () => void
+    /** 本轮文件变更数（claude 闭包现成；codex / spark 暂缺省，wiki milestone 关键词兜底）。 */
+    fileChangeCount?: number
   }): void {
     args.onTurnSucceeded?.()
     // auto-router 轮次成功：清零执行器失败计数（半开恢复探针通过）。未登记为 no-op。
@@ -6003,6 +6039,16 @@ export class SessionService {
       },
     ).catch(() => {
       /* swallow — never affect main flow */
+    })
+
+    // ── Wiki milestone：交付信号 + 防抖后的自动沉淀（fire-and-forget，绝不阻塞主链）──
+    // 触发评估 / 防抖 / 护栏 / 蒸馏全部在独立模块内消化，此处只投递信号。
+    this.getWikiMilestoneTrigger().onTurnSettled({
+      sessionId,
+      turnId,
+      assistantTurnText,
+      primaryWorkspaceId: args.options.primaryWorkspaceId,
+      ...(args.fileChangeCount != null ? { fileChangeCount: args.fileChangeCount } : {}),
     })
 
     this.settleTurnSuccessTail({
@@ -6922,6 +6968,7 @@ export class SessionService {
           settleTerminalStatus: settlePendingTerminalStatus,
           // Reset resume circuit breaker on successful turn completion（claude 专属）
           onTurnSucceeded: () => getResumeCircuitBreaker().recordSuccess(sessionId),
+          fileChangeCount: changedFiles.size,
         })
       })
       .catch(() => {
@@ -12183,6 +12230,8 @@ export class SessionService {
       this.toolAuditRecorder.dispose()
       // 执行连续性：Supervisor 心跳定时器与租约缓存随服务关停。
       this.executionSupervisor.dispose()
+      // wiki 里程碑触发器：清防抖定时器与频次护栏内存 Map。
+      this.wikiMilestoneTrigger?.dispose()
     })()
     return this.disposePromise
   }
