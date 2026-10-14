@@ -60,6 +60,8 @@ export default tseslint.config(
       'scripts/**/*.mjs',
       // SparkWork 移动端（apps/mobile）的构建/校验脚本同样跑在 Node ESM 下
       'apps/mobile/scripts/**/*.mjs',
+      // spark CLI 编程评测脚本跑在 Node ESM 下，不经过根 tsconfig。
+      'spark-engine/evals/**/*.mjs',
     ],
     languageOptions: {
       globals: {

@@ -1,0 +1,10 @@
+{
+  "id": "02-multi-file-refactor",
+  "title": "Rename a function across source files",
+  "capability": "multi-file-refactor",
+  "timeoutMs": 180000,
+  "promptFile": "prompt.md",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": ["package.json", "test/greet.test.mjs"]
+}

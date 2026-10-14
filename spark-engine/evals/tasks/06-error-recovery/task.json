@@ -1,0 +1,10 @@
+{
+  "id": "06-error-recovery",
+  "title": "Recover from a misleading crash hint",
+  "capability": "error-recovery",
+  "timeoutMs": 180000,
+  "promptFile": "prompt.md",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": ["package.json", "src/main.js"]
+}

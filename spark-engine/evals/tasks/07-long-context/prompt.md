@@ -1,0 +1,1 @@
+Read `SPEC.md` and implement section 4 by creating `src/label.js`. Section 9 is an abandoned draft and must not be implemented. Do not modify `SPEC.md`, `src/frozen.js`, `test/label.test.mjs`, or `package.json`. Verify with `node --test test/label.test.mjs`.

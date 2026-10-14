@@ -1,5 +1,6 @@
 coverage/
 dist/
+evals/reports/
 node_modules/
 *.tgz
 *.tsbuildinfo

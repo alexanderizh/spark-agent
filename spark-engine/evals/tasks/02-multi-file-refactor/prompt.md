@@ -1,0 +1,1 @@
+Rename the exported function `formatName` to `formatDisplayName` in every file under `src/`. Update imports and re-exports so the project still runs. `greet()` must keep the same behavior. Do not modify files under `test/` or `package.json`. Verify with `node --test test/greet.test.mjs`.

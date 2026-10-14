@@ -1,0 +1,10 @@
+{
+  "id": "01-file-edit",
+  "title": "Fix a single-file arithmetic bug",
+  "capability": "file-edit",
+  "timeoutMs": 180000,
+  "promptFile": "prompt.md",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": ["package.json", "test/sum.test.mjs"]
+}

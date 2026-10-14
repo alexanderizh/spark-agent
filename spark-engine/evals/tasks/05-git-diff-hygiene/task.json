@@ -1,0 +1,11 @@
+{
+  "id": "05-git-diff-hygiene",
+  "title": "Fix a bug without committing or staging unrelated edits",
+  "capability": "git-diff-hygiene",
+  "timeoutMs": 180000,
+  "promptFile": "prompt.md",
+  "prepare": "setup.mjs",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": ["package.json", "test/clamp.test.mjs", ".gitignore"]
+}

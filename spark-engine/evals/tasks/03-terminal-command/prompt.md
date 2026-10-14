@@ -1,0 +1,1 @@
+Create `out/token.txt` containing the exact stdout of `node bin/token.mjs`, with no extra characters. The value is defined by running that command. Do not modify `bin/token.mjs`, `bin/seed.txt`, or `package.json`.
