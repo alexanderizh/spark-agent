@@ -784,7 +784,7 @@ export function parseWebhookBody(
     })
     const text = parseJsonContent(message.content) ?? readString(message.text)
     if (!externalId || (!text && feishuImage == null && feishuVoice == null)) {
-      if (message != null && externalId.length > 0) {
+      if (message != null && externalId) {
         log.warn(
           `飞书消息被忽略：不含可处理的文本/图片/语音 (chat=${externalId}, msg_type=${readString(message.message_type) ?? 'unknown'})`,
         )
@@ -799,8 +799,7 @@ export function parseWebhookBody(
       senderName: readString(senderId?.open_id) ?? readString(senderId?.user_id) ?? '飞书用户',
       text: normalizeInboundText(
         channel,
-        text ??
-          (feishuVoice != null ? '请转写并处理这条语音消息。' : '请识别并说明这张图片。'),
+        text ?? (feishuVoice != null ? '请转写并处理这条语音消息。' : '请识别并说明这张图片。'),
       ),
       ...(feishuImage != null ? { feishuImage } : {}),
       ...(feishuVoice != null ? { feishuVoice } : {}),
@@ -2120,7 +2119,9 @@ export class RemoteConnectionService {
         mimeType: voice.mimeType,
       })
       if (outcome.kind !== 'ok') {
-        log.warn(`远程语音转写失败 (connection=${connection.id}): ${outcome.message.split('\n')[0] ?? ''}`)
+        log.warn(
+          `远程语音转写失败 (connection=${connection.id}): ${outcome.message.split('\n')[0] ?? ''}`,
+        )
         await reply(`语音转写失败，原因与指引如下：\n\n${outcome.message}`)
         return null
       }
@@ -3116,7 +3117,8 @@ export class RemoteConnectionService {
     const voices = connection.capabilities.transferFiles ? requestedVoices : []
     // 图片被拦时沿用既有语义：原文（如「图片已发送」）不再投递，只提示开启能力；
     // 仅语音被拦时保留原文并附加提示。
-    const voiceTransferBlocked = !connection.capabilities.transferFiles && requestedVoices.length > 0
+    const voiceTransferBlocked =
+      !connection.capabilities.transferFiles && requestedVoices.length > 0
     const outboundText = imageTransferBlocked
       ? '图片未发送：当前 QQ 连接未启用“传输文件”能力。请在 SparkWork 的远程连接设置中开启后重试。'
       : voiceTransferBlocked
@@ -3221,11 +3223,7 @@ export class RemoteConnectionService {
           // 频道场景无富媒体 file_info 通道，SILK 以 multipart file_audio 直传
           const silk = await prepareQqOutboundSilk(voice.source)
           const form = new FormData()
-          form.append(
-            'file_audio',
-            new Blob([silk.bytes], { type: 'audio/silk' }),
-            silk.fileName,
-          )
+          form.append('file_audio', new Blob([silk.bytes], { type: 'audio/silk' }), silk.fileName)
           const reply = this.takeQqReply(connection.id, externalId)
           if (reply != null) form.append('msg_id', reply.msgId)
           const response = await fetch(

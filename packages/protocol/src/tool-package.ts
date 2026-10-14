@@ -540,8 +540,17 @@ export interface ToolPackageTestResult {
 
 export interface ToolInvocationTrace {
   id: string
-  correlationId: string
-  sourceKind: 'connector' | 'custom-tool' | 'tool-package' | 'workflow' | 'test'
+  /** 未关联测试调用时为 null（与审计存储层一致）。 */
+  correlationId: string | null
+  sourceKind:
+    | 'sdk-builtin'
+    | 'mcp'
+    | 'connector'
+    | 'custom-tool'
+    | 'tool-package'
+    | 'workflow'
+    | 'hook'
+    | 'test'
   sourceId: string
   packageId: string | null
   toolId: string | null
@@ -554,7 +563,7 @@ export interface ToolInvocationTrace {
   agentId: string | null
   workflowId: string | null
   invocationSource: 'model' | 'workflow' | 'test' | 'platform' | 'nested' | 'hook'
-  status: 'running' | 'ok' | 'error' | 'timeout' | 'denied' | 'cancelled'
+  status: 'running' | 'ok' | 'error' | 'timeout' | 'denied' | 'cancelled' | 'stale'
   startedAt: string
   finishedAt: string | null
   durationMs: number | null
@@ -802,11 +811,22 @@ export const ToolPackagesIpcSchemaRegistry = {
   'tool-packages:invocations:list': z
     .object({
       sourceKind: z
-        .enum(['connector', 'custom-tool', 'tool-package', 'workflow', 'test'])
+        .enum([
+          'sdk-builtin',
+          'mcp',
+          'connector',
+          'custom-tool',
+          'tool-package',
+          'workflow',
+          'hook',
+          'test',
+        ])
         .optional(),
       packageId: ToolPackageIdSchema.optional(),
       toolName: ToolNameSchema.optional(),
-      status: z.enum(['running', 'ok', 'error', 'timeout', 'denied', 'cancelled']).optional(),
+      status: z
+        .enum(['running', 'ok', 'error', 'timeout', 'denied', 'cancelled', 'stale'])
+        .optional(),
       correlationId: z.string().min(1).max(160).optional(),
       from: z.string().datetime().optional(),
       to: z.string().datetime().optional(),

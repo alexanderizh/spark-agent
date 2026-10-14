@@ -138,7 +138,10 @@ describe('ToolAuditLedgerMaintenance', () => {
 
   it('配额超限：从最旧开始删到配额内', async () => {
     // 三个新载荷（30 天内），配额压到 2 个文件大小 → 最旧一个被删。
-    const ids = ['d'.repeat(64), 'e'.repeat(64), 'f'.repeat(64)]
+    const firstId = 'd'.repeat(64)
+    const secondId = 'e'.repeat(64)
+    const oldestId = 'f'.repeat(64)
+    const ids = [firstId, secondId, oldestId]
     const size = 100
     ids.forEach((id, index) => {
       writePayload(id, `${index}:${'x'.repeat(size - 2)}`, NOW - (index + 1) * HOUR_MS)
@@ -156,10 +159,10 @@ describe('ToolAuditLedgerMaintenance', () => {
     const result = await maintenance.runOnce()
 
     expect(result.ledgerRowsDeleted).toBe(0)
-    // mtime 最旧的是 ids[2]（NOW-3h）——被删；其余保留。
-    expect(payloadExists(ids[2])).toBe(false)
-    expect(payloadExists(ids[0])).toBe(true)
-    expect(payloadExists(ids[1])).toBe(true)
+    // mtime 最旧的是 oldestId（NOW-3h）——被删；其余保留。
+    expect(payloadExists(oldestId)).toBe(false)
+    expect(payloadExists(firstId)).toBe(true)
+    expect(payloadExists(secondId)).toBe(true)
     expect(result.bytesFreed).toBeGreaterThanOrEqual(size)
   })
 })

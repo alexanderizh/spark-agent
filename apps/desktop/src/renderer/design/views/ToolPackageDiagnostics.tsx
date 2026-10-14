@@ -205,7 +205,9 @@ export function ToolPackageDiagnostics({ detail, requestConfirm }: ToolPackageDi
               <code>{trace.toolName}</code>
               <span>{trace.durationMs == null ? '运行中' : `${trace.durationMs}ms`}</span>
               <span>{trace.outputBytes == null ? '—' : `${trace.outputBytes} B`}</span>
-              <code title={trace.correlationId}>{trace.correlationId.slice(0, 12)}</code>
+              <code title={trace.correlationId ?? undefined}>
+                {trace.correlationId?.slice(0, 12) ?? '—'}
+              </code>
               {trace.errorCode != null && <span className="tp_errorText">{trace.errorCode}</span>}
             </div>
           ))}
@@ -228,5 +230,6 @@ function statusColor(status: ToolInvocationTrace['status']): string {
   if (status === 'ok') return 'green'
   if (status === 'running') return 'blue'
   if (status === 'denied' || status === 'cancelled') return 'gold'
+  if (status === 'stale') return 'default'
   return 'red'
 }
