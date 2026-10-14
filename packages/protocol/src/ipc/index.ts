@@ -636,6 +636,8 @@ export interface SessionUpdateRequest {
   reasoningEffort?: SessionReasoningEffort
   /** OpenAI Fast mode (request-level service_tier=fast), independent from reasoning effort. */
   fastMode?: boolean
+  /** 切换会话所属项目（workspace id）；仅改侧边栏归属列，不动工作区 */
+  projectId?: string
   /** 调试模式开关（per-session，持久化到 metadata） */
   debugMode?: boolean
   /** 会话标记（per-session，持久化到 metadata）；null = 取消标记，undefined = 不修改 */

@@ -357,6 +357,8 @@ export class SessionCrudController {
     permissionMode?: SessionPermissionMode
     chatMode?: SessionChatMode
     reasoningEffort?: SparkReasoningEffort
+    /** 切换会话所属项目（workspace id）；仅改归属列，与移动端「移入项目」共用通道 */
+    projectId?: string
     fastMode?: boolean
     debugMode?: boolean
     /** null 取消标记；undefined 不修改 */
@@ -420,7 +422,8 @@ export class SessionCrudController {
       params.agentAdapter !== undefined ||
       params.permissionMode !== undefined ||
       params.chatMode !== undefined ||
-      params.reasoningEffort !== undefined
+      params.reasoningEffort !== undefined ||
+      params.projectId !== undefined
     ) {
       sessionRepo.updateRuntime(params.sessionId, {
         ...(params.providerProfileId !== undefined
@@ -434,6 +437,7 @@ export class SessionCrudController {
         ...(params.reasoningEffort !== undefined
           ? { reasoningEffort: params.reasoningEffort }
           : {}),
+        ...(params.projectId !== undefined ? { projectId: params.projectId } : {}),
       })
     }
 

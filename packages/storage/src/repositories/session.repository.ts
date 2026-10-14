@@ -205,10 +205,17 @@ export class SessionRepository extends BaseRepository {
       permissionMode?: string
       chatMode?: string
       reasoningEffort?: string
+      /** 切换所属项目（workspace id）；仅改归属列，不动工作区 */
+      projectId?: string
     },
   ): void {
     const fields: string[] = []
     const values: unknown[] = []
+
+    if (params.projectId !== undefined) {
+      fields.push('project_id = ?')
+      values.push(params.projectId)
+    }
 
     if (params.providerProfileId !== undefined) {
       fields.push('provider_profile_id = ?')
