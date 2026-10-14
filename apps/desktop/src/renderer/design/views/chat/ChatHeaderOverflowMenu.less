@@ -98,14 +98,14 @@
   margin-left: auto;
 }
 
-/* 收起阈值按按钮岛实际宽度标定（岛全开约 400px + 左侧起点约 40px），
-   并按低频优先分三档渐进收起，避免一到阈值就整组合并：
-   档1 secondary（复制全部/清空）→ 档2 middle（计划任务/配置面板）→ 档3 base（检查器/统一面板）。
+/* 收起阈值按按钮岛实际宽度标定（岛全开约 400px + 左侧起点约 40px）。
+   溢出菜单一旦出现（620px 档），清单内按钮（复制/清空/计划任务/配置/检查器/统一面板/分享）
+   必须整体并入菜单，栏上不保留重复入口；更窄档位只处理标题与 git chip 的让位。
    Windows 集成标题栏右侧预留 138px 窗口控件（.platform-win32），整条阶梯相应右移。 */
 
-/* —— 档 1：先收低频按钮（两者仍在溢出菜单内），其余按钮保留 —— */
+/* —— 档 1：更多入口出现，会话顶栏清单内按钮全部并入菜单 —— */
 @container chat-header (max-width: 620px) {
-  .chat-tabbar .chat-header-collapsible-secondary {
+  .chat-tabbar .chat-header-collapsible {
     display: none !important;
   }
 
@@ -123,19 +123,19 @@
   }
 }
 
-/* —— 档 2：收起计划任务/配置面板；项目名与团队 chip 让位；git chip 限宽 —— */
+/* —— 档 2：空会话顶栏的同款收口（其更多入口在 540px 档出现）；项目名与团队 chip 让位 —— */
 @container chat-header (max-width: 540px) {
-  .chat-header-collapsible-middle {
+  .chat-sidebar-topbar .chat-header-collapsible {
     display: none !important;
+  }
+
+  .chat-sidebar-topbar .chat-header-overflow {
+    display: inline-flex;
   }
 
   .chat-tabbar .chat-project-label,
   .chat-tabbar .chat-team-status-chip {
     display: none;
-  }
-
-  .chat-sidebar-topbar .chat-header-overflow {
-    display: inline-flex;
   }
 
   .git-session-counts {
@@ -151,12 +151,8 @@
   }
 }
 
-/* —— 档 3：收起全部可折叠按钮，标题获得弹性 —— */
+/* —— 档 3：极窄下标题获得弹性 —— */
 @container chat-header (max-width: 460px) {
-  .chat-header-collapsible {
-    display: none !important;
-  }
-
   .chat-tabbar .chat-title-block {
     display: flex;
     flex: 1 1 auto;
@@ -210,7 +206,7 @@
 
 /* —— Windows 副本：集成标题栏右侧预留 138px 窗口控件，各档宽度 +140px —— */
 @container chat-header (max-width: 760px) {
-  .platform-win32 .chat-tabbar .chat-header-collapsible-secondary {
+  .platform-win32 .chat-tabbar .chat-header-collapsible {
     display: none !important;
   }
 
@@ -229,17 +225,17 @@
 }
 
 @container chat-header (max-width: 680px) {
-  .platform-win32 .chat-header-collapsible-middle {
+  .platform-win32 .chat-sidebar-topbar .chat-header-collapsible {
     display: none !important;
+  }
+
+  .platform-win32 .chat-sidebar-topbar .chat-header-overflow {
+    display: inline-flex;
   }
 
   .platform-win32 .chat-tabbar .chat-project-label,
   .platform-win32 .chat-tabbar .chat-team-status-chip {
     display: none;
-  }
-
-  .platform-win32 .chat-sidebar-topbar .chat-header-overflow {
-    display: inline-flex;
   }
 
   .platform-win32 .git-session-counts {
@@ -256,10 +252,6 @@
 }
 
 @container chat-header (max-width: 600px) {
-  .platform-win32 .chat-header-collapsible {
-    display: none !important;
-  }
-
   .platform-win32 .chat-tabbar .chat-title-block {
     display: flex;
     flex: 1 1 auto;

@@ -135,20 +135,20 @@ export function EmptySessionTopbar({
             {...(onOpenInTerminal ? { onOpenInTerminal } : {})}
           />
         ) : (
-          <button
-            className="icon-btn"
+          <TabbarTooltipButton
             title="请先选择项目文件夹"
-            aria-label="请先选择项目文件夹"
+            ariaLabel="请先选择项目文件夹"
+            className="icon-btn"
             disabled
           >
             <TabbarIcon icon={FolderOpen} />
-          </button>
+          </TabbarTooltipButton>
         )}
-        {/* 空会话顶栏按钮岛更窄：计划任务/配置面板作为第一档收起（middle），检查器/统一面板走 base */}
+        {/* 空会话顶栏按钮岛更窄：溢出菜单出现时（540px 档）清单内按钮整体并入菜单 */}
         <TabbarTooltipButton
           title="计划任务"
           ariaLabel="计划任务"
-          className={`icon-btn chat-header-collapsible chat-header-collapsible-middle ${showSessionSchedule ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible ${showSessionSchedule ? 'active' : ''}`}
           onClick={toggleSessionSchedule}
         >
           <span className="chat-session-schedule-icon">
@@ -158,32 +158,34 @@ export function EmptySessionTopbar({
             )}
           </span>
         </TabbarTooltipButton>
-        <button
-          className={`icon-btn chat-header-collapsible ${showInspector ? 'active' : ''}`}
+        <TabbarTooltipButton
           title="会话检查器"
-          aria-label="会话检查器"
+          ariaLabel="会话检查器"
+          className={`icon-btn chat-header-collapsible ${showInspector ? 'active' : ''}`}
           onClick={onToggleInspector}
         >
           <TabbarIcon icon={PanelRight} />
-        </button>
-        <button
-          className={`icon-btn chat-header-collapsible chat-header-collapsible-middle ${showConfigPanel ? 'active' : ''}`}
+        </TabbarTooltipButton>
+        <TabbarTooltipButton
           title={activeWorkspace ? '配置面板' : '请先选择项目文件夹'}
-          aria-label="配置面板"
+          ariaLabel="配置面板"
+          className={`icon-btn chat-header-collapsible ${showConfigPanel ? 'active' : ''}`}
           disabled={!activeWorkspace}
           onClick={onToggleConfig}
         >
           <TabbarIcon icon={SlidersHorizontal} />
-        </button>
-        <button
+        </TabbarTooltipButton>
+        <TabbarTooltipButton
+          title={
+            activeWorkspace ? '统一侧边面板（终端/侧聊/审查/计划）' : '请先选择项目文件夹'
+          }
+          ariaLabel="统一侧边面板"
           className={`icon-btn chat-header-collapsible ${showUnifiedPanel ? 'active' : ''}`}
-          title={activeWorkspace ? '统一侧边面板（终端/侧聊/审查/计划）' : '请先选择项目文件夹'}
-          aria-label="统一侧边面板"
           disabled={!activeWorkspace}
           onClick={onToggleUnifiedPanel}
         >
           <TabbarIcon icon={PanelsTopLeft} />
-        </button>
+        </TabbarTooltipButton>
         <ChatHeaderOverflowMenu items={overflowItems} />
       </div>
       <ChatTitlebarEnd />

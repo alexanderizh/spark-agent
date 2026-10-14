@@ -1,6 +1,34 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useState, type ReactNode } from 'react'
+import { Tooltip } from '@lobehub/ui'
 import { readAppearance } from '../../hooks/useAppearance'
 import { Icons } from '../../Icons'
+
+function MessageHoverBarAction({
+  title,
+  className,
+  ariaLabel,
+  onClick,
+  children,
+}: {
+  title: string
+  className?: string
+  ariaLabel?: string
+  onClick?: () => void
+  children: ReactNode
+}) {
+  return (
+    <Tooltip title={title} placement="bottom" mouseEnterDelay={0} arrow className="spark-icon-tooltip">
+      <button
+        type="button"
+        className={`msg-hover-btn${className ? ` ${className}` : ''}`}
+        aria-label={ariaLabel ?? title}
+        onClick={onClick}
+      >
+        {children}
+      </button>
+    </Tooltip>
+  )
+}
 
 function formatMsgTime(timestamp?: string): string {
   if (!timestamp) return ''
@@ -60,7 +88,7 @@ export function MessageHoverBar({
   onFork?: () => void
   /** 仅配置了 TTS 模型的助手消息：切换语音播报（off→播报，loading/playing→停止） */
   onSpeechToggle?: () => void
-  /** 播报状态：loading=合成中 playing=播报中（图标切换与 title 依据） */
+  /** 播报状态：loading=合成中 playing=播报中（图标切换与 tooltip 依据） */
   speechStatus?: 'off' | 'loading' | 'playing'
 }) {
   const [copied, setCopied] = useState(false)
@@ -81,21 +109,24 @@ export function MessageHoverBar({
     <div className={`msg-hover-bar msg-hover-${position}`}>
       {time && <span className="msg-hover-time">{time}</span>}
       {onResend && (
-        <button type="button" className="msg-hover-resend" title="重发" onClick={onResend}>
+        <MessageHoverBarAction title="重发" className="msg-hover-resend" onClick={onResend}>
           <Icons.RotateCw size={12} />
-        </button>
+        </MessageHoverBarAction>
       )}
       {textContent && (
-        <button type="button" className="msg-hover-copy" title="复制" onClick={handleCopy}>
+        <MessageHoverBarAction
+          title={copied ? '已复制' : '复制'}
+          className="msg-hover-copy"
+          onClick={handleCopy}
+        >
           {copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
-        </button>
+        </MessageHoverBarAction>
       )}
       {onSpeechToggle && textContent && (
-        <button
-          type="button"
+        <MessageHoverBarAction
+          title={speechStatus === 'off' ? '朗读' : '停止播报'}
           className={`msg-hover-speech${speechStatus === 'playing' ? ' is-playing' : ''}`}
-          title={speechStatus === 'off' ? '语音播报' : '停止播报'}
-          aria-label={speechStatus === 'off' ? '语音播报' : '停止播报'}
+          ariaLabel={speechStatus === 'off' ? '朗读' : '停止播报'}
           onClick={onSpeechToggle}
         >
           {speechStatus === 'loading' ? (
@@ -114,34 +145,22 @@ export function MessageHoverBar({
           ) : (
             <Icons.Volume2 size={12} />
           )}
-        </button>
+        </MessageHoverBarAction>
       )}
       {onEdit && (
-        <button
-          type="button"
-          className="msg-hover-edit"
-          title="编辑消息"
-          aria-label="编辑消息"
-          onClick={onEdit}
-        >
+        <MessageHoverBarAction title="编辑消息" className="msg-hover-edit" onClick={onEdit}>
           <Icons.Pencil size={12} />
-        </button>
+        </MessageHoverBarAction>
       )}
       {onFork && (
-        <button
-          type="button"
-          className="msg-hover-fork"
-          title="从此处分支"
-          aria-label="从此处分支"
-          onClick={onFork}
-        >
+        <MessageHoverBarAction title="从此处分支" className="msg-hover-fork" onClick={onFork}>
           <Icons.GitBranch size={12} />
-        </button>
+        </MessageHoverBarAction>
       )}
       {onDelete && (
-        <button type="button" className="msg-hover-delete" title="删除" onClick={onDelete}>
+        <MessageHoverBarAction title="删除" className="msg-hover-delete" onClick={onDelete}>
           <Icons.Trash size={12} />
-        </button>
+        </MessageHoverBarAction>
       )}
     </div>
   )

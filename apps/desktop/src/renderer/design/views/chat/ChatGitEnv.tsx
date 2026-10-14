@@ -69,7 +69,7 @@ export function GitSessionTrigger({
   }
 
   return (
-    <Tooltip title="环境信息" placement="bottom" mouseEnterDelay={0}>
+    <Tooltip title="环境信息" placement="bottom" mouseEnterDelay={0} arrow className="spark-icon-tooltip">
       <div className="git-session-widget">
         <button
           type="button"
