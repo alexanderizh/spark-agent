@@ -10,6 +10,8 @@ describe('Spark kernel prompt', () => {
     expect(SPARK_KERNEL_PROMPT).toContain('observed facts, reasonable inferences, assumptions')
     expect(SPARK_KERNEL_PROMPT).toContain('final response independently useful')
     expect(SPARK_KERNEL_PROMPT).toContain('smallest actionable next step')
+    expect(SPARK_KERNEL_PROMPT).toContain("Stay within the task's scope")
+    expect(SPARK_KERNEL_PROMPT).toContain('report the conflict in your final answer')
   })
 
   it('stays provider-neutral and bounded', () => {
