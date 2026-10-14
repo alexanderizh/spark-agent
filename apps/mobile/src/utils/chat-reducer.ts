@@ -17,6 +17,8 @@ export interface ChatMessage {
   key: string
   role: 'user' | 'assistant' | 'tool' | 'status'
   text: string
+  /** 所属回合（助手消息记录，final 收尾归并本 turn 分段用） */
+  turnId?: string
   /** 工具名（role=tool） */
   toolName?: string
   toolStatus?: 'running' | 'success' | 'error'
@@ -81,6 +83,37 @@ export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): Chat
       }
 
       case 'assistant_message': {
+        // 最终完整消息（isFinal，无 segmentId）：桌面端在流式分段之外会补一条
+        // final 收尾消息，文本与已渲染的分段拼接一致 —— 若不归并会渲染双份。
+        // 口径与桌面端 reconcileFinalText 一致：final 到达时替换本 turn 最后一个
+        // 助手气泡的文本（相等则无操作），不再新开气泡。
+        if (event.isFinal === true && event.segmentId == null) {
+          const finalText = event.content ?? ''
+          // 归并本 turn 的全部分段气泡为一条 final 气泡（与桌面端单消息多段聚合同观感）
+          const turnAssistantIndexes: number[] = []
+          messages.forEach((item, index) => {
+            if (item.role === 'assistant' && item.turnId === event.turnId) {
+              turnAssistantIndexes.push(index)
+            }
+          })
+          const anchorIndex = turnAssistantIndexes[0]
+          for (let i = turnAssistantIndexes.length - 1; i >= 0; i -= 1) {
+            messages.splice(turnAssistantIndexes[i], 1)
+          }
+          const finalMessage: ChatMessage = {
+            key: `a:${event.turnId}`,
+            role: 'assistant',
+            text: finalText,
+            turnId: event.turnId,
+            createdAt: event.timestamp,
+          }
+          if (anchorIndex != null) {
+            messages.splice(anchorIndex, 0, finalMessage)
+          } else {
+            messages.push(finalMessage)
+          }
+          break
+        }
         const key = `a:${event.segmentId ?? event.turnId}`
         const existing = messages.find((item) => item.key === key && item.role === 'assistant')
         if (existing == null) {
@@ -88,6 +121,7 @@ export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): Chat
             key,
             role: 'assistant',
             text: event.content ?? '',
+            turnId: event.turnId,
             createdAt: event.timestamp,
           })
         } else if (event.mode === 'delta') {
