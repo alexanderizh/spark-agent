@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { shouldShowScrollToBottom } from './chat-scroll'
+import { SMOOTH_SCROLL_TO_BOTTOM_GUARD_MS, shouldShowScrollToBottom } from './chat-scroll'
 import { calculateOverlayScrollbarMetrics } from './chat/chat-overlay-scrollbar-metrics'
 
 describe('chat scroll controls', () => {
   it('shows the scroll-to-bottom button once the chat is more than 50px from bottom', () => {
     expect(shouldShowScrollToBottom(50)).toBe(false)
     expect(shouldShowScrollToBottom(51)).toBe(true)
+  })
+
+  it('bounds the smooth scroll-to-bottom guard window long enough for the animation', () => {
+    expect(SMOOTH_SCROLL_TO_BOTTOM_GUARD_MS).toBeGreaterThanOrEqual(600)
   })
 
   it('maps the native scroll position onto the overlay thumb', () => {
@@ -82,6 +86,22 @@ describe('chat scroll controls', () => {
     )
     expect(overlayComponent).toContain('role="scrollbar"')
     expect(overlayComponent).toContain('ResizeObserver')
+  })
+
+  it('keeps user scroll intent sovereign while streaming', () => {
+    const component = readFileSync(
+      fileURLToPath(new URL('./ChatView.tsx', import.meta.url)),
+      'utf8',
+    )
+
+    // 新用户消息必须按 id 增量检测：同一轮 user 消息等待回复期间 effect 重跑
+    // 不得无条件清 userScrolledRef 强拉底部。
+    expect(component).toContain('latestMsg.id !== lastPinnedUserMsgIdRef.current')
+    expect(component).not.toContain('isNewUserMessage')
+    // 键盘上滚（ArrowUp/PageUp/Home）不派发 wheel，必须有独立源事件闸门。
+    expect(component).toContain('window.addEventListener(\'keydown\', onKeyDown)')
+    // 「回到底部」smooth 动画期间不按 distance 重算，防止贴底完成后跟随停摆。
+    expect(component).toContain('smoothScrollToBottomUntilRef')
   })
 
   it('portals the session-switching mask to the full chat host', () => {

@@ -390,9 +390,11 @@ import {
   resolveComposerRunningAgentIds,
 } from '../services/composer-working-state'
 import {
+  isKeyboardScrollIntentForContainer,
   PROGRAMMATIC_SCROLL_GUARD_MS,
   SCROLL_TO_BOTTOM_LOCK_THRESHOLD,
   shouldShowScrollToBottom,
+  SMOOTH_SCROLL_TO_BOTTOM_GUARD_MS,
 } from './chat-scroll'
 import {
   getLastAssistantMessageMarkdown,
@@ -4036,6 +4038,15 @@ function ChatStream({
   // 会按 distance 重算 userScrolledRef，把用户由 wheel/touchstart 设定的「已上滚」状态冲掉——
   // 这是「流式输出与用户上滚冲突、滚不上去被弹回」的根因。
   const programmaticScrollAtRef = useRef(0)
+  // 「回到底部」按钮 smooth 贴底的守卫截止时间（performance.now 域；0 = 未进行）。
+  // smooth 动画持续数百毫秒并持续派生 scroll 事件，期间 handleScroll 不按 distance 重算
+  // userScrolledRef，否则动画中途被误判为「用户上滚」，贴底完成后流式跟随停摆。
+  const smoothScrollToBottomUntilRef = useRef(0)
+  // 「新用户消息强制贴底」的增量检测：记录最近一次因尾部 user 消息强制贴底的 message id。
+  // 同一轮 user 消息在等待首条 assistant 内容的窗口（乐观消息替换、排队/思考/工具调用，
+  // 可达数秒~数十秒）里，displayMessages 引用重建与 agentIsRunning 翻转会让自动滚动
+  // effect 反复重跑；若仍无条件清闸门，会把正在上滚翻历史的用户反复拽回底部（主诉根因）。
+  const lastPinnedUserMsgIdRef = useRef<string | null>(null)
   // 统一程序性贴底入口：先记录时间戳（供 handleScroll 守卫忽略其派生的 scroll 事件），再写 scrollTop。
   const pinToBottom = (el: HTMLElement) => {
     programmaticScrollAtRef.current =
@@ -4520,6 +4531,9 @@ function ChatStream({
 
     isStreamingRef.current = false
     userScrolledRef.current = false
+    // 新会话是全新上下文：清掉上一会话的「新 user 消息」增量检测基线，
+    // 避免旧会话尾部 id 残留影响本会话的首条 user 消息贴底判定。
+    lastPinnedUserMsgIdRef.current = null
     viewCallbacksRef.current.onContextUsageChange(null)
     viewCallbacksRef.current.onContextLedgerChange(null)
     viewCallbacksRef.current.onProjectContextChange(null)
@@ -4778,7 +4792,21 @@ function ChatStream({
         typeof performance !== 'undefined' && typeof performance.now === 'function'
           ? performance.now()
           : Date.now()
-      if (now - programmaticScrollAtRef.current >= PROGRAMMATIC_SCROLL_GUARD_MS) {
+      // 「回到底部」smooth 动画守卫：动画期间的 scroll 事件同样不按 distance 重算，
+      // 到达底部（<=LOCK）或窗口超时（动画被用户滚动中断时不会有「到达」事件）即结束守卫，
+      // 到达帧随后的重算会按 distance<=LOCK 恢复跟随，无需额外处理。
+      if (smoothScrollToBottomUntilRef.current > 0) {
+        if (
+          distanceFromBottom <= SCROLL_TO_BOTTOM_LOCK_THRESHOLD ||
+          now >= smoothScrollToBottomUntilRef.current
+        ) {
+          smoothScrollToBottomUntilRef.current = 0
+        }
+      }
+      if (
+        smoothScrollToBottomUntilRef.current === 0 &&
+        now - programmaticScrollAtRef.current >= PROGRAMMATIC_SCROLL_GUARD_MS
+      ) {
         if (distanceFromBottom <= SCROLL_TO_BOTTOM_LOCK_THRESHOLD) {
           userScrolledRef.current = false
         } else if (shouldShowScrollToBottom(distanceFromBottom)) {
@@ -4814,8 +4842,8 @@ function ChatStream({
   // 用户主动上滚的「源事件」闸门：流式 pin（层2 effect 与 MutationObserver）都以 userScrolledRef
   // 为闸门，但仅靠 scroll 事件的 distance 重算存在阈值延迟与程序 pin 干扰——用户第一帧小幅上滚时
   // distance 仍 <50，会被当成「未上滚」，pin 随即把视图拉回，形成「滚不上去被弹回」的死锁。
-  // 这里直接监听 wheel(向上) / touchstart：用户一有上滚意图就立即锁定 userScrolledRef，让后续每帧
-  // 的程序 pin 在闸门处跳过，从根本上打破竞速（治本）。
+  // 这里直接监听 wheel(向上) / touchstart / 键盘上滚键：用户一有上滚意图就立即锁定 userScrolledRef，
+  // 让后续每帧的程序 pin 在闸门处跳过，从根本上打破竞速（治本）。
   useEffect(() => {
     const el = streamRef.current
     if (!el) return
@@ -4826,11 +4854,22 @@ function ChatStream({
     const onTouchStart = () => {
       markUserScrolled() // 触摸即视为用户接管
     }
+    // 键盘上滚（ArrowUp/PageUp/Home）不派发 wheel，需要独立源事件闸门；小步按键滚动会长期
+    // 停在 8~50px 滞后区间，仅靠 distance 重算会复现 wheel 曾有过的「滚不上去被弹回」死锁。
+    // 挂 window 而非 el：焦点在 body（点击消息区后最常见）时 keydown 目标是 body，不冒泡经过 el。
+    // 带修饰键的组合（快捷键）不是裸滚动意图，不标记。
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (!isKeyboardScrollIntentForContainer(event.key, event.target, el)) return
+      markUserScrolled()
+    }
     el.addEventListener('wheel', onWheel, { passive: true })
     el.addEventListener('touchstart', onTouchStart, { passive: true })
+    window.addEventListener('keydown', onKeyDown)
     return () => {
       el.removeEventListener('wheel', onWheel)
       el.removeEventListener('touchstart', onTouchStart)
+      window.removeEventListener('keydown', onKeyDown)
     }
   }, [markUserScrollIntentUp])
 
@@ -4883,11 +4922,16 @@ function ChatStream({
       return
     }
 
-    // 检测最新消息是否为用户消息（表示用户刚发送了新消息）
+    // 检测最新消息是否为「新出现的」用户消息（表示用户刚发送了新消息）。
+    // 必须按 message id 增量判断而非「尾部恰好是 user」：同一轮 user 消息在等待首条
+    // assistant 内容的窗口里，displayMessages 引用重建与 agentIsRunning 翻转会让本
+    // effect 反复重跑，无条件清闸门+拉底会抢走正在上滚翻历史的用户（主诉根因）。
+    // 发送瞬间的贴底仍由 scrollToBottomTrigger effect 兜底；此处仅对 id 变化
+    // （乐观消息出现、事件回流替换、编辑重发）的真正新消息强制贴底。
     const latestMsg = displayMessages[displayMessages.length - 1]
-    const isNewUserMessage = latestMsg?.role === 'user'
 
-    if (isNewUserMessage) {
+    if (latestMsg?.role === 'user' && latestMsg.id !== lastPinnedUserMsgIdRef.current) {
+      lastPinnedUserMsgIdRef.current = latestMsg.id
       userScrolledRef.current = false
       setShowScrollToBottom(false)
       requestAnimationFrame(() => {
@@ -5148,6 +5192,12 @@ function ChatStream({
   const handleScrollToBottom = useCallback(() => {
     const el = streamRef.current
     if (!el) return
+    // smooth 动画期间派生的 scroll 事件由 handleScroll 的守卫跳过重算（到达底部或超时
+    // 恢复），防止贴底途中 distance>阈值 把跟随状态误翻成「已上滚」、贴底完成后停跟。
+    smoothScrollToBottomUntilRef.current =
+      (typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now()) + SMOOTH_SCROLL_TO_BOTTOM_GUARD_MS
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     userScrolledRef.current = false
     setShowScrollToBottom(false)
