@@ -326,46 +326,45 @@ test('prepare output exposes the baseline commit', () => {
   assert.equal(parsePrepareOutput('nope').head, undefined)
 })
 
-test('15 readme-drops-outdir allows a migration note and rejects stale usage or table', () => {
+test('15 readme-drops-outdir scans every line and allows a same-line migration marker', () => {
   const fixture = readFileSync(
     fileURLToPath(new URL('./tasks/15-rename-syncs-docs/workspace/README.md', import.meta.url)),
     'utf8',
   )
   assert.match(fixture, /```bash\r?\npack --outdir build/u)
   assert.match(fixture, /\| `--outdir <dir>` \|/u)
+  assert.match(fixture, /`pack` creates the `--outdir` directory when it does not exist\./u)
   assert.equal(readmeDropsOutdir(fixture), false)
 
-  const documented = `# pack
+  const note = '`--outdir` was renamed to `--dest`.'
+  const oracleReadme = `${fixture.replaceAll('--outdir', '--dest').replace(/\s*$/u, '')}\n\n${note}\n`
+  assert.match(oracleReadme, /--outdir\b/u)
+  assert.equal(readmeDropsOutdir(oracleReadme), true)
 
-## Usage
+  const staleProse = fixture
+    .replace('pack --outdir build alpha beta', 'pack --dest build alpha beta')
+    .replace('| `--outdir <dir>` |', '| `--dest <dir>` |')
+  assert.notEqual(staleProse, fixture)
+  assert.match(staleProse, /`pack` creates the `--outdir` directory when it does not exist\./u)
+  assert.doesNotMatch(staleProse, /pack --outdir build/u)
+  assert.doesNotMatch(staleProse, /\| `--outdir <dir>` \|/u)
+  assert.equal(readmeDropsOutdir(staleProse), false)
+  assert.equal(readmeDropsOutdir(`${staleProse.replace(/\s*$/u, '')}\n\n${note}\n`), false)
 
-\`\`\`bash
-pack --dest build alpha beta
-\`\`\`
-
-| Option | Default | Meaning |
-| --- | --- | --- |
-| \`--dest <dir>\` | \`dist\` | Directory for bundle.txt. |
-
-\`--outdir\` was renamed to \`--dest\`.
-`
-  assert.match(documented, /--outdir\b/u)
-  assert.equal(readmeDropsOutdir(documented), true)
-
-  const staleUsage = documented.replace('pack --dest build', 'pack --outdir build')
-  assert.notEqual(staleUsage, documented)
+  const staleUsage = oracleReadme.replace('pack --dest build', 'pack --outdir build')
+  assert.notEqual(staleUsage, oracleReadme)
   assert.equal(readmeDropsOutdir(staleUsage), false)
 
-  const staleTable = documented.replace('| `--dest <dir>` |', '| `--outdir <dir>` |')
-  assert.notEqual(staleTable, documented)
+  const staleTable = oracleReadme.replace('| `--dest <dir>` |', '| `--outdir <dir>` |')
+  assert.notEqual(staleTable, oracleReadme)
   assert.equal(readmeDropsOutdir(staleTable), false)
 
   for (const marker of ['renamed', 'removed', 'deprecated', 'replaced', '改名']) {
-    const noted = documented.replace(
-      '| `--dest <dir>` | `dist` | Directory for bundle.txt. |',
-      `| \`--outdir <dir>\` | \`dist\` | ${marker} to \`--dest\`. |`,
+    const noted = oracleReadme.replace(
+      '| `--dest <dir>` | `dist`  | Directory for `bundle.txt`. |',
+      `| \`--outdir <dir>\` | \`dist\`  | ${marker} to \`--dest\`. |`,
     )
-    assert.notEqual(noted, documented, marker)
+    assert.notEqual(noted, oracleReadme, marker)
     assert.equal(readmeDropsOutdir(noted), true, marker)
   }
 })

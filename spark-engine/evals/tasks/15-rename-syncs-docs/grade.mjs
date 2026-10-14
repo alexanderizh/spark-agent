@@ -15,6 +15,6 @@ finish([
   {
     name: 'readme-drops-outdir',
     passed: readmeDropsOutdir(readme),
-    detail: 'README.md still documents the removed flag in Usage or the options table',
+    detail: 'README.md still has a line that names --outdir without a migration marker',
   },
 ])

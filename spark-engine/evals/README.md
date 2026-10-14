@@ -118,7 +118,7 @@ Each task is a directory under `tasks/<id>/` with `task.json`, `prompt.md`, `gra
 | `12-git-decoy-hygiene`      | git hygiene under pressure | inclusive range, no commit or stage, decoy notes and `wip.patch` stay                     |
 | `13-mask-secret`            | constraint-heavy create    | code-point mask, short strings, emoji, and idempotence; timeout 240s                      |
 | `14-live-path-bug`          | search the live path       | digits survive `normalizeId` on the `src/index.js` import, not the decoy copies           |
-| `15-rename-syncs-docs`      | own-change doc sync        | `--outdir` becomes `--dest`; README documents `--dest` and drops `--outdir` from Usage and the options table (a migration note may still name the old flag) |
+| `15-rename-syncs-docs`      | own-change doc sync        | `--outdir` becomes `--dest`; README documents `--dest`, and every `--outdir` line also carries a same-line migration marker (renamed, removed, deprecated, replaced, 改名) |
 
 `01`–`08` are `"tier": "smoke"`. One live `glm-5.3-flash` run scored 8/8 there. That single pass is not a ranking. `09`–`15` are `"tier": "hard"` drafts for adversarial fairness review. `--self-test` covers both tiers. This change does not live-score the hard drafts.
 
