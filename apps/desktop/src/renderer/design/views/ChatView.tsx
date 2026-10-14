@@ -16,6 +16,7 @@ import React, {
   Fragment,
   useSyncExternalStore,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { MAIN_WINDOW_MIN_WIDTH } from '../../../window-sizing.js'
 import './ChatView.less'
 import './ToolDropdown.less'
@@ -71,6 +72,8 @@ import { HeroTipsTicker, SingleAgentEmptyHero, TeamModeEmptyHero } from './chat/
 import { HeroUsageHeatmap } from './chat/HeroUsageHeatmap'
 import { useEmptyHeroUsage } from './chat/useEmptyHeroUsage'
 import { ChatTabbar } from './chat/ChatTabbar'
+import { SessionShareDialog } from './chat/SessionShareDialog'
+import { SessionShareLiveFrame } from './chat/SessionShareSheet'
 import { ContextCompactionCard } from './chat/ContextCompactionCard'
 import { EmptySessionTopbar } from './chat/EmptySessionTopbar'
 import { SessionSchedulePanel } from './chat/SessionSchedulePanel'
@@ -1230,6 +1233,9 @@ export function ChatView({
   const chatLayoutRef = useRef<HTMLDivElement | null>(null)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
+  const [sessionShareOpen, setSessionShareOpen] = useState(false)
+  const [shareCaptureHost, setShareCaptureHost] = useState<HTMLElement | null>(null)
+  const [shareOmitCount, setShareOmitCount] = useState(0)
   const activeVisibleMessages = useMemo(
     () => projectVisibleChatMessages(activeMessages),
     [activeMessages],
@@ -1386,6 +1392,9 @@ export function ChatView({
     setActiveSessionOrchestration(null)
     setProposedPlan(null)
     setTurnPromptSnapshots([])
+    setSessionShareOpen(false)
+    setShareCaptureHost(null)
+    setShareOmitCount(0)
   }, [active])
 
   // 分支刷新触发器：窗口重新聚焦（用户可能在终端/IDE 里切了分支）或会话从 running 回到
@@ -3318,6 +3327,8 @@ export function ChatView({
                     }
                   : {})}
                 {...(onExpandSidebar ? { onExpandSidebar } : {})}
+                onShareSession={() => setSessionShareOpen(true)}
+                shareDisabled={activeVisibleMessages.length === 0}
               />
             )}
             <HtmlRenderProvider value={htmlRenderContext}>
@@ -3370,6 +3381,8 @@ export function ChatView({
                 onRequestFork={(turnId, ordinal) => {
                   setForkDialog({ turnId, ...(ordinal != null ? { ordinal } : {}) })
                 }}
+                shareCaptureHost={sessionShareOpen ? shareCaptureHost : null}
+                shareOmitCount={shareOmitCount}
               />
             </HtmlRenderProvider>
             {userQuestion != null && (
@@ -3381,6 +3394,20 @@ export function ChatView({
               />
             )}
           </Fragment>
+        )}
+
+        {sessionShareOpen && activeSession != null && (
+          <SessionShareDialog
+            title={activeSession.title || '新会话'}
+            workspaceName={activeSessionWorkspaceForDisplay?.name ?? activeWorkspace?.name ?? null}
+            onCaptureHost={setShareCaptureHost}
+            onOmitCount={setShareOmitCount}
+            onClose={() => {
+              setShareCaptureHost(null)
+              setShareOmitCount(0)
+              setSessionShareOpen(false)
+            }}
+          />
         )}
 
         {forkDialog != null && activeSession != null && (
@@ -3856,6 +3883,8 @@ function ChatStream({
   scrollToTurnId = null,
   onTurnScrolled,
   onRequestFork,
+  shareCaptureHost = null,
+  shareOmitCount = 0,
 }: {
   sessionId: SessionId
   optimisticMessages?: OptimisticUserMessage[]
@@ -3922,6 +3951,10 @@ function ChatStream({
   onTurnScrolled?: () => void
   /** 在一个已完成轮次尾部打开物化分叉流程。 */
   onRequestFork?: (turnId: TurnId, ordinal?: number) => void
+  /** 分享长图的挂载点。传入时把当前真实消息再渲染一份进去。 */
+  shareCaptureHost?: HTMLElement | null
+  /** 长图过长时省略的较早消息条数，索引仍相对完整列表。 */
+  shareOmitCount?: number
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const streamId = useId()
@@ -5284,14 +5317,8 @@ function ChatStream({
           )}
           <ComputerActivityProvider sessionId={sessionId}>
             <ComputerActivitySegmentsBridge messages={displayMessages}>
-              {(segmentsFor) => (
-                <VirtualMessageList
-                  ref={virtualMessageListRef}
-                  items={displayMessages}
-                  scrollElementRef={streamRef}
-                  getItemKey={(msg) => msg.id}
-                  estimateSize={(msg) => (msg.role === 'user' ? 120 : 220)}
-                  renderAfterItem={(msg, index) => {
+              {(segmentsFor) => {
+                const renderAfterItem = (msg: UIMessage, index: number) => {
                     const marker = modelSwitchMarkers.find((item) => item.afterMessageId === msg.id)
                     const segments = segmentsFor(msg.id)
                     const waitingAfterLastMessage =
@@ -5366,8 +5393,8 @@ function ChatStream({
                         )}
                       </>
                     )
-                  }}
-                  renderItem={(msg, index) => {
+                }
+                const renderItem = (msg: UIMessage, index: number) => {
                     const nextMessage = displayMessages[index + 1]
                     const isTurnEnd = msg.turnId != null && nextMessage?.turnId !== msg.turnId
                     const turnNavItem =
@@ -5532,9 +5559,38 @@ function ChatStream({
                         )
                       })()
                     )
-                  }}
-                />
-              )}
+                }
+                const shareMessages =
+                  shareCaptureHost == null ? [] : displayMessages.slice(shareOmitCount)
+                return (
+                  <>
+                    <VirtualMessageList
+                      ref={virtualMessageListRef}
+                      items={displayMessages}
+                      scrollElementRef={streamRef}
+                      getItemKey={(msg) => msg.id}
+                      estimateSize={(msg) => (msg.role === 'user' ? 120 : 220)}
+                      renderAfterItem={renderAfterItem}
+                      renderItem={renderItem}
+                    />
+                    {shareCaptureHost != null &&
+                      createPortal(
+                        <SessionShareLiveFrame count={displayMessages.length}>
+                          {shareMessages.map((msg, offset) => {
+                            const index = offset + shareOmitCount
+                            return (
+                              <div key={msg.id}>
+                                {renderItem(msg, index)}
+                                {renderAfterItem(msg, index)}
+                              </div>
+                            )
+                          })}
+                        </SessionShareLiveFrame>,
+                        shareCaptureHost,
+                      )}
+                  </>
+                )
+              }}
             </ComputerActivitySegmentsBridge>
           </ComputerActivityProvider>
           {displayMessages.length === 0 && waitingAgentMessage}

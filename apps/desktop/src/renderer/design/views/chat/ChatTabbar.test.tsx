@@ -100,6 +100,51 @@ describe('ChatTabbar session schedules', () => {
     act(() => button?.click())
     expect(onToggleSessionSchedule).toHaveBeenCalledOnce()
   })
+
+  it('opens session sharing from the top-right button', () => {
+    const onShareSession = vi.fn()
+    act(() => {
+      root.render(
+        <ChatTabbar
+          session={{ id: 'session-1', title: 'Session', modelId: null } as never}
+          workspace={null}
+          agentStatus=""
+          branchState={{} as never}
+          gitStatus={null}
+          isGitRepo={false}
+          taskCount={0}
+          taskCompletedCount={0}
+          hasGoal={false}
+          showGitEnvPanel={false}
+          onToggleGitEnvPanel={() => undefined}
+          showInspector={false}
+          setShowInspector={() => undefined}
+          showConfigPanel={false}
+          onToggleConfig={() => undefined}
+          showTerminalPanel={false}
+          setShowTerminalPanel={() => undefined}
+          showSideChatPanel={false}
+          onToggleSideChat={() => undefined}
+          showUnifiedPanel={false}
+          onToggleUnifiedPanel={() => undefined}
+          teamConfig={{ enabled: false, hostAgentId: '', memberAgentIds: [] } as never}
+          orchestration={null}
+          effectiveHostAgentId={null}
+          agents={[]}
+          showSessionSchedule={false}
+          sessionScheduleEnabledCount={0}
+          onToggleSessionSchedule={() => undefined}
+          onShareSession={onShareSession}
+        />,
+      )
+    })
+
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="分享会话"]')
+    expect(button).not.toBeNull()
+    expect(button?.textContent?.trim()).toBe('')
+    act(() => button?.click())
+    expect(onShareSession).toHaveBeenCalledOnce()
+  })
 })
 
 describe('ChatTabbar agentStatus grace', () => {
