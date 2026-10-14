@@ -272,10 +272,10 @@ test('defaults a run to the smoke tier and can select hard tasks without mixing'
   assert.equal(hard.tier, 'hard')
   assert.deepEqual(
     hard.tasks.map((task) => task.id.slice(0, 2)),
-    ['09', '10', '11', '12', '13', '14'],
+    ['09', '10', '11', '12', '13', '14', '15'],
   )
 
-  const range = selectTasks(tasks, { ids: ['09-14'] })
+  const range = selectTasks(tasks, { ids: ['09-15'] })
   assert.equal(range.tier, 'all')
   assert.deepEqual(
     range.tasks.map((task) => task.id),
