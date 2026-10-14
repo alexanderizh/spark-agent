@@ -70,7 +70,7 @@
     </block>
 
     <view wx:elif="{{!loading}}" class="empty">
-      <view class="empty-icon">☁️</view>
+      <view class="empty-icon"><view class="icon icon-cloud"></view></view>
       <text>暂无同步记录</text>
       <text class="t-caption" style="margin-top: 8rpx;">在桌面端登录同一账号并开启同步后，这里会显示记录</text>
     </view>

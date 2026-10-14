@@ -1,5 +1,6 @@
 <view class="entry-page">
   <view class="entry-brand">
+    <image class="entry-logo" src="/assets/brand/logo.png" mode="aspectFit" />
     <text class="entry-name">SparkWork</text>
     <text class="entry-hint">{{hint}}</text>
   </view>

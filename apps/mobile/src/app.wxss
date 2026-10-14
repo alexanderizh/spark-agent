@@ -134,6 +134,10 @@ page {
   margin-bottom: 24rpx;
   box-shadow: 0 2rpx 12rpx rgba(26, 26, 26, 0.04);
 }
+/* 扁平变体：说明性/次要卡片去阴影 */
+.card-flat {
+  box-shadow: none;
+}
 
 /* 状态仪表盘 2×2 卡片（紧凑横排：图标 + 标签 + 右侧计数） */
 .stat-card {
@@ -304,6 +308,9 @@ page {
 .icon-camera {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z'/%3E%3Ccircle cx='12' cy='13' r='4'/%3E%3C/svg%3E");
 }
+.icon-cloud {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e8e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z'/%3E%3C/svg%3E");
+}
 
 /* ─── 徽标 / 状态点 ────────────────────────────────────────────────────────── */
 
@@ -454,6 +461,27 @@ page {
   flex-direction: column;
   align-items: flex-start;
   padding: 40rpx 8rpx;
+}
+
+/* 卡片内居中空态（同步/设备等列表为空时） */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 88rpx 48rpx;
+  text-align: center;
+  color: #6b6b6b;
+  font-size: 28rpx;
+}
+.empty-icon {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: #efedea;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24rpx;
 }
 .empty-state-icon {
   width: 64rpx;

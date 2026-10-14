@@ -16,6 +16,15 @@
   gap: 12rpx;
 }
 
+.entry-logo {
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: 32rpx;
+  margin-bottom: 12rpx;
+  background: #fff;
+  box-shadow: 0 8rpx 24rpx rgba(17, 16, 14, 0.1);
+}
+
 .entry-name {
   font-size: 40rpx;
   font-weight: 600;
