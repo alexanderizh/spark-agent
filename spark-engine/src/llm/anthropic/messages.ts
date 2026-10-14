@@ -53,16 +53,25 @@ export class AnthropicMessagesService implements LlmService {
       },
       body: toAnthropicRequest(request, this.#options.model, this.#options.promptCaching ?? true, {
         omitDisabledThinking:
-          resolveDisabledThinkingWire({
-            baseUrl: this.#options.baseUrl,
-            model: this.#options.model,
-            override: this.#options.disabledThinking ?? process.env.SPARK_EVAL_THINKING,
-          }) === 'omit',
+          resolveDisabledThinkingWire(disabledThinkingInput(this.#options)) === 'omit',
       }),
       signal: context.signal,
       ...(this.#options.fetch ? { fetch: this.#options.fetch } : {}),
     })
     yield* decodeAnthropicEvents(opened.events, opened.requestId, startedAt)
+  }
+}
+
+function disabledThinkingInput(options: AnthropicMessagesOptions): {
+  readonly model: string
+  readonly baseUrl?: string
+  readonly override?: string
+} {
+  const override = options.disabledThinking ?? process.env.SPARK_EVAL_THINKING
+  return {
+    model: options.model,
+    ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+    ...(override === undefined ? {} : { override }),
   }
 }
 
