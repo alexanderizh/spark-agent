@@ -36,7 +36,6 @@
   white-space: nowrap;
 }
 
-
 .auto-router-notice .model-switch-notice-tooltip {
   width: min(520px, calc(100vw - 48px));
   max-width: none;
@@ -47,9 +46,9 @@
 
 .auto-router-notice-tooltip-meta {
   display: block;
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
   color: #c5c5c5;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 400;
 }
 
@@ -63,9 +62,9 @@
 .auto-router-meta-tag {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   color: var(--text-tertiary, #858585);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -86,5 +85,5 @@
 .auto-router-turn-tail {
   display: flex;
   justify-content: flex-end;
-  padding: 2px 4px 6px;
+  padding: 2px var(--pad-3xs) var(--pad-xs);
 }

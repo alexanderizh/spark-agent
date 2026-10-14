@@ -10,7 +10,7 @@
   --render-svg-muted: var(--text-muted, #6f6a61);
   --render-svg-danger: var(--danger, #ef4444);
   width: 100%;
-  margin: 10px 0;
+  margin: var(--pad-sm) 0;
   overflow: hidden;
   border-radius: var(--r-md);
   background: var(--bg-sunken);
@@ -20,9 +20,9 @@
 .render-svg-action {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   color: var(--render-svg-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .render-svg-action:hover {
@@ -35,7 +35,7 @@
   justify-content: center;
   min-height: 140px;
   max-height: 520px;
-  padding: 16px;
+  padding: var(--pad-lg);
   overflow: auto;
   background: var(--render-svg-surface);
 }
@@ -66,12 +66,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 140px;
-  padding: 20px;
+  padding: var(--pad-xl);
   background: var(--render-svg-surface);
   color: var(--render-svg-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .render-svg-error {
@@ -79,10 +79,10 @@
 }
 
 .render-svg-note {
-  padding: 6px 12px;
+  padding: var(--pad-xs) var(--pad-md);
   border-top: 1px solid var(--md-divider, var(--divider, rgba(128, 128, 128, 0.24)));
   color: var(--render-svg-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .render-svg-source-wrap {

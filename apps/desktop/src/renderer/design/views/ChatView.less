@@ -12,10 +12,10 @@
 .git-session-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   height: 28px;
   max-width: 260px;
-  padding: 0 8px;
+  padding: 0 var(--pad-sm);
   border: 1px solid transparent;
   border-radius: var(--r-md);
   background: transparent;
@@ -49,7 +49,7 @@
   display: inline-block;
   width: 6px;
   height: 6px;
-  margin-right: 4px;
+  margin-right: var(--pad-3xs);
   border-radius: 50%;
   background: var(--color-primary-6, #4a8cff);
   vertical-align: middle;
@@ -58,7 +58,7 @@
 
 .git-session-counts {
   display: inline-flex;
-  gap: 3px;
+  gap: var(--pad-3xs);
   font-size: var(--font-xs);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -90,7 +90,7 @@
   width: min(250px, calc(100% - 8px));
   max-height: min(480px, calc(100% - 76px));
   overflow: auto;
-  padding: 4px;
+  padding: var(--pad-3xs);
   border: 0;
   border-radius: var(--r-md);
   background: var(--panel-elev);
@@ -161,7 +161,7 @@
   z-index: calc(var(--z-dropdown, 100) + 20);
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--pad-2xl);
   background: color-mix(in srgb, var(--bg) 40%, transparent);
   backdrop-filter: blur(2px);
   -webkit-app-region: no-drag;
@@ -192,8 +192,8 @@
 .git-dialog-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--pad-sm);
+  margin-bottom: var(--pad-md);
 }
 
 .git-dialog-header h3 {
@@ -229,12 +229,12 @@
 .git-popover-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px 4px;
+  gap: var(--pad-xs);
+  padding: var(--pad-xs) var(--pad-sm) var(--pad-3xs);
 }
 
 .git-popover-header.compact {
-  padding: 6px 10px 4px;
+  padding: var(--pad-xs) var(--pad-sm) var(--pad-3xs);
   margin-bottom: 0;
 }
 
@@ -248,7 +248,7 @@
 
 .git-popover-title {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -284,9 +284,9 @@
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 32px;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -343,11 +343,11 @@
 
 .git-env-worktree-tag {
   flex-shrink: 0;
-  padding: 0 5px;
-  border-radius: 999px;
+  padding: 0 var(--pad-xs);
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--color-primary-6, #4a8cff) 14%, transparent);
   color: var(--color-primary-6, #4a8cff);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   line-height: 16px;
   white-space: nowrap;
@@ -362,28 +362,28 @@
   flex: 0 0 auto;
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--color-primary-6, #4a8cff);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-6, #4a8cff) 18%, transparent);
 }
 
 .git-popover-divider {
   height: 1px;
-  margin: 4px 8px;
+  margin: var(--pad-3xs) var(--pad-sm);
   background: var(--divider);
 }
 
 .git-popover-section-title {
-  margin: 4px 8px 2px;
+  margin: var(--pad-3xs) var(--pad-sm) 2px;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .git-popover-muted {
-  padding: 2px 8px 6px;
+  padding: 2px var(--pad-sm) var(--pad-xs);
   color: var(--text-muted);
   font-size: var(--font-xs);
   font-weight: 500;
@@ -391,20 +391,20 @@
 
 .git-task-progress {
   margin-top: 2px;
-  padding: 0 4px 4px;
+  padding: 0 var(--pad-3xs) var(--pad-3xs);
 }
 
 .git-task-progress .git-popover-divider {
-  margin: 6px 4px 8px;
+  margin: var(--pad-xs) var(--pad-3xs) var(--pad-sm);
 }
 
 .git-task-progress-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 0 4px 6px;
+  gap: var(--pad-sm);
+  margin: 0 var(--pad-3xs) var(--pad-xs);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -419,7 +419,7 @@
 .git-task-progress-item {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   width: 100%;
   box-sizing: border-box;
   min-width: 0;
@@ -428,7 +428,7 @@
   font-weight: 500;
   line-height: 1.4;
   min-height: 24px;
-  padding: 2px 4px;
+  padding: 2px var(--pad-3xs);
   border-radius: var(--r-sm);
 }
 
@@ -443,7 +443,7 @@
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--text-muted) 55%, transparent);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   color: var(--text-muted);
 }
 
@@ -496,14 +496,14 @@
 }
 
 .git-task-progress-popover-desc {
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
   color: var(--text-muted);
   font-size: var(--font-xs);
 }
 
 // ── Goal section（GitEnvPanel 内嵌：当会话存在活跃 Goal 时显示） ──
 .git-goal-section {
-  padding: 0 8px 8px;
+  padding: 0 var(--pad-sm) var(--pad-sm);
 }
 
 .git-goal-section .git-popover-divider {
@@ -513,24 +513,24 @@
 .git-goal-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
+  gap: var(--pad-xs);
+  margin-bottom: var(--pad-3xs);
 }
 
 .git-goal-head-title {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .git-goal-status-tag {
-  padding: 1px 6px;
-  border-radius: 999px;
+  padding: 1px var(--pad-xs);
+  border-radius: var(--r-pill);
   background: var(--surface-soft, rgba(120, 120, 130, 0.18));
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 500;
   letter-spacing: 0.02em;
 
@@ -566,8 +566,8 @@
 .git-goal-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
-  margin-top: 6px;
+  gap: var(--pad-3xs) var(--pad-sm);
+  margin-top: var(--pad-xs);
   color: var(--text-muted);
   font-size: var(--font-xs);
 }
@@ -575,12 +575,12 @@
 .git-goal-meta-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .git-goal-summary {
-  margin-top: 6px;
-  padding: 6px 8px;
+  margin-top: var(--pad-xs);
+  padding: var(--pad-xs) var(--pad-sm);
   border-radius: 6px;
   background: var(--surface-soft, rgba(120, 120, 130, 0.1));
   color: var(--text-muted);
@@ -592,15 +592,15 @@
 .git-goal-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--pad-xs);
+  margin-top: var(--pad-sm);
 }
 
 .git-goal-action {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-3xs) var(--pad-sm);
   border: 1px solid var(--border-subtle, rgba(120, 120, 130, 0.25));
   border-radius: 6px;
   background: transparent;
@@ -689,14 +689,14 @@
 .git-commit-scope-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
   min-height: 20px;
-  padding: 2px 8px;
-  border-radius: 999px;
+  padding: 2px var(--pad-sm);
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text) 7%, transparent);
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
@@ -711,12 +711,12 @@
 .git-commit-scope-reset,
 .git-commit-scope-toggle {
   flex-shrink: 0;
-  padding: 2px 8px;
+  padding: 2px var(--pad-sm);
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   line-height: 1.4;
   cursor: pointer;
@@ -758,8 +758,8 @@
 .git-scope-tree-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: var(--pad-sm);
+  padding: var(--pad-xs) var(--pad-sm);
   border-bottom: 1px solid var(--divider);
   flex-shrink: 0;
 }
@@ -767,7 +767,7 @@
 .git-scope-tree-search {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   flex: 1;
   min-width: 0;
   color: var(--text-faint);
@@ -791,7 +791,7 @@
   height: 18px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: transparent;
   color: var(--text-faint);
   cursor: pointer;
@@ -805,17 +805,17 @@
 .git-scope-tree-bulk {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex-shrink: 0;
 }
 
 .git-scope-tree-bulk button {
-  padding: 2px 8px;
+  padding: 2px var(--pad-sm);
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   cursor: pointer;
 }
@@ -833,15 +833,15 @@
 .git-scope-tree-body {
   max-height: 240px;
   overflow: auto;
-  padding: 4px 0;
+  padding: var(--pad-3xs) 0;
 }
 
 .git-scope-tree-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-height: 26px;
-  padding-right: 10px;
+  padding-right: var(--pad-sm);
   color: var(--text);
   font-size: var(--font-sm);
   user-select: none;
@@ -890,7 +890,7 @@
   margin-left: auto;
   flex-shrink: 0;
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -898,7 +898,7 @@
 .git-scope-staged-dot {
   width: 5px;
   height: 5px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--primary);
   flex-shrink: 0;
 }
@@ -910,7 +910,7 @@
   width: 16px;
   height: 16px;
   border-radius: 4px;
-  font-size: 9.5px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   line-height: 1;
   flex-shrink: 0;
@@ -941,17 +941,17 @@
 .git-scope-file-delta {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   margin-left: auto;
   flex-shrink: 0;
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .git-scope-tree-empty {
-  padding: 18px 0;
+  padding: var(--pad-xl) 0;
   color: var(--text-faint);
   font-size: var(--font-sm);
   text-align: center;
@@ -985,7 +985,7 @@
 .git-action-meta {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   margin-left: auto;
   flex-shrink: 0;
   white-space: nowrap;
@@ -995,31 +995,31 @@
   display: inline-flex;
   align-items: center;
   min-height: 18px;
-  padding: 1px 7px;
-  border-radius: 999px;
+  padding: 1px var(--pad-sm);
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text) 7%, transparent);
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   font-weight: 600;
   line-height: 1;
 }
 
 .git-action-shortcut {
-  padding: 2px 8px;
-  border-radius: 999px;
+  padding: 2px var(--pad-sm);
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text) 9%, transparent);
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 
 .git-branch-search {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   height: 32px;
-  margin-bottom: 4px;
-  padding: 0 4px;
+  margin-bottom: var(--pad-3xs);
+  padding: 0 var(--pad-3xs);
   color: var(--text-faint);
 }
 
@@ -1040,15 +1040,15 @@
   min-height: 24px;
   flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
+  gap: var(--pad-3xs);
+  padding: 2px var(--pad-xs);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
 }
 
@@ -1085,21 +1085,21 @@
 }
 
 .git-branch-section + .git-branch-section {
-  margin-top: 4px;
+  margin-top: var(--pad-3xs);
   padding-top: 2px;
 }
 
 .git-branch-section-title {
-  padding: 3px 8px 2px;
+  padding: var(--pad-3xs) var(--pad-sm) 2px;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 
 .git-branch-row {
   min-height: 34px;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   font-size: var(--font-sm);
 }
 
@@ -1126,18 +1126,18 @@
 
 .git-branch-desc {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 500;
 }
 
 .git-create-branch-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
   min-height: 34px;
   margin-top: 0px;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -1157,11 +1157,11 @@
 .git-create-branch-inline {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   width: 100%;
   min-height: 34px;
   margin-top: 0px;
-  padding: 0 4px 0 8px;
+  padding: 0 var(--pad-3xs) 0 var(--pad-sm);
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--text) 4%, transparent);
 }
@@ -1219,7 +1219,7 @@
 .git-tag-row > .git-tag-time {
   margin-left: auto;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -1227,7 +1227,7 @@
 .git-tag-row > svg:last-child {
   margin-left: 0;
   color: var(--text-faint);
-  transition: transform 0.12s ease;
+  transition: transform var(--motion-instant) ease;
 }
 
 .git-tag-row > svg:last-child.open {
@@ -1244,9 +1244,9 @@
 .git-tag-action-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-height: 28px;
-  padding: 4px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -1286,9 +1286,9 @@
 .git-detached-notice {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  margin: 2px 0 6px;
-  padding: 6px 8px;
+  gap: var(--pad-xs);
+  margin: 2px 0 var(--pad-xs);
+  padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--warning, #d69e2e) 12%, transparent);
   color: var(--warning, #d69e2e);
@@ -1306,7 +1306,7 @@
 .composer-branch-trigger-label {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   min-width: 0;
 }
 
@@ -1316,11 +1316,11 @@
 
 .composer-branch-detached-badge {
   flex: none;
-  padding: 1px 4px;
+  padding: 1px var(--pad-3xs);
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--warning, #d69e2e) 16%, transparent);
   color: var(--warning, #d69e2e);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
 }
 
@@ -1331,14 +1331,14 @@
   max-width: min(260px, calc(100vw - 24px));
   max-height: none;
   overflow: visible;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
 }
 
 .git-create-label-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--pad-sm);
   color: var(--text-muted);
   font-size: var(--font-xs);
   font-weight: 500;
@@ -1361,7 +1361,7 @@
 .git-create-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg);
@@ -1377,7 +1377,7 @@
 }
 
 .git-create-error {
-  margin-top: 8px;
+  margin-top: var(--pad-sm);
   color: var(--danger);
   font-size: var(--font-xs);
   font-weight: 500;
@@ -1386,13 +1386,13 @@
 .git-create-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-lg);
 }
 
 .git-create-actions .btn {
   min-height: 30px;
-  padding-inline: 12px;
+  padding-inline: var(--pad-md);
   border-radius: var(--r-sm);
   font-size: var(--font-sm);
 }
@@ -1411,7 +1411,7 @@
   gap: 0;
   padding-inline: var(--pad-xs);
   min-height: 0;
-  padding-top: 12px;
+  padding-top: var(--pad-md);
   overflow: hidden;
 }
 
@@ -1423,7 +1423,7 @@
 .git-review-content {
   display: flex;
   flex: 1 1 auto;
-  gap: 10px;
+  gap: var(--pad-sm);
   min-height: 0;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -1453,10 +1453,10 @@
 .git-review-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   flex-shrink: 0;
   height: var(--chat-header-height);
-  margin-bottom: 14px;
+  margin-bottom: var(--pad-lg);
 }
 
 .git-review-toolbar-main {
@@ -1466,7 +1466,7 @@
 
 .git-review-kicker {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1475,7 +1475,7 @@
 .git-review-toolbar h3 {
   margin: 2px 0 0;
   color: var(--text-strong);
-  font-size: 18px;
+  font-size: var(--font-xl);
   font-weight: 650;
   line-height: 1.2;
 }
@@ -1483,10 +1483,10 @@
 .git-review-compare {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
   flex-shrink: 0;
-  margin-bottom: 8px;
-  padding: 12px 14px;
+  margin-bottom: var(--pad-sm);
+  padding: var(--pad-md) var(--pad-lg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--panel);
@@ -1495,7 +1495,7 @@
 .git-review-compare-branches {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -1507,10 +1507,10 @@
 .git-review-branch-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
   max-width: 46%;
-  padding: 4px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
   border-radius: var(--r-xs);
   background: var(--bg-soft);
   color: var(--text);
@@ -1530,7 +1530,7 @@
 .git-review-compare-stats {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
   font-size: var(--font-xs);
   font-weight: 600;
@@ -1540,11 +1540,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   width: 100%;
   min-height: 34px;
   flex-shrink: 0;
-  margin-bottom: 8px;
+  margin-bottom: var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--panel);
@@ -1564,7 +1564,7 @@
   flex: 0 0 auto;
   flex-direction: column;
   min-height: 0;
-  margin-bottom: 12px;
+  margin-bottom: var(--pad-md);
   overflow: hidden;
 }
 
@@ -1603,7 +1603,7 @@
   left: 0;
   width: 1px;
   background: color-mix(in srgb, var(--border) 72%, transparent);
-  transition: background 0.12s ease;
+  transition: background var(--motion-instant) ease;
 }
 
 .git-review-tree-resize-handle:hover::after,
@@ -1620,15 +1620,15 @@ body.git-review-tree-resizing {
 .git-review-tree-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px 6px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-xs);
 }
 
 .git-review-tree-title {
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: var(--text-strong);
   font-size: var(--font-xs);
   font-weight: 600;
@@ -1640,10 +1640,10 @@ body.git-review-tree-resizing {
   height: 18px;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 700;
 }
 
@@ -1676,9 +1676,9 @@ body.git-review-tree-resizing {
 .git-review-tree-search {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 0 8px 7px;
-  padding: 0 8px;
+  gap: var(--pad-xs);
+  margin: 0 var(--pad-sm) var(--pad-sm);
+  padding: 0 var(--pad-sm);
   min-height: 28px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -1703,23 +1703,23 @@ body.git-review-tree-resizing {
 
 .git-review-tree-filters {
   display: flex;
-  gap: 4px;
-  padding: 0 8px 8px;
+  gap: var(--pad-3xs);
+  padding: 0 var(--pad-sm) var(--pad-sm);
 }
 
 .git-review-tree-filters button {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   min-height: 24px;
-  padding: 0 7px;
+  padding: 0 var(--pad-sm);
   border: 1px solid transparent;
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
   // font-weight: 600;
 
   &:hover {
@@ -1739,7 +1739,7 @@ body.git-review-tree-resizing {
   max-height: none;
   min-height: 0;
   overflow: auto;
-  padding: 2px 4px 6px;
+  padding: 2px var(--pad-3xs) var(--pad-xs);
   border-top: 1px solid var(--divider);
 }
 
@@ -1747,10 +1747,10 @@ body.git-review-tree-resizing {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   width: 100%;
   min-height: 27px;
-  padding: 3px 8px 3px calc(8px + var(--tree-indent, 0px));
+  padding: var(--pad-3xs) var(--pad-sm) var(--pad-3xs) calc(var(--pad-sm) + var(--tree-indent, 0px));
   border: 0;
   border-radius: var(--r-xs);
   background: transparent;
@@ -1805,14 +1805,14 @@ body.git-review-tree-resizing {
 
 .git-review-tree-dir-count {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 700;
 }
 
 .git-review-tree-stage-dot {
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--text-faint);
 
   &.staged {
@@ -1835,15 +1835,15 @@ body.git-review-tree-resizing {
 .git-review-tree-stats {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   color: var(--text-faint);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 700;
 }
 
 .git-review-tree-empty {
-  padding: 16px 10px;
+  padding: var(--pad-lg) var(--pad-sm);
   color: var(--text-muted);
   font-size: var(--font-xs);
   text-align: center;
@@ -1857,17 +1857,17 @@ body.git-review-tree-resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 7px 10px 5px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-xs);
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 700;
 }
 
 .git-review-stash-head span:first-child {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 
 .git-review-stash-list {
@@ -1875,16 +1875,16 @@ body.git-review-tree-resizing {
   gap: 1px;
   max-height: 96px;
   overflow: auto;
-  padding: 0 4px 6px;
+  padding: 0 var(--pad-3xs) var(--pad-xs);
 }
 
 .git-review-stash-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   min-height: 26px;
-  padding: 3px 6px;
+  padding: var(--pad-3xs) var(--pad-xs);
   border-radius: var(--r-xs);
   color: var(--text);
   font-size: var(--font-xs);
@@ -1898,7 +1898,7 @@ body.git-review-tree-resizing {
 .git-review-stash-selector {
   color: var(--text-muted);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 700;
 }
 
@@ -1909,12 +1909,12 @@ body.git-review-tree-resizing {
 .git-review-stash-date,
 .git-review-stash-empty {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
 }
 
 .git-review-stash-empty {
-  padding: 6px;
+  padding: var(--pad-xs);
 }
 
 .git-review-file-card {
@@ -1933,10 +1933,10 @@ body.git-review-tree-resizing {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
   min-height: 40px;
-  padding: 8px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   border: 0;
   background: transparent;
   color: var(--text);
@@ -2010,7 +2010,7 @@ body.git-review-tree-resizing {
   gap: 0;
   min-width: 0;
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  font-size: 11.5px;
+  font-size: var(--font-sm);
   line-height: 1.35;
 }
 
@@ -2030,7 +2030,7 @@ body.git-review-tree-resizing {
 .git-review-file-stage {
   display: none;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -2038,9 +2038,9 @@ body.git-review-tree-resizing {
 .git-review-file-stats {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -2048,7 +2048,7 @@ body.git-review-tree-resizing {
 .git-review-file-chevron {
   display: inline-flex;
   color: var(--text-faint);
-  transition: transform 0.15s ease;
+  transition: transform var(--motion-fast) ease;
 
   &.expanded {
     transform: rotate(180deg);
@@ -2062,7 +2062,7 @@ body.git-review-tree-resizing {
 .git-review-diff-body {
   max-height: min(52vh, 520px);
   padding: 0;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .git-review-diff-body .diff-line {
@@ -2070,11 +2070,11 @@ body.git-review-tree-resizing {
 }
 
 .git-review-diff-meta {
-  padding: 6px 12px;
+  padding: var(--pad-xs) var(--pad-md);
   border-bottom: 1px solid var(--divider);
   color: var(--text-faint);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2085,16 +2085,16 @@ body.git-review-tree-resizing {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   width: 100%;
-  padding: 6px 12px;
+  padding: var(--pad-xs) var(--pad-md);
   border: 0;
   border-block: 1px solid var(--divider);
   background: color-mix(in srgb, var(--bg-soft) 80%, transparent);
   color: var(--text-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
 
   &:hover {
@@ -2107,9 +2107,9 @@ body.git-review-tree-resizing {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 72px;
-  padding: 16px 12px;
+  padding: var(--pad-lg) var(--pad-md);
   color: var(--text-muted);
   font-size: var(--font-sm);
 
@@ -2119,7 +2119,7 @@ body.git-review-tree-resizing {
 }
 
 .git-review-empty {
-  padding: 28px 16px;
+  padding: 28px var(--pad-lg);
   color: var(--text-muted);
   font-size: var(--font-sm);
   text-align: center;
@@ -2179,7 +2179,7 @@ body.git-review-tree-resizing {
   width: 100%;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: var(--pad-lg);
   margin-top: -8px;
   text-align: center;
 }
@@ -2188,7 +2188,7 @@ body.git-review-tree-resizing {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .chat-main-empty .single-empty-title.chat-hero-title {
@@ -2202,11 +2202,11 @@ body.git-review-tree-resizing {
 
 @media (max-width: 720px) {
   .chat-main-empty .single-empty-hero {
-    gap: 14px;
+    gap: var(--pad-lg);
   }
 
   .chat-main-empty .single-empty-title.chat-hero-title {
-    font-size: 22px;
+    font-size: var(--font-xl);
   }
 }
 
@@ -2226,23 +2226,23 @@ body.git-review-tree-resizing {
   display: inline-flex;
   max-width: 100%;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
-  border-radius: 999px;
+  gap: var(--pad-sm);
+  padding: var(--pad-3xs) var(--pad-md);
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--bg-soft) 55%, transparent);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.4;
   animation: hero-tip-in 0.45s ease;
 }
 
 .hero-tips-chip {
   flex: 0 0 auto;
-  padding: 1px 7px;
-  border-radius: 999px;
+  padding: 1px var(--pad-sm);
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
   color: color-mix(in srgb, var(--primary) 72%, var(--text-muted));
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -2305,7 +2305,7 @@ body.git-review-tree-resizing {
   width: 10px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease;
+  transition: opacity var(--motion-fast) ease;
   -webkit-app-region: no-drag;
 }
 
@@ -2323,7 +2323,7 @@ body.git-review-tree-resizing {
   width: 6px;
   min-height: 28px;
   margin-left: 2px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--border-strong);
   cursor: grab;
   touch-action: none;
@@ -2373,7 +2373,7 @@ body.git-review-tree-resizing {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: var(--pad-lg);
 
   .chat-loading-text {
     font-size: var(--font-sm);
@@ -2388,7 +2388,7 @@ body.git-review-tree-resizing {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 0 12px;
+  padding: var(--pad-3xs) 0 var(--pad-md);
 
   .chat-loading-spinner {
     width: 22px;
@@ -2423,15 +2423,15 @@ body.git-review-tree-resizing {
   min-width: 0;
   margin: 0 auto;
   box-sizing: border-box;
-  padding-left: max(24px, var(--chat-turn-nav-content-inset, 0px));
-  padding-right: 24px;
+  padding-left: max(var(--pad-2xl), var(--chat-turn-nav-content-inset, 0px));
+  padding-right: var(--pad-2xl);
 }
 
 .chat-stream-inner {
   flex: 1 0 auto;
   display: flex;
   flex-direction: column;
-  padding-block: 16px;
+  padding-block: var(--pad-lg);
   gap: 2px;
 
   /* 滚动条统一由全局规则彻底隐藏（见 styles.css 顶部 `*::-webkit-scrollbar*` + 标准
@@ -2441,7 +2441,7 @@ body.git-review-tree-resizing {
 .chat-message-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--pad-lg);
   width: 100%;
 }
 
@@ -2457,7 +2457,7 @@ body.git-review-tree-resizing {
   left: 0;
   width: 100%;
   box-sizing: border-box;
-  padding-bottom: 16px;
+  padding-bottom: var(--pad-lg);
 }
 
 .chat-layout > .inspector-frame {
@@ -2518,7 +2518,7 @@ body.git-review-tree-resizing {
 }
 
 .chat-main-active {
-  padding-bottom: 14px;
+  padding-bottom: var(--pad-lg);
 }
 
 /* 内容区与侧边会话区在浅色激活态下改为透明，让 .chat-layout 上的统一光晕透出，
@@ -2536,7 +2536,7 @@ body.git-review-tree-resizing {
 }
 
 .platform-win32 .chat-main-active .composer-inner {
-  padding-bottom: 12px;
+  padding-bottom: var(--pad-md);
 }
 
 .composer-file-drop-overlay {
@@ -2546,7 +2546,7 @@ body.git-review-tree-resizing {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: var(--pad-3xl);
   background: color-mix(in srgb, var(--primary-soft) 18%, rgba(247, 250, 253, 0.58));
   -webkit-backdrop-filter: blur(16px) saturate(1.16);
   backdrop-filter: blur(16px) saturate(1.16);
@@ -2563,8 +2563,8 @@ body.git-review-tree-resizing {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 24px 30px;
+  gap: var(--pad-sm);
+  padding: var(--pad-2xl) 30px;
   border-radius: 20px;
   background: color-mix(in srgb, var(--panel) 38%, transparent);
   color: var(--text);
@@ -2573,8 +2573,8 @@ body.git-review-tree-resizing {
   animation: composer-file-drop-rise 160ms ease-out;
 
   strong {
-    margin-top: 5px;
-    font-size: 18px;
+    margin-top: var(--pad-xs);
+    font-size: var(--font-xl);
     font-weight: 650;
   }
 
@@ -2591,7 +2591,7 @@ body.git-review-tree-resizing {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: var(--pad-3xl);
   background: color-mix(in srgb, #b06dff 15%, rgba(247, 250, 253, 0.62));
   -webkit-backdrop-filter: blur(16px) saturate(1.16);
   backdrop-filter: blur(16px) saturate(1.16);
@@ -2603,8 +2603,8 @@ body.git-review-tree-resizing {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 7px;
-  padding: 24px 30px;
+  gap: var(--pad-sm);
+  padding: var(--pad-2xl) 30px;
   border-radius: 20px;
   background: color-mix(in srgb, var(--panel) 42%, transparent);
   color: var(--text);
@@ -2616,8 +2616,8 @@ body.git-review-tree-resizing {
     color: #9856e7;
   }
   strong {
-    margin-top: 5px;
-    font-size: 18px;
+    margin-top: var(--pad-xs);
+    font-size: var(--font-xl);
     font-weight: 650;
   }
   span {
@@ -2705,13 +2705,13 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .agent-task-running-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 4px;
+  gap: var(--pad-3xs);
+  margin-top: var(--pad-3xs);
   padding: 2px 0px;
   border-radius: var(--r-xs);
   // background: var(--primary-soft);
   color: var(--primary);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 20px;
   width: fit-content;
 }
@@ -2745,14 +2745,14 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 12px 0;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm) var(--pad-md) 0;
 }
 
 .composer-running-agent-tag {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   max-width: min(220px, 100%);
   margin: 0;
   line-height: 20px;
@@ -2771,14 +2771,14 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-running-agent-tag .arco-tag-content {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 
 .composer-running-agent-dot {
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: currentColor;
   flex: 0 0 auto;
   animation: composer-running-agent-pulse 1.1s ease-in-out infinite;
@@ -2835,17 +2835,17 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .inspector-task-counts {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 11px;
+  gap: var(--pad-sm);
+  margin-bottom: var(--pad-sm);
+  font-size: var(--font-xs);
   color: var(--text-muted);
 }
 .inspector-task-count {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
-  border-radius: 999px;
+  gap: var(--pad-3xs);
+  padding: 1px var(--pad-xs);
+  border-radius: var(--r-pill);
   background: var(--bg-soft);
   border: 1px solid var(--border);
   line-height: 1.4;
@@ -2867,7 +2867,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   .inspector-task-dot {
     width: 6px;
     height: 6px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--border-strong);
     display: inline-block;
   }
@@ -2885,7 +2885,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-model-group-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .composer-model-group-icon {
@@ -2915,10 +2915,10 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
   min-height: 34px;
-  padding: 7px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   border: none;
   border-radius: var(--r-sm);
   background: transparent;
@@ -2957,7 +2957,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   flex-shrink: 0;
   width: 22px;
   height: 22px;
-  margin-right: 6px;
+  margin-right: var(--pad-xs);
   padding: 0;
   border: none;
   border-radius: var(--r-xs);
@@ -3044,7 +3044,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   > .composer-param-tail {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--pad-3xs);
     flex-shrink: 0;
     padding: 0;
     height: 29px;
@@ -3095,7 +3095,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 
   /* 上下文选择器：与其它参数选择器统一文字大小（覆盖 views.css 的 --font-sm） */
   .context-meter {
-    font-size: 13px;
+    font-size: var(--font-base);
   }
 }
 
@@ -3146,7 +3146,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   left: -12px;
   z-index: 50;
   min-width: 200px;
-  padding: 5px;
+  padding: var(--pad-xs);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -3173,9 +3173,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 32px;
-  padding: 0 9px;
+  padding: 0 var(--pad-sm);
   border-radius: var(--r-sm);
   background: transparent;
   border: none;
@@ -3198,7 +3198,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   }
 
   &.has-sub {
-    padding-right: 7px;
+    padding-right: var(--pad-sm);
   }
 
   &.sub-open {
@@ -3221,7 +3221,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   height: 16px;
   color: var(--text-muted);
   flex-shrink: 0;
-  transition: color 120ms ease;
+  transition: color var(--motion-fast) ease;
 }
 
 .composer-actions-item-label {
@@ -3249,7 +3249,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   max-width: 260px;
   max-height: min(320px, calc(100vh - 24px));
   overflow: hidden;
-  padding: 5px;
+  padding: var(--pad-xs);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -3286,10 +3286,10 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   height: 30px;
-  margin: 0 2px 4px;
-  padding: 0 9px;
+  margin: 0 2px var(--pad-3xs);
+  padding: 0 var(--pad-sm);
   border-radius: var(--r-sm);
   background: var(--bg-sunken);
   border: 1px solid var(--border);
@@ -3320,9 +3320,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-actions-sub-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 30px;
-  padding: 0 9px;
+  padding: 0 var(--pad-sm);
   border-radius: var(--r-sm);
   background: transparent;
   border: none;
@@ -3362,7 +3362,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   height: 14px;
   color: var(--text-faint);
   flex-shrink: 0;
-  transition: color 120ms ease;
+  transition: color var(--motion-fast) ease;
 }
 
 .composer-actions-sub-item-name {
@@ -3378,8 +3378,8 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-actions-sub-group-label {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 9px 3px;
+  gap: var(--pad-xs);
+  padding: var(--pad-xs) var(--pad-sm) var(--pad-3xs);
   color: var(--text-faint);
   font-size: var(--font-xs);
   line-height: 14px;
@@ -3388,9 +3388,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 
 .composer-actions-sub-group-count {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 12px;
-  padding: 0 4px;
+  padding: 0 var(--pad-3xs);
   border-radius: var(--r-sm);
   background: var(--hover);
 }
@@ -3398,9 +3398,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-actions-sub-item-tag {
   flex-shrink: 0;
   margin-left: auto;
-  padding: 0 4px;
-  border-radius: 3px;
-  font-size: 10px;
+  padding: 0 var(--pad-3xs);
+  border-radius: var(--r-xs);
+  font-size: var(--font-2xs);
   line-height: 14px;
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 12%, transparent);
@@ -3409,9 +3409,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-actions-sub-empty {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-height: 32px;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   color: var(--text-faint);
   font-size: var(--font-sm);
   line-height: 18px;
@@ -3420,7 +3420,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-actions-sub-divider {
   height: 1px;
   background: var(--divider);
-  margin: 4px 2px;
+  margin: var(--pad-3xs) 2px;
 }
 
 /* 当子菜单接近视口右边缘时，反向到左侧展开 */
@@ -3439,7 +3439,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-agent-menu .composer-menu-group-title {
   font-size: var(--font-xs);
   color: var(--text-faint);
-  padding: 6px 10px 2px;
+  padding: var(--pad-xs) var(--pad-sm) 2px;
   text-transform: none;
 }
 
@@ -3453,7 +3453,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
  */
 .composer-agent-picker.is-team {
   height: 28px;
-  padding: 0 6px 0 5px;
+  padding: 0 var(--pad-xs) 0 var(--pad-xs);
   border-radius: var(--r-md);
   background: var(--panel);
 }
@@ -3479,7 +3479,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   top: -6px;
   z-index: 2;
   margin-top: -6px;
-  padding-top: 9px;
+  padding-top: var(--pad-sm);
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--danger) 8%, var(--panel));
   color: var(--danger);
@@ -3505,8 +3505,8 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-agent-menu .composer-roster-team-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-xs) var(--pad-md);
 }
 .composer-agent-menu .composer-roster-team-icon {
   display: inline-flex;
@@ -3530,8 +3530,8 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 /* 主持人徽标 */
 .composer-agent-menu .composer-roster-host-badge {
   flex-shrink: 0;
-  margin-left: 6px;
-  padding: 0 7px;
+  margin-left: var(--pad-xs);
+  padding: 0 var(--pad-sm);
   height: 16px;
   display: inline-flex;
   align-items: center;
@@ -3545,9 +3545,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-agent-menu .composer-roster-locked-hint {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin: 4px 6px 2px;
-  padding: 6px 8px;
+  gap: var(--pad-xs);
+  margin: var(--pad-3xs) var(--pad-xs) 2px;
+  padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-sm);
   background: var(--bg-soft);
   color: var(--text-faint);
@@ -3560,13 +3560,13 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-menu.permission-menu {
   width: min(220px, calc(100vw - 24px));
   max-width: min(220px, calc(100vw - 24px));
-  padding: 8px;
+  padding: var(--pad-sm);
 }
 
 .composer-menu.permission-menu .composer-menu-item.permission-menu-item {
   min-height: 30px;
-  gap: 12px;
-  padding: 4px 8px;
+  gap: var(--pad-md);
+  padding: var(--pad-3xs) var(--pad-sm);
   border-radius: var(--r-sm);
   color: var(--text);
   background: transparent;
@@ -3607,7 +3607,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 34px;
   margin-left: auto;
   color: var(--text-faint);
@@ -3709,7 +3709,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   min-width: min(244px, calc(100vw - 24px));
   max-height: none;
   overflow: visible;
-  padding: 10px 12px 12px;
+  padding: var(--pad-sm) var(--pad-md) var(--pad-md);
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
@@ -3720,14 +3720,14 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: var(--pad-sm);
+  margin-bottom: var(--pad-sm);
 }
 
 .composer-reasoning-title {
   display: inline-flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
   color: var(--text-faint);
   font-size: var(--font-sm);
@@ -3754,14 +3754,14 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-fast-mode-indicator {
   flex: none;
   color: color-mix(in srgb, var(--primary) 84%, var(--text));
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
 
 .composer-reasoning-description {
   min-height: 30px;
-  margin: -2px 0 9px;
+  margin: -2px 0 var(--pad-sm);
   color: var(--text-faint);
   font-size: var(--font-xs);
   line-height: 1.45;
@@ -3814,7 +3814,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   position: absolute;
   inset: 50% 0 auto;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text) 12%, var(--panel));
   transform: translateY(-50%);
   pointer-events: none;
@@ -3825,7 +3825,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   inset: 50% auto auto 0;
   width: var(--reasoning-pos);
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--primary);
   transform: translateY(-50%);
   pointer-events: none;
@@ -3904,7 +3904,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   top: var(--reasoning-particle-y);
   width: var(--reasoning-particle-tail);
   height: var(--reasoning-particle-size);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   opacity: var(--reasoning-particle-opacity);
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.94));
   filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.48));
@@ -3916,7 +3916,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-reasoning-scale {
   position: relative;
   height: 15px;
-  margin-top: 3px;
+  margin-top: var(--pad-3xs);
   pointer-events: none;
 }
 
@@ -3925,7 +3925,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   top: 0;
   transform: translateX(-50%);
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 550;
   line-height: 15px;
   white-space: nowrap;
@@ -3949,9 +3949,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 11px;
-  padding-top: 11px;
+  gap: var(--pad-md);
+  margin-top: var(--pad-md);
+  padding-top: var(--pad-md);
   border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
 }
 
@@ -3960,16 +3960,16 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   flex: 1;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--pad-3xs);
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.35;
 }
 
 .composer-fast-mode-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: var(--text);
   font-size: var(--font-xs);
   font-weight: 650;
@@ -3977,7 +3977,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 
 .composer-fast-mode-cost {
   color: color-mix(in srgb, #e6a23c 78%, var(--text));
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 600;
 }
 
@@ -3988,7 +3988,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   height: 18px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text) 16%, var(--panel));
   cursor: pointer;
   transition: background-color 0.16s ease;
@@ -4067,9 +4067,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-worktree-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  padding: 2px 8px;
+  gap: var(--pad-3xs);
+  font-size: var(--font-base);
+  padding: 2px var(--pad-sm);
   border-radius: 6px;
   cursor: pointer;
   color: var(--text-secondary, #888);
@@ -4094,15 +4094,15 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-worktree-controls {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding-right: 4px;
+  gap: var(--pad-xs);
+  padding-right: var(--pad-3xs);
 
   /* 分支名输入：复用全局 .form-input 组件样式，仅压缩为参数栏紧凑尺寸 */
   .composer-worktree-branch-input {
     width: 100px;
     height: 26px;
-    padding: 3px 8px;
-    font-size: 12px;
+    padding: var(--pad-3xs) var(--pad-sm);
+    font-size: var(--font-sm);
     border: 0;
   }
 }
@@ -4111,9 +4111,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-debug-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  padding: 0 6px;
+  gap: var(--pad-3xs);
+  font-size: var(--font-base);
+  padding: 0 var(--pad-xs);
   border-radius: 6px;
   border: 0;
   background: transparent;
@@ -4142,18 +4142,18 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 5px;
-  padding: 4px 12px 0;
+  gap: var(--pad-xs);
+  padding: var(--pad-3xs) var(--pad-md) 0;
 
   .composer-debug-quickreplies-label {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--pad-3xs);
     flex-shrink: 0;
     height: 20px;
     padding: 0;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 500;
     white-space: nowrap;
 
@@ -4166,12 +4166,12 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   .composer-debug-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--pad-3xs);
     height: 22px;
-    padding: 0 9px;
+    padding: 0 var(--pad-sm);
     border: 0;
     border-radius: 8px;
-    font-size: 12px;
+    font-size: var(--font-sm);
     font-weight: 500;
     line-height: 1;
     background: var(--fill-2);
@@ -4238,11 +4238,11 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: var(--pad-xl);
   width: min(560px, 100%);
   /* 自带 24px gutter（与 .composer-inner 一致），窄窗口下与输入框左右边缘对齐 */
   box-sizing: border-box;
-  padding-inline: 24px;
+  padding-inline: var(--pad-2xl);
   text-align: center;
 }
 
@@ -4258,7 +4258,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   position: absolute;
   inset: 8px 34px;
   border: 1px solid color-mix(in srgb, var(--primary) 26%, transparent);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background:
     radial-gradient(circle, color-mix(in srgb, var(--primary) 8%, transparent), transparent 62%),
     color-mix(in srgb, var(--panel) 46%, transparent);
@@ -4269,19 +4269,19 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .team-empty-host {
   position: relative;
   display: grid;
-  gap: 7px;
+  gap: var(--pad-sm);
   justify-items: center;
   z-index: 2;
 }
 
 .team-empty-host-label {
   height: 20px;
-  padding: 0 8px;
-  border-radius: 999px;
+  padding: 0 var(--pad-sm);
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--primary) 12%, var(--panel));
   color: var(--primary);
   border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 700;
   line-height: 20px;
 }
@@ -4331,7 +4331,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   top: -2px;
   width: 10px;
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--success);
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 38%, transparent);
   animation: team-member-running-pulse 1.2s ease-out infinite;
@@ -4381,7 +4381,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 9px;
+  gap: var(--pad-sm);
 }
 
 .team-empty-kicker,
@@ -4389,17 +4389,17 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-team-banner-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .team-empty-kicker {
   height: 26px;
-  padding: 0 10px;
-  border-radius: 999px;
+  padding: 0 var(--pad-sm);
+  border-radius: var(--r-pill);
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 700;
 }
 
@@ -4411,13 +4411,13 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 
   span {
-    padding: 4px 8px;
-    border-radius: 999px;
+    padding: var(--pad-3xs) var(--pad-sm);
+    border-radius: var(--r-pill);
     background: color-mix(in srgb, var(--text) 5%, transparent);
   }
 }
@@ -4425,10 +4425,10 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .team-empty-action {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
+  padding: 0 var(--pad-md);
+  border-radius: var(--r-pill);
   border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 9%, var(--panel));
@@ -4442,12 +4442,12 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .chat-team-status-chip {
   max-width: min(520px, 48vw);
   height: 24px;
-  padding: 0 9px;
-  border-radius: 999px;
+  padding: 0 var(--pad-sm);
+  border-radius: var(--r-pill);
   border: 0;
   background: none;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
   cursor: pointer;
 
@@ -4476,9 +4476,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 // workflow_run 一次调用期间的实时节点进度清单，渲染在消息流里（挂在触发 workflow_run 的
 // assistant 消息上），风格参考 git-task-progress 但独立成卡片、支持 failed 态。
 .workflow-progress-card {
-  margin: 10px 12px 8px 12px;
+  margin: var(--pad-sm) var(--pad-md) var(--pad-sm) var(--pad-md);
   max-width: min(760px, calc(100% - 56px));
-  padding: 10px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
@@ -4487,8 +4487,8 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .workflow-progress-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: var(--pad-sm);
+  margin-bottom: var(--pad-xs);
   color: var(--text-muted);
   font-size: var(--font-xs);
   font-weight: 600;
@@ -4496,9 +4496,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 
 .workflow-progress-state {
   flex: 0 0 auto;
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: 11px;
+  padding: 0 var(--pad-xs);
+  border-radius: var(--r-pill);
+  font-size: var(--font-xs);
   font-weight: 600;
   line-height: 18px;
   color: var(--text-faint);
@@ -4549,9 +4549,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .workflow-progress-item {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   min-width: 0;
-  padding: 3px 4px;
+  padding: var(--pad-3xs) var(--pad-3xs);
   margin: 0 -2px;
   border-radius: var(--r-sm);
   font-size: var(--font-xs);
@@ -4571,7 +4571,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   .chev {
     flex: 0 0 auto;
     color: var(--text-faint);
-    transition: transform 0.15s ease;
+    transition: transform var(--motion-fast) ease;
   }
 
   .chev.chev-open {
@@ -4582,22 +4582,22 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .workflow-progress-duration {
   flex: 0 0 auto;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 // 失败/重试失败的错误详情：行下直接展示，限高滚动，红色左界条区分
 .workflow-progress-error {
-  margin: 1px 0 3px 22px;
-  padding: 4px 8px;
+  margin: 1px 0 var(--pad-3xs) 22px;
+  padding: var(--pad-3xs) var(--pad-sm);
   max-height: 84px;
   overflow-y: auto;
   border-left: 2px solid color-mix(in srgb, var(--c-err, #ef4444) 55%, transparent);
   border-radius: 0 var(--r-sm) var(--r-sm) 0;
   background: color-mix(in srgb, var(--c-err, #ef4444) 6%, transparent);
   color: var(--c-err, #ef4444);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -4605,15 +4605,15 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 
 // 节点输出预览：等宽、沉底背景、限高滚动
 .workflow-progress-output {
-  margin: 1px 0 3px 22px;
-  padding: 6px 8px;
+  margin: 1px 0 var(--pad-3xs) 22px;
+  padding: var(--pad-xs) var(--pad-sm);
   max-height: 160px;
   overflow: auto;
   border-radius: var(--r-sm);
   background: var(--bg-sunken, var(--bg));
   color: var(--text-muted);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -4630,7 +4630,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .workflow-progress-dot {
   width: 5px;
   height: 5px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text-muted) 55%, transparent);
 }
 
@@ -4662,9 +4662,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .workflow-progress-agent {
   flex: 0 0 auto;
   margin-left: auto;
-  padding-left: 8px;
+  padding-left: var(--pad-sm);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   white-space: nowrap;
 }
 
@@ -4682,9 +4682,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-team-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px 0;
-  font-size: 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-md) 0;
+  font-size: var(--font-sm);
   color: var(--text-muted);
 
   .composer-team-banner-badge {
@@ -4707,7 +4707,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
     background: transparent;
     color: var(--primary);
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--font-sm);
 
     &:disabled {
       opacity: 0.5;
@@ -4795,7 +4795,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   left: 3px;
   width: 2px;
   background: color-mix(in srgb, var(--border) 72%, transparent);
-  transition: background 0.12s ease;
+  transition: background var(--motion-instant) ease;
 }
 .side-chat-resize-handle:hover::after,
 body.side-chat-resizing .side-chat-resize-handle::after {
@@ -4811,8 +4811,8 @@ body.side-chat-resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 0 12px 0 18px;
+  gap: var(--pad-md);
+  padding: 0 var(--pad-md) 0 var(--pad-xl);
   // border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
@@ -4831,7 +4831,7 @@ body.side-chat-resizing {
 .side-chat-panel-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .side-chat-panel-status {
@@ -4846,10 +4846,10 @@ body.side-chat-resizing {
 .side-chat-panel-session-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
   max-width: 100%; // 防御性：长标题 + ellipsis 不会突破父容器
-  padding: 4px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
   margin-left: -8px; // 抵消自身 padding，与原标题左边缘(18px)对齐
   border: none;
   border-radius: 6px;
@@ -4858,7 +4858,7 @@ body.side-chat-resizing {
   font-size: var(--font-md);
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--motion-fast) ease;
 
   &:hover:not(:disabled) {
     background: color-mix(in srgb, var(--text) 7%, transparent);
@@ -4893,21 +4893,21 @@ body.side-chat-resizing {
 .side-chat-session-menu.composer-menu {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
   min-width: 280px;
   max-width: min(360px, calc(100vw - 24px));
   max-height: min(520px, calc(100vh - 24px));
-  padding: 6px;
+  padding: var(--pad-xs);
   overflow: hidden;
 
   .side-chat-session-menu-search {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     flex: 0 0 auto;
-    padding: 7px 9px;
+    padding: var(--pad-sm) var(--pad-sm);
     border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-    border-radius: 7px;
+    border-radius: var(--r-md);
     background: var(--bg-sunken);
     color: var(--text-muted);
 
@@ -4946,8 +4946,8 @@ body.side-chat-resizing {
   .composer-menu-item.side-chat-session-menu-item {
     min-height: 40px;
     align-items: center;
-    gap: 12px;
-    padding: 7px 8px;
+    gap: var(--pad-md);
+    padding: var(--pad-sm) var(--pad-sm);
     border-radius: var(--r-sm);
     transition:
       background-color 0.18s ease,
@@ -4968,7 +4968,7 @@ body.side-chat-resizing {
   // 「新建会话」独立一行：保留 icon + 描述，与列表 item 视觉区分
   .composer-menu-item.canvas-session-new {
     min-height: 40px;
-    padding: 7px 8px;
+    padding: var(--pad-sm) var(--pad-sm);
     border-radius: var(--r-sm);
     transition:
       background-color 0.18s ease,
@@ -4982,25 +4982,25 @@ body.side-chat-resizing {
 
   // 分隔线缩进到 item 内边距内，与 item 圆角不打架
   .composer-menu-divider {
-    margin: 2px 6px;
+    margin: 2px var(--pad-xs);
   }
 
   .composer-menu-empty {
-    padding: 14px 8px;
+    padding: var(--pad-lg) var(--pad-sm);
     color: var(--text-muted);
     font-size: var(--font-sm);
     text-align: center;
   }
 
   .composer-menu-item-copy {
-    gap: 4px;
+    gap: var(--pad-3xs);
   }
 
   // 置顶徽标：与「运行中」tag 共用基底，置顶色用 primary，区别于中性「主区当前」
   .composer-menu-item-tag.pinned {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--pad-3xs);
     background: color-mix(in srgb, var(--primary) 14%, transparent);
     color: color-mix(in srgb, var(--primary) 76%, var(--text));
     font-weight: 600;
@@ -5030,7 +5030,7 @@ body.side-chat-resizing {
   flex-direction: column;
   overflow: hidden;
   .composer-inner {
-    padding-bottom: 8px;
+    padding-bottom: var(--pad-sm);
   }
   /* 侧边聊天的消息流与输入框左右内边距：主会话靠 .chat-main-active 父级注入 padding，
      侧边面板无该父级（父级链为 .unified-side-panel → .side-chat-panel-content），
@@ -5039,8 +5039,8 @@ body.side-chat-resizing {
   .chat-stream-inner,
   .composer-inner {
     box-sizing: border-box;
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: var(--pad-lg);
+    padding-right: var(--pad-lg);
   }
 }
 
@@ -5067,11 +5067,11 @@ body.side-chat-resizing {
 .context-popup-summary {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--pad-xs);
   margin-top: -2px;
 }
 .context-popup-summary-main {
-  font-size: var(--font-lg);
+  font-size: var(--font-md);
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -5091,7 +5091,7 @@ body.side-chat-resizing {
 .context-popup-bar-seg {
   height: 100%;
   min-width: 1px;
-  transition: width 0.3s ease;
+  transition: width var(--motion-slow) ease;
 }
 .context-popup-bar-seg:first-child {
   border-top-left-radius: var(--r-xs);
@@ -5101,18 +5101,18 @@ body.side-chat-resizing {
 .context-popup-breakdown {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--pad-xs);
 }
 .context-popup-seg-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   font-size: var(--font-xs);
 }
 .context-popup-seg-dot {
   width: 9px;
   height: 9px;
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   flex-shrink: 0;
 }
 .context-popup-seg-dot.is-transparent {
@@ -5133,8 +5133,8 @@ body.side-chat-resizing {
   font-variant-numeric: tabular-nums;
 }
 .context-popup-seg-total {
-  margin-top: 3px;
-  padding-top: 7px;
+  margin-top: var(--pad-3xs);
+  padding-top: var(--pad-sm);
   border-top: 1px solid var(--border);
 }
 .context-popup-seg-total .context-popup-seg-label,
@@ -5152,8 +5152,8 @@ body.side-chat-resizing {
   display: flex;
   flex-direction: column;
   max-height: min(320px, 38vh);
-  margin: 0 0 6px;
-  padding: 6px;
+  margin: 0 0 var(--pad-xs);
+  padding: var(--pad-xs);
   border: 0;
   border-radius: var(--r-lg);
   background: var(--bg-sunken);
@@ -5163,9 +5163,9 @@ body.side-chat-resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 34px;
-  padding: 0 4px 2px 8px;
+  padding: 0 var(--pad-3xs) 2px var(--pad-sm);
   color: var(--text-muted);
   font-size: var(--font-xs);
 }
@@ -5179,11 +5179,11 @@ body.side-chat-resizing {
 .composer-queue-panel .composer-queue-clear-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex: 0 0 auto;
   min-height: 28px;
   border: 0;
-  padding: 0 7px;
+  padding: 0 var(--pad-sm);
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted);
@@ -5204,16 +5204,16 @@ body.side-chat-resizing {
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--pad-xs);
   padding: 0 2px 0 0;
 }
 .composer-queue-panel .composer-queue-item {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   min-height: 40px;
-  padding: 5px 7px 5px 4px;
+  padding: var(--pad-xs) var(--pad-sm) var(--pad-xs) var(--pad-3xs);
   border: 0;
   border-radius: var(--r-md);
   background: var(--panel);
@@ -5371,8 +5371,8 @@ body.side-chat-resizing {
   flex: 0 0 var(--chat-header-height);
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: var(--pad-xs);
+  padding: var(--pad-3xs) var(--pad-sm);
   /* 整条充当系统标题栏：空白区（含激活标签条右侧的留白）支持原生窗口拖拽，
      并由组件层 onDoubleClick 触发双击最大化。
      所有真正可交互的元素（按钮、关闭叉号、弹出菜单）在下方规则里显式 no-drag，
@@ -5405,7 +5405,7 @@ body.side-chat-resizing {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -5439,8 +5439,8 @@ body.side-chat-resizing {
   max-width: 220px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 6px 0 8px;
+  gap: var(--pad-xs);
+  padding: 0 var(--pad-xs) 0 var(--pad-sm);
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
@@ -5526,10 +5526,10 @@ body.side-chat-resizing {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  padding: 24px;
+  gap: var(--pad-lg);
+  padding: var(--pad-2xl);
   color: var(--text-muted, var(--text));
-  font-size: 13px;
+  font-size: var(--font-base);
   text-align: center;
   overflow: auto;
 }
@@ -5546,14 +5546,14 @@ body.side-chat-resizing {
   width: min(100%, 320px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 .unified-side-panel-empty-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: var(--pad-md);
+  padding: var(--pad-sm) var(--pad-md);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel-elev, var(--panel));
@@ -5607,7 +5607,7 @@ body.side-chat-resizing {
 }
 
 .unified-side-panel-empty-card-desc {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-muted, var(--text));
   opacity: 0.75;
   overflow: hidden;
@@ -5617,11 +5617,11 @@ body.side-chat-resizing {
 
 .unified-side-panel-empty-card-action {
   flex: 0 0 auto;
-  padding: 2px 8px;
+  padding: 2px var(--pad-sm);
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--text) 7%, transparent);
   color: var(--text-muted, var(--text));
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -5629,8 +5629,8 @@ body.side-chat-resizing {
 .unified-side-panel-empty-hint {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: var(--pad-3xs);
+  font-size: var(--font-xs);
   color: var(--text-muted, var(--text));
   opacity: 0.65;
 }
@@ -5640,14 +5640,14 @@ body.side-chat-resizing {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: var(--pad-3xl);
 }
 
 .unified-side-panel-menu {
   width: min(100%, 520px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .unified-side-panel-menu.compact {
@@ -5656,7 +5656,7 @@ body.side-chat-resizing {
   right: 0;
   z-index: 30;
   width: 224px;
-  padding: 6px;
+  padding: var(--pad-xs);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--panel-elev);
@@ -5667,13 +5667,13 @@ body.side-chat-resizing {
   height: 56px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 18px;
+  gap: var(--pad-lg);
+  padding: 0 var(--pad-xl);
   border: 0;
   border-radius: 12px;
   background: color-mix(in srgb, var(--text) 5%, transparent);
   color: var(--text);
-  font-size: var(--font-lg);
+  font-size: var(--font-md);
   font-weight: 650;
   cursor: pointer;
   text-align: left;
@@ -5681,8 +5681,8 @@ body.side-chat-resizing {
 
 .unified-side-panel-menu.compact .unified-side-panel-menu-item {
   height: 38px;
-  gap: 10px;
-  padding: 0 8px 0 6px;
+  gap: var(--pad-sm);
+  padding: 0 var(--pad-sm) 0 var(--pad-xs);
   font-size: var(--font-sm);
   font-weight: 600;
   background: transparent;
@@ -5699,7 +5699,7 @@ body.side-chat-resizing {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 5px;
+  padding: var(--pad-xs);
   border-radius: var(--r-sm);
   background: var(--primary-soft);
   color: var(--primary);
@@ -5719,7 +5719,7 @@ body.side-chat-resizing {
 }
 
 .unified-side-panel-menu.compact .unified-side-panel-menu-divider {
-  margin: 4px 2px;
+  margin: var(--pad-3xs) 2px;
 }
 
 .unified-side-panel-menu.compact .unified-side-panel-menu-item:hover {
@@ -5804,12 +5804,12 @@ body.side-chat-resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
   margin-bottom: 0;
 }
 
 .team-log-visibility-help {
-  margin: 6px 0 0;
+  margin: var(--pad-xs) 0 0;
   line-height: 1.55;
 }
 
@@ -5925,8 +5925,8 @@ body.side-chat-resizing {
   gap: 2px;
   width: fit-content;
   max-width: 100%;
-  margin: 0 auto 12px;
-  padding: 4px 6px;
+  margin: 0 auto var(--pad-md);
+  padding: var(--pad-3xs) var(--pad-xs);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel-elev);
@@ -5937,20 +5937,20 @@ body.side-chat-resizing {
 .chat-message-selectbar .selectbar-count {
   font-weight: 600;
   color: var(--text);
-  padding: 0 8px 0 6px;
+  padding: 0 var(--pad-sm) 0 var(--pad-xs);
 }
 
 .chat-message-selectbar .selectbar-divider {
   width: 1px;
   height: 16px;
-  margin: 0 4px;
+  margin: 0 var(--pad-3xs);
   background: var(--border);
   flex-shrink: 0;
 }
 
 .chat-message-selectbar button {
   height: 26px;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -5974,7 +5974,7 @@ body.side-chat-resizing {
 .chat-message-selectbar button.is-done {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
   color: var(--success);
 }
 
@@ -5995,7 +5995,9 @@ body.side-chat-resizing {
   cursor: not-allowed;
 }
 
-/* 进入多选：为左侧勾选列预留空间，消息整体右移，避免挤压气泡 */
+/* 进入多选：为左侧勾选列预留空间，消息整体右移，避免挤压气泡。
+   40px 为功能性预留尺寸：与 .msg-select-check(left:-32px,22px) 和
+   选中色条(left:-38px) 的绝对定位耦合，收敛到 --pad-3xl(32px) 会导致色条溢出，故不 token 化。 */
 .chat-stream-inner.has-multiselect {
   padding-left: 40px;
 }

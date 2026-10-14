@@ -10,7 +10,7 @@
 }
 
 .git-review-file-row-wrap {
-  padding-right: 8px;
+  padding-right: var(--pad-sm);
 
   &:hover {
     background: var(--hover);
@@ -18,7 +18,7 @@
 
   > .git-review-file-row {
     min-width: 0;
-    padding-right: 4px;
+    padding-right: var(--pad-3xs);
 
     &:hover {
       background: transparent;
@@ -28,7 +28,7 @@
 
 .git-review-file-open,
 .git-review-tree-file-open {
-  margin-left: 4px;
+  margin-left: var(--pad-3xs);
 }
 
 /* 行尾操作区：「在编辑器中打开并编辑」+ 原有打开方式选择器（主列表与树面板共用） */
@@ -64,7 +64,7 @@
 }
 
 .git-review-tree-row-wrap {
-  padding-right: 4px;
+  padding-right: var(--pad-3xs);
   border-radius: var(--r-xs);
 
   &:hover,

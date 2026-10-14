@@ -2,175 +2,11 @@
    Spark Agent — Design Tokens & Base Styles
    ============================================================ */
 
+@import './tokens.css';
+@import './motion.css';
 @import './components.css';
 
-:root {
-  /* Primary color is set on .app element by JS via --primary / --primary-soft */
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
-  --primary-soft: rgba(59, 130, 246, 0.12);
-  --primary-fg: #ffffff;
-
-  /* radii */
-  --r-xs: 4px;
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
-  --r-xl: 16px;
-
-  /* density-driven spacing (overridden by .density-* on .app) */
-  --pad-xs: 6px;
-  --pad-sm: 8px;
-  --pad-md: 12px;
-  --pad-lg: 16px;
-  --pad-xl: 20px;
-  --row-h: 32px;
-  --nav-row-h: 34px;
-  --font-base: 13px;
-  --font-sm: 12px;
-  --font-xs: 11px;
-  --font-lg: 14px;
-
-  /* Settings navigation and its window-titlebar continuation must share one
-     width so the two surfaces stay visually aligned. 设置页的拖拽条会把用户
-     调过的宽度内联写到根节点上（见 views/settings-nav/settingsNavWidth.ts），
-     这里的 240px 只是「从未调整过」时的默认值。 */
-  --settings-nav-width: 240px;
-
-  /* Inline control height scale: --control-h-sm 对齐 lobehub size="small" / .btn.sm */
-  --control-h-sm: 24px;
-  --control-h: 32px;
-  --control-h-md: var(--control-h);
-  --control-h-form: 36px;
-  --font-sans:
-    'Geist', 'SF Pro Text', 'SF Pro Display', 'HarmonyOS Sans SC', 'MiSans', 'PingFang SC',
-    'Hiragino Sans GB', 'Microsoft YaHei UI', 'Segoe UI Variable', 'Segoe UI', -apple-system,
-    BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
-  --font-mono:
-    'SFMono-Regular', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, 'Liberation Mono',
-    Menlo, ui-monospace, monospace;
-
-  /* code ligature — overridden by useAppearance */
-  --code-ligature: normal;
-  /* backdrop blur — overridden by useAppearance */
-  --backdrop-blur: none;
-
-  /* Window Controls Overlay geometry. Declared on :root so portals that mount
-     outside .app/.window (e.g. ImagePreviewModal via createPortal(document.body))
-     can still inherit the macOS traffic-light safe area. .window redeclares the
-     same tokens for its own subtree; values stay in sync. */
-  --window-titlebar-height: env(titlebar-area-height, 52px);
-  --window-titlebar-safe-left: env(titlebar-area-x, 90px);
-}
-
-/* ---------- THEME: LIGHT (default) — also on html for Arco popups outside .app ---------- */
-html[data-theme='light'],
-.app.theme-light {
-  --bg: rgb(250, 250, 250);
-  --bg-soft: #fff;
-  --bg-sunken: #f2f2f2;
-  --composer-toolbar-bg: #f8f7f5;
-  --panel: #fff;
-  --panel-elev: rgb(250, 250, 250);
-  --canvas-edit-bg: var(--panel-elev);
-  --hover: rgba(36, 32, 27, 0.045);
-  --active: rgba(36, 32, 27, 0.07);
-  --selected: var(--primary-soft);
-  --border: #f6f3ec;
-  --border-strong: #d7d2c9;
-  --divider: #efede8;
-
-  --text: #23231f;
-  --text-strong: #11100e;
-  --text-muted: #888888;
-  --text-faint: #9b9489;
-  --text-weight: #8d8a86;
-  --text-inverse: #ffffff;
-
-  --code-bg: #f4f3f0;
-  --code-fg: #24211d;
-
-  --success: #10b981;
-  --success-bg: rgba(16, 185, 129, 0.1);
-  --warning: #f59e0b;
-  --warning-bg: rgba(245, 158, 11, 0.12);
-  --danger: #ef4444;
-  --danger-bg: rgba(239, 68, 68, 0.1);
-  --info: #3b82f6;
-  --info-bg: rgba(59, 130, 246, 0.1);
-
-  --shadow-xs: 0 0 2px rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 0 0 1px rgba(0, 0, 0, 0.03), 0 2px 8px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 4px 16px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 8px 32px rgba(0, 0, 0, 0.12);
-  --window-shadow: 0 0 28px rgba(15, 23, 42, 0.08);
-
-  --diff-add-bg: rgba(16, 185, 129, 0.18);
-  --diff-add-fg: #047857;
-  --diff-add-bar: #10b981;
-  --diff-del-bg: rgba(239, 68, 68, 0.16);
-  --diff-del-fg: #b91c1c;
-  --diff-del-bar: #ef4444;
-
-  --term-bg: #ebe9e3;
-  --term-fg: #24211d;
-}
-
-/* ---------- THEME: DARK — also on html for Arco popups outside .app ---------- */
-html[data-theme='dark'],
-.app.theme-dark {
-  /* 中性灰梯度（S=0），主背景 #262626 对齐主流暗色应用观感 */
-  --bg: #262626;
-  --bg-soft: #2c2c2c;
-  --bg-sunken: #1a1a1a;
-  --composer-toolbar-bg: #3d3d3d;
-  --panel: #303030;
-  --panel-elev: #383838;
-  --canvas-edit-bg: #3d3d3d;
-  --hover: rgba(255, 255, 255, 0.04);
-  --active: rgba(255, 255, 255, 0.07);
-  --selected: var(--primary-soft);
-  --border: #3d3d3d;
-  --border-strong: #4a4a4a;
-  --divider: #383838;
-
-  --text: #e4e4e7;
-  --text-strong: #fafafa;
-  --text-muted: #9ca3af;
-  --text-faint: #6b7280;
-  --text-weight: #6d6f72;
-  --text-inverse: #09090b;
-  /* 品牌主色按钮在暗色界面始终使用浅色前景，避免组件库暗色算法改成深色文字。 */
-  --primary-fg: #ffffff;
-
-  --code-bg: #303030;
-  --code-fg: #d4d4d8;
-
-  --success: #22c55e;
-  --success-bg: rgba(34, 197, 94, 0.14);
-  --warning: #f59e0b;
-  --warning-bg: rgba(245, 158, 11, 0.16);
-  --danger: #f87171;
-  --danger-bg: rgba(248, 113, 113, 0.14);
-  --info: #60a5fa;
-  --info-bg: rgba(96, 165, 250, 0.14);
-
-  --shadow-xs: 0 0 2px rgba(0, 0, 0, 0.35);
-  --shadow-sm: 0 0 0 1px rgba(0, 0, 0, 0.32), 0 2px 8px rgba(0, 0, 0, 0.42);
-  --shadow-md: 0 0 0 1px rgba(0, 0, 0, 0.36), 0 4px 16px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 0 0 1px rgba(0, 0, 0, 0.36), 0 8px 32px rgba(0, 0, 0, 0.6);
-  --window-shadow: 0 0 32px rgba(0, 0, 0, 0.44);
-
-  --diff-add-bg: rgba(34, 197, 94, 0.22);
-  --diff-add-fg: #4ade80;
-  --diff-add-bar: #22c55e;
-  --diff-del-bg: rgba(248, 113, 113, 0.22);
-  --diff-del-fg: #fca5a5;
-  --diff-del-bar: #f87171;
-
-  --term-bg: #08080a;
-  --term-fg: #d4d4d8;
-}
+/* token 定义（:root / 双主题块 / density）已整体平移至 tokens.css，值零变化。 */
 
 /* Ant/Lobe 会在运行时注入按钮主题色；暗色模式统一由产品主题变量接管前景色。 */
 html[data-theme='dark'] .ant-btn-primary:not(:disabled),
@@ -214,33 +50,6 @@ html[data-theme='dark'] .ant-btn-primary.ant-btn-disabled :where(svg, span),
 .app.theme-dark .ant-btn-primary.ant-btn-disabled :where(svg, span) {
   color: inherit !important;
   stroke: currentColor;
-}
-
-/* ---------- DENSITY MODES ---------- */
-.app.density-compact,
-html.density-compact {
-  --pad-xs: 4px;
-  --pad-sm: 6px;
-  --pad-md: 10px;
-  --pad-lg: 14px;
-  --pad-xl: 18px;
-  --row-h: 28px;
-  --nav-row-h: 30px;
-  --font-base: 12.5px;
-  --font-sm: 11.5px;
-}
-.app.density-comfy,
-html.density-comfy {
-  --pad-xs: 8px;
-  --pad-sm: 10px;
-  --pad-md: 14px;
-  --pad-lg: 20px;
-  --pad-xl: 26px;
-  --row-h: 36px;
-  --nav-row-h: 38px;
-  --font-base: 14px;
-  --font-sm: 13px;
-  --font-lg: 15px;
 }
 
 /* ============================================================
@@ -1737,13 +1546,13 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
   padding: 3px;
 }
 .user-contact-qq-brand-name {
-  font-size: var(--font-lg);
+  font-size: var(--font-md);
   font-weight: 700;
   color: var(--text-strong);
   letter-spacing: 0.2px;
 }
 .user-contact-qq-title {
-  font-size: var(--font-lg);
+  font-size: var(--font-md);
   font-weight: 600;
   color: var(--text);
 }

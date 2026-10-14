@@ -12,7 +12,7 @@
   align-items: baseline;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  gap: var(--pad-xs) var(--pad-sm);
 }
 
 /*
@@ -71,7 +71,8 @@
   --fill-2: color-mix(in srgb, var(--eh-accent) 8%, transparent);
   --fill-3: color-mix(in srgb, var(--eh-accent) 13%, transparent);
   isolation: isolate;
-  padding: clamp(80px, 10vh, 112px) clamp(18px, 3vw, 44px) clamp(16px, 2.5vh, 24px);
+  padding: clamp(80px, 10vh, 112px) clamp(var(--pad-xl), 3vw, 44px)
+    clamp(var(--pad-lg), 2.5vh, var(--pad-2xl));
   transition:
     background 240ms ease,
     color 180ms ease;
@@ -97,7 +98,7 @@
      hero 左边缘与输入框容器左边缘严格对齐，两态切换不跳变。 */
   width: min(100%, var(--chat-content-max-width, 900px));
   align-items: stretch;
-  gap: 14px;
+  gap: var(--pad-lg);
   margin-top: 0;
   text-align: left;
 }
@@ -107,13 +108,13 @@
   min-height: 0;
   grid-template-columns: 1fr;
   align-items: center;
-  gap: clamp(20px, 4vw, 52px);
+  gap: clamp(var(--pad-xl), 4vw, 52px);
   padding-inline: 0;
 }
 
 .chat-main-empty[data-empty-theme] .single-empty-copy {
   align-items: flex-start;
-  gap: 9px;
+  gap: var(--pad-sm);
 }
 
 .chat-main-empty[data-empty-theme] .single-empty-title-row {
@@ -124,10 +125,10 @@
 .single-empty-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   color: var(--eh-accent);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 680;
   letter-spacing: 0.19em;
   line-height: 1;
@@ -585,24 +586,24 @@
 @media (max-width: 720px) {
   .chat-main-empty[data-empty-theme] {
     /* 无水平 padding（与 .chat-main-active 同基准）；底部 14px 与有内容态对齐 */
-    padding: 118px 0 14px;
+    padding: 118px 0 var(--pad-lg);
     overflow-y: auto;
   }
 
   .chat-main-empty[data-empty-theme] .chat-empty-content {
     min-height: auto;
     flex: 1 0 auto;
-    padding-bottom: 14px;
+    padding-bottom: var(--pad-lg);
   }
 
   .chat-main-empty[data-empty-theme] .single-empty-hero {
-    gap: 14px;
+    gap: var(--pad-lg);
   }
 
   .single-empty-heading {
     min-height: 0;
     grid-template-columns: 1fr;
-    padding: 0 8px;
+    padding: 0 var(--pad-sm);
   }
 
   .chat-main-empty[data-empty-theme] .single-empty-title.chat-hero-title {
@@ -619,11 +620,11 @@
   .chat-main-empty[data-empty-theme] {
     padding-top: 82px;
     /* 与 .chat-main-active 的 14px 底距对齐，避免两态切换时输入框垂直跳变 */
-    padding-bottom: 14px;
+    padding-bottom: var(--pad-lg);
   }
 
   .chat-main-empty[data-empty-theme] .single-empty-hero {
-    gap: 12px;
+    gap: var(--pad-md);
   }
 
   .chat-main-empty[data-empty-theme] .single-empty-title.chat-hero-title {

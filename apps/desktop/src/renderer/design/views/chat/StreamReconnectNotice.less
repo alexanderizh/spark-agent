@@ -1,11 +1,11 @@
 .stream-reconnect-notice {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: var(--pad-xl);
   width: 100%;
   min-height: 44px;
   color: var(--text-tertiary, #858585);
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 400;
   box-sizing: border-box;
 }
@@ -20,17 +20,17 @@
 .stream-reconnect-notice-content {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
   white-space: nowrap;
 }
 
 @media (max-width: 640px) {
   .stream-reconnect-notice {
-    gap: 10px;
-    font-size: 12px;
+    gap: var(--pad-sm);
+    font-size: var(--font-sm);
   }
 
   .stream-reconnect-notice-content {
-    gap: 7px;
+    gap: var(--pad-sm);
   }
 }

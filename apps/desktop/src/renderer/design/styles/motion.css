@@ -1,0 +1,53 @@
+/* ============================================================
+   Spark Agent — Motion Tokens（动效单一事实源）
+   ------------------------------------------------------------
+   数值采纳 WorkBuddy 逆向实测（docs/reviews/2026-10-14-workbuddy-
+   reverse-engineering-analysis.md）。由 styles.css @import。
+
+   语义组合规范（stylelint 按时长档位校验）：
+   - hover / active / focus 反馈      var(--motion-instant) var(--ease-standard)
+   - 颜色 / 透明度状态切换            var(--motion-fast)    var(--ease-standard)
+   - 弹层 / 下拉 / tooltip 出入场     var(--motion-base)    var(--ease-standard)
+     （入场 decelerate / 出场 accelerate）
+   - 模态 / 抽屉 / 大面板             var(--motion-slow)    var(--ease-standard)
+   - 骨架屏 / 加载渐显                var(--motion-slower)  var(--ease-decelerate)
+   - 循环动画（spinner/进度）         keyframes 内自定 timing，但须遵守
+     keyframes 命名规范：{域}-{对象}-{动作} 全 kebab，
+     域枚举：chat / composer / canvas / settings / board / boot / common。
+   ============================================================ */
+
+:root {
+  /* 时长 5 档 */
+  --motion-instant: 0.1s; /* hover/active/focus 即时反馈 */
+  --motion-fast: 0.15s; /* 常规状态切换（颜色/透明度/小型位移） */
+  --motion-base: 0.2s; /* 弹层、下拉、tooltip 出入场 */
+  --motion-slow: 0.3s; /* 大面板、抽屉、模态 */
+  --motion-slower: 0.4s; /* 骨架屏渐显、大面积过渡 */
+
+  /* 缓动 6 曲线 */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1); /* 默认：Material 3 emphasized，快出缓停 */
+  --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1); /* 入场：减速进入 */
+  --ease-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15); /* 出场：加速离开 */
+  --ease-linear: linear; /* 仅循环动画（spinner/进度） */
+  --ease-spring-soft: cubic-bezier(0.34, 1.56, 0.64, 1); /* 轻 overshoot：勾选、开关、小型强调 */
+  --ease-spring-bouncy: cubic-bezier(
+    0.34,
+    1.56,
+    0.64,
+    1
+  ); /* 弹性强调：大元素入场，Phase 1 真机微调 */
+}
+
+/* ---------- 全局无障碍降级基线 ----------
+   现网仅 boot-splash 有局部降级；此处为全局 token 级基线。
+   transform 类入场动画统一近似禁用；循环动画（spinner 属状态指示）保留，
+   其单独降级（如 boot-splash 的 animation: none）继续各自维护。 */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-instant: 0.01s;
+    --motion-fast: 0.01s;
+    --motion-base: 0.01s;
+    --motion-slow: 0.01s;
+    --motion-slower: 0.01s;
+  }
+}

@@ -5,7 +5,7 @@
 .chat-inspector-perf {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--pad-sm);
 }
 
 // ─── LIVE 实时条 ─────────────────────────────────────────────────────────
@@ -13,17 +13,17 @@
 .perf-live-strip {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: var(--pad-xs);
+  padding: var(--pad-3xs) var(--pad-sm);
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--primary) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   color: var(--text-muted);
 }
 
 .perf-live-badge {
-  font-size: 9px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   letter-spacing: 0.5px;
   color: var(--primary);
@@ -57,14 +57,14 @@
 .perf-tiles {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .perf-tile {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-sm);
   background: var(--bg-soft);
   border: 1px solid var(--border);
@@ -73,7 +73,7 @@
 }
 
 .perf-tile-value {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -83,7 +83,7 @@
 }
 
 .perf-tile-label {
-  font-size: 9.5px;
+  font-size: var(--font-2xs);
   color: var(--text-faint);
   white-space: nowrap;
   overflow: hidden;
@@ -95,18 +95,18 @@
 .perf-chart {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .perf-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   height: 18px;
 }
 
 .perf-row-index {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-faint);
   min-width: 24px;
   text-align: right;
@@ -156,7 +156,7 @@
 }
 
 .perf-row-tps {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text);
   width: 44px;
   text-align: right;
@@ -165,7 +165,7 @@
 }
 
 .perf-row-status {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-faint);
   width: 44px;
   text-align: right;
@@ -173,7 +173,7 @@
 }
 
 .perf-row-ttft {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-muted);
   // 路由耗时收进行悬浮提示（rowTooltip），格内只放 TTFT，宽度弹性兜底；
   // 禁止折行，避免固定 18px 行高内溢出与相邻行文字重叠。
@@ -201,7 +201,7 @@
 // ─── 口径脚注 ─────────────────────────────────────────────────────────────
 
 .perf-footnote {
-  font-size: 9.5px;
+  font-size: var(--font-2xs);
   color: var(--text-faint);
   line-height: 1.5;
 }
@@ -211,7 +211,7 @@
   display: inline-block;
   width: 5px;
   height: 5px;
-  margin-left: 3px;
+  margin-left: var(--pad-3xs);
   border-radius: 50%;
   vertical-align: middle;
 }

@@ -16,12 +16,12 @@
 
     strong {
       color: var(--text);
-      font-size: var(--font-lg);
+      font-size: var(--font-md);
       font-weight: 650;
     }
     span {
       color: var(--text-muted);
-      font-size: 12px;
+      font-size: var(--font-sm);
       line-height: 1.5;
     }
   }
@@ -40,7 +40,7 @@
       gap: var(--pad-sm);
       margin: 0 0 var(--pad-md);
       color: var(--text);
-      font-size: 12px;
+      font-size: var(--font-sm);
       font-weight: 650;
       letter-spacing: 0;
       text-transform: none;
@@ -84,26 +84,26 @@
     justify-content: space-between;
     gap: var(--pad-sm);
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--font-sm);
   }
   .session-panel-count {
     padding: 0;
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--font-2xs);
     font-weight: 500;
     white-space: nowrap;
   }
   .session-panel-caption {
     margin-top: calc(var(--pad-sm) / -2);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.5;
   }
   .runtime-env-hint {
     padding: 0;
     margin-bottom: 0;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-xs);
     line-height: 1.7;
   }
   .runtime-env-empty {
@@ -119,7 +119,7 @@
     border: 0;
     border-radius: var(--r-sm);
     background: var(--bg-soft);
-    transition: background-color 0.15s ease;
+    transition: background-color var(--motion-fast) ease;
 
     &:focus-within {
       background: var(--bg-hover);
@@ -132,7 +132,7 @@
     min-width: 0;
     > span {
       color: var(--text-muted);
-      font-size: 10px;
+      font-size: var(--font-2xs);
       line-height: 1.4;
     }
     &--key {
@@ -148,7 +148,7 @@
       border-radius: var(--r-sm);
       background: var(--bg);
       color: var(--text);
-      font-size: 12px;
+      font-size: var(--font-sm);
     }
   }
   .runtime-env-key,
@@ -184,7 +184,7 @@
     border: 1px solid var(--border);
     border-radius: var(--r-sm);
     background: var(--bg);
-    font-size: 12px;
+    font-size: var(--font-sm);
     line-height: 1.7;
     resize: vertical;
   }
@@ -221,7 +221,7 @@
     font-variant-numeric: tabular-nums;
   }
   .inspector-muted {
-    font-size: 12px;
+    font-size: var(--font-sm);
     line-height: 1.6;
   }
 }
@@ -245,19 +245,19 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-bottom: 6px;
+  padding-bottom: var(--pad-xs);
 }
 
 .session-hooks-empty {
-  font-size: 12px;
-  padding: 6px 0;
+  font-size: var(--font-sm);
+  padding: var(--pad-xs) 0;
 }
 
 .session-hooks-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 0;
+  gap: var(--pad-sm);
+  padding: var(--pad-sm) 0;
   border-bottom: 1px dashed var(--border-color, rgba(128, 128, 128, 0.15));
 }
 
@@ -268,13 +268,13 @@
 .session-hooks-name {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: var(--pad-xs);
+  font-size: var(--font-base);
   font-weight: 600;
 }
 
 .session-hooks-sub {
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -287,9 +287,9 @@
 /* 项目 Agent 作用域 */
 .project-agent-block .project-agent-select {
   width: 100%;
-  margin-top: 6px;
-  padding: 4px 8px;
-  font-size: 12px;
+  margin-top: var(--pad-xs);
+  padding: var(--pad-3xs) var(--pad-sm);
+  font-size: var(--font-sm);
   border-radius: 6px;
   background: var(--bg-soft, rgba(127, 127, 127, 0.1));
   color: inherit;
@@ -297,11 +297,11 @@
 }
 
 .project-agent-list-title {
-  margin-top: 12px;
+  margin-top: var(--pad-md);
 }
 
 .project-agent-list {
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
   max-height: 180px;
   overflow-y: auto;
   display: flex;
@@ -312,9 +312,9 @@
 .project-agent-option {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 4px;
-  font-size: 12px;
+  gap: var(--pad-sm);
+  padding: var(--pad-3xs) var(--pad-3xs);
+  font-size: var(--font-sm);
   cursor: pointer;
   border-radius: 4px;
 }
@@ -333,25 +333,25 @@
 
 .project-agent-option-tag {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   opacity: 0.7;
   border: 1px solid currentColor;
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 0 var(--pad-3xs);
 }
 
 .project-agent-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--pad-xs);
+  margin-top: var(--pad-xs);
 }
 
 .project-agent-search {
   flex: 1;
   min-width: 0;
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: var(--pad-3xs) var(--pad-sm);
+  font-size: var(--font-sm);
   border-radius: 6px;
   background: var(--bg-soft, rgba(127, 127, 127, 0.1));
   color: inherit;
@@ -365,8 +365,8 @@
 
 .project-agent-clear {
   flex-shrink: 0;
-  font-size: 11px;
-  padding: 3px 8px;
+  font-size: var(--font-xs);
+  padding: var(--pad-3xs) var(--pad-sm);
   border-radius: 6px;
   border: 1px solid var(--border-color, rgba(127, 127, 127, 0.3));
   background: transparent;
@@ -380,13 +380,13 @@
 }
 
 .project-agent-count {
-  margin-top: 4px;
+  margin-top: var(--pad-3xs);
 }
 
 .project-agent-empty {
-  margin-top: 6px;
-  padding: 12px 4px;
-  font-size: 12px;
+  margin-top: var(--pad-xs);
+  padding: var(--pad-md) var(--pad-3xs);
+  font-size: var(--font-sm);
   opacity: 0.65;
   text-align: center;
 }

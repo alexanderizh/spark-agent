@@ -1,6 +1,6 @@
 .last-user-message-editor {
   width: min(680px, calc(100vw - 96px));
-  padding: 12px;
+  padding: var(--pad-md);
   border-radius: 18px;
   background: var(--panel-elev);
 }
@@ -27,16 +27,16 @@ html[data-theme='light'] .last-user-message-editor {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 32px;
-  margin-top: 4px;
+  margin-top: var(--pad-3xs);
 
   button {
     min-width: 64px;
     height: 32px;
-    padding: 0 14px;
+    padding: 0 var(--pad-lg);
     border: 0;
-    border-radius: 9px;
+    border-radius: var(--r-md);
     background: var(--bg-soft);
     color: var(--text);
     cursor: pointer;

@@ -7,7 +7,7 @@
   z-index: 3600;
   box-sizing: border-box;
   max-width: 340px;
-  padding: 9px 12px 10px;
+  padding: var(--pad-sm) var(--pad-md) var(--pad-sm);
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
@@ -35,7 +35,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -43,7 +43,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 12.5px;
+  font-size: var(--font-base);
   font-weight: 600;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -54,19 +54,19 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 8px;
-  padding-top: 7px;
+  gap: var(--pad-3xs);
+  margin-top: var(--pad-sm);
+  padding-top: var(--pad-sm);
   border-top: 1px solid var(--border);
   min-width: 0;
 }
 
 .composer-provider-quota-card-hint,
 .composer-provider-quota-card-error {
-  margin-top: 7px;
-  padding-top: 6px;
+  margin-top: var(--pad-sm);
+  padding-top: var(--pad-xs);
   border-top: 1px solid var(--border);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
 }

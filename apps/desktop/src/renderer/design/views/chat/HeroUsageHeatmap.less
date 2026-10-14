@@ -14,11 +14,11 @@
   width: min(720px, 100%);
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: var(--pad-md);
   /* 自带 24px gutter（与 .composer-inner 一致）：宽度百分比基准保持整宽，
      窄窗口下 hero 与输入框左右边缘对齐 */
   box-sizing: border-box;
-  padding-inline: 24px;
+  padding-inline: var(--pad-2xl);
 }
 
 /* 主题模式 hero 列与 .composer-inner 共用同一限宽变量（.chat-main 上定义），
@@ -28,7 +28,7 @@
   width: min(100%, var(--chat-content-max-width, 900px));
   align-items: stretch;
   box-sizing: border-box;
-  padding-inline: 24px;
+  padding-inline: var(--pad-2xl);
 }
 
 /* 暗色模式下无用量格子还原原透明度：暗底上 72% 已足够可辨，不随浅色加深 */
@@ -42,7 +42,7 @@
 
 .hero-usage-heatmap {
   --uh-cell: 17px;
-  --uh-gap: 5px;
+  --uh-gap: var(--pad-xs);
   --uh-months-h: 16px;
   /* 无用量格子底色：浅色模式下比之前（72%）加深一档，避免在半透明面板上几乎隐形；
      暗色模式见下方 theme-dark 覆盖，维持原 72% 不变 */
@@ -56,8 +56,8 @@
   min-width: min(320px, 100%);
   max-width: 100%;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 16px 10px;
+  gap: var(--pad-sm);
+  padding: var(--pad-md) var(--pad-lg) var(--pad-sm);
   border: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
   border-radius: var(--r-lg);
   /* 面板底色掺入少量 ink（--eh-ink 浅色为深墨 #171923、暗色为近白 #f4f3f8）：
@@ -75,7 +75,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
 }
 
 .hero-usage-caption {
@@ -87,7 +87,7 @@
 
 .hero-usage-title {
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   letter-spacing: 0.01em;
 }
@@ -95,21 +95,21 @@
 .hero-usage-summary {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .hero-usage-link {
   flex: 0 0 auto;
-  padding: 2px 4px;
+  padding: 2px var(--pad-3xs);
   border: 0;
   background: transparent;
   color: color-mix(in srgb, var(--primary) 78%, var(--text-muted));
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
-  transition: color 120ms ease;
+  transition: color var(--motion-fast) ease;
 }
 
 .hero-usage-link:hover,
@@ -120,7 +120,7 @@
 
 .hero-usage-layout {
   display: flex;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
   justify-content: flex-start;
 }
@@ -134,9 +134,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--pad-md);
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 /* 图例格子跟随放大，避免与 17px 主格子比例失衡（base 固定 11px） */
@@ -152,15 +152,16 @@
 }
 /* level-4 常态自带同色细描边，hover 时同样恢复常态而不是 base 外圈。 */
 .hero-usage-heatmap .usage-heatmap-cell--level-4:hover {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--uh-primary, var(--primary)) 70%, var(--text-strong));
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--uh-primary, var(--primary)) 70%, var(--text-strong));
 }
 
 @media (max-width: 720px) {
   /* 放大后网格最小宽度 ~380px，窄容器回落原尺寸避免横向溢出 */
   .hero-usage-heatmap {
     --uh-cell: 14px;
-    --uh-gap: 4px;
-    padding: 8px 10px;
+    --uh-gap: var(--pad-3xs);
+    padding: var(--pad-sm) var(--pad-sm);
   }
   .hero-usage-heatmap .usage-heatmap-legend .usage-heatmap-cell {
     width: 11px;

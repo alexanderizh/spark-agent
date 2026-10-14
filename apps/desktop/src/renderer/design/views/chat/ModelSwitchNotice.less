@@ -1,11 +1,11 @@
 .model-switch-notice {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: var(--pad-xl);
   width: 100%;
   min-height: 48px;
   color: var(--text-tertiary, #858585);
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 400;
   box-sizing: border-box;
 }
@@ -20,10 +20,10 @@
 .model-switch-notice-content {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--pad-sm);
   white-space: nowrap;
   span {
-    font-size: 13px;
+    font-size: var(--font-base);
   }
 }
 
@@ -49,19 +49,22 @@
   transform: translate(-50%, 4px);
   width: max-content;
   max-width: min(360px, calc(100vw - 48px));
-  padding: 11px 16px;
+  padding: var(--pad-md) var(--pad-lg);
   border: 1px solid color-mix(in srgb, white 14%, transparent);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: #2c2c2c;
   color: #f2f2f2;
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
   line-height: 1.5;
   box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+  transition:
+    opacity var(--motion-fast) ease,
+    transform var(--motion-fast) ease,
+    visibility var(--motion-fast) ease;
 }
 
 .model-switch-notice-help:hover .model-switch-notice-tooltip,
@@ -73,11 +76,11 @@
 
 @media (max-width: 640px) {
   .model-switch-notice {
-    gap: 10px;
-    font-size: 12px;
+    gap: var(--pad-sm);
+    font-size: var(--font-sm);
   }
 
   .model-switch-notice-content {
-    gap: 7px;
+    gap: var(--pad-sm);
   }
 }

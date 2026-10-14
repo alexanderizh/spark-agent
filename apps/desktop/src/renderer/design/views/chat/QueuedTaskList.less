@@ -1,10 +1,10 @@
 .composer-queue-panel .composer-queue-pause {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 38px;
-  margin: 0 0 5px;
-  padding: 6px 8px;
+  margin: 0 0 var(--pad-xs);
+  padding: var(--pad-xs) var(--pad-sm);
   border: 0;
   border-radius: var(--r-md);
   background: var(--panel);
@@ -27,12 +27,12 @@
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
+  gap: var(--pad-3xs);
 }
 
 .composer-queue-panel .composer-queue-pause-action {
   min-height: 26px;
-  padding: 0 7px;
+  padding: 0 var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -62,7 +62,7 @@
   max-width: 180px;
   margin-top: 2px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;

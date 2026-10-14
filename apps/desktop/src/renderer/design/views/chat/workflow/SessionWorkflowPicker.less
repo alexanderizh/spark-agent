@@ -68,7 +68,7 @@
   width: min(320px, calc(100vw - 32px));
   max-height: min(420px, 60vh);
   overflow: auto;
-  padding: 6px;
+  padding: var(--pad-xs);
   border-radius: var(--r-md);
   color: var(--text);
   /* 与权限策略 / 推理强度弹窗（composer-menu permission/enriched）同一套视觉：
@@ -82,11 +82,11 @@
  * 旧值 2px 会让标题比条目少缩进 6px，整块菜单看起来向右错位。 */
 .session-workflow-menu-head {
   display: flex;
-  gap: 8px;
+  gap: var(--pad-sm);
   align-items: baseline;
   justify-content: space-between;
   min-width: 0;
-  padding: 6px 8px 8px;
+  padding: var(--pad-xs) var(--pad-sm) var(--pad-sm);
   color: var(--text-faint);
   font-size: var(--font-sm);
   font-weight: 600;
@@ -94,7 +94,7 @@
 }
 
 .session-workflow-section-label {
-  padding: 4px 8px;
+  padding: var(--pad-3xs) var(--pad-sm);
   /* 分组标题比菜单标题轻一档：中文小字号再叠加重字重会糊在一起，
    * 这里用字重而不是字号表达层级。 */
   color: var(--text-faint);
@@ -121,11 +121,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--pad-sm);
   width: 100%;
   min-width: 0;
   min-height: 34px;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   color: inherit;
@@ -185,13 +185,13 @@
 /* 分割线上下留白：略多于“标题到条目”，让分组标题归属下方列表而不是贴着线。 */
 .session-workflow-divider {
   height: 1px;
-  margin: 6px 8px 10px;
+  margin: var(--pad-xs) var(--pad-sm) var(--pad-sm);
   background: var(--border);
 }
 
 .session-workflow-notice,
 .session-workflow-error {
-  padding: 8px;
+  padding: var(--pad-sm);
   color: var(--text-faint);
   font-size: var(--font-xs);
   line-height: 1.45;
@@ -219,8 +219,8 @@
 .session-workflow-abandon-accept,
 .session-workflow-abandon-cancel {
   height: 24px;
-  margin-top: 6px;
-  padding: 0 8px;
+  margin-top: var(--pad-xs);
+  padding: 0 var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   color: var(--text-muted);
@@ -247,8 +247,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--pad-xs);
+  margin-top: var(--pad-xs);
   color: var(--color-text-secondary);
 }
 

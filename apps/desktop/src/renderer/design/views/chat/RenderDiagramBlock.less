@@ -19,9 +19,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--pad-sm);
   min-height: 42px;
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border-bottom: 1px solid var(--render-diagram-divider);
 }
 
@@ -29,13 +29,13 @@
 .render-diagram-actions {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 
 .render-diagram-mark {
   color: var(--primary, #6366f1);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1;
 }
 
@@ -43,24 +43,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 
 .render-diagram-type-badge {
   flex-shrink: 0;
-  padding: 1px 6px;
+  padding: 1px var(--pad-xs);
   border: 1px solid var(--render-diagram-border);
   border-radius: 4px;
   color: var(--render-diagram-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .render-diagram-action {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: var(--pad-3xs);
+  font-size: var(--font-xs);
   color: var(--render-diagram-muted);
 }
 
@@ -98,9 +98,9 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
+  padding: var(--pad-3xs);
   border: 1px solid color-mix(in srgb, var(--render-diagram-border) 86%, transparent);
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--render-diagram-bg) 92%, transparent);
   box-shadow: 0 4px 14px rgba(31, 41, 55, 0.08);
   backdrop-filter: blur(8px);
@@ -112,7 +112,7 @@
   height: 26px;
   place-items: center;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--render-diagram-muted);
   cursor: pointer;
@@ -124,8 +124,8 @@
 
 .render-diagram-zoom-label {
   min-width: 48px;
-  padding: 0 6px;
-  font-size: 11px;
+  padding: 0 var(--pad-xs);
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -181,12 +181,12 @@
   align-items: safe center;
   justify-content: safe center;
   box-sizing: border-box;
-  padding: 48px 24px 24px;
+  padding: var(--pad-3xl) var(--pad-2xl) var(--pad-2xl);
 }
 
 .render-diagram-viewport-shell.is-fullscreen .render-diagram-viewport-stage {
   min-height: 100%;
-  padding: 56px 32px 32px;
+  padding: 56px var(--pad-3xl) var(--pad-3xl);
 }
 
 .render-diagram-viewport-surface {
@@ -252,7 +252,7 @@
   display: grid;
   place-items: center;
   color: var(--render-diagram-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   pointer-events: none;
 }
 
@@ -276,18 +276,18 @@
 .render-diagram-error,
 .render-diagram-muted {
   display: grid;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 140px;
   align-content: center;
-  padding: 20px;
+  padding: var(--pad-xl);
   color: var(--render-diagram-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .render-diagram-error-title {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: var(--render-diagram-danger);
   font-weight: 600;
 }
@@ -297,16 +297,16 @@
 }
 
 .render-diagram-error-inline {
-  padding: 16px;
+  padding: var(--pad-lg);
   color: var(--render-diagram-danger);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .render-diagram-warning {
-  padding: 7px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border-top: 1px solid var(--render-diagram-divider);
   color: var(--render-diagram-warning);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .render-diagram-fullscreen {
@@ -315,7 +315,7 @@
   z-index: 10000;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--pad-2xl);
   background: rgba(0, 0, 0, 0.46);
 }
 
@@ -334,12 +334,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--pad-sm);
   flex: 0 0 auto;
   min-height: 42px;
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border-bottom: 1px solid var(--render-diagram-divider);
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
 }
 
@@ -349,7 +349,7 @@
   height: 28px;
   place-items: center;
   border: 1px solid var(--render-diagram-border);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--render-diagram-text);
   cursor: pointer;

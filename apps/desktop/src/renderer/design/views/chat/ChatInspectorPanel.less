@@ -3,25 +3,25 @@
 /* ─── Animation ─── */
 .runtime-skill-list {
   display: grid;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 .runtime-skill-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-height: 34px;
 }
 .runtime-skill-main {
   min-width: 0;
 }
 .runtime-skill-name {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 .runtime-skill-desc {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 .mini-check {
   display: inline-flex;
@@ -32,7 +32,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 700;
   cursor: pointer;
   user-select: none;
@@ -53,20 +53,20 @@
 }
 .runtime-prompt-block {
   display: grid;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 .runtime-prompt-block + .runtime-prompt-block {
-  margin-top: 12px;
+  margin-top: var(--pad-md);
 }
 .runtime-prompt-title {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 650;
 }
 .inspector-textarea {
   min-height: 72px;
   max-height: 160px;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 .runtime-save-btn {
   justify-self: end;
@@ -75,11 +75,11 @@
 .runtime-env-hint,
 .runtime-env-empty {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
 }
 .runtime-env-hint {
-  margin-bottom: 8px;
+  margin-bottom: var(--pad-sm);
 }
 .runtime-env-empty {
   padding: 2px 0;
@@ -89,8 +89,8 @@
   display: grid;
   grid-template-columns: minmax(56px, 1fr) minmax(56px, 1.4fr) minmax(56px, 1.4fr) auto;
   align-items: start;
-  gap: 6px;
-  padding: 8px;
+  gap: var(--pad-xs);
+  padding: var(--pad-sm);
   background: var(--bg-soft);
   border: 0;
   border-radius: var(--r-md);
@@ -102,13 +102,13 @@
 }
 .runtime-env-fields {
   display: grid;
-  gap: 4px;
+  gap: var(--pad-3xs);
   flex: 1;
   min-width: 0;
 }
 .runtime-env-kv {
   display: flex;
-  gap: 6px;
+  gap: var(--pad-xs);
   align-items: stretch;
 }
 .runtime-env-key {
@@ -147,8 +147,8 @@
 .runtime-env-input {
   height: 28px;
   width: 100%;
-  padding: 0 8px;
-  font-size: 12px;
+  padding: 0 var(--pad-sm);
+  font-size: var(--font-sm);
   font-family: inherit;
   color: var(--text);
   background: var(--bg-elevated, var(--bg));
@@ -168,7 +168,7 @@
 }
 .runtime-env-remove {
   flex: none;
-  padding: 4px;
+  padding: var(--pad-3xs);
   height: 28px;
   color: var(--text-muted);
 }
@@ -180,7 +180,7 @@
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   margin-top: 2px;
 }
 .runtime-env-transfer-actions {
@@ -188,24 +188,24 @@
   flex: 1 1 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 .runtime-env-add {
   color: var(--primary);
 }
 
 .prompt-runtime-metrics {
-  margin-bottom: 8px;
-  padding: 8px;
+  margin-bottom: var(--pad-sm);
+  padding: var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg-soft);
 }
 
 .prompt-runtime-metrics-title {
-  margin-bottom: 6px;
+  margin-bottom: var(--pad-xs);
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 650;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -214,9 +214,9 @@
 .prompt-runtime-metrics dl {
   display: grid;
   grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
-  gap: 4px 10px;
+  gap: var(--pad-3xs) var(--pad-sm);
   margin: 0;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.45;
 }
 
@@ -233,5 +233,5 @@
 
 .prompt-runtime-metrics-empty {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }

@@ -5,7 +5,7 @@
   z-index: 12;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -22,7 +22,7 @@
 .empty-session-mode-segmented button {
   min-width: 82px;
   height: 27px;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -43,10 +43,10 @@
 .empty-session-team-create {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   width: min(200px, 26vw);
   height: 32px;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--panel) 92%, var(--bg));
@@ -80,7 +80,7 @@
   width: min(280px, calc(100vw - 24px));
   max-height: min(360px, calc(100vh - 72px));
   overflow: auto;
-  padding: 6px;
+  padding: var(--pad-xs);
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
@@ -89,10 +89,10 @@
 .empty-session-team-menu button {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
   min-height: 34px;
-  padding: 6px 8px;
+  padding: var(--pad-xs) var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -123,7 +123,7 @@
 
 .empty-session-team-menu-divider {
   height: 1px;
-  margin: 5px 4px;
+  margin: var(--pad-xs) var(--pad-3xs);
   background: var(--divider);
 }
 
@@ -134,7 +134,7 @@
 
   .empty-session-mode-segmented button {
     min-width: 70px;
-    padding-inline: 7px;
+    padding-inline: var(--pad-sm);
   }
 
   .empty-session-team-trigger {

@@ -1,10 +1,10 @@
 .cancellation-notice {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  margin: 6px 0;
+  gap: var(--pad-sm);
+  margin: var(--pad-xs) 0;
   color: var(--text-muted, #7d8592);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 20px;
 }
 

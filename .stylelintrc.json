@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json.schemastore.org/stylelintrc.json",
+  "ignoreFiles": [
+    "**/node_modules/**",
+    "**/.spark-agent/**",
+    "**/dist/**",
+    "**/out/**",
+    "**/release/**"
+  ],
+  "overrides": [
+    {
+      "files": ["**/*.less"],
+      "customSyntax": "postcss-less"
+    },
+    {
+      "files": ["**/design/styles/tokens.css", "**/design/styles/motion.css"],
+      "rules": {}
+    }
+  ],
+  "rules": {
+    "declaration-property-value-allowed-list": [
+      {
+        "color": [
+          "/^var\\(--/",
+          "transparent",
+          "currentColor",
+          "inherit",
+          "unset",
+          "/^color-mix\\(/"
+        ],
+        "background": [
+          "/^var\\(--/",
+          "transparent",
+          "none",
+          "inherit",
+          "/^url\\(/",
+          "/gradient\\(/",
+          "/^color-mix\\(/"
+        ],
+        "border": ["/^var\\(--/", "none", "0", "/ solid var\\(--/"],
+        "border-color": [
+          "/^var\\(--/",
+          "transparent",
+          "currentColor",
+          "inherit",
+          "/^color-mix\\(/"
+        ],
+        "font-size": ["/^var\\(--/", "inherit"],
+        "transition-duration": ["/^var\\(--/", "0s", "0ms"],
+        "transition-timing-function": [
+          "/^var\\(--ease/",
+          "linear",
+          "ease",
+          "ease-in",
+          "ease-out",
+          "ease-in-out",
+          "inherit"
+        ],
+        "border-radius": ["/^var\\(--/", "50%", "999px", "0"]
+      },
+      { "severity": "warning" }
+    ]
+  }
+}

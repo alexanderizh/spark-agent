@@ -1,7 +1,7 @@
 // 工作流原子节点的紧凑派发卡：一行「图标 · 节点标题 · 类型 · 状态 · 摘要」，
 // 默认收起（运行中也收起），点击展开完整节点指令。视觉对齐 workflow-progress-item。
 .workflow-atomic-dispatch {
-  margin: 6px 12px 4px 46px;
+  margin: var(--pad-xs) var(--pad-md) var(--pad-3xs) 46px;
   max-width: min(760px, calc(100% - 56px));
   min-width: 0;
 }
@@ -9,10 +9,10 @@
 .workflow-atomic-dispatch-head {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   width: 100%;
   min-height: 26px;
-  padding: 2px 6px;
+  padding: 2px var(--pad-xs);
   margin: 0 -2px;
   border: 0;
   border-radius: var(--r-sm);
@@ -49,9 +49,9 @@
 
 .workflow-atomic-dispatch-kind {
   flex: 0 0 auto;
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: 11px;
+  padding: 0 var(--pad-xs);
+  border-radius: var(--r-pill);
+  font-size: var(--font-xs);
   line-height: 18px;
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
@@ -93,8 +93,8 @@
 
 // 展开后的完整节点指令（保留调试能力）
 .workflow-atomic-dispatch-detail {
-  margin: 6px 0 2px 26px;
-  padding: 8px 10px;
+  margin: var(--pad-xs) 0 2px 26px;
+  padding: var(--pad-sm) var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--panel);
@@ -103,10 +103,10 @@
 .workflow-atomic-dispatch-detail-head {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
+  gap: var(--pad-xs);
+  margin-bottom: var(--pad-3xs);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
 }
 
@@ -120,7 +120,7 @@
 }
 
 .workflow-atomic-dispatch-error {
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
   font-size: var(--font-xs);
   color: var(--c-err, #ef4444);
   white-space: pre-wrap;

@@ -208,12 +208,17 @@ function applyAppearance(settings: AppearanceSettings) {
   root.style.setProperty('--font-mono', fontFamily.mono)
   root.dataset.fontUnavailable = isAppearanceFontAvailable(settings.font) ? '0' : '1'
 
-  // Font size
+  // Font size — 7 档跟随用户基准字号缩放（档位定义见 design/styles/tokens.css）。
+  // --font-md 是原 --font-lg(基准+1) 的规范名；--font-lg 重估为基准+3、
+  // --font-xl 基准+7，当前无存量引用，重估零视觉变化。
   const base = settings.fontSize
+  root.style.setProperty('--font-2xs', `${Math.max(8, base - 3)}px`)
   root.style.setProperty('--font-base', `${base}px`)
   root.style.setProperty('--font-sm', `${Math.max(10, base - 1)}px`)
   root.style.setProperty('--font-xs', `${Math.max(9, base - 2)}px`)
-  root.style.setProperty('--font-lg', `${base + 1}px`)
+  root.style.setProperty('--font-md', `${base + 1}px`)
+  root.style.setProperty('--font-lg', `${base + 3}px`)
+  root.style.setProperty('--font-xl', `${base + 7}px`)
 
   // Code ligature
   root.style.setProperty(

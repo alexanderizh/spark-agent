@@ -13,31 +13,35 @@
   overflow: visible;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-sans), 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  font-family:
+    var(--font-sans), 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', 'Microsoft YaHei',
+    sans-serif;
 }
 
 .session-share-header {
-  padding: 22px var(--session-share-pad-right, 24px) 4px var(--session-share-pad-left, 24px);
+  padding: 22px var(--session-share-pad-right, var(--pad-2xl)) var(--pad-3xs)
+    var(--session-share-pad-left, var(--pad-2xl));
 }
 
 .session-share-header h1 {
   margin: 0;
   color: var(--text);
-  font-size: 20px;
+  font-size: var(--font-xl);
   font-weight: 640;
   line-height: 1.3;
 }
 
 .session-share-header p,
 .session-share-omit {
-  margin: 6px 0 0;
+  margin: var(--pad-xs) 0 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 
 .session-share-omit {
-  margin: 12px var(--session-share-pad-right, 24px) 0 var(--session-share-pad-left, 24px);
+  margin: var(--pad-md) var(--session-share-pad-right, var(--pad-2xl)) 0
+    var(--session-share-pad-left, var(--pad-2xl));
 }
 
 .session-share-live-host {
@@ -60,8 +64,8 @@
   max-width: none !important;
   margin: 0 !important;
   box-sizing: border-box;
-  padding-right: var(--session-share-pad-right, 24px) !important;
-  padding-left: var(--session-share-pad-left, 24px) !important;
+  padding-right: var(--session-share-pad-right, var(--pad-2xl)) !important;
+  padding-left: var(--session-share-pad-left, var(--pad-2xl)) !important;
 }
 
 .session-share-live .msg-hover-bar {
@@ -75,16 +79,17 @@
 
 .session-share-brand-line {
   height: 1px;
-  margin-right: var(--session-share-pad-right, 24px);
-  margin-left: var(--session-share-pad-left, 24px);
+  margin-right: var(--session-share-pad-right, var(--pad-2xl));
+  margin-left: var(--session-share-pad-left, var(--pad-2xl));
   background: var(--border);
 }
 
 .session-share-brand-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px var(--session-share-pad-right, 24px) 16px var(--session-share-pad-left, 24px);
+  gap: var(--pad-sm);
+  padding: var(--pad-lg) var(--session-share-pad-right, var(--pad-2xl)) var(--pad-lg)
+    var(--session-share-pad-left, var(--pad-2xl));
 }
 
 .session-share-logo {
@@ -99,12 +104,12 @@
 .session-share-brand-copy {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
 .session-share-brand-copy strong {
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 620;
   letter-spacing: -0.01em;
 }
@@ -112,7 +117,7 @@
 .session-share-brand-copy span,
 .session-share-brand time {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1;
 }
 
@@ -128,7 +133,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 28px;
+  padding: var(--pad-3xl) 28px;
   background: rgba(16, 16, 18, 0.28);
 }
 
@@ -157,10 +162,10 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--pad-sm);
   flex: 0 0 auto;
   min-height: 48px;
-  padding: 8px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   border-bottom: 1px solid var(--border);
   background: var(--panel);
 }
@@ -173,14 +178,14 @@
 }
 
 .session-share-toolbar-title strong {
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 
 .session-share-toolbar-title span,
 .session-share-zoom-label {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -192,7 +197,7 @@
 .session-share-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
 }
 
 .session-share-toolbar button:not(.icon-btn),
@@ -201,14 +206,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   height: 28px;
-  padding: 0 10px;
+  padding: 0 var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: transparent;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
@@ -239,7 +244,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 16px;
+  padding: var(--pad-lg);
   background: var(--bg-sunken);
 }
 
@@ -260,7 +265,7 @@
   max-width: none !important;
   max-height: none !important;
   object-fit: contain;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
   cursor: zoom-in;
 }
@@ -274,8 +279,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 28px 24px 22px;
+  gap: var(--pad-sm);
+  padding: 28px var(--pad-2xl) 22px;
   text-align: center;
 }
 
@@ -286,27 +291,27 @@
 }
 
 .session-share-status strong {
-  font-size: 14px;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 
 .session-share-status p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 
 .session-share-status button.is-primary {
-  margin-top: 6px;
+  margin-top: var(--pad-xs);
 }
 
 .session-share-progress {
   width: 148px;
   height: 2px;
-  margin-bottom: 6px;
+  margin-bottom: var(--pad-xs);
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--text) 12%, transparent);
 }
 

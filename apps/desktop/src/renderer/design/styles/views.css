@@ -5007,7 +5007,7 @@ body.sidebar-resizing {
   color: var(--text-muted);
 }
 .context-popup-pct {
-  font-size: var(--font-lg);
+  font-size: var(--font-md);
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -7860,7 +7860,7 @@ body.inspector-resizing {
   margin-bottom: 4px;
 }
 .agents-empty-title {
-  font-size: var(--font-lg);
+  font-size: var(--font-md);
   font-weight: 600;
   color: var(--text-strong);
 }

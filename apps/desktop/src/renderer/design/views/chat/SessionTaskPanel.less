@@ -2,7 +2,7 @@
   --session-task-bg: var(--panel, #fff);
   --session-task-border: var(--border, #e8e5df);
   width: 100%;
-  margin: 8px 0 10px;
+  margin: var(--pad-sm) 0 var(--pad-sm);
   overflow: hidden;
   color: var(--text);
   border: 1px solid var(--session-task-border);
@@ -14,14 +14,14 @@
   display: inline-flex;
   align-items: center;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
 }
 
 .session-task-panel-list {
   display: flex;
   margin: 0;
-  padding: 8px 10px 9px;
+  padding: var(--pad-sm) var(--pad-sm) var(--pad-sm);
   flex-direction: column;
   gap: 1px;
   list-style: none;
@@ -30,9 +30,9 @@
 .session-task-panel-item {
   display: flex;
   min-width: 0;
-  padding: 5px 0;
+  padding: var(--pad-xs) 0;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--pad-sm);
   color: var(--text-muted);
   font-size: var(--font-sm);
   line-height: 1.45;
@@ -109,6 +109,6 @@
 
 @media (max-width: 640px) {
   .session-task-panel {
-    margin-block: 6px 8px;
+    margin-block: var(--pad-xs) var(--pad-sm);
   }
 }

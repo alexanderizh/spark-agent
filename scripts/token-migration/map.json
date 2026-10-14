@@ -1,0 +1,96 @@
+{
+  "$comment": [
+    "SparkWork token 收敛 codemod 映射表（方案：todo/2026-10-14-设计Token收敛与动效规范落地方案.md）",
+    "direction 字段：near=就近归位（默认），up=就高档，down=就低档；spacing 类上下文敏感值已按方案 2.4 定向。",
+    "执行纪律：migrate.mjs 默认 dry-run；按文件分批 --write，diff 人工 review 后合入。"
+  ],
+  "fontSize": {
+    "9px": { "token": "--font-2xs", "direction": "up" },
+    "9.5px": { "token": "--font-2xs", "direction": "down" },
+    "10px": { "token": "--font-2xs", "direction": "near" },
+    "10.5px": { "token": "--font-xs", "direction": "up" },
+    "11px": { "token": "--font-xs", "direction": "near" },
+    "11.5px": { "token": "--font-sm", "direction": "up" },
+    "12px": { "token": "--font-sm", "direction": "near" },
+    "12.5px": { "token": "--font-base", "direction": "down" },
+    "13px": { "token": "--font-base", "direction": "near" },
+    "13.5px": { "token": "--font-base", "direction": "down" },
+    "14px": { "token": "--font-md", "direction": "near" },
+    "15px": { "token": "--font-lg", "direction": "down" },
+    "16px": { "token": "--font-lg", "direction": "near" },
+    "17px": { "token": "--font-lg", "direction": "down" },
+    "18px": { "token": "--font-xl", "direction": "up" },
+    "20px": { "token": "--font-xl", "direction": "near" },
+    "22px": { "token": "--font-xl", "direction": "down" }
+  },
+  "spacing": {
+    "3px": { "token": "--pad-3xs", "direction": "up" },
+    "4px": { "token": "--pad-3xs", "direction": "near" },
+    "5px": { "token": "--pad-xs", "direction": "up" },
+    "6px": { "token": "--pad-xs", "direction": "near" },
+    "7px": { "token": "--pad-sm", "direction": "down" },
+    "8px": { "token": "--pad-sm", "direction": "near" },
+    "9px": { "token": "--pad-sm", "direction": "up" },
+    "10px": { "token": "--pad-sm", "direction": "up" },
+    "11px": { "token": "--pad-md", "direction": "down" },
+    "12px": { "token": "--pad-md", "direction": "near" },
+    "13px": { "token": "--pad-md", "direction": "down" },
+    "14px": { "token": "--pad-lg", "direction": "down" },
+    "15px": { "token": "--pad-lg", "direction": "down" },
+    "16px": { "token": "--pad-lg", "direction": "near" },
+    "18px": { "token": "--pad-xl", "direction": "down" },
+    "20px": { "token": "--pad-xl", "direction": "near" },
+    "24px": { "token": "--pad-2xl", "direction": "near" },
+    "32px": { "token": "--pad-3xl", "direction": "near" },
+    "36px": { "token": "--pad-3xl", "direction": "down" },
+    "40px": { "token": "--pad-3xl", "direction": "down" },
+    "48px": { "token": "--pad-3xl", "direction": "down" }
+  },
+  "radius": {
+    "3px": { "token": "--r-xs", "direction": "up" },
+    "5px": { "token": "--r-sm", "direction": "up" },
+    "7px": { "token": "--r-md", "direction": "down" },
+    "9px": { "token": "--r-md", "direction": "down" },
+    "10px": { "token": "--r-lg", "direction": "down" },
+    "999px": { "token": "--r-pill", "direction": "near" }
+  },
+  "color": {
+    "#71717a": { "token": "--text-muted", "scope": "global" },
+    "#9ca3af": { "token": "--text-muted", "scope": "global" },
+    "#a1a1aa": { "token": "--text-faint", "scope": "global" },
+    "#71717a;bg": { "token": "--divider", "scope": "global" },
+    "#e4e4e7": { "token": "--border-strong", "scope": "global" },
+    "#d4d4d8": { "token": "--border-strong", "scope": "global" },
+    "#ef4444": { "token": "--danger", "scope": "global" },
+    "#16a34a": { "token": "--success", "scope": "global" },
+    "#22c55e": { "token": "--success", "scope": "global" },
+    "#f59e0b": { "token": "--warning", "scope": "global" },
+    "#d97706": { "token": "--warning", "scope": "global" },
+    "#3b82f6": { "token": "--primary", "scope": "non-canvas" },
+    "#2563eb": { "token": "--primary-hover", "scope": "non-canvas" },
+    "#6366f1": {
+      "token": "REVIEW",
+      "scope": "non-canvas",
+      "note": "品牌相关→--primary；功能色→域 token，逐条人审"
+    },
+    "#8b5cf6": { "token": "REVIEW", "scope": "non-canvas", "note": "同上" },
+    "#0f172a": {
+      "token": "REVIEW",
+      "scope": "global",
+      "note": "深底→--bg-sunken 或域 token，逐条人审"
+    },
+    "#1a1a1a": { "token": "REVIEW", "scope": "global", "note": "同上" }
+  },
+  "transition": {
+    "0.1s": { "token": "--motion-instant" },
+    "0.12s": { "token": "--motion-instant", "direction": "up" },
+    "0.15s": { "token": "--motion-fast" },
+    "120ms": { "token": "--motion-fast", "direction": "near" },
+    "140ms": { "token": "--motion-fast", "direction": "near" },
+    "160ms": { "token": "--motion-base", "direction": "down" },
+    "0.2s": { "token": "--motion-base" },
+    "0.25s": { "token": "--motion-slow", "direction": "down" },
+    "0.3s": { "token": "--motion-slow" },
+    "0.4s": { "token": "--motion-slower" }
+  }
+}

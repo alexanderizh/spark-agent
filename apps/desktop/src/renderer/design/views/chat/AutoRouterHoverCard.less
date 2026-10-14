@@ -10,7 +10,7 @@
   box-sizing: border-box;
   /* 三段式：头部一行 / 分流器 + 三强度行 / 底部摘要一行 */
   width: 304px;
-  padding: 9px 12px 10px;
+  padding: var(--pad-sm) var(--pad-md) var(--pad-sm);
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
@@ -38,7 +38,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -46,7 +46,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 12.5px;
+  font-size: var(--font-base);
   font-weight: 600;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -56,12 +56,12 @@
 .composer-auto-router-card-adapter {
   flex: none;
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   line-height: 1.35;
 }
 
 .composer-auto-router-card-rows {
-  margin-top: 7px;
+  margin-top: var(--pad-sm);
 }
 
 .composer-auto-router-card-row {
@@ -69,17 +69,17 @@
   /* 极长模型名 + 多条计数时让行尾 meta 折到下一行，避免渠道名被压成一个省略号 */
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   /* border-box + min-height：行高按「整行」算（含 padding），单行行高 = 32px */
   box-sizing: border-box;
   min-height: 32px;
-  padding: 3px 0;
+  padding: var(--pad-3xs) 0;
 }
 
 /* 分流器行与三强度执行行之间用分割线区隔两组语义（卡片内部仅此 1 条 + 底部摘要 1 条） */
 .composer-auto-router-card-row:first-child {
-  margin-bottom: 6px;
-  padding-bottom: 6px;
+  margin-bottom: var(--pad-xs);
+  padding-bottom: var(--pad-xs);
   border-bottom: 1px solid var(--border);
 }
 
@@ -107,7 +107,7 @@
   flex: none;
   width: 36px;
   color: color-mix(in srgb, var(--text-strong) 62%, transparent);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.35;
   white-space: nowrap;
 }
@@ -120,7 +120,7 @@
   min-width: 90px;
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -132,7 +132,7 @@
   max-width: 88px;
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -142,25 +142,25 @@
   flex: none;
   margin-left: auto;
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   line-height: 1.35;
   white-space: nowrap;
 }
 
 .composer-auto-router-card-footer {
-  margin-top: 7px;
-  padding-top: 6px;
+  margin-top: var(--pad-sm);
+  padding-top: var(--pad-xs);
   border-top: 1px solid var(--border);
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: var(--font-xs);
   line-height: 1.35;
 }
 
 /* 配置解析失败时只有一行说明 */
 .composer-auto-router-card-error {
-  margin-top: 7px;
+  margin-top: var(--pad-sm);
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
 }
 

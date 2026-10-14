@@ -22,7 +22,6 @@
   flex-wrap: wrap;
   gap: 8px;
   padding-top: 5px;
-
 }
 
 .st-header-left {
@@ -72,7 +71,9 @@
   font-weight: 500;
   color: var(--text-muted);
   font-family: inherit;
-  transition: color 0.12s ease, background 0.12s ease;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
 
   &:hover {
     color: var(--text);
@@ -124,7 +125,9 @@
   padding: 10px 12px;
   border-radius: var(--r-md);
   cursor: pointer;
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
   background: var(--bg-sunken);
 
   &:hover {
@@ -459,7 +462,9 @@
 .st-form-section {
   border-radius: var(--r-lg);
   background: var(--bg-sunken);
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
 
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
@@ -751,7 +756,9 @@
   &.multi-selected {
     background: color-mix(in srgb, var(--primary) 6%, var(--panel));
     border-color: var(--primary);
-    box-shadow: 0 0 0 1px var(--primary) inset, var(--shadow-sm);
+    box-shadow:
+      0 0 0 1px var(--primary) inset,
+      var(--shadow-sm);
 
     .st-task-name {
       color: var(--primary);
@@ -954,7 +961,7 @@
   gap: var(--pad-sm);
 
   h2 {
-    font-size: var(--font-lg);
+    font-size: var(--font-md);
     font-weight: 600;
   }
 }

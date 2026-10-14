@@ -1,14 +1,14 @@
 .session-fork-dialog {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pad-sm);
 }
 
 .session-fork-dialog-summary {
   display: flex;
-  gap: 10px;
+  gap: var(--pad-sm);
   align-items: flex-start;
-  padding: 12px;
+  padding: var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
   border-radius: 12px;
   background: color-mix(in srgb, var(--primary) 6%, var(--panel));
@@ -20,35 +20,35 @@
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--primary) 14%, transparent);
   color: var(--primary);
 }
 
 .session-fork-dialog-summary strong {
   display: block;
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .session-fork-dialog-summary p {
-  margin: 4px 0 0;
+  margin: var(--pad-3xs) 0 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.55;
 }
 
 .session-fork-dialog-label {
-  margin-top: 4px;
+  margin-top: var(--pad-3xs);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .session-fork-dialog-input {
   width: 100%;
   min-height: 36px;
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--r-md);
   outline: none;
   background: var(--bg-soft);
   color: var(--text);
@@ -62,31 +62,31 @@
 
 .session-fork-dialog-hint {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
 }
 
 .session-fork-dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-sm);
 }
 
 .session-fork-dialog-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   min-height: 32px;
-  padding: 0 12px;
+  padding: 0 var(--pad-md);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: transparent;
   color: var(--text);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .session-fork-dialog-button.ghost:hover {

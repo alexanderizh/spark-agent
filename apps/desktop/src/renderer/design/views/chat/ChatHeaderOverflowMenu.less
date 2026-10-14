@@ -13,7 +13,7 @@
   width: max-content;
   min-width: 190px;
   max-width: min(240px, calc(100vw - 20px));
-  padding: 5px;
+  padding: var(--pad-xs);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--panel-elev, var(--panel));
@@ -23,10 +23,10 @@
 .chat-header-overflow-item {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--pad-sm);
   width: 100%;
   min-height: 32px;
-  padding: 6px 9px;
+  padding: var(--pad-xs) var(--pad-sm);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -177,7 +177,7 @@
 
   .git-session-trigger {
     max-width: 92px;
-    padding-inline: 6px;
+    padding-inline: var(--pad-xs);
   }
 
   .git-session-branch {
@@ -269,7 +269,7 @@
 
   .platform-win32 .git-session-trigger {
     max-width: 92px;
-    padding-inline: 6px;
+    padding-inline: var(--pad-xs);
   }
 
   .platform-win32 .git-session-branch {

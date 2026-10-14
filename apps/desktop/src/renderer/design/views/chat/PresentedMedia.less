@@ -11,9 +11,9 @@
 .presented-media-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--pad-sm);
   width: min(100%, 760px);
-  margin: 10px 0;
+  margin: var(--pad-sm) 0;
 
   .md-image {
     margin: 0;
@@ -31,7 +31,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   // 给横向滚动条留出位置，避免压住图片下沿
-  padding-bottom: 8px;
+  padding-bottom: var(--pad-sm);
 
   // 图集里混进音频/视频时，它们不能被当成可压缩的 flex 项挤在图片中间，
   // 各占满一整个容器宽的槽位（图片仍不换行、继续横向滚动到它们）。
@@ -95,7 +95,7 @@
   right: 0;
   bottom: 0;
   left: 0;
-  padding: 22px 10px 8px;
+  padding: 22px var(--pad-sm) var(--pad-sm);
   overflow: hidden;
   color: #fff;
   font-size: var(--font-xs, 11px);
@@ -117,9 +117,9 @@
   display: flex;
   flex-direction: column;
   grid-column: 1 / -1;
-  gap: 8px;
+  gap: var(--pad-sm);
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--pad-sm) var(--pad-md);
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -132,7 +132,7 @@
 .presented-media-audio-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 
@@ -160,7 +160,7 @@
 
 .presented-media-audio-ext {
   flex: 0 0 auto;
-  padding: 1px 6px;
+  padding: 1px var(--pad-xs);
   border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--text-faint) 18%, transparent);
   color: var(--text-muted);
@@ -171,11 +171,11 @@
 .presented-media-video-wrap {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pad-xs);
   grid-column: 1 / -1;
   width: 100%;
   max-width: 680px;
-  padding: 10px;
+  padding: var(--pad-sm);
   border: 1px solid var(--border);
   border-radius: calc(var(--r-md) + 2px);
   background: var(--bg-soft);
@@ -184,7 +184,7 @@
 .presented-media-video-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-width: 0;
 }
 

@@ -2,21 +2,21 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--pad-xs);
   width: min(86%, 100%);
-  margin-bottom: 6px;
+  margin-bottom: var(--pad-xs);
 }
 
 .msg-user-session-reference-chip {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--pad-sm);
   min-width: 0;
   max-width: min(360px, 100%);
   min-height: 30px;
-  padding: 5px 11px;
+  padding: var(--pad-xs) var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border));
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--primary-soft) 88%, var(--panel));
   color: var(--primary);
   font-size: var(--font-sm);

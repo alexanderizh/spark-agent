@@ -29,9 +29,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--pad-sm);
   min-height: 42px;
-  padding: 8px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border-bottom: 1px solid var(--render-html-divider);
 }
 
@@ -45,7 +45,7 @@
 
 .render-html-heading,
 .render-html-actions {
-  gap: 6px;
+  gap: var(--pad-xs);
   min-width: 0;
 }
 
@@ -58,7 +58,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
 }
 
@@ -66,20 +66,20 @@
 .render-html-warning,
 .render-html-action-error {
   color: var(--render-html-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .render-html-mode-label {
-  gap: 5px;
+  gap: var(--pad-xs);
   color: var(--render-html-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .render-html-mode-label select,
 .render-html-icon-button,
 .render-html-muted-state button {
   border: 1px solid var(--render-html-border);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--render-html-text);
   cursor: pointer;
@@ -88,13 +88,13 @@
 
 .render-html-mode-label select {
   max-width: 124px;
-  padding: 4px 22px 4px 6px;
-  font-size: 11px;
+  padding: var(--pad-3xs) 22px var(--pad-3xs) var(--pad-xs);
+  font-size: var(--font-xs);
 }
 
 .render-html-action {
-  gap: 4px;
-  font-size: 11px;
+  gap: var(--pad-3xs);
+  font-size: var(--font-xs);
   color: var(--render-html-muted);
 }
 
@@ -104,8 +104,8 @@
 
 .render-html-fullscreen-action {
   min-height: 30px;
-  padding-inline: 10px;
-  font-size: 12px;
+  padding-inline: var(--pad-sm);
+  font-size: var(--font-sm);
 }
 
 .render-html-source-actions .render-html-action {
@@ -120,7 +120,7 @@
 .render-html-frame-wrap {
   position: relative;
   min-height: 120px;
-  padding: 6px;
+  padding: var(--pad-xs);
   overflow: hidden;
   background: var(--render-html-bg-soft);
 }
@@ -147,7 +147,7 @@
   display: grid;
   place-items: center;
   color: var(--render-html-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   pointer-events: none;
 }
 
@@ -174,15 +174,15 @@
 
 .render-html-source-actions {
   min-height: 34px;
-  padding-block: 5px;
+  padding-block: var(--pad-xs);
   color: var(--render-html-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .render-html-source {
   max-height: 520px;
   margin: 0;
-  padding: 12px;
+  padding: var(--pad-md);
   overflow: auto;
   color: var(--render-html-text);
   font: 11px/1.55 var(--font-mono, ui-monospace, monospace);
@@ -193,18 +193,18 @@
 .render-html-error,
 .render-html-muted-state {
   display: grid;
-  gap: 8px;
+  gap: var(--pad-sm);
   min-height: 140px;
   align-content: center;
-  padding: 20px;
+  padding: var(--pad-xl);
   color: var(--render-html-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .render-html-error-title {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--pad-xs);
   color: var(--render-html-danger);
   font-weight: 600;
 }
@@ -213,8 +213,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 10px;
-  padding: 10px 12px;
+  gap: var(--pad-sm) var(--pad-sm);
+  padding: var(--pad-sm) var(--pad-md);
   border: 1px solid var(--render-html-border);
   border-radius: 8px;
   background: var(--render-html-bg-soft);
@@ -234,15 +234,15 @@
 .render-html-error-hint button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: var(--pad-3xs);
+  padding: var(--pad-3xs) var(--pad-sm);
   border: 1px solid var(--render-html-border);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: var(--render-html-bg);
   color: var(--render-html-text);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-xs);
   white-space: nowrap;
 }
 
@@ -256,7 +256,7 @@
 
 .render-html-warning,
 .render-html-action-error {
-  padding: 7px 10px;
+  padding: var(--pad-sm) var(--pad-sm);
   border-top: 1px solid var(--render-html-divider);
 }
 
@@ -274,7 +274,7 @@
   z-index: 10000;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--pad-2xl);
   background: rgba(0, 0, 0, 0.46);
 }
 
@@ -291,7 +291,7 @@
 
 .render-html-fullscreen-head {
   flex: 0 0 auto;
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
 }
 
