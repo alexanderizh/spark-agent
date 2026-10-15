@@ -262,8 +262,19 @@ async function main() {
   )
   check(
     '握手带上设备信息',
-    desktopFrames.some((f) => f.t === 'hello' && f.deviceId === 'mac-01' && f.version === '1.2.3'),
+    desktopFrames.some(
+      (f) =>
+        f.t === 'hello' &&
+        f.deviceId === 'mac-01' &&
+        f.version === '1.2.3' &&
+        f.label === 'MacBook',
+    ),
     JSON.stringify(desktopFrames.slice(0, 2)),
+  )
+  check(
+    '状态带设备展示名（label）',
+    client.getStatus().label === 'MacBook',
+    String(client.getStatus().label),
   )
   const presence = await hub.presence('u1')
   check(
@@ -277,10 +288,11 @@ async function main() {
     JSON.stringify(desktopUpgradeUrls.at(-1)),
   )
   check(
-    '首帧为 auth 且携带设备凭据',
+    '首帧为 auth 且携带设备凭据与展示名',
     desktopFrames[0]?.t === 'auth' &&
       desktopFrames[0]?.deviceId === 'mac-01' &&
-      desktopFrames[0]?.secret === 'test-secret-hex',
+      desktopFrames[0]?.secret === 'test-secret-hex' &&
+      desktopFrames[0]?.label === 'MacBook',
     JSON.stringify(desktopFrames[0]),
   )
   check(

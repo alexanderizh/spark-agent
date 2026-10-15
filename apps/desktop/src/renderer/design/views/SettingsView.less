@@ -376,7 +376,7 @@
 }
 .profile-chip.active .profile-chip-icon {
   background: var(--primary);
-  color: var(--text-inverse);
+  color: var(--primary-fg);
 }
 .profile-chip-name {
   font-size: var(--font-base);
@@ -441,7 +441,7 @@
 }
 .runtime-permission-option.active .runtime-permission-icon {
   background: var(--primary);
-  color: var(--text-inverse);
+  color: var(--primary-fg);
 }
 .runtime-permission-option.tone-danger .runtime-permission-icon {
   color: var(--danger);
@@ -2672,46 +2672,10 @@ body.settings-nav-resizing .settings-nav-resizer {
   margin-top: var(--pad-3xs);
 }
 
-// ─── 移动端桥接（设置 → 生态 → 移动端桥接） ────────────────────────────────────
-.mobile-bridge-port {
-  width: 92px;
-  height: var(--row-h);
-  padding: 0 var(--pad-sm);
-  box-sizing: border-box;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
-  background: var(--bg-soft);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--font-sm);
-  outline: none;
+// ─── 移动端桥接（设置 → 生态 → 移动端桥接 · 云端中继） ──────────────────────────
+// 局域网直连（端口输入 / 局域网地址 / 二维码 / 已配对设备表）已随传输层移除。
 
-  &:focus {
-    border-color: var(--primary);
-  }
-
-  &:disabled {
-    opacity: 0.6;
-  }
-}
-
-// 空状态：settings-card 本身不带 padding，直接塞文字会贴边，这里补一个居中空态
-.mobile-bridge-empty {
-  padding: 28px var(--pad-lg);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--font-base);
-  line-height: 1.7;
-}
-
-.mobile-bridge-qr {
-  padding: var(--pad-xs);
-  border-radius: var(--r-sm);
-  background: var(--bg-soft);
-  border: 1px solid var(--border-strong);
-  line-height: 0;
-}
-
+// 只读展示的服务器地址 / 等宽代码片段（地址较长，允许折行防溢出）
 .mobile-bridge-url {
   padding: var(--pad-3xs) var(--pad-sm);
   border-radius: var(--r-sm);
@@ -2720,4 +2684,18 @@ body.settings-nav-resizing .settings-nav-resizer {
   font-family: var(--font-mono);
   font-size: var(--font-sm);
   word-break: break-all;
+}
+
+// 行右侧多控件组合（设备号 Tag + 复制 / 二次确认按钮组）：窄面板允许换行
+.mobile-bridge-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+// 吊销原因 / 连接失败等危险提示文字（row-desc 内联使用）
+.mobile-bridge-danger {
+  color: var(--danger);
 }

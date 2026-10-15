@@ -1,24 +1,26 @@
 /**
- * MobileBridgeService — SparkWork 移动端（微信小程序）直连桌面端的桥接服务。
+ * MobileBridgeService — SparkWork 移动端（微信小程序）经云端中继访问桌面端的桥接服务。
  *
- * 解决「小程序接管桌面端会话」的传输层：
- *   1. 配对：小程序持 edu-server 账号 token 换取设备令牌（同账号即授权，令牌落 SettingsService）
- *   2. 会话：列表 / 新建 / 历史 / 提交回合 / 取消（全部经 deps 闭包注入，避免循环依赖）
- *   3. 流式：WebSocket 按事件 seq 增量推送（500ms 轮询 getHistory，diff 后只发新事件）
+ * 传输层已收敛为纯云端中继：桌面端主动出网连 Spark 平台服务（MobileBridgeRelayClient），
+ * 小程序也连同一服务，服务端按账号转发 —— 局域网直连（HTTP 监听 + LAN WebSocket +
+ * 设备令牌配对）已整体移除（小程序体验版强制 https/wss + 域名白名单，真机不可用）。
  *
- * 网络模型：桌面端监听 0.0.0.0，小程序经局域网 IP 直连；
- * 公网部署时在服务端前置反代（wss 443 → 本端口）即可，协议不变。
+ * 本服务职责（中继合成请求的唯一路由层）：
+ *   1. 请求处理：invokeRelay 把中继帧 { m, p, b } 合成为 HTTP 语义调用，
+ *      经 handleHttpRequest 路由到项目 / 会话 / 选项目录 / 工作流绑定 / 附件 /
+ *      语音转写 / 定时任务 / 斜杠命令等端点（全部经 deps 闭包注入，避免循环依赖）
+ *   2. 事件推送：addRelaySubscriber 复用轮询广播管线（500ms 轮询 getHistory，
+ *      diff 后只发新事件），把会话事件增量交给中继上行
  *
  * 依赖注入参照 RemoteConnectionService.startRuntime(handler) 模式：
  * 本服务不 import SessionService/AuthService，由 registerMobileBridgeIpc 装配。
  */
 
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Readable, PassThrough } from 'node:stream'
-import { networkInterfaces, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { randomUUID, createHash } from 'node:crypto'
 import { createLogger } from '@spark/shared'
 import type {
   MobileBridgeAttachment,
@@ -28,15 +30,12 @@ import type {
   MobileBridgeCreateSessionResponse,
   MobileBridgeEvent,
   MobileBridgeHistoryResponse,
-  MobileBridgePairResponse,
   MobileBridgeProjectListResponse,
   MobileBridgeScheduledTask,
   MobileBridgeSessionListResponse,
   MobileBridgeSessionRuntime,
   MobileBridgeSessionSummary,
   MobileBridgeSetWorkflowBindingRequest,
-  MobileBridgeSettings,
-  MobileBridgeStatus,
   MobileBridgeSubmitTurnRequest,
   MobileBridgeUpdateScheduledTaskRequest,
   MobileBridgeUpdateSessionRequest,
@@ -46,45 +45,17 @@ import type {
 
 const log = createLogger('mobile-bridge')
 
-/** WS 轮询间隔：LLM 回合以秒计，500ms 增量延迟不可感知 */
+/** 轮询间隔：LLM 回合以秒计，500ms 增量延迟不可感知 */
 const STREAM_POLL_INTERVAL_MS = 500
 /** 单次 getHistory 拉取上限（保底，正常远小于此） */
 const HISTORY_LIMIT = 400
 /** 回合终态后的轮询宽限期：等 settle 阶段补发事件（如滞后 agent_error）到齐再回收 */
 const TERMINAL_GRACE_MS = 5_000
-/** 单个 WebSocket 连接最大静默期（无事件 10 分钟即回收，由 ping 保活） */
-const WS_IDLE_TIMEOUT_MS = 10 * 60 * 1000
 const MAX_BODY_BYTES = 256 * 1024
 /** 附件上传 / 语音转写路由单独放宽的 body 上限（base64 膨胀后 ≈ 原始 8MB） */
 const MAX_UPLOAD_BODY_BYTES = 12 * 1024 * 1024
 
-/**
- * 局域网 IPv4 地址（用于生成小程序可访问的 localUrl）。
- *
- * 多网卡（Wi-Fi + VPN 隧道 + 虚拟机桥接）时**物理网卡优先**：
- * utun 是 VPN 隧道、veth/docker/br-/vmnet 是容器或虚拟网卡，手机多半到不了，
- * 直接取「第一个」可能给出一个连不上的地址。
- * 找不到时返回 null（调用方退化为占位提示）。
- */
-function findLanAddress(): string | null {
-  const ifaces = networkInterfaces()
-  const candidates: { name: string; address: string }[] = []
-  for (const [name, list] of Object.entries(ifaces)) {
-    for (const info of list ?? []) {
-      if (info.family === 'IPv4' && !info.internal) {
-        candidates.push({ name, address: info.address })
-      }
-    }
-  }
-  const preferred = candidates.find(
-    (c) => !/^(utun|veth|docker|br-|bridge|vmnet|llw|awdl)/i.test(c.name),
-  )
-  return preferred?.address ?? candidates[0]?.address ?? null
-}
-
 export interface MobileBridgeDeps {
-  /** 用 edu-server 账号 token 换用户身份；无效返回 null */
-  validateAccountToken(token: string): Promise<{ userId: string; account: string } | null>
   /** 项目列表（workspace 投影，含项目下会话数） */
   listProjects(limit: number): Promise<MobileBridgeProjectListResponse>
   /** 会话列表（最近 limit 条，含预览；projectId 过滤时仅返回该项目下的会话） */
@@ -114,8 +85,6 @@ export interface MobileBridgeDeps {
   ): Promise<{ turnId: string }>
   /** 取消进行中的回合 */
   cancelTurn(sessionId: string): Promise<void>
-  /** 桌面端信息（配对回显） */
-  getDesktopInfo(): { name: string; version: string }
 
   // ─── 会话内配置与输入能力扩展（2026-10-14） ──────────────────────────────────
 
@@ -176,46 +145,11 @@ export interface MobileBridgeDeps {
   }>
 }
 
-interface PairedDeviceRecord {
-  deviceId: string
-  deviceToken: string
-  account: string
-  userId: string
-  deviceLabel: string
-  pairedAt: string
-  lastSeenAt: string
-}
-
-/** 持久化到 SettingsService 的设备形态（含令牌，本机 Secrets，与远程连接凭据同存储） */
-export type MobileBridgePersistedDevice = PairedDeviceRecord
-
-interface BridgeStore {
-  settings: MobileBridgeSettings
-  devices: PairedDeviceRecord[]
-}
-
-const DEFAULT_SETTINGS: MobileBridgeSettings = { enabled: false, port: 3721 }
-
 /**
- * 云端中继的虚拟设备：请求已经由 edu-server 按账号鉴权并转发过来了，
- * 不需要（也没有）设备令牌。单独用一个哨兵对象，避免污染真实的配对设备列表，
- * touchDevice 也会跳过它（否则每次调用都写一遍设置）。
- */
-const RELAY_DEVICE: PairedDeviceRecord = {
-  deviceId: 'cloud-relay',
-  deviceToken: '__relay__',
-  account: '',
-  userId: '',
-  deviceLabel: '云端中继',
-  pairedAt: '',
-  lastSeenAt: '',
-}
-
-/**
- * handleHttpRequest 的调用来源标记，是中继免鉴权的唯一信任依据：
+ * handleHttpRequest 的调用来源标记，是唯一的信任依据：
  *   relay=true  仅限进程内的云端中继合成请求（invokeRelay → runSyntheticRequest）
  *               传入，edu-server 已按账号鉴权并只转发给本人；
- *   relay=false LAN HTTP 监听到的一切外部请求（默认值），只认设备令牌。
+ *   relay=false 其他一切来源——本服务已不再监听网络端口，出现该值即拒绝。
  * 鉴权绝不信任任何请求头——网络侧请求可随意伪造 header（安全修复 F1）。
  */
 interface HttpRequestOrigin {
@@ -223,125 +157,17 @@ interface HttpRequestOrigin {
 }
 
 export class MobileBridgeService {
-  private server: Server | null = null
-  private runtimePort: number | null = null
-  private store: BridgeStore = { settings: { ...DEFAULT_SETTINGS }, devices: [] }
   private deps: MobileBridgeDeps | null = null
-  /** sessionId → 该会话当前 WS 连接集合（广播用） */
+  /** sessionId → 该会话当前订阅连接集合（中继订阅者；广播用） */
   private readonly streamClients = new Map<string, Set<WsConnection>>()
   /** sessionId → 轮询定时器 */
   private readonly streamPollers = new Map<string, ReturnType<typeof setInterval>>()
-
-  constructor(
-    private readonly readStore: () => BridgeStore,
-    private readonly writeStore: (store: BridgeStore) => void,
-  ) {
-    // 构造即加载持久化配置：否则 start() 读到的永远是内存默认值（enabled=false），
-    // 设置里开过服务也会被当成「未开启」而拒绝监听。
-    this.store = this.readStore()
-  }
 
   setDeps(deps: MobileBridgeDeps): void {
     this.deps = deps
   }
 
-  // ─── 生命周期 ───────────────────────────────────────────────────────────────
-
-  async start(): Promise<void> {
-    if (this.server != null) return
-    if (!this.store.settings.enabled) {
-      log.info('mobile bridge disabled by settings; not starting')
-      return
-    }
-    if (this.deps == null) {
-      log.warn('mobile bridge deps not wired; skip start')
-      return
-    }
-    await new Promise<void>((resolve, reject) => {
-      const server = createServer((req, res) => {
-        this.handleHttpRequest(req, res).catch((err) => {
-          this.sendJson(res, 500, {
-            error: { code: 'INTERNAL', message: err instanceof Error ? err.message : String(err) },
-          })
-        })
-      })
-      server.on('upgrade', (req, socket) => {
-        this.handleUpgrade(req, socket).catch((err) => {
-          log.warn(`ws upgrade failed: ${err instanceof Error ? err.message : String(err)}`)
-          socket.destroy()
-        })
-      })
-      const listenPort = this.store.settings.port > 0 ? this.store.settings.port : 0
-      server.listen(listenPort, '0.0.0.0', () => {
-        const addr = server.address()
-        this.runtimePort = typeof addr === 'object' && addr != null ? addr.port : null
-        this.server = server
-        log.info(`mobile bridge listening on 0.0.0.0:${this.runtimePort}`)
-        resolve()
-      })
-      server.on('error', reject)
-    })
-  }
-
-  async stop(): Promise<void> {
-    for (const timer of this.streamPollers.values()) clearInterval(timer)
-    this.streamPollers.clear()
-    for (const clients of this.streamClients.values()) {
-      for (const client of clients) client.close()
-    }
-    this.streamClients.clear()
-    const server = this.server
-    if (server == null) return
-    this.server = null
-    this.runtimePort = null
-    await new Promise<void>((resolve) => server.close(() => resolve()))
-    log.info('mobile bridge stopped')
-  }
-
-  /** 设置变更后重生效（端口/开关变化时重启） */
-  async applySettings(settings: MobileBridgeSettings): Promise<void> {
-    const changed =
-      settings.enabled !== this.store.settings.enabled || settings.port !== this.store.settings.port
-    this.store = { ...this.store, settings }
-    this.writeStore(this.store)
-    if (!changed) return
-    await this.stop()
-    await this.start()
-  }
-
-  getStatus(): MobileBridgeStatus {
-    const port = this.runtimePort
-    const lan = port != null ? findLanAddress() : null
-    return {
-      running: this.server != null,
-      port,
-      localUrl: port != null ? `http://${lan ?? '<本机局域网IP（未检测到网卡）>'}:${port}` : null,
-      pairedDevices: this.store.devices.map((device) => ({
-        deviceId: device.deviceId,
-        deviceLabel: device.deviceLabel,
-        account: device.account,
-        pairedAt: device.pairedAt,
-        lastSeenAt: device.lastSeenAt,
-      })),
-      settings: { ...this.store.settings },
-    }
-  }
-
-  revokeDevice(deviceId: string): void {
-    const next = this.store.devices.filter((device) => device.deviceId !== deviceId)
-    if (next.length === this.store.devices.length) return
-    this.store = { ...this.store, devices: next }
-    this.writeStore(this.store)
-    // 断开该设备的所有 WS
-    for (const clients of this.streamClients.values()) {
-      for (const client of clients) {
-        if (client.deviceId === deviceId) client.close()
-      }
-    }
-    log.info(`mobile bridge device revoked: ${deviceId}`)
-  }
-
-  // ─── HTTP ───────────────────────────────────────────────────────────────────
+  // ─── HTTP 语义路由（唯一入口：进程内中继合成请求） ───────────────────────────
 
   private async handleHttpRequest(
     req: IncomingMessage,
@@ -361,57 +187,19 @@ export class MobileBridgeService {
       return
     }
 
-    if (path === '/v1/pair' && req.method === 'POST') {
-      await this.handlePair(req, res)
-      return
-    }
-
     if (path === '/v1/health' && req.method === 'GET') {
       this.sendJson(res, 200, { ok: true, running: true })
       return
     }
 
-    // 附件内容预览：wx.previewImage 不支持自定义 header，故本路由额外接受 query token
-    if (path === '/v1/attachments/content' && req.method === 'GET') {
-      const queryToken = (url.searchParams.get('token') ?? '').trim()
-      const deviceByQuery =
-        queryToken != null && queryToken.length > 0
-          ? (this.store.devices.find((device) => device.deviceToken === queryToken) ?? null)
-          : null
-      const deviceForContent = deviceByQuery ?? this.authenticate(req, origin)
-      if (deviceForContent == null) {
-        this.sendJson(res, 401, {
-          error: { code: 'UNAUTHORIZED', message: '设备令牌无效，请重新配对' },
-        })
-        return
-      }
-      this.touchDevice(deviceForContent)
-      const requestedPath = (url.searchParams.get('path') ?? '').trim()
-      if (!requestedPath) {
-        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '缺少 path' } })
-        return
-      }
-      const content = await this.requireDeps().readAttachmentContent(requestedPath)
-      if (content == null) {
-        this.sendJson(res, 404, {
-          error: { code: 'NOT_FOUND', message: '附件不存在或不在白名单内' },
-        })
-        return
-      }
-      res.writeHead(200, { 'Content-Type': content.mimeType })
-      res.end(content.data)
-      return
-    }
-
-    // 其余接口均需设备令牌
-    const device = this.authenticate(req, origin)
-    if (device == null) {
+    // 唯一鉴权：LAN 令牌路径已随局域网直连一并移除，origin.relay 是唯一信任来源，
+    // 且只可能由本进程 runSyntheticRequest 显式传入（合成请求不可能来自网络）。
+    if (!origin.relay) {
       this.sendJson(res, 401, {
-        error: { code: 'UNAUTHORIZED', message: '设备令牌无效，请重新配对' },
+        error: { code: 'UNAUTHORIZED', message: '仅接受云端中继调用' },
       })
       return
     }
-    this.touchDevice(device)
 
     // ─── 项目（workspace 投影） ────────────────────────────────────────────────
 
@@ -857,71 +645,6 @@ export class MobileBridgeService {
     this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
   }
 
-  private async handlePair(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const payload = await this.readJson<{ accountToken?: string; deviceLabel?: string }>(req)
-    const token = (payload.accountToken ?? '').trim()
-    if (!token) {
-      this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '缺少 accountToken' } })
-      return
-    }
-    const identity = await this.requireDeps().validateAccountToken(token)
-    if (identity == null) {
-      this.sendJson(res, 401, {
-        error: { code: 'NOT_PAIRED', message: '账号验证失败，请重新登录' },
-      })
-      return
-    }
-    const now = new Date().toISOString()
-    const deviceId = randomUUID()
-    const deviceToken = `${deviceId}.${createHash('sha256').update(`${deviceId}:${identity.userId}:${Date.now()}`).digest('base64url')}`
-    const record: PairedDeviceRecord = {
-      deviceId,
-      deviceToken,
-      account: identity.account,
-      userId: identity.userId,
-      deviceLabel: payload.deviceLabel?.trim() || '移动端设备',
-      pairedAt: now,
-      lastSeenAt: now,
-    }
-    // 同账号旧设备保留（多手机可同时在线）；上限 10 台防无限增长
-    const devices = [
-      ...this.store.devices.filter(
-        (item) => item.userId !== identity.userId || item.deviceId === deviceId,
-      ),
-      record,
-    ].slice(-10)
-    this.store = { ...this.store, devices }
-    this.writeStore(this.store)
-    const info = this.requireDeps().getDesktopInfo()
-    const body: MobileBridgePairResponse = {
-      deviceToken,
-      deviceId,
-      desktop: info,
-      account: identity.account,
-    }
-    log.info(`mobile bridge paired: device=${deviceId} account=${identity.account}`)
-    this.sendJson(res, 200, body)
-  }
-
-  private authenticate(req: IncomingMessage, origin: HttpRequestOrigin): PairedDeviceRecord | null {
-    // 云端中继：edu-server 已用账号 JWT 鉴权并只转发给本人，这里直接放行。
-    // 信任依据是进程内显式传入的 origin.relay（仅 invokeRelay 合成请求会置 true），
-    // 不是请求头——LAN 上的外部请求可随意伪造 header（安全修复 F1）。
-    if (origin.relay) return RELAY_DEVICE
-    const header = req.headers.authorization
-    if (header == null || !header.startsWith('Bearer ')) return null
-    const token = header.slice('Bearer '.length).trim()
-    return this.store.devices.find((device) => device.deviceToken === token) ?? null
-  }
-
-  private touchDevice(device: PairedDeviceRecord): void {
-    if (device === RELAY_DEVICE) return
-    const now = new Date().toISOString()
-    if (device.lastSeenAt === now) return
-    device.lastSeenAt = now
-    this.writeStore(this.store)
-  }
-
   // ─── 云端中继：把既有 HTTP 处理器复用为「方法调用」 ──────────────────────────
   //
   // 中继收到的每一帧都是 { m: HTTP method, p: path, b: body }，
@@ -930,7 +653,7 @@ export class MobileBridgeService {
 
   /**
    * 中继调用入口。返回 HTTP 语义的 { status, body }，由中继客户端回成 res 帧。
-   * 附件内容路由特殊处理：云端模式下小程序拿不到局域网地址，改为返回 base64。
+   * 附件内容路由特殊处理：小程序经中继拿不到可直连的桌面端地址，改为返回 base64。
    */
   async invokeRelay(
     method: string,
@@ -1040,8 +763,8 @@ export class MobileBridgeService {
   }
 
   /**
-   * 中继订阅者：小程序在云端模式下也要收到会话事件流。
-   * 复用既有 streamClients + 轮询广播，只是把「发送」换成中继帧。
+   * 中继订阅者：小程序经云端中继订阅会话事件流。
+   * 复用既有轮询广播管线，只是把「发送」换成中继帧。
    * 返回的句柄用于取消订阅。
    */
   addRelaySubscriber(
@@ -1050,7 +773,7 @@ export class MobileBridgeService {
   ): () => void {
     const connection: WsConnection = {
       socket: new PassThrough() as unknown as import('node:stream').Duplex,
-      deviceId: RELAY_DEVICE.deviceId,
+      deviceId: 'cloud-relay',
       sessionId,
       send: (data: string) => {
         try {
@@ -1082,110 +805,9 @@ export class MobileBridgeService {
     return unsubscribe
   }
 
-  // ─── WebSocket 流 ───────────────────────────────────────────────────────────
+  // ─── 事件轮询广播 ───────────────────────────────────────────────────────────
 
-  private async handleUpgrade(
-    req: IncomingMessage,
-    socket: import('node:stream').Duplex,
-  ): Promise<void> {
-    const url = new URL(req.url ?? '/', 'http://localhost')
-    if (url.pathname !== '/v1/stream') {
-      socket.destroy()
-      return
-    }
-    // WebSocket 握手：Sec-WebSocket-Key + 魔术 GUID → Sec-WebSocket-Accept
-    const key = req.headers['sec-websocket-key']
-    if (typeof key !== 'string' || key.length === 0) {
-      socket.destroy()
-      return
-    }
-    const accept = createHash('sha1')
-      .update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
-      .digest('base64')
-    socket.write(
-      'HTTP/1.1 101 Switching Protocols\r\n' +
-        'Upgrade: websocket\r\n' +
-        'Connection: Upgrade\r\n' +
-        `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
-    )
-
-    const token = (url.searchParams.get('token') ?? '').trim()
-    const sessionId = (url.searchParams.get('sessionId') ?? '').trim()
-    const device = this.store.devices.find((item) => item.deviceToken === token) ?? null
-    if (device == null || !sessionId) {
-      this.writeWsFrame(socket, JSON.stringify({ type: 'error', message: '未授权' }))
-      socket.end()
-      return
-    }
-
-    const connection: WsConnection = {
-      socket,
-      deviceId: device.deviceId,
-      sessionId,
-      close: () => {
-        try {
-          socket.destroy()
-        } catch {
-          /* noop */
-        }
-      },
-      send: (data: string) => this.writeWsFrame(socket, data),
-    }
-
-    let clients = this.streamClients.get(sessionId)
-    if (clients == null) {
-      clients = new Set()
-      this.streamClients.set(sessionId, clients)
-    }
-    clients.add(connection)
-    this.touchDevice(device)
-
-    // 客户端帧最小解析：处理 close(0x8)/ping(0x9)，忽略业务数据（小程序只读流）
-    socket.on('data', (chunk: Buffer) => {
-      this.handleClientFrame(socket, chunk)
-    })
-    socket.on('close', () => {
-      clients?.delete(connection)
-      if (clients != null && clients.size === 0) {
-        this.streamClients.delete(sessionId)
-        this.stopPoller(sessionId)
-      }
-    })
-    socket.on('error', () => connection.close())
-
-    // 首帧：连接确认（端上从 messages 接口取全量，这里只推增量）
-    connection.send(JSON.stringify({ type: 'connected', sessionId, deviceId: device.deviceId }))
-    this.ensurePoller(sessionId)
-    log.info(`mobile bridge ws connected: session=${sessionId} device=${device.deviceId}`)
-  }
-
-  /** 客户端帧最小解析：close → 关闭；ping → pong；其余忽略 */
-  private handleClientFrame(socket: import('node:stream').Duplex, chunk: Buffer): void {
-    if (chunk.length < 2) return
-    const first = chunk[0]
-    if (first == null) return
-    const opcode = first & 0x0f
-    if (opcode === 0x8) {
-      try {
-        socket.end()
-      } catch {
-        /* noop */
-      }
-      return
-    }
-    if (opcode === 0x9) {
-      // pong：FIN + pong opcode， Echo 负载（客户端帧带掩码，pong 不带）
-      const payload = chunk.length > 2 ? chunk.subarray(2) : Buffer.alloc(0)
-      const header = Buffer.from([0x8a, payload.length])
-      try {
-        socket.write(Buffer.concat([header, payload]))
-      } catch {
-        /* noop */
-      }
-    }
-  }
-
-  /** 每个有 WS 连接的会话一个轮询器：拉历史 → 按 seq diff → 广播新事件 */
+  /** 每个有订阅者的会话一个轮询器：拉历史 → 按 seq diff → 广播新事件 */
   private ensurePoller(sessionId: string): void {
     if (this.streamPollers.has(sessionId)) return
     const deps = this.deps
@@ -1279,32 +901,6 @@ export class MobileBridgeService {
     res.writeHead(status, { 'Content-Type': 'application/json' })
     res.end(payload)
   }
-
-  /** 最小 WebSocket 服务端帧实现（文本帧 + close，够用免依赖） */
-  private writeWsFrame(socket: import('node:stream').Duplex, data: string): void {
-    if (socket.destroyed) return
-    const payload = Buffer.from(data, 'utf8')
-    const length = payload.length
-    let header: Buffer
-    if (length < 126) {
-      header = Buffer.alloc(2)
-      header[1] = length
-    } else if (length < 65536) {
-      header = Buffer.alloc(4)
-      header[1] = 126
-      header.writeUInt16BE(length, 2)
-    } else {
-      header = Buffer.alloc(10)
-      header[1] = 127
-      header.writeBigUInt64BE(BigInt(length), 2)
-    }
-    header[0] = 0x81 // FIN + text frame
-    try {
-      socket.write(Buffer.concat([header, payload]))
-    } catch {
-      /* 连接已断开 */
-    }
-  }
 }
 
 interface WsConnection {
@@ -1338,6 +934,3 @@ function mimeTypeToAudioExtension(mimeType?: string): string {
   if (normalized.includes('m4a') || normalized.includes('mp4')) return 'm4a'
   return 'bin'
 }
-
-/** 空闲 WS 兜底回收（客户端 ping 由小程序侧 keep-alive 触发） */
-export const MOBILE_BRIDGE_WS_IDLE_TIMEOUT_MS = WS_IDLE_TIMEOUT_MS

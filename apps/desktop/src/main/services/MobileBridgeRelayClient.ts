@@ -1,8 +1,8 @@
 /**
  * MobileBridgeRelayClient — 桌面端 ↔ edu-server 的云端中继长连接。
  *
- * 为什么需要它：局域网直连要求小程序与电脑在同一网络、且电脑端口可达，
- * 真机（尤其体验版强制 https/wss）基本连不通。中继模式下桌面端**主动出网**
+ * 为什么需要它：小程序体验版强制 https/wss + 域名白名单，局域网直连
+ * （http://IP:端口）真机不可用、已整体移除。中继模式下桌面端**主动出网**
  * 连 edu-server，小程序也连 edu-server，服务端按账号 userId 配对转发：
  *
  *     小程序 ──wss──> edu-server <──wss── 桌面端（本文件）
@@ -52,7 +52,7 @@ export interface MobileBridgeRelayClientDeps {
   getDeviceId(): string
   /** 设备密钥（授信凭据，仅本机明文保存；服务端只存哈希） */
   getDeviceSecret(): string
-  /** 设备展示名（小程序「我的桌面端」里显示） */
+  /** 设备展示名（默认主机名；auth/hello 帧上报，小程序「我的桌面端」里显示） */
   getDeviceLabel(): string
   /** 桌面端版本号 */
   getVersion(): string
@@ -101,6 +101,13 @@ export class MobileBridgeRelayClient {
   private lastSeenAt: string | null = null
   /** 当前订阅的会话（重连后需要重新订阅） */
   private subscribedSessionId: string | null = null
+  /**
+   * 是否已收到服务端 welcome（= 首帧认证通过并注册进中继）。
+   * 「已连接」徽标以此为准则而非 socket 建立：WS 建立后到认证通过前
+   * 存在最长 10s 窗口（认证失败会被 4400/1011 关闭），期间不显示已连接，
+   * 避免服务端异常时桌面端在重连振荡中呈现「绿色已连接」的假象。
+   */
+  private welcomed = false
 
   constructor(private readonly deps: MobileBridgeRelayClientDeps) {}
 
@@ -109,11 +116,12 @@ export class MobileBridgeRelayClient {
     return {
       enabled: settings.enabled,
       baseUrl: this.resolveBaseUrl(),
-      connected: this.socket != null,
+      connected: this.socket != null && this.welcomed,
       lastError: this.lastError,
       connectionId: this.connectionId,
       lastSeenAt: this.lastSeenAt,
       deviceId: this.deps.getDeviceId(),
+      label: this.deps.getDeviceLabel(),
       revoked: this.identityRejected,
     }
   }
@@ -275,6 +283,7 @@ export class MobileBridgeRelayClient {
       this.retryCount = 0
       this.lastError = null
       this.lastSeenAt = new Date().toISOString()
+      this.welcomed = false
       // 首帧认证：服务端收到 auth 并验证通过（deviceSecret 对得上）后，
       // 才把本连接注册进中继并回 welcome；业务帧（hello/订阅/心跳）等
       // welcome 再发，避免认证窗口内发出的帧被丢弃。
@@ -304,6 +313,7 @@ export class MobileBridgeRelayClient {
     socket.onclose = (event: { code?: number }) => {
       if (this.socket !== socket) return
       this.socket = null
+      this.welcomed = false
       if (this.pingTimer != null) {
         clearInterval(this.pingTimer)
         this.pingTimer = null
@@ -360,6 +370,8 @@ export class MobileBridgeRelayClient {
     switch (frame.t) {
       case 'welcome':
         // welcome = 服务端已通过首帧认证并完成注册，此刻起进入正常业务流程
+        this.welcomed = true
+        this.lastError = null
         this.connectionId = frame.connId ?? null
         this.send({
           t: 'hello',

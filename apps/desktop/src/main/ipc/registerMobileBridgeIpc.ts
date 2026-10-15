@@ -2,10 +2,11 @@
  * 移动桥接 IPC 注册 + 依赖装配。
  *
  * 装配层职责（本文件）：
- *   1. 创建 MobileBridgeService（设置与设备存 SettingsService，键 mobileBridge/store）
- *   2. 注入 deps 闭包（会话仓库 / SessionService / 账号校验），避免服务层反向依赖
- *   3. 注册设置 IPC（get-status / update-settings / revoke-device）
- *   4. 按设置启动 HTTP/WS 服务
+ *   1. 创建 MobileBridgeService（中继合成请求的业务路由层；局域网直连已移除，
+ *      服务本身不再有网络监听与独立持久化）
+ *   2. 注入 deps 闭包（会话仓库 / SessionService），避免服务层反向依赖
+ *   3. 注册设置 IPC（get-relay-status / update-relay-settings / reset-relay-identity）
+ *   4. 按设置启动云端中继长连接（MobileBridgeRelayClient）
  *
  * 主进程 ipc/index.ts 只加一行 registerMobileBridgeIpc({...}) 调用。
  */
@@ -29,8 +30,6 @@ import type {
   MobileBridgeSessionRuntime,
   MobileBridgeSessionSummary,
   MobileBridgeSetWorkflowBindingRequest,
-  MobileBridgeSettings,
-  MobileBridgeStatus,
   MobileBridgeUpdateScheduledTaskRequest,
   MobileBridgeUploadAttachmentsRequest,
   MobileBridgeWorkflowBindingResponse,
@@ -54,23 +53,19 @@ import { typedIpcHandle } from './typed-ipc.js'
 import { AgentRepository, SessionRepository, WorkflowRepository } from '@spark/storage'
 import { PASTED_IMAGE_MAX_EDGE, resizePastedImageBuffer } from '../services/PastedImageResizer.js'
 import type { RemoteVoiceTranscriber } from '../services/remoteVoiceTranscription.js'
-import {
-  DEFAULT_MOBILE_BRIDGE_RELAY_SETTINGS,
-  DEFAULT_MOBILE_BRIDGE_SETTINGS,
-} from '@spark/protocol'
-import {
-  MobileBridgeService,
-  type MobileBridgeDeps,
-  type MobileBridgePersistedDevice,
-} from '../services/MobileBridgeService.js'
+import { DEFAULT_MOBILE_BRIDGE_RELAY_SETTINGS } from '@spark/protocol'
+import { MobileBridgeService, type MobileBridgeDeps } from '../services/MobileBridgeService.js'
 import { MobileBridgeRelayClient } from '../services/MobileBridgeRelayClient.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('mobile-bridge:ipc')
 
 const SETTINGS_CATEGORY = 'mobileBridge'
-const SETTINGS_KEY = 'store'
-/** 云端中继单独一个键：与局域网桥接的 store 互不干扰 */
+/**
+ * 云端中继单独一个键（'relay'）：身份（deviceId/secret/label）+ 开关地址。
+ * 旧版局域网桥接在同一分类的 'store' 键里留有 port/pairedDevices 等 LAN 字段，
+ * 已不再读写——老用户配置原样保留、静默忽略（向后兼容，不炸配置）。
+ */
 const RELAY_SETTINGS_KEY = 'relay'
 
 export interface MobileBridgeIpcDeps {
@@ -81,7 +76,11 @@ export interface MobileBridgeIpcDeps {
   getTerminalService(): { disposeBySession(sessionId: string, opts?: { defer?: boolean }): number }
   /** 归档会话时同步暂停关联定时任务（与 session:update 行为对齐） */
   getScheduledTaskService(): ScheduledTaskService
-  /** 账号 token 校验（edu-server /me） */
+  /**
+   * 账号 token 校验（edu-server /me）。
+   * ⚠️ LAN 配对移除后已无消费方；字段保留是因为装配入口（ipc/index.ts）仍在
+   * 传入该参数，避免本次改动扩散到装配文件，后续清理装配层时可一并删除。
+   */
   validateAccountToken(token: string): Promise<{ userId: string; account: string } | null>
   /** 新建会话（默认渠道/引擎/权限，与远程建会话同规则；projectId 归属项目） */
   createMobileSession(title?: string, projectId?: string): Promise<MobileBridgeSessionSummary>
@@ -95,18 +94,14 @@ export interface MobileBridgeIpcDeps {
   getRelayBaseUrl(): string
 }
 
-/** 持久化形态：设备含 deviceToken（本机 Secrets，与远程连接凭据同存储） */
-interface BridgeStoreShape {
-  settings: MobileBridgeSettings
-  devices: MobileBridgePersistedDevice[]
-}
-
-/** 云端中继持久化形态：开关/地址 + 本机设备身份（deviceId + secret，重新授信时整体换新） */
+/** 云端中继持久化形态：开关/地址 + 本机设备身份（deviceId/secret/label，重新授信时整体换新） */
 interface RelayStoreShape {
   settings: MobileBridgeRelaySettings
   deviceId: string
   /** 设备密钥：授信凭据，仅本机明文保存；服务端只存 SHA-256 哈希 */
   deviceSecret: string
+  /** 设备展示名（默认取主机名；连接时上报，设置页与小程序设备管理展示用） */
+  label: string
 }
 
 let service: MobileBridgeService | null = null
@@ -119,6 +114,7 @@ function readRelayStore(settings: SettingsService): RelayStoreShape {
       settings: { ...DEFAULT_MOBILE_BRIDGE_RELAY_SETTINGS },
       deviceId: randomUUID(),
       deviceSecret: randomBytes(32).toString('hex'),
+      label: hostname(),
     }
     settings.set(SETTINGS_CATEGORY, RELAY_SETTINGS_KEY, fresh)
     return fresh
@@ -131,6 +127,9 @@ function readRelayStore(settings: SettingsService): RelayStoreShape {
     typeof record.deviceSecret === 'string' && record.deviceSecret
       ? record.deviceSecret
       : randomBytes(32).toString('hex')
+  // 旧版本 store 没有 label：回落主机名并补写（与 deviceId/secret 同策略）
+  const label =
+    typeof record.label === 'string' && record.label.trim() ? record.label : hostname()
   const stored: MobileBridgeRelaySettings =
     record.settings != null && typeof record.settings === 'object'
       ? {
@@ -138,9 +137,13 @@ function readRelayStore(settings: SettingsService): RelayStoreShape {
           ...(record.settings as MobileBridgeRelaySettings),
         }
       : { ...DEFAULT_MOBILE_BRIDGE_RELAY_SETTINGS }
-  const shape: RelayStoreShape = { settings: stored, deviceId, deviceSecret }
+  const shape: RelayStoreShape = { settings: stored, deviceId, deviceSecret, label }
   // 身份字段是首次读取时生成的，补写一次保证稳定
-  if (deviceId !== record.deviceId || deviceSecret !== record.deviceSecret) {
+  if (
+    deviceId !== record.deviceId ||
+    deviceSecret !== record.deviceSecret ||
+    label !== record.label
+  ) {
     settings.set(SETTINGS_CATEGORY, RELAY_SETTINGS_KEY, shape)
   }
   return shape
@@ -160,7 +163,7 @@ function getRelayClient(deps: MobileBridgeIpcDeps): MobileBridgeRelayClient {
     getAccessToken: () => deps.getRelayAccessToken(),
     getDeviceId: () => readRelayStore(settings).deviceId,
     getDeviceSecret: () => readRelayStore(settings).deviceSecret,
-    getDeviceLabel: () => `${hostname()} · ${app.getName()}`,
+    getDeviceLabel: () => readRelayStore(settings).label,
     getVersion: () => app.getVersion(),
     invoke: (method, urlPath, body) => bridge.invokeRelay(method, urlPath, body),
     subscribe: (sessionId, sendEvents) => bridge.addRelaySubscriber(sessionId, sendEvents),
@@ -170,31 +173,9 @@ function getRelayClient(deps: MobileBridgeIpcDeps): MobileBridgeRelayClient {
 
 function getService(deps: MobileBridgeIpcDeps): MobileBridgeService {
   if (service != null) return service
-  const settings = deps.getSettingsService()
-  service = new MobileBridgeService(
-    () => {
-      const raw = settings.get(SETTINGS_CATEGORY, SETTINGS_KEY)
-      if (raw == null || typeof raw !== 'object') {
-        return { settings: { ...DEFAULT_MOBILE_BRIDGE_SETTINGS }, devices: [] }
-      }
-      const record = raw as Record<string, unknown>
-      return {
-        settings:
-          record.settings != null && typeof record.settings === 'object'
-            ? { ...DEFAULT_MOBILE_BRIDGE_SETTINGS, ...(record.settings as MobileBridgeSettings) }
-            : { ...DEFAULT_MOBILE_BRIDGE_SETTINGS },
-        devices: Array.isArray(record.devices)
-          ? (record.devices as MobileBridgePersistedDevice[])
-          : [],
-      } satisfies BridgeStoreShape
-    },
-    (store) => {
-      settings.set(SETTINGS_CATEGORY, SETTINGS_KEY, {
-        settings: store.settings,
-        devices: store.devices,
-      } satisfies BridgeStoreShape)
-    },
-  )
+  // 局域网直连移除后服务不再有独立持久化（旧 LAN store 见文件头注释）；
+  // 这里只负责装配业务 deps，供中继合成请求按需调用。
+  service = new MobileBridgeService()
   service.setDeps(buildDeps(deps))
   return service
 }
@@ -401,8 +382,6 @@ function imageExtensionFromMime(mimeType: string | undefined, fallbackName: stri
 
 function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
   return {
-    validateAccountToken: (token) => deps.validateAccountToken(token),
-
     listProjects: async (limit) => {
       const db = getDatabase()
       const workspaces = deps.getWorkspaceService().listWorkspaces(limit, 0, {})
@@ -579,11 +558,6 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
     cancelTurn: async (sessionId) => {
       await deps.getSessionService().cancelTurn(sessionId)
     },
-
-    getDesktopInfo: () => ({
-      name: app.getName(),
-      version: app.getVersion(),
-    }),
 
     // ─── 会话内配置与输入能力扩展（2026-10-14） ────────────────────────────────
 
@@ -855,29 +829,7 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
 }
 
 export function registerMobileBridgeIpc(deps: MobileBridgeIpcDeps): void {
-  const bridge = getService(deps)
-
-  typedIpcHandle('mobile-bridge:get-status', async () => bridge.getStatus())
-
-  typedIpcHandle('mobile-bridge:update-settings', async (request) => {
-    const current = bridge.getStatus().settings
-    const next: MobileBridgeSettings = {
-      enabled: request.enabled ?? current.enabled,
-      port: request.port ?? current.port,
-    }
-    if (!Number.isInteger(next.port) || next.port < 0 || next.port > 65535) {
-      throw new Error('端口必须是 0-65535 的整数（0 表示随机）')
-    }
-    await bridge.applySettings(next)
-    return bridge.getStatus()
-  })
-
-  typedIpcHandle('mobile-bridge:revoke-device', async (request) => {
-    bridge.revokeDevice(request.deviceId)
-    return bridge.getStatus()
-  })
-
-  // ── 云端中继 ────────────────────────────────────────────────────────────────
+  // ── 云端中继（唯一的移动桥接传输层；业务路由层随调用按需工作） ────────────────
   const settings = deps.getSettingsService()
   const relay = getRelayClient(deps)
 
@@ -899,24 +851,20 @@ export function registerMobileBridgeIpc(deps: MobileBridgeIpcDeps): void {
   })
 
   typedIpcHandle('mobile-bridge:reset-relay-identity', async () => {
-    // 重新授信：生成全新设备身份（旧 deviceId 已被服务端永久拉黑，复用无意义）
+    // 重新授信：生成全新设备身份（旧 deviceId 已被服务端永久拉黑，复用无意义），
+    // 展示名同步刷新为主机名（主机名改动后重授信即可更新上报的 label）
     const store = readRelayStore(settings)
     writeRelayStore(settings, {
       ...store,
       deviceId: randomUUID(),
       deviceSecret: randomBytes(32).toString('hex'),
+      label: hostname(),
     })
     log.info('relay identity reset (re-trust requested)')
     await relay.resetIdentity()
     return relay.getStatus()
   })
 
-  // 按设置启动（关闭态不监听；端口冲突等错误只记日志，不阻塞启动序列）
-  void bridge.start().catch((error) => {
-    log.warn(
-      `mobile bridge start failed: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  })
   // 中继是出网长连接，无端口冲突风险；失败由客户端内部退避重试
   void relay.start().catch((error) => {
     log.warn(
