@@ -370,3 +370,7 @@ Built-in workspace tools are `read`, `glob`, `grep`, `write`, `edit`, and `bash`
 When Spark is embedded by a host, the host can provide stable system/skill prompt sections, custom environment variables, permission lists, and MCP servers. Spark passes custom environment variables only to its workspace shell and hook children; configured MCP servers receive only their own explicit server environment. MCP `stdio` and Streamable HTTP transports are supported by the Spark engine; legacy SSE and in-process SDK servers are skipped at the boundary. Host team tools use the same Streamable HTTP bridge as other external consumers, so tool calls retain normal permission and event handling.
 
 Permission modes are `manual`, `auto`, and `bypass`. `bypass` requires the explicit `--permission-mode bypass` or `--dangerously-skip-permissions` flag and prints a danger warning. Every policy result is persisted as a `permission.evaluated` fact event.
+
+## Capability evals
+
+`evals/` is a headless programming-case runner for this CLI. It configures `ARK_BASE_URL`, `ARK_API_KEY`, and `ARK_MODEL` from the environment, runs `dist/cli/main.js` on temp copies of small fixtures, and writes a JSON/Markdown report. It does not compare against other coding CLIs. Fixture graders are checked with `npm run eval:self-test` and do not need a key. See [evals/README.md](evals/README.md).

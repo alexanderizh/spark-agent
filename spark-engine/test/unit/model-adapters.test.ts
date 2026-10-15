@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { consumeLlmStream } from '../../src/llm/consume.js'
 import { AnthropicMessagesService, toAnthropicRequest } from '../../src/llm/anthropic/messages.js'
 import { OpenAiResponsesService, toOpenAiRequest } from '../../src/llm/openai/responses.js'
+import { thinkingConfigFor } from '../../src/llm/types.js'
 import { CLIENT_USER_AGENT, clientIdentityHeaders } from '../../src/llm/http/client-identity.js'
 import type { LlmRequest } from '../../src/llm/types.js'
 
@@ -140,6 +141,64 @@ describe('real model protocol adapters', () => {
     await consumeLlmStream(service.stream(baseRequest(), context))
 
     expect(requestedUrl).toBe('https://gateway.example/anthropic/v1/messages')
+  })
+
+  it('leaves thinking off the Ark coding GLM body and still sends disabled for Claude', async () => {
+    const fixture = await loadFixture('anthropic-tool.sse')
+    const bodies: string[] = []
+    const fetcher: typeof globalThis.fetch = async (input, init) => {
+      if (typeof input !== 'string') throw new Error('expected a URL string')
+      if (typeof init?.body !== 'string') throw new Error('expected a JSON request body')
+      bodies.push(init.body)
+      return sseResponse(fixture)
+    }
+    const request = { ...baseRequest(), thinking: thinkingConfigFor('off') }
+    const previous = process.env.SPARK_EVAL_THINKING
+    delete process.env.SPARK_EVAL_THINKING
+    try {
+      await consumeLlmStream(
+        new AnthropicMessagesService({
+          apiKey: 'secret',
+          model: 'glm-5.3-flash',
+          baseUrl: 'https://ark.cn-beijing.volces.com/api/coding',
+          fetch: fetcher,
+        }).stream(request, context),
+      )
+      await consumeLlmStream(
+        new AnthropicMessagesService({
+          apiKey: 'secret',
+          model: 'claude-sonnet',
+          baseUrl: 'https://api.anthropic.com',
+          fetch: fetcher,
+        }).stream(request, context),
+      )
+      process.env.SPARK_EVAL_THINKING = 'omit'
+      await consumeLlmStream(
+        new AnthropicMessagesService({
+          apiKey: 'secret',
+          model: 'claude-sonnet',
+          baseUrl: 'https://api.anthropic.com',
+          fetch: fetcher,
+        }).stream(request, context),
+      )
+      process.env.SPARK_EVAL_THINKING = 'disabled'
+      await consumeLlmStream(
+        new AnthropicMessagesService({
+          apiKey: 'secret',
+          model: 'glm-5.3-flash',
+          baseUrl: 'https://ark.cn-beijing.volces.com/api/coding',
+          fetch: fetcher,
+        }).stream(request, context),
+      )
+    } finally {
+      if (previous === undefined) delete process.env.SPARK_EVAL_THINKING
+      else process.env.SPARK_EVAL_THINKING = previous
+    }
+    const parsed = bodies.map((body) => JSON.parse(body) as { thinking?: { type?: string } })
+    expect(parsed[0]?.thinking).toBeUndefined()
+    expect(parsed[1]?.thinking).toEqual({ type: 'disabled' })
+    expect(parsed[2]?.thinking).toBeUndefined()
+    expect(parsed[3]?.thinking).toEqual({ type: 'disabled' })
   })
 
   it('keeps a full messages URL intact instead of appending a second /v1/messages', async () => {

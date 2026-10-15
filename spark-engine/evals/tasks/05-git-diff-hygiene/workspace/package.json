@@ -1,0 +1,5 @@
+{
+  "name": "spark-eval-git-hygiene",
+  "private": true,
+  "type": "module"
+}

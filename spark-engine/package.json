@@ -45,7 +45,9 @@
     "release:publish": "node scripts/publish-release-to-minio.mjs",
     "release:verify": "node scripts/verify-release.mjs",
     "verify:package": "node scripts/package-smoke.mjs",
-    "verify": "npm run boundary && npm run typecheck && npm run lint && npm test && npm run build && npm run verify:package"
+    "verify": "npm run boundary && npm run typecheck && npm run lint && npm test && npm run build && npm run verify:package",
+    "eval": "node evals/run.mjs",
+    "eval:self-test": "node --test evals/harness.test.mjs && node evals/run.mjs --self-test"
   },
   "dependencies": {
     "ajv": "8.20.0",

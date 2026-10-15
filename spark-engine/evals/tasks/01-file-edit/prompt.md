@@ -1,0 +1,1 @@
+The function `sum` in `src/sum.js` returns the wrong result. Fix the implementation so `node --test test/sum.test.mjs` passes. Do not modify the test file or `package.json`. Finish only when that test command exits 0.

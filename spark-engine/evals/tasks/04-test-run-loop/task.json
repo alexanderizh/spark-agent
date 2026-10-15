@@ -1,0 +1,17 @@
+{
+  "id": "04-test-run-loop",
+  "tier": "smoke",
+  "title": "Fix code until the existing test passes",
+  "capability": "test-run-loop",
+  "timeoutMs": 180000,
+  "promptFile": "prompt.md",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": ["package.json", "test/parse-port.test.mjs"],
+  "requireTools": [
+    {
+      "name": "bash",
+      "argsMatch": "parse-port.test.mjs"
+    }
+  ]
+}

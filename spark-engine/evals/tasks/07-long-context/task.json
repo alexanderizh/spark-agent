@@ -1,0 +1,11 @@
+{
+  "id": "07-long-context",
+  "tier": "smoke",
+  "title": "Follow a buried contract and ignore an abandoned draft",
+  "capability": "long-context-instructions",
+  "timeoutMs": 240000,
+  "promptFile": "prompt.md",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": ["package.json", "SPEC.md", "src/frozen.js", "test/label.test.mjs"]
+}

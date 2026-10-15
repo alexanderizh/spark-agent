@@ -1,0 +1,5 @@
+{
+  "name": "spark-eval-long-context",
+  "private": true,
+  "type": "module"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "12-git-decoy-hygiene",
+  "tier": "hard",
+  "title": "Fix a bug without committing decoys or rewriting history",
+  "capability": "git-decoy-hygiene",
+  "timeoutMs": 300000,
+  "promptFile": "prompt.md",
+  "prepare": "setup.mjs",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": [
+    "package.json",
+    "test/bound.test.mjs",
+    ".gitignore",
+    "CONTRIBUTING.md",
+    "notes/todo.md",
+    "notes/scratch.log",
+    "wip.patch"
+  ],
+  "requireTools": [
+    {
+      "name": "bash",
+      "argsMatch": "test/bound.test.mjs"
+    }
+  ]
+}

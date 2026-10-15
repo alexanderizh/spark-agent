@@ -1,0 +1,11 @@
+{
+  "id": "08-create-from-spec",
+  "tier": "smoke",
+  "title": "Create a module that matches a short spec and test",
+  "capability": "file-create",
+  "timeoutMs": 180000,
+  "promptFile": "prompt.md",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": ["package.json", "SPEC.md", "test/slug.test.mjs"]
+}

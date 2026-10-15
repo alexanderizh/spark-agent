@@ -1,0 +1,5 @@
+{
+  "name": "spark-eval-cross-file-invariant",
+  "private": true,
+  "type": "module"
+}

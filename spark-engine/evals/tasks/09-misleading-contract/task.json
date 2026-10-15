@@ -1,0 +1,23 @@
+{
+  "id": "09-misleading-contract",
+  "tier": "hard",
+  "title": "Follow the buried ledger contract, not the old README",
+  "capability": "misleading-docs",
+  "timeoutMs": 240000,
+  "promptFile": "prompt.md",
+  "grade": "grade.mjs",
+  "oracle": "oracle.mjs",
+  "frozen": [
+    "package.json",
+    "README.md",
+    "docs/ledger/SPEC.md",
+    "docs/ledger/archive.md",
+    "test/ledger.test.mjs"
+  ],
+  "requireTools": [
+    {
+      "name": "bash",
+      "argsMatch": "test/ledger.test.mjs"
+    }
+  ]
+}

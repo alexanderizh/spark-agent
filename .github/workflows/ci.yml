@@ -66,6 +66,9 @@ jobs:
       - name: Verify
         run: npm run verify
 
+      - name: Eval harness self-test
+        run: npm run eval:self-test
+
   quality:
     name: ${{ matrix.label }}
     runs-on: ubuntu-latest
