@@ -891,7 +891,11 @@ describe('telegram inbound voice', () => {
 
   async function createVoiceService(options?: {
     transcriber?: {
-      transcribe: (input: { audioPath: string; mimeType?: string }) => Promise<
+      transcribe: (input: {
+        audioPath: string
+        mimeType?: string
+        durationSec?: number
+      }) => Promise<
         | { kind: 'ok'; text: string; engine: 'local' | 'cloud' }
         | { kind: 'failed'; message: string }
       >
@@ -932,7 +936,7 @@ describe('telegram inbound voice', () => {
         }
       ).inboundHandler = options.inboundHandler
     }
-    return { service, connection, fetchMock }
+    return { service, connection, fetchMock, attachmentRoot }
   }
 
   const callHandleInbound = async (
@@ -969,9 +973,14 @@ describe('telegram inbound voice', () => {
 
   it('转写成功后以 [语音] 前缀进入会话', async () => {
     const received: string[] = []
+    let downloadedVoicePath: string | null = null
     const { service, connection } = await createVoiceService({
       transcriber: {
-        transcribe: async () => ({ kind: 'ok', text: '今天天气不错', engine: 'local' }),
+        transcribe: async ({ audioPath, durationSec }) => {
+          downloadedVoicePath = audioPath
+          expect(durationSec).toBe(8)
+          return { kind: 'ok', text: '今天天气不错', engine: 'local' }
+        },
       },
       inboundHandler: async (message) => {
         received.push(message.text)
@@ -986,17 +995,27 @@ describe('telegram inbound voice', () => {
     })
 
     expect(received).toEqual(['[语音] 今天天气不错'])
+    expect(downloadedVoicePath).not.toBeNull()
+    await expect(
+      (await import('node:fs/promises')).access(downloadedVoicePath!),
+    ).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
   })
 
   it('本地与云端均不可用时把原因与配置指引回传远程端，不进入会话', async () => {
     const received: string[] = []
+    let downloadedVoicePath: string | null = null
     const { service, connection, fetchMock } = await createVoiceService({
       transcriber: {
-        transcribe: async () => ({
-          kind: 'failed',
-          message:
-            '本地转写：离线识别模型（SenseVoice）未安装\n云端转写：未配置任何多媒体渠道\n\n配置指引：\n· 本地（推荐）：…\n· 云端兜底：…',
-        }),
+        transcribe: async ({ audioPath }) => {
+          downloadedVoicePath = audioPath
+          return {
+            kind: 'failed',
+            message:
+              '本地转写：离线识别模型（SenseVoice）未安装\n云端转写：未配置任何多媒体渠道\n\n配置指引：\n· 本地（推荐）：…\n· 云端兜底：…',
+          }
+        },
       },
       inboundHandler: async (message) => {
         received.push(message.text)
@@ -1017,6 +1036,12 @@ describe('telegram inbound voice', () => {
     expect(
       sentBodies.some((body) => body.includes('离线识别模型') && body.includes('配置指引')),
     ).toBe(true)
+    expect(downloadedVoicePath).not.toBeNull()
+    await expect(
+      (await import('node:fs/promises')).access(downloadedVoicePath!),
+    ).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
   })
 
   it('未启用传输文件能力时提示开启，不进入会话', async () => {
@@ -1067,9 +1092,7 @@ describe('outbound voice delivery', () => {
         credentials: { botToken: 'test-token' },
         capabilities: { ...connection.capabilities, transferFiles: true },
       })
-      await service.sendReply(connection.id, '42', '语音已生成。', [
-        { type: 'file', path: file },
-      ])
+      await service.sendReply(connection.id, '42', '语音已生成。', [{ type: 'file', path: file }])
       const urls = fetchMock.mock.calls.map(([url]) => String(url))
       expect(urls.some((url) => url.includes('/sendAudio'))).toBe(true)
       expect(urls.some((url) => url.includes('/sendMessage'))).toBe(true)

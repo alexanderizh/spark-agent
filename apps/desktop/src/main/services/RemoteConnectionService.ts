@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { unlink } from 'node:fs/promises'
 import http from 'node:http'
 import path from 'node:path'
 import { URL } from 'node:url'
@@ -2088,6 +2089,7 @@ export class RemoteConnectionService {
       return null
     }
 
+    let temporaryVoicePath: string | null = null
     try {
       let voice: { path: string; mimeType: string }
       if (request.channel === 'telegram') {
@@ -2114,9 +2116,13 @@ export class RemoteConnectionService {
           attachmentRoot: path.join(path.dirname(attachmentRoot), 'qq', 'voice'),
         })
       }
+      temporaryVoicePath = voice.path
       const outcome = await transcriber.transcribe({
         audioPath: voice.path,
         mimeType: voice.mimeType,
+        ...(request.channel === 'telegram' && request.telegram.durationSec != null
+          ? { durationSec: request.telegram.durationSec }
+          : {}),
       })
       if (outcome.kind !== 'ok') {
         log.warn(
@@ -2141,6 +2147,17 @@ export class RemoteConnectionService {
       )
       await reply(`语音消息处理失败：${detail}`)
       return null
+    } finally {
+      if (temporaryVoicePath != null) {
+        await unlink(temporaryVoicePath).catch((error: unknown) => {
+          const code = (error as NodeJS.ErrnoException).code
+          if (code !== 'ENOENT') {
+            log.warn(
+              `临时语音文件清理失败 (connection=${connection.id}, channel=${request.channel}): ${String(error)}`,
+            )
+          }
+        })
+      }
     }
   }
 

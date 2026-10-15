@@ -44,7 +44,9 @@ function buildDeps(overrides: {
     }))
   return {
     resolveMediaProviders: async () =>
-      (overrides.providers ?? [{ id: 'p1', name: 'OpenAI', defaultModel: 'whisper-1', apiKey: 'k' }]) as never,
+      (overrides.providers ?? [
+        { id: 'p1', name: 'OpenAI', defaultModel: 'whisper-1', apiKey: 'k' },
+      ]) as never,
     mediaRouter: { invoke },
     workDir: '/tmp/unused',
     ...(overrides.decodeAudioToPcm != null ? { decodeAudioToPcm: overrides.decodeAudioToPcm } : {}),
@@ -137,7 +139,7 @@ describe('createRemoteVoiceTranscriber', () => {
     }
   })
 
-  it('rejects voice longer than the local transcription limit', async () => {
+  it('rejects audio beyond the total processing limit without cloud fallback', async () => {
     const workDir = await createWorkDir()
     const deps = buildDeps({
       decodeAudioToPcm: async (_input, outputPath) => {
@@ -149,7 +151,22 @@ describe('createRemoteVoiceTranscriber', () => {
     deps.workDir = workDir
     const transcriber = createRemoteVoiceTranscriber(deps)
     const outcome = await transcriber.transcribe({ audioPath: '/voice/input.ogg' })
-    // 超限走云端兜底而非直接失败
-    expect(outcome).toEqual({ kind: 'ok', text: '云端转写文本', engine: 'cloud' })
+    expect(outcome).toMatchObject({ kind: 'failed' })
+    expect(deps.invoke).not.toHaveBeenCalled()
+  })
+
+  it('rejects Telegram duration metadata before decoding or cloud fallback', async () => {
+    const decode = vi.fn(fakeDecode)
+    const deps = buildDeps({ decodeAudioToPcm: decode })
+    const transcriber = createRemoteVoiceTranscriber(deps)
+
+    const outcome = await transcriber.transcribe({
+      audioPath: '/voice/input.ogg',
+      durationSec: 601,
+    })
+
+    expect(outcome).toMatchObject({ kind: 'failed' })
+    expect(decode).not.toHaveBeenCalled()
+    expect(deps.invoke).not.toHaveBeenCalled()
   })
 })

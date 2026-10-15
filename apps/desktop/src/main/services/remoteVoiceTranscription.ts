@@ -29,7 +29,11 @@ export type RemoteVoiceTranscriptionOutcome =
   | { kind: 'failed'; message: string }
 
 export interface RemoteVoiceTranscriber {
-  transcribe(input: { audioPath: string; mimeType?: string }): Promise<RemoteVoiceTranscriptionOutcome>
+  transcribe(input: {
+    audioPath: string
+    mimeType?: string
+    durationSec?: number
+  }): Promise<RemoteVoiceTranscriptionOutcome>
 }
 
 export interface RemoteVoiceTranscriptionDeps {
@@ -53,9 +57,13 @@ const CLOUD_SETUP_GUIDANCE =
 
 /** 语音时长保护上限（秒）：超长语音拒绝转写，防止主进程长时间阻塞。 */
 const MAX_VOICE_DURATION_SECONDS = 600
+const MAX_PCM_BYTES = 16_000 * MAX_VOICE_DURATION_SECONDS * Int16Array.BYTES_PER_ELEMENT
 
 async function defaultDecodeAudioToPcm(input: string, outputPath: string): Promise<void> {
-  await decodeAudioToPcm16kMono(input, outputPath)
+  // 多解码一秒用于识别超限输入，同时把临时 PCM 输出限制在约 19.3 MB。
+  await decodeAudioToPcm16kMono(input, outputPath, {
+    maxDurationSec: MAX_VOICE_DURATION_SECONDS + 1,
+  })
 }
 
 /** 默认本地识别：先检查语音包就绪，再走 SenseVoice 离线转写。 */
@@ -149,13 +157,19 @@ export function createRemoteVoiceTranscriber(
       return { ok: false, reason: detail }
     } finally {
       if (tempWavPath != null) {
-        fs.unlink(tempWavPath).catch(() => undefined)
+        await fs.unlink(tempWavPath).catch(() => undefined)
       }
     }
   }
 
   return {
     async transcribe(input) {
+      if (input.durationSec != null && input.durationSec > MAX_VOICE_DURATION_SECONDS) {
+        return {
+          kind: 'failed',
+          message: `语音超过 ${MAX_VOICE_DURATION_SECONDS / 60} 分钟处理上限，请截短后重试`,
+        }
+      }
       const pcmPath = path.join(deps.workDir, `${Date.now()}-${randomUUID().slice(0, 8)}.pcm`)
       let pcmSamples: Int16Array | null = null
       // 本地转写不可用/失败原因：所有路径都会赋值，最终进入失败回执
@@ -165,11 +179,18 @@ export function createRemoteVoiceTranscriber(
       try {
         await fs.mkdir(deps.workDir, { recursive: true })
         await decodeAudioToPcm(input.audioPath, pcmPath)
+        if ((await fs.stat(pcmPath)).size > MAX_PCM_BYTES) {
+          const message = `语音超过 ${MAX_VOICE_DURATION_SECONDS / 60} 分钟处理上限，请截短后重试`
+          log.warn(message)
+          return { kind: 'failed', message }
+        }
         pcmSamples = await readPcmFile(pcmPath)
         if (pcmSamples == null || pcmSamples.length === 0) {
           localReason = '音频解码结果为空（可能不是有效语音）'
         } else if (pcmSamples.length > 16000 * MAX_VOICE_DURATION_SECONDS) {
-          localReason = `语音超过 ${MAX_VOICE_DURATION_SECONDS / 60} 分钟，超出本地转写上限`
+          const message = `语音超过 ${MAX_VOICE_DURATION_SECONDS / 60} 分钟处理上限，请截短后重试`
+          log.warn(message)
+          return { kind: 'failed', message }
         } else {
           try {
             const text = await transcribePcm(pcmSamples)
@@ -187,7 +208,7 @@ export function createRemoteVoiceTranscriber(
       } catch (error) {
         localReason = `音频解码失败：${error instanceof Error ? error.message : String(error)}`
       } finally {
-        fs.unlink(pcmPath).catch(() => undefined)
+        await fs.unlink(pcmPath).catch(() => undefined)
       }
 
       log.warn(`远程语音本地转写不可用，转云端兜底：${localReason}`)

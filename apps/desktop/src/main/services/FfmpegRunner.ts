@@ -1334,11 +1334,14 @@ export async function decodeAudioToPcm16kMono(
   opts: {
     timeoutMs?: number | undefined
     signal?: AbortSignal | undefined
+    /** Optional upper bound for decoded duration; used to bound untrusted audio output. */
+    maxDurationSec?: number | undefined
     /** 输出采样率（Hz），默认 16000；QQ SILK 编解码链路使用 24000。 */
     sampleRate?: number | undefined
   } = {},
 ): Promise<void> {
   ensureOutputDirectory(outputPath)
+  const durationArgs = opts.maxDurationSec != null ? ['-t', String(opts.maxDurationSec)] : []
   const result = await runFfmpeg(
     [
       '-i',
@@ -1352,6 +1355,7 @@ export async function decodeAudioToPcm16kMono(
       '1',
       '-f',
       's16le',
+      ...durationArgs,
       '-y',
       outputPath,
     ],
