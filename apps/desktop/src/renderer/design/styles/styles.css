@@ -1182,10 +1182,13 @@ body.floating-sidebar-resizing * {
    用于消息操作栏、会话顶栏、侧栏底部按钮组、代码面板工具栏（code-viewer）。 */
 .spark-icon-tooltip {
   --spark-icon-tooltip-bg: #2c2c2e;
+  /* 气泡底色在两套主题下都是深色实心，前景必须恒为浅色；
+     不能用 --text-inverse——它在暗色主题下是近黑，会和深底融成黑底黑字。 */
+  --spark-icon-tooltip-fg: #ffffff;
   border: none !important;
   border-radius: var(--r-md) !important;
   background: var(--spark-icon-tooltip-bg) !important;
-  color: var(--text-inverse) !important;
+  color: var(--spark-icon-tooltip-fg) !important;
   box-shadow: 0 4px 14px color-mix(in srgb, var(--black) 16%, transparent) !important;
   font-size: var(--font-sm) !important;
   font-weight: 500;
