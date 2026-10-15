@@ -56,6 +56,7 @@ import type { RemoteVoiceTranscriber } from '../services/remoteVoiceTranscriptio
 import { DEFAULT_MOBILE_BRIDGE_RELAY_SETTINGS } from '@spark/protocol'
 import { MobileBridgeService, type MobileBridgeDeps } from '../services/MobileBridgeService.js'
 import { MobileBridgeRelayClient } from '../services/MobileBridgeRelayClient.js'
+import { getAuthService } from '../services/Auth/AuthService.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('mobile-bridge:ipc')
@@ -868,12 +869,35 @@ export function registerMobileBridgeIpc(deps: MobileBridgeIpcDeps): void {
     return relay.getStatus()
   })
 
-  // 中继是出网长连接，无端口冲突风险；失败由客户端内部退避重试
-  void relay.start().catch((error) => {
-    log.warn(
-      `mobile bridge relay start failed: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  })
+  // 中继启动时序：本模块（IPC 注册）先于 Cloud Auth 初始化执行（index.ts 启动序列），
+  // 而 relay.start() 需经 AuthService 获取访问令牌——直接启动会抛
+  // "AuthService not initialized" 且失败后没有重试路径，中继会静默失效到用户手动重开。
+  // 因此轮询等待 auth 就绪（上限 30s，正常启动约 1s 内完成）后再启动；
+  // 超时仍未就绪（认证初始化失败/未登录环境）则保持关闭并在日志说明。
+  const AUTH_READY_POLL_MS = 500
+  const AUTH_READY_TIMEOUT_MS = 30_000
+  void (async () => {
+    const deadline = Date.now() + AUTH_READY_TIMEOUT_MS
+    for (;;) {
+      try {
+        getAuthService()
+        break
+      } catch {
+        if (Date.now() >= deadline) {
+          log.warn('mobile bridge relay not started: auth service unavailable within 30s')
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, AUTH_READY_POLL_MS))
+      }
+    }
+    try {
+      await relay.start()
+    } catch (error) {
+      log.warn(
+        `mobile bridge relay start failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  })()
   log.info('mobile bridge ipc registered')
 }
 
