@@ -9,7 +9,12 @@ import {
 import type { ImageInputSeam } from '../../images/seam.js'
 import { shouldSwallowImeKeypress } from '../ime-guard.js'
 import { SLASH_COMMANDS } from '../slash-commands.js'
-import { glyphs, type TerminalCapabilities, type TuiTheme } from '../theme.js'
+import {
+  glyphs,
+  supportsRichBackground,
+  type TerminalCapabilities,
+  type TuiTheme,
+} from '../theme.js'
 import {
   admitImage,
   collectSubmittedImages,
@@ -809,15 +814,23 @@ export function InputEditor(props: InputEditorProps): ReactElement {
         </Box>
       )}
       <Box
-        borderStyle="round"
-        borderColor={props.locked ? props.theme.dim : props.theme.accent}
         paddingX={1}
+        {...(props.locked || !supportsRichBackground(props.capabilities)
+          ? {}
+          : { backgroundColor: props.theme.userBg })}
       >
         <Text color={props.locked ? props.theme.dim : props.theme.accent}>{symbols.user} </Text>
-        <Text>
-          {props.locked ? '(输入已锁定)' : before}
-          {!props.locked &&
-            (cursorAtCollapsedPaste ? (
+        {props.locked ? (
+          <Text color={props.theme.dim}>(输入已锁定)</Text>
+        ) : value === '' ? (
+          <>
+            <Text inverse> </Text>
+            <Text color={props.theme.dim}> 向 Spark 描述任务，/ 查看命令</Text>
+          </>
+        ) : (
+          <Text>
+            {before}
+            {cursorAtCollapsedPaste ? (
               <Text inverse> </Text>
             ) : currentIsLineBreak ? (
               <>
@@ -826,9 +839,10 @@ export function InputEditor(props: InputEditorProps): ReactElement {
               </>
             ) : (
               <Text inverse>{sanitizeDisplayText(current ?? '') || ' '}</Text>
-            ))}
-          {!props.locked && after}
-        </Text>
+            )}
+            {after}
+          </Text>
+        )}
       </Box>
       {pasteBlocks.length > 0 && !props.locked && (
         <Text color={props.theme.dim}>

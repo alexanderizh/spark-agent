@@ -38,7 +38,7 @@ describe('TUI theme capability fallbacks', () => {
   it('uses visually centred, single-cell spinner frames for unicode terminals', () => {
     const symbols = glyphs({ color: 'truecolor', unicode: true, width: 80 })
 
-    expect(symbols.spinner).toEqual(['◒', '◐', '◓', '◑'])
+    expect(symbols.spinner).toEqual(['✢', '✳', '✶', '✻', '✽'])
     expect(symbols.spinner.every((frame) => Array.from(frame).length === 1)).toBe(true)
   })
 })

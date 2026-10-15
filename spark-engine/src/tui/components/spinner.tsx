@@ -42,6 +42,10 @@ export function SpinnerGlyph(props: SpinnerGlyphProps): ReactElement {
 export interface WorkingLineProps {
   readonly label: string
   readonly detail?: string
+  /** Whole seconds the current turn has been running; omitted hides the timer. */
+  readonly elapsedSeconds?: number
+  /** Shown as the trailing "esc 中断" escape hint; turn lines set it, others omit it. */
+  readonly interruptHint?: boolean
   readonly capabilities: TerminalCapabilities
   readonly theme: TuiTheme
   /** Deterministic frame override for tests. */
@@ -50,8 +54,10 @@ export interface WorkingLineProps {
 
 /**
  * The busy status line shown while a turn runs: a loading glyph, the current
- * action in the accent color, and dim runtime details. Empty details render
- * nothing at all, so a bare action never trails a dangling separator.
+ * action in the accent color, dim runtime details, and — for agent turns — a
+ * running seconds counter plus the bold esc interrupt hint (Codex CLI style).
+ * Empty details render nothing at all, so a bare action never trails a
+ * dangling separator.
  */
 export function WorkingLine(props: WorkingLineProps): ReactElement {
   const detail = props.detail ?? ''
@@ -64,6 +70,19 @@ export function WorkingLine(props: WorkingLineProps): ReactElement {
       />
       <Text color={props.theme.accent}> {props.label}</Text>
       {detail === '' ? undefined : <Text color={props.theme.dim}> · {detail}</Text>}
+      {props.elapsedSeconds === undefined ? undefined : (
+        <Text color={props.theme.dim}> · {props.elapsedSeconds}s</Text>
+      )}
+      {props.interruptHint === true && (
+        <Text color={props.theme.dim}>
+          {' '}
+          ·{' '}
+          <Text bold {...(props.theme.fg === undefined ? {} : { color: props.theme.fg })}>
+            esc
+          </Text>{' '}
+          中断
+        </Text>
+      )}
     </Text>
   )
 }

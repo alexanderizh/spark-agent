@@ -62,4 +62,38 @@ describe('WorkingLine loading glyph', () => {
       app.unmount()
     }
   })
+
+  it('appends the elapsed seconds and the esc interrupt hint for agent turns', () => {
+    const app = render(
+      <WorkingLine
+        label="正在思考"
+        elapsedSeconds={3}
+        interruptHint
+        capabilities={capabilities}
+        theme={defaultTheme}
+        tick={0}
+      />,
+    )
+    try {
+      expect((app.lastFrame() ?? '').trim()).toBe('* 正在思考 · 3s · esc 中断')
+    } finally {
+      app.unmount()
+    }
+  })
+
+  it('hides the timer and hint when they are not provided', () => {
+    const app = render(
+      <WorkingLine
+        label="正在检查更新"
+        capabilities={capabilities}
+        theme={defaultTheme}
+        tick={0}
+      />,
+    )
+    try {
+      expect((app.lastFrame() ?? '').trim()).toBe('* 正在检查更新')
+    } finally {
+      app.unmount()
+    }
+  })
 })

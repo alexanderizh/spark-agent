@@ -195,6 +195,19 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const [retrying, setRetrying] = useState<Extract<LlmDelta, { type: 'retry' }>>()
   const [showThinking, setShowThinking] = useState(true)
   const [activeTurns, setActiveTurns] = useState(0)
+  const [turnStartedAt, setTurnStartedAt] = useState<number>()
+  // Re-render once per second while a turn runs so the elapsed counter keeps
+  // ticking even when the model is quiet and no stream deltas arrive.
+  const [, setElapsedClock] = useState(0)
+  useEffect(() => {
+    if (activeTurns === 0) return
+    const timer = setInterval(() => {
+      setElapsedClock((value) => value + 1)
+    }, 1_000)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [activeTurns])
   const [cancelling, setCancelling] = useState(false)
   const [pending, setPending] = useState<PendingApproval>()
   const [notice, setNoticeFull] = useState<NoticeState | undefined>(
@@ -321,6 +334,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       const controller = new AbortController()
       controllers.current.push(controller)
       setActiveTurns((count) => count + 1)
+      setTurnStartedAt(Date.now())
       setNoticeFull(undefined)
       void session
         .turn(prompt, {
@@ -354,6 +368,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           if (controller.signal.aborted) setCancelling(false)
           controllers.current = controllers.current.filter((candidate) => candidate !== controller)
           setActiveTurns((count) => Math.max(0, count - 1))
+          setTurnStartedAt(undefined)
         })
     },
     [
@@ -694,9 +709,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       {empty && !pickerOpen && (
         <WelcomeBox
           version={props.version ?? SPARK_ENGINE_VERSION}
-          model={visibleModelName}
           cwd={formatCwd(props.cwd)}
-          capabilities={capabilities}
           theme={theme}
         />
       )}
@@ -723,20 +736,6 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         </Box>
       )}
       <ActiveTools tools={projection.activeTools} capabilities={capabilities} theme={theme} />
-      {activeTurns > 0 && (
-        <WorkingLine
-          label={cancelling ? '正在中断 · 等待工具清理' : action}
-          detail={`${
-            cancelling
-              ? '已保留当前输入'
-              : retrying
-                ? `${retrying.resetOutput ? '已丢弃失败尝试的临时输出 · ' : ''}${retrying.error.code ?? 'stream_error'} · ${retrying.error.message} · ${(retrying.delayMs / 1_000).toFixed(1)}s 后重试`
-                : ''
-          }${session.queuedTurns() > 0 ? ` · +${session.queuedTurns()} 排队` : ''}`.trim()}
-          capabilities={capabilities}
-          theme={theme}
-        />
-      )}
     </>
   )
 
@@ -851,10 +850,43 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     </>
   )
 
+  const turnElapsed =
+    activeTurns > 0 && turnStartedAt !== undefined
+      ? Math.max(0, Math.floor((Date.now() - turnStartedAt) / 1_000))
+      : undefined
+
   return (
-    <Box flexDirection="column" width={capabilities.width}>
+    // A fixed frame height pins the input + status chrome to the terminal's
+    // bottom edge (Codex CLI behavior): a flexGrow spacer absorbs whatever the
+    // transcript leaves free, so streaming content never drags the editor
+    // around. Terminals without a known height (pipes, test renderers) fall
+    // back to the old follow-the-content layout.
+    <Box
+      flexDirection="column"
+      width={capabilities.width}
+      {...(capabilities.height === undefined ? {} : { height: capabilities.height })}
+    >
       {output}
       {overlays}
+      <Box flexGrow={1} flexShrink={1} />
+      {activeTurns > 0 && (
+        <Box marginBottom={1}>
+          <WorkingLine
+            label={cancelling ? '正在中断 · 等待工具清理' : action}
+            detail={`${
+              cancelling
+                ? '已保留当前输入'
+                : retrying
+                  ? `${retrying.resetOutput ? '已丢弃失败尝试的临时输出 · ' : ''}${retrying.error.code ?? 'stream_error'} · ${retrying.error.message} · ${(retrying.delayMs / 1_000).toFixed(1)}s 后重试`
+                  : ''
+            }${session.queuedTurns() > 0 ? ` · +${session.queuedTurns()} 排队` : ''}`.trim()}
+            {...(turnElapsed === undefined ? {} : { elapsedSeconds: turnElapsed })}
+            interruptHint
+            capabilities={capabilities}
+            theme={theme}
+          />
+        </Box>
+      )}
       <InputEditor
         active={!pickerOpen}
         locked={
@@ -889,7 +921,6 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         effort={reasoningEffort}
         perf={perfText || undefined}
         cwd={formatCwd(props.cwd)}
-        running={activeTurns > 0 || updateRunning}
         capabilities={capabilities}
         theme={theme}
       />

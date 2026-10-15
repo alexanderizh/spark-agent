@@ -149,9 +149,9 @@ export function glyphs(capabilities: TerminalCapabilities): TuiGlyphs {
     failure: '✗',
     pending: '◌',
     divider: '─',
-    // Braille spinner frames render against the top of many terminal glyph
-    // cells. Quarter-circle frames keep the same one-cell footprint while
-    // staying visually centred beside the status copy.
-    spinner: ['◒', '◐', '◓', '◑'],
+    // Star-flower pulse frames (the Claude Code / Codex CLI family): they read
+    // as a gentle breathing mark instead of a mechanical wheel, and the fixed
+    // one-cell footprint stays centred beside the status copy.
+    spinner: ['✢', '✳', '✶', '✻', '✽'],
   }
 }

@@ -130,7 +130,9 @@ describe('InputEditor shortcuts', () => {
 
     app.stdin.write('\u0017') // Ctrl+W removes "now"
     await tick()
-    expect(app.lastFrame() ?? '').toContain('deploy the service ')
+    // The frame drops a borderless line's trailing blanks, so the kept trailing
+    // space is asserted through the submitted draft, not the render.
+    expect(app.lastFrame() ?? '').toContain('deploy the service')
     expect(app.lastFrame() ?? '').not.toContain('service now')
 
     app.stdin.write('\u0015') // Ctrl+U clears everything
@@ -145,7 +147,8 @@ describe('InputEditor shortcuts', () => {
 
   it('Shift+Tab cycles permission and Tab completion stays on plain Tab', async () => {
     const onCyclePermission = vi.fn()
-    const app = editor({ onCyclePermission })
+    const onSubmit = vi.fn()
+    const app = editor({ onCyclePermission, onSubmit })
     app.stdin.write('/hel')
     await tick()
     expect(app.lastFrame() ?? '').toContain('/help')
@@ -157,8 +160,11 @@ describe('InputEditor shortcuts', () => {
 
     app.stdin.write('\t')
     await tick()
-    expect(app.lastFrame() ?? '').toContain('/help ') // completion adopted
+    expect(app.lastFrame() ?? '').toContain('/help') // completion adopted
     expect(onCyclePermission).toHaveBeenCalledTimes(1)
+    app.stdin.write('\r')
+    await tick()
+    expect(onSubmit).toHaveBeenCalledWith('/help ', expect.anything())
     app.unmount()
   })
 
@@ -195,7 +201,9 @@ describe('InputEditor shortcuts', () => {
 
   it('folds long bracketed pastes while submitting the complete original text', async () => {
     const onSubmit = vi.fn()
-    const pasted = Array.from({ length: 12 }, (_, index) => `const line${index} = ${index}`).join('\n')
+    const pasted = Array.from({ length: 12 }, (_, index) => `const line${index} = ${index}`).join(
+      '\n',
+    )
     const app = editor({ onSubmit })
 
     app.stdin.write(bracketedPaste(pasted))

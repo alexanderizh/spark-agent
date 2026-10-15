@@ -64,8 +64,9 @@ describe('TUI execution feedback', () => {
       expect(frame.split('Preparing the requested write.')).toHaveLength(2)
       expect(frame).toContain('waiting for approval')
       expect(frame).toContain('等待权限确认')
-      const border = frame.split('\n').find((line) => line.startsWith('╭'))
-      expect(border?.length).toBe(64)
+      // The editor is visible and locked behind the approval (the former round
+      // border-width probe died with the borderless Codex-style input).
+      expect(frame).toContain('(输入已锁定)')
       app.stdin.write('\u001b')
       await new Promise((resolve) => setTimeout(resolve, 40))
       await tick()

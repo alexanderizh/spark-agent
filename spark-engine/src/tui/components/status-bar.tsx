@@ -3,7 +3,6 @@ import type { ReactElement, ReactNode } from 'react'
 
 import type { PermissionMode } from '../../permission/types.js'
 import type { TerminalCapabilities, TuiTheme } from '../theme.js'
-import { SpinnerGlyph } from './spinner.js'
 
 export interface StatusBarProps {
   readonly model: string
@@ -11,13 +10,6 @@ export interface StatusBarProps {
   readonly effort: string
   readonly perf?: string | undefined
   readonly cwd?: string | undefined
-  /**
-   * Turn (or self-update) in flight: the leading indent shows the animated
-   * spinner so running state is anchored beside the model name.
-   */
-  readonly running?: boolean
-  /** Deterministic spinner frame override for tests. */
-  readonly tick?: number
   readonly capabilities: TerminalCapabilities
   readonly theme: TuiTheme
 }
@@ -54,21 +46,11 @@ export function StatusBar(props: StatusBarProps): ReactElement {
   return (
     <Box width="100%" paddingX={1} flexWrap="wrap">
       {/*
-        Two blank cells keep the row aligned with the input prompt's `❯ ` while
-        staying free of a permanent vertical line; the loading glyph takes that
-        space only while a turn or self-update runs.
+        Two blank cells keep the row aligned with the input prompt's `❯ `.
+        Running state lives in the WorkingLine above the input; the status bar
+        itself stays a quiet, never-animated chrome line.
       */}
-      {props.running ? (
-        <Text color={props.theme.accent}>
-          <SpinnerGlyph
-            capabilities={props.capabilities}
-            theme={props.theme}
-            {...(props.tick === undefined ? {} : { tick: props.tick })}
-          />{' '}
-        </Text>
-      ) : (
-        <Text>{'  '}</Text>
-      )}
+      <Text>{'  '}</Text>
       <Box flexGrow={1} flexShrink={1} flexWrap="wrap">
         {segments.map((segment, index) => (
           <Box key={index}>
