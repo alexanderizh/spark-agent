@@ -749,6 +749,12 @@ export const Icons = {
       <path d="M9 4v16" />
     </IconBase>
   ),
+  Columns: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M12 4v16" />
+    </IconBase>
+  ),
   PanelRight: (p: IconProps) => (
     <IconBase {...p}>
       <rect x="3" y="4" width="18" height="16" rx="2" />

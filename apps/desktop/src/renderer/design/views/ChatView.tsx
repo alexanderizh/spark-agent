@@ -136,7 +136,7 @@ import { getRichImageDisplay, getRichSourceLinks } from './chat/rich-output-pars
 import { ToolLogImageThumb, ToolLogSourceList } from './chat/ToolLogRichOutput'
 import { HostProviderVisionActivity } from './chat/HostProviderVisionActivity'
 import { isHostProviderVisionTool } from './chat/host-provider-vision-tool'
-import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
+import { buildErrorRetryPayload, buildMessageErrorContinuePayload } from './chat/ChatErrorRetry'
 import { projectVisibleChatMessages } from './chat/internal-turn-message-visibility'
 import { getRecentAssistantMessageIds } from './chat/recent-assistant-messages'
 import { useAssistantTurnCollapse } from './chat/useAssistantTurnCollapse'
@@ -255,17 +255,17 @@ import {
   consumePendingOpenTerminalPanel,
   clearPendingOpenTerminalPanel,
 } from './chat/terminalPanelNavigation'
-import type { OpenCodeFile, CodeViewMode } from '../components/code-viewer/types'
+import type { OpenCodeFile, CodeViewMode, CodeViewPreference } from '../components/code-viewer/types'
 import { isCodeLikeFile } from '../components/code-viewer/codeLanguage'
 import { insertToComposer } from '../components/code-viewer/composerInsert'
 import { buildComposerAttachmentsFromPaths } from '../services/composer-attachments'
 import {
   canOpenInEditor,
-  shouldOpenInEditorByDefault,
   shouldPreviewFirst,
   type FileOpenModeOpts,
   type FileOpenHandler,
 } from '../components/fileOpenRouting'
+import { useCodeViewPreference } from './chat/useCodeViewPreference'
 import type { HtmlOpenMode } from '../services/render-html'
 import {
   clamp,
@@ -758,7 +758,7 @@ export function ChatView({
   type CodePanelSnapshot = {
     codeFiles: OpenCodeFile[]
     activeCodePath: string | null
-    codeViewMode: CodeViewMode
+    viewPreference: CodeViewPreference
     codeExplorerExpandedDirs: string[]
     /** 切换前「代码」面板的形态（closed/collapsed/open/active），见 describeCodePanelTabState */
     codeTabState: CodePanelTabState
@@ -766,7 +766,7 @@ export function ChatView({
   const emptyCodePanelSnapshot: CodePanelSnapshot = {
     codeFiles: [],
     activeCodePath: null,
-    codeViewMode: 'source',
+    viewPreference: 'source',
     codeExplorerExpandedDirs: [],
     codeTabState: 'closed',
   }
@@ -1181,7 +1181,8 @@ export function ChatView({
     if (prevProjectKey !== projectKey) {
       setCodeFiles(nextCode.codeFiles)
       setActiveCodePath(nextCode.activeCodePath)
-      setCodeViewMode(nextCode.codeViewMode)
+      // 恢复跨文件视图偏好；diff/右键预览等一次性覆盖随 tab（codeFiles.viewMode）走，切回自动生效
+      setViewPreference(nextCode.viewPreference)
       setCodeExplorerExpandedDirs(new Set(nextCode.codeExplorerExpandedDirs))
     }
 
@@ -1471,7 +1472,17 @@ export function ChatView({
   // 与 tabs 增删解耦。
   const [codeFiles, setCodeFiles] = useState<OpenCodeFile[]>([])
   const [activeCodePath, setActiveCodePath] = useState<string | null>(null)
-  const [codeViewMode, setCodeViewMode] = useState<CodeViewMode>('source')
+  // 跨文件视图偏好（sticky 开关）：预览/分屏切换后跨文件延续，切到不支持预览的文件
+  // 由渲染期收窄回落源码、偏好不丢。diff 不参与偏好，走 tab 级一次性覆盖。
+  const [viewPreference, setViewPreference] = useState<CodeViewPreference>('source')
+  const { panelViewMode, handleViewModeChange, handleSelectActive } = useCodeViewPreference({
+    codeFiles,
+    activeCodePath,
+    viewPreference,
+    setCodeFiles,
+    setViewPreference,
+    setActiveCodePath,
+  })
   // 文件树展开目录（per-project：同项目切会话保持；visible/width 才跨重启走全局 store）
   const [codeExplorerExpandedDirs, setCodeExplorerExpandedDirs] = useState<Set<string>>(
     () => new Set(),
@@ -1502,7 +1513,7 @@ export function ChatView({
   latestCodeStateRef.current = {
     codeFiles,
     activeCodePath,
-    codeViewMode,
+    viewPreference,
     codeExplorerExpandedDirs: Array.from(codeExplorerExpandedDirs),
     codeTabState: describeCodePanelTabState({
       unifiedSideTabs,
@@ -1633,8 +1644,9 @@ export function ChatView({
   }, [])
 
   // 在「代码」tab 打开一个文件（已存在则更新 diff/行号/变更类型并激活）。
-  // 打开即重置视图模式：默认源码面板，仅 Git 面板/审查面板等明确「看改动」的入口传 'diff'，
-  // 避免上一次的 diff 模式粘住，让后续从文件树/聊天卡片等入口打开文件也停在 git 改动视图。
+  // 初始视图跟随跨文件偏好（viewPreference，按文件能力收窄）；仅两类入口写 tab 一次性覆盖
+  // （OpenCodeFile.viewMode）：Git 面板/审查面板/提交历史的 'diff'、右键「预览」的 'preview'。
+  // 重新打开同一文件会按入口重置覆盖（不传则清掉、回到跟随偏好）。
   const openInCodeTab = useCallback(
     (
       filePath: string,
@@ -1642,7 +1654,7 @@ export function ChatView({
         lineNumber?: number
         diff?: string
         changeType?: OpenCodeFile['changeType']
-        viewMode?: CodeViewMode
+        viewMode?: 'diff' | 'preview'
         gitCommitHash?: string
       },
     ) => {
@@ -1665,6 +1677,7 @@ export function ChatView({
                     lineNumber: opts?.lineNumber ?? f.lineNumber,
                     changeType: opts?.changeType ?? f.changeType,
                     gitCommitHash: opts?.gitCommitHash,
+                    viewMode: opts?.viewMode,
                   }
                 : f,
             )
@@ -1678,11 +1691,11 @@ export function ChatView({
                 lineNumber: opts?.lineNumber,
                 changeType: opts?.changeType,
                 gitCommitHash: opts?.gitCommitHash,
+                viewMode: opts?.viewMode,
               },
             ],
       )
       setActiveCodePath(absPath)
-      setCodeViewMode(opts?.viewMode ?? 'source')
       // 收起独立面板 + 打开统一面板的 code tab；其余统一面板 tab（含文件预览）原样保留
       setShowInspector(false)
       setShowConfigPanel(false)
@@ -1702,7 +1715,11 @@ export function ChatView({
     (absPath: string) => {
       setCodeFiles((prev) => {
         const next = prev.filter((f) => f.absPath !== absPath)
-        setActiveCodePath((cur) => (cur !== absPath ? cur : (next.at(-1)?.absPath ?? null)))
+        setActiveCodePath((cur) => {
+          if (cur !== absPath) return cur
+          // 关闭的是激活文件：回落到列表末尾 tab；视图由 panelViewMode 派生（偏好/覆盖自动生效）
+          return next.at(-1)?.absPath ?? null
+        })
         if (next.length === 0) closeUnifiedSidePanel('code')
         return next
       })
@@ -1710,21 +1727,21 @@ export function ChatView({
     [closeUnifiedSidePanel],
   )
 
-  // 批量关闭多个 code tab（右键菜单：关闭右侧/左侧/全部/已保存）。空数组直接返回。
+  // 批量关闭编辑器内文件 tab（右键菜单）；外层 code 面板保持打开。空数组直接返回。
   const closeCodeFiles = useCallback(
     (absPaths: string[]) => {
       if (absPaths.length === 0) return
       const closing = new Set(absPaths)
       setCodeFiles((prev) => {
         const next = prev.filter((f) => !closing.has(f.absPath))
-        setActiveCodePath((cur) =>
-          cur != null && closing.has(cur) ? (next.at(-1)?.absPath ?? null) : cur,
-        )
-        if (next.length === 0) closeUnifiedSidePanel('code')
+        setActiveCodePath((cur) => {
+          if (cur == null || !closing.has(cur)) return cur
+          return next.at(-1)?.absPath ?? null
+        })
         return next
       })
     },
-    [closeUnifiedSidePanel],
+    [],
   )
 
   const handleFilePreview = useCallback<FileOpenHandler>(
@@ -3597,11 +3614,11 @@ export function ChatView({
               <CodeViewerPanel
                 files={codeFiles}
                 activeAbsPath={activeCodePath}
-                viewMode={codeViewMode}
-                onSelectActive={setActiveCodePath}
+                viewMode={panelViewMode}
+                onSelectActive={handleSelectActive}
                 onCloseFile={closeCodeFile}
                 onCloseFiles={closeCodeFiles}
-                onViewModeChange={setCodeViewMode}
+                onViewModeChange={handleViewModeChange}
                 workspaceId={gitWorkspaceId ?? null}
                 sessionId={activeSession?.id ?? null}
                 explorerVisible={codeExplorerVisible}
@@ -3612,13 +3629,11 @@ export function ChatView({
                 onExplorerWidthChange={setCodeExplorerWidth}
                 onExplorerExpandedChange={setCodeExplorerExpandedDirs}
                 onOpenFileFromExplorer={(rel) =>
-                  shouldOpenInEditorByDefault(rel)
-                    ? openInCodeTab(rel)
-                    : handleFilePreview(rel, 'text')
+                  // 双击统一进代码 tab：初始视图跟随跨文件偏好并按文件能力收窄——
+                  // 二进制富媒体（图片/音视频/office/pdf）只能原地预览，其余跟随偏好/源码
+                  openInCodeTab(rel)
                 }
-                onPreviewFileFromExplorer={(rel) =>
-                  handleFilePreview(rel, 'text', { mode: 'preview' })
-                }
+                onPreviewFileFromExplorer={(rel) => openInCodeTab(rel, { viewMode: 'preview' })}
                 onEditFileFromExplorer={(rel) => openInCodeTab(rel)}
                 onAddToChatFromExplorer={(rel) => void addExplorerNodeToConversation(rel)}
                 gitStatus={gitStatus}
@@ -3632,8 +3647,9 @@ export function ChatView({
                       : { viewMode: 'diff', gitCommitHash: commitHash, changeType },
                   )
                 }
-                onPreviewFileFromToolbar={(path, type) =>
-                  handleFilePreview(path, type, { mode: 'preview' })
+                onPreviewFileFromToolbar={(path) =>
+                  // 工具栏预览入口：直接把当前文件切到编辑器内 preview 模式，不再跳侧面板
+                  openInCodeTab(path, { viewMode: 'preview' })
                 }
                 onOpenFileFromSearch={(rel, line) => {
                   // 搜索结果命中必为文本文件：编辑器打开并定位到匹配行（视图模式由 openInCodeTab 回落为源码）
@@ -5554,6 +5570,9 @@ function ChatStream({
                         assistantAvatarSrc,
                       )
                       const retryPayload = buildErrorRetryPayload(displayMessages, index)
+                      // 智能续跑：失败轮已有实质产出且自动改派未进行时，错误卡额外提供
+                      // 「继续完成」（发继续指令从断点续跑，不丢弃已完成进度）。
+                      const continuePayload = buildMessageErrorContinuePayload(displayMessages, index)
                       const sessionTaskEntry = sessionTaskTimeline.get(msg.id)
                       return (
                         <AssistantMessageRows
@@ -5597,6 +5616,9 @@ function ChatStream({
                             : {})}
                           {...(retryPayload != null && onResendMessage != null
                             ? { onRetry: () => onResendMessage(retryPayload) }
+                            : {})}
+                          {...(continuePayload != null && onResendMessage != null
+                            ? { onContinue: () => onResendMessage(continuePayload) }
                             : {})}
                           {...(msg.status !== 'streaming' && onReplyToMember != null
                             ? {
@@ -8068,6 +8090,7 @@ type AssistantRowCompareProps = {
   selected?: boolean
   teamModeActive?: boolean
   onRetry?: () => void
+  onContinue?: () => void
   onFork?: () => void
 }
 
@@ -8095,6 +8118,7 @@ function assistantRowsPropsAreEqual(
     prev.selected === next.selected &&
     prev.teamModeActive === next.teamModeActive &&
     (prev.onRetry != null) === (next.onRetry != null) &&
+    (prev.onContinue != null) === (next.onContinue != null) &&
     (prev.onFork != null) === (next.onFork != null)
   )
 }
@@ -8126,6 +8150,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   onToggleSelected,
   onStartMultiSelect,
   onRetry,
+  onContinue,
   teamModeActive = false,
 }: {
   sessionId: SessionId
@@ -8161,6 +8186,8 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   onToggleSelected?: () => void
   onStartMultiSelect?: () => void
   onRetry?: () => void
+  /** 智能续跑：失败轮有实质产出时错误卡显示「继续完成」（继续指令从断点续跑） */
+  onContinue?: () => void
   // 团队模式开关：关闭「显示思考与执行日志」时配合 CSS 在 React 侧剔除 host 的纯过程段，
   // 避免气泡内内容全被隐藏后只剩下头像+名称的空气泡。
   teamModeActive?: boolean
@@ -8323,6 +8350,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
               {...(onToggleSelected != null ? { onToggleSelected } : {})}
               {...(onStartMultiSelect != null ? { onStartMultiSelect } : {})}
               {...(onRetry != null ? { onRetry } : {})}
+              {...(onContinue != null ? { onContinue } : {})}
             />
           )
         })}
@@ -8357,6 +8385,7 @@ const AgentMsg = React.memo(function AgentMsg({
   onToggleSelected,
   onStartMultiSelect,
   onRetry,
+  onContinue,
   turnCollapseManaged = false,
 }: {
   sessionId: SessionId
@@ -8386,6 +8415,8 @@ const AgentMsg = React.memo(function AgentMsg({
   onToggleSelected?: () => void
   onStartMultiSelect?: () => void
   onRetry?: () => void
+  /** 智能续跑：失败轮有实质产出时错误卡显示「继续完成」（继续指令从断点续跑） */
+  onContinue?: () => void
   /** The parent turn owns the single collapse control for completed output. */
   turnCollapseManaged?: boolean
 }) {
@@ -8601,6 +8632,7 @@ const AgentMsg = React.memo(function AgentMsg({
           {...(block.origin != null ? { origin: block.origin } : {})}
           {...(block.occurrenceCount != null ? { occurrenceCount: block.occurrenceCount } : {})}
           {...(block.retryable && onRetry != null ? { onRetry } : {})}
+          {...(block.retryable && onContinue != null ? { onContinue } : {})}
         />
       )
     }
@@ -8609,6 +8641,7 @@ const AgentMsg = React.memo(function AgentMsg({
         key={group.key}
         block={group.block}
         {...(group.block.retryable && onRetry != null ? { onRetry } : {})}
+        {...(group.block.retryable && onContinue != null ? { onContinue } : {})}
       />
     )
   })

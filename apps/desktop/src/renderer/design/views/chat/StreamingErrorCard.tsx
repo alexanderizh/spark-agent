@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Info,
+  Play,
   RefreshCw,
   TriangleAlert,
 } from 'lucide-react'
@@ -23,6 +24,8 @@ export interface StreamingErrorCardProps {
   details?: Array<{ label: string; value: string }>
   origin?: RuntimeEventOrigin
   occurrenceCount?: number
+  /** 智能重试·继续完成：从失败轮的半截产出续跑（仅失败轮已有实质产出时由调用方提供）。 */
+  onContinue?: () => void
   onRetry?: () => void
 }
 
@@ -36,6 +39,7 @@ export function StreamingErrorCard({
   details = [],
   origin,
   occurrenceCount = 1,
+  onContinue,
   onRetry,
 }: StreamingErrorCardProps) {
   const [expanded, setExpanded] = useState(false)
@@ -74,7 +78,21 @@ export function StreamingErrorCard({
           {!expanded && <span className="runtime-diagnostic-preview">{message}</span>}
         </span>
         <span className="runtime-diagnostic-header-actions">
-          {retryable && !needsCodexRuntime && onRetry != null && (
+          {retryable && !needsCodexRuntime && onContinue != null && (
+            <>
+              <button type="button" className="runtime-diagnostic-retry" onClick={onContinue}>
+                <Play size={13} aria-hidden="true" />
+                继续完成
+              </button>
+              {onRetry != null && (
+                <button type="button" className="runtime-diagnostic-restart" onClick={onRetry}>
+                  <RefreshCw size={13} aria-hidden="true" />
+                  重新开始
+                </button>
+              )}
+            </>
+          )}
+          {retryable && !needsCodexRuntime && onContinue == null && onRetry != null && (
             <button type="button" className="runtime-diagnostic-retry" onClick={onRetry}>
               <RefreshCw size={13} aria-hidden="true" />
               重新尝试

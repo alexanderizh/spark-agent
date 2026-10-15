@@ -19,6 +19,10 @@
 
 .sheet {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
   max-height: 68vh;
   background: #ffffff;
   border-radius: 28rpx 28rpx 0 0;
@@ -29,18 +33,27 @@
 }
 
 .sheet-head {
+  box-sizing: border-box;
+  min-width: 0;
   justify-content: space-between;
   align-items: center;
   padding: 8rpx 8rpx 20rpx;
 }
 
 .sheet-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 32rpx;
   font-weight: 600;
   color: #1a1a1a;
 }
 
 .sheet-close {
+  flex: none;
+  margin-left: 16rpx;
   width: 52rpx;
   height: 52rpx;
   border-radius: 50%;
@@ -59,6 +72,9 @@
 }
 
 .sheet-list {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   max-height: 52vh;
 }
 
@@ -68,6 +84,9 @@
 }
 
 .sheet-option {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   align-items: center;
   padding: 24rpx 16rpx;
   border-radius: 20rpx;
@@ -86,10 +105,18 @@
   display: flex;
   flex-direction: column;
   gap: 4rpx;
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .sheet-option-label {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  word-break: break-all;
   font-size: 29rpx;
   color: #1a1a1a;
   font-weight: 500;
@@ -100,11 +127,17 @@
 }
 
 .sheet-option-sub {
+  display: block;
+  max-width: 100%;
   font-size: 23rpx;
   color: #8f8b85;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sheet-option .icon-check {
+  flex: none;
 }
 
 /* 滑块模式 */

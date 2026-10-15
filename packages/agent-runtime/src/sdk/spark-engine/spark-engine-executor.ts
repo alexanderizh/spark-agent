@@ -183,6 +183,8 @@ export class SparkEngineExecutor implements EngineExecutor, PermissionModeAwareE
         ...(config.approvalCallback != null
           ? { approver: new HostBridgeApprover(sessionId, config.approvalCallback) }
           : {}),
+        // spark-auto 危险性评估：灰区命令交宿主 LLM 分类器判定（dangerous → ask）。
+        ...(config.dangerClassifier != null ? { dangerClassifier: config.dangerClassifier } : {}),
         ...(config.systemPrompt === undefined ? {} : { systemPrompt: config.systemPrompt }),
         ...(config.skillSystemPrompt === undefined
           ? {}

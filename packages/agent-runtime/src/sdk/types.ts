@@ -10,6 +10,7 @@
  */
 
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages'
+import type { DangerClassifier } from '@spark/agent'
 import type {
   HookNode,
   SessionPermissionMode,
@@ -1044,6 +1045,13 @@ export interface SDKExecutorConfig {
   invocationObserver?: ((snapshot: SDKInvocationSnapshot) => void) | undefined
   /** Adapter-specific observable phase metrics; merged into the turn metrics stream. */
   runtimeMetricsObserver?: ((metrics: TurnRuntimeMetrics) => void) | undefined
+  /**
+   * Spark 引擎（adapter 'spark'）：auto 权限档的危险性评估分类器。引擎对参数
+   * 含命令串的工具调用先做正则筛查，灰色地带命令交由该分类器（宿主 LLM）判定，
+   * dangerous → 引擎返回 ask → 落入 approvalCallback 审批弹卡链路。缺省时
+   * auto 档维持引擎历史行为（无弹卡）。
+   */
+  dangerClassifier?: DangerClassifier | undefined
   approvalCallback?:
     | ((
         sessionId: string,

@@ -137,6 +137,18 @@
   background: color-mix(in srgb, var(--primary, #5876d8) 16%, transparent);
 }
 
+/* 智能重试双操作中的「重新开始」次按钮：描边弱化，与主操作「继续完成」区分层级。 */
+.runtime-diagnostic-restart {
+  border-color: color-mix(in srgb, var(--border, #dfe3e8) 90%, transparent);
+  background: transparent;
+  color: var(--text-muted, #747b86);
+}
+
+.runtime-diagnostic-restart:hover {
+  background: color-mix(in srgb, var(--text, #20242a) 6%, transparent);
+  color: var(--text, #20242a);
+}
+
 .runtime-diagnostic-detail-toggle {
   border-color: color-mix(in srgb, var(--text, #20242a) 12%, transparent) !important;
   background: var(--text, #22262d);

@@ -11,7 +11,7 @@
  */
 
 import { Dropdown } from '@lobehub/ui'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { SessionId, WorkspaceGitStatusResponse } from '@spark/protocol'
 import { Icons } from '../../Icons'
@@ -19,6 +19,7 @@ import { OPEN_CODE_SEARCH_EVENT } from '../../hooks/useKeyboard'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
 import { FileTypeIcon } from '../FileDisplay'
 import type { PreviewFileType } from '../FileDisplay'
+import { FilePreviewPanel } from '../FilePreviewPanel'
 import { useToast } from '../Toast'
 import { CodeViewerEditor } from './CodeViewerEditor'
 import { CodeViewerDiff } from './CodeViewerDiff'
@@ -58,6 +59,12 @@ import {
   stepCodeViewerZoom,
   useCodeViewerZoom,
 } from './codeViewerZoom'
+import {
+  canPreviewInCodeViewer,
+  canSplitPreviewInCodeViewer,
+  isSvgFile,
+  previewTypeInCodeViewer,
+} from './previewSupport'
 import type { OpenCodeFile, CodeViewMode } from './types'
 import './index.less'
 
@@ -104,6 +111,13 @@ function basename(p: string): string {
   return idx >= 0 ? norm.slice(idx + 1) : p
 }
 
+/** 分屏实时预览防抖间隔（ms）：编辑停顿约 300ms 后把未保存内容同步到预览区 */
+const CODE_PREVIEW_LIVE_DEBOUNCE_MS = 300
+/** 分屏左栏（源码）占比的钳制范围与初始值：20% ~ 80%，初始各占一半 */
+const SPLIT_RATIO_MIN = 0.2
+const SPLIT_RATIO_MAX = 0.8
+const SPLIT_RATIO_DEFAULT = 0.5
+
 export function CodeViewerPanel({
   files,
   activeAbsPath,
@@ -143,6 +157,13 @@ export function CodeViewerPanel({
   const { toast } = useToast()
   const [saving, setSaving] = useState(false)
   const [minimapEnabled, setMinimapEnabled] = useState(false)
+  // 分屏比例（左栏源码占 cv-split 容器的宽度比）：组件本地态不持久化，拖拽钳制 20%~80%
+  const [splitRatio, setSplitRatio] = useState(SPLIT_RATIO_DEFAULT)
+  const splitRatioRef = useRef(SPLIT_RATIO_DEFAULT)
+  // 实时预览直传快照：~300ms 防抖后的未保存内容（path 绑定文件，防切 tab 串台）
+  const [livePreview, setLivePreview] = useState<{ path: string; content: string } | null>(null)
+  // 预览刷新令牌：保存 / 重载成功后递增，驱动非直传预览（图片等）重读磁盘
+  const [previewRefreshToken, setPreviewRefreshToken] = useState(0)
   const zoom = useCodeViewerZoom()
   const editorFontSize = editorFontSizeFor(zoom)
   const editorLineHeight = editorLineHeightFor(editorFontSize)
@@ -165,6 +186,20 @@ export function CodeViewerPanel({
     gitSidebarActions.busy === 'push'
 
   const active = files.find((f) => f.absPath === activeAbsPath) ?? null
+  // 预览能力（纯扩展名判定，无 IO）：preview 整页 / split 分屏是否可用 + FilePreviewPanel 渲染类型
+  const canPreview = active != null && canPreviewInCodeViewer(active.absPath)
+  const canSplit = active != null && canSplitPreviewInCodeViewer(active.absPath)
+  // 有无源码视图：纯文本/代码（不可预览）与双向文件（可编辑+可预览）有；
+  // 只能看不能编的二进制富媒体（png/mp4/office 等）没有——工具栏「源码」段对其禁用
+  const canShowSource = active != null && (!canPreview || canSplit)
+  const activePreviewType = active != null ? previewTypeInCodeViewer(active.absPath) : null
+  // 实时直传仅对「可编辑文本 + 文本渲染」类型有意义：markdown / html 原生支持 contentOverride；
+  // svg 属 image 类型但为 XML 文本，走 FilePreviewPanel 的 data URL 直传分支；
+  // csv 等 universal 类型（Flyfish Viewer 读磁盘 buffer）不支持直传，分屏右侧按磁盘内容渲染。
+  const supportsLiveOverride =
+    activePreviewType === 'markdown' ||
+    activePreviewType === 'html' ||
+    (activePreviewType === 'image' && active != null && isSvgFile(active.absPath))
   const diffInfo = useGitDiff(
     workspaceId ?? null,
     active?.displayPath,
@@ -173,12 +208,48 @@ export function CodeViewerPanel({
     active?.gitCommitHash,
   )
 
+  // ── 实时预览联动（markdown / html / svg） ──
+  // 编辑器内容变化后 ~300ms 防抖，把未保存内容快照给预览区（contentOverride 直传）。
+  // 仅在「脏」时直传：保存 / 撤销回到磁盘内容（content === savedContent）时自动回落磁盘渲染，
+  // 避免打开文件瞬间出现一次「磁盘渲染 → 直传同内容」的无谓重载（html 会整帧重登沙箱文档）。
+  const runtimeContent = activeRuntime?.content
+  const runtimeSavedContent = activeRuntime?.savedContent
+  const runtimeState = activeRuntime?.state
+  useEffect(() => {
+    if (!supportsLiveOverride || activeAbsPath == null) return
+    if (
+      runtimeState !== 'ready' ||
+      runtimeContent == null ||
+      runtimeContent === runtimeSavedContent
+    ) {
+      return
+    }
+    const path = activeAbsPath
+    const content = runtimeContent
+    const timer = window.setTimeout(() => {
+      setLivePreview({ path, content })
+    }, CODE_PREVIEW_LIVE_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [supportsLiveOverride, activeAbsPath, runtimeState, runtimeContent, runtimeSavedContent])
+
+  // 直传内容生效条件：快照属于当前文件 && 仍与当前编辑内容一致 && 文件处于脏态；
+  // 任一不满足即回落磁盘渲染（保存 / 撤销 / 切文件 / 只读 reload 均天然覆盖）
+  const liveOverride =
+    livePreview != null &&
+    livePreview.path === activeAbsPath &&
+    runtimeContent === livePreview.content &&
+    runtimeContent !== runtimeSavedContent
+      ? livePreview.content
+      : undefined
+
   const handleSave = useCallback(async () => {
     if (activeAbsPath == null) return
     setSaving(true)
     try {
       await saveActive()
       toast.success('已保存')
+      // 保存完成：递增刷新令牌，预览区（非直传类型）重读磁盘；直传类型此时已回落磁盘渲染
+      setPreviewRefreshToken((t) => t + 1)
     } catch (err) {
       if (err instanceof CodeFileExternalChangeError) {
         // externalChanged 已在 runtime 置位 → 冲突横幅出现，不重复 toast
@@ -189,6 +260,74 @@ export function CodeViewerPanel({
       setSaving(false)
     }
   }, [activeAbsPath, saveActive, toast])
+
+  // 冲突横幅的「用磁盘重载 / 覆盖保存」：成功后同样递增刷新令牌，预览区同步回落磁盘内容
+  const handleReloadActive = useCallback(() => {
+    void reloadActive().then(
+      () => setPreviewRefreshToken((t) => t + 1),
+      () => {},
+    )
+  }, [reloadActive])
+  const handleForceSaveActive = useCallback(() => {
+    void forceSaveActive().then(
+      () => setPreviewRefreshToken((t) => t + 1),
+      () => {},
+    )
+  }, [forceSaveActive])
+
+  // 工具栏「刷新预览」：令牌自增，预览区双通道刷新 ——
+  // key 重挂载重建图片/音视频/Office 等媒体元素并重读磁盘；
+  // html 据令牌重新登记沙箱文档整页重载（未保存直传内容保持直传语义，刷新的是当前预览内容）。
+  const handleRefreshPreview = useCallback(() => {
+    setPreviewRefreshToken((t) => t + 1)
+  }, [])
+
+  // ── 分屏分隔条拖拽 ──
+  // pointer capture 落在分隔条自身（capture 期间事件持续派发给它，Monaco 不会抢走），
+  // 按容器实宽把位移换算为比例并钳制 20%~80%；拖动期间 body 加 cv-split-resizing
+  // （col-resize 光标 + 禁止选中文本）。比例用 ref 镜像，move 闭包不读 state 防 stale。
+  const handleSplitDragStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const divider = e.currentTarget
+    const totalWidth = divider.parentElement?.getBoundingClientRect().width ?? 0
+    if (totalWidth <= 0) return
+    const startX = e.clientX
+    const startRatio = splitRatioRef.current
+    const onMove = (ev: PointerEvent): void => {
+      const next = startRatio + (ev.clientX - startX) / totalWidth
+      const clamped = Math.min(SPLIT_RATIO_MAX, Math.max(SPLIT_RATIO_MIN, next))
+      splitRatioRef.current = clamped
+      setSplitRatio(clamped)
+    }
+    const onUp = (ev: PointerEvent): void => {
+      if (divider.hasPointerCapture(ev.pointerId)) divider.releasePointerCapture(ev.pointerId)
+      divider.removeEventListener('pointermove', onMove)
+      divider.removeEventListener('pointerup', onUp)
+      divider.removeEventListener('pointercancel', onUp)
+      document.body.classList.remove('cv-split-resizing')
+    }
+    try {
+      divider.setPointerCapture(e.pointerId)
+    } catch {
+      return
+    }
+    document.body.classList.add('cv-split-resizing')
+    divider.addEventListener('pointermove', onMove)
+    divider.addEventListener('pointerup', onUp)
+    divider.addEventListener('pointercancel', onUp)
+  }, [])
+  const handleSplitReset = useCallback(() => {
+    splitRatioRef.current = SPLIT_RATIO_DEFAULT
+    setSplitRatio(SPLIT_RATIO_DEFAULT)
+  }, [])
+  // 拖拽中途组件卸载时清理 body 上的全局拖动态类
+  useEffect(
+    () => () => {
+      document.body.classList.remove('cv-split-resizing')
+    },
+    [],
+  )
 
   // 代码面板内统一接管搜索快捷键（capture 早于 Monaco / 应用全局处理）：
   // Cmd/Ctrl+F = 内容搜索，Cmd/Ctrl+P = 文件搜索；三个左侧板块内行为一致。
@@ -497,6 +636,63 @@ export function CodeViewerPanel({
   const dirty = isDirty(active.absPath)
   const externalChanged = activeRuntime?.externalChanged === true
 
+  // 源码区三态（loading / error / Monaco）：source 整页与 split 左栏共用同一渲染块
+  const sourceArea = (
+    <>
+      {(activeRuntime == null ||
+        activeRuntime.state === 'idle' ||
+        activeRuntime.state === 'loading') && (
+        <div className="code-viewer-loading">
+          <Icons.Spinner size={18} className="cv-spin" /> 读取文件…
+        </div>
+      )}
+      {activeRuntime?.state === 'error' && (
+        <div className="code-viewer-error">
+          <span className="code-viewer-error-icon">
+            <Icons.AlertTriangle size={20} />
+          </span>
+          <div className="code-viewer-error-title">无法读取该文件</div>
+          <div className="code-viewer-error-detail">{activeRuntime.error}</div>
+        </div>
+      )}
+      {activeRuntime?.state === 'ready' && (
+        <CodeViewerEditor
+          filePath={active.absPath}
+          content={activeRuntime.content}
+          readOnly={readOnly}
+          theme={theme}
+          lineNumber={active.lineNumber}
+          minimapEnabled={minimapEnabled}
+          fontSize={editorFontSize}
+          lineHeight={editorLineHeight}
+          onContentChange={editActive}
+          onSave={() => void handleSave()}
+        />
+      )}
+    </>
+  )
+
+  // 内容区预览（embedded：填满宿主，无头部/关闭钮）：markdown / html / svg 实时直传未保存内容，
+  // 图片 / 音视频 / Office 按磁盘内容渲染（保存后由 refreshToken 驱动刷新）。
+  // key 绑定刷新令牌：手动刷新时整组件重挂载，媒体元素重建、磁盘内容重读、
+  // html 沙箱文档重新登记（配合组件内 refreshToken 依赖双保险）。
+  // onClose 为必填 prop，embedded 形态没有关闭语义，传 no-op；
+  // workspaceRootPath 可选 prop 未声明 | undefined（exactOptionalPropertyTypes），
+  // 用条件展开传值，与 FilePreviewPanel 内部 imageBasePath 的写法一致。
+  const previewArea =
+    activePreviewType != null ? (
+      <FilePreviewPanel
+        key={`fp-${previewRefreshToken}`}
+        filePath={active.absPath}
+        fileType={activePreviewType}
+        variant="embedded"
+        contentOverride={liveOverride}
+        refreshToken={previewRefreshToken}
+        {...(workspaceRootPath != null ? { workspaceRootPath } : {})}
+        onClose={() => {}}
+      />
+    ) : null
+
   return renderLayout(
     <>
       <CodeViewerToolbar
@@ -509,9 +705,13 @@ export function CodeViewerPanel({
         saving={saving}
         readOnly={readOnly}
         hasDiff={active.gitCommitHash != null || active.changeType !== 'delete'}
+        canPreview={canPreview}
+        canSplit={canSplit}
+        canShowSource={canShowSource}
         minimapEnabled={minimapEnabled}
         onToggleMinimap={() => setMinimapEnabled((v) => !v)}
         onSave={() => void handleSave()}
+        onRefreshPreview={handleRefreshPreview}
         onPreview={onPreviewFileFromToolbar}
       />
 
@@ -521,14 +721,10 @@ export function CodeViewerPanel({
             文件已被外部修改（如 agent 写入），继续保存将覆盖磁盘内容。
           </span>
           <div className="cv-conflict-actions">
-            <button type="button" className="cv-mini-btn" onClick={() => void reloadActive()}>
+            <button type="button" className="cv-mini-btn" onClick={handleReloadActive}>
               用磁盘重载
             </button>
-            <button
-              type="button"
-              className="cv-mini-btn primary"
-              onClick={() => void forceSaveActive()}
-            >
+            <button type="button" className="cv-mini-btn primary" onClick={handleForceSaveActive}>
               覆盖保存
             </button>
           </div>
@@ -545,39 +741,25 @@ export function CodeViewerPanel({
             changeType={active.changeType}
             fontSize={diffFontSize}
           />
+        ) : viewMode === 'preview' && previewArea != null ? (
+          previewArea
+        ) : viewMode === 'split' && canSplit && previewArea != null ? (
+          <div className="cv-split">
+            <div className="cv-split-editor" style={{ width: `${(splitRatio * 100).toFixed(2)}%` }}>
+              {sourceArea}
+            </div>
+            <div
+              className="cv-split-divider"
+              role="separator"
+              aria-orientation="vertical"
+              title="拖拽调整分屏比例，双击复位"
+              onPointerDown={handleSplitDragStart}
+              onDoubleClick={handleSplitReset}
+            />
+            <div className="cv-split-preview">{previewArea}</div>
+          </div>
         ) : (
-          <>
-            {(activeRuntime == null ||
-              activeRuntime.state === 'idle' ||
-              activeRuntime.state === 'loading') && (
-              <div className="code-viewer-loading">
-                <Icons.Spinner size={18} className="cv-spin" /> 读取文件…
-              </div>
-            )}
-            {activeRuntime?.state === 'error' && (
-              <div className="code-viewer-error">
-                <span className="code-viewer-error-icon">
-                  <Icons.AlertTriangle size={20} />
-                </span>
-                <div className="code-viewer-error-title">无法读取该文件</div>
-                <div className="code-viewer-error-detail">{activeRuntime.error}</div>
-              </div>
-            )}
-            {activeRuntime?.state === 'ready' && (
-              <CodeViewerEditor
-                filePath={active.absPath}
-                content={activeRuntime.content}
-                readOnly={readOnly}
-                theme={theme}
-                lineNumber={active.lineNumber}
-                minimapEnabled={minimapEnabled}
-                fontSize={editorFontSize}
-                lineHeight={editorLineHeight}
-                onContentChange={editActive}
-                onSave={() => void handleSave()}
-              />
-            )}
-          </>
+          sourceArea
         )}
       </div>
 

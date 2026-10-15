@@ -27,6 +27,8 @@ import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
 import { SessionQuestionGate } from '../../services/session-question-gate.js'
 import { TurnRegistry } from '../../services/session/turn-registry.js'
 import { QueueErrorPauseGate } from '../../services/session/queue-error-pause-gate.js'
+import { GoalRepository } from '@spark/storage'
+import type { SessionGoal as StoredSessionGoal } from '@spark/storage'
 import { CodexAppServerExecutor, CodexCliExecutor, CodexOpenAIExecutor } from '../../sdk/index.js'
 import {
   TEAM_DISPATCH_AUTO_CONTINUATION_PRESENTATION,
@@ -1075,6 +1077,107 @@ describe('SessionService queue error pause lifecycle', () => {
       status: 'cancelled',
     })
     expect(service.queueErrorPauseGate.getPause('session-1', 1)).toBeNull()
+  })
+})
+
+describe('SessionService.startGoalLoop (错误暂停闸门)', () => {
+  type GoalLoopInternals = {
+    db: unknown
+    pendingTurns: Map<string, Array<{ turnId: string; message: string; enqueuedAt: string }>>
+    queueErrorPauseGate?: QueueErrorPauseGate
+    hasActiveSessionExecution: (sessionId: string) => boolean
+    emitQueueChanged: (sessionId: string) => void
+    startGoalLoop: (sessionId: string) => Promise<void>
+    drainQueuedUserTurnsForGoalIteration: (sessionId: string) => string[]
+    getGoalBudgetCycleStartMs: (sessionId: string, goal: unknown) => number
+    getGoalLoopBudgetStopSummary: (
+      sessionId: string,
+      goal: unknown,
+      cycleStartMs: number,
+    ) => unknown
+    findGoalSourceAttachments: (sessionId: string, objective: string) => unknown
+    goalSyntheticTurnRuntimePatch: (sessionId: string) => unknown
+    emitGoalEvent: (...args: unknown[]) => void
+    startTurn: (...args: unknown[]) => Promise<void>
+    executionSupervisor: { config: { enabled: boolean } }
+  }
+
+  const activeGoal = {
+    id: 'goal-1',
+    session_id: 'session-goal',
+    objective: 'ship the feature',
+    mode: 'spark-loop',
+    status: 'active',
+    progressLog: [],
+    successCriteria: [],
+    constraints: [],
+    validation: {},
+    budget: {},
+    lastError: null,
+  } as unknown as StoredSessionGoal
+
+  function makeGoalLoopService(paused: boolean): GoalLoopInternals {
+    const service = Object.create(SessionService.prototype) as GoalLoopInternals
+    service.db = {}
+    service.pendingTurns = new Map([
+      ['session-goal', [{ turnId: 'turn-queued', message: 'waiting', enqueuedAt: '2026-10-16T00:00:00.000Z' }]],
+    ])
+    service.queueErrorPauseGate = new QueueErrorPauseGate()
+    if (paused) {
+      service.queueErrorPauseGate.pause('session-goal', {
+        reason: 'turn_error',
+        failedTurnId: 'turn-failed',
+        pausedAt: '2026-10-16T00:01:00.000Z',
+      })
+    }
+    service.hasActiveSessionExecution = vi.fn(() => false)
+    service.emitQueueChanged = vi.fn()
+    service.drainQueuedUserTurnsForGoalIteration = vi.fn(() => [])
+    service.getGoalBudgetCycleStartMs = vi.fn(() => 0)
+    service.getGoalLoopBudgetStopSummary = vi.fn(() => null)
+    service.findGoalSourceAttachments = vi.fn(() => undefined)
+    service.goalSyntheticTurnRuntimePatch = vi.fn(() => undefined)
+    service.emitGoalEvent = vi.fn()
+    service.startTurn = vi.fn(async () => undefined)
+    service.executionSupervisor = { config: { enabled: false } }
+    return service
+  }
+
+  it('错误暂停激活时：不泵迭代、不排空队列（含重启 goal 自动恢复直连路径）', async () => {
+    const service = makeGoalLoopService(true)
+    const getCurrent = vi
+      .spyOn(GoalRepository.prototype, 'getCurrent')
+      .mockReturnValue(activeGoal)
+    const drain = service.drainQueuedUserTurnsForGoalIteration as unknown as ReturnType<
+      typeof vi.fn
+    >
+    const startTurn = service.startTurn as unknown as ReturnType<typeof vi.fn>
+
+    await service.startGoalLoop('session-goal')
+
+    // 队列未被排空进迭代 prompt（暂停期间等待用户「重试/跳过」决策）
+    expect(service.pendingTurns.get('session-goal')).toHaveLength(1)
+    expect(drain).not.toHaveBeenCalled()
+    expect(startTurn).not.toHaveBeenCalled()
+    expect(service.emitQueueChanged).toHaveBeenCalledWith('session-goal')
+    getCurrent.mockRestore()
+  })
+
+  it('无暂停时照常泵迭代（闸门不得过度拦截）', async () => {
+    const service = makeGoalLoopService(false)
+    const getCurrent = vi
+      .spyOn(GoalRepository.prototype, 'getCurrent')
+      .mockReturnValue(activeGoal)
+    const drain = service.drainQueuedUserTurnsForGoalIteration as unknown as ReturnType<
+      typeof vi.fn
+    >
+    const startTurn = service.startTurn as unknown as ReturnType<typeof vi.fn>
+
+    await service.startGoalLoop('session-goal')
+
+    expect(drain).toHaveBeenCalledOnce()
+    expect(startTurn).toHaveBeenCalledOnce()
+    getCurrent.mockRestore()
   })
 })
 

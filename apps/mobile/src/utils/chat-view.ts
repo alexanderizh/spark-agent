@@ -12,7 +12,7 @@ export type TimelineItem =
   | { kind: 'time'; key: string; label: string }
   | { kind: 'user'; key: string; text: string }
   | { kind: 'assistant'; key: string; text: string }
-  | { kind: 'thinking'; key: string; text: string }
+  | { kind: 'thinking'; key: string; text: string; expanded?: boolean }
   | {
       kind: 'tool'
       key: string
@@ -38,6 +38,7 @@ function dayLabel(iso: string): string {
 /** 消息列表 → 渲染项（含天级时间分界） */
 export function buildTimelineItems(messages: ChatMessage[]): TimelineItem[] {
   const items: TimelineItem[] = []
+  const thinkingByTurn = new Map<string, Extract<TimelineItem, { kind: 'thinking' }>>()
   let lastDay = ''
   for (const msg of messages) {
     const day = (msg.createdAt ?? '').slice(0, 10)
@@ -56,9 +57,22 @@ export function buildTimelineItems(messages: ChatMessage[]): TimelineItem[] {
       case 'assistant':
         items.push({ kind: 'assistant', key: msg.key, text: msg.text })
         break
-      case 'thinking':
-        items.push({ kind: 'thinking', key: msg.key, text: msg.text })
+      case 'thinking': {
+        // 同一回合可能产生多个思考片段；归并成一个折叠入口，避免每段各占一行。
+        const existing = msg.turnId ? thinkingByTurn.get(msg.turnId) : undefined
+        if (existing) {
+          existing.text += msg.text
+          break
+        }
+        const thinkingItem: Extract<TimelineItem, { kind: 'thinking' }> = {
+          kind: 'thinking',
+          key: msg.key,
+          text: msg.text,
+        }
+        items.push(thinkingItem)
+        if (msg.turnId) thinkingByTurn.set(msg.turnId, thinkingItem)
         break
+      }
       case 'tool':
         items.push({
           kind: 'tool',
@@ -73,4 +87,10 @@ export function buildTimelineItems(messages: ChatMessage[]): TimelineItem[] {
     }
   }
   return items
+}
+
+/** 隐藏执行详情时同时隐藏工具调用与思考正文，运行状态和最终答复仍保留。 */
+export function filterExecutionDetails(items: TimelineItem[], hidden: boolean): TimelineItem[] {
+  if (!hidden) return items
+  return items.filter((item) => item.kind !== 'tool' && item.kind !== 'thinking')
 }

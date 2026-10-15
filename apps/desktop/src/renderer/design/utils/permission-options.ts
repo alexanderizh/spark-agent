@@ -65,7 +65,7 @@ export const SPARK_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
   {
     value: 'spark-auto',
     label: '自动审批',
-    description: '所有工具自动执行（显式 deny 规则仍生效）',
+    description: '自动执行读取、编辑与常规命令；高危命令会先做安全检查，需要时弹出确认',
     tone: 'auto',
   },
   {

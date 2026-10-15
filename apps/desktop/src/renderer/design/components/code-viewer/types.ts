@@ -10,8 +10,21 @@
 
 import type { PreviewFileType } from '../ClickableFilePath'
 
-/** 代码查看器视图模式：源码 / 本次改动 diff */
-export type CodeViewMode = 'source' | 'diff'
+/**
+ * 代码查看器视图模式：
+ *  - source  源码（Monaco 编辑器）
+ *  - preview 预览（内容区原地渲染 HTML/Markdown/图片/音视频/Office 渲染结果）
+ *  - split   分屏实时预览（左源码右预览，中间分隔条可拖；仅「可编辑 + 可预览」类型可用）
+ *  - diff    本次改动 diff
+ */
+export type CodeViewMode = 'source' | 'preview' | 'split' | 'diff'
+
+/**
+ * 跨文件视图偏好（sticky 开关）：用户在工具栏切到预览/分屏后，切换文件仍保持该偏好；
+ * 与文件能力不匹配时由渲染期收窄（不可预览 → 源码，只能看不能编的富媒体 → 预览），偏好本身不丢。
+ * diff 是上下文绑定视图（看某个文件的改动），不参与偏好，只走 tab 级覆盖。
+ */
+export type CodeViewPreference = 'source' | 'preview' | 'split'
 
 /** 文件变更类型（与 ChatInteractions.FileChangeSummaryItem.changeType 对齐） */
 export type CodeFileChangeType = 'create' | 'modify' | 'delete' | 'rename'
@@ -38,6 +51,14 @@ export interface OpenCodeFile {
   changeType?: CodeFileChangeType | undefined
   /** 当前 tab 若来自提交历史，则 diff 固定读取该提交的 patch。 */
   gitCommitHash?: string | undefined
+  /**
+   * 该文件 tab 的一次性视图覆盖（不承载跨文件偏好，偏好见 ChatView 的 viewPreference）：
+   *  - 'diff'：Git 面板/审查面板/提交历史等「看改动」入口写入，切走再切回仍停在 diff；
+   *  - 'preview'：右键「预览」等显式单次意图写入；
+   *  - undefined：跟随全局偏好（按文件能力收窄）。
+   * 用户在工具栏切换 source/preview/split 时会清掉覆盖（此后跟随偏好）；切到 diff 时写入覆盖。
+   */
+  viewMode?: 'diff' | 'preview' | undefined
 }
 
 /** 单文件加载状态 */

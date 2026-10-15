@@ -164,7 +164,7 @@ export function providerRowMatchesAdapter(
 }
 
 /** 从 LLM 文本提取 JSON（容忍 ```json 围栏与前后噪声）。 */
-function extractJsonText(raw: string): string | null {
+export function extractJsonText(raw: string): string | null {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
   if (fenced != null && fenced[1] != null) return fenced[1].trim()
   const start = raw.indexOf('{')
@@ -761,7 +761,7 @@ function classifyDispatchFailure(reason: string): 'timeout' | 'http' {
  * 确定性失败（重试也不会成功）：鉴权/权限/模型不存在/请求非法等 4xx。
  * 429 视为可能瞬时限流，保留一次重试（套餐权限类 429 重试虽白费，但通用上无法区分）。
  */
-function isDeterministicHttpFailure(reason: string): boolean {
+export function isDeterministicHttpFailure(reason: string): boolean {
   const m = /HTTP (4\d\d)/.exec(reason)
   if (m == null) return false
   const status = Number(m[1])
@@ -782,7 +782,7 @@ export function extractDispatchFailureDetail(reason: string): string {
   return httpStatus != null ? `HTTP ${httpStatus}：${detail}` : detail
 }
 
-function safeJsonParse(text: string): unknown {
+export function safeJsonParse(text: string): unknown {
   try {
     return JSON.parse(text)
   } catch {

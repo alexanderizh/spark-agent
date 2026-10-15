@@ -82,6 +82,46 @@ describe('StreamingErrorCard', () => {
     expect(container.querySelector('.runtime-diagnostic-retry')).toBeNull()
   })
 
+  it('offers dual smart-retry actions when continuation is available', () => {
+    const onContinue = vi.fn()
+    const onRetry = vi.fn()
+    act(() => {
+      root.render(
+        <StreamingErrorCard
+          code="HTTP_500"
+          title="Agent 执行失败"
+          message="上游服务不可用。"
+          level="error"
+          retryable
+          onContinue={onContinue}
+          onRetry={onRetry}
+        />,
+      )
+    })
+
+    // 主按钮「继续完成」+ 次按钮「重新开始」，不再出现单一「重新尝试」。
+    expect(container.textContent).toContain('继续完成')
+    expect(container.textContent).toContain('重新开始')
+    expect(container.textContent).not.toContain('重新尝试')
+
+    const continueButton = container.querySelector<HTMLButtonElement>(
+      '.runtime-diagnostic-retry',
+    )
+    const restartButton = container.querySelector<HTMLButtonElement>(
+      '.runtime-diagnostic-restart',
+    )
+    expect(continueButton).not.toBeNull()
+    expect(restartButton).not.toBeNull()
+
+    act(() => continueButton?.click())
+    expect(onContinue).toHaveBeenCalledOnce()
+    expect(onRetry).not.toHaveBeenCalled()
+
+    act(() => restartButton?.click())
+    expect(onRetry).toHaveBeenCalledOnce()
+    expect(onContinue).toHaveBeenCalledOnce()
+  })
+
   it('installs a missing Codex runtime in place and then retries the message', async () => {
     const onRetry = vi.fn()
     const invoke = vi

@@ -123,9 +123,12 @@ function ExecutorFailoverCard({ block }: { block: RuntimeSignalBlock }) {
 
 export function RuntimeSignalCard({
   block,
+  onContinue,
   onRetry,
 }: {
   block: RuntimeSignalBlock
+  /** 智能重试·继续完成：透传给通用诊断卡的双操作主按钮。 */
+  onContinue?: () => void
   onRetry?: () => void
 }) {
   if (block.signal === 'background_tasks') return <BackgroundTasksCard block={block} />
@@ -143,6 +146,7 @@ export function RuntimeSignalCard({
       {...(block.details != null ? { details: block.details } : {})}
       {...(block.origin != null ? { origin: block.origin } : {})}
       {...(block.occurrenceCount != null ? { occurrenceCount: block.occurrenceCount } : {})}
+      {...(onContinue != null ? { onContinue } : {})}
       {...(onRetry != null ? { onRetry } : {})}
     />
   )

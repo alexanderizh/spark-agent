@@ -667,6 +667,78 @@ body.cv-resizing {
   cursor: col-resize;
 }
 
+/* ── 分屏预览（cv-split：左源码右预览，中间分隔条可拖） ── */
+.cv-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.cv-split-editor {
+  position: relative;
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--cv-bg);
+}
+.cv-split-divider {
+  position: relative;
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  background: var(--cv-border);
+  z-index: 6;
+  touch-action: none;
+  transition: background 0.12s ease;
+
+  /* 命中区左右各扩 3px，6px 细条也容易命中 */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 -3px;
+  }
+
+  /* 中央抓手短竖条 */
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2px;
+    height: 28px;
+    border-radius: 1px;
+    transform: translate(-50%, -50%);
+    background: var(--cv-text-faint);
+    transition: background 0.12s ease;
+  }
+
+  &:hover,
+  &:active {
+    background: color-mix(in srgb, var(--cv-accent) 24%, var(--cv-border));
+
+    &::after {
+      background: var(--cv-accent);
+    }
+  }
+}
+.cv-split-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--cv-bg);
+}
+/* 拖动期间：全局 col-resize 光标 + 禁止选中文本；分隔条保持高亮 */
+body.cv-split-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+body.cv-split-resizing .cv-split-divider {
+  background: color-mix(in srgb, var(--cv-accent) 24%, var(--cv-border));
+
+  &::after {
+    background: var(--cv-accent);
+  }
+}
+
 /* ── 文件树（fe-*） ── */
 .fe-panel {
   display: flex;

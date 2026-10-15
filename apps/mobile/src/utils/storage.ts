@@ -11,7 +11,7 @@ export const StorageKeys = {
   refreshToken: `${PREFIX}refresh-token`,
   userId: `${PREFIX}user-id`,
   user: `${PREFIX}user`,
-  /** 聊天页是否隐藏工具调用记录（本地偏好，跨会话生效） */
+  /** 聊天页是否隐藏工具调用与思考记录（本地偏好，跨会话生效；复用历史键名） */
   chatHideToolEvents: `${PREFIX}chat-hide-tool-events`,
 } as const
 

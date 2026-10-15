@@ -30,7 +30,9 @@
 }
 
 /* 统一侧面板 tab 内嵌模式：宽度交给统一面板托管，填满内容区且不带独立边框/动画 */
-.file-preview-panel.is-tab {
+/* is-embedded（代码编辑器内容区预览）与 is-tab 同形态：填满宿主、无边框无动画 */
+.file-preview-panel.is-tab,
+.file-preview-panel.is-embedded {
   width: 100%;
   min-width: 0;
   max-width: none;

@@ -51,9 +51,22 @@ type Props = {
   workspaceRootPath?: string
   /**
    * 展示形态：'panel' = 独立右侧面板（自带宽度与拖拽把手）；
-   * 'tab' = 内嵌统一侧面板 tab（填满宿主容器，宽度由统一面板托管）。
+   * 'tab' = 内嵌统一侧面板 tab（填满宿主容器，宽度由统一面板托管）；
+   * 'embedded' = 嵌入代码编辑器内容区（填满 cv-body，不渲染头部/把手/ESC 关闭）。
    */
-  variant?: 'panel' | 'tab'
+  variant?: 'panel' | 'tab' | 'embedded'
+  /**
+   * 外部内容直传（编辑器分屏实时预览用）：传入时跳过磁盘读取，直接渲染该内容，
+   * 变化时按内容重新渲染（html 会重新登记沙箱文档）。仅文本类预览（markdown/html/svg）
+   * 有意义；undefined 表示按磁盘内容加载。
+   */
+  contentOverride?: string | undefined
+  /**
+   * 刷新令牌：变化时强制重读磁盘内容（如编辑器保存成功后传入自增值刷新整页预览）；
+   * html 预览额外据此重新登记沙箱文档并递增版本，iframe 整页重载（未保存直传内容同样生效）。
+   * 图片 / 音视频 / Office 由宿主以 key 重挂载本组件实现刷新，不经此 prop。
+   */
+  refreshToken?: number
   /** 在代码编辑器中打开（可选：仅可编辑文件显示「编辑」入口） */
   onEdit?: (() => void) | undefined
   /** 关闭面板回调 */
@@ -190,6 +203,8 @@ export function FilePreviewPanel({
   fileType,
   workspaceRootPath,
   variant = 'panel',
+  contentOverride,
+  refreshToken,
   onEdit,
   onClose,
 }: Props): ReactNode {
@@ -232,6 +247,15 @@ export function FilePreviewPanel({
       fileType === 'video'
     ) {
       // 图片 / Flyfish Viewer / 音视频预览不需要读取文本内容，直接用 URL/路径渲染。
+      // （svg 的分屏实时预览走独立 data URL 分支，不经过 content state。）
+      return
+    }
+
+    // 分屏实时预览：直接采用编辑器传入的未保存内容，跳过磁盘读取。
+    if (contentOverride !== undefined) {
+      setContent(contentOverride)
+      setLoading(false)
+      setError(null)
       return
     }
 
@@ -263,7 +287,7 @@ export function FilePreviewPanel({
     return () => {
       cancelled = true
     }
-  }, [fileType, readFile, resolvedFilePath])
+  }, [fileType, readFile, resolvedFilePath, contentOverride, refreshToken])
 
   // HTML 预览：文件内容登记为主进程沙箱文档（capability-asset://html-render），
   // iframe 用协议地址加载而非 srcdoc —— srcdoc 会继承 renderer CSP，内联脚本、
@@ -291,7 +315,10 @@ export function FilePreviewPanel({
       cancelled = true
       releaseHtmlRuntimeDoc(htmlDocToken)
     }
-  }, [content, fileType, htmlDocToken, resolvedFilePath])
+    // refreshToken 入依赖：手动刷新（令牌自增）时即使内容未变也重新登记文档并递增
+    // version，iframe 地址随之变化整页重载 —— 页面 JS 状态重置、外链资源重读，
+    // 这是「刷新」区别于「编辑实时更新」的核心语义。release→re-put 幂等（put 幂等覆盖）。
+  }, [content, fileType, htmlDocToken, resolvedFilePath, refreshToken])
 
   useEffect(() => {
     if (fileType !== 'universal' || isRemotePreviewUrl(resolvedFilePath)) return
@@ -318,8 +345,9 @@ export function FilePreviewPanel({
     }
   }, [fileType, readBinaryFile, resolvedFilePath])
 
-  // ESC 关闭
+  // ESC 关闭（embedded 变体嵌在编辑器内容区，关闭语义归编辑器所有，不监听）
   useEffect(() => {
+    if (variant === 'embedded') return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose()
@@ -327,7 +355,7 @@ export function FilePreviewPanel({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [onClose, variant])
 
   const { invoke: openFile } = useIpcInvoke('file:open')
 
@@ -434,10 +462,15 @@ export function FilePreviewPanel({
   )
 
   const fileName = filePath.split(/[\\/]/).pop() ?? filePath
+  // svg 属 image 类型但为 XML 文本：分屏实时预览时把未保存内容包装成 data URL 直接渲染
+  const svgLiveSrc =
+    fileType === 'image' && contentOverride !== undefined && filePath.toLowerCase().endsWith('.svg')
+      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(contentOverride)}`
+      : null
 
   return (
     <div
-      className={`file-preview-panel${variant === 'tab' ? ' is-tab' : ''}`}
+      className={`file-preview-panel${variant === 'tab' ? ' is-tab' : ''}${variant === 'embedded' ? ' is-embedded' : ''}`}
       style={{ '--file-preview-width': `${panelWidth}px` } as CSSProperties}
     >
       {variant === 'panel' && (
@@ -456,48 +489,50 @@ export function FilePreviewPanel({
           title="拖拽调整预览宽度"
         />
       )}
-      <div
-        className="file-preview-header"
-        onDoubleClick={(event) => {
-          if (event.target instanceof Element && event.target.closest('.file-preview-actions')) {
-            return
-          }
-          window.spark?.invoke('window:maximize', {}).catch(() => {})
-        }}
-      >
-        <div className="file-preview-title">
-          <span className="file-preview-icon">
-            <FileTypeIcon filePath={filePath} size={18} />
-          </span>
-          <span className="file-preview-name" title={filePath}>
-            {fileName}
-          </span>
-        </div>
-        <div className="file-preview-actions">
-          {onEdit != null && canOpenInEditor(filePath) && (
+      {variant !== 'embedded' && (
+        <div
+          className="file-preview-header"
+          onDoubleClick={(event) => {
+            if (event.target instanceof Element && event.target.closest('.file-preview-actions')) {
+              return
+            }
+            window.spark?.invoke('window:maximize', {}).catch(() => {})
+          }}
+        >
+          <div className="file-preview-title">
+            <span className="file-preview-icon">
+              <FileTypeIcon filePath={filePath} size={18} />
+            </span>
+            <span className="file-preview-name" title={filePath}>
+              {fileName}
+            </span>
+          </div>
+          <div className="file-preview-actions">
+            {onEdit != null && canOpenInEditor(filePath) && (
+              <button
+                aria-label="在代码编辑器中打开"
+                className="file-preview-action"
+                title="在代码编辑器中打开"
+                onClick={onEdit}
+              >
+                <Icons.Code size={14} />
+              </button>
+            )}
             <button
-              aria-label="在代码编辑器中打开"
+              aria-label="使用默认应用打开"
               className="file-preview-action"
-              title="在代码编辑器中打开"
-              onClick={onEdit}
+              disabled={openingExternal}
+              title="使用默认应用打开"
+              onClick={handleOpenExternal}
             >
-              <Icons.Code size={14} />
+              {openingExternal ? <Icons.Spinner size={14} /> : <Icons.ExternalLink size={14} />}
             </button>
-          )}
-          <button
-            aria-label="使用默认应用打开"
-            className="file-preview-action"
-            disabled={openingExternal}
-            title="使用默认应用打开"
-            onClick={handleOpenExternal}
-          >
-            {openingExternal ? <Icons.Spinner size={14} /> : <Icons.ExternalLink size={14} />}
-          </button>
-          <button className="file-preview-action" title="关闭" onClick={onClose}>
-            <Icons.X size={14} />
-          </button>
+            <button className="file-preview-action" title="关闭" onClick={onClose}>
+              <Icons.X size={14} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
       <div className="file-preview-content">
         {previewLoading && (
           <div className="file-preview-loading">
@@ -513,7 +548,7 @@ export function FilePreviewPanel({
         )}
         {!previewLoading && !previewError && fileType === 'image' && (
           <div className="file-preview-image">
-            <MarkdownImage src={resolvedFilePath} alt={fileName} />
+            <MarkdownImage src={svgLiveSrc ?? resolvedFilePath} alt={fileName} />
           </div>
         )}
         {!previewLoading && !previewError && fileType === 'audio' && (

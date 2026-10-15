@@ -24,7 +24,11 @@ import {
   filterUnseenEvents,
   type ChatTimeline,
 } from '../../utils/chat-reducer'
-import { buildTimelineItems, type TimelineItem } from '../../utils/chat-view'
+import {
+  buildTimelineItems,
+  filterExecutionDetails,
+  type TimelineItem,
+} from '../../utils/chat-view'
 import { formatRelativeTime } from '../../utils/format'
 import { getItem, setItem, StorageKeys } from '../../utils/storage'
 
@@ -100,8 +104,8 @@ interface ChatPageData {
   historyError: string
   /** 是否还有更早历史（false 或旧版桌面端缺省时顶部显示「已到最前面」仅当确认拉完） */
   hasMoreHistory: boolean
-  /** 隐藏工具调用记录（本地偏好，··· 菜单切换） */
-  hideToolRecords: boolean
+  /** 隐藏工具调用与思考记录（沿用旧存储键，兼容已有本地偏好） */
+  hideExecutionDetails: boolean
   /** 键盘弹起中（dock 安全区让位，避免与键盘高度叠加出缝） */
   keyboardOpen: boolean
   // ── 配置条与面板 ──
@@ -147,7 +151,7 @@ Page({
     historyLoaded: false,
     historyError: '',
     hasMoreHistory: false,
-    hideToolRecords: false,
+    hideExecutionDetails: false,
     keyboardOpen: false,
     chips: [] as ChipView[],
     panelShow: false,
@@ -183,6 +187,8 @@ Page({
   runtime: null as bridge.BridgeSessionRuntime | null,
   /** 本次进入会话期间发送过的附件（按消息文本索引，用户气泡下方渲染） */
   sentAttachmentsByText: {} as Record<string, bridge.BridgeAttachment[]>,
+  /** 用户主动展开的思考段落；流式重绘时保留展开状态。 */
+  expandedThinkingKeys: new Set<string>(),
   /** 命令目录原始数据（补全过滤用） */
   commandCatalog: [] as bridge.BridgeCommandItem[],
   /** 设备列表订阅取消函数（onShow 校验所选电脑在线状态 + 实时刷新） */
@@ -199,6 +205,7 @@ Page({
   historyGeneration: 0,
 
   onLoad(options: Record<string, string | undefined>) {
+    this.expandedThinkingKeys = new Set<string>()
     const deviceId = options.deviceId ?? ''
     if (!deviceId) {
       // 聊天必须继承项目层传入的电脑，缺少上下文时回到顶层重新选择。
@@ -216,7 +223,7 @@ Page({
       deviceId,
       title: options.title ? decodeURIComponent(options.title) : '对话',
       // 工具记录显隐是本地持久偏好，进入页面即生效
-      hideToolRecords: getItem<boolean>(StorageKeys.chatHideToolEvents) === true,
+      hideExecutionDetails: getItem<boolean>(StorageKeys.chatHideToolEvents) === true,
     })
     // presence 增量：所选电脑上下线时刷新顶部离线提示条
     this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.refreshDeviceOnline())
@@ -460,11 +467,10 @@ Page({
       this.flushTimer = 0
       const timeline = this.latestTimeline
       if (!timeline) return
-      const hideTool = this.data.hideToolRecords
-      const items = buildTimelineItems(timeline.messages)
-        // 隐藏工具记录：仅隐藏工具调用行；「思考中/执行工具」状态行保留，运行可见
-        .filter((item) => !(hideTool && item.kind === 'tool'))
-        .map((item) => this.decorateItem(item))
+      const items = filterExecutionDetails(
+        buildTimelineItems(timeline.messages),
+        this.data.hideExecutionDetails,
+      ).map((item) => this.decorateItem(item))
       this.setData({
         items,
         running: timeline.running,
@@ -482,6 +488,9 @@ Page({
 
   /** 用户气泡附件渲染：把发送时挂载的附件映射到对应文本的用户项上（预填 previewUrl） */
   decorateItem(item: TimelineItem): TimelineItem {
+    if (item.kind === 'thinking') {
+      return { ...item, expanded: this.expandedThinkingKeys.has(item.key) }
+    }
     if (item.kind !== 'user') return item
     const attachments = this.sentAttachmentsByText[item.text]
     if (attachments == null || attachments.length === 0) return item
@@ -491,6 +500,19 @@ Page({
       previewUrl: att.type === 'image' ? ((att as { localPath?: string }).localPath ?? '') : '',
     }))
     return { ...item, attachments: views } as TimelineItem
+  },
+
+  onThinkingToggle(e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { key: string }>) {
+    const key = e.currentTarget.dataset.key
+    if (typeof key !== 'string' || key.length === 0) return
+    if (this.expandedThinkingKeys.has(key)) this.expandedThinkingKeys.delete(key)
+    else this.expandedThinkingKeys.add(key)
+
+    const expanded = this.expandedThinkingKeys.has(key)
+    const items = this.data.items.map((item) =>
+      item.kind === 'thinking' && item.key === key ? { ...item, expanded } : item,
+    )
+    this.setData({ items })
   },
 
   scrollToBottom() {
@@ -1105,7 +1127,7 @@ Page({
         '重命名',
         '定时任务',
         '刷新配置',
-        this.data.hideToolRecords ? '显示工具记录' : '隐藏工具记录',
+        this.data.hideExecutionDetails ? '显示工具与思考记录' : '隐藏工具与思考记录',
         '删除会话',
       ],
       itemColor: '#1a1a1a',
@@ -1124,10 +1146,10 @@ Page({
 
   /** 隐藏/显示工具调用记录（本地持久化，立即重渲染） */
   onToggleToolRecords() {
-    const next = !this.data.hideToolRecords
-    this.setData({ hideToolRecords: next })
+    const next = !this.data.hideExecutionDetails
+    this.setData({ hideExecutionDetails: next })
     setItem(StorageKeys.chatHideToolEvents, next)
-    wx.showToast({ title: next ? '已隐藏工具记录' : '已显示工具记录', icon: 'none' })
+    wx.showToast({ title: next ? '已隐藏工具与思考记录' : '已显示工具与思考记录', icon: 'none' })
     if (this.latestTimeline != null) this.flushTimeline(true)
   },
 

@@ -170,7 +170,11 @@ export function QueuedTaskList({
               type="button"
               className="composer-queue-pause-action"
               disabled={disabled || !canRetry}
-              title={canRetry ? '使用当前模型重试失败消息' : '失败消息无法安全还原'}
+              title={
+                canRetry
+                  ? '智能重试：已有进度时从断点继续，无进度时重新执行'
+                  : '失败消息无法安全还原'
+              }
               onClick={onRetry}
             >
               {recovering === 'retry' ? '重试中…' : '重试'}

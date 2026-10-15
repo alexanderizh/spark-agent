@@ -83,13 +83,24 @@
             </view>
           </view>
 
-          <!-- 显示桌面端实际发出的思考事件；delta 到达时在同一段内增量追加 -->
+          <!-- 思考内容默认折叠；仍按桌面端事件逐段增量更新，点击标题可展开 -->
           <view wx:elif="{{item.kind === 'thinking'}}" class="msg-row msg-row--thinking">
-            <view class="thinking-heading row gap-8">
-              <view class="thinking-mark"></view>
-              <text>思考过程</text>
+            <view
+              class="thinking-toggle row"
+              data-key="{{item.key}}"
+              hover-class="hover-dim"
+              bindtap="onThinkingToggle"
+            >
+              <view class="thinking-heading row gap-8">
+                <view class="thinking-mark"></view>
+                <text>思考过程</text>
+              </view>
+              <view class="thinking-action row gap-8">
+                <text>{{item.expanded ? '收起' : '展开'}}</text>
+                <view class="icon icon-chevron-down thinking-chevron {{item.expanded ? 'thinking-chevron--expanded' : ''}}"></view>
+              </view>
             </view>
-            <text class="thinking-content" user-select>{{item.text}}</text>
+            <text wx:if="{{item.expanded}}" class="thinking-content" user-select>{{item.text}}</text>
           </view>
 
           <!-- 工具调用行（折叠样式） -->

@@ -368,6 +368,8 @@
   min-width: 0;
   margin: 0;
   padding: 0;
+  /* WeChat's native slider groove sits above its layout-box center. Align its track with the row text. */
+  transform: translateY(14rpx);
 }
 
 .home-reasoning-value {

@@ -124,6 +124,7 @@ export function resolveWikiMountPlan(helpDisclosure: boolean): WikiMountPlan {
 export const WIKI_L0_PROMPT = [
   'wiki_* = 可检索的知识库（空间/页面/双链）。',
   '仅在自动注入的记忆摘要不足以回答、或需要沉淀/复用成篇知识时使用。',
+  '遇到经验证且可复用的排查结论、踩坑修复经验或开发流程，可整理并提交知识库写入；相关任务也可以检索知识库内容提供帮助',
   '取用顺序：wiki_list_spaces → wiki_search（拿 id + 摘要）→ 只在确需全文时 wiki_read(id)。',
   '禁止凭标题臆测内容；不要一次读多页；读完即总结，避免重复读取。',
 ].join('\n')

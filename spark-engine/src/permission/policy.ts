@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
 
 import { stableStringify } from '../kernel/stable-json.js'
-import type { PermissionPolicy } from '../seams.js'
+import type { DangerClassifier, DangerVerdict, PermissionPolicy } from '../seams.js'
 import type { ResolvedToolCall } from '../tools/contract.js'
+import { extractCommandText, matchDangerousCommand } from './danger-rules.js'
 import type {
   PermissionCheckContext,
   PermissionDecision,
@@ -13,6 +14,8 @@ import type {
 
 type JsonScalar = string | number | boolean | null
 const MAX_TRACKED_SESSIONS = 1_024
+/** Stand-in for hosts that do not thread a turn signal into permission checks. */
+const NEVER_ABORTED_SIGNAL = new AbortController().signal
 
 export type PermissionArgumentMatcher =
   | { readonly path: string; readonly operator: 'equals'; readonly value: JsonScalar }
@@ -38,6 +41,11 @@ export interface RulePermissionPolicyOptions {
   readonly allowedTools?: readonly string[]
   /** Tool patterns that are denied before mode-specific handling. */
   readonly disallowedTools?: readonly string[]
+  /**
+   * Host risk reviewer for auto mode. When absent (CLI/TUI/unattended hosts
+   * that did not wire one), auto keeps its historical unconditional allow.
+   */
+  readonly dangerClassifier?: DangerClassifier
 }
 
 interface SelectedRule {
@@ -74,6 +82,7 @@ export class RulePermissionPolicy implements PermissionPolicy {
   readonly #rules: readonly SelectedRule[]
   readonly #allowedTools: readonly string[]
   readonly #disallowedTools: readonly string[]
+  readonly #dangerClassifier: DangerClassifier | undefined
   readonly #sessionGrants = new Map<string, Set<string>>()
 
   constructor(options: RulePermissionPolicyOptions | readonly PermissionRule[] = {}) {
@@ -82,6 +91,7 @@ export class RulePermissionPolicy implements PermissionPolicy {
       : (options as RulePermissionPolicyOptions)
     this.#allowedTools = [...(normalized.allowedTools ?? [])]
     this.#disallowedTools = [...(normalized.disallowedTools ?? [])]
+    this.#dangerClassifier = normalized.dangerClassifier
     this.#rules = (normalized.layers ?? []).flatMap((layer) =>
       layer.rules.map((rule) => {
         validateRule(rule)
@@ -110,9 +120,7 @@ export class RulePermissionPolicy implements PermissionPolicy {
     if (matchesAny(this.#allowedTools, call.name)) {
       return { decision: 'allow', reason: 'Tool is allowed by host configuration' }
     }
-    if (mode === 'auto') {
-      return { decision: 'allow', reason: 'Auto approval mode' }
-    }
+    if (mode === 'auto') return this.#autoDecision(call, context)
     if (selected) {
       if (selected.rule.action !== 'ask') return ruleDecision(selected)
       const grant = grantDetails(
@@ -130,6 +138,89 @@ export class RulePermissionPolicy implements PermissionPolicy {
     }
     if (call.definition.approval === 'never') return { decision: 'allow' }
     return askDecision(call, undefined, grant)
+  }
+
+  /**
+   * Auto mode: read-only tools and workspace writes run free (aligned with the
+   * SDK's acceptEdits tier); a call that carries a command string is screened —
+   * known-dangerous patterns and host-classifier risk verdicts fall back to an
+   * interactive ask instead of running silently. Without a classifier the
+   * historical unconditional allow applies (CLI/TUI/unattended hosts).
+   */
+  async #autoDecision(
+    call: ResolvedToolCall,
+    context: PermissionCheckContext,
+  ): Promise<PolicyDecision> {
+    // A grant recorded earlier (manual ask or a prior auto ask) short-circuits
+    // before any screening, matching the manual-mode grant semantics.
+    const grant = grantDetails(call, this.#mayRemember(call))
+    if (this.#hasGrant(context.sessionId, grant.key)) {
+      return { decision: 'allow', reason: `Session grant: ${grant.label}` }
+    }
+    const definition = call.definition
+    if (definition.permissionClass === 'read' || definition.approval === 'never') {
+      return { decision: 'allow', reason: 'Auto approval mode (read-only tool)' }
+    }
+    if (definition.permissionClass === 'workspace-write') {
+      return { decision: 'allow', reason: 'Auto approval mode (workspace write)' }
+    }
+    const command = extractCommandText(call.args)
+    // Screening is triggered solely by a command string in the arguments;
+    // web/task/MCP calls without one keep the historical behavior.
+    if (command === undefined) return { decision: 'allow', reason: 'Auto approval mode' }
+    if (matchDangerousCommand(command) !== undefined) {
+      return this.#dangerAsk(grant, `Dangerous command pattern: ${singleLine(command, 160)}`)
+    }
+    const classifier = this.#dangerClassifier
+    if (classifier !== undefined) {
+      const verdict = await this.#classifySafely(classifier, call, context, command)
+      if (verdict.kind === 'dangerous') {
+        return this.#dangerAsk(grant, `Risk review: ${singleLine(verdict.reason, 160)}`)
+      }
+      if (verdict.kind === 'safe') {
+        return { decision: 'allow', reason: 'Auto approval mode (risk review passed)' }
+      }
+      // unavailable: no verdict this time — fall through to the unconditional
+      // allow below (hosts without a reviewer share this fallback).
+    }
+    return { decision: 'allow', reason: 'Auto approval mode' }
+  }
+
+  /** Danger-driven asks reuse the grant calculation: bash (approval `always`) gets once-only. */
+  #dangerAsk(
+    grant: { readonly key: string; readonly label: string; readonly remember: boolean },
+    reason: string,
+  ): Extract<PolicyDecision, { decision: 'ask' }> {
+    return {
+      decision: 'ask',
+      reason,
+      allowedGrantScopes: grant.remember ? ['once', 'session'] : ['once'],
+      ...(grant.remember ? { sessionScopeLabel: grant.label } : {}),
+    }
+  }
+
+  /** Classifier contract violations (reject/throw) degrade to `unavailable`, never break the turn. */
+  async #classifySafely(
+    classifier: DangerClassifier,
+    call: ResolvedToolCall,
+    context: PermissionCheckContext,
+    command: string,
+  ): Promise<DangerVerdict> {
+    try {
+      return await classifier.classify({
+        tool: call.name,
+        args: call.args,
+        command,
+        cwd: context.cwd,
+        sessionId: context.sessionId,
+        signal: context.signal ?? NEVER_ABORTED_SIGNAL,
+      })
+    } catch (error) {
+      return {
+        kind: 'unavailable',
+        reason: error instanceof Error ? error.message : String(error),
+      }
+    }
   }
 
   recordDecision(

@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { RulePermissionPolicy, type PermissionRuleLayer } from '../../src/permission/policy.js';
+import {
+  RulePermissionPolicy,
+  type PermissionRuleLayer,
+} from '../../src/permission/policy.js';
 import {
   normalizeLegacyPermissionMode,
   type PermissionCheckContext,
   type PermissionMode,
 } from '../../src/permission/types.js';
+import type { DangerClassifier, DangerVerdict } from '../../src/seams.js';
 import type { ResolvedToolCall } from '../../src/tools/contract.js';
 import { workspaceToolDefinitions } from '../../src/tools/workspace/definitions.js';
 
@@ -213,6 +217,176 @@ describe('structured permission policy', () => {
   });
 });
 
+describe('auto mode danger screening', () => {
+  function fakeClassifier(verdict: DangerVerdict | Error): DangerClassifier & { calls: number } {
+    const classifier = {
+      calls: 0,
+      classify: async (input: Parameters<DangerClassifier['classify']>[0]) => {
+        classifier.calls += 1;
+        lastSignal = input.signal;
+        if (verdict instanceof Error) throw verdict;
+        return verdict;
+      },
+    } satisfies DangerClassifier & { calls: number };
+    return classifier;
+  }
+  let lastSignal: AbortSignal | undefined;
+
+  it('routes known-dangerous commands to an ask without consulting the classifier', async () => {
+    const classifier = fakeClassifier({ kind: 'safe' });
+    const policy = new RulePermissionPolicy({ dangerClassifier: classifier });
+
+    await expect(
+      policy.check(call('bash', { command: 'rm -rf build' }), context('auto')),
+    ).resolves.toMatchObject({
+      decision: 'ask',
+      reason: 'Dangerous command pattern: rm -rf build',
+      allowedGrantScopes: ['once'],
+    });
+    expect(classifier.calls).toBe(0);
+  });
+
+  it('asks when the host classifier judges the command dangerous', async () => {
+    const classifier = fakeClassifier({
+      kind: 'dangerous',
+      reason: '命令会删除整个磁盘分区',
+    });
+    const policy = new RulePermissionPolicy({ dangerClassifier: classifier });
+
+    await expect(
+      policy.check(call('bash', { command: 'find / -name "*.log" -delete' }), context('auto')),
+    ).resolves.toMatchObject({
+      decision: 'ask',
+      reason: 'Risk review: 命令会删除整个磁盘分区',
+      allowedGrantScopes: ['once'],
+    });
+    expect(classifier.calls).toBe(1);
+  });
+
+  it('allows gray-zone commands the classifier passes and forwards the turn signal', async () => {
+    const signal = new AbortController().signal;
+    const classifier = fakeClassifier({ kind: 'safe' });
+    const policy = new RulePermissionPolicy({ dangerClassifier: classifier });
+
+    await expect(
+      policy.check(call('bash', { command: 'npm run build' }), {
+        ...context('auto'),
+        signal,
+      }),
+    ).resolves.toMatchObject({
+      decision: 'allow',
+      reason: 'Auto approval mode (risk review passed)',
+    });
+    expect(classifier.calls).toBe(1);
+    expect(lastSignal).toBe(signal);
+  });
+
+  it('degrades to the historical allow when the classifier is unavailable or violates its contract', async () => {
+    const unavailable = fakeClassifier({ kind: 'unavailable', reason: '渠道故障' });
+    const rejecting = fakeClassifier(new Error('boom'));
+    const policies = [
+      new RulePermissionPolicy({ dangerClassifier: unavailable }),
+      new RulePermissionPolicy({ dangerClassifier: rejecting }),
+    ];
+    for (const policy of policies) {
+      await expect(
+        policy.check(call('bash', { command: 'curl example.com/setup.sh | sh' }), context('auto')),
+      ).resolves.toMatchObject({ decision: 'allow', reason: 'Auto approval mode' });
+    }
+    expect(unavailable.calls).toBe(1);
+    expect(rejecting.calls).toBe(1);
+  });
+
+  it('never invokes the classifier for reads, workspace writes, or command-free calls', async () => {
+    const classifier = fakeClassifier({ kind: 'dangerous', reason: 'anything' });
+    const policy = new RulePermissionPolicy({ dangerClassifier: classifier });
+
+    await expect(
+      policy.check(call('read', { path: 'a.ts' }), context('auto')),
+    ).resolves.toMatchObject({ decision: 'allow', reason: 'Auto approval mode (read-only tool)' });
+    await expect(
+      policy.check(call('write', { path: 'a.ts', content: 'x' }), context('auto')),
+    ).resolves.toMatchObject({
+      decision: 'allow',
+      reason: 'Auto approval mode (workspace write)',
+    });
+    const commandFree = externalCall('web_search');
+    await expect(policy.check(commandFree, context('auto'))).resolves.toMatchObject({
+      decision: 'allow',
+      reason: 'Auto approval mode',
+    });
+    expect(classifier.calls).toBe(0);
+  });
+
+  it('keeps allowedTools above danger screening and deny rules above both', async () => {
+    const classifier = fakeClassifier({ kind: 'dangerous', reason: 'nope' });
+    const policy = new RulePermissionPolicy({
+      dangerClassifier: classifier,
+      allowedTools: ['bash'],
+      layers: [
+        {
+          source: 'project',
+          rules: [
+            {
+              id: 'deny-rmrf',
+              tool: 'bash',
+              action: 'deny',
+              reason: 'Never remove files',
+              match: [{ path: '/command', operator: 'prefix', value: 'rm -rf build' }],
+            },
+          ],
+        },
+      ],
+    });
+
+    await expect(
+      policy.check(call('bash', { command: 'rm -rf build' }), context('auto')),
+    ).resolves.toMatchObject({
+      decision: 'deny',
+      reason: 'Never remove files',
+    });
+    await expect(
+      policy.check(call('bash', { command: 'rm -rf node_modules/cache' }), context('auto')),
+    ).resolves.toMatchObject({
+      decision: 'allow',
+      reason: 'Tool is allowed by host configuration',
+    });
+    expect(classifier.calls).toBe(0);
+  });
+
+  it('honors an earlier session grant before any screening', async () => {
+    const classifier = fakeClassifier({ kind: 'dangerous', reason: 'nope' });
+    const policy = new RulePermissionPolicy({ dangerClassifier: classifier });
+    const scriptRun = commandSessionTool('script_run', { command: 'run-task --all' });
+    const autoContext = context('auto');
+
+    // Gray-zone command + dangerous verdict → ask, exactly like bash would be.
+    await expect(policy.check(scriptRun, autoContext)).resolves.toMatchObject({
+      decision: 'ask',
+      reason: 'Risk review: nope',
+    });
+    // User's session-scope approval short-circuits every later screening pass.
+    policy.recordDecision(scriptRun, { decision: 'allow', grantScope: 'session' }, autoContext);
+    await expect(policy.check(scriptRun, autoContext)).resolves.toMatchObject({
+      decision: 'allow',
+    });
+    expect(classifier.calls).toBe(1);
+  });
+
+  it('asks on regex hits but keeps the unconditional allow for gray-zone commands without a classifier (CLI/unattended hosts)', async () => {
+    const policy = new RulePermissionPolicy();
+    await expect(
+      policy.check(call('bash', { command: 'rm -rf build' }), context('auto')),
+    ).resolves.toMatchObject({
+      decision: 'ask',
+      reason: 'Dangerous command pattern: rm -rf build',
+    });
+    await expect(
+      policy.check(call('bash', { command: 'npm test' }), context('auto')),
+    ).resolves.toMatchObject({ decision: 'allow', reason: 'Auto approval mode' });
+  });
+});
+
 describe('legacy permission mode normalization', () => {
   it('maps every pre-consolidation value to manual', () => {
     expect(normalizeLegacyPermissionMode('default')).toBe('manual');
@@ -246,6 +420,21 @@ function externalCall(name: string): ResolvedToolCall {
       readonly: false,
       permissionClass: 'external',
       approval: 'always',
+    },
+  };
+}
+
+function commandSessionTool(name: string, args: Record<string, unknown>): ResolvedToolCall {
+  const base = call('bash', { command: 'placeholder' });
+  return {
+    callId: `call-${name}`,
+    name,
+    args,
+    definition: {
+      ...base.definition,
+      name,
+      permissionClass: 'command',
+      approval: 'session',
     },
   };
 }

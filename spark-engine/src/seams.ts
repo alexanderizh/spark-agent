@@ -144,6 +144,36 @@ export interface Approver {
   ask(request: PermissionRequest, signal: AbortSignal): Promise<PermissionDecision>
 }
 
+/** Verdict of a danger review for a tool call that carries a command string. */
+export type DangerVerdict =
+  | { readonly kind: 'safe' }
+  | { readonly kind: 'dangerous'; readonly reason: string }
+  | { readonly kind: 'unavailable'; readonly reason: string }
+
+export interface DangerClassifierInput {
+  /** Tool name being invoked (e.g. `bash`). */
+  readonly tool: string
+  /** Raw tool arguments, unchanged. */
+  readonly args: unknown
+  /** Extracted command string the review is about. */
+  readonly command: string
+  readonly cwd: string
+  readonly sessionId: string
+  /** Turn cancellation signal: aborted reviews need no verdict. */
+  readonly signal: AbortSignal
+}
+
+/**
+ * Optional host-provided risk reviewer consulted by the auto permission mode
+ * for commands that are not obviously safe (see `RulePermissionPolicy`).
+ * Strong contract: implementations must catch all of their own errors and
+ * return `{ kind: 'unavailable' }`; the policy still wraps `classify` in a
+ * try/catch so a contract violation degrades, never breaks the turn.
+ */
+export interface DangerClassifier {
+  classify(input: DangerClassifierInput): Promise<DangerVerdict>
+}
+
 export interface ProjectorConfig {
   readonly cwd: string
   readonly warning?: string

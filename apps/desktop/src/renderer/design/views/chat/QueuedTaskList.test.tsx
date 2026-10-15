@@ -118,6 +118,10 @@ describe('QueuedTaskList', () => {
 
     expect(container.textContent).toContain('当前回复出错，队列已暂停（内容未丢失）')
     const actions = container.querySelectorAll<HTMLButtonElement>('.composer-queue-pause-action')
+    // 智能重试语义：已有进度时从断点继续，无进度时重新执行。
+    expect(actions[0]?.getAttribute('title')).toBe(
+      '智能重试：已有进度时从断点继续，无进度时重新执行',
+    )
     act(() => actions[0]?.click())
     act(() => actions[1]?.click())
     expect(onRetry).toHaveBeenCalledOnce()

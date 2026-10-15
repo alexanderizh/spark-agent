@@ -20,7 +20,7 @@ import { LocalSkillCatalog } from './skills/catalog.js'
 import { skillToolDefinitions, SkillToolExecutor } from './skills/tools.js'
 import type { LlmService } from './seams.js'
 import type { ToolDefinition } from './tools/contract.js'
-import type { AgentEnv, Approver, ContextCompactionPolicy } from './seams.js'
+import type { AgentEnv, Approver, ContextCompactionPolicy, DangerClassifier } from './seams.js'
 import { FakeApprover } from './permission/approver.js'
 import { RulePermissionPolicy, wildcardMatches, type PermissionRule } from './permission/policy.js'
 import type { PermissionDecision } from './permission/types.js'
@@ -47,6 +47,8 @@ export interface DefaultEnvOptions {
   readonly llm: LlmService
   readonly permissionRules?: readonly PermissionRule[]
   readonly approver?: Approver
+  /** Host risk reviewer consulted in auto mode for command-carrying calls. */
+  readonly dangerClassifier?: DangerClassifier
   readonly systemPrompt?: string
   readonly skillSystemPrompt?: string
   /** Enables local `skills_list` / `skills_load` for CLI/TUI hosts. */
@@ -240,6 +242,7 @@ function buildDefaultEnv(options: DefaultEnvOptions, mcp?: McpToolManager): Agen
             : [{ source: 'host', rules: options.permissionRules }],
         ...(options.allowedTools === undefined ? {} : { allowedTools: options.allowedTools }),
         ...(disallowedTools.length === 0 ? {} : { disallowedTools }),
+        ...(options.dangerClassifier === undefined ? {} : { dangerClassifier: options.dangerClassifier }),
       }),
       approver: options.approver ?? new FakeApprover(),
     },

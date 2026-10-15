@@ -286,6 +286,124 @@ describe('SparkEngineExecutor', () => {
     expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
   })
 
+  it('spark-auto 危险筛查：正则命中的命令弹审批卡，放行后执行成功', async () => {
+    const script = [
+      toolCall('c-1', 'bash', { command: 'rm -rf build' }),
+      text('已清理 build 目录。'),
+    ]
+    setSparkLlmFactoryForTests(scriptFactory(script))
+    const approvals: Array<{ tool: string; input: Record<string, unknown> }> = []
+    const executor = new SparkEngineExecutor()
+    const events = collectEvents(executor)
+    await executor.executeTurn(
+      'sess-1',
+      'turn-danger-regex',
+      '清理 build',
+      makeConfig({
+        permissionMode: 'spark-auto',
+        approvalCallback: async (_sid, tool, input) => {
+          approvals.push({ tool, input })
+          return { allowed: true, scope: 'once' }
+        },
+      }),
+    )
+
+    // rm -rf 命中引擎正则 → ask（不走分类器）→ 审批桥放行 → 执行。
+    expect(approvals).toEqual([{ tool: 'bash', input: { command: 'rm -rf build' } }])
+    const toolResults = events.filter((e) => e.type === 'tool_result')
+    expect(toolResults[0]).toMatchObject({ status: 'success' })
+    expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+  })
+
+  it('spark-auto 危险筛查：分类器判危险的灰区命令弹卡，拒绝后 turn 正常完成', async () => {
+    const script = [
+      toolCall('c-2', 'bash', { command: 'find / -name "*.log" -delete' }),
+      text('好的，我不删除这些文件。'),
+    ]
+    setSparkLlmFactoryForTests(scriptFactory(script))
+    const approvals: Array<{ tool: string }> = []
+    const executor = new SparkEngineExecutor()
+    const events = collectEvents(executor)
+    await executor.executeTurn(
+      'sess-1',
+      'turn-danger-model',
+      '清理日志',
+      makeConfig({
+        permissionMode: 'spark-auto',
+        dangerClassifier: {
+          classify: async () => ({ kind: 'dangerous', reason: '会递归删除系统盘日志' }),
+        },
+        approvalCallback: async (_sid, tool) => {
+          approvals.push({ tool })
+          return false
+        },
+      }),
+    )
+
+    // 引擎对灰区命令 ask（模型理由只进引擎账本，宿主回调协议无 reason 字段）。
+    expect(approvals).toEqual([{ tool: 'bash' }])
+    const toolResults = events.filter((e) => e.type === 'tool_result')
+    expect(toolResults[0]).toMatchObject({ status: 'error' })
+    expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+  })
+
+  it('spark-auto 危险筛查：分类器判安全的灰区命令零审批直通', async () => {
+    const script = [
+      toolCall('c-3', 'bash', { command: 'node --version' }),
+      text('当前 node 版本已确认。'),
+    ]
+    setSparkLlmFactoryForTests(scriptFactory(script))
+    let approvalCalls = 0
+    const executor = new SparkEngineExecutor()
+    const events = collectEvents(executor)
+    await executor.executeTurn(
+      'sess-1',
+      'turn-safe-model',
+      '查看 node 版本',
+      makeConfig({
+        permissionMode: 'spark-auto',
+        dangerClassifier: { classify: async () => ({ kind: 'safe' }) },
+        approvalCallback: async () => {
+          approvalCalls += 1
+          return true
+        },
+      }),
+    )
+
+    expect(approvalCalls).toBe(0)
+    const toolResults = events.filter((e) => e.type === 'tool_result')
+    expect(toolResults[0]).toMatchObject({ status: 'success' })
+    expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+  })
+
+  it('spark-auto 无分类器（CLI/unattended）：灰区命令维持零审批直通', async () => {
+    const script = [
+      toolCall('c-4', 'bash', { command: 'node --version' }),
+      text('完成。'),
+    ]
+    setSparkLlmFactoryForTests(scriptFactory(script))
+    let approvalCalls = 0
+    const executor = new SparkEngineExecutor()
+    const events = collectEvents(executor)
+    await executor.executeTurn(
+      'sess-1',
+      'turn-no-classifier',
+      '查看 node 版本',
+      makeConfig({
+        permissionMode: 'spark-auto',
+        approvalCallback: async () => {
+          approvalCalls += 1
+          return true
+        },
+      }),
+    )
+
+    expect(approvalCalls).toBe(0)
+    const toolResults = events.filter((e) => e.type === 'tool_result')
+    expect(toolResults[0]).toMatchObject({ status: 'success' })
+    expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+  })
+
   it('openSession 模式对齐：续轮 bypass 免审批直写（账本 default 不残留）', async () => {
     // turn 1：default + 审批放行 write，账本记录 default 模式
     setSparkLlmFactoryForTests(

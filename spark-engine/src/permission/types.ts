@@ -15,6 +15,8 @@ export interface PermissionCheckContext {
   readonly sessionId: string;
   readonly cwd: string;
   readonly mode: PermissionMode;
+  /** Turn cancellation signal, forwarded to host danger review in auto mode. */
+  readonly signal?: AbortSignal;
 }
 
 export interface PermissionRuleReference {

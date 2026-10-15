@@ -8,7 +8,7 @@ import type {
   MessageAttachment,
   SessionRuntimePatch,
 } from './ChatComposerTypes'
-import { buildTurnRetryPayload } from './ChatErrorRetry'
+import { buildErrorContinuePayload, buildTurnRetryPayload } from './ChatErrorRetry'
 
 type RetryDispatchPayload = {
   text: string
@@ -76,10 +76,19 @@ export function useQueueErrorRecovery({
     () => buildTurnRetryPayload(messages, pause?.failedTurnId),
     [messages, pause?.failedTurnId],
   )
+  // 智能重试：失败轮已有实质产出（文本/工具调用/文件变更）时优先发继续指令，
+  // 让模型基于会话历史中的半截产出从中断处续跑；无产出回落原消息重发。
+  const continuePayload = useMemo(
+    () => buildErrorContinuePayload(messages, pause?.failedTurnId),
+    [messages, pause?.failedTurnId],
+  )
 
   const retry = async (): Promise<void> => {
     if (sessionId == null || pause == null || recovering != null) return
-    if (retryPayload == null) {
+    // 继续指令与原消息重发共用同一条 dispatchRetry 通道（resumePausedQueue 在
+    // 主进程侧统一按队首插入），失败轮续跑恒先于其后排队的消息。
+    const payload = continuePayload ?? retryPayload
+    if (payload == null) {
       showWarning('失败消息无法安全还原，请选择“跳过继续”或手动发送。')
       return
     }
@@ -87,9 +96,9 @@ export function useQueueErrorRecovery({
     setRecoveryTask(task)
     try {
       await dispatchRetry({
-        text: retryPayload.text,
-        attachments: toRetryAttachments(retryPayload.attachments),
-        sessionReferences: retryPayload.sessionReferences ?? [],
+        text: payload.text,
+        attachments: toRetryAttachments(payload.attachments),
+        sessionReferences: payload.sessionReferences ?? [],
       })
       await refreshQueueState(sessionId)
     } catch (error) {
@@ -120,7 +129,9 @@ export function useQueueErrorRecovery({
   }
 
   return {
-    canRetry: retryPayload != null,
+    // 继续指令与原消息重发任一可用即可重试（放宽：原消息不可还原但已有产出时，
+    // 继续指令仍能安全续跑）。
+    canRetry: continuePayload != null || retryPayload != null,
     recovering,
     retry,
     resume,

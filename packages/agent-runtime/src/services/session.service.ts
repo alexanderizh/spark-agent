@@ -574,6 +574,7 @@ import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
 import { ModelService } from './model.service.js'
 import { AutoRouterService, type AutoRouterRouteResult } from './auto-router.service.js'
+import { createSparkDangerClassifierFromComplete } from './spark-danger-classifier.service.js'
 import { EmbeddingService } from './memory/embedding.service.js'
 import { MemorySearchService } from './memory/memory-search.service.js'
 import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
@@ -5580,6 +5581,19 @@ export class SessionService {
         this.mcpService.getConnectedToolCatalogs(),
       )
       runtimeMetrics.pauseMcpConfiguration()
+      // spark-auto 危险性评估：仅交互会话注入宿主 LLM 分类器（灰区命令判危险 →
+      // 引擎 ask → approvalCallback 弹卡）。unattended 定时任务无人值守不弹卡，
+      // 不注入，维持引擎「无 classifier 兜底放行」语义。
+      const settingsRepoForDanger = new SettingsRepository(this.db)
+      const dangerModelService =
+        this.onApproval != null && automation.unattended !== true
+          ? new ModelService(
+              new ModelProfileRepository(this.db),
+              new ProviderProfileRepository(this.db),
+              (category: string, key: string) => settingsRepoForDanger.get(category, key),
+              () => this.activeChatModelBySession.get(sessionId) ?? null,
+            )
+          : null
       const sparkConfig: SDKExecutorConfig = {
         apiKey,
         model,
@@ -5633,6 +5647,14 @@ export class SessionService {
             undeliveredCallIds: evidence.undeliveredCallIds,
           })
         },
+        ...(dangerModelService != null
+          ? {
+              dangerClassifier: createSparkDangerClassifierFromComplete({
+                complete: (prompt, opts) => dangerModelService.complete(prompt, opts),
+                sessionId,
+              }),
+            }
+          : {}),
         ...(this.onApproval != null
           ? {
               // 审批桥（M3）：与 claude 分支同构——弹卡等待前后切换 waiting_permission
@@ -13626,6 +13648,22 @@ export class SessionService {
     const goal = repo.getCurrent(sessionId)
     if (goal == null || goal.status !== 'active') return
     if (this.hasActiveSessionExecution(sessionId)) return
+    // [queue-pause] 错误暂停闸门（与 continueGoalOrQueue 同一约定）：暂停期间既不泵
+    // 迭代也不排空队列。startGoalLoop 有绕过 continueGoalOrQueue 的直连调用方
+    //（重启 goal 自动恢复、恢复委托 resumeGoalLoop、goal CRUD），若不设闸，
+    // drainQueuedUserTurnsForGoalIteration 会把暂停中的排队消息静默注入迭代 prompt，
+    // 绕过用户「重试/跳过」决策，暂停态也随队列被排空而失效。暂停解除后由
+    // continueGoalOrQueue → startGoalLoop 自然恢复泵送，goal 不丢失。
+    if (
+      this.getQueueErrorPauseGate().isBlocked(
+        sessionId,
+        this.pendingTurns.get(sessionId)?.length ?? 0,
+      )
+    ) {
+      log.info('[queue-pause] goal loop pump deferred: queue error pause active', { sessionId })
+      this.emitQueueChanged(sessionId)
+      return
+    }
     // 预算周期起点（创建或最近一次「继续」）在一次泵运行内只解析一次：停车判定与迭代
     // prompt 的轮次口径必须同源，否则两者会给出互相矛盾的轮次。
     const cycleStartMs = this.getGoalBudgetCycleStartMs(sessionId, goal)

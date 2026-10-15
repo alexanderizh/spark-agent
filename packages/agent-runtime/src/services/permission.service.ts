@@ -216,6 +216,26 @@ function isMcpToolName(toolName: string): boolean {
   return toolName.startsWith('mcp__') || toolName.startsWith('mcp:')
 }
 
+/**
+ * 高危命令正则表（宿主/desktop 审批规则引擎权威版本）。
+ *
+ * spark-engine 侧持有一份镜像（`spark-engine/src/permission/danger-rules.ts`，
+ * boundary-check 禁止引擎依赖 workspace 包）；agent-runtime 的漂移守卫单测
+ * （`spark-danger-rules-drift.test.ts`）断言两侧逐条 `.source` 相等。
+ * **修改此数组必须同步引擎镜像，否则漂移守卫测试失败。**
+ */
+export const HOST_DANGEROUS_COMMAND_PATTERNS: readonly RegExp[] = [
+  /\brm\s+(-[^\s]*r[^\s]*f|-[^\s]*f[^\s]*r)\b/,
+  /\bgit\s+clean\b.*\s-[^\s]*[fx]/,
+  /\bgit\s+reset\s+--hard\b/,
+  /\bsudo\b/,
+  /\bchmod\s+-r\b/,
+  /\bchown\s+-r\b/,
+  /\bdd\s+if=/,
+  /\bmkfs(?:\.\w+)?\b/,
+  /:\s*\(\)\s*\{\s*:\|:&\s*\};\s*:/,
+]
+
 function isDangerousCommand(toolInput: Record<string, unknown>): boolean {
   const command =
     typeof toolInput.command === 'string'
@@ -226,17 +246,7 @@ function isDangerousCommand(toolInput: Record<string, unknown>): boolean {
   const normalized = command.trim().toLowerCase()
   if (normalized.length === 0) return false
 
-  return [
-    /\brm\s+(-[^\s]*r[^\s]*f|-[^\s]*f[^\s]*r)\b/,
-    /\bgit\s+clean\b.*\s-[^\s]*[fx]/,
-    /\bgit\s+reset\s+--hard\b/,
-    /\bsudo\b/,
-    /\bchmod\s+-r\b/,
-    /\bchown\s+-r\b/,
-    /\bdd\s+if=/,
-    /\bmkfs(?:\.\w+)?\b/,
-    /:\s*\(\)\s*\{\s*:\|:&\s*\};\s*:/,
-  ].some((pattern) => pattern.test(normalized))
+  return HOST_DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(normalized))
 }
 
 function isDenyDecision(decision: PermissionApprovalDecision): boolean {

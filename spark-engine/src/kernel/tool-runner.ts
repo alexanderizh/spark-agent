@@ -286,6 +286,7 @@ export class ToolRunner {
       sessionId: this.options.sessionId,
       cwd: this.options.cwd,
       mode: this.options.permissionMode,
+      signal: this.options.signal,
     }
   }
 
