@@ -108,13 +108,6 @@
   font-size: var(--font-sm);
 }
 
-/* 累计整理消耗行：文本 + ⓘ 悬浮说明（说明收进 tooltip，不占版面） */
-.dream_set_usage {
-  display: flex;
-  align-items: center;
-  gap: var(--pad-xs);
-}
-
 /* 运行状态条（R7）：转圈 + 阶段说明 + 取消按钮 */
 .dream_set_runbar {
   display: flex;
@@ -148,25 +141,135 @@
   font-size: var(--font-base);
 }
 
-/* 上次整理报告摘要（失败态红字） */
-.dream_set_report {
-  padding: var(--pad-sm) var(--pad-lg);
-  border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
-  color: color-mix(in srgb, var(--text) 65%, transparent);
+/* ── 运行状态卡：上次整理标题行 + 统计行 + 累计消耗行三段结构 ──────────────
+   浮层小卡（text 3% 底 + 描边 + 圆角），与宿主灰底/透明底区分层级；
+   统计值各自 nowrap，换行只发生在组与组之间，数值不再被折行截断 */
+.dream_status_card {
+  margin: var(--pad-sm) var(--pad-lg) 0;
+  padding: var(--pad-sm) var(--pad-md);
+  border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
   font-size: var(--font-sm);
 
-  &.is-error {
-    color: var(--danger, #d4603d);
+  &.is-error .dream_status_label {
+    color: var(--danger);
   }
 }
 
-/* 手动触发按钮行（触发说明收进行内 ⓘ tooltip） */
+.dream_status_head {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm);
+  min-width: 0;
+}
+
+.dream_status_label {
+  flex: none;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.dream_status_time {
+  flex: none;
+  color: color-mix(in srgb, var(--text) 45%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 终态徽章：语义色 pill + 状态圆点（成功绿 / 失败红 / 取消灰） */
+.dream_status_badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+
+  i {
+    flex: none;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+}
+
+.dream_status_stats {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--pad-md);
+  row-gap: 2px;
+  margin-top: var(--pad-xs);
+}
+
+/* 统计组：标签弱色 + 数值强调，整体 nowrap 保证不拦腰截断 */
+.dream_status_stat {
+  flex: none;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+
+  b {
+    margin-left: 3px;
+    color: var(--text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &.is-warn,
+  &.is-warn b {
+    color: var(--danger);
+  }
+
+  &.is-dim b {
+    color: color-mix(in srgb, var(--text) 70%, transparent);
+  }
+}
+
+.dream_status_err {
+  margin-top: var(--pad-xs);
+  color: var(--danger);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* 消耗行：分隔线隔开的独立行，数值右对齐；作为卡内唯一行时去分隔 */
+.dream_status_usage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-sm);
+  margin-top: var(--pad-sm);
+  padding-top: var(--pad-sm);
+  border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+
+  &:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  em {
+    flex: none;
+    color: var(--text);
+    font-style: normal;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.dream_status_usage_label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-xs);
+  min-width: 0;
+  color: color-mix(in srgb, var(--text) 65%, transparent);
+}
+
+/* 手动触发按钮行（触发说明收进行内 ⓘ tooltip；上方状态卡自带描边，不再叠分隔线） */
 .dream_set_actions {
   display: flex;
   align-items: center;
   gap: var(--pad-sm);
+  margin-top: var(--pad-xs);
   padding: var(--pad-sm) var(--pad-lg);
-  border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 /* 灰底上的 InputNumber：设置页全局把 .ant-input-number 强制为透明边框 + 灰底，
@@ -218,12 +321,11 @@
 
   > .dream_set_actions {
     padding: var(--pad-sm) 0 0;
-    border-top: none;
   }
 
-  > .dream_set_report {
-    padding: 2px 0 0;
-    border-top: none;
+  /* 状态卡在描边宿主内不再额外留外边距（宿主 padding 已提供呼吸感） */
+  > .dream_status_card {
+    margin: 0;
   }
 }
 
@@ -232,30 +334,17 @@
   display: block;
   margin-top: 2px;
   font-size: var(--font-sm);
-  color: var(--spark-text-danger, #e5484d);
+  color: var(--danger);
 }
 
-/* ── 提案审计（可追溯）：报告摘要行右侧「查看明细」入口 + 明细弹层 ────────── */
-
-/* 摘要行改为两端布局：左侧统计文本（被拒计数强调色），右侧明细入口 */
-.dream_set_report.has-audit {
-  display: flex;
-  align-items: center;
-  gap: var(--pad-sm);
-}
-
-.dream_set_report_text {
-  flex: 1;
-  min-width: 0;
-}
-
-.dream_set_report_warn {
-  color: var(--spark-text-danger, #e5484d);
-  font-weight: 600;
-}
+/* ── 提案审计（可追溯）：状态卡标题行「查看明细」入口 + 明细弹层 ──────────── */
 
 .dream_set_report_link {
-  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  margin-left: auto;
   padding: 2px var(--pad-sm);
   border: none;
   border-radius: var(--r-sm);
@@ -275,17 +364,27 @@
   }
 }
 
-/* 明细弹层：运行选择行 + 审计行列表 */
+/* 明细弹层：运行批次选择 + 审计行列表 */
 .dream_audit {
   display: flex;
   flex-direction: column;
-  gap: var(--pad-sm);
+  gap: var(--pad-md);
 }
 
-.dream_audit_runs {
+/* 运行批次选择：标签行 + 全宽主题化控件（v6 变量改高度，34px 与卡内节奏一致） */
+.dream_audit_pick_label {
   display: flex;
   align-items: center;
-  gap: var(--pad-sm);
+  gap: var(--pad-xs);
+  margin-bottom: var(--pad-xs);
+  color: color-mix(in srgb, var(--text) 65%, transparent);
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+
+.dream_audit_pick_select {
+  width: 100%;
+  --ant-select-height: 34px;
 }
 
 .dream_audit_empty {
@@ -295,8 +394,81 @@
   text-align: center;
 
   &.is-error {
-    color: var(--spark-text-danger, #e5484d);
+    color: var(--danger);
   }
+}
+
+/* 下拉展开的运行选项行：左侧时间 + 右侧四枚语义计数徽章 */
+.dream_audit_opt {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-md);
+  width: 100%;
+  min-width: 0;
+}
+
+.dream_audit_opt_time {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.dream_audit_counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+
+  i {
+    white-space: nowrap;
+  }
+}
+
+/* tinted 语义徽章基座：批次计数徽章 / 行内去向徽章 / 状态卡终态徽章共用尺寸语言 */
+.dream_audit_counts i,
+.dream_audit_outcome,
+.dream_status_badge {
+  padding: 0 var(--pad-xs);
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  font-style: normal;
+  line-height: 18px;
+}
+
+/* 语义配色：落库绿 / 待审蓝 / 被拒红 / 丢弃灰（徽章自身带 tone 类或行祖先带 tone 类） */
+.dream_audit_counts i.is-ok,
+.dream_status_badge.is-ok,
+.dream_audit_row.is-ok .dream_audit_outcome {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+}
+
+.dream_audit_counts i.is-review,
+.dream_status_badge.is-review,
+.dream_audit_row.is-review .dream_audit_outcome {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+}
+
+.dream_audit_counts i.is-reject,
+.dream_status_badge.is-reject,
+.dream_audit_row.is-reject .dream_audit_outcome {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.dream_audit_counts i.is-reject,
+.dream_audit_row.is-reject .dream_audit_outcome {
+  font-weight: 600;
+}
+
+.dream_audit_counts i.is-drop,
+.dream_status_badge.is-drop,
+.dream_audit_row.is-drop .dream_audit_outcome {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: color-mix(in srgb, var(--text) 55%, transparent);
 }
 
 .dream_audit_list {
@@ -308,28 +480,20 @@
   padding-right: 2px;
 }
 
-/* 审计行：左侧 3px 语义色条 + 头部四段信息（类型/去向/置信度/时间） */
+/* 审计行：扁平描边卡 + hover 提亮；头部 mono 类型 chip / tinted 去向徽章 /
+   置信度 / 时间四段信息，语义只由徽章承载 */
 .dream_audit_row {
-  padding: var(--pad-sm) var(--pad-sm) var(--pad-sm) var(--pad-md);
+  padding: var(--pad-sm) var(--pad-md);
   border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
-  border-left-width: 3px;
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--text) 2%, transparent);
+  transition:
+    border-color var(--motion-fast) ease,
+    background var(--motion-fast) ease;
 
-  &.is-ok {
-    border-left-color: var(--success);
-  }
-
-  &.is-review {
-    border-left-color: var(--primary);
-  }
-
-  &.is-reject {
-    border-left-color: var(--spark-text-danger, #e5484d);
-  }
-
-  &.is-drop {
-    border-left-color: color-mix(in srgb, var(--text) 35%, transparent);
+  &:hover {
+    border-color: color-mix(in srgb, var(--text) 20%, transparent);
+    background: color-mix(in srgb, var(--text) 4%, transparent);
   }
 }
 
@@ -340,41 +504,29 @@
   font-size: var(--font-sm);
 }
 
+/* 类型 chip：等宽字体 + 浅底，弱化为「数据格式」观感 */
 .dream_audit_kind {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
   color: var(--text);
-  font-weight: 600;
-}
-
-.dream_audit_outcome {
-  font-size: var(--font-sm);
-
-  .is-ok & {
-    color: var(--success);
-  }
-
-  .is-review & {
-    color: var(--primary);
-  }
-
-  .is-reject & {
-    color: var(--spark-text-danger, #e5484d);
-    font-weight: 600;
-  }
-
-  .is-drop & {
-    color: color-mix(in srgb, var(--text) 55%, transparent);
-  }
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: 16px;
 }
 
 .dream_audit_conf {
   color: color-mix(in srgb, var(--text) 55%, transparent);
   font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .dream_audit_time {
   margin-left: auto;
   color: color-mix(in srgb, var(--text) 40%, transparent);
   font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 拒绝原因 / 执行说明 */
@@ -386,18 +538,18 @@
   word-break: break-word;
 }
 
-/* 提案原文快照：默认折叠，展开后等宽字体滚动区（截断快照原样展示） */
+/* 提案原文快照：链接式折叠入口 + code-bg 等宽滚动区（截断快照原样展示） */
 .dream_audit_payload {
   margin-top: var(--pad-xs);
 
   summary {
-    color: color-mix(in srgb, var(--text) 50%, transparent);
+    color: var(--primary);
     font-size: var(--font-sm);
     cursor: pointer;
     user-select: none;
 
     &:hover {
-      color: var(--primary);
+      text-decoration: underline;
     }
   }
 
@@ -406,7 +558,7 @@
     margin: var(--pad-xs) 0 0;
     padding: var(--pad-sm);
     border-radius: var(--r-sm);
-    background: color-mix(in srgb, var(--text) 5%, transparent);
+    background: var(--code-bg);
     color: var(--text);
     font-size: var(--font-xs);
     line-height: 1.5;

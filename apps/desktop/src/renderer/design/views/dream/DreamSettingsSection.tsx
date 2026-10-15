@@ -114,6 +114,13 @@ const REPORT_STATUS_LABEL: Record<string, string> = {
   cancelled: '已取消',
 }
 
+/** 运行终态徽章色调（状态卡标题行）：成功绿 / 失败红 / 取消灰（dream.less 语义色） */
+const REPORT_STATUS_TONE: Record<string, string> = {
+  succeeded: 'is-ok',
+  failed: 'is-reject',
+  cancelled: 'is-drop',
+}
+
 /** 提案去向的展示口径（审计明细弹层）：文案 + 语义色类（dream.less 配色） */
 const AUDIT_OUTCOME_META: Record<DreamAuditRecord['outcome'], { label: string; tone: string }> = {
   'auto-applied': { label: '自动落库', tone: 'is-ok' },
@@ -679,41 +686,71 @@ export function DreamSettingsSection({
           </Button>
         </div>
       )}
-      {dreamState?.status !== 'running' && lastReport != null && (
+      {/* 运行状态卡：标题行（时间+状态徽章+查看明细）／统计行（组间换行、被拒强调）
+          ／消耗行（分隔线独立、数值右对齐）；报告与累计消耗任一存在即渲染整卡 */}
+      {dreamState?.status !== 'running' &&
+      (lastReport != null || (dreamUsage != null && dreamUsage.recordCount > 0)) && (
         <div
-          className={`dream_set_report has-audit${lastReport.status === 'failed' ? ' is-error' : ''}`}
+          className={`dream_status_card${lastReport?.status === 'failed' ? ' is-error' : ''}`}
         >
-          <span className="dream_set_report_text">
-            上次整理（{formatTime(lastReport.finishedAt)}）·{' '}
-            {REPORT_STATUS_LABEL[lastReport.status] ?? lastReport.status}
-            {lastReport.status !== 'failed' && lastReport.status !== 'cancelled'
-              ? ` · 提案 ${lastReport.stats.proposals} · 自动落库 ${lastReport.stats.autoApplied} · 待人审 ${lastReport.stats.pendingReview}`
-              : ''}
-            {lastReport.stats.rejectedInvalid > 0 ? (
-              <>
-                {' · '}
-                <span className="dream_set_report_warn">
-                  被拒 {lastReport.stats.rejectedInvalid}
+          {lastReport != null && (
+            <>
+              <div className="dream_status_head">
+                <span className="dream_status_label">上次整理</span>
+                <span className="dream_status_time">{formatTime(lastReport.finishedAt)}</span>
+                <span
+                  className={`dream_status_badge ${
+                    REPORT_STATUS_TONE[lastReport.status] ?? 'is-drop'
+                  }`}
+                >
+                  <i aria-hidden />
+                  {REPORT_STATUS_LABEL[lastReport.status] ?? lastReport.status}
                 </span>
-              </>
-            ) : null}
-            {lastReport.stats.droppedByLimit > 0
-              ? ` · 超限丢弃 ${lastReport.stats.droppedByLimit}`
-              : ''}
-            {lastReport.error != null ? ` · ${lastReport.error.slice(0, 120)}` : ''}
-          </span>
-          <button type="button" className="dream_set_report_link" onClick={openAudit}>
-            查看明细
-          </button>
-        </div>
-      )}
-      {dreamUsage != null && dreamUsage.recordCount > 0 && (
-        <div className="dream_set_report dream_set_usage">
-          <span>
-            累计整理消耗（两轨合计）· {dreamUsage.recordCount} 次调用 · 入出{' '}
-            {formatTokens(dreamUsage.totalInputTokens + dreamUsage.totalOutputTokens)} tokens
-          </span>
-          <SettingHelp tip="自动整编的模型消耗单列 dream 分账，不计入正常用量统计。" />
+                <button type="button" className="dream_set_report_link" onClick={openAudit}>
+                  查看明细
+                  <Icons.ChevronRight size={12} />
+                </button>
+              </div>
+              {lastReport.status !== 'failed' && lastReport.status !== 'cancelled' && (
+                <div className="dream_status_stats">
+                  <span className="dream_status_stat">
+                    提案<b>{lastReport.stats.proposals}</b>
+                  </span>
+                  <span className="dream_status_stat">
+                    自动落库<b>{lastReport.stats.autoApplied}</b>
+                  </span>
+                  <span className="dream_status_stat">
+                    待人审<b>{lastReport.stats.pendingReview}</b>
+                  </span>
+                  {lastReport.stats.rejectedInvalid > 0 && (
+                    <span className="dream_status_stat is-warn">
+                      被拒<b>{lastReport.stats.rejectedInvalid}</b>
+                    </span>
+                  )}
+                  {lastReport.stats.droppedByLimit > 0 && (
+                    <span className="dream_status_stat is-dim">
+                      超限丢弃<b>{lastReport.stats.droppedByLimit}</b>
+                    </span>
+                  )}
+                </div>
+              )}
+              {lastReport.error != null && (
+                <div className="dream_status_err">{lastReport.error.slice(0, 120)}</div>
+              )}
+            </>
+          )}
+          {dreamUsage != null && dreamUsage.recordCount > 0 && (
+            <div className="dream_status_usage">
+              <span className="dream_status_usage_label">
+                累计整理消耗（两轨合计）· {dreamUsage.recordCount} 次调用
+                <SettingHelp tip="自动整编的模型消耗单列 dream 分账，不计入正常用量统计。" />
+              </span>
+              <em>
+                入出{' '}
+                {formatTokens(dreamUsage.totalInputTokens + dreamUsage.totalOutputTokens)} tokens
+              </em>
+            </div>
+          )}
         </div>
       )}
       <div className="dream_set_actions">
@@ -734,25 +771,44 @@ export function DreamSettingsSection({
       <Modal
         open={auditOpen}
         title="提案审计明细"
-        width={640}
+        width={680}
         footer={null}
         onCancel={() => setAuditOpen(false)}
       >
         <div className="dream_audit">
-          <div className="dream_audit_runs">
+          <div className="dream_audit_pick">
+            <div className="dream_audit_pick_label">
+              运行批次
+              <SettingHelp tip="审计表保留全部历史运行；被拒/超限丢弃提案的拒绝原因与原文快照均可在此追溯。上方状态卡只存最近一次，这里可切换历史运行查看完整去向。" />
+            </div>
             <Select
-              size="small"
-              style={{ minWidth: 320, flex: 1 }}
+              className="dream_audit_pick_select"
               loading={auditLoading}
               value={auditRunId ?? null}
-              placeholder={auditRuns.length === 0 ? '暂无审计记录' : '选择运行'}
+              placeholder={auditRuns.length === 0 ? '暂无审计记录' : '选择运行批次'}
               onChange={(v: string) => loadAuditRows(v)}
               options={auditRuns.map((r) => ({
                 value: r.runId,
-                label: `${formatTime(r.startedAt)} · 提案 ${r.counts.proposals} · 落库 ${r.counts.autoApplied} · 待审 ${r.counts.pendingReview} · 被拒 ${r.counts.rejectedInvalid} · 丢弃 ${r.counts.droppedByLimit}`,
+                label: `${formatTime(r.startedAt)} · 提案 ${r.counts.proposals}${
+                  r.counts.rejectedInvalid > 0 ? ` · 被拒 ${r.counts.rejectedInvalid}` : ''
+                }`,
               }))}
+              optionRender={(option) => {
+                const run = auditRuns.find((x) => x.runId === option.value)
+                if (run == null) return <span>{String(option.label ?? '')}</span>
+                return (
+                  <div className="dream_audit_opt">
+                    <span className="dream_audit_opt_time">{formatTime(run.startedAt)}</span>
+                    <span className="dream_audit_counts">
+                      <i className="is-ok">落库 {run.counts.autoApplied}</i>
+                      <i className="is-review">待审 {run.counts.pendingReview}</i>
+                      <i className="is-reject">被拒 {run.counts.rejectedInvalid}</i>
+                      <i className="is-drop">丢弃 {run.counts.droppedByLimit}</i>
+                    </span>
+                  </div>
+                )
+              }}
             />
-            <SettingHelp tip="审计表保留全部历史运行；被拒/超限丢弃提案的拒绝原因与原文快照均可在此追溯。上方报告摘要行只存最近一次，这里可切换历史运行查看完整去向。" />
           </div>
           {auditError != null ? (
             <div className="dream_audit_empty is-error">{auditError}</div>
