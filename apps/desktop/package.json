@@ -1,6 +1,6 @@
 {
   "name": "@spark/desktop",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "description": "SparkWork — local-first desktop agent workbench for professional development and complex work",
   "author": "SparkWork Team",
   "private": true,
@@ -40,7 +40,8 @@
     "i18n:check": "node scripts/check-i18n.mjs",
     "prepare:file-viewer-assets": "node scripts/copy-file-viewer-assets.mjs",
     "prepare:computer-use-host": "node scripts/prepare-computer-use-host.js",
-    "smoke:mobile-bridge-relay": "node scripts/smoke-mobile-bridge-relay.mjs"
+    "smoke:mobile-bridge-relay": "node scripts/smoke-mobile-bridge-relay.mjs",
+    "smoke:mobile-bridge-stream": "node scripts/smoke-mobile-bridge-stream.mjs"
   },
   "//deps-note": "dependencies 仅保留 main/preload 运行时真正 require 的包（已据 out/main bundle 权威核实）。所有纯渲染端依赖被 vite 打进 out/renderer，移到 devDependencies，使 electron-builder 仅收生产依赖闭包，避免渲染库及其传递依赖被重复打包。配合 pnpm nodeLinker:hoisted 平铺布局，electron-builder 才能完整收集生产闭包。",
   "dependencies": {

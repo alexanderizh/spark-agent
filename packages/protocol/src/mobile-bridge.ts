@@ -278,6 +278,7 @@ export interface MobileBridgeCancelResponse {
 export type MobileBridgeEventType =
   | 'user_message'
   | 'assistant_message'
+  | 'agent_thinking'
   | 'tool_call'
   | 'tool_result'
   | 'agent_status'
@@ -290,9 +291,9 @@ export interface MobileBridgeEvent {
   turnId: string
   type: MobileBridgeEventType
   timestamp: string
-  /** user_message / assistant_message 的文本 */
+  /** user_message / assistant_message / agent_thinking 的文本 */
   content?: string
-  /** assistant_message：增量或完整文本（delta 由端上拼接） */
+  /** assistant_message / agent_thinking：增量或完整文本（delta 由端上拼接） */
   mode?: 'delta' | 'complete'
   /** assistant_message：是否为最终完整消息 */
   isFinal?: boolean
@@ -318,6 +319,8 @@ export interface MobileBridgeHistoryResponse {
    * 携带 GET /messages?beforeSeq= 向上翻页；缺省 = 旧版桌面端不支持分页。
    */
   hasMore?: boolean
+  /** 下一页原始事件游标。即使本页事件都被移动端映射器过滤，也可继续向更早历史翻页。 */
+  nextBeforeSeq?: number
 }
 
 // ─── 错误 ─────────────────────────────────────────────────────────────────────

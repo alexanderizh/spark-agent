@@ -1,0 +1,63 @@
+<view class="projects-page">
+  <safe-nav-bar title="" />
+
+  <view class="projects-heading row between">
+    <view class="grow">
+      <text class="page-title">项目</text>
+      <text class="projects-subtitle">先选电脑，再浏览它自己的项目</text>
+    </view>
+    <view class="projects-manage" bindtap="onOpenBridgeDevices">授信设备</view>
+  </view>
+
+  <view class="projects-device-context row">
+    <view class="projects-device-dot {{deviceOffline ? '' : 'projects-device-dot--on'}}"></view>
+    <view class="grow">
+      <text class="projects-context-label">当前电脑</text>
+      <text class="projects-context-name ellipsis">{{deviceName}}</text>
+    </view>
+    <view class="projects-switch" bindtap="onBackToComputers">返回电脑列表</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="loading-tip">正在加载这台电脑的项目…</view>
+
+  <view wx:elif="{{deviceUnavailable}}" class="projects-state">
+    <empty-state icon="monitor" title="这台电脑已解除授信" desc="返回电脑列表，选择一台仍受信任的电脑" />
+    <view class="projects-action" bindtap="onBackToComputers">返回电脑列表</view>
+  </view>
+
+  <view wx:elif="{{deviceOffline}}" class="projects-state">
+    <empty-state icon="monitor" title="这台电脑当前离线" desc="项目只从所选电脑读取。电脑重新连上中继后，可在这里继续查看。" />
+    <view class="projects-action" bindtap="onBackToComputers">返回电脑列表</view>
+  </view>
+
+  <view wx:elif="{{errorText}}" class="projects-state">
+    <empty-state icon="monitor" title="项目加载失败" desc="{{errorText}}" />
+    <view class="projects-action" bindtap="onRetry">重试</view>
+  </view>
+
+  <block wx:else>
+    <view wx:if="{{projects.length === 0}}" class="projects-state">
+      <empty-state icon="folder" title="这台电脑还没有项目" desc="请先在桌面端打开一个项目；其会话会归入该项目。" />
+    </view>
+
+    <view wx:else class="projects-list">
+      <text class="group-title">这台电脑的项目</text>
+      <view
+        wx:for="{{projects}}"
+        wx:key="id"
+        class="projects-row row"
+        hover-class="projects-row--hover"
+        data-id="{{item.id}}"
+        data-name="{{item.name}}"
+        bindtap="onOpenProject"
+      >
+        <view class="icon {{item.isVirtual ? 'icon-chat' : 'icon-folder'}} projects-row-icon"></view>
+        <view class="grow col gap-4 projects-row-copy">
+          <text class="projects-row-name ellipsis">{{item.name}}</text>
+          <text class="t-caption">{{item.sessionCount}} 条会话</text>
+        </view>
+        <view class="icon icon-chevron"></view>
+      </view>
+    </view>
+  </block>
+</view>

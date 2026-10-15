@@ -2,7 +2,6 @@
   "navigationStyle": "custom",
   "navigationBarTitleText": "SparkWork",
   "usingComponents": {
-    "capsule-composer": "../../components/capsule-composer/index",
     "empty-state": "../../components/empty-state/index"
   }
 }

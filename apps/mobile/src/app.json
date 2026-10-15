@@ -3,6 +3,7 @@
     "pages/entry/index",
     "pages/login/index",
     "pages/home/index",
+    "pages/projects/index",
     "pages/project-sessions/index",
     "pages/bridge-devices/index",
     "pages/chat/index",

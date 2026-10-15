@@ -20,20 +20,31 @@
     <view class="chat-body">
       <view wx:if="{{loading}}" class="loading-tip">加载历史…</view>
 
-      <block wx:elif="{{items.length > 0}}">
-        <!-- 历史翻页状态（顶部）：加载中提示 / 拉完提示 -->
-        <view wx:if="{{loadingEarlier}}" class="chat-history-edge">加载更早消息…</view>
-        <view wx:elif="{{!hasMoreHistory}}" class="chat-history-edge">已到最前面</view>
-      </block>
+      <view wx:elif="{{historyError}}" class="chat-history-error">
+        <text>{{historyError}}</text>
+        <view class="chat-history-retry" bindtap="onRetryHistory">重试加载记录</view>
+      </view>
 
       <empty-state
-        wx:elif="{{items.length === 0}}"
+        wx:elif="{{historyLoaded && items.length === 0 && !hasMoreHistory}}"
         icon="chat"
-        title="开始新的对话"
-        desc="发送的消息会直达桌面端同一会话，回复实时流式回传"
+        title="还没有聊天记录"
+        desc="在下方发送消息，回复会实时同步到这台电脑"
       />
 
       <block wx:else>
+        <view wx:if="{{loadingEarlier}}" class="chat-history-edge">
+          正在加载更早消息…
+        </view>
+        <view
+          wx:if="{{hasMoreHistory && !loadingEarlier}}"
+          class="chat-history-edge chat-history-edge--action"
+          bindtap="loadEarlier"
+        >点击加载更早消息</view>
+        <view
+          wx:if="{{historyLoaded && items.length > 0 && !hasMoreHistory && !loadingEarlier}}"
+          class="chat-history-edge"
+        >没有更早消息</view>
         <block wx:for="{{items}}" wx:key="key">
           <!-- 天级时间分界（居中灰字） -->
           <view wx:if="{{item.kind === 'time'}}" class="chat-time">{{item.label}}</view>
@@ -70,6 +81,15 @@
               <view class="typing-dot typing-dot--2"></view>
               <view class="typing-dot typing-dot--3"></view>
             </view>
+          </view>
+
+          <!-- 显示桌面端实际发出的思考事件；delta 到达时在同一段内增量追加 -->
+          <view wx:elif="{{item.kind === 'thinking'}}" class="msg-row msg-row--thinking">
+            <view class="thinking-heading row gap-8">
+              <view class="thinking-mark"></view>
+              <text>思考过程</text>
+            </view>
+            <text class="thinking-content" user-select>{{item.text}}</text>
           </view>
 
           <!-- 工具调用行（折叠样式） -->

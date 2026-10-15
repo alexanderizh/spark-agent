@@ -1,6 +1,6 @@
 {
   "name": "@spark/mobile",
-  "version": "0.1.0",
+  "version": "1.3.0",
   "private": true,
   "description": "SparkWork 移动端（微信小程序）— 桌面端的移动伴侣：账号登录同步、同步状态、设备与会话管理",
   "scripts": {
@@ -12,6 +12,8 @@
     "smoke:boot": "node scripts/smoke-boot.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "smoke:relay": "node scripts/smoke-relay.mjs",
+    "smoke:chat-stream": "node scripts/smoke-chat-stream.mjs",
+    "smoke:home-composer": "node scripts/smoke-home-composer.mjs",
     "e2e:relay": "node scripts/e2e-relay-prod.mjs"
   },
   "devDependencies": {

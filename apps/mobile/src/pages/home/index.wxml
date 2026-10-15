@@ -1,176 +1,214 @@
-<!-- 首页 Inbox：头像/搜索工具行 → 大标题 → 状态仪表盘 → 项目 → 最近会话 → 悬浮胶囊 -->
-
 <view class="home-page">
-  <!-- 顶部工具行（状态栏安全区） -->
   <view class="home-header" style="padding-top: {{statusBarHeight}}px;">
     <view class="home-toolbar row between" style="padding-right: {{navClearance}}px;">
       <view class="home-avatar-wrap" hover-class="home-avatar-wrap--hover" bindtap="onGoProfile">
-        <image
-          wx:if="{{avatarUrl}}"
-          class="home-avatar"
-          src="{{avatarUrl}}"
-          mode="aspectFill"
-        />
+        <image wx:if="{{avatarUrl}}" class="home-avatar" src="{{avatarUrl}}" mode="aspectFill" />
         <view wx:else class="home-avatar home-avatar--fallback center">
           <text>{{accountLabel ? accountLabel[0] : 'S'}}</text>
         </view>
       </view>
-      <view class="row gap-16">
-        <view class="circle-btn" hover-class="hover-dim" bindtap="onOpenSearch">
-          <view class="icon icon-search"></view>
-        </view>
-        <view class="circle-btn" hover-class="hover-dim" bindtap="onNewProjectHint">
-          <view class="icon icon-folder-plus"></view>
-        </view>
-      </view>
+      <view class="home-manage" bindtap="onOpenBridgeDevices">授信设备管理</view>
     </view>
     <view class="home-title-row">
-      <text class="page-title">会话</text>
+      <text class="page-title">远程会话</text>
+      <text class="home-subtitle">先选电脑，再进入它自己的项目与会话</text>
     </view>
   </view>
 
-  <!-- ─── 链路失败态（多为电脑端离线 / 中继未开启） ─────────────────────────── -->
-  <view wx:if="{{gate !== 'ok'}}" class="home-gate">
-    <empty-state icon="monitor" title="连不上电脑端" desc="{{errorText}}" />
-    <view class="row gap-16 home-gate-actions">
-      <view class="btn btn-dark btn-small" hover-class="hover-dim" bindtap="onRetryLoad">
-        <text>重试</text>
-      </view>
-    </view>
-    <text wx:if="{{errorHint}}" class="t-caption home-gate-hint">{{errorHint}}</text>
+  <view class="home-section-head row between">
+    <text class="group-title">电脑</text>
+    <text class="t-caption">{{devices.length}} 台已授信</text>
   </view>
 
-  <!-- ─── 内容态 ──────────────────────────────────────────────────────────── -->
-  <block wx:else>
-    <!-- 2×2 状态仪表盘（Cursor Inbox 式竖排白卡） -->
-    <view class="stat-grid" wx:if="{{!loading || sessionTotal > 0}}">
-      <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
-        <view class="icon icon-chat stat-card-icon"></view>
-        <view class="stat-card-foot">
-          <text class="stat-card-label">全部会话</text>
-          <text class="stat-card-count">{{stats.total}}</text>
-        </view>
-      </view>
-      <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
-        <view class="icon icon-working stat-card-icon"></view>
-        <view class="stat-card-foot">
-          <text class="stat-card-label">进行中</text>
-          <text class="stat-card-count">{{stats.running}}</text>
-        </view>
-      </view>
-      <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
-        <view class="icon icon-bell stat-card-icon"></view>
-        <view class="stat-card-foot">
-          <text class="stat-card-label">异常</text>
-          <text class="stat-card-count">{{stats.error}}</text>
-        </view>
-      </view>
-      <view class="stat-card" hover-class="stat-card--hover" bindtap="onOpenAll">
-        <view class="icon icon-review stat-card-icon"></view>
-        <view class="stat-card-foot">
-          <text class="stat-card-label">项目</text>
-          <text class="stat-card-count">{{stats.projects}}</text>
-        </view>
-      </view>
-    </view>
+  <view wx:if="{{devicesLoading}}" class="home-state">
+    <view class="loading-tip">正在获取已授信电脑…</view>
+  </view>
 
-    <view wx:if="{{loading && sessionTotal === 0}}" class="loading-tip">加载中…</view>
+  <view wx:elif="{{devicesError}}" class="home-state">
+    <empty-state icon="monitor" title="电脑列表加载失败" desc="{{devicesError}}" />
+    <view class="home-action" bindtap="onRetry">重试</view>
+  </view>
 
-    <!-- 项目列表加载失败提示（桌面端旧版本无项目端点时最常见） -->
-    <view class="home-group" wx:if="{{projectsError}}">
-      <view class="projects-error">
-        <text class="t-caption">项目列表加载失败：请确认桌面端已更新到最新版本并重启，然后下拉刷新重试</text>
-      </view>
-    </view>
+  <view wx:elif="{{devicesLoaded && devices.length === 0}}" class="home-state">
+    <empty-state
+      icon="monitor"
+      title="还没有授信电脑"
+      desc="在桌面端登录同一 Spark 平台账号并开启云端中继，电脑首次连接后会出现在这里。"
+    />
+    <view class="home-action" bindtap="onOpenBridgeDevices">管理授信设备</view>
+  </view>
 
-    <!-- 项目分组（Cursor Workspaces 式：新建行 + 单行项目条目，缩进分割线） -->
-    <view class="home-group" wx:if="{{projects.length > 0 || projectsError}}">
-      <view class="group-title home-group-title">项目</view>
-      <view
-        class="list-row home-row"
-        hover-class="list-row--hover"
-        bindtap="onNewProjectHint"
-      >
-        <view class="icon icon-plus home-row-icon home-row-icon--accent"></view>
-        <text class="home-row-title home-row-title--action">新建项目</text>
-      </view>
-      <view
-        wx:for="{{projects}}"
-        wx:key="id"
-        class="list-row home-row"
-        hover-class="list-row--hover"
-        data-id="{{item.id}}"
-        data-name="{{item.name}}"
-        bindtap="onOpenProject"
-      >
-        <view class="icon icon-folder home-row-icon"></view>
-        <text class="home-row-title ellipsis">{{item.name}}</text>
-        <view class="icon icon-chevron"></view>
-      </view>
-    </view>
-
-    <!-- 会话（按项目分组，临时会话置底） -->
-    <view class="home-group" wx:if="{{sessionTotal > 0}}">
-      <view class="row between home-group-head">
-        <view class="group-title">会话</view>
-        <text class="t-caption t-accent" bindtap="onOpenAll">全部 ›</text>
-      </view>
-      <block wx:for="{{sessionGroups}}" wx:for-item="group" wx:key="key">
-        <view
-          class="row between home-group-subhead"
-          hover-class="{{group.projectId ? 'list-row--hover' : ''}}"
-          data-project-id="{{group.projectId}}"
-          data-name="{{group.name}}"
-          bindtap="onOpenGroup"
-        >
-          <view class="row gap-8 home-subhead-text">
-            <view wx:if="{{!group.isTemp}}" class="icon icon-folder-small"></view>
-            <text class="home-subhead-title">{{group.name}}</text>
-          </view>
-          <text class="t-caption">{{group.sessions.length}} 条{{group.projectId ? ' ›' : ''}}</text>
-        </view>
-        <view
-          wx:for="{{group.sessions}}"
-          wx:for-item="session"
-          wx:key="id"
-          class="list-row list-row--nested"
-          hover-class="list-row--hover"
-          data-id="{{session.id}}"
-          data-title="{{session.title}}"
-          bindtap="onOpenSession"
-        >
-          <view class="dot {{session.dotClass}}"></view>
-          <view class="grow col gap-8 home-session-text">
-            <text class="t-strong ellipsis">{{session.title}}</text>
-            <text class="t-caption ellipsis">{{session.statusLabel}} · {{session.timeLabel}}{{session.preview ? ' · ' + session.preview : ''}}</text>
-          </view>
-        </view>
-      </block>
-    </view>
-
+  <view wx:else class="home-device-list">
     <view
-      wx:if="{{!loading && sessionTotal === 0 && projects.length === 0}}"
-      class="home-gate"
+      wx:for="{{devices}}"
+      wx:key="deviceId"
+      class="home-device-card {{selectedDeviceId === item.deviceId ? 'home-device-card--selected' : ''}}"
+      hover-class="home-device-card--hover"
+      data-id="{{item.deviceId}}"
+      bindtap="onPickDevice"
     >
-      <empty-state
-        icon="chat"
-        title="还没有会话"
-        desc="在下方输入框说点什么，会话会发送到所选电脑"
-      />
+      <view class="row between home-device-heading">
+        <view class="row gap-12 grow home-device-name-wrap">
+          <view class="home-device-icon center">
+            <view class="icon icon-monitor"></view>
+          </view>
+          <text class="home-device-name ellipsis">{{item.name}}</text>
+        </view>
+        <view class="row gap-8 home-device-status">
+          <view class="home-device-dot {{item.online ? 'home-device-dot--on' : ''}}"></view>
+          <text>{{item.online ? '在线' : '离线'}}</text>
+        </view>
+      </view>
+      <view class="row between home-device-footer">
+        <text class="t-caption"
+          >{{item.online ? '查看这台电脑的项目' : '电脑连接中继后即可浏览'}}</text
+        >
+        <view wx:if="{{item.online}}" class="icon icon-chevron"></view>
+      </view>
     </view>
+  </view>
 
-    <!-- 底部胶囊占位 -->
-    <view class="home-spacer"></view>
-  </block>
+  <view
+    class="home-composer"
+    style="bottom: {{keyboardHeight}}px; padding-bottom: env(safe-area-inset-bottom);"
+  >
+    <view
+      class="home-config-trigger row"
+      hover-class="home-config-trigger--hover"
+      bindtap="onOpenConfig"
+    >
+      <text class="home-config-tag">会话配置</text>
+      <text class="home-config-summary ellipsis">{{configSummary}}</text>
+      <text class="home-config-chevron">⌄</text>
+    </view>
+    <view wx:if="{{pendingSessionId}}" class="home-pending-hint row">
+      <text class="ellipsis">这条消息已关联到待处理会话</text>
+      <text class="home-pending-open" bindtap="openPendingSession">打开会话</text>
+    </view>
+    <view class="home-compose-shell row">
+      <textarea
+        class="home-compose-input"
+        value="{{quickText}}"
+        placeholder="发起一条新的远程对话…"
+        placeholder-style="color:#aaa7a1"
+        auto-height
+        maxlength="8000"
+        show-confirm-bar="{{false}}"
+        confirm-type="send"
+        adjust-position="{{false}}"
+        cursor-spacing="16"
+        disabled="{{quickSending || (devices.length === 0 && devicesLoaded)}}"
+        bindinput="onQuickInput"
+        bindconfirm="onQuickSend"
+        bindkeyboardheightchange="onComposerKeyboardChange"
+      />
+      <view
+        class="home-compose-send {{canQuickSend ? 'home-compose-send--active' : ''}}"
+        hover-class="home-compose-send--hover"
+        bindtap="onQuickSend"
+      >
+        <text>{{quickSending ? '发送中' : pendingSubmissionUnknown ? '检查' : '发送'}}</text>
+      </view>
+    </view>
+    <text class="home-compose-footnote">
+      {{pendingSubmissionUnknown ? '结果未确认，先打开会话检查，避免重复提交' :
+      '首条消息会在所选电脑上创建新会话'}}
+    </text>
+  </view>
 
-  <!-- 底部悬浮胶囊输入框（快速发起） -->
-  <capsule-composer
-    wx:if="{{gate === 'ok'}}"
-    mode="float"
-    value="{{quickText}}"
-    placeholder="发起新对话…"
-    disabled="{{quickSending}}"
-    bind:input="onQuickInput"
-    bind:send="onQuickSend"
-  />
+  <view wx:if="{{configOpen}}" class="home-config-mask" catchtap="onCloseConfig">
+    <view class="home-config-sheet" catchtap="onStopConfigTap">
+      <view class="home-config-sheet-head row between">
+        <view>
+          <text class="home-config-sheet-title">新建会话配置</text>
+          <text class="home-config-sheet-subtitle">选择只影响本次新会话</text>
+        </view>
+        <view class="home-config-close" hover-class="hover-dim" bindtap="onCloseConfig">完成</view>
+      </view>
+
+      <view class="home-config-row row">
+        <text class="home-config-label">电脑</text>
+        <picker
+          class="home-config-picker grow"
+          mode="selector"
+          range="{{devices}}"
+          range-key="pickerLabel"
+          value="{{composerDeviceIndex}}"
+          disabled="{{devices.length === 0 || pendingSessionId}}"
+          bindchange="onConfigDeviceChange"
+        >
+          <view class="home-config-picker-value row between">
+            <text class="ellipsis">{{composerDeviceLabel}}</text>
+            <text class="home-config-chevron">⌄</text>
+          </view>
+        </picker>
+      </view>
+
+      <view class="home-config-row row">
+        <text class="home-config-label">项目</text>
+        <picker
+          class="home-config-picker grow"
+          mode="selector"
+          range="{{projectOptions}}"
+          range-key="label"
+          value="{{projectIndex}}"
+          disabled="{{configLoading || configError || pendingSessionId}}"
+          bindchange="onProjectChange"
+        >
+          <view class="home-config-picker-value row between">
+            <text class="ellipsis">{{projectOptions[projectIndex].label}}</text>
+            <text class="home-config-chevron">⌄</text>
+          </view>
+        </picker>
+      </view>
+
+      <view class="home-config-row row">
+        <text class="home-config-label">模型渠道</text>
+        <picker
+          class="home-config-picker grow"
+          mode="selector"
+          range="{{modelOptions}}"
+          range-key="label"
+          value="{{modelIndex}}"
+          disabled="{{configLoading || configError || pendingSessionId}}"
+          bindchange="onModelChange"
+        >
+          <view class="home-config-picker-value row between">
+            <text class="ellipsis">{{modelOptions[modelIndex].label}}</text>
+            <text class="home-config-chevron">⌄</text>
+          </view>
+        </picker>
+      </view>
+
+      <view class="home-config-row row">
+        <text class="home-config-label">推理强度</text>
+        <view class="home-reasoning-control grow row">
+          <slider
+            class="home-reasoning-slider grow"
+            min="0"
+            max="{{reasoningOptions.length - 1}}"
+            step="1"
+            value="{{reasoningIndex}}"
+            disabled="{{configLoading || configError || pendingSessionId}}"
+            activeColor="#3b82f6"
+            backgroundColor="#d8d5d0"
+            block-size="20"
+            bindchange="onReasoningChange"
+          />
+          <text class="home-reasoning-value">
+            {{reasoningOptions[reasoningIndex].label}}
+          </text>
+        </view>
+      </view>
+
+      <view wx:if="{{configLoading}}" class="home-config-status">正在读取这台电脑的项目和模型…</view>
+      <view wx:elif="{{configError}}" class="home-config-error">
+        <text>{{configError}}</text>
+        <text class="home-config-retry" bindtap="onRetryConfig">重试</text>
+      </view>
+      <view wx:if="{{pendingSessionId}}" class="home-config-status">
+        待处理会话已创建，电脑与配置已锁定，避免消息发到另一台电脑。
+      </view>
+    </view>
+  </view>
 </view>

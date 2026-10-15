@@ -73,7 +73,7 @@
           <text class="card-title">会话与设备</text>
         </view>
         <view class="list-row" bindtap="onGoSessions">
-          <text class="list-row-label grow">全部会话</text>
+          <text class="list-row-label grow">远程会话</text>
           <text class="t-faint">›</text>
         </view>
         <view class="list-row" bindtap="onGoSync">

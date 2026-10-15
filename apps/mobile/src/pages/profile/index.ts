@@ -169,7 +169,8 @@ Page({
   // ─── 导航 ───────────────────────────────────────────────────────────────────
 
   onGoSessions() {
-    wx.navigateTo({ url: '/pages/project-sessions/index' })
+    // 远程会话从电脑顶层开始，避免旧的全部会话入口绕过项目层级。
+    wx.reLaunch({ url: '/pages/home/index' })
   },
 
   /** 授信设备管理（云端中继的桌面设备列表与吊销） */

@@ -30,92 +30,62 @@
   opacity: 0.7;
 }
 
-/* ─── 电脑切换条（横向滚动设备 pill） ───────────────────────────────────────── */
+/* ─── 电脑上下文（切换需返回顶层） ──────────────────────────────────────────── */
 
-.ps-devices {
-  padding: 8rpx 32rpx 0;
-}
-
-.ps-devices-scroll {
-  width: 100%;
-  white-space: nowrap;
-}
-
-.ps-devices-row {
-  display: inline-flex;
-  flex-direction: row;
-  gap: 12rpx;
-  padding: 8rpx 0;
-}
-
-.ps-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 10rpx;
-  flex-shrink: 0;
-  padding: 10rpx 24rpx;
-  border-radius: 999rpx;
-  background: #ffffff;
-  border: 1rpx solid #ececec;
-  max-width: 320rpx;
-  box-sizing: border-box;
-}
-
-.ps-pill--hover {
-  background: #f2f1ef;
-}
-
-.ps-pill--active {
-  background: #1a1a1a;
-  border-color: #1a1a1a;
-}
-
-.ps-pill--active .ps-pill-name {
-  color: #ffffff;
-}
-
-.ps-pill-name {
-  font-size: 24rpx;
-  color: #6b6b6b;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ps-pill-dot {
-  flex-shrink: 0;
-  width: 14rpx;
-  height: 14rpx;
-  border-radius: 50%;
-  background: #d4d1cc;
-}
-
-.ps-pill-dot--on {
-  background: #22c55e;
-}
-
-/* ─── 所选电脑离线提示条 ───────────────────────────────────────────────────── */
-
-.ps-offline {
+.ps-device-context {
   display: flex;
   align-items: center;
   gap: 12rpx;
-  margin: 16rpx 32rpx 0;
-  padding: 18rpx 24rpx;
-  border-radius: 16rpx;
-  background: #fdf6ec;
-  border: 1rpx solid #f5e5c8;
-  font-size: 24rpx;
-  color: #b45309;
-  line-height: 1.5;
+  margin: 0 32rpx 8rpx;
+  min-height: 64rpx;
+  padding: 8rpx 16rpx;
+  border: 1rpx solid #ececec;
+  border-radius: 12rpx;
+  background: #fff;
 }
-
-.ps-offline-dot {
-  flex-shrink: 0;
+.ps-context-dot {
+  flex: none;
   width: 14rpx;
   height: 14rpx;
   border-radius: 50%;
   background: #d97706;
+}
+.ps-context-dot--on {
+  background: #22c55e;
+}
+.ps-context-label {
+  flex: none;
+  font-size: 22rpx;
+  color: #8a8782;
+}
+.ps-context-name {
+  flex: 1;
+  min-width: 0;
+  color: #1a1a1a;
+  font-size: 25rpx;
+  font-weight: 500;
+}
+.ps-context-action {
+  flex: none;
+  color: #3b82f6;
+  font-size: 22rpx;
+  padding: 12rpx 0 12rpx 8rpx;
+}
+.ps-context-action:active {
+  background: #f7f6f4;
+}
+
+.ps-back-button {
+  display: flex;
+  justify-content: center;
+  width: 240rpx;
+  margin: 24rpx auto 0;
+  padding: 16rpx 24rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 24rpx;
 }
 
 /* ─── 筛选 + 搜索 ──────────────────────────────────────────────────────────── */

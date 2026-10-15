@@ -1,0 +1,113 @@
+.projects-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.projects-heading {
+  padding: 18rpx 32rpx 24rpx;
+  align-items: flex-end;
+  gap: 16rpx;
+}
+
+.projects-heading .page-title {
+  display: block;
+}
+
+.projects-subtitle {
+  display: block;
+  margin-top: 10rpx;
+  color: #8a8782;
+  font-size: 24rpx;
+}
+
+.projects-manage,
+.projects-switch {
+  flex: none;
+  color: #3b82f6;
+  font-size: 23rpx;
+}
+
+.projects-device-context {
+  gap: 14rpx;
+  margin: 0 32rpx 24rpx;
+  padding: 18rpx 20rpx;
+  border: 1rpx solid #e9e7e4;
+  border-radius: 18rpx;
+  background: #fff;
+}
+
+.projects-device-dot {
+  width: 16rpx;
+  height: 16rpx;
+  flex: none;
+  border-radius: 50%;
+  background: #d4d1cc;
+}
+
+.projects-device-dot--on {
+  background: #22c55e;
+}
+
+.projects-context-label,
+.projects-context-name {
+  display: block;
+}
+
+.projects-context-label {
+  margin-bottom: 6rpx;
+  color: #8a8782;
+  font-size: 21rpx;
+}
+
+.projects-context-name {
+  color: #1a1a1a;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.projects-list {
+  padding: 12rpx 32rpx 48rpx;
+}
+
+.projects-list > .group-title {
+  display: block;
+  margin-bottom: 10rpx;
+}
+
+.projects-row {
+  min-height: 104rpx;
+  gap: 18rpx;
+  border-bottom: 1rpx solid #ececec;
+}
+
+.projects-row--hover {
+  background: #f2f1ef;
+}
+
+.projects-row-icon {
+  flex: none;
+}
+
+.projects-row-copy {
+  min-width: 0;
+}
+
+.projects-row-name {
+  color: #1a1a1a;
+  font-size: 29rpx;
+  font-weight: 500;
+}
+
+.projects-state {
+  padding: 52rpx 40rpx;
+}
+
+.projects-action {
+  width: fit-content;
+  margin: 24rpx auto 0;
+  padding: 15rpx 26rpx;
+  border-radius: 999rpx;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 24rpx;
+}

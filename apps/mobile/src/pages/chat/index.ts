@@ -18,7 +18,12 @@
  */
 
 import * as bridge from '../../api/bridge'
-import { applyEvents, emptyTimeline, type ChatTimeline } from '../../utils/chat-reducer'
+import {
+  applyEvents,
+  emptyTimeline,
+  filterUnseenEvents,
+  type ChatTimeline,
+} from '../../utils/chat-reducer'
 import { buildTimelineItems, type TimelineItem } from '../../utils/chat-view'
 import { formatRelativeTime } from '../../utils/format'
 import { getItem, setItem, StorageKeys } from '../../utils/storage'
@@ -90,6 +95,9 @@ interface ChatPageData {
   scrollToId: string
   /** 历史向上翻页中（顶部提示「加载更早消息…」） */
   loadingEarlier: boolean
+  /** 首屏历史已经成功返回；与空历史及请求失败区分 */
+  historyLoaded: boolean
+  historyError: string
   /** 是否还有更早历史（false 或旧版桌面端缺省时顶部显示「已到最前面」仅当确认拉完） */
   hasMoreHistory: boolean
   /** 隐藏工具调用记录（本地偏好，··· 菜单切换） */
@@ -136,6 +144,8 @@ Page({
     connected: false,
     scrollToId: '',
     loadingEarlier: false,
+    historyLoaded: false,
+    historyError: '',
     hasMoreHistory: false,
     hideToolRecords: false,
     keyboardOpen: false,
@@ -179,10 +189,22 @@ Page({
   unsubscribeDevices: null as (() => void) | null,
   /** 已加载的全部历史事件（按 seq 升序累积；向上翻页时前插） */
   allEvents: [] as bridge.BridgeEvent[],
-  /** 首屏历史单页条数（与 init/loadEarlier 的请求 limit 一致；旧版桌面端 hasMore 缺省时的兜底判定） */
-  historyPageSize: 200,
+  /** 中继重连会重放当前回合事件；页面级 ID 集合去重，避免 delta 被二次拼接。 */
+  seenEventIds: new Set<string>(),
+  /** 与桌面端 ChatView 对齐：每页完整 12 个 turn；eventLimit 是软上限，单个 turn 不会被切碎。 */
+  historyTurnPageSize: 12,
+  historyEventPageLimit: 1200,
+  /** 原始事件游标，即使服务端映射器过滤掉本页所有事件也能继续向前翻页。 */
+  historyCursor: null as number | null,
+  historyGeneration: 0,
 
   onLoad(options: Record<string, string | undefined>) {
+    const deviceId = options.deviceId ?? ''
+    if (!deviceId) {
+      // 聊天必须继承项目层传入的电脑，缺少上下文时回到顶层重新选择。
+      wx.redirectTo({ url: '/pages/home/index' })
+      return
+    }
     const sessionId = options.sessionId ?? ''
     if (!sessionId) {
       wx.showToast({ title: '缺少会话 ID', icon: 'none' })
@@ -191,7 +213,7 @@ Page({
     }
     this.setData({
       sessionId,
-      deviceId: options.deviceId ?? '',
+      deviceId,
       title: options.title ? decodeURIComponent(options.title) : '对话',
       // 工具记录显隐是本地持久偏好，进入页面即生效
       hideToolRecords: getItem<boolean>(StorageKeys.chatHideToolEvents) === true,
@@ -209,6 +231,7 @@ Page({
   },
 
   onUnload() {
+    this.historyGeneration += 1
     if (this.flushTimer) clearTimeout(this.flushTimer)
     if (this.watchdogTimer) clearInterval(this.watchdogTimer)
     this.watchdogTimer = 0
@@ -218,9 +241,9 @@ Page({
     this.unsubscribeDevices = null
   },
 
-  /** 定向的 deviceId（'' → undefined，帧不带 d = 主桌面端） */
-  targetDeviceId(): string | undefined {
-    return this.data.deviceId || undefined
+  /** 聊天页只使用路由继承的电脑，不回退到中继默认选择。 */
+  targetDeviceId(): string {
+    return this.data.deviceId
   },
 
   /** 所选电脑是否在线：presence 已知时刷新顶部提示条；未知（WS 未连上）时不误报 */
@@ -240,16 +263,50 @@ Page({
   async init() {
     const { sessionId } = this.data
     if (!sessionId) return
-    this.setData({ loading: true })
+    const generation = ++this.historyGeneration
+    this.closeStream?.()
+    this.closeStream = null
+    this.setData({ loading: true, historyError: '', historyLoaded: false, connected: false })
     try {
-      const [history] = await Promise.all([
-        bridge.getMessages(sessionId, this.historyPageSize, this.targetDeviceId()),
+      const [firstPage] = await Promise.all([
+        bridge.getMessages(sessionId, {
+          deviceId: this.targetDeviceId(),
+          turnLimit: this.historyTurnPageSize,
+          eventLimit: this.historyEventPageLimit,
+        }),
         this.refreshRuntime().catch(() => undefined),
       ])
-      this.allEvents = history.events
-      const hasMore = this.resolveHasMore(history)
-      this.setData({ hasMoreHistory: hasMore })
-      const timeline = applyEvents(emptyTimeline(), history.events)
+      if (generation !== this.historyGeneration) return
+      const events = [...firstPage.events]
+      let hasMore = this.resolveHasMore(firstPage)
+      let cursor = firstPage.nextBeforeSeq ?? firstPage.events[0]?.seq ?? null
+      let skippedPages = 0
+      while (!this.hasRenderableHistory(events) && hasMore && skippedPages < 8) {
+        if (cursor == null) throw new Error('历史分页缺少游标，请重试加载记录')
+        const page = await bridge.getMessages(sessionId, {
+          deviceId: this.targetDeviceId(),
+          beforeSeq: cursor,
+          turnLimit: this.historyTurnPageSize,
+          eventLimit: this.historyEventPageLimit,
+        })
+        if (generation !== this.historyGeneration) return
+        const nextCursor = page.nextBeforeSeq ?? page.events[0]?.seq ?? null
+        const seen = new Set(events.map((event) => event.id))
+        for (const event of page.events) {
+          if (!seen.has(event.id)) events.push(event)
+        }
+        hasMore = this.resolveHasMore(page)
+        if (hasMore && (nextCursor == null || nextCursor >= cursor)) {
+          throw new Error('历史分页游标未向更早记录推进，请重试加载记录')
+        }
+        cursor = nextCursor
+        skippedPages += 1
+      }
+      this.allEvents = events.sort((a, b) => a.seq - b.seq)
+      this.seenEventIds = new Set(this.allEvents.map((event) => event.id))
+      this.historyCursor = cursor
+      this.setData({ hasMoreHistory: hasMore, historyLoaded: true })
+      const timeline = applyEvents(emptyTimeline(), this.allEvents)
       this.latestTimeline = timeline
       this.localPending = null
       this.lastEventAt = Date.now()
@@ -257,16 +314,30 @@ Page({
       this.connectStream()
       this.startWatchdog()
     } catch (error) {
-      wx.showToast({ title: (error as Error).message || '历史加载失败', icon: 'none' })
+      if (generation === this.historyGeneration) {
+        const message = (error as Error).message || '历史加载失败'
+        this.setData({ historyError: message, historyLoaded: false, connected: false })
+      }
     } finally {
-      this.setData({ loading: false })
+      if (generation === this.historyGeneration) this.setData({ loading: false })
     }
+  },
+
+  onRetryHistory() {
+    void this.init()
+  },
+
+  /** A page may contain only event types omitted from the mobile timeline. */
+  hasRenderableHistory(events: bridge.BridgeEvent[]): boolean {
+    return buildTimelineItems(applyEvents(emptyTimeline(), events).messages).some(
+      (item) => item.kind !== 'time',
+    )
   },
 
   /** hasMore 归一：新版桌面端以服务端为准；旧版缺省时按「满页即可能还有」兜底 */
   resolveHasMore(history: Awaited<ReturnType<typeof bridge.getMessages>>): boolean {
     if (typeof history.hasMore === 'boolean') return history.hasMore
-    return history.events.length >= this.historyPageSize
+    return history.events.length >= 200
   },
 
   /**
@@ -276,29 +347,48 @@ Page({
    */
   async loadEarlier() {
     if (this.data.loading || this.data.loadingEarlier || !this.data.hasMoreHistory) return
-    const oldest = this.allEvents[0]
-    if (oldest == null) return
+    const initialCursor = this.historyCursor ?? this.allEvents[0]?.seq
+    if (initialCursor == null) return
     this.setData({ loadingEarlier: true })
     try {
-      const history = await bridge.getMessages(
-        this.data.sessionId,
-        this.historyPageSize,
-        this.targetDeviceId(),
-        oldest.seq,
-      )
+      let cursor = initialCursor
+      let hasMore: boolean = this.data.hasMoreHistory
       const seen = new Set(this.allEvents.map((event) => event.id))
-      const fresh = history.events.filter((event) => !seen.has(event.id))
-      if (fresh.length === 0) {
-        // 游标之前没有新事件：服务端已到头，收敛状态避免反复空拉
-        this.setData({ hasMoreHistory: false })
-        return
+      const freshEvents: bridge.BridgeEvent[] = []
+
+      // 个别历史页可能只有移动端不展示的内部事件。继续用原始游标向前扫，
+      // 不把「本页没有可渲染事件」误判成「已经到最前面」。每次手势最多扫 8 页。
+      for (let page = 0; page < 8 && hasMore && freshEvents.length === 0; page += 1) {
+        const history = await bridge.getMessages(this.data.sessionId, {
+          deviceId: this.targetDeviceId(),
+          beforeSeq: cursor,
+          turnLimit: this.historyTurnPageSize,
+          eventLimit: this.historyEventPageLimit,
+        })
+        const nextCursor = history.nextBeforeSeq ?? history.events[0]?.seq ?? null
+        for (const event of history.events) {
+          if (!seen.has(event.id)) freshEvents.push(event)
+        }
+        hasMore = this.resolveHasMore(history)
+        if (!hasMore) {
+          this.historyCursor = nextCursor
+          break
+        }
+        if (nextCursor == null || nextCursor >= cursor) {
+          throw new Error('历史分页游标未向更早记录推进，请刷新后重试')
+        }
+        cursor = nextCursor
+        this.historyCursor = cursor
       }
-      this.allEvents = [...fresh, ...this.allEvents]
-      this.setData({ hasMoreHistory: this.resolveHasMore(history) })
-      const timeline = applyEvents(emptyTimeline(), this.allEvents)
-      this.latestTimeline = timeline
-      // 顶部加载：保持当前视觉位置，不触发回底
-      this.flushTimeline(true, { keepScroll: true })
+      if (freshEvents.length > 0) {
+        for (const event of freshEvents) this.seenEventIds.add(event.id)
+        this.allEvents = [...freshEvents, ...this.allEvents].sort((a, b) => a.seq - b.seq)
+        const timeline = applyEvents(emptyTimeline(), this.allEvents)
+        this.latestTimeline = timeline
+        // 顶部加载：保持当前视觉位置，不触发回底。
+        this.flushTimeline(true, { keepScroll: true })
+      }
+      this.setData({ hasMoreHistory: hasMore })
     } catch (error) {
       wx.showToast({ title: (error as Error).message || '加载更早消息失败', icon: 'none' })
     } finally {
@@ -316,11 +406,13 @@ Page({
           this.setData({ connected: true })
         },
         onEvent: (events) => {
+          const unseenEvents = filterUnseenEvents(this.seenEventIds, events)
+          if (unseenEvents.length === 0) return
           const base = this.latestTimeline ?? emptyTimeline()
-          const timeline = applyEvents(base, events)
+          const timeline = applyEvents(base, unseenEvents)
           // 乐观占位去重：真实 user_message 到达且文本匹配 → 移除本地占位，避免双气泡
           if (this.localPending != null) {
-            const confirmed = events.some(
+            const confirmed = unseenEvents.some(
               (event) =>
                 event.type === 'user_message' &&
                 (event.content ?? '').trim() === this.localPending?.text,

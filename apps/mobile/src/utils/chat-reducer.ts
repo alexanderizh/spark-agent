@@ -5,6 +5,7 @@
  *   - user_message                       → 用户气泡
  *   - assistant_message delta            → 按 segmentId（缺省 turnId）追加到当前助手气泡
  *   - assistant_message complete         → 替换同 segment 的文本
+ *   - agent_thinking delta/complete      → 按 segment 拼接思考内容
  *   - tool_call / tool_result            → 工具提示行（折叠展示）
  *   - agent_status thinking/calling_tool → 运行中指示（转写为「思考中 / 调用工具」）
  *   - agent_status 终态 / agent_error    → 结束指示
@@ -15,7 +16,7 @@ import type { BridgeEvent } from '../api/bridge'
 export interface ChatMessage {
   /** 稳定 key：用户消息用事件 id，助手气泡用 segmentId ?? turnId */
   key: string
-  role: 'user' | 'assistant' | 'tool' | 'status'
+  role: 'user' | 'assistant' | 'thinking' | 'tool' | 'status'
   text: string
   /** 所属回合（助手消息记录，final 收尾归并本 turn 分段用） */
   turnId?: string
@@ -35,6 +36,23 @@ export interface ChatTimeline {
 
 export function emptyTimeline(): ChatTimeline {
   return { messages: [], running: false }
+}
+
+/**
+ * 过滤中继重连重放的事件。Set 由聊天页在一次页面生命周期内持有，避免每次 delta
+ * 都复制整段历史的事件 ID；历史翻页和首屏加载也应把返回事件交给此函数登记。
+ */
+export function filterUnseenEvents(
+  seenEventIds: Set<string>,
+  events: BridgeEvent[],
+): BridgeEvent[] {
+  const unseen: BridgeEvent[] = []
+  for (const event of events) {
+    if (seenEventIds.has(event.id)) continue
+    seenEventIds.add(event.id)
+    unseen.push(event)
+  }
+  return unseen
 }
 
 /** 运行中状态 → 人类可读文案 */
@@ -120,6 +138,25 @@ export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): Chat
           messages.push({
             key,
             role: 'assistant',
+            text: event.content ?? '',
+            turnId: event.turnId,
+            createdAt: event.timestamp,
+          })
+        } else if (event.mode === 'delta') {
+          existing.text += event.content ?? ''
+        } else {
+          existing.text = event.content ?? ''
+        }
+        break
+      }
+
+      case 'agent_thinking': {
+        const key = `r:${event.segmentId ?? event.turnId}`
+        const existing = messages.find((item) => item.key === key && item.role === 'thinking')
+        if (existing == null) {
+          messages.push({
+            key,
+            role: 'thinking',
             text: event.content ?? '',
             turnId: event.turnId,
             createdAt: event.timestamp,

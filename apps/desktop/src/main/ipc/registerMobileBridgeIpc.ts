@@ -200,6 +200,14 @@ function toMobileEvent(event: AgentEvent): MobileBridgeEvent | null {
         isFinal: event.isFinal,
         ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
       }
+    case 'agent_thinking':
+      return {
+        ...base,
+        type: 'agent_thinking',
+        content: event.content,
+        mode: event.mode,
+        ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+      }
     case 'tool_call':
       return { ...base, type: 'tool_call', toolName: event.toolName, toolCallId: event.toolCallId }
     case 'tool_result':
@@ -423,10 +431,42 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
 
     listSessions: async (limit, projectId) => {
       const db = getDatabase()
-      const { sessions, total } = new SessionRepository(db).list({
-        limit,
-        ...(projectId != null ? { projectId } : {}),
-      })
+      const sessionRepository = new SessionRepository(db)
+      let projectIds: string[] | null = null
+      if (projectId != null && projectId !== 'default') {
+        projectIds = [projectId]
+        const worktrees = db.raw
+          .prepare(
+            `SELECT id, worktree_meta_json FROM workspaces
+             WHERE archived_at IS NULL AND worktree_meta_json IS NOT NULL`,
+          )
+          .all() as { id: string; worktree_meta_json: string | null }[]
+        for (const worktree of worktrees) {
+          if (parseWorktreeBaseId(worktree.worktree_meta_json) === projectId) {
+            projectIds.push(worktree.id)
+          }
+        }
+      }
+      const queryResults =
+        projectIds == null
+          ? [
+              sessionRepository.list({
+                limit,
+                ...(projectId != null ? { projectId } : {}),
+              }),
+            ]
+          : projectIds.map((id) => sessionRepository.list({ limit, projectId: id }))
+      const sessions = queryResults
+        .flatMap((result) => result.sessions)
+        .sort((a, b) => {
+          const pinOrder = Number(b.pinned_at != null) - Number(a.pinned_at != null)
+          if (pinOrder !== 0) return pinOrder
+          const pinnedAtOrder = (b.pinned_at ?? '').localeCompare(a.pinned_at ?? '')
+          if (pinnedAtOrder !== 0) return pinnedAtOrder
+          return b.updated_at.localeCompare(a.updated_at)
+        })
+        .slice(0, limit)
+      const total = queryResults.reduce((count, result) => count + result.total, 0)
       const previewStmt = db.raw.prepare(
         `SELECT event_json FROM agent_events
          WHERE session_id = ? AND event_type = 'user_message'
@@ -510,11 +550,10 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
       return deps.getSessionService().deleteSession(sessionId)
     },
 
-    getHistory: async (sessionId, limit, beforeSeq) => {
+    getHistory: async (sessionId, query) => {
       const history = await deps.getSessionService().getHistory({
         sessionId,
-        limit,
-        ...(beforeSeq != null ? { beforeSeq } : {}),
+        ...query,
       })
       const events: MobileBridgeEvent[] = []
       for (const event of history.events) {
@@ -536,7 +575,38 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
           break
         }
       }
-      return { events, running, hasMore: history.hasMore }
+      const nextBeforeSeq = history.events[0]?.seq
+      return {
+        events,
+        running,
+        hasMore: history.hasMore,
+        ...(nextBeforeSeq != null ? { nextBeforeSeq } : {}),
+      }
+    },
+
+    getStreamEvents: async (sessionId, afterSeq) => {
+      // 历史分页会有意排除 delta，避免加载完整历史时解析数千条增量事件。
+      // 实时流按游标只读新事件，因此可以保留 assistant/thinking 的 delta 而不重扫历史。
+      const rows = getDatabase()
+        .raw.prepare(
+          `SELECT event_json, seq FROM agent_events
+           WHERE session_id = ? AND seq > ?
+           ORDER BY seq ASC, created_at ASC, rowid ASC
+           LIMIT 500`,
+        )
+        .all(sessionId, afterSeq) as Array<{ event_json: string; seq: number }>
+      const events: MobileBridgeEvent[] = []
+      for (const row of rows) {
+        try {
+          const event = JSON.parse(row.event_json) as AgentEvent
+          const mapped = toMobileEvent(event)
+          if (mapped != null) events.push(mapped)
+        } catch {
+          // 单条损坏事件不阻断后续事件；nextSeq 仍推进到原始行游标。
+        }
+      }
+      const lastRow = rows[rows.length - 1]
+      return { events, nextSeq: lastRow?.seq ?? afterSeq }
     },
 
     submitTurn: async (sessionId, text, attachmentPaths) => {

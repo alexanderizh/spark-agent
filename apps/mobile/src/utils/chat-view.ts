@@ -12,6 +12,7 @@ export type TimelineItem =
   | { kind: 'time'; key: string; label: string }
   | { kind: 'user'; key: string; text: string }
   | { kind: 'assistant'; key: string; text: string }
+  | { kind: 'thinking'; key: string; text: string }
   | {
       kind: 'tool'
       key: string
@@ -41,7 +42,11 @@ export function buildTimelineItems(messages: ChatMessage[]): TimelineItem[] {
   for (const msg of messages) {
     const day = (msg.createdAt ?? '').slice(0, 10)
     if (day && day !== lastDay) {
-      items.push({ kind: 'time', key: `day:${day}:${items.length}`, label: dayLabel(msg.createdAt) })
+      items.push({
+        kind: 'time',
+        key: `day:${day}:${items.length}`,
+        label: dayLabel(msg.createdAt),
+      })
       lastDay = day
     }
     switch (msg.role) {
@@ -50,6 +55,9 @@ export function buildTimelineItems(messages: ChatMessage[]): TimelineItem[] {
         break
       case 'assistant':
         items.push({ kind: 'assistant', key: msg.key, text: msg.text })
+        break
+      case 'thinking':
+        items.push({ kind: 'thinking', key: msg.key, text: msg.text })
         break
       case 'tool':
         items.push({

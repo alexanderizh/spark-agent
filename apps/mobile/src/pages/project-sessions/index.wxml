@@ -1,39 +1,20 @@
-<!-- 项目/全部会话列表：大标题 + 电脑切换条 + 筛选 + 分组两行式条目 + 悬浮胶囊 -->
+<!-- 固定电脑下的项目/全部会话列表：大标题 + 电脑上下文 + 筛选 + 分组条目 -->
 
 <view class="ps-page">
   <safe-nav-bar title="" />
 
-  <!-- 大标题（项目名 / 全部会话） -->
+  <!-- 当前项目 -->
   <view class="ps-title-row">
-    <text class="page-title ellipsis">{{allMode ? '全部会话' : projectName}}</text>
+    <text class="page-title ellipsis">{{projectName}}</text>
     <view class="ps-title-action" bindtap="onOpenBridgeDevices">授信设备</view>
   </view>
 
-  <!-- 电脑切换条：横向滚动设备 pill（设备名 + 在线圆点；离线可选中） -->
-  <view wx:if="{{devices.length > 0}}" class="ps-devices">
-    <scroll-view class="ps-devices-scroll" scroll-x>
-      <view class="ps-devices-row">
-        <view
-          class="ps-pill {{selectedDeviceId === '' ? 'ps-pill--active' : ''}}"
-          hover-class="ps-pill--hover"
-          bindtap="onPickPrimaryDevice"
-        >
-          <view class="ps-pill-dot {{primaryOnline ? 'ps-pill-dot--on' : ''}}"></view>
-          <text class="ps-pill-name">自动</text>
-        </view>
-        <view
-          wx:for="{{devices}}"
-          wx:key="deviceId"
-          class="ps-pill {{selectedDeviceId === item.deviceId ? 'ps-pill--active' : ''}}"
-          hover-class="ps-pill--hover"
-          data-id="{{item.deviceId}}"
-          bindtap="onPickDevice"
-        >
-          <view class="ps-pill-dot {{item.online ? 'ps-pill-dot--on' : ''}}"></view>
-          <text class="ps-pill-name">{{item.name}}</text>
-        </view>
-      </view>
-    </scroll-view>
+  <!-- 电脑是上层上下文；此处只显示归属，返回顶层后才能切换 -->
+  <view class="ps-device-context">
+    <view class="ps-context-dot {{deviceOffline ? '' : 'ps-context-dot--on'}}"></view>
+    <text class="ps-context-label">电脑</text>
+    <text class="ps-context-name ellipsis">{{deviceName}}</text>
+    <text class="ps-context-action" bindtap="onBackToProjects">返回项目 ›</text>
   </view>
 
   <!-- 筛选 + 搜索行 -->
@@ -61,30 +42,25 @@
     </view>
   </view>
 
-  <!-- 列表 -->
+  <!-- 固定电脑下的会话列表 -->
   <view wx:if="{{loading}}" class="loading-tip">加载中…</view>
+
+  <view wx:elif="{{deviceUnavailable}}" class="ps-error">
+    <empty-state icon="monitor" title="这台电脑已解除授信" desc="返回项目列表，或回到电脑顶层重新选择" />
+    <view class="ps-back-button" bindtap="onBackToProjects">返回项目列表</view>
+  </view>
+
+  <view wx:elif="{{deviceOffline}}" class="ps-error">
+    <empty-state icon="monitor" title="这台电脑当前离线" desc="电脑重新连上中继后，可回到项目列表继续查看" />
+    <view class="ps-back-button" bindtap="onBackToProjects">返回项目列表</view>
+  </view>
 
   <view wx:elif="{{errorText}}" class="ps-error">
     <empty-state icon="monitor" title="加载失败" desc="{{errorText}}" />
   </view>
 
-  <!-- 无授信设备：引导在桌面端登录同一账号并开启中继 -->
-  <view wx:elif="{{devicesLoaded && devices.length === 0}}" class="ps-empty">
-    <empty-state
-      icon="monitor"
-      title="还没有授信电脑"
-      desc="在电脑端 SparkWork 用同一 Spark 平台账号登录，并开启「设置 → 生态 → 移动端桥接 → 云端中继」，首次连接后自动授信"
-    />
-  </view>
-
   <block wx:else>
-    <!-- 所选电脑离线：不发请求，列表区显示提示条 -->
-    <view wx:if="{{selectedOffline}}" class="ps-offline">
-      <view class="ps-offline-dot"></view>
-      <text>该电脑离线，请在桌面端开启远程会话（云端中继）</text>
-    </view>
-
-    <view wx:elif="{{groups.length === 0}}" class="ps-empty">
+    <view wx:if="{{groups.length === 0}}" class="ps-empty">
       <empty-state
         icon="chat"
         title="{{searchText ? '没有匹配的会话' : '项目下还没有会话'}}"
@@ -123,8 +99,8 @@
   <capsule-composer
     mode="float"
     value="{{quickText}}"
-    placeholder="{{allMode ? '发起新对话…' : '在 ' + (projectName || '项目') + ' 发起对话…'}}"
-    disabled="{{quickSending}}"
+    placeholder="{{projectId === 'default' ? '在未归属项目中发起对话…' : '在 ' + (projectName || '项目') + ' 发起对话…'}}"
+    disabled="{{quickSending || deviceOffline || deviceUnavailable}}"
     bind:input="onQuickInput"
     bind:send="onQuickSend"
   />

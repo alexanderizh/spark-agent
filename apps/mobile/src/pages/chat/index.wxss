@@ -60,6 +60,28 @@
   padding: 16rpx 0 4rpx;
 }
 
+.chat-history-edge--action {
+  color: #3b82f6;
+}
+
+.chat-history-error {
+  margin: 28rpx 32rpx;
+  padding: 24rpx;
+  border: 1rpx solid #f0d4d4;
+  border-radius: 16rpx;
+  background: #fff7f7;
+  color: #a12b2b;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+.chat-history-retry {
+  display: inline-flex;
+  margin-top: 14rpx;
+  color: #3b82f6;
+  font-size: 24rpx;
+}
+
 /* ─── 消息行 ───────────────────────────────────────────────────────────────── */
 
 .msg-row {
@@ -125,6 +147,35 @@
 /* AI 回复：全宽无气泡 */
 .msg-row--assistant {
   padding: 4rpx 0;
+}
+
+/* 思考内容始终可见，与最终回答区分；流式 delta 会追加到同一段 */
+.msg-row--thinking {
+  margin: 10rpx 0 18rpx;
+  padding: 18rpx 22rpx;
+  border-left: 4rpx solid #c9c6c0;
+  border-radius: 0 14rpx 14rpx 0;
+  background: #efeeeb;
+}
+.thinking-heading {
+  margin-bottom: 10rpx;
+  color: #77736d;
+  font-size: 22rpx;
+  font-weight: 600;
+}
+.thinking-mark {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #8f8b84;
+}
+.thinking-content {
+  display: block;
+  color: #5f5b55;
+  font-size: 25rpx;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* 打字指示（AI 回复为空时） */

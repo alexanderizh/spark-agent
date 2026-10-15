@@ -126,6 +126,7 @@ export interface BridgeProjectSummary {
 export type BridgeEventType =
   | 'user_message'
   | 'assistant_message'
+  | 'agent_thinking'
   | 'tool_call'
   | 'tool_result'
   | 'agent_status'
@@ -376,23 +377,41 @@ export function deleteSession(sessionId: string, deviceId?: string): Promise<{ d
     .then((body) => ({ deleted: body?.deleted !== false }))
 }
 
-/**
- * 会话历史（事件级分页，桌面端排除流式 delta）。
- * beforeSeq：向上翻页游标，只取 seq 小于该值的更早事件；hasMore 缺省 = 旧版桌面端不支持分页。
- */
+/** 桌面端每页返回完整对话轮次；nextBeforeSeq 指向原始事件，映射为空时也能继续翻页。 */
+export interface BridgeHistoryQuery {
+  deviceId?: string
+  beforeSeq?: number
+  turnLimit?: number
+  eventLimit?: number
+}
+
 export function getMessages(
   sessionId: string,
-  limit = 200,
-  deviceId?: string,
-  beforeSeq?: number,
-): Promise<{ sessionId: string; events: BridgeEvent[]; running: boolean; hasMore?: boolean }> {
-  return request<{ sessionId: string; events: BridgeEvent[]; running: boolean; hasMore?: boolean }>(
-    `/v1/sessions/${encodeURIComponent(sessionId)}/messages?limit=${limit}${
-      beforeSeq != null ? `&beforeSeq=${beforeSeq}` : ''
-    }`,
+  query: BridgeHistoryQuery = {},
+): Promise<{
+  sessionId: string
+  events: BridgeEvent[]
+  running: boolean
+  hasMore?: boolean
+  nextBeforeSeq?: number
+}> {
+  const search = [
+    'limit=200',
+    ...(query.turnLimit != null ? [`turnLimit=${query.turnLimit}`] : []),
+    ...(query.eventLimit != null ? [`eventLimit=${query.eventLimit}`] : []),
+    ...(query.beforeSeq != null ? [`beforeSeq=${query.beforeSeq}`] : []),
+  ].join('&')
+  return request<{
+    sessionId: string
+    events: BridgeEvent[]
+    running: boolean
+    hasMore?: boolean
+    nextBeforeSeq?: number
+  }>(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/messages?${search}`,
     'GET',
     undefined,
-    deviceId,
+    query.deviceId,
   )
 }
 

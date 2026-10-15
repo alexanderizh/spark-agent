@@ -9,8 +9,8 @@
  *   1. 请求处理：invokeRelay 把中继帧 { m, p, b } 合成为 HTTP 语义调用，
  *      经 handleHttpRequest 路由到项目 / 会话 / 选项目录 / 工作流绑定 / 附件 /
  *      语音转写 / 定时任务 / 斜杠命令等端点（全部经 deps 闭包注入，避免循环依赖）
- *   2. 事件推送：addRelaySubscriber 复用轮询广播管线（500ms 轮询 getHistory，
- *      diff 后只发新事件），把会话事件增量交给中继上行
+ *   2. 事件推送：addRelaySubscriber 每 500ms 按 seq 读取原始新事件（包含 delta），
+ *      把会话事件增量交给中继上行；历史分页仍走过滤 delta 的 getHistory
  *
  * 依赖注入参照 RemoteConnectionService.startRuntime(handler) 模式：
  * 本服务不 import SessionService/AuthService，由 registerMobileBridgeIpc 装配。
@@ -49,8 +49,6 @@ const log = createLogger('mobile-bridge')
 const STREAM_POLL_INTERVAL_MS = 500
 /** 单次 getHistory 拉取上限（保底，正常远小于此） */
 const HISTORY_LIMIT = 400
-/** 回合终态后的轮询宽限期：等 settle 阶段补发事件（如滞后 agent_error）到齐再回收 */
-const TERMINAL_GRACE_MS = 5_000
 const MAX_BODY_BYTES = 256 * 1024
 /** 附件上传 / 语音转写路由单独放宽的 body 上限（base64 膨胀后 ≈ 原始 8MB） */
 const MAX_UPLOAD_BODY_BYTES = 12 * 1024 * 1024
@@ -78,9 +76,23 @@ export interface MobileBridgeDeps {
    */
   getHistory(
     sessionId: string,
-    limit: number,
-    beforeSeq?: number,
-  ): Promise<{ events: MobileBridgeEvent[]; running: boolean; hasMore?: boolean }>
+    query: {
+      limit: number
+      turnLimit?: number
+      eventLimit?: number
+      beforeSeq?: number
+    },
+  ): Promise<{
+    events: MobileBridgeEvent[]
+    running: boolean
+    hasMore?: boolean
+    nextBeforeSeq?: number
+  }>
+  /** 实时流按 seq 读取原始增量事件；历史分页会有意过滤 delta。 */
+  getStreamEvents(
+    sessionId: string,
+    afterSeq: number,
+  ): Promise<{ events: MobileBridgeEvent[]; nextSeq: number }>
   /** 提交回合（消息进入会话，等同桌面端发送；attachmentPaths 须来自 saveAttachments） */
   submitTurn(
     sessionId: string,
@@ -380,15 +392,33 @@ export class MobileBridgeService {
       // 向上翻页游标：仅接受正整数（非法值静默忽略 = 按最新页返回，向后兼容旧客户端）
       const beforeSeqRaw = url.searchParams.get('beforeSeq')
       const beforeSeq =
-        beforeSeqRaw != null && /^\d+$/.test(beforeSeqRaw) && Number(beforeSeqRaw) > 0
+        beforeSeqRaw != null &&
+        /^\d+$/.test(beforeSeqRaw) &&
+        Number.isSafeInteger(Number(beforeSeqRaw))
           ? Number(beforeSeqRaw)
           : undefined
-      const result = await this.requireDeps().getHistory(sessionId, limit, beforeSeq)
+      const turnLimitRaw = url.searchParams.get('turnLimit')
+      const turnLimit =
+        turnLimitRaw != null && /^\d+$/.test(turnLimitRaw) && Number(turnLimitRaw) > 0
+          ? Math.min(Number(turnLimitRaw), 50)
+          : undefined
+      const eventLimitRaw = url.searchParams.get('eventLimit')
+      const eventLimit =
+        eventLimitRaw != null && /^\d+$/.test(eventLimitRaw) && Number(eventLimitRaw) > 0
+          ? Math.min(Number(eventLimitRaw), 5_000)
+          : undefined
+      const result = await this.requireDeps().getHistory(sessionId, {
+        limit,
+        ...(turnLimit != null ? { turnLimit } : {}),
+        ...(eventLimit != null ? { eventLimit } : {}),
+        ...(beforeSeq != null ? { beforeSeq } : {}),
+      })
       const body: MobileBridgeHistoryResponse = {
         sessionId,
         events: result.events,
         running: result.running,
         ...(result.hasMore != null ? { hasMore: result.hasMore } : {}),
+        ...(result.nextBeforeSeq != null ? { nextBeforeSeq: result.nextBeforeSeq } : {}),
       }
       this.sendJson(res, 200, body)
       return
@@ -818,63 +848,61 @@ export class MobileBridgeService {
 
   // ─── 事件轮询广播 ───────────────────────────────────────────────────────────
 
-  /** 每个有订阅者的会话一个轮询器：拉历史 → 按 seq diff → 广播新事件 */
+  /** 每个有订阅者的会话一个轮询器：按原始事件 seq 增量读取并广播 */
   private ensurePoller(sessionId: string): void {
     if (this.streamPollers.has(sessionId)) return
     const deps = this.deps
     if (deps == null) return
-    // 基线：客户端已从 /messages 取过全量，轮询器先同步一次当前最大 seq，避免重复推送
+    // 基线：普通会话从最后可见事件后开始；运行中的会话从最近用户消息后回放当前回合。
     let lastSeq = -1
-    // 终态宽限：completed 后 settle 阶段还可能补发 agent_error（实测 seq 1121 晚于 1118
-    // completed），立即停轮询会漏推，导致客户端 running 卡死。终态后静默满宽限期才回收。
-    let terminalSince: number | null = null
+    let baselineReady = false
+    let pollInFlight = false
     const timer = setInterval(() => {
       void (async () => {
-        if (this.deps == null) return
+        if (this.deps == null || !baselineReady || pollInFlight) return
+        pollInFlight = true
         try {
-          const history = await this.deps.getHistory(sessionId, HISTORY_LIMIT)
-          const fresh = history.events.filter((event) => event.seq > lastSeq)
+          const stream = await this.deps.getStreamEvents(sessionId, lastSeq)
+          const fresh = stream.events
           if (fresh.length === 0) {
-            // 无新事件时也可能到达回收条件（终态在上一拍已推完）
-            if (terminalSince != null && Date.now() - terminalSince >= TERMINAL_GRACE_MS) {
-              this.stopPoller(sessionId)
-            }
+            lastSeq = Math.max(lastSeq, stream.nextSeq)
             return
           }
-          lastSeq = Math.max(...fresh.map((event) => event.seq))
-          terminalSince = null
+          lastSeq = Math.max(lastSeq, stream.nextSeq)
           const clients = this.streamClients.get(sessionId)
           if (clients != null && clients.size > 0) {
             const payload = JSON.stringify({ type: 'events', sessionId, events: fresh })
             for (const client of clients) client.send(payload)
           }
-          // 回合终态：不立即停，进入宽限期等 settle 补发；宽限期内再有新事件则重置
-          const terminal = fresh.some(
-            (event) =>
-              event.type === 'agent_status' &&
-              (event.status === 'idle' ||
-                event.status === 'completed' ||
-                event.status === 'cancelled' ||
-                event.status === 'error'),
-          )
-          if (terminal && !history.running) {
-            terminalSince = Date.now()
-          }
         } catch (error) {
           log.warn(
             `mobile bridge stream poll failed: ${error instanceof Error ? error.message : String(error)}`,
           )
+        } finally {
+          pollInFlight = false
         }
       })()
     }, STREAM_POLL_INTERVAL_MS)
 
     void (async () => {
       try {
-        const history = await deps.getHistory(sessionId, HISTORY_LIMIT)
-        lastSeq = history.events.reduce((max, event) => Math.max(max, event.seq), -1)
+        const history = await deps.getHistory(sessionId, { limit: HISTORY_LIMIT })
+        const maxVisibleSeq = history.events.reduce((max, event) => Math.max(max, event.seq), -1)
+        if (history.running) {
+          const lastUserSeq = history.events.reduce(
+            (max, event) => (event.type === 'user_message' ? Math.max(max, event.seq) : max),
+            -1,
+          )
+          // 打开正在运行的会话时，从当前回合用户消息之后回放，补齐已生成的 delta。
+          lastSeq = lastUserSeq >= 0 ? lastUserSeq : maxVisibleSeq
+        } else {
+          lastSeq = maxVisibleSeq
+        }
+        baselineReady = true
       } catch {
         // 基线拉取失败时退回「全量推一次」：客户端按 (seq, id) 去重，不会重复渲染
         lastSeq = -1
+        baselineReady = true
       }
     })()
     this.streamPollers.set(sessionId, timer)

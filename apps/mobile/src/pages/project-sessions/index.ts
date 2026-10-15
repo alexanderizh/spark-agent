@@ -1,12 +1,8 @@
 /**
  * 项目会话列表页（Cursor 工作区列表式）。
  *
- * 两种模式：
- *   projectId 存在 → 该项目的会话（标题=项目名，胶囊输入在当前项目发起新会话）
- *   projectId 缺省 → 全部会话聚合（标题「全部会话」，支持状态筛选与标题搜索）
- *
- * 顶部「电脑切换」条：同一账号可有多台授信桌面端，会话列表按所选电脑加载；
- * 数据源 = REST 设备列表（首拉）+ WS presence（增量），选择持久化到本地存储。
+ * 本页必须同时持有上层传入的 deviceId 与 projectId；电脑切换只能返回电脑顶层后进行。
+ * 'default' 是虚拟「未归属项目」，列出未归属会话，新建会话时不向桌面端传项目 id。
  *
  * 列表按「置顶 / 进行中 / 今天 / 昨天 / 7 天内 / 更早」分组；
  * 条目长按弹出 重命名 / 置顶 / 删除 操作。
@@ -14,7 +10,7 @@
 
 import * as bridge from '../../api/bridge'
 import { formatRelativeTime } from '../../utils/format'
-import type { BridgeSessionSummary, RelayDeviceInfo } from '../../api/bridge'
+import type { BridgeSessionSummary } from '../../api/bridge'
 
 type StatusFilter = 'all' | 'running' | 'error' | 'idle'
 
@@ -30,18 +26,12 @@ interface SessionGroup {
   rows: SessionRow[]
 }
 
-/** 电脑切换条的设备 pill（WXML 直接绑定，字段预计算） */
-interface DevicePill {
-  deviceId: string
-  name: string
-  online: boolean
-}
-
 interface ProjectSessionsData {
+  /** 由远程会话顶层固定传入，本页不允许修改 */
+  deviceId: string
+  deviceName: string
   projectId: string
   projectName: string
-  /** 全部会话聚合模式 */
-  allMode: boolean
   loading: boolean
   errorText: string
   groups: SessionGroup[]
@@ -52,17 +42,8 @@ interface ProjectSessionsData {
   autoFocusSearch: boolean
   quickText: string
   quickSending: boolean
-  // ── 电脑切换 ──
-  /** 授信设备 pill 列表（REST + presence 合并） */
-  devices: DevicePill[]
-  /** 选中的桌面端（'' = 主桌面端/自动） */
-  selectedDeviceId: string
-  /** 所选设备是否离线（离线可选中，但列表区显示离线提示条） */
-  selectedOffline: boolean
-  /** REST 设备列表是否已返回（区分「加载中」与「无授信设备」） */
-  devicesLoaded: boolean
-  /** 自动（主桌面端）pill 的在线圆点 */
-  primaryOnline: boolean
+  deviceOffline: boolean
+  deviceUnavailable: boolean
 }
 
 /** 今天 0 点（本地时区） */
@@ -119,9 +100,10 @@ function groupSessions(rows: SessionRow[]): SessionGroup[] {
 
 Page({
   data: {
+    deviceId: '',
+    deviceName: '',
     projectId: '',
     projectName: '',
-    allMode: true,
     loading: true,
     errorText: '',
     groups: [],
@@ -131,35 +113,43 @@ Page({
     autoFocusSearch: false,
     quickText: '',
     quickSending: false,
-    devices: [],
-    selectedDeviceId: '',
-    selectedOffline: false,
-    devicesLoaded: false,
-    primaryOnline: false,
+    deviceOffline: false,
+    deviceUnavailable: false,
   } as ProjectSessionsData,
 
   /** 全量缓存（前端过滤：状态 + 标题搜索） */
   allRows: [] as SessionRow[],
-  /** REST 设备列表（离线设备也在；presence 只含在线） */
-  restDevices: null as RelayDeviceInfo[] | null,
   /** 设备列表订阅取消函数 */
   unsubscribeDevices: null as (() => void) | null,
 
   onLoad(options: Record<string, string | undefined>) {
+    const deviceId = options.deviceId ?? ''
+    if (!deviceId) {
+      // 旧入口没有电脑上下文时回到顶层选择，禁止使用服务端的自动选机路由。
+      wx.redirectTo({ url: '/pages/home/index' })
+      return
+    }
     const projectId = options.projectId ?? ''
+    if (!projectId) {
+      // 项目页是会话列表唯一入口；旧的无项目聚合链接回到项目选择层。
+      wx.redirectTo({
+        url: `/pages/projects/index?deviceId=${encodeURIComponent(deviceId)}&deviceName=${encodeURIComponent(options.deviceName ?? '')}`,
+      })
+      return
+    }
     this.setData({
+      deviceId,
+      deviceName: options.deviceName ? decodeURIComponent(options.deviceName) : '桌面端',
       projectId,
-      allMode: projectId === '',
       projectName: options.projectName ? decodeURIComponent(options.projectName) : '',
       autoFocusSearch: options.search === '1',
-      // 恢复上次选择的电脑（'' = 主桌面端）
-      selectedDeviceId: bridge.getSelectedDeviceId(),
     })
-    // presence 增量：设备上下线时刷新切换条；所选设备恢复在线后重新拉列表
+    // presence 增量只更新固定电脑状态；切换电脑必须先返回顶层。
     this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.onPresenceUpdate())
   },
 
   onShow() {
+    if (!this.data.deviceId) return
     void this.bootstrap()
   },
 
@@ -174,107 +164,60 @@ Page({
 
   /** 设备列表（REST 首拉 + 中继连接）就绪后加载会话 */
   async bootstrap() {
-    await this.refreshDevices()
+    void bridge.ensureRelay().catch(() => undefined)
+    await this.refreshDeviceContext()
     await this.load()
   },
 
-  /** REST 拉授信设备列表；同时建立中继 WS 以接收 presence 增量 */
-  async refreshDevices() {
-    // 中继连接失败不阻塞（REST 已能拿到列表，只是没有实时刷新）
-    void bridge.ensureRelay().catch(() => undefined)
+  async refreshDeviceContext() {
     try {
       const result = await bridge.listRelayDevices()
-      this.restDevices = result?.devices ?? []
-      // 只有 REST 真正返回过，才允许进入「无授信设备」引导态（网络抖动不算）
-      this.setData({ devicesLoaded: true })
-    } catch {
-      // REST 失败时保留上次结果（或空），由 presence 兜底在线设备
-    }
-    this.rebuildDeviceBar()
-  },
-
-  /** presence 增量到达：合并刷新切换条；所选设备从离线恢复在线时重新加载列表 */
-  onPresenceUpdate() {
-    const wasOffline = this.data.selectedOffline
-    this.rebuildDeviceBar()
-    if (wasOffline && !this.data.selectedOffline && this.data.selectedDeviceId !== '') {
-      void this.load()
-    }
-  },
-
-  /** REST 列表 + presence 快照合并出设备 pill；校验所选设备仍存在 */
-  rebuildDeviceBar() {
-    const presence = bridge.getRelayPresenceDevices()
-    const presenceFresh = bridge.isRelayPresenceFresh()
-    const presenceById = new Map(presence.map((item) => [item.deviceId, item]))
-    const merged: DevicePill[] = []
-    const seen = new Set<string>()
-    for (const item of this.restDevices ?? []) {
-      seen.add(item.deviceId)
-      const live = presenceById.get(item.deviceId)
-      merged.push({
-        deviceId: item.deviceId,
-        name: live?.label || item.name || '桌面端',
-        // presence 只含在线设备：在列表里但不在 presence = 离线；
-        // presence 还没到过（WS 未连上）时退回 REST 的 online 快照
-        online: presenceFresh ? live != null : item.online,
+      const trusted = (result?.devices ?? []).find((item) => item.deviceId === this.data.deviceId)
+      if (!trusted) {
+        this.setData({ deviceUnavailable: true, deviceOffline: true, groups: [], loading: false })
+        return
+      }
+      const live = bridge
+        .getRelayPresenceDevices()
+        .find((item) => item.deviceId === this.data.deviceId)
+      const online = bridge.isRelayPresenceFresh() ? live != null : trusted.online
+      this.setData({
+        deviceName: live?.label || trusted.name || this.data.deviceName,
+        deviceUnavailable: false,
+        deviceOffline: !online,
       })
+    } catch {
+      // REST 暂不可用时用 presence 判断；状态未知时继续定向请求并显示具体错误。
+      if (bridge.isRelayPresenceFresh()) {
+        const online = bridge
+          .getRelayPresenceDevices()
+          .some((item) => item.deviceId === this.data.deviceId)
+        this.setData({ deviceOffline: !online })
+      }
     }
-    // presence 里有、REST 列表还没有的（刚授信的设备），补进切换条
-    for (const item of presence) {
-      if (seen.has(item.deviceId)) continue
-      merged.push({ deviceId: item.deviceId, name: item.label || '桌面端', online: true })
-    }
-
-    let selected = this.data.selectedDeviceId
-    if (selected !== '' && !merged.some((item) => item.deviceId === selected)) {
-      // 所选设备被吊销/消失 → 回落到主桌面端
-      selected = ''
-      bridge.setSelectedDeviceId('')
-    }
-    const selectedPill = merged.find((item) => item.deviceId === selected)
-    this.setData({
-      devices: merged,
-      selectedDeviceId: selected,
-      selectedOffline: selectedPill != null && !selectedPill.online,
-      primaryOnline: merged.some((item) => item.online),
-    })
   },
 
-  /** 选「自动」= 不定向，服务端选主桌面端（最近活跃的在线桌面端） */
-  onPickPrimaryDevice() {
-    if (this.data.selectedDeviceId === '') return
-    bridge.setSelectedDeviceId('')
-    this.setData({ selectedDeviceId: '', selectedOffline: false })
-    void this.load()
-  },
-
-  onPickDevice(e: WechatMiniprogram.CustomEvent) {
-    const id = String(e.currentTarget.dataset.id ?? '')
-    if (!id || id === this.data.selectedDeviceId) return
-    bridge.setSelectedDeviceId(id)
-    const pill = this.data.devices.find((item) => item.deviceId === id)
-    this.setData({ selectedDeviceId: id, selectedOffline: pill != null && !pill.online })
-    void this.load()
+  /** presence 增量只更新本页固定电脑；恢复在线后重新拉当前项目 */
+  onPresenceUpdate() {
+    if (!bridge.isRelayPresenceFresh()) return
+    const wasOffline = this.data.deviceOffline
+    const online = bridge
+      .getRelayPresenceDevices()
+      .some((item) => item.deviceId === this.data.deviceId)
+    this.setData({ deviceOffline: !online })
+    if (wasOffline && online) void this.load()
   },
 
   async load() {
-    // 无授信设备：列表区显示引导空态，不发起会话调用
-    if (this.data.devicesLoaded && this.data.devices.length === 0) {
+    // 路由必须提供明确电脑；设备被吊销或离线时不回退到其它电脑。
+    if (this.data.deviceUnavailable || this.data.deviceOffline) {
       this.setData({ loading: false, groups: [], errorText: '' })
       return
     }
-    // 所选电脑离线：不发请求，列表区显示离线提示条
-    if (this.data.selectedOffline) {
-      this.setData({ loading: false, groups: [] })
-      return
-    }
     this.setData({ loading: true })
-    const deviceId = this.data.selectedDeviceId || undefined
+    const deviceId = this.data.deviceId
     try {
-      const result = this.data.allMode
-        ? await bridge.listSessions(100, undefined, deviceId)
-        : await bridge.listProjectSessions(this.data.projectId, 100, deviceId)
+      const result = await bridge.listProjectSessions(this.data.projectId, 100, deviceId)
       const rows = result.sessions.map((item) => ({
         ...item,
         statusLabel:
@@ -330,9 +273,19 @@ Page({
     wx.navigateTo({ url: '/pages/bridge-devices/index' })
   },
 
-  /** 进聊天页：路由带上所选 deviceId，聊天页据此定向调用与订阅 */
+  /** 返回项目列表；如通过旧链接直接进入，则恢复固定电脑上下文。 */
+  onBackToProjects() {
+    wx.navigateBack({
+      fail: () =>
+        wx.redirectTo({
+          url: `/pages/projects/index?deviceId=${encodeURIComponent(this.data.deviceId)}&deviceName=${encodeURIComponent(this.data.deviceName)}`,
+        }),
+    })
+  },
+
+  /** 进聊天页：继承当前电脑上下文，不使用全局自动选机 */
   chatUrl(sessionId: string, title: string): string {
-    return `/pages/chat/index?sessionId=${encodeURIComponent(sessionId)}&title=${encodeURIComponent(title)}&deviceId=${encodeURIComponent(this.data.selectedDeviceId)}`
+    return `/pages/chat/index?sessionId=${encodeURIComponent(sessionId)}&title=${encodeURIComponent(title)}&deviceId=${encodeURIComponent(this.data.deviceId)}`
   },
 
   onOpenSession(e: WechatMiniprogram.CustomEvent) {
@@ -409,9 +362,9 @@ Page({
     })
   },
 
-  /** 当前定向的 deviceId（'' → undefined，帧不带 d = 主桌面端） */
+  /** 当前项目固定所属的电脑；不会回退到服务端自动选机 */
   targetDeviceId(): string | undefined {
-    return this.data.selectedDeviceId || undefined
+    return this.data.deviceId || undefined
   },
 
   // ─── 快速发起（底部胶囊，归属当前项目） ─────────────────────────────────────
@@ -422,13 +375,14 @@ Page({
 
   async onQuickSend() {
     const text = this.data.quickText.trim()
-    if (!text || this.data.quickSending) return
+    if (!text || this.data.quickSending || this.data.deviceUnavailable || this.data.deviceOffline)
+      return
     this.setData({ quickSending: true })
     try {
       const deviceId = this.targetDeviceId()
       const created = await bridge.createSession(
         text.slice(0, 30),
-        this.data.allMode ? undefined : this.data.projectId,
+        this.data.projectId === 'default' ? undefined : this.data.projectId,
         deviceId,
       )
       await bridge.submitTurn(created.session.id, text, undefined, deviceId)
