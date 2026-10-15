@@ -1,7 +1,7 @@
 {
   "name": "@spark/agent",
-  "version": "0.7.4",
-  "sha256": "ef992c1bdcb1631121a26842ad3777c276a6a29e1d790fe6550e09fc2389547a",
-  "tarball": "spark-agent-0.7.4.tgz",
-  "publishedAt": "2026-10-15T02:26:00.793Z"
+  "version": "0.7.5",
+  "sha256": "e48474aa36093c1d8d49c6a546f9a70e3e41b7955cf6350599b13d555febe7d6",
+  "tarball": "spark-agent-0.7.5.tgz",
+  "publishedAt": "2026-10-15T12:24:55.780Z"
 }
