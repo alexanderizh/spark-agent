@@ -281,61 +281,128 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           id: 'general',
           icon: <Icons.Settings size={13} />,
           label: translate('settingsView.t3'),
-          keywords: [translate('settingsView.t4'), translate('settingsView.t5'), translate('settingsView.t6'), translate('settingsView.t7'), translate('settingsView.t8')],
+          keywords: [
+            translate('settingsView.t4'),
+            translate('settingsView.t5'),
+            translate('settingsView.t6'),
+            translate('settingsView.t7'),
+            translate('settingsView.t8'),
+          ],
         },
         {
           id: 'appearance',
           icon: <Icons.Sparkles size={13} />,
           label: translate('settingsView.t9'),
-          keywords: [translate('settingsView.t10'), translate('settingsView.t11'), translate('settingsView.t12'), translate('settingsView.t13'), translate('settingsView.t14'), translate('settingsView.t15'), translate('settingsView.t16'), translate('settingsView.t17')],
+          keywords: [
+            translate('settingsView.t10'),
+            translate('settingsView.t11'),
+            translate('settingsView.t12'),
+            translate('settingsView.t13'),
+            translate('settingsView.t14'),
+            translate('settingsView.t15'),
+            translate('settingsView.t16'),
+            translate('settingsView.t17'),
+          ],
         },
         {
           id: 'account-sync',
           icon: <Icons.Refresh size={13} />,
           label: translate('settingsView.t18'),
-          keywords: [translate('settingsView.t19'), translate('settingsView.t20'), translate('settingsView.t21'), translate('settingsView.t22'), translate('settingsView.t23')],
+          keywords: [
+            translate('settingsView.t19'),
+            translate('settingsView.t20'),
+            translate('settingsView.t21'),
+            translate('settingsView.t22'),
+            translate('settingsView.t23'),
+          ],
         },
         {
           id: 'memory',
           icon: <Icons.Brain size={13} />,
           label: translate('settingsView.t24'),
-          keywords: [translate('settingsView.t25'), translate('settingsView.t26'), translate('settingsView.t27')],
+          keywords: [
+            translate('settingsView.t25'),
+            translate('settingsView.t26'),
+            translate('settingsView.t27'),
+          ],
         },
         {
           id: 'wiki',
           icon: <Icons.Book size={13} />,
           label: translate('settingsView.t28'),
-          keywords: ['wiki', translate('settingsView.t28'), translate('settingsView.t29'), translate('settingsView.t30'), translate('settingsView.t31'), translate('settingsView.t32')],
+          keywords: [
+            'wiki',
+            translate('settingsView.t28'),
+            translate('settingsView.t29'),
+            translate('settingsView.t30'),
+            translate('settingsView.t31'),
+            translate('settingsView.t32'),
+          ],
         },
         {
           id: 'remote-connections',
           icon: <Icons.Globe size={13} />,
           label: translate('settingsView.t33'),
-          keywords: ['API Key', translate('settingsView.t34'), 'Provider', translate('settingsView.t35'), translate('settingsView.t36'), translate('settingsView.t37')],
+          keywords: [
+            'API Key',
+            translate('settingsView.t34'),
+            'Provider',
+            translate('settingsView.t35'),
+            translate('settingsView.t36'),
+            translate('settingsView.t37'),
+          ],
         },
         {
           id: 'voice-assistant',
           icon: <Icons.Monitor size={13} />,
           label: translate('settingsView.t38'),
-          keywords: [translate('settingsView.t39'), translate('settingsView.t40'), translate('settingsView.t41'), 'TTS', translate('settingsView.t42'), translate('settingsView.t43'), translate('settingsView.t44')],
+          keywords: [
+            translate('settingsView.t39'),
+            translate('settingsView.t40'),
+            translate('settingsView.t41'),
+            'TTS',
+            translate('settingsView.t42'),
+            translate('settingsView.t43'),
+            translate('settingsView.t44'),
+          ],
         },
         {
           id: 'performance',
           icon: <Icons.Activity size={13} />,
           label: translate('settingsView.t45'),
-          keywords: [translate('settingsView.t46'), translate('settingsView.t47'), translate('settingsView.t48'), translate('settingsView.t49'), translate('settingsView.t50'), translate('settingsView.t51'), translate('settingsView.t52'), 'performance'],
+          keywords: [
+            translate('settingsView.t46'),
+            translate('settingsView.t47'),
+            translate('settingsView.t48'),
+            translate('settingsView.t49'),
+            translate('settingsView.t50'),
+            translate('settingsView.t51'),
+            translate('settingsView.t52'),
+            'performance',
+          ],
         },
         {
           id: 'integrity',
           icon: <Icons.Shield size={13} />,
           label: translate('settingsView.t53'),
-          keywords: [translate('settingsView.t54'), translate('settingsView.t55'), 'Chromium', translate('settingsView.t56'), translate('settingsView.t53')],
+          keywords: [
+            translate('settingsView.t54'),
+            translate('settingsView.t55'),
+            'Chromium',
+            translate('settingsView.t56'),
+            translate('settingsView.t53'),
+          ],
         },
         {
           id: 'hooks',
           icon: <Icons.Bell size={13} />,
           label: 'Hooks',
-          keywords: [translate('settingsView.t57'), translate('settingsView.t58'), translate('settingsView.t59'), translate('settingsView.t60')],
+          keywords: [
+            translate('settingsView.t57'),
+            translate('settingsView.t58'),
+            translate('settingsView.t59'),
+            translate('settingsView.t60'),
+          ],
         },
       ],
     },
@@ -346,31 +413,61 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           id: 'rules',
           icon: <Icons.Beaker size={13} />,
           label: translate('settingsView.t61'),
-          keywords: [translate('settingsView.t62'), 'AGENTS', 'CLAUDE', translate('settingsView.t63')],
+          keywords: [
+            translate('settingsView.t62'),
+            'AGENTS',
+            'CLAUDE',
+            translate('settingsView.t63'),
+          ],
         },
         {
           id: 'custom-commands',
           icon: <Icons.Command size={13} />,
           label: translate('settingsView.t64'),
-          keywords: [translate('settingsView.t65'), 'slash', translate('settingsView.t66'), translate('settingsView.t67')],
+          keywords: [
+            translate('settingsView.t65'),
+            'slash',
+            translate('settingsView.t66'),
+            translate('settingsView.t67'),
+          ],
         },
         {
           id: 'permissions',
           icon: <Icons.Shield size={13} />,
           label: translate('settingsView.t68'),
-          keywords: [translate('settingsView.t69'), translate('settingsView.t70'), translate('settingsView.t71'), translate('settingsView.t72'), translate('settingsView.t73')],
+          keywords: [
+            translate('settingsView.t69'),
+            translate('settingsView.t70'),
+            translate('settingsView.t71'),
+            translate('settingsView.t72'),
+            translate('settingsView.t73'),
+          ],
         },
         {
           id: 'session-workflow',
           icon: <Icons.Workflow size={13} />,
           label: translate('settingsView.t74'),
-          keywords: [translate('settingsView.t75'), translate('settingsView.t76'), translate('settingsView.t77'), translate('settingsView.t78'), translate('settingsView.t74')],
+          keywords: [
+            translate('settingsView.t75'),
+            translate('settingsView.t76'),
+            translate('settingsView.t77'),
+            translate('settingsView.t78'),
+            translate('settingsView.t74'),
+          ],
         },
         {
           id: 'toolchain',
           icon: <Icons.Puzzle size={13} />,
           label: translate('settingsView.t79'),
-          keywords: [translate('settingsView.t80'), 'toolchain', 'MCP', translate('settingsView.t81'), translate('settingsView.t82'), translate('settingsView.t73'), translate('settingsView.t83')],
+          keywords: [
+            translate('settingsView.t80'),
+            'toolchain',
+            'MCP',
+            translate('settingsView.t81'),
+            translate('settingsView.t82'),
+            translate('settingsView.t73'),
+            translate('settingsView.t83'),
+          ],
         },
       ],
     },
@@ -381,19 +478,37 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           id: 'playwright',
           icon: <Icons.Globe size={13} />,
           label: translate('settingsView.t85'),
-          keywords: ['Playwright', translate('settingsView.t86'), translate('settingsView.t87'), translate('settingsView.t88'), 'E2E'],
+          keywords: [
+            'Playwright',
+            translate('settingsView.t86'),
+            translate('settingsView.t87'),
+            translate('settingsView.t88'),
+            'E2E',
+          ],
         },
         {
           id: 'usage',
           icon: <Icons.Activity size={13} />,
           label: translate('settingsView.t89'),
-          keywords: ['token', translate('settingsView.t90'), translate('settingsView.t91'), translate('settingsView.t92')],
+          keywords: [
+            'token',
+            translate('settingsView.t90'),
+            translate('settingsView.t91'),
+            translate('settingsView.t92'),
+          ],
         },
         {
           id: 'storage',
           icon: <Icons.Database size={13} />,
           label: translate('settingsView.t93'),
-          keywords: [translate('settingsView.t94'), translate('settingsView.t22'), translate('settingsView.t95'), translate('settingsView.t96'), translate('settingsView.t97'), translate('settingsView.t98')],
+          keywords: [
+            translate('settingsView.t94'),
+            translate('settingsView.t22'),
+            translate('settingsView.t95'),
+            translate('settingsView.t96'),
+            translate('settingsView.t97'),
+            translate('settingsView.t98'),
+          ],
         },
         // MCP 设置暂未完全实现，隐藏导航项
         // { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
@@ -401,19 +516,39 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           id: 'team-registry',
           icon: <Icons.Users size={13} />,
           label: translate('settingsView.t99'),
-          keywords: ['Nacos', translate('settingsView.t100'), translate('settingsView.t101'), translate('settingsView.t102'), translate('settingsView.t103'), translate('settingsView.t99')],
+          keywords: [
+            'Nacos',
+            translate('settingsView.t100'),
+            translate('settingsView.t101'),
+            translate('settingsView.t102'),
+            translate('settingsView.t103'),
+            translate('settingsView.t99'),
+          ],
         },
         {
           id: 'system-prompt',
           icon: <Icons.Chat size={13} />,
           label: translate('settingsView.t104'),
-          keywords: [translate('settingsView.t105'), 'prompt', translate('settingsView.t106'), translate('settingsView.t107')],
+          keywords: [
+            translate('settingsView.t105'),
+            'prompt',
+            translate('settingsView.t106'),
+            translate('settingsView.t107'),
+          ],
         },
         {
           id: 'sub-app',
           icon: <Icons.Sparkles size={13} />,
           label: translate('settingsView.t108'),
-          keywords: ['sub-app', translate('settingsView.t108'), translate('settingsView.t109'), 'CSP', translate('settingsView.t110'), 'eval', translate('settingsView.t111')],
+          keywords: [
+            'sub-app',
+            translate('settingsView.t108'),
+            translate('settingsView.t109'),
+            'CSP',
+            translate('settingsView.t110'),
+            'eval',
+            translate('settingsView.t111'),
+          ],
         },
         {
           id: 'mobile-bridge',
@@ -430,13 +565,24 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           id: 'shortcuts',
           icon: <Icons.Command size={13} />,
           label: translate('settingsView.t41'),
-          keywords: [translate('settingsView.t113'), translate('settingsView.t114'), translate('settingsView.t115'), 'shortcut'],
+          keywords: [
+            translate('settingsView.t113'),
+            translate('settingsView.t114'),
+            translate('settingsView.t115'),
+            'shortcut',
+          ],
         },
         {
           id: 'computer-use',
           icon: <Icons.Monitor size={13} />,
           label: translate('settingsView.t116'),
-          keywords: [translate('settingsView.t117'), translate('settingsView.t118'), translate('settingsView.t119'), translate('settingsView.t120'), 'computer use'],
+          keywords: [
+            translate('settingsView.t117'),
+            translate('settingsView.t118'),
+            translate('settingsView.t119'),
+            translate('settingsView.t120'),
+            'computer use',
+          ],
         },
         {
           id: 'telemetry',
@@ -448,19 +594,33 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           id: 'archived',
           icon: <Icons.Archive size={13} />,
           label: translate('settingsView.t124'),
-          keywords: [translate('settingsView.t125'), translate('settingsView.t126'), translate('settingsView.t127')],
+          keywords: [
+            translate('settingsView.t125'),
+            translate('settingsView.t126'),
+            translate('settingsView.t127'),
+          ],
         },
         {
           id: 'updates',
           icon: <Icons.Refresh size={13} />,
           label: translate('settingsView.t128'),
-          keywords: [translate('settingsView.t129'), translate('settingsView.t130'), translate('settingsView.t131'), 'release'],
+          keywords: [
+            translate('settingsView.t129'),
+            translate('settingsView.t130'),
+            translate('settingsView.t131'),
+            'release',
+          ],
         },
         {
           id: 'about',
           icon: <Icons.Sparkles size={13} />,
           label: translate('settingsView.t132'),
-          keywords: [translate('settingsView.t133'), translate('settingsView.t134'), translate('settingsView.t135'), translate('settingsView.t136')],
+          keywords: [
+            translate('settingsView.t133'),
+            translate('settingsView.t134'),
+            translate('settingsView.t135'),
+            translate('settingsView.t136'),
+          ],
         },
       ],
     },
@@ -665,13 +825,10 @@ function GeneralSection() {
         />
       </div>
 
-      <UsageHeatmap />
-
-      <ModelUsageTrendCard />
-
       <div className="form-grid">
         <label>
-          {translate('settingsView.t4')}<span className="sub">{translate('settingsView.t364')}</span>
+          {translate('settingsView.t4')}
+          <span className="sub">{translate('settingsView.t364')}</span>
         </label>
         <Select
           value={resolveSupportedLanguage(s.language)}
@@ -689,7 +846,9 @@ function GeneralSection() {
         <label>
           {translate('settingsView.t365')}
           <span className="sub">
-            {autoStartSupported ? translate('settingsView.t137Desc') : translate('settingsView.t138Desc')}
+            {autoStartSupported
+              ? translate('settingsView.t137Desc')
+              : translate('settingsView.t138Desc')}
           </span>
         </label>
         <Switch
@@ -714,6 +873,10 @@ function GeneralSection() {
           }
         />
       </div>
+
+      <UsageHeatmap />
+
+      <ModelUsageTrendCard />
     </div>
   )
 }
@@ -798,7 +961,8 @@ function AppearanceSection() {
       <div className="subsec-h">{translate('settingsView.t369')}</div>
       <div className="form-grid">
         <label>
-          {translate('settingsView.t370')}<span className="sub">{translate('settingsView.t371')}</span>
+          {translate('settingsView.t370')}
+          <span className="sub">{translate('settingsView.t371')}</span>
         </label>
         <Segmented
           value={t.density}
@@ -826,7 +990,8 @@ function AppearanceSection() {
         </div>
 
         <label>
-          {translate('settingsView.t15')}<span className="sub">{translate('settingsView.t372Desc')}</span>
+          {translate('settingsView.t15')}
+          <span className="sub">{translate('settingsView.t372Desc')}</span>
         </label>
         <div className="control">
           <Space.Compact>
@@ -845,7 +1010,11 @@ function AppearanceSection() {
         <label>
           {translate('settingsView.t373')}
           <span className="sub">
-            {translate('settingsView.tpl35Desc', { zoom: a.uiZoom ?? 100, plus: modSymbol(), minus: modSymbol() })}
+            {translate('settingsView.tpl35Desc', {
+              zoom: a.uiZoom ?? 100,
+              plus: modSymbol(),
+              minus: modSymbol(),
+            })}
           </span>
         </label>
         <div className="control ui-zoom-control">
@@ -870,7 +1039,8 @@ function AppearanceSection() {
         </div>
 
         <label>
-          {translate('settingsView.t374')}<span className="sub">{translate('settingsView.t375Desc')}</span>
+          {translate('settingsView.t374')}
+          <span className="sub">{translate('settingsView.t375Desc')}</span>
         </label>
         <Switch
           size="middle"
@@ -890,7 +1060,8 @@ function AppearanceSection() {
         />
 
         <label>
-          {translate('settingsView.t377')}<span className="sub">{translate('settingsView.t378Desc')}</span>
+          {translate('settingsView.t377')}
+          <span className="sub">{translate('settingsView.t378Desc')}</span>
         </label>
         <Switch
           size="middle"
@@ -1005,7 +1176,13 @@ function ThemePreview({
         </div>
       </div>
       <div className="theme-preview-foot">
-        <span>{kind === 'light' ? translate('settingsView.t13') : kind === 'dark' ? translate('settingsView.t12') : translate('settingsView.t150')}</span>
+        <span>
+          {kind === 'light'
+            ? translate('settingsView.t13')
+            : kind === 'dark'
+              ? translate('settingsView.t12')
+              : translate('settingsView.t150')}
+        </span>
         {active && <Icons.Check size={13} className="color-primary" />}
       </div>
     </button>
@@ -1067,9 +1244,7 @@ function ShortcutsSection() {
   return (
     <div className="settings-section section-wider">
       <h2>{translate('settingsView.t41')}</h2>
-      <div className="lede">
-        {translate('settingsView.t380Desc')}
-      </div>
+      <div className="lede">{translate('settingsView.t380Desc')}</div>
 
       <div className="row row-mb-sm">
         <Input
@@ -1198,11 +1373,11 @@ function ModelsSection() {
       <div className="row section-header-row">
         <div className="flex1">
           <h2 className="section-h2">{translate('settingsView.t383')}</h2>
-          <div className="lede section-lede">
-            {translate('settingsView.t384Desc')}
-          </div>
+          <div className="lede section-lede">{translate('settingsView.t384Desc')}</div>
         </div>
-        <span className="badge primary dot">{translate('settingsView.tpl36Desc', { count: models.length })}</span>
+        <span className="badge primary dot">
+          {translate('settingsView.tpl36Desc', { count: models.length })}
+        </span>
       </div>
 
       {error && <div className="alert-banner">{error}</div>}
@@ -1255,7 +1430,9 @@ function ModelsSection() {
               </div>
             )}
 
-            {pModels.length === 0 && <div className="model-card-empty">{translate('settingsView.t390')}</div>}
+            {pModels.length === 0 && (
+              <div className="model-card-empty">{translate('settingsView.t390')}</div>
+            )}
 
             {pModels.map((m) => {
               const cap = ModelCapabilityRegistry.getCapabilities(m.name)
@@ -1277,7 +1454,11 @@ function ModelsSection() {
                     </div>
                   )}
                   <Switch size="middle" checked={m.enabled} onChange={() => void handleToggle(m)} />
-                  <button className="icon-btn" title={translate('settingsView.t157')} onClick={() => void handleDelete(m.id)}>
+                  <button
+                    className="icon-btn"
+                    title={translate('settingsView.t157')}
+                    onClick={() => void handleDelete(m.id)}
+                  >
                     <Icons.X size={13} />
                   </button>
                 </div>
@@ -1304,8 +1485,20 @@ const RULE_LAYER_META: Array<{
     badgeColor: '#94a3b8',
     desc: translate('settingsView.t158'),
   },
-  { scope: 'team', label: 'Team', badge: 'TEAM', badgeColor: '#8b5cf6', desc: translate('settingsView.t159') },
-  { scope: 'user', label: 'User', badge: 'USER', badgeColor: '#10b981', desc: translate('settingsView.t160') },
+  {
+    scope: 'team',
+    label: 'Team',
+    badge: 'TEAM',
+    badgeColor: '#8b5cf6',
+    desc: translate('settingsView.t159'),
+  },
+  {
+    scope: 'user',
+    label: 'User',
+    badge: 'USER',
+    badgeColor: '#10b981',
+    desc: translate('settingsView.t160'),
+  },
   {
     scope: 'project',
     label: 'Project',
@@ -1404,14 +1597,16 @@ function RulesSection() {
     <>
       <div className="settings-section">
         <h2>{translate('settingsView.t61')}</h2>
-        <div className="lede">
-          {translate('settingsView.t391LongDesc')}
-        </div>
+        <div className="lede">{translate('settingsView.t391LongDesc')}</div>
 
         <div className="row info-banner">
           <Icons.Brain size={14} className="color-primary flex-shrink-0" />
           <div className="flex1 info-banner-text">
-            <strong>{translate('settingsView.t392')}</strong> · {translate('settingsView.tpl37Desc', { count: activeCount, scopes: RULE_LAYER_META.length })}
+            <strong>{translate('settingsView.t392')}</strong> ·{' '}
+            {translate('settingsView.tpl37Desc', {
+              count: activeCount,
+              scopes: RULE_LAYER_META.length,
+            })}
           </div>
           <Button size="middle" type="primary" icon={<Icons.Refresh size={11} />} onClick={refresh}>
             {translate('settingsView.t393')}
@@ -1429,7 +1624,10 @@ function RulesSection() {
               scope={meta.label}
               badge={meta.badge}
               badgeColor={meta.badgeColor}
-              desc={translate('settingsView.tpl2Desc', { desc: meta.desc, count: grouped[meta.scope].length })}
+              desc={translate('settingsView.tpl2Desc', {
+                desc: meta.desc,
+                count: grouped[meta.scope].length,
+              })}
               rules={grouped[meta.scope]}
               readOnly={meta.scope === 'system'}
               onToggle={handleToggle}
@@ -1490,7 +1688,9 @@ function RuleLayer({
           <span className="desc"> · {desc}</span>
         </div>
         <div className="flex1" />
-        {readOnly && <span className="badge rule-readonly-badge">{translate('settingsView.t395')}</span>}
+        {readOnly && (
+          <span className="badge rule-readonly-badge">{translate('settingsView.t395')}</span>
+        )}
         {!readOnly && (
           <button className="icon-btn" title={translate('settingsView.t168')} onClick={onAdd}>
             <Icons.Plus size={13} />
@@ -1513,10 +1713,18 @@ function RuleLayer({
             <Switch size="middle" checked={rule.enabled} onChange={(v) => onToggle(rule.id, v)} />
             {!readOnly && (
               <>
-                <button className="icon-btn" title={translate('settingsView.t301')} onClick={() => onEdit(rule)}>
+                <button
+                  className="icon-btn"
+                  title={translate('settingsView.t301')}
+                  onClick={() => onEdit(rule)}
+                >
                   <Icons.Edit size={13} />
                 </button>
-                <button className="icon-btn" title={translate('settingsView.t157')} onClick={() => onDelete(rule.id)}>
+                <button
+                  className="icon-btn"
+                  title={translate('settingsView.t157')}
+                  onClick={() => onDelete(rule.id)}
+                >
                   <Icons.X size={13} />
                 </button>
               </>
@@ -1580,7 +1788,9 @@ function RuleEditPanel({
         <div className="slide-panel-h">
           <div className="h-icon">{scope.slice(0, 1).toUpperCase()}</div>
           <div className="flex1">
-            <div className="h-title">{rule === null ? translate('settingsView.t168') : translate('settingsView.t169')}</div>
+            <div className="h-title">
+              {rule === null ? translate('settingsView.t168') : translate('settingsView.t169')}
+            </div>
             <div className="h-sub">{translate('settingsView.tpl38Desc', { scope })}</div>
           </div>
           <button className="icon-btn" onClick={onClose}>
@@ -1601,7 +1811,8 @@ function RuleEditPanel({
             />
 
             <label>
-              {translate('settingsView.t399')}<span className="sub">{translate('settingsView.t400')}</span>
+              {translate('settingsView.t399')}
+              <span className="sub">{translate('settingsView.t400')}</span>
             </label>
             <Input
               type="number"
@@ -1945,9 +2156,7 @@ function McpSection() {
       <div className="row section-header-row">
         <div className="flex1">
           <h2 className="section-h2">{translate('settingsView.t403')}</h2>
-          <div className="lede section-lede">
-            {translate('settingsView.t404LongDesc')}
-          </div>
+          <div className="lede section-lede">{translate('settingsView.t404LongDesc')}</div>
         </div>
         <span className="badge primary dot">
           {translate('settingsView.tpl39Desc', { running: runningCount, total: servers.length })}
@@ -2033,7 +2242,11 @@ function McpSection() {
                         {translate('settingsView.t5')}
                       </Button>
                     )}
-                    <button className="icon-btn" title={translate('settingsView.t301')} onClick={() => openEditForm(server)}>
+                    <button
+                      className="icon-btn"
+                      title={translate('settingsView.t301')}
+                      onClick={() => openEditForm(server)}
+                    >
                       <Icons.Edit size={13} />
                     </button>
                     <button
@@ -2059,7 +2272,11 @@ function McpSection() {
                           <span
                             className={`badge ${isConnected ? 'success' : hasError ? 'danger' : ''} dot`}
                           >
-                            {isConnected ? translate('settingsView.t183') : hasError ? translate('settingsView.t184') : translate('settingsView.t185')}
+                            {isConnected
+                              ? translate('settingsView.t183')
+                              : hasError
+                                ? translate('settingsView.t184')
+                                : translate('settingsView.t185')}
                           </span>
                         </div>
                       </div>
@@ -2137,7 +2354,9 @@ function McpSection() {
                   {editingId ? translate('settingsView.t186') : translate('settingsView.t187')}
                 </div>
                 <div className="modal-subtitle">
-                  {draft.type === 'stdio' ? translate('settingsView.t188') : translate('settingsView.t189')}
+                  {draft.type === 'stdio'
+                    ? translate('settingsView.t188')
+                    : translate('settingsView.t189')}
                 </div>
               </div>
               <button className="icon-btn" onClick={closeForm}>
@@ -2151,7 +2370,8 @@ function McpSection() {
               <div className="subsec-h">{translate('settingsView.t415')}</div>
               <div className="form-grid">
                 <label>
-                  {translate('settingsView.t398')}<span className="sub">{translate('settingsView.t416')}</span>
+                  {translate('settingsView.t398')}
+                  <span className="sub">{translate('settingsView.t416')}</span>
                 </label>
                 <Input
                   value={draft.name}
@@ -2160,7 +2380,8 @@ function McpSection() {
                 />
 
                 <label>
-                  {translate('settingsView.t411')}<span className="sub">{translate('settingsView.t417')}</span>
+                  {translate('settingsView.t411')}
+                  <span className="sub">{translate('settingsView.t417')}</span>
                 </label>
                 <Select
                   value={draft.scope}
@@ -2175,7 +2396,8 @@ function McpSection() {
                 />
 
                 <label>
-                  {translate('settingsView.t409')}<span className="sub">{translate('settingsView.t418Desc')}</span>
+                  {translate('settingsView.t409')}
+                  <span className="sub">{translate('settingsView.t418Desc')}</span>
                 </label>
                 <Select
                   value={draft.type}
@@ -2198,7 +2420,8 @@ function McpSection() {
                   <div className="subsec-h mt-lg">{translate('settingsView.t419')}</div>
                   <div className="form-grid">
                     <label>
-                      {translate('settingsView.t420')}<span className="sub">{translate('settingsView.t421')}</span>
+                      {translate('settingsView.t420')}
+                      <span className="sub">{translate('settingsView.t421')}</span>
                     </label>
                     <Input
                       className="mono-sm"
@@ -2208,7 +2431,8 @@ function McpSection() {
                     />
 
                     <label>
-                      {translate('settingsView.t422')}<span className="sub">{translate('settingsView.t423')}</span>
+                      {translate('settingsView.t422')}
+                      <span className="sub">{translate('settingsView.t423')}</span>
                     </label>
                     <Input
                       className="mono-sm"
@@ -2548,8 +2772,7 @@ export function PermissionsSection() {
         if (codex?.runtime?.installed !== false) return
         AntdModal.confirm({
           title: translate('settingsView.t195Desc'),
-          content:
-            translate('settingsView.t196LongDesc'),
+          content: translate('settingsView.t196LongDesc'),
           okText: translate('settingsView.t197'),
           cancelText: translate('settingsView.t198'),
           onOk: async () => {
@@ -2566,7 +2789,9 @@ export function PermissionsSection() {
       })
       .catch((error: unknown) => {
         toast.error(
-          translate('settingsView.tpl3Desc', { message: error instanceof Error ? error.message : String(error) }),
+          translate('settingsView.tpl3Desc', {
+            message: error instanceof Error ? error.message : String(error),
+          }),
         )
       })
   }
@@ -2630,9 +2855,7 @@ export function PermissionsSection() {
   return (
     <div className="settings-section">
       <h2>{translate('settingsView.t68')}</h2>
-      <div className="lede">
-        {translate('settingsView.tpl45LongDesc')}
-      </div>
+      <div className="lede">{translate('settingsView.tpl45LongDesc')}</div>
 
       <div className="subsec-h">{translate('settingsView.t434')}</div>
       <div className="card runtime-permission-card">
@@ -2653,7 +2876,10 @@ export function PermissionsSection() {
             </div>
           }
         />
-        <SettingsRow title={translate('settingsView.t309')} desc={translate('settingsView.t310Desc')} />
+        <SettingsRow
+          title={translate('settingsView.t309')}
+          desc={translate('settingsView.t310Desc')}
+        />
         <div className="runtime-permission-grid p-[10px]">
           {runtimeOptions.map((option) => (
             <button
@@ -2681,9 +2907,7 @@ export function PermissionsSection() {
         {activeRuntimeMode?.tone === 'danger' && (
           <div className="runtime-permission-warning">
             <Icons.AlertTriangle />
-            <span>
-              {translate('settingsView.t435LongDesc')}
-            </span>
+            <span>{translate('settingsView.t435LongDesc')}</span>
           </div>
         )}
       </div>
@@ -2711,7 +2935,9 @@ export function PermissionsSection() {
 
       {activeProfile && (
         <>
-          <div className="subsec-h">{translate('settingsView.tpl46Desc', { name: activeProfile.name })}</div>
+          <div className="subsec-h">
+            {translate('settingsView.tpl46Desc', { name: activeProfile.name })}
+          </div>
           <div className="card">
             {RULE_META.map(({ action, icon, name, hint }) => {
               const rule = activeProfile.rules.find((r) => r.action === action)
@@ -2801,9 +3027,7 @@ function TelemetrySection() {
   return (
     <div className="settings-section settings-section--fill">
       <h2>{translate('settingsView.t121')}</h2>
-      <div className="lede">
-        {translate('settingsView.t438Desc')}
-      </div>
+      <div className="lede">{translate('settingsView.t438Desc')}</div>
 
       {/* ── 本地日志级别 ── */}
       <div className="form-grid">
@@ -2824,9 +3048,7 @@ function TelemetrySection() {
       <div className="form-grid">
         <label>
           {translate('settingsView.t440')}
-          <span className="sub">
-            {translate('settingsView.t441Desc')}
-          </span>
+          <span className="sub">{translate('settingsView.t441Desc')}</span>
         </label>
         <Switch
           size="middle"
@@ -3025,8 +3247,10 @@ function UsageSection() {
               <span className="usage-rec-model">{r.model_id}</span>
               <span className="usage-rec-tokens mono-sm">
                 ↑{fmt(r.input_tokens)} ↓{fmt(r.output_tokens)}
-                {r.cache_read_tokens > 0 && translate('settingsView.tpl4Desc', { value: fmt(r.cache_read_tokens) })}
-                {r.cache_write_tokens > 0 && translate('settingsView.tpl5Desc', { value: fmt(r.cache_write_tokens) })}
+                {r.cache_read_tokens > 0 &&
+                  translate('settingsView.tpl4Desc', { value: fmt(r.cache_read_tokens) })}
+                {r.cache_write_tokens > 0 &&
+                  translate('settingsView.tpl5Desc', { value: fmt(r.cache_write_tokens) })}
               </span>
             </div>
           ))}
@@ -3126,7 +3350,11 @@ function StorageSection() {
       })
       .catch(() => {
         if (!cancelled) {
-          setInheritInfo({ available: false, currentIsDev: false, reason: translate('settingsView.t218') })
+          setInheritInfo({
+            available: false,
+            currentIsDev: false,
+            reason: translate('settingsView.t218'),
+          })
         }
       })
     return () => {
@@ -3137,8 +3365,7 @@ function StorageSection() {
   const handleInheritProductionDb = useCallback(async () => {
     const confirmed = await requestConfirm({
       title: translate('settingsView.t219'),
-      description:
-        translate('settingsView.t220LongDesc'),
+      description: translate('settingsView.t220LongDesc'),
       confirmText: translate('settingsView.t221'),
       danger: true,
     })
@@ -3245,8 +3472,7 @@ function StorageSection() {
   const handleClearRuntimeSnapshots = async () => {
     const confirmed = await requestConfirm({
       title: translate('settingsView.t234'),
-      description:
-        translate('settingsView.t235LongDesc'),
+      description: translate('settingsView.t235LongDesc'),
       confirmText: translate('settingsView.t236'),
       danger: true,
     })
@@ -3325,7 +3551,10 @@ function StorageSection() {
         skipped += result.skippedAssets
       }
       toast.success(
-        translate('settingsView.tpl9Desc', { moved, skipped: skipped > 0 ? translate('settingsView.tpl9bDesc', { count: skipped }) : '' }),
+        translate('settingsView.tpl9Desc', {
+          moved,
+          skipped: skipped > 0 ? translate('settingsView.tpl9bDesc', { count: skipped }) : '',
+        }),
       )
       await refreshStats()
     } catch (err) {
@@ -3346,7 +3575,12 @@ function StorageSection() {
     setCanvasMaintaining(true)
     try {
       const result = await canvasApi.cleanupLegacyCanvasAssets()
-      toast.success(translate('settingsView.tpl10Desc', { count: result.deletedFiles, size: formatBytes(result.deletedBytes) }))
+      toast.success(
+        translate('settingsView.tpl10Desc', {
+          count: result.deletedFiles,
+          size: formatBytes(result.deletedBytes),
+        }),
+      )
       await refreshStats()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : translate('settingsView.t249'))
@@ -3386,7 +3620,8 @@ function StorageSection() {
         </div>
 
         <label>
-          {translate('settingsView.t460')}<span className="sub">{translate('settingsView.t461Desc')}</span>
+          {translate('settingsView.t460')}
+          <span className="sub">{translate('settingsView.t461Desc')}</span>
         </label>
         <div className="control">
           <Input
@@ -3414,13 +3649,16 @@ function StorageSection() {
         </div>
 
         <label>
-          {translate('settingsView.t464')}<span className="sub">{translate('settingsView.t465')}</span>
+          {translate('settingsView.t464')}
+          <span className="sub">{translate('settingsView.t465')}</span>
         </label>
         <div className="control">
           <Input
             className="flex1"
             size="middle"
-            value={canvasProjectsRoot || stats?.canvasProjectsRoot || translate('settingsView.t250')}
+            value={
+              canvasProjectsRoot || stats?.canvasProjectsRoot || translate('settingsView.t250')
+            }
             readOnly
           />
           <Button
@@ -3455,7 +3693,9 @@ function StorageSection() {
       <div className="card">
         {stats === null ? (
           <div className="empty-compact">
-            <div className="empty-desc">{statsLoading ? translate('settingsView.t252') : translate('settingsView.t253')}</div>
+            <div className="empty-desc">
+              {statsLoading ? translate('settingsView.t252') : translate('settingsView.t253')}
+            </div>
           </div>
         ) : (
           <>
@@ -3490,7 +3730,10 @@ function StorageSection() {
               pct={percent(stats.logsBytes, stats.totalBytes)}
             />
             <div className="usage-total-hint">
-              {translate('settingsView.tpl47Desc', { total: formatBytes(stats.totalBytes), path: stats.databasePath })}
+              {translate('settingsView.tpl47Desc', {
+                total: formatBytes(stats.totalBytes),
+                path: stats.databasePath,
+              })}
             </div>
           </>
         )}
@@ -3693,7 +3936,11 @@ function ArchivedSection() {
   const handleRestoreSession = async (session: SessionListResponse['sessions'][number]) => {
     try {
       await updateSession({ sessionId: session.id, archived: false })
-      toast.success(translate('settingsView.tpl15Desc', { title: session.title || translate('settingsView.t255') }))
+      toast.success(
+        translate('settingsView.tpl15Desc', {
+          title: session.title || translate('settingsView.t255'),
+        }),
+      )
       await Promise.all([refresh(), refreshData()])
     } catch (err) {
       toast.error(err instanceof Error ? err.message : translate('settingsView.t256'))
@@ -3727,7 +3974,11 @@ function ArchivedSection() {
     if (!confirmed) return
     try {
       await deleteSession({ sessionId: session.id })
-      toast.success(translate('settingsView.tpl19Desc', { title: session.title || translate('settingsView.t255') }))
+      toast.success(
+        translate('settingsView.tpl19Desc', {
+          title: session.title || translate('settingsView.t255'),
+        }),
+      )
       refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : translate('settingsView.t260'))
@@ -3799,7 +4050,9 @@ function ArchivedSection() {
       {error && <div className="card storage-card">{error}</div>}
 
       {/* ── Archived Workspaces ── */}
-      <div className="subsec-h">{translate('settingsView.tpl51Desc', { count: workspaces.length })}</div>
+      <div className="subsec-h">
+        {translate('settingsView.tpl51Desc', { count: workspaces.length })}
+      </div>
       <div className="card">
         {loading && <div className="settings-card-row">{translate('settingsView.t250')}</div>}
         {!loading && workspaces.length === 0 && (
@@ -3812,7 +4065,9 @@ function ArchivedSection() {
               <div className="flex1 min-w-0">
                 <div className="row-title">{w.name}</div>
                 <div className="row-desc mono-sm">{w.rootPath}</div>
-                <div className="row-desc">{translate('settingsView.tpl52Desc', { date: formatDate(w.archivedAt) })}</div>
+                <div className="row-desc">
+                  {translate('settingsView.tpl52Desc', { date: formatDate(w.archivedAt) })}
+                </div>
               </div>
               <div className="archived-item-actions">
                 <Button
@@ -3838,7 +4093,9 @@ function ArchivedSection() {
       </div>
 
       {/* ── Archived Sessions ── */}
-      <div className="subsec-h">{translate('settingsView.tpl53Desc', { count: sessions.length })}</div>
+      <div className="subsec-h">
+        {translate('settingsView.tpl53Desc', { count: sessions.length })}
+      </div>
       <div className="card">
         {loading && <div className="settings-card-row">{translate('settingsView.t250')}</div>}
         {!loading && sessions.length === 0 && (
@@ -3860,7 +4117,9 @@ function ArchivedSection() {
               </Checkbox>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--pad-sm)' }}>
                 {selectedSessionIds.size > 0 && (
-                  <span className="row-desc">{translate('settingsView.tpl54Desc', { count: selectedSessionIds.size })}</span>
+                  <span className="row-desc">
+                    {translate('settingsView.tpl54Desc', { count: selectedSessionIds.size })}
+                  </span>
                 )}
                 <Button
                   size="middle"
@@ -3886,7 +4145,11 @@ function ArchivedSection() {
                 <div className="flex1 min-w-0">
                   <div className="row-title">{s.title || translate('settingsView.t255')}</div>
                   <div className="row-desc">
-                    {translate('settingsView.tpl55Desc', { count: s.messageCount, date: formatDate(s.createdAt), sep: ' ' })}
+                    {translate('settingsView.tpl55Desc', {
+                      count: s.messageCount,
+                      date: formatDate(s.createdAt),
+                      sep: ' ',
+                    })}
                     {formatDate(s.archivedAt)}
                   </div>
                 </div>
@@ -4019,7 +4282,11 @@ function IntegritySection() {
       setCheckedAt(result.checkedAt)
       window.localStorage.setItem('spark-sdk-integrity', JSON.stringify(result))
     } catch (err) {
-      toast.error(translate('settingsView.tpl23Desc', { message: err instanceof Error ? err.message : String(err) }))
+      toast.error(
+        translate('settingsView.tpl23Desc', {
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      )
     } finally {
       setIsChecking(false)
       setIsCheckingLatest(false)
@@ -4073,7 +4340,9 @@ function IntegritySection() {
         }))
       }
     } catch (err) {
-      const message = translate('settingsView.tpl24Desc', { message: err instanceof Error ? err.message : String(err) })
+      const message = translate('settingsView.tpl24Desc', {
+        message: err instanceof Error ? err.message : String(err),
+      })
       toast.error(message)
       setInstallProgress((current) => ({
         packageName,
@@ -4093,13 +4362,21 @@ function IntegritySection() {
       return <span className="badge error dot">{translate('settingsView.t474')}</span>
     }
     if (sdk.runtime?.updateAvailable) {
-      return <span className="badge warning dot">{translate('settingsView.tpl56Desc', { version: sdk.runtime.latestVersion })}</span>
+      return (
+        <span className="badge warning dot">
+          {translate('settingsView.tpl56Desc', { version: sdk.runtime.latestVersion })}
+        </span>
+      )
     }
     if (!sdk.installed) {
       return <span className="badge error dot">{translate('settingsView.t267')}</span>
     }
     if (sdk.updateAvailable) {
-      return <span className="badge warning dot">{translate('settingsView.tpl57Desc', { version: sdk.latestVersion })}</span>
+      return (
+        <span className="badge warning dot">
+          {translate('settingsView.tpl57Desc', { version: sdk.latestVersion })}
+        </span>
+      )
     }
     if (sdk.latestChecked && sdk.latestVersion && !sdk.updateAvailable) {
       return <span className="badge success dot">{translate('settingsView.t280')}</span>
@@ -4165,7 +4442,14 @@ function IntegritySection() {
           {totalItems > 0 ? (
             <div className={`integrity-status-badge ${allOk ? 'ok' : 'warn'}`}>
               {allOk ? <Icons.CheckCircle size={14} /> : <Icons.AlertTriangle size={14} />}
-              <span>{allOk ? translate('settingsView.t263') : translate('settingsView.tpl25Desc', { ok: sdkHealthy + toolAvailable, total: totalItems })}</span>
+              <span>
+                {allOk
+                  ? translate('settingsView.t263')
+                  : translate('settingsView.tpl25Desc', {
+                      ok: sdkHealthy + toolAvailable,
+                      total: totalItems,
+                    })}
+              </span>
             </div>
           ) : (
             <div className="integrity-status-badge unknown">
@@ -4281,7 +4565,16 @@ function IntegritySection() {
                 <div className="integrity-sdk-name">{sdk.displayName}</div>
                 <div className="integrity-sdk-version">
                   {sdk.installedVersion
-                    ? translate('settingsView.tpl26Desc', { version: sdk.installedVersion, suffix: sdk.runtime?.installedVersion ? translate('settingsView.tpl26bDesc', { version: sdk.runtime.installedVersion }) : sdk.runtime ? translate('settingsView.tpl26cDesc') : '' })
+                    ? translate('settingsView.tpl26Desc', {
+                        version: sdk.installedVersion,
+                        suffix: sdk.runtime?.installedVersion
+                          ? translate('settingsView.tpl26bDesc', {
+                              version: sdk.runtime.installedVersion,
+                            })
+                          : sdk.runtime
+                            ? translate('settingsView.tpl26cDesc')
+                            : '',
+                      })
                     : sdk.installed
                       ? translate('settingsView.t264')
                       : translate('settingsView.t267')}
@@ -4340,45 +4633,35 @@ function IntegritySection() {
         <div className="integrity-ref-item">
           <div className="integrity-ref-left">
             <div className="integrity-ref-name">Node.js</div>
-            <div className="integrity-ref-desc">
-              {translate('settingsView.t487LongDesc')}
-            </div>
+            <div className="integrity-ref-desc">{translate('settingsView.t487LongDesc')}</div>
           </div>
           <span className="badge dot">{translate('settingsView.t488')}</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
             <div className="integrity-ref-name">npm</div>
-            <div className="integrity-ref-desc">
-              {translate('settingsView.t489LongDesc')}
-            </div>
+            <div className="integrity-ref-desc">{translate('settingsView.t489LongDesc')}</div>
           </div>
           <span className="badge dot">{translate('settingsView.t488')}</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
             <div className="integrity-ref-name">Git</div>
-            <div className="integrity-ref-desc">
-              {translate('settingsView.t490Desc')}
-            </div>
+            <div className="integrity-ref-desc">{translate('settingsView.t490Desc')}</div>
           </div>
           <span className="badge dot">{translate('settingsView.t488')}</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
             <div className="integrity-ref-name">Claude Agent SDK</div>
-            <div className="integrity-ref-desc">
-              {translate('settingsView.t491LongDesc')}
-            </div>
+            <div className="integrity-ref-desc">{translate('settingsView.t491LongDesc')}</div>
           </div>
           <span className="badge dot">{translate('settingsView.t488')}</span>
         </div>
         <div className="integrity-ref-item bordered">
           <div className="integrity-ref-left">
             <div className="integrity-ref-name">OpenAI Codex SDK</div>
-            <div className="integrity-ref-desc">
-              {translate('settingsView.tpl59LongDesc')}
-            </div>
+            <div className="integrity-ref-desc">{translate('settingsView.tpl59LongDesc')}</div>
           </div>
           <span className="badge dot">{translate('settingsView.t488')}</span>
         </div>
@@ -4401,7 +4684,9 @@ function IntegritySection() {
 function UpdatesSection() {
   const [s, set] = usePersistedSettings(SETTINGS_UPDATES_KEY, DEFAULT_UPDATES)
   const [status, setStatus] = useState<UpdateStatus | null>(null)
-  const installActionLabel = isPlatformDarwin ? translate('settingsView.t271') : translate('settingsView.t272')
+  const installActionLabel = isPlatformDarwin
+    ? translate('settingsView.t271')
+    : translate('settingsView.t272')
   const autoInstallSupported = isPlatformWin32
   useEffect(() => {
     window.spark
@@ -4493,12 +4778,19 @@ function UpdatesSection() {
   }
 
   const getStatusLabel = () => {
-    if (isError) return translate('settingsView.tpl27Desc', { message: status?.error ?? translate('settingsView.t273') })
+    if (isError)
+      return translate('settingsView.tpl27Desc', {
+        message: status?.error ?? translate('settingsView.t273'),
+      })
     if (isChecking) return translate('settingsView.t274')
     if (isDownloading)
-      return translate('settingsView.tpl28Desc', { percent: status?.progress != null ? `(${Math.round(status.progress.percent)}%)` : '' })
-    if (isDownloaded) return translate('settingsView.tpl29Desc', { version: status?.updateInfo?.version ?? '?' })
-    if (hasUpdate) return translate('settingsView.tpl30Desc', { version: status?.updateInfo?.version ?? '?' })
+      return translate('settingsView.tpl28Desc', {
+        percent: status?.progress != null ? `(${Math.round(status.progress.percent)}%)` : '',
+      })
+    if (isDownloaded)
+      return translate('settingsView.tpl29Desc', { version: status?.updateInfo?.version ?? '?' })
+    if (hasUpdate)
+      return translate('settingsView.tpl30Desc', { version: status?.updateInfo?.version ?? '?' })
     return translate('settingsView.tpl31Desc')
   }
 
@@ -4527,7 +4819,9 @@ function UpdatesSection() {
           <div className="update-source-line">
             <Tag>{translate('settingsView.t493')}</Tag>
             <span>{translate('settingsView.tpl60Desc', { source: updateSourceLabel })}</span>
-            {status?.downloadSource != null && <span>{translate('settingsView.tpl61Desc', { source: downloadSourceLabel })}</span>}
+            {status?.downloadSource != null && (
+              <span>{translate('settingsView.tpl61Desc', { source: downloadSourceLabel })}</span>
+            )}
           </div>
           {isDownloading && status?.progress != null && (
             <div className="update-progress-bar">
@@ -4559,7 +4853,9 @@ function UpdatesSection() {
             </Button>
           ) : isDownloading ? (
             <Button icon={<Icons.Download size={14} />} className="update-action-btn" disabled>
-              {translate('settingsView.tpl62Desc', { percent: status?.progress != null ? `${Math.round(status.progress.percent)}%` : '' })}
+              {translate('settingsView.tpl62Desc', {
+                percent: status?.progress != null ? `${Math.round(status.progress.percent)}%` : '',
+              })}
             </Button>
           ) : (
             <Button
@@ -4660,12 +4956,18 @@ function UpdatesSection() {
           desc={`${currentVersion}`}
           right={
             <span className={hasUpdate ? 'badge warning dot' : 'badge success dot'}>
-              {hasUpdate ? translate('settingsView.tpl34Desc', { version: status?.updateInfo?.version }) : translate('settingsView.t280')}
+              {hasUpdate
+                ? translate('settingsView.tpl34Desc', { version: status?.updateInfo?.version })
+                : translate('settingsView.t280')}
             </span>
           }
         />
 
-        <SettingsRow title="Electron" desc="31.x" right={<span className="badge">{translate('settingsView.t497')}</span>} />
+        <SettingsRow
+          title="Electron"
+          desc="31.x"
+          right={<span className="badge">{translate('settingsView.t497')}</span>}
+        />
       </div>
     </div>
   )
@@ -4673,15 +4975,28 @@ function UpdatesSection() {
 
 /* ───────── Helpers ───────── */
 const CLAUDE_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
-  { value: 'claude-ask', label: translate('settingsView.t281'), desc: translate('settingsView.t282') },
-  { value: 'claude-plan', label: translate('settingsView.t283'), desc: translate('settingsView.t284') },
+  {
+    value: 'claude-ask',
+    label: translate('settingsView.t281'),
+    desc: translate('settingsView.t282'),
+  },
+  {
+    value: 'claude-plan',
+    label: translate('settingsView.t283'),
+    desc: translate('settingsView.t284'),
+  },
   {
     value: 'claude-auto-edits',
     label: translate('settingsView.t285'),
     desc: translate('settingsView.t286'),
     tone: 'auto',
   },
-  { value: 'claude-auto', label: translate('settingsView.t287'), desc: translate('settingsView.t288'), tone: 'auto' },
+  {
+    value: 'claude-auto',
+    label: translate('settingsView.t287'),
+    desc: translate('settingsView.t288'),
+    tone: 'auto',
+  },
   {
     value: 'claude-bypass',
     label: translate('settingsView.t289'),
@@ -4798,7 +5113,9 @@ function AboutSection() {
       <div className="about-header">
         <div className="about-title">SparkWork</div>
         <div className="about-subtitle">{translate('settingsView.t498')}</div>
-        <div className="about-version">{translate('settingsView.tpl63Desc', { version: sysInfo?.appVersion ?? '0.1.0' })}</div>
+        <div className="about-version">
+          {translate('settingsView.tpl63Desc', { version: sysInfo?.appVersion ?? '0.1.0' })}
+        </div>
       </div>
       <div className="subsec-h">{translate('settingsView.t499')}</div>
       <div className="card">
