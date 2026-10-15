@@ -191,10 +191,10 @@
 }
 
 .home-config-chevron {
+  width: 32rpx;
+  height: 32rpx;
   flex: none;
-  color: #8a8782;
-  font-size: 30rpx;
-  line-height: 1;
+  background-size: 24rpx 24rpx;
 }
 
 .home-compose-shell {
@@ -316,6 +316,7 @@
 
 .home-config-row {
   min-height: 88rpx;
+  align-items: center;
   gap: 14rpx;
   border-top: 1rpx solid #eeece8;
 }
@@ -347,18 +348,35 @@
 .home-reasoning-control {
   min-width: 0;
   gap: 12rpx;
+  align-items: center;
+}
+
+.home-reasoning-slider-wrap {
+  display: flex;
+  height: 64rpx;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
 }
 
 .home-reasoning-slider {
+  width: 100%;
+  height: 64rpx;
   min-width: 0;
   margin: 0;
+  padding: 0;
 }
 
 .home-reasoning-value {
   width: 116rpx;
+  height: 64rpx;
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   color: #252422;
   font-size: 24rpx;
+  line-height: 1.2;
   text-align: right;
   white-space: nowrap;
 }

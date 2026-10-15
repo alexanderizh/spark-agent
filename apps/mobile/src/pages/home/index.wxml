@@ -79,7 +79,7 @@
     >
       <text class="home-config-tag">会话配置</text>
       <text class="home-config-summary ellipsis">{{configSummary}}</text>
-      <text class="home-config-chevron">⌄</text>
+      <view class="icon icon-chevron-down home-config-chevron"></view>
     </view>
     <view wx:if="{{pendingSessionId}}" class="home-pending-hint row">
       <text class="ellipsis">这条消息已关联到待处理会话</text>
@@ -139,7 +139,7 @@
         >
           <view class="home-config-picker-value row between">
             <text class="ellipsis">{{composerDeviceLabel}}</text>
-            <text class="home-config-chevron">⌄</text>
+            <view class="icon icon-chevron-down home-config-chevron"></view>
           </view>
         </picker>
       </view>
@@ -157,7 +157,7 @@
         >
           <view class="home-config-picker-value row between">
             <text class="ellipsis">{{projectOptions[projectIndex].label}}</text>
-            <text class="home-config-chevron">⌄</text>
+            <view class="icon icon-chevron-down home-config-chevron"></view>
           </view>
         </picker>
       </view>
@@ -175,7 +175,7 @@
         >
           <view class="home-config-picker-value row between">
             <text class="ellipsis">{{modelOptions[modelIndex].label}}</text>
-            <text class="home-config-chevron">⌄</text>
+            <view class="icon icon-chevron-down home-config-chevron"></view>
           </view>
         </picker>
       </view>
@@ -183,21 +183,23 @@
       <view class="home-config-row row">
         <text class="home-config-label">推理强度</text>
         <view class="home-reasoning-control grow row">
-          <slider
-            class="home-reasoning-slider grow"
-            min="0"
-            max="{{reasoningOptions.length - 1}}"
-            step="1"
-            value="{{reasoningIndex}}"
-            disabled="{{configLoading || configError || pendingSessionId}}"
-            activeColor="#3b82f6"
-            backgroundColor="#d8d5d0"
-            block-size="20"
-            bindchange="onReasoningChange"
-          />
-          <text class="home-reasoning-value">
-            {{reasoningOptions[reasoningIndex].label}}
-          </text>
+          <view class="home-reasoning-slider-wrap grow">
+            <slider
+              class="home-reasoning-slider"
+              min="0"
+              max="{{reasoningOptions.length - 1}}"
+              step="1"
+              value="{{reasoningIndex}}"
+              disabled="{{configLoading || configError || pendingSessionId}}"
+              activeColor="#3b82f6"
+              backgroundColor="#d8d5d0"
+              block-size="20"
+              bindchange="onReasoningChange"
+            />
+          </view>
+          <view class="home-reasoning-value">
+            <text>{{reasoningOptions[reasoningIndex].label}}</text>
+          </view>
         </view>
       </view>
 

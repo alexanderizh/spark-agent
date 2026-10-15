@@ -1,6 +1,6 @@
 {
   "name": "@spark/mobile",
-  "version": "1.3.0",
+  "version": "1.3.2",
   "private": true,
   "description": "SparkWork 移动端（微信小程序）— 桌面端的移动伴侣：账号登录同步、同步状态、设备与会话管理",
   "scripts": {
