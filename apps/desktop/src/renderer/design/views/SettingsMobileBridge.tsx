@@ -193,7 +193,7 @@ export function MobileBridgeSettingsSection() {
     <div className="settings-section">
       <h2>移动端桥接</h2>
       <div className="lede">
-        让微信小程序用同一个 edu-server 账号接管本机会话：接续对话、新建远程会话、实时跟流。
+        让微信小程序用同一个 Spark 平台账号接管本机会话：接续对话、新建远程会话、实时跟流。
         <strong>推荐用云端中继</strong>（跨网络可用，无需同 Wi-Fi、无需公网
         IP）；局域网直连仅作备用。
       </div>
@@ -203,7 +203,7 @@ export function MobileBridgeSettingsSection() {
       <div className="settings-card">
         <SettingsRow
           title="启用云端中继"
-          desc="桌面端主动出网连 edu-server 并保持长连接，小程序也连 edu-server，服务端按账号配对转发。电脑不需要公网 IP、不需要开端口、手机不需要和电脑同一个 Wi-Fi。"
+          desc="桌面端主动出网连 Spark 平台服务并保持长连接，小程序也连 Spark 平台服务，服务端按账号配对转发。电脑不需要公网 IP、不需要开端口、手机不需要和电脑同一个 Wi-Fi。"
           right={
             <Switch
               size="middle"
@@ -220,7 +220,7 @@ export function MobileBridgeSettingsSection() {
           desc={
             relay?.lastError
               ? relay.lastError
-              : '与 edu-server 的长连接状态；断线会自动按 1s→30s 退避重连。'
+              : '与 Spark 平台服务的长连接状态；断线会自动按 1s→30s 退避重连。'
           }
           right={
             relay?.connected ? (
@@ -258,7 +258,7 @@ export function MobileBridgeSettingsSection() {
 
         <SettingsRow
           title="中继服务地址"
-          desc="留空则跟随账号服务地址（https://www.yiqibyte.com）。仅在自建 edu-server 时填写，必须以 http:// 或 https:// 开头。"
+          desc="留空则跟随账号服务地址（https://www.yiqibyte.com）。仅在自建平台服务时填写，必须以 http:// 或 https:// 开头。"
           right={
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
@@ -295,7 +295,7 @@ export function MobileBridgeSettingsSection() {
       <div className="settings-card">
         <SettingsRow
           title="启用移动端桥接"
-          desc="开启后在局域网监听 HTTP + WebSocket 服务；仅接受与桌面端同一 edu-server 账号的配对请求。"
+          desc="开启后在局域网监听 HTTP + WebSocket 服务；仅接受与桌面端同一 Spark 平台账号的配对请求。"
           right={
             <Switch
               size="middle"

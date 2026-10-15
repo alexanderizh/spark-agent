@@ -38,7 +38,7 @@ export const BRIDGE_HINTS: Record<BridgeErrorReason, string> = {
     '开发期请在开发者工具「详情 → 本地设置」勾选「不校验合法域名」；正式版需在 mp 后台配置 request 合法域名',
   DISABLED: '请到桌面端「设置 → 生态 → 移动端桥接」打开开关',
   EXPIRED: '设备令牌已失效，请重新配对',
-  AUTH: '两端必须登录同一个 edu-server 账号，请检查后重新配对',
+  AUTH: '两端必须登录同一个 Spark 平台账号，请检查后重新配对',
   OFFLINE:
     '电脑端没连上云端中继：请在桌面端「设置 → 生态 → 移动端桥接」确认「云端中继」已开启，且电脑处于联网状态',
   SERVER: '桌面端返回了错误，可在桌面端日志中查看原因',
