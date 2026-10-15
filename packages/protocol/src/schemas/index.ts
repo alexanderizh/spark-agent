@@ -900,6 +900,7 @@ export const WorkspaceFetchBranchesRequestSchema = z.object({
 
 export const WorkspaceGitStatusRequestSchema = z.object({
   workspaceId: z.string().uuid(),
+  sessionId: SessionIdSchema.optional(),
 })
 
 export const WorkspaceGitCommitRequestSchema = z.object({

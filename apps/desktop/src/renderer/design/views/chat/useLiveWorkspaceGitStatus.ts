@@ -45,6 +45,7 @@ export function useLiveWorkspaceGitStatus({
   const [gitStatus, setGitStatus] = useState<WorkspaceGitStatusResponse | null>(null)
   const lastTrustedBranchRef = useRef<BranchState>({ currentBranch: null, branches: [] })
   const workspaceIdRef = useRef(workspaceId)
+  const sessionIdRef = useRef(sessionId)
   const requestVersionRef = useRef(0)
   const activeRequestCountRef = useRef(0)
   const statusFingerprintRef = useRef<string | null>(null)
@@ -52,6 +53,7 @@ export function useLiveWorkspaceGitStatus({
   const scheduledForceRef = useRef(false)
 
   workspaceIdRef.current = workspaceId
+  sessionIdRef.current = sessionId
 
   const commitStatus = useCallback(
     (status: WorkspaceGitStatusResponse | null, force: boolean) => {
@@ -81,6 +83,7 @@ export function useLiveWorkspaceGitStatus({
   const requestGitStatus = useCallback(
     async (force: boolean): Promise<void> => {
       const requestedWorkspaceId = workspaceId
+      const requestedSessionId = sessionId
       // Background polling must never keep invalidating a slow status request.
       // Forced refreshes (user/file events) may supersede it and are race-guarded below.
       if (!force && activeRequestCountRef.current > 0) return
@@ -91,10 +94,14 @@ export function useLiveWorkspaceGitStatus({
       }
       activeRequestCountRef.current += 1
       try {
-        const status = await getGitStatus({ workspaceId: requestedWorkspaceId })
+        const status = await getGitStatus({
+          workspaceId: requestedWorkspaceId,
+          ...(requestedSessionId == null ? {} : { sessionId: requestedSessionId }),
+        })
         if (
           requestVersion !== requestVersionRef.current ||
-          workspaceIdRef.current !== requestedWorkspaceId
+          workspaceIdRef.current !== requestedWorkspaceId ||
+          sessionIdRef.current !== requestedSessionId
         ) {
           return
         }
@@ -102,7 +109,8 @@ export function useLiveWorkspaceGitStatus({
       } catch {
         if (
           requestVersion === requestVersionRef.current &&
-          workspaceIdRef.current === requestedWorkspaceId
+          workspaceIdRef.current === requestedWorkspaceId &&
+          sessionIdRef.current === requestedSessionId
         ) {
           commitStatus(null, force)
         }
@@ -110,7 +118,7 @@ export function useLiveWorkspaceGitStatus({
         activeRequestCountRef.current = Math.max(0, activeRequestCountRef.current - 1)
       }
     },
-    [commitStatus, getGitStatus, workspaceId],
+    [commitStatus, getGitStatus, sessionId, workspaceId],
   )
 
   const refreshGitStatus = useCallback(() => requestGitStatus(true), [requestGitStatus])
@@ -140,7 +148,7 @@ export function useLiveWorkspaceGitStatus({
 
   useEffect(() => {
     lastTrustedBranchRef.current = { currentBranch: null, branches: [] }
-  }, [workspaceId])
+  }, [sessionId, workspaceId])
 
   useEffect(() => {
     requestVersionRef.current += 1
@@ -154,20 +162,24 @@ export function useLiveWorkspaceGitStatus({
   useEffect(() => {
     if (workspaceId == null) return
     let disposed = false
-    void startWatch({ workspaceId })
+    let started = false
+    const watchRequest = { workspaceId, ...(sessionId == null ? {} : { sessionId }) }
+    void startWatch(watchRequest)
       .then(() => {
-        if (disposed) void stopWatch({ workspaceId })
+        started = true
+        if (disposed) void stopWatch(watchRequest).catch(() => {})
       })
       .catch(() => {
         // Focus/session/manual refresh and polling remain available as fallbacks.
       })
     return () => {
       disposed = true
-      void stopWatch({ workspaceId }).catch(() => {})
+      if (started) void stopWatch(watchRequest).catch(() => {})
     }
-  }, [startWatch, stopWatch, workspaceId])
+  }, [sessionId, startWatch, stopWatch, workspaceId])
 
   useIpcStream('stream:workspace:file-change', (payload: WorkspaceFileChangePayload) => {
+    if ((payload.sessionId ?? null) !== (sessionIdRef.current ?? null)) return
     if (payload.workspaceId === workspaceIdRef.current) scheduleRefresh(true)
   })
 

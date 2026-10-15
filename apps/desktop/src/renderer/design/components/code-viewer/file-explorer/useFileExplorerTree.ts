@@ -92,7 +92,9 @@ export function useFileExplorerTree({
 
   // workspaceId ref：watch 回调可能在切换后到达，需校验所属 workspace
   const workspaceIdRef = useRef(workspaceId)
+  const sessionIdRef = useRef(sessionId)
   workspaceIdRef.current = workspaceId
+  sessionIdRef.current = sessionId
   const expandedDirsRef = useRef(expandedDirs)
   expandedDirsRef.current = expandedDirs
   const rootLoadGenerationRef = useRef(0)
@@ -215,32 +217,40 @@ export function useFileExplorerTree({
       return
     }
     void loadRoot()
+    let disposed = false
+    let started = false
+    const watchRequest = {
+      workspaceId,
+      ...(sessionId != null ? { sessionId } : {}),
+    }
     void window.spark
-      .invoke('workspace:watch-start', {
-        workspaceId,
-        ...(sessionId != null ? { sessionId } : {}),
+      .invoke('workspace:watch-start', watchRequest)
+      .then(() => {
+        started = true
+        if (disposed) {
+          void window.spark.invoke('workspace:watch-stop', watchRequest).catch(() => {})
+        }
       })
       .catch(() => {
         /* watch 启动失败不阻断浏览，仅失去实时性 */
       })
     return () => {
+      disposed = true
       rootLoadGenerationRef.current += 1
       if (reloadTimerRef.current != null) clearTimeout(reloadTimerRef.current)
       pendingReloadRef.current.clear()
-      void window.spark
-        .invoke('workspace:watch-stop', {
-          workspaceId,
-          ...(sessionId != null ? { sessionId } : {}),
-        })
-        .catch(() => {
+      if (started) {
+        void window.spark.invoke('workspace:watch-stop', watchRequest).catch(() => {
           /* 忽略 */
         })
+      }
     }
   }, [enabled, workspaceId, sessionId, loadRoot])
 
   // 监听文件变更：delete 本地级联删 + reload 父；create/modify/rename reload 父
   useIpcStream('stream:workspace:file-change', (payload: WorkspaceFileChangePayload) => {
     if (workspaceIdRef.current !== payload.workspaceId) return
+    if ((sessionIdRef.current ?? null) !== (payload.sessionId ?? null)) return
     const posixPath = payload.path.replace(/\\/g, '/')
     if (payload.changeType === 'delete' || payload.changeType === 'rename') {
       const target =

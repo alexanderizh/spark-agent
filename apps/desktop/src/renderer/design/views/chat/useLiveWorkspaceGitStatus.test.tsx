@@ -104,10 +104,28 @@ describe('useLiveWorkspaceGitStatus', () => {
     })
     await vi.waitFor(() => expect(container.textContent).toContain('0'))
 
+    const initialStatusCalls = invoke.mock.calls.filter(
+      ([channel]) => channel === 'workspace:git-status',
+    ).length
+    await act(async () => {
+      streamHandlers.get('stream:workspace:file-change')?.({
+        workspaceId: 'workspace-1',
+        sessionId: 'another-session',
+        changeType: 'modify',
+        path: 'src/other.js',
+        timestamp: new Date().toISOString(),
+      } as never)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+    expect(
+      invoke.mock.calls.filter(([channel]) => channel === 'workspace:git-status'),
+    ).toHaveLength(initialStatusCalls)
+
     status = createGitStatus({ changedFiles: 1, additions: 3, deletions: 3 })
     await act(async () => {
       streamHandlers.get('stream:workspace:file-change')?.({
         workspaceId: 'workspace-1',
+        sessionId: 'session-1',
         changeType: 'modify',
         path: 'src/prod.js',
         timestamp: new Date().toISOString(),
@@ -116,8 +134,61 @@ describe('useLiveWorkspaceGitStatus', () => {
     })
 
     expect(container.querySelector('[data-testid="changed-files"]')?.textContent).toBe('1')
-    expect(invoke).toHaveBeenCalledWith('workspace:watch-start', { workspaceId: 'workspace-1' })
-    expect(invoke).toHaveBeenCalledWith('workspace:git-status', { workspaceId: 'workspace-1' })
+    expect(invoke).toHaveBeenCalledWith('workspace:watch-start', {
+      workspaceId: 'workspace-1',
+      sessionId: 'session-1',
+    })
+    expect(invoke).toHaveBeenCalledWith('workspace:git-status', {
+      workspaceId: 'workspace-1',
+      sessionId: 'session-1',
+    })
+  })
+
+  it('stops a late watcher start exactly once after the scope unmounts', async () => {
+    let resolveWatchStart!: (value: { watching: boolean }) => void
+    const watchStart = new Promise<{ watching: boolean }>((resolve) => {
+      resolveWatchStart = resolve
+    })
+    const invoke = vi.fn((channel: string) => {
+      if (channel === 'workspace:git-status') return Promise.resolve(createGitStatus())
+      if (channel === 'workspace:watch-start') return watchStart
+      if (channel === 'workspace:watch-stop') return Promise.resolve({ stopped: true })
+      return Promise.resolve({})
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (payload: never) => void) => {
+        streamHandlers.set(channel, callback)
+        return vi.fn()
+      }),
+    })
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<GitStatusProbe />)
+    })
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('workspace:watch-start', {
+        workspaceId: 'workspace-1',
+        sessionId: 'session-1',
+      })
+    })
+
+    await act(async () => root.render(null))
+    expect(
+      invoke.mock.calls.filter(([channel]) => channel === 'workspace:watch-stop'),
+    ).toHaveLength(0)
+
+    await act(async () => {
+      resolveWatchStart({ watching: true })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(invoke).toHaveBeenCalledTimes(3)
+    expect(invoke).toHaveBeenCalledWith('workspace:watch-stop', {
+      workspaceId: 'workspace-1',
+      sessionId: 'session-1',
+    })
   })
 
   it('does not let a slower stale request overwrite a newer refresh', async () => {

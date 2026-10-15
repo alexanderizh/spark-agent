@@ -8319,12 +8319,14 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('workspace:git-status', async (req) => {
-    log.info(`workspace:git-status requested, workspaceId=${req.workspaceId}`)
-    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    log.info(
+      `workspace:git-status requested, workspaceId=${req.workspaceId}, sessionId=${req.sessionId ?? 'none'}`,
+    )
+    const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
     // 旁路节流 fetch：推进本地远端跟踪引用，让 behind 计数能感知远端新提交。
     // fire-and-forget，不阻塞本次 status 返回；fetch 落库后由下一次轮询带出新数字。
-    scheduleWorkspaceBackgroundFetch(workspace.root_path)
-    return getWorkspaceGitStatus(workspace.root_path)
+    scheduleWorkspaceBackgroundFetch(rootPath)
+    return getWorkspaceGitStatus(rootPath)
   })
 
   typedIpcHandle('workspace:git-file-diff', async (req) => {
@@ -8701,16 +8703,20 @@ export function registerAllIpcHandlers(): void {
   // ─── File Watcher Handlers ──────────────────────────────────────────────
 
   typedIpcHandle('workspace:watch-start', async (req) => {
-    log.info(`workspace:watch-start requested, workspaceId=${req.workspaceId}`)
+    log.info(
+      `workspace:watch-start requested, workspaceId=${req.workspaceId}, sessionId=${req.sessionId ?? 'none'}`,
+    )
     const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
     const watcherService = getFileWatcherService()
-    watcherService.start(req.workspaceId, rootPath, req.ignorePatterns)
+    watcherService.start(req.workspaceId, rootPath, req.ignorePatterns, req.sessionId)
     return { watching: true }
   })
 
   typedIpcHandle('workspace:watch-stop', async (req) => {
-    log.info(`workspace:watch-stop requested, workspaceId=${req.workspaceId}`)
-    const stopped = getFileWatcherService().stop(req.workspaceId)
+    log.info(
+      `workspace:watch-stop requested, workspaceId=${req.workspaceId}, sessionId=${req.sessionId ?? 'none'}`,
+    )
+    const stopped = getFileWatcherService().stop(req.workspaceId, req.sessionId)
     return { stopped }
   })
 

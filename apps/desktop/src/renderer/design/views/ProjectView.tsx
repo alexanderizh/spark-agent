@@ -63,14 +63,21 @@ export function ProjectView() {
   useEffect(() => {
     if (workspaceId == null) return
 
-    startWatch({ workspaceId })
-      .then(() => undefined)
+    let disposed = false
+    let started = false
+    const watchRequest = { workspaceId }
+    startWatch(watchRequest)
+      .then(() => {
+        started = true
+        if (disposed) void stopWatch(watchRequest).catch(() => {})
+      })
       .catch((err) => {
         console.error('[FileWatcher] Failed to start:', err)
       })
 
     return () => {
-      stopWatch({ workspaceId }).catch(() => {})
+      disposed = true
+      if (started) void stopWatch(watchRequest).catch(() => {})
     }
   }, [workspaceId, startWatch, stopWatch])
 
@@ -103,6 +110,7 @@ export function ProjectView() {
     (payload: WorkspaceFileChangePayload) => {
       if (workspace == null) return
       if (payload.workspaceId !== workspace.id) return
+      if (payload.sessionId != null) return
 
       const changeType = payload.changeType as FileChangeStatus
       const filePath = payload.path

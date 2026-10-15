@@ -1745,6 +1745,8 @@ export interface WorkspaceGitFileChange {
 
 export interface WorkspaceGitStatusRequest {
   workspaceId: string
+  /** Resolve a no-project workspace to this session's isolated child directory. */
+  sessionId?: SessionId
 }
 
 export interface WorkspaceGitStashEntry {
@@ -5024,9 +5026,11 @@ export interface WorkspaceWatchStopResponse {
 /** 外部文件变更事件（由 fs.watch 检测，推送至渲染进程） */
 export interface WorkspaceFileChangePayload {
   workspaceId: string
+  /** Present when the change belongs to a session-scoped workspace root. */
+  sessionId?: SessionId
   /** 变更类型 */
   changeType: 'create' | 'modify' | 'delete' | 'rename'
-  /** 文件路径（相对于 workspace root） */
+  /** 文件路径（相对于本次事件所属的监听根目录） */
   path: string
   /** rename 时的旧路径 */
   oldPath?: string
