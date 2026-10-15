@@ -1,33 +1,16 @@
 /**
  * 移动桥接（MobileBridge）协议。
  *
- * SparkWork 移动端（微信小程序）通过本协议直连桌面端：
- *   - 配对：小程序用 edu-server 账号 token 换桌面端设备令牌（同账号即授权）
- *   - 会话：列表 / 新建 / 历史 / 提交回合 / 取消
+ * SparkWork 移动端（微信小程序）通过云端中继访问桌面端：
+ *   - 同一 Spark 平台账号即授权（无需配对；桌面端以「授信设备」身份连中继）
+ *   - 会话：项目 / 列表 / 新建 / 历史 / 提交回合 / 取消等
  *   - 流式：WebSocket 按 seq 增量推送 agent 事件
+ *   - 多电脑：同一账号允许多台桌面端同时在线，调用与订阅按 deviceId 定向
  *
- * 桌面端实现：apps/desktop/src/main/services/MobileBridgeService.ts
- * 小程序实现：apps/mobile/src/api/bridge.ts
+ * 桌面端实现：apps/desktop/src/main/services/MobileBridgeService.ts（请求处理）
+ *            apps/desktop/src/main/services/MobileBridgeRelayClient.ts（中继长连接）
+ * 小程序实现：apps/mobile/src/api/relay.ts + apps/mobile/src/api/bridge.ts
  */
-
-// ─── 配对 ─────────────────────────────────────────────────────────────────────
-
-export interface MobileBridgePairRequest {
-  /** 小程序登录后拿到的 edu-server JWT（与桌面端同一账号体系） */
-  accountToken: string
-  /** 设备展示名（如 "iPhone 15 · 微信"） */
-  deviceLabel?: string
-}
-
-export interface MobileBridgePairResponse {
-  deviceToken: string
-  deviceId: string
-  desktop: {
-    name: string
-    version: string
-  }
-  account: string
-}
 
 // ─── 项目（workspace 的移动端投影） ───────────────────────────────────────────
 
@@ -332,20 +315,6 @@ export interface MobileBridgeHistoryResponse {
   running: boolean
 }
 
-// ─── 回合 ─────────────────────────────────────────────────────────────────────
-
-export interface MobileBridgeSubmitTurnRequest {
-  text: string
-}
-
-export interface MobileBridgeSubmitTurnResponse {
-  turnId: string
-}
-
-export interface MobileBridgeCancelResponse {
-  cancelled: boolean
-}
-
 // ─── 错误 ─────────────────────────────────────────────────────────────────────
 
 export interface MobileBridgeErrorBody {
@@ -361,42 +330,27 @@ export interface MobileBridgeErrorBody {
   }
 }
 
-// ─── 桌面端设置 IPC（渲染端 ↔ 主进程） ────────────────────────────────────────
+// ─── 授信设备（REST：小程序管理同一账号下的桌面端） ───────────────────────────
 
-export interface MobileBridgeSettings {
-  /** 总开关（关闭时停止 HTTP/WS 服务） */
-  enabled: boolean
-  /** 监听端口（0 表示随机；实际端口见 status） */
-  port: number
-}
-
-export interface MobileBridgePairedDevice {
+/** 账号下一台桌面端（授信设备）的信息 */
+export interface MobileBridgeDeviceInfo {
   deviceId: string
-  deviceLabel: string
-  account: string
-  pairedAt: string
-  lastSeenAt: string
+  /** 展示名（桌面端主机名，连接时上报） */
+  name: string
+  version: string | null
+  online: boolean
+  lastSeenAt: string | null
+  /** 首次授信时间 */
+  trustedAt: string
 }
 
-export interface MobileBridgeStatus {
-  running: boolean
-  /** 实际监听端口（未运行为 null） */
-  port: number | null
-  /** 局域网访问地址（未运行为 null） */
-  localUrl: string | null
-  pairedDevices: MobileBridgePairedDevice[]
-  settings: MobileBridgeSettings
+export interface MobileBridgeDeviceListResponse {
+  devices: MobileBridgeDeviceInfo[]
 }
 
-export const DEFAULT_MOBILE_BRIDGE_SETTINGS: MobileBridgeSettings = {
-  enabled: false,
-  port: 3721,
-}
+// ─── 桌面端设置 IPC（渲染端 ↔ 主进程；仅云端中继，局域网直连已移除） ──────────
 
 export interface MobileBridgeIpcChannelMap {
-  'mobile-bridge:get-status': [{}, MobileBridgeStatus]
-  'mobile-bridge:update-settings': [Partial<MobileBridgeSettings>, MobileBridgeStatus]
-  'mobile-bridge:revoke-device': [{ deviceId: string }, MobileBridgeStatus]
   'mobile-bridge:get-relay-status': [{}, MobileBridgeRelayStatus]
   'mobile-bridge:update-relay-settings': [
     Partial<MobileBridgeRelaySettings>,
@@ -408,26 +362,32 @@ export interface MobileBridgeIpcChannelMap {
 
 // ─── 云端中继（跨网络：桌面端与小程序都只连 edu-server） ───────────────────────
 //
-// 局域网直连要求两端同网、且小程序体验版强制 https/wss，天然不可用。
 // 中继模式：桌面端**出网**连 edu-server（无需公网 IP、无需开端口），
 // 小程序也连 edu-server，服务端按 userId 配对转发 → 账户即达、跨网络可用。
+// 局域网直连模式已整体移除（体验版强制 https/wss + 域名白名单，真机不可用）。
+//
+// 多电脑：同一账号可有多台桌面端同时在线（各自持有独立授信身份）。
+//   - 小程序的 req/sub 帧可带 d=<deviceId> 定向到某台桌面端；
+//     缺省 d 时服务端选「主桌面端」（最近活跃的在线桌面端），兼容旧版小程序。
+//   - 服务端下发的 event 帧带 d=<来源 deviceId>，订阅按 (deviceId, sessionId) 维度隔离，
+//     两台电脑上同名 id 的会话不会串流。
 //
 // 帧协议（JSON，两端对称）：
 //   → auth     桌面端连接后第一帧：设备凭据认证（deviceSecret 不走 URL query，
 //              避免 nginx access log 落盘长期凭据）；通过后服务端才注册进中继
-//   → hello    认证通过（收到 welcome）后发送，带设备标识
-//   ← welcome  服务端回连接 id + 当前桌面端在线状态（对桌面端 = 认证已通过）
+//   → hello    认证通过（收到 welcome）后发送，带设备展示名（仅可更新 label）
+//   ← welcome  服务端回连接 id + 当前在线桌面端列表（对桌面端 = 认证已通过）
 //   ← req      服务端→桌面端：转发小程序的调用（m=HTTP method，p=path，b=body）
 //   → res      桌面端→服务端：{ id, s: HTTP 状态码, b: 响应体 }
-//   → sub      小程序→服务端：订阅某会话的事件流（unsub 取消）
-//   ← event    服务端→小程序：{ sessionId, events }
-//   ← presence 桌面端上下线时广播给该用户所有小程序连接
+//   → sub      小程序→服务端：订阅某会话的事件流（可带 d 定向；unsub 取消）
+//   ← event    服务端→小程序：{ sessionId, d=来源设备, events }
+//   ← presence 桌面端上下线时广播给该用户所有小程序连接（携带完整设备列表）
 //   ↔ ping/pong
 //
 // ⚠️ 帧结构必须与 edu-server `src/service/mobile-bridge/relay-hub.ts` 保持一致。
 
 export interface MobileBridgeRelaySettings {
-  /** 总开关（关闭时桌面端不连中继，小程序回落局域网直连） */
+  /** 总开关（关闭时桌面端不连中继，小程序将显示桌面端离线） */
   enabled: boolean
   /** 中继服务地址（https/wss 基址，缺省取账号服务 baseUrl） */
   baseUrl: string
@@ -448,6 +408,8 @@ export interface MobileBridgeRelayStatus {
   lastSeenAt: string | null
   /** 本机授信设备 ID（账号下的设备身份，可在小程序端管理） */
   deviceId: string | null
+  /** 本机设备展示名（主机名，连接时上报；设置页展示用） */
+  label: string | null
   /**
    * 设备是否被吊销（close 4403）。吊销后不再自动重连，
    * 需用户在桌面端「重新授信」（生成全新设备身份）。
@@ -455,6 +417,19 @@ export interface MobileBridgeRelayStatus {
   revoked: boolean
 }
 
+/**
+ * 单台在线桌面端的实时信息（welcome / presence / devices 携带）。
+ * REST 的 MobileBridgeDeviceInfo 额外含 offline 项（授信表合并），字段语义一致。
+ */
+export interface MobileBridgeRelayDesktopInfo {
+  deviceId: string
+  label: string
+  version: string | null
+  online: boolean
+  lastSeenAt: string | null
+}
+
+/** 旧版单桌面 presence 投影（兼容 1.1.0 小程序；新代码请用 devices 列表） */
 export interface MobileBridgeRelayDesktopPresence {
   online: boolean
   deviceId: string | null
@@ -479,13 +454,50 @@ export type MobileBridgeRelayFrame =
       label?: string
       version?: string
     }
-  | { t: 'welcome'; connId: string; desktop: MobileBridgeRelayDesktopPresence }
-  | { t: 'req'; id: string; m: string; p: string; b?: unknown }
+  | {
+      t: 'welcome'
+      connId: string
+      /** 兼容旧版的单桌面投影（= 主桌面端） */
+      desktop: MobileBridgeRelayDesktopPresence
+      /** 当前该账号全部在线桌面端 */
+      devices: MobileBridgeRelayDesktopInfo[]
+    }
+  | {
+      t: 'req'
+      id: string
+      m: string
+      p: string
+      b?: unknown
+      /** 目标桌面端 deviceId；缺省 = 主桌面端（最近活跃的在线桌面端） */
+      d?: string
+    }
   | { t: 'res'; id: string; s: number; b?: unknown }
-  | { t: 'sub'; sessionId: string }
-  | { t: 'unsub' }
-  | { t: 'event'; sessionId: string; events: unknown[] }
-  | { t: 'presence'; desktop: MobileBridgeRelayDesktopPresence }
+  | {
+      t: 'sub'
+      sessionId: string
+      /** 定向到某台桌面端；缺省 = 主桌面端 */
+      d?: string
+    }
+  | {
+      t: 'unsub'
+      /** 要取消的会话；缺省 = 取消全部订阅（兼容旧版无参 unsub） */
+      sessionId?: string
+      d?: string
+    }
+  | {
+      t: 'event'
+      sessionId: string
+      events: unknown[]
+      /** 下行（→小程序）时由服务端盖上的来源桌面端 deviceId；桌面上行不带 */
+      d?: string
+    }
+  | {
+      t: 'presence'
+      /** 兼容旧版的单桌面投影（= 主桌面端） */
+      desktop: MobileBridgeRelayDesktopPresence
+      /** 该账号全部在线桌面端（上下线、label 变化时广播） */
+      devices: MobileBridgeRelayDesktopInfo[]
+    }
   | { t: 'ping' }
   | { t: 'pong' }
   | { t: 'error'; code?: string; message: string }
