@@ -382,12 +382,31 @@ function getLayerBadgeColor(layer: CommandLayer | 'ui'): string {
   }
 }
 
+/** 徽章底色对应的前景：亮色底（成功绿/警示琥珀/灰蓝）配深墨字，
+    中深色底（靛蓝/品牌蓝）配白字；均为恒值，不随主题反转。 */
+function getLayerBadgeFg(layer: CommandLayer | 'ui'): string {
+  switch (layer) {
+    case 'sdk':
+    case 'custom':
+      return 'var(--white)'
+    case 'builtin':
+    case 'skill':
+    case 'ui':
+      return 'var(--ink-slate)'
+  }
+}
+
 function getRiskBadge(risk: CommandRisk | 'none'): ReactNode | null {
   if (risk === 'none' || risk === 'low') return null
-  const colors: Record<string, string> = {
-    medium: 'var(--color-warning, #f59e0b)',
-    high: 'var(--color-error, #ef4444)',
-  }
+  // 底色与前景成对固定（不随主题反转）：琥珀底白字对比仅 ~2:1，用深墨字；
+  // 红底沿用白字。保证两套主题下都可读。
+  // 字面量对象而非 Record：键已由上方守卫收窄为 'medium' | 'high'，
+  // 具体键访问结果不含 undefined（Record 索引签名会带 | undefined）。
+  const palette = {
+    medium: { bg: 'var(--color-warning, #f59e0b)', fg: 'var(--ink-slate)' },
+    high: { bg: 'var(--color-error, #ef4444)', fg: 'var(--white)' },
+  } as const
+  const tone = palette[risk]
   return (
     <span
       className="badge"
@@ -396,8 +415,8 @@ function getRiskBadge(risk: CommandRisk | 'none'): ReactNode | null {
         fontSize: 10,
         padding: '1px 5px',
         borderRadius: 3,
-        background: colors[risk] ?? colors.medium,
-        color: 'var(--text-inverse)',
+        background: tone.bg,
+        color: tone.fg,
       }}
     >
       {risk === 'high' ? '危险' : '注意'}
@@ -955,7 +974,7 @@ function PaletteCommandItem({
             padding: '1px 4px',
             borderRadius: 3,
             background: layerColor,
-            color: 'var(--text-inverse)',
+            color: getLayerBadgeFg(command.layer),
             opacity: 0.7,
             whiteSpace: 'nowrap',
           }}

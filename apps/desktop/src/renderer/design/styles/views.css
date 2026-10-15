@@ -3556,7 +3556,7 @@ body.sidebar-resizing {
   border: 0;
   border-radius: 50%;
   background: color-mix(in srgb, var(--panel) 82%, black 18%);
-  color: var(--text-inverse);
+  color: var(--text);
   box-shadow: 0 8px 18px color-mix(in srgb, black 18%, transparent);
   cursor: pointer;
   opacity: 0;
@@ -3876,7 +3876,7 @@ body.sidebar-resizing {
 .composer-approval-btn.primary {
   border-color: var(--primary);
   background: var(--primary);
-  color: var(--text-inverse);
+  color: var(--primary-fg);
   box-shadow: 0 8px 16px color-mix(in srgb, var(--primary) 24%, transparent);
 }
 .composer-approval-btn.primary:hover:not(:disabled) {
@@ -4298,9 +4298,8 @@ body.sidebar-resizing {
   stroke: var(--app-ember-1);
   stroke-width: 2.05;
 }
-.adapter-brand-codex {
-  color: var(--text-inverse);
-}
+/* .adapter-brand-codex 无 color 声明：图标各子元素（rect/cloud/prompt）都有专属
+   fill/stroke，currentColor 无消费者，曾误挂 --text-inverse 已删。 */
 .adapter-brand-codex rect {
   fill: var(--app-blue-1);
   stroke: var(--app-blue-2);
@@ -7459,7 +7458,7 @@ body.inspector-resizing {
 }
 
 .user-question-btn.primary {
-  color: var(--text-inverse);
+  color: var(--primary-fg);
   background: linear-gradient(135deg, var(--primary), var(--primary-hover));
   box-shadow: 0 5px 14px color-mix(in srgb, var(--primary) 20%, transparent);
 }

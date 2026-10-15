@@ -283,7 +283,7 @@
   padding: var(--pad-3xs) var(--pad-xs);
   border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--canvas-stage-bg) 78%, transparent);
-  color: var(--text-inverse);
+  color: var(--fg-on-dark);
   font-size: var(--font-2xs);
   font-family: 'SF Mono', 'JetBrains Mono', monospace;
   pointer-events: none;
@@ -390,7 +390,7 @@
 
   &:hover {
     background: color-mix(in srgb, var(--white) 10%, transparent);
-    color: var(--text-inverse);
+    color: var(--fg-on-dark);
   }
 
   &:focus-visible {
@@ -1219,7 +1219,7 @@
   right: 0;
   padding: 2px var(--pad-xs);
   background: linear-gradient(transparent, color-mix(in srgb, var(--black) 80%, transparent));
-  color: var(--text-inverse);
+  color: var(--fg-on-dark);
   font-size: var(--font-2xs);
   font-family: 'SF Mono', monospace;
 }
@@ -1913,7 +1913,7 @@
   font-size: var(--font-2xs);
   font-weight: 600;
   background: color-mix(in srgb, var(--warning) 85%, transparent);
-  color: var(--text-inverse);
+  color: var(--ink-slate);
 }
 
 .vwb-resource-source.from-canvas {
@@ -1931,7 +1931,7 @@
   padding: 1px var(--pad-xs);
   border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--black) 70%, transparent);
-  color: var(--text-inverse);
+  color: var(--fg-on-dark);
   font-size: var(--font-2xs);
   font-family: 'SF Mono', 'JetBrains Mono', monospace;
 }
@@ -1972,7 +1972,7 @@
   border: 0;
   border-radius: 50%;
   background: color-mix(in srgb, var(--black) 55%, transparent);
-  color: var(--text-inverse);
+  color: var(--fg-on-dark);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2015,7 +2015,7 @@
   border: 0;
   border-radius: 50%;
   background: color-mix(in srgb, var(--black) 55%, transparent);
-  color: var(--text-inverse);
+  color: var(--fg-on-dark);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2044,7 +2044,7 @@
   padding: 1px var(--pad-xs);
   border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--success-fixed) 85%, transparent);
-  color: var(--text-inverse);
+  color: var(--ink-slate);
   font-size: var(--font-2xs);
   font-weight: 600;
 }
@@ -2324,7 +2324,7 @@
   cursor: grab;
   box-shadow: 0 2px 8px color-mix(in srgb, var(--black) 32%, transparent);
   background: linear-gradient(180deg, var(--vw-blue-6) 0%, var(--vw-blue-7) 100%);
-  color: var(--text-inverse);
+  color: var(--fg-on-dark);
   transition:
     transform 0.12s,
     box-shadow 0.12s;
@@ -2459,7 +2459,7 @@
   border: 0;
   border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--black) 55%, transparent);
-  color: var(--text-inverse);
+  color: var(--fg-on-dark);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2798,7 +2798,7 @@
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--white) 16%, transparent);
   border-radius: 50%;
-  color: var(--text-inverse);
+  color: var(--fg-on-dark);
 }
 
 .vwb-picker-result.is-selected .vwb-picker-result-check {

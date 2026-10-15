@@ -644,7 +644,8 @@
 .spark-avatar-fallback {
   display: grid;
   place-items: center;
-  color: var(--text-inverse);
+  /* 底色是 hsl 中亮饱和渐变池（恒定，不随主题反转），前景用恒白。 */
+  color: var(--fg-on-dark);
   font-size: var(--font-base);
   font-weight: 750;
   line-height: 1;
@@ -770,7 +771,8 @@
 }
 
 .provider-logo-fallback {
-  color: var(--text-inverse);
+  /* 容器底为品牌色 / --bg-soft，白字是容器内联 color:#fff 的既定意图，前景恒白。 */
+  color: var(--fg-on-dark);
   font-size: 0.6em;
   font-weight: 700;
   letter-spacing: 0;

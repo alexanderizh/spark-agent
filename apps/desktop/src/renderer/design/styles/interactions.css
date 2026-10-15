@@ -1403,7 +1403,7 @@
 .pw-button.primary {
   background: var(--primary);
   border-color: var(--primary);
-  color: var(--text-inverse);
+  color: var(--primary-fg);
 }
 
 .pw-button.enabled {
@@ -1455,7 +1455,7 @@
 
 .playwright-segmented button.active {
   background: var(--primary);
-  color: var(--text-inverse);
+  color: var(--primary-fg);
 }
 
 .playwright-segmented button:disabled {

@@ -290,7 +290,7 @@
 
 .codex-runtime-install-button {
   background: var(--primary, #5876d8);
-  color: var(--text-inverse);
+  color: var(--primary-fg);
 }
 
 .codex-runtime-install-button:hover:not(:disabled) {

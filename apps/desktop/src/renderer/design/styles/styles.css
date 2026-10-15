@@ -1526,7 +1526,7 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
   width: 28px;
   height: 28px;
   background: color-mix(in srgb, var(--black) 42%, transparent);
-  color: var(--text-inverse);
+  color: var(--fg-on-dark);
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
@@ -1535,7 +1535,7 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
 }
 .user-contact-qq-modal .ant-modal-close:hover {
   background: color-mix(in srgb, var(--black) 60%, transparent);
-  color: var(--text-inverse);
+  color: var(--fg-on-dark);
 }
 
 .user-contact-qq-card {
