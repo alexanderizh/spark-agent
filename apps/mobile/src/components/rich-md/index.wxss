@@ -12,6 +12,16 @@
 .md-p:last-child {
   margin-bottom: 0;
 }
+/* 段内含链接：多段拼接，flex 换行让可点链接与 rich-text 正文同行排布 */
+.md-p--mixed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  row-gap: 4rpx;
+}
+.md-p--mixed rich-text {
+  max-width: 100%;
+}
 
 /* 标题层级 */
 .md-h {
@@ -53,6 +63,14 @@
   color: #2563eb;
   text-decoration: underline;
   text-underline-offset: 4rpx;
+  word-break: break-all;
+}
+/* 可点链接（独立 text 节点）：加点击反馈 */
+.md-link--tap {
+  word-break: break-all;
+}
+.md-link--tap:active {
+  opacity: 0.7;
 }
 .md-inline-code {
   font-family: 'SF Mono', Menlo, Consolas, monospace;
@@ -131,6 +149,49 @@
   font-size: 30rpx;
   line-height: 1.7;
   color: #1a1a1a;
+  min-width: 0;
+  word-break: break-word;
+}
+/* 任务列表项：勾选框 + 完成态划线 */
+.md-li--task .md-li-marker {
+  display: none;
+}
+.md-li--done .md-li-body {
+  color: #a8a5a0;
+  text-decoration: line-through;
+}
+.md-task {
+  width: 32rpx;
+  height: 32rpx;
+  border: 3rpx solid #c9c6c0;
+  border-radius: 8rpx;
+  margin-right: 16rpx;
+  margin-top: 10rpx;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.md-task--on {
+  background: #1a1a1a;
+  border-color: #1a1a1a;
+}
+.md-task-check {
+  width: 16rpx;
+  height: 9rpx;
+  border-left: 3rpx solid #fff;
+  border-bottom: 3rpx solid #fff;
+  transform: rotate(-45deg) translateY(-2rpx);
+}
+
+/* 块级图片：全宽圆角，点击全屏预览 */
+.md-image-block {
+  margin: 12rpx 0 16rpx;
+}
+.md-image {
+  width: 100%;
+  border-radius: 16rpx;
+  background: #f2f0ed;
 }
 
 /* 分割线 */
@@ -165,13 +226,24 @@
 .md-tr--head {
   background: #faf9f7;
 }
+/* 斑马纹（偶数行由模板加 class） */
+.md-tr--stripe {
+  background: #faf9f7;
+}
 .md-td {
   padding: 14rpx 20rpx;
   font-size: 26rpx;
   color: #1a1a1a;
-  flex: 1;
-  min-width: 160rpx;
+  /* 列宽权重由模板内联 flex-grow 控制（内容自适应），basis 0 保证权重生效 */
+  flex: 1 1 0;
+  min-width: 120rpx;
+  word-break: break-word;
 }
 .md-td--head {
   font-weight: 600;
+  background: #faf9f7;
+}
+/* 表格行内 rich-text 长词断行（URL/长 token 不撑破列宽） */
+.md-td rich-text {
+  word-break: break-all;
 }

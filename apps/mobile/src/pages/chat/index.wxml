@@ -9,9 +9,22 @@
     <text>该电脑离线，可查看历史记录；请在桌面端开启远程会话（云端中继）</text>
   </view>
 
-  <scroll-view class="chat-scroll" scroll-y scroll-into-view="{{scrollToId}}" scroll-anchoring>
+  <scroll-view
+    class="chat-scroll"
+    scroll-y
+    scroll-into-view="{{scrollToId}}"
+    scroll-anchoring
+    upper-threshold="120"
+    bindscrolltoupper="loadEarlier"
+  >
     <view class="chat-body">
       <view wx:if="{{loading}}" class="loading-tip">加载历史…</view>
+
+      <block wx:elif="{{items.length > 0}}">
+        <!-- 历史翻页状态（顶部）：加载中提示 / 拉完提示 -->
+        <view wx:if="{{loadingEarlier}}" class="chat-history-edge">加载更早消息…</view>
+        <view wx:elif="{{!hasMoreHistory}}" class="chat-history-edge">已到最前面</view>
+      </block>
 
       <empty-state
         wx:elif="{{items.length === 0}}"
@@ -78,7 +91,7 @@
     </view>
   </scroll-view>
 
-  <view class="chat-dock safe-bottom">
+  <view class="chat-dock {{keyboardOpen ? 'chat-dock--kb' : 'safe-bottom'}}">
     <capsule-composer
       mode="dock"
       value="{{inputText}}"
@@ -100,6 +113,7 @@
       bind:voicefile="onVoiceFile"
       bind:voiceerror="onVoiceError"
       bind:commandpick="onCommandPick"
+      bind:keyboardchange="onComposerKeyboard"
     />
   </view>
 

@@ -11,6 +11,8 @@ export const StorageKeys = {
   refreshToken: `${PREFIX}refresh-token`,
   userId: `${PREFIX}user-id`,
   user: `${PREFIX}user`,
+  /** 聊天页是否隐藏工具调用记录（本地偏好，跨会话生效） */
+  chatHideToolEvents: `${PREFIX}chat-hide-tool-events`,
 } as const
 
 export function getItem<T>(key: string): T | null {

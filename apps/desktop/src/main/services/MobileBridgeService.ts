@@ -72,11 +72,15 @@ export interface MobileBridgeDeps {
   ): Promise<MobileBridgeSessionSummary>
   /** 删除会话（含终端等副作用清理） */
   deleteSession(sessionId: string): Promise<{ deleted: boolean }>
-  /** 会话历史（agent 事件 → 移动端子集） */
+  /**
+   * 会话历史（agent 事件 → 移动端子集）。
+   * beforeSeq：向上翻页游标，只返回 seq 小于该值的事件（服务端按 seq 正序返回）。
+   */
   getHistory(
     sessionId: string,
     limit: number,
-  ): Promise<{ events: MobileBridgeEvent[]; running: boolean }>
+    beforeSeq?: number,
+  ): Promise<{ events: MobileBridgeEvent[]; running: boolean; hasMore?: boolean }>
   /** 提交回合（消息进入会话，等同桌面端发送；attachmentPaths 须来自 saveAttachments） */
   submitTurn(
     sessionId: string,
@@ -373,11 +377,18 @@ export class MobileBridgeService {
       }
       const sessionId = decodeURIComponent(rawId)
       const limit = Math.min(Number(url.searchParams.get('limit') ?? 200) || 200, HISTORY_LIMIT)
-      const result = await this.requireDeps().getHistory(sessionId, limit)
+      // 向上翻页游标：仅接受正整数（非法值静默忽略 = 按最新页返回，向后兼容旧客户端）
+      const beforeSeqRaw = url.searchParams.get('beforeSeq')
+      const beforeSeq =
+        beforeSeqRaw != null && /^\d+$/.test(beforeSeqRaw) && Number(beforeSeqRaw) > 0
+          ? Number(beforeSeqRaw)
+          : undefined
+      const result = await this.requireDeps().getHistory(sessionId, limit, beforeSeq)
       const body: MobileBridgeHistoryResponse = {
         sessionId,
         events: result.events,
         running: result.running,
+        ...(result.hasMore != null ? { hasMore: result.hasMore } : {}),
       }
       this.sendJson(res, 200, body)
       return

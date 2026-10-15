@@ -313,6 +313,11 @@ export interface MobileBridgeHistoryResponse {
   events: MobileBridgeEvent[]
   /** 会话是否仍在运行（决定端上是否继续跟流） */
   running: boolean
+  /**
+   * 是否还有更早的历史（事件级分页，排除流式 delta）。
+   * 携带 GET /messages?beforeSeq= 向上翻页；缺省 = 旧版桌面端不支持分页。
+   */
+  hasMore?: boolean
 }
 
 // ─── 错误 ─────────────────────────────────────────────────────────────────────

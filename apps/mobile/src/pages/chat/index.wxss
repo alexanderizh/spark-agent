@@ -52,6 +52,14 @@
   margin: 24rpx 0;
 }
 
+/* 历史翻页顶部提示（加载更早 / 已到最前面） */
+.chat-history-edge {
+  text-align: center;
+  font-size: 22rpx;
+  color: #b3b0ab;
+  padding: 16rpx 0 4rpx;
+}
+
 /* ─── 消息行 ───────────────────────────────────────────────────────────────── */
 
 .msg-row {
@@ -202,4 +210,8 @@
 .chat-dock {
   flex: none;
   background: #f7f6f4;
+}
+/* 键盘弹起：底部安全区让位（键盘自身盖住安全区，组件内动态占位顶起输入框） */
+.chat-dock--kb {
+  padding-bottom: 0;
 }

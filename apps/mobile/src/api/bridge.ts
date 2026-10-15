@@ -376,13 +376,20 @@ export function deleteSession(sessionId: string, deviceId?: string): Promise<{ d
     .then((body) => ({ deleted: body?.deleted !== false }))
 }
 
+/**
+ * 会话历史（事件级分页，桌面端排除流式 delta）。
+ * beforeSeq：向上翻页游标，只取 seq 小于该值的更早事件；hasMore 缺省 = 旧版桌面端不支持分页。
+ */
 export function getMessages(
   sessionId: string,
   limit = 200,
   deviceId?: string,
-): Promise<{ sessionId: string; events: BridgeEvent[]; running: boolean }> {
-  return request<{ sessionId: string; events: BridgeEvent[]; running: boolean }>(
-    `/v1/sessions/${encodeURIComponent(sessionId)}/messages?limit=${limit}`,
+  beforeSeq?: number,
+): Promise<{ sessionId: string; events: BridgeEvent[]; running: boolean; hasMore?: boolean }> {
+  return request<{ sessionId: string; events: BridgeEvent[]; running: boolean; hasMore?: boolean }>(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/messages?limit=${limit}${
+      beforeSeq != null ? `&beforeSeq=${beforeSeq}` : ''
+    }`,
     'GET',
     undefined,
     deviceId,

@@ -2,7 +2,13 @@
  * 胶囊输入框（Cursor 式全局输入）。
  *
  * mode=float  fixed 悬浮胶囊（首页快速发起，页面内容从其后滚过）
- * mode=dock   流式停靠（聊天页底部正常文档流，配合键盘 adjust-position）
+ * mode=dock   流式停靠（聊天页底部正常文档流）
+ *
+ * 键盘策略：两种模式统一关闭 adjust-position（原生整页上推在 float 模式下完全不生效、
+ * 在 dock 模式下把输入框顶死在键盘上沿），改为监听 textarea 的 keyboardheightchange
+ * 自行抬升：float 用内联 bottom 抬到键盘上方；dock 在组件尾部加等高占位把输入框顶起，
+ * 页面消息区（flex:1）自动压缩，可边打字边看流式回复。keyboardchange 事件转发给页面，
+ * 供页面收起底部安全区避免与键盘高度叠加出缝。
  *
  * 能力面：
  *   右侧圆形按钮  running 时为「停止」，否则输入非空时为「发送」
@@ -39,6 +45,8 @@ interface CapsuleComposerData {
   localValue: string
   /** 快捷行（输入框上方两个常用项：模型/权限） */
   quickChips: ComposerChip[]
+  /** 键盘高度（px；0 = 收起）。float 抬 bottom / dock 加占位都以此为准 */
+  keyboardHeight: number
 }
 
 /** 录音管理器（微信全局单例；组件多实例复用同一份） */
@@ -77,6 +85,7 @@ Component({
     focus: false,
     localValue: '',
     quickChips: [],
+    keyboardHeight: 0,
   } as CapsuleComposerData,
 
   observers: {
@@ -132,6 +141,21 @@ Component({
     },
     onBlur() {
       this.setData({ focus: false })
+      // 兜底：个别机型键盘收起不回 keyboardheightchange(height=0)，失焦后短暂校验复位
+      if (this.data.keyboardHeight > 0) {
+        setTimeout(() => {
+          if (!this.data.focus && this.data.keyboardHeight > 0) {
+            this.setData({ keyboardHeight: 0 })
+          }
+        }, 400)
+      }
+    },
+
+    /** 键盘高度变化：驱动 float 抬升 / dock 占位，并转发页面（收起安全区） */
+    onKeyboardHeight(e: WechatMiniprogram.CustomEvent<{ height: number }>) {
+      const height = Math.max(0, Math.round(e.detail.height ?? 0))
+      this.setData({ keyboardHeight: height })
+      this.triggerEvent('keyboardchange', { height })
     },
 
     onSend() {

@@ -3,9 +3,20 @@
 <view class="md">
   <block wx:for="{{blocks}}" wx:key="index">
 
-    <!-- 段落 -->
-    <view wx:if="{{item.type === 'p'}}" class="md-p">
-      <rich-text nodes="{{item.nodes}}"></rich-text>
+    <!-- 段落：无链接时单 rich-text；含链接时拆段，链接为可点 text -->
+    <view
+      wx:if="{{item.type === 'p'}}"
+      class="md-p {{item.segments.length > 1 ? 'md-p--mixed' : ''}}"
+    >
+      <block wx:for="{{item.segments}}" wx:for-item="seg" wx:key="index">
+        <text
+          wx:if="{{seg.kind === 'link'}}"
+          class="md-link md-link--tap"
+          data-url="{{seg.url}}"
+          catchtap="onLinkTap"
+        >{{seg.label}}</text>
+        <rich-text wx:else nodes="{{seg.nodes}}"></rich-text>
+      </block>
     </view>
 
     <!-- 标题 -->
@@ -24,19 +35,47 @@
       </scroll-view>
     </view>
 
-    <!-- 引用（拍平段落） -->
+    <!-- 图片：块级渲染，点击全屏预览 -->
+    <view wx:elif="{{item.type === 'image'}}" class="md-image-block">
+      <image
+        class="md-image"
+        src="{{item.url}}"
+        mode="widthFix"
+        lazy-load
+        data-url="{{item.url}}"
+        bindtap="onImageTap"
+      />
+    </view>
+
+    <!-- 引用（拍平段落；链接同样可点） -->
     <view wx:elif="{{item.type === 'quote'}}" class="md-quote">
       <view wx:for="{{item.paragraphs}}" wx:for-item="para" wx:key="index" class="md-quote-p">
-        <rich-text nodes="{{para}}"></rich-text>
+        <block wx:for="{{para}}" wx:for-item="seg" wx:key="index">
+          <text
+            wx:if="{{seg.kind === 'link'}}"
+            class="md-link md-link--tap"
+            data-url="{{seg.url}}"
+            catchtap="onLinkTap"
+          >{{seg.label}}</text>
+          <rich-text wx:else nodes="{{seg.nodes}}"></rich-text>
+        </block>
       </view>
     </view>
 
-    <!-- 列表 -->
+    <!-- 列表：普通项圆点/序号；任务项勾选框 -->
     <view wx:elif="{{item.type === 'list'}}" class="md-list {{item.ordered ? 'md-list--ol' : ''}}">
-      <view wx:for="{{item.items}}" wx:for-item="li" wx:key="index" class="md-li">
-        <text class="md-li-marker">{{item.ordered ? (index + 1) + '.' : '•'}}</text>
+      <view
+        wx:for="{{item.items}}"
+        wx:for-item="li"
+        wx:key="index"
+        class="md-li {{li.checked != null ? 'md-li--task' : ''}} {{li.checked ? 'md-li--done' : ''}}"
+      >
+        <text wx:if="{{li.checked === null}}" class="md-li-marker">{{item.ordered ? (index + 1) + '.' : '•'}}</text>
+        <view wx:else class="md-task {{li.checked ? 'md-task--on' : ''}}">
+          <view wx:if="{{li.checked}}" class="md-task-check"></view>
+        </view>
         <view class="md-li-body grow">
-          <rich-text nodes="{{li}}"></rich-text>
+          <rich-text nodes="{{li.nodes}}"></rich-text>
         </view>
       </view>
     </view>
@@ -44,17 +83,37 @@
     <!-- 分割线 -->
     <view wx:elif="{{item.type === 'hr'}}" class="md-hr"></view>
 
-    <!-- 表格 -->
+    <!-- 表格：列对齐 + 列宽自适应 + 斑马纹 + 横向滚动 -->
     <view wx:elif="{{item.type === 'table'}}" class="md-table-wrap">
       <scroll-view scroll-x class="md-table-scroll">
         <view class="md-table">
           <view class="md-tr md-tr--head">
-            <view wx:for="{{item.header}}" wx:for-item="cell" wx:key="index" class="md-td md-td--head">
+            <view
+              wx:for="{{item.header}}"
+              wx:for-item="cell"
+              wx:for-index="colIdx"
+              wx:key="index"
+              class="md-td md-td--head"
+              style="text-align:{{item.aligns[colIdx] || 'left'}};flex-grow:{{item.weights[colIdx] || 1}}"
+            >
               <rich-text nodes="{{cell}}"></rich-text>
             </view>
           </view>
-          <view wx:for="{{item.rows}}" wx:for-item="row" wx:key="index" class="md-tr">
-            <view wx:for="{{row}}" wx:for-item="cell" wx:key="index" class="md-td">
+          <view
+            wx:for="{{item.rows}}"
+            wx:for-item="row"
+            wx:for-index="rowIdx"
+            wx:key="index"
+            class="md-tr {{rowIdx % 2 === 1 ? 'md-tr--stripe' : ''}}"
+          >
+            <view
+              wx:for="{{row}}"
+              wx:for-item="cell"
+              wx:for-index="colIdx"
+              wx:key="index"
+              class="md-td"
+              style="text-align:{{item.aligns[colIdx] || 'left'}};flex-grow:{{item.weights[colIdx] || 1}}"
+            >
               <rich-text nodes="{{cell}}"></rich-text>
             </view>
           </view>

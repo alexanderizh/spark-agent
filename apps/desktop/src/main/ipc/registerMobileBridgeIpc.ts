@@ -128,8 +128,7 @@ function readRelayStore(settings: SettingsService): RelayStoreShape {
       ? record.deviceSecret
       : randomBytes(32).toString('hex')
   // 旧版本 store 没有 label：回落主机名并补写（与 deviceId/secret 同策略）
-  const label =
-    typeof record.label === 'string' && record.label.trim() ? record.label : hostname()
+  const label = typeof record.label === 'string' && record.label.trim() ? record.label : hostname()
   const stored: MobileBridgeRelaySettings =
     record.settings != null && typeof record.settings === 'object'
       ? {
@@ -510,8 +509,12 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
       return deps.getSessionService().deleteSession(sessionId)
     },
 
-    getHistory: async (sessionId, limit) => {
-      const history = await deps.getSessionService().getHistory({ sessionId, limit })
+    getHistory: async (sessionId, limit, beforeSeq) => {
+      const history = await deps.getSessionService().getHistory({
+        sessionId,
+        limit,
+        ...(beforeSeq != null ? { beforeSeq } : {}),
+      })
       const events: MobileBridgeEvent[] = []
       for (const event of history.events) {
         const mapped = toMobileEvent(event)
@@ -532,7 +535,7 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
           break
         }
       }
-      return { events, running }
+      return { events, running, hasMore: history.hasMore }
     },
 
     submitTurn: async (sessionId, text, attachmentPaths) => {

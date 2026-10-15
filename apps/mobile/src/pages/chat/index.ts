@@ -21,6 +21,7 @@ import * as bridge from '../../api/bridge'
 import { applyEvents, emptyTimeline, type ChatTimeline } from '../../utils/chat-reducer'
 import { buildTimelineItems, type TimelineItem } from '../../utils/chat-view'
 import { formatRelativeTime } from '../../utils/format'
+import { getItem, setItem, StorageKeys } from '../../utils/storage'
 
 interface ComposerAttachmentView {
   type: 'image' | 'file'
@@ -87,6 +88,14 @@ interface ChatPageData {
   connected: boolean
   /** scroll-into-view 目标（固定锚点 id） */
   scrollToId: string
+  /** 历史向上翻页中（顶部提示「加载更早消息…」） */
+  loadingEarlier: boolean
+  /** 是否还有更早历史（false 或旧版桌面端缺省时顶部显示「已到最前面」仅当确认拉完） */
+  hasMoreHistory: boolean
+  /** 隐藏工具调用记录（本地偏好，··· 菜单切换） */
+  hideToolRecords: boolean
+  /** 键盘弹起中（dock 安全区让位，避免与键盘高度叠加出缝） */
+  keyboardOpen: boolean
   // ── 配置条与面板 ──
   chips: ChipView[]
   panelShow: boolean
@@ -126,6 +135,10 @@ Page({
     loading: true,
     connected: false,
     scrollToId: '',
+    loadingEarlier: false,
+    hasMoreHistory: false,
+    hideToolRecords: false,
+    keyboardOpen: false,
     chips: [] as ChipView[],
     panelShow: false,
     panelKind: '' as PanelKind | '',
@@ -164,6 +177,10 @@ Page({
   commandCatalog: [] as bridge.BridgeCommandItem[],
   /** 设备列表订阅取消函数（onShow 校验所选电脑在线状态 + 实时刷新） */
   unsubscribeDevices: null as (() => void) | null,
+  /** 已加载的全部历史事件（按 seq 升序累积；向上翻页时前插） */
+  allEvents: [] as bridge.BridgeEvent[],
+  /** 首屏历史单页条数（与 init/loadEarlier 的请求 limit 一致；旧版桌面端 hasMore 缺省时的兜底判定） */
+  historyPageSize: 200,
 
   onLoad(options: Record<string, string | undefined>) {
     const sessionId = options.sessionId ?? ''
@@ -176,6 +193,8 @@ Page({
       sessionId,
       deviceId: options.deviceId ?? '',
       title: options.title ? decodeURIComponent(options.title) : '对话',
+      // 工具记录显隐是本地持久偏好，进入页面即生效
+      hideToolRecords: getItem<boolean>(StorageKeys.chatHideToolEvents) === true,
     })
     // presence 增量：所选电脑上下线时刷新顶部离线提示条
     this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.refreshDeviceOnline())
@@ -212,9 +231,7 @@ Page({
       return
     }
     if (!bridge.isRelayPresenceFresh()) return
-    const online = bridge
-      .getRelayPresenceDevices()
-      .some((item) => item.deviceId === deviceId)
+    const online = bridge.getRelayPresenceDevices().some((item) => item.deviceId === deviceId)
     const offline = !online
     if (offline === this.data.deviceOffline) return
     this.setData({ deviceOffline: offline })
@@ -226,9 +243,12 @@ Page({
     this.setData({ loading: true })
     try {
       const [history] = await Promise.all([
-        bridge.getMessages(sessionId, 200, this.targetDeviceId()),
+        bridge.getMessages(sessionId, this.historyPageSize, this.targetDeviceId()),
         this.refreshRuntime().catch(() => undefined),
       ])
+      this.allEvents = history.events
+      const hasMore = this.resolveHasMore(history)
+      this.setData({ hasMoreHistory: hasMore })
       const timeline = applyEvents(emptyTimeline(), history.events)
       this.latestTimeline = timeline
       this.localPending = null
@@ -243,42 +263,89 @@ Page({
     }
   },
 
+  /** hasMore 归一：新版桌面端以服务端为准；旧版缺省时按「满页即可能还有」兜底 */
+  resolveHasMore(history: Awaited<ReturnType<typeof bridge.getMessages>>): boolean {
+    if (typeof history.hasMore === 'boolean') return history.hasMore
+    return history.events.length >= this.historyPageSize
+  },
+
+  /**
+   * 向上翻页：scroll-view 顶部触底触发。
+   * 以当前已加载最小 seq 为游标拉更早一页，按事件 id 去重后前插并全量重放时间线；
+   * scroll-view 开了 scroll-anchoring，前插内容时视觉位置不跳。
+   */
+  async loadEarlier() {
+    if (this.data.loading || this.data.loadingEarlier || !this.data.hasMoreHistory) return
+    const oldest = this.allEvents[0]
+    if (oldest == null) return
+    this.setData({ loadingEarlier: true })
+    try {
+      const history = await bridge.getMessages(
+        this.data.sessionId,
+        this.historyPageSize,
+        this.targetDeviceId(),
+        oldest.seq,
+      )
+      const seen = new Set(this.allEvents.map((event) => event.id))
+      const fresh = history.events.filter((event) => !seen.has(event.id))
+      if (fresh.length === 0) {
+        // 游标之前没有新事件：服务端已到头，收敛状态避免反复空拉
+        this.setData({ hasMoreHistory: false })
+        return
+      }
+      this.allEvents = [...fresh, ...this.allEvents]
+      this.setData({ hasMoreHistory: this.resolveHasMore(history) })
+      const timeline = applyEvents(emptyTimeline(), this.allEvents)
+      this.latestTimeline = timeline
+      // 顶部加载：保持当前视觉位置，不触发回底
+      this.flushTimeline(true, { keepScroll: true })
+    } catch (error) {
+      wx.showToast({ title: (error as Error).message || '加载更早消息失败', icon: 'none' })
+    } finally {
+      this.setData({ loadingEarlier: false })
+    }
+  },
+
   connectStream() {
     this.closeStream?.()
-    this.closeStream = bridge.connectStream(this.data.sessionId, {
-      onOpen: () => {
-        // 连接状态以真实 onOpen 为准（此前在发起连接时同步置 true，WS 失败也显示已连接）
-        this.setData({ connected: true })
-      },
-      onEvent: (events) => {
-        const base = this.latestTimeline ?? emptyTimeline()
-        const timeline = applyEvents(base, events)
-        // 乐观占位去重：真实 user_message 到达且文本匹配 → 移除本地占位，避免双气泡
-        if (this.localPending != null) {
-          const confirmed = events.some(
-            (event) =>
-              event.type === 'user_message' &&
-              (event.content ?? '').trim() === this.localPending?.text,
-          )
-          if (confirmed) {
-            timeline.messages = timeline.messages.filter(
-              (item) => item.key !== this.localPending?.key,
+    this.closeStream = bridge.connectStream(
+      this.data.sessionId,
+      {
+        onOpen: () => {
+          // 连接状态以真实 onOpen 为准（此前在发起连接时同步置 true，WS 失败也显示已连接）
+          this.setData({ connected: true })
+        },
+        onEvent: (events) => {
+          const base = this.latestTimeline ?? emptyTimeline()
+          const timeline = applyEvents(base, events)
+          // 乐观占位去重：真实 user_message 到达且文本匹配 → 移除本地占位，避免双气泡
+          if (this.localPending != null) {
+            const confirmed = events.some(
+              (event) =>
+                event.type === 'user_message' &&
+                (event.content ?? '').trim() === this.localPending?.text,
             )
-            this.localPending = null
+            if (confirmed) {
+              timeline.messages = timeline.messages.filter(
+                (item) => item.key !== this.localPending?.key,
+              )
+              this.localPending = null
+            }
           }
-        }
-        this.latestTimeline = timeline
-        this.lastEventAt = Date.now()
-        this.flushTimeline()
+          this.latestTimeline = timeline
+          this.lastEventAt = Date.now()
+          this.flushTimeline()
+        },
+        onError: () => {
+          this.setData({ connected: false })
+          // bridge 内部自动重连；watchdog 兜底校正状态
+        },
+        onClose: () => {
+          this.setData({ connected: false })
+        },
       },
-      onError: () => {
-        this.setData({ connected: false })
-        // bridge 内部自动重连；watchdog 兜底校正状态
-      },
-      onClose: () => {
-        this.setData({ connected: false })
-      },
-    }, this.targetDeviceId())
+      this.targetDeviceId(),
+    )
   },
 
   /** 运行中看门狗：running 且 45s 无任何事件 → 重拉全量校正（覆盖漏推/断流/running 卡死） */
@@ -292,18 +359,25 @@ Page({
     }, 20_000)
   },
 
-  /** 渲染节流：高频流式事件合并为每 100ms 一次 setData；force 立即刷 */
-  flushTimeline(force = false) {
+  /**
+   * 渲染节流：高频流式事件合并为每 100ms 一次 setData；force 立即刷。
+   * opts.keepScroll：顶部加载更早消息时保持视觉位置，不回底。
+   */
+  flushTimeline(force = false, opts?: { keepScroll?: boolean }) {
     const paint = () => {
       this.flushTimer = 0
       const timeline = this.latestTimeline
       if (!timeline) return
-      const items = buildTimelineItems(timeline.messages).map((item) => this.decorateItem(item))
+      const hideTool = this.data.hideToolRecords
+      const items = buildTimelineItems(timeline.messages)
+        // 隐藏工具记录：仅隐藏工具调用行；「思考中/执行工具」状态行保留，运行可见
+        .filter((item) => !(hideTool && item.kind === 'tool'))
+        .map((item) => this.decorateItem(item))
       this.setData({
         items,
         running: timeline.running,
       })
-      this.scrollToBottom()
+      if (opts?.keepScroll !== true) this.scrollToBottom()
     }
     if (force) {
       if (this.flushTimer) clearTimeout(this.flushTimer)
@@ -724,11 +798,7 @@ Page({
           )
         }
       } else if (kind === 'project') {
-        await bridge.updateSession(
-          this.data.sessionId,
-          { projectId: id },
-          this.targetDeviceId(),
-        )
+        await bridge.updateSession(this.data.sessionId, { projectId: id }, this.targetDeviceId())
       }
       await this.refreshRuntime()
       this.closePanel()
@@ -908,11 +978,7 @@ Page({
           fail: (err) => reject(new Error(err.errMsg || '读取录音失败')),
         })
       })
-      const { text } = await bridge.transcribeAudio(
-        dataBase64,
-        'audio/mp3',
-        this.targetDeviceId(),
-      )
+      const { text } = await bridge.transcribeAudio(dataBase64, 'audio/mp3', this.targetDeviceId())
       if (!text.trim()) {
         wx.showToast({ title: '没有识别到内容', icon: 'none' })
         return
@@ -943,18 +1009,40 @@ Page({
 
   onMore() {
     wx.showActionSheet({
-      itemList: ['重命名', '定时任务', '刷新配置', '删除会话'],
+      itemList: [
+        '重命名',
+        '定时任务',
+        '刷新配置',
+        this.data.hideToolRecords ? '显示工具记录' : '隐藏工具记录',
+        '删除会话',
+      ],
       itemColor: '#1a1a1a',
       success: (res) => {
         if (res.tapIndex === 0) void this.onRename()
         if (res.tapIndex === 1) this.setData({ tasksShow: true })
         if (res.tapIndex === 2) void this.onRefreshConfig()
-        if (res.tapIndex === 3) void this.onDelete()
+        if (res.tapIndex === 3) this.onToggleToolRecords()
+        if (res.tapIndex === 4) void this.onDelete()
       },
       fail: () => {
         /* 用户取消 */
       },
     })
+  },
+
+  /** 隐藏/显示工具调用记录（本地持久化，立即重渲染） */
+  onToggleToolRecords() {
+    const next = !this.data.hideToolRecords
+    this.setData({ hideToolRecords: next })
+    setItem(StorageKeys.chatHideToolEvents, next)
+    wx.showToast({ title: next ? '已隐藏工具记录' : '已显示工具记录', icon: 'none' })
+    if (this.latestTimeline != null) this.flushTimeline(true)
+  },
+
+  /** 输入框键盘高度变化（组件转发）：弹起时收起 dock 底部安全区，避免键盘上方出缝 */
+  onComposerKeyboard(e: WechatMiniprogram.CustomEvent<{ height: number }>) {
+    const open = e.detail.height > 0
+    if (open !== this.data.keyboardOpen) this.setData({ keyboardOpen: open })
   },
 
   async onRefreshConfig() {

@@ -1,6 +1,9 @@
 <!-- 胶囊输入框：float=悬浮 / dock=停靠；附件条 + 麦克风/加号 + 发送 + 配置条 chips + 命令补全 -->
 
-<view class="composer composer--{{mode}} {{focus ? 'composer--focus' : ''}}">
+<view
+  class="composer composer--{{mode}} {{focus ? 'composer--focus' : ''}}"
+  style="{{mode === 'float' && keyboardHeight > 0 ? 'bottom:' + keyboardHeight + 'px;' : ''}}"
+>
 
   <!-- 命令补全面板（输入以 / 开头时浮出） -->
   <view wx:if="{{commands.length > 0}}" class="cmd-panel">
@@ -100,12 +103,13 @@
       show-confirm-bar="{{false}}"
       confirm-type="send"
       disabled="{{disabled}}"
-      adjust-position="{{mode === 'dock'}}"
+      adjust-position="{{false}}"
       cursor-spacing="16"
       bindinput="onInput"
       bindfocus="onFocus"
       bindblur="onBlur"
       bindconfirm="onSend"
+      bindkeyboardheightchange="onKeyboardHeight"
     />
     <view
       class="composer-action {{running || localValue ? 'composer-action--dark' : ''}}"
@@ -133,4 +137,11 @@
       </block>
     </view>
   </scroll-view>
+
+  <!-- 键盘占位（仅 dock）：等高于键盘，把输入框顶到键盘上沿，页面消息区自动压缩 -->
+  <view
+    wx:if="{{mode === 'dock' && keyboardHeight > 0}}"
+    class="kb-spacer"
+    style="height:{{keyboardHeight}}px"
+  ></view>
 </view>
