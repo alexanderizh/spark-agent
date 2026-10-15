@@ -1,20 +1,19 @@
 /**
  * 桥接错误类型。
  *
- * 单独成文件的原因：`bridge.ts`（直连传输）与 `relay.ts`（云端中继传输）都要抛同一类错误，
+ * 单独成文件的原因：`bridge.ts`（门面）与 `relay.ts`（云端中继传输）都要抛同一类错误，
  * 互相 import 会形成循环依赖，所以把错误与提示文案抽到最底层。
  *
- * 只抛一句「配对失败」没有任何排查价值，所以把失败原因分类并带上可执行的提示。
+ * 云端中继是唯一传输（局域网直连已移除），错误原因只保留中继语义；
+ * 只抛一句「连接失败」没有任何排查价值，所以把失败原因分类并带上可执行的提示。
  */
 
 export type BridgeErrorReason =
-  | 'NO_URL'
   | 'NETWORK'
-  | 'DOMAIN'
-  | 'DISABLED'
-  | 'EXPIRED'
+  | 'TIMEOUT'
   | 'AUTH'
-  | 'OFFLINE'
+  | 'DISABLED'
+  | 'DESKTOP_OFFLINE'
   | 'SERVER'
   | 'UNKNOWN'
 
@@ -32,16 +31,13 @@ export class BridgeError extends Error {
 }
 
 export const BRIDGE_HINTS: Record<BridgeErrorReason, string> = {
-  NO_URL: '先在下方填写桌面端地址，或点「扫码」扫设置页的二维码',
-  NETWORK: '确认手机与电脑在同一 Wi-Fi、桌面端「移动端桥接」已开启、端口未被防火墙拦截',
-  DOMAIN:
-    '开发期请在开发者工具「详情 → 本地设置」勾选「不校验合法域名」；正式版需在 mp 后台配置 request 合法域名',
-  DISABLED: '请到桌面端「设置 → 生态 → 移动端桥接」打开开关',
-  EXPIRED: '设备令牌已失效，请重新配对',
-  AUTH: '两端必须登录同一个 Spark 平台账号，请检查后重新配对',
-  OFFLINE:
+  NETWORK: '请检查手机网络后重试；小程序经 Spark 平台服务中转，正常网络均可访问',
+  TIMEOUT: '电脑端响应超时，请稍后重试',
+  AUTH: '两端必须登录同一个 Spark 平台账号，请在本机重新登录后再试',
+  DISABLED: '请到桌面端「设置 → 生态 → 移动端桥接」打开云端中继开关',
+  DESKTOP_OFFLINE:
     '电脑端没连上云端中继：请在桌面端「设置 → 生态 → 移动端桥接」确认「云端中继」已开启，且电脑处于联网状态',
-  SERVER: '桌面端返回了错误，可在桌面端日志中查看原因',
+  SERVER: '电脑端返回了错误，可在桌面端日志中查看原因',
   UNKNOWN: '可重试一次，仍失败请查看桌面端日志',
 }
 

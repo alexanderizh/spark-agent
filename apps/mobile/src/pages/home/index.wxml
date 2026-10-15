@@ -29,31 +29,15 @@
     </view>
   </view>
 
-  <!-- ─── 门控态 ──────────────────────────────────────────────────────────── -->
+  <!-- ─── 链路失败态（多为电脑端离线 / 中继未开启） ─────────────────────────── -->
   <view wx:if="{{gate !== 'ok'}}" class="home-gate">
-    <empty-state
-      icon="{{gate === 'no-pair' ? 'monitor' : 'chat'}}"
-      title="{{gate === 'no-url' ? '先连接桌面端' : (gate === 'no-pair' ? '配对桌面端' : '连接出了点问题')}}"
-      desc="{{gate === 'no-url' ? '扫桌面端设置页的配对二维码，或手动填写局域网地址' : (gate === 'no-pair' ? '两端登录同一账号后一键配对' : errorText)}}"
-    />
+    <empty-state icon="monitor" title="连不上电脑端" desc="{{errorText}}" />
     <view class="row gap-16 home-gate-actions">
-      <view class="btn btn-dark btn-small" hover-class="hover-dim" bindtap="onScan">
-        <text>扫码配对</text>
-      </view>
-      <view class="btn btn-plain btn-small" hover-class="hover-dim" bindtap="onEditUrl">
-        <text>填写地址</text>
-      </view>
-      <view
-        wx:if="{{gate === 'no-pair' || gate === 'error'}}"
-        class="btn btn-plain btn-small {{pairing ? 'btn-loading' : ''}}"
-        hover-class="hover-dim"
-        bindtap="onPair"
-      >
-        <text>{{pairing ? '配对中…' : '重新配对'}}</text>
+      <view class="btn btn-dark btn-small" hover-class="hover-dim" bindtap="onRetryLoad">
+        <text>重试</text>
       </view>
     </view>
-    <text wx:if="{{gate === 'error' && errorHint}}" class="t-caption home-gate-hint">{{errorHint}}</text>
-    <text wx:if="{{serverUrl}}" class="t-caption home-gate-url t-mono">{{serverUrl}}</text>
+    <text wx:if="{{errorHint}}" class="t-caption home-gate-hint">{{errorHint}}</text>
   </view>
 
   <!-- ─── 内容态 ──────────────────────────────────────────────────────────── -->
@@ -93,7 +77,7 @@
     <view wx:if="{{loading && sessionTotal === 0}}" class="loading-tip">加载中…</view>
 
     <!-- 项目列表加载失败提示（桌面端旧版本无项目端点时最常见） -->
-    <view wx:if="{{projectsError}}" class="home-group">
+    <view class="home-group" wx:if="{{projectsError}}">
       <view class="projects-error">
         <text class="t-caption">项目列表加载失败：请确认桌面端已更新到最新版本并重启，然后下拉刷新重试</text>
       </view>
@@ -171,7 +155,7 @@
       <empty-state
         icon="chat"
         title="还没有会话"
-        desc="在下方输入框说点什么，会自动创建会话并发送到桌面端"
+        desc="在下方输入框说点什么，会话会发送到所选电脑"
       />
     </view>
 
@@ -189,25 +173,4 @@
     bind:input="onQuickInput"
     bind:send="onQuickSend"
   />
-
-  <!-- 手动填写地址弹窗 -->
-  <view wx:if="{{urlDialog.visible}}" class="dialog-mask" bindtap="onUrlCancel">
-    <view class="dialog" catchtap="">
-      <text class="t-strong dialog-title">桌面端地址</text>
-      <input
-        class="field-input"
-        value="{{urlDialog.value}}"
-        placeholder="http://192.168.1.5:3721"
-        bindinput="onUrlInput"
-      />
-      <view class="row gap-16 dialog-actions">
-        <view class="btn btn-plain grow" hover-class="hover-dim" bindtap="onUrlCancel">
-          <text>取消</text>
-        </view>
-        <view class="btn btn-dark grow" hover-class="hover-dim" bindtap="onUrlConfirm">
-          <text>保存</text>
-        </view>
-      </view>
-    </view>
-  </view>
 </view>

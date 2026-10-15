@@ -41,8 +41,8 @@
   border: 1rpx solid #eceae6;
 }
 
-.bd-card--revoked {
-  opacity: 0.72;
+.bd-card--offline {
+  opacity: 0.82;
   background: #faf9f7;
 }
 
@@ -95,14 +95,22 @@
   background: #e8f7ee;
 }
 
-.bd-tag--active {
+.bd-tag--offline {
   color: #8a8782;
   background: #f2f0ec;
 }
 
-.bd-tag--revoked {
-  color: #b91c1c;
-  background: #fdeeee;
+/* 标题行内的在线圆点（与卡片右上徽标同色系） */
+.bd-online-dot {
+  flex-shrink: 0;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #d4d1cc;
+}
+
+.bd-online-dot--on {
+  background: #22c55e;
 }
 
 /* ── 吊销操作（行内二次确认） ── */

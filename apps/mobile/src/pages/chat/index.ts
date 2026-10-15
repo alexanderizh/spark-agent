@@ -1,8 +1,10 @@
 /**
  * 远程对话页。
  *
- * 接替桌面端会话：进入即拉全量历史，随后 WebSocket 增量跟流；
+ * 接替桌面端会话：进入即拉全量历史，随后经云端中继 WebSocket 增量跟流；
  * 发送消息走 submitTurn（与桌面端发送同一会话同一回合机制）。
+ * 路由带 deviceId 时所有调用与 sub/unsub 定向到该电脑；onShow 校验其在线状态，
+ * 离线显示顶部提示条（仍可看历史）。
  *
  * 能力面（2026-10-14 扩展）：
  *   配置条    助手 / 模型 / 权限策略 / 推理强度 / 工作流 / 项目 → 半屏面板切换
@@ -72,6 +74,10 @@ const PERMISSION_LABELS: Record<string, string> = {
 
 interface ChatPageData {
   sessionId: string
+  /** 定向的桌面端 deviceId（'' = 主桌面端；路由传入） */
+  deviceId: string
+  /** 所选电脑是否离线（离线仍可看历史，顶部提示条） */
+  deviceOffline: boolean
   title: string
   updatedAtLabel: string
   items: ReturnType<typeof buildTimelineItems>
@@ -110,6 +116,8 @@ const MAX_ATTACHMENTS = 20
 Page({
   data: {
     sessionId: '',
+    deviceId: '',
+    deviceOffline: false,
     title: '对话',
     updatedAtLabel: '',
     items: [],
@@ -154,6 +162,8 @@ Page({
   sentAttachmentsByText: {} as Record<string, bridge.BridgeAttachment[]>,
   /** 命令目录原始数据（补全过滤用） */
   commandCatalog: [] as bridge.BridgeCommandItem[],
+  /** 设备列表订阅取消函数（onShow 校验所选电脑在线状态 + 实时刷新） */
+  unsubscribeDevices: null as (() => void) | null,
 
   onLoad(options: Record<string, string | undefined>) {
     const sessionId = options.sessionId ?? ''
@@ -164,14 +174,18 @@ Page({
     }
     this.setData({
       sessionId,
+      deviceId: options.deviceId ?? '',
       title: options.title ? decodeURIComponent(options.title) : '对话',
     })
+    // presence 增量：所选电脑上下线时刷新顶部离线提示条
+    this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.refreshDeviceOnline())
     // 配置目录/命令目录异步补齐，不阻塞首屏历史
     void this.loadCatalog()
     void this.loadCommands()
   },
 
   onShow() {
+    this.refreshDeviceOnline()
     void this.init()
   },
 
@@ -181,6 +195,29 @@ Page({
     this.watchdogTimer = 0
     this.closeStream?.()
     this.closeStream = null
+    this.unsubscribeDevices?.()
+    this.unsubscribeDevices = null
+  },
+
+  /** 定向的 deviceId（'' → undefined，帧不带 d = 主桌面端） */
+  targetDeviceId(): string | undefined {
+    return this.data.deviceId || undefined
+  },
+
+  /** 所选电脑是否在线：presence 已知时刷新顶部提示条；未知（WS 未连上）时不误报 */
+  refreshDeviceOnline() {
+    const deviceId = this.data.deviceId
+    if (!deviceId) {
+      if (this.data.deviceOffline) this.setData({ deviceOffline: false })
+      return
+    }
+    if (!bridge.isRelayPresenceFresh()) return
+    const online = bridge
+      .getRelayPresenceDevices()
+      .some((item) => item.deviceId === deviceId)
+    const offline = !online
+    if (offline === this.data.deviceOffline) return
+    this.setData({ deviceOffline: offline })
   },
 
   async init() {
@@ -189,7 +226,7 @@ Page({
     this.setData({ loading: true })
     try {
       const [history] = await Promise.all([
-        bridge.getMessages(sessionId, 200),
+        bridge.getMessages(sessionId, 200, this.targetDeviceId()),
         this.refreshRuntime().catch(() => undefined),
       ])
       const timeline = applyEvents(emptyTimeline(), history.events)
@@ -241,7 +278,7 @@ Page({
       onClose: () => {
         this.setData({ connected: false })
       },
-    })
+    }, this.targetDeviceId())
   },
 
   /** 运行中看门狗：running 且 45s 无任何事件 → 重拉全量校正（覆盖漏推/断流/running 卡死） */
@@ -284,13 +321,8 @@ Page({
     if (attachments == null || attachments.length === 0) return item
     const views = attachments.map((att) => ({
       ...att,
-      // 中继模式下小程序访问不到桌面端的局域网地址，直接预览手机本地那份原图
-      previewUrl:
-        att.type === 'image'
-          ? bridge.isRelayEnabled()
-            ? ((att as { localPath?: string }).localPath ?? '')
-            : bridge.buildAttachmentPreviewUrl(att.path)
-          : '',
+      // 小程序访问不到桌面端本地路径，直接预览手机本地那份原图
+      previewUrl: att.type === 'image' ? ((att as { localPath?: string }).localPath ?? '') : '',
     }))
     return { ...item, attachments: views } as TimelineItem
   },
@@ -341,7 +373,7 @@ Page({
     // 斜杠命令：设置型命令主进程内直接生效；不识别时按普通消息发送
     if (text.startsWith('/')) {
       try {
-        const result = await bridge.executeCommand(this.data.sessionId, text)
+        const result = await bridge.executeCommand(this.data.sessionId, text, this.targetDeviceId())
         if (result.isCommand) {
           if (result.queued === true) {
             wx.showToast({ title: '当前回合运行中，命令已排队', icon: 'none', duration: 2500 })
@@ -362,6 +394,7 @@ Page({
         this.data.sessionId,
         text,
         attachmentPaths.length > 0 ? attachmentPaths : undefined,
+        this.targetDeviceId(),
       )
       // 用户消息会经流回来；若流未连上，本地先乐观渲染（流恢复后按文本去重）
       if (!this.data.connected) {
@@ -388,7 +421,7 @@ Page({
 
   async onCancel() {
     try {
-      await bridge.cancelTurn(this.data.sessionId)
+      await bridge.cancelTurn(this.data.sessionId, this.targetDeviceId())
       wx.showToast({ title: '已请求停止', icon: 'success' })
     } catch (error) {
       wx.showToast({ title: (error as Error).message || '取消失败', icon: 'none' })
@@ -399,7 +432,7 @@ Page({
 
   async loadCatalog() {
     try {
-      const catalog = await bridge.getCatalog()
+      const catalog = await bridge.getCatalog(this.targetDeviceId())
       this.catalog = catalog
       this.refreshChips()
     } catch {
@@ -408,7 +441,7 @@ Page({
       this.refreshChips()
     }
     try {
-      const { projects } = await bridge.listProjects(100)
+      const { projects } = await bridge.listProjects(100, this.targetDeviceId())
       this.projectOptionsCache = projects.map((project) => ({
         id: project.id,
         label: project.name,
@@ -424,7 +457,7 @@ Page({
 
   async loadCommands() {
     try {
-      const { commands } = await bridge.listCommands(this.data.sessionId)
+      const { commands } = await bridge.listCommands(this.data.sessionId, this.targetDeviceId())
       this.commandCatalog = commands
       this.setData({ commands })
     } catch {
@@ -433,7 +466,7 @@ Page({
   },
 
   async refreshRuntime() {
-    const { runtime } = await bridge.getSessionRuntime(this.data.sessionId)
+    const { runtime } = await bridge.getSessionRuntime(this.data.sessionId, this.targetDeviceId())
     this.runtime = runtime
     this.refreshChips()
   },
@@ -659,26 +692,43 @@ Page({
     this.setData({ panelLoading: true })
     try {
       if (kind === 'agent') {
-        await bridge.updateSession(this.data.sessionId, { agentId: id })
+        await bridge.updateSession(this.data.sessionId, { agentId: id }, this.targetDeviceId())
       } else if (kind === 'model') {
         const sep = id.indexOf('::')
         if (sep < 0) return
         const providerId = id.slice(0, sep)
         const modelId = id.slice(sep + 2)
-        await bridge.updateSession(this.data.sessionId, {
-          providerProfileId: providerId,
-          ...(modelId !== '' ? { modelId } : { modelId: null }),
-        })
+        await bridge.updateSession(
+          this.data.sessionId,
+          {
+            providerProfileId: providerId,
+            ...(modelId !== '' ? { modelId } : { modelId: null }),
+          },
+          this.targetDeviceId(),
+        )
       } else if (kind === 'permission') {
-        await bridge.updateSession(this.data.sessionId, { permissionMode: id })
+        await bridge.updateSession(
+          this.data.sessionId,
+          { permissionMode: id },
+          this.targetDeviceId(),
+        )
       } else if (kind === 'workflow') {
         if (id === 'inherit' || id === 'disabled') {
-          await bridge.setWorkflowBinding(this.data.sessionId, id)
+          await bridge.setWorkflowBinding(this.data.sessionId, id, undefined, this.targetDeviceId())
         } else {
-          await bridge.setWorkflowBinding(this.data.sessionId, 'override', id)
+          await bridge.setWorkflowBinding(
+            this.data.sessionId,
+            'override',
+            id,
+            this.targetDeviceId(),
+          )
         }
       } else if (kind === 'project') {
-        await bridge.updateSession(this.data.sessionId, { projectId: id })
+        await bridge.updateSession(
+          this.data.sessionId,
+          { projectId: id },
+          this.targetDeviceId(),
+        )
       }
       await this.refreshRuntime()
       this.closePanel()
@@ -695,7 +745,11 @@ Page({
     const effort = efforts[e.detail.index]
     if (effort == null) return
     try {
-      await bridge.updateSession(this.data.sessionId, { reasoningEffort: effort })
+      await bridge.updateSession(
+        this.data.sessionId,
+        { reasoningEffort: effort },
+        this.targetDeviceId(),
+      )
       await this.refreshRuntime()
       this.closePanel()
       wx.showToast({ title: `推理强度：${REASONING_LABELS[effort] ?? effort}`, icon: 'success' })
@@ -787,9 +841,11 @@ Page({
           fail: (err) => reject(new Error(err.errMsg || '读取文件失败')),
         })
       })
-      const { attachments: uploaded } = await bridge.uploadAttachments(this.data.sessionId, [
-        { name: input.name, mimeType: input.mimeType || undefined, dataBase64 },
-      ])
+      const { attachments: uploaded } = await bridge.uploadAttachments(
+        this.data.sessionId,
+        [{ name: input.name, mimeType: input.mimeType || undefined, dataBase64 }],
+        this.targetDeviceId(),
+      )
       const first = uploaded[0]
       if (first == null) throw new Error('上传失败')
       this.setData({
@@ -852,7 +908,11 @@ Page({
           fail: (err) => reject(new Error(err.errMsg || '读取录音失败')),
         })
       })
-      const { text } = await bridge.transcribeAudio(dataBase64, 'audio/mp3')
+      const { text } = await bridge.transcribeAudio(
+        dataBase64,
+        'audio/mp3',
+        this.targetDeviceId(),
+      )
       if (!text.trim()) {
         wx.showToast({ title: '没有识别到内容', icon: 'none' })
         return
@@ -921,7 +981,7 @@ Page({
         const name = (res.content ?? '').trim()
         if (!name) return
         try {
-          await bridge.renameSession(this.data.sessionId, name)
+          await bridge.renameSession(this.data.sessionId, name, this.targetDeviceId())
           this.setData({ title: name })
           wx.showToast({ title: '已重命名', icon: 'success' })
         } catch (error) {
@@ -939,7 +999,7 @@ Page({
       success: async (res) => {
         if (!res.confirm) return
         try {
-          await bridge.deleteSession(this.data.sessionId)
+          await bridge.deleteSession(this.data.sessionId, this.targetDeviceId())
           wx.showToast({ title: '已删除', icon: 'success' })
           setTimeout(
             () => wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/index' }) }),

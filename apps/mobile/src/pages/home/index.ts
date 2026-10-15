@@ -3,7 +3,9 @@
  *
  * 页面即应用入口：状态仪表盘（2×2 卡）→ 项目分组 → 最近会话分组，
  * 底部悬浮胶囊输入框随时发起新对话（创建会话并直接发送首条消息）。
- * 桥接门控（未配置地址 / 未配对 / 连接失败）内嵌为本页引导态。
+ *
+ * 云端中继是唯一传输：登录即达（无需填地址/配对），
+ * 会话与项目按「远程会话页选中的电脑」加载；链路失败（如电脑离线）内嵌为本页引导态。
  */
 
 import * as bridge from '../../api/bridge'
@@ -13,7 +15,7 @@ import { getState as getAuthState } from '../../store/auth'
 import { formatRelativeTime } from '../../utils/format'
 import type { BridgeProjectSummary, BridgeSessionSummary } from '../../api/bridge'
 
-type Gate = 'ok' | 'no-url' | 'no-pair' | 'error'
+type Gate = 'ok' | 'error'
 
 interface SessionRow extends BridgeSessionSummary {
   statusLabel: string
@@ -39,11 +41,6 @@ interface HomeData {
   loading: boolean
   errorText: string
   errorHint: string
-  serverUrl: string
-  /** 是否走云端中继（开启时不需要填地址/配对，登录即达） */
-  relayEnabled: boolean
-  pairing: boolean
-  urlDialog: { visible: boolean; value: string }
   avatarUrl: string
   accountLabel: string
   stats: { total: number; running: number; error: number; projects: number }
@@ -138,10 +135,6 @@ Page({
     loading: true,
     errorText: '',
     errorHint: '',
-    serverUrl: '',
-    relayEnabled: true,
-    pairing: false,
-    urlDialog: { visible: false, value: '' },
     avatarUrl: '',
     accountLabel: '',
     stats: { total: 0, running: 0, error: 0, projects: 0 },
@@ -164,36 +157,8 @@ Page({
     this.setData({
       avatarUrl: user?.avatarUrl ?? '',
       accountLabel: user?.nickname ?? user?.account ?? '',
-      serverUrl: bridge.getServerUrl(),
-      relayEnabled: bridge.isRelayEnabled(),
     })
     // 云端中继：登录同一个账号即达，不需要「填地址 + 配对」两步
-    if (bridge.isRelayEnabled()) {
-      void this.load()
-      return
-    }
-    if (!bridge.getServerUrl()) {
-      this.setData({
-        gate: 'no-url',
-        loading: false,
-        projects: [],
-        projectsError: false,
-        sessionGroups: [],
-        sessionTotal: 0,
-      })
-      return
-    }
-    if (!bridge.isPaired()) {
-      this.setData({
-        gate: 'no-pair',
-        loading: false,
-        projects: [],
-        projectsError: false,
-        sessionGroups: [],
-        sessionTotal: 0,
-      })
-      return
-    }
     void this.load()
   },
 
@@ -214,14 +179,20 @@ Page({
     }
   },
 
+  /** 当前定向的 deviceId（与远程会话页电脑切换共享，'' → undefined = 主桌面端） */
+  targetDeviceId(): string | undefined {
+    return bridge.getSelectedDeviceId() || undefined
+  },
+
   async load() {
     this.setData({ loading: true })
+    const deviceId = this.targetDeviceId()
     try {
-      const sessionsResult = await bridge.listSessions(50)
+      const sessionsResult = await bridge.listSessions(50, undefined, deviceId)
       const sessions = sessionsResult.sessions.map(sessionRow)
       // 项目列表单独容错：失败不阻塞会话展示，但要显式提示（多为桌面端未更新重启、无新端点）
       const projectsResult = await bridge
-        .listProjects(100)
+        .listProjects(100, deviceId)
         .then((result) => ({ projects: result.projects, ok: true as const }))
         .catch(() => ({ projects: [] as BridgeProjectSummary[], ok: false as const }))
       const running = sessions.filter((item) => item.status === 'running').length
@@ -258,97 +229,10 @@ Page({
     }
   },
 
-  // ─── 桥接门控 ───────────────────────────────────────────────────────────────
+  // ─── 桥接链路 ───────────────────────────────────────────────────────────────
 
-  onEditUrl() {
-    this.setData({ urlDialog: { visible: true, value: this.data.serverUrl } })
-  },
-  onUrlInput(e: WechatMiniprogram.Input) {
-    this.setData({ 'urlDialog.value': e.detail.value })
-  },
-  onUrlCancel() {
-    this.setData({ 'urlDialog.visible': false })
-  },
-  onUrlConfirm() {
-    const url = bridge.normalizeBridgeUrl(this.data.urlDialog.value)
-    if (!url) {
-      wx.showToast({ title: '地址格式如 http://192.168.1.5:3721', icon: 'none' })
-      return
-    }
-    bridge.setServerUrl(url)
-    this.setData({ serverUrl: url, 'urlDialog.visible': false })
-    if (bridge.isPaired()) {
-      this.setData({ gate: 'ok', errorText: '', errorHint: '' })
-      void this.load()
-    } else {
-      this.setData({
-        gate: 'no-pair',
-        projects: [],
-        projectsError: false,
-        sessionGroups: [],
-        sessionTotal: 0,
-      })
-    }
-  },
-
-  onScan() {
-    wx.scanCode({
-      onlyFromCamera: false,
-      scanType: ['qrCode'],
-      success: (res) => {
-        const url = bridge.normalizeBridgeUrl(res.result || '')
-        if (!url) {
-          wx.showToast({ title: '二维码内容不是有效的桌面端地址', icon: 'none' })
-          return
-        }
-        bridge.setServerUrl(url)
-        this.setData({ serverUrl: url })
-        void this.onPair()
-      },
-      fail: () => {
-        /* 用户取消扫码 */
-      },
-    })
-  },
-
-  async onPair() {
-    if (this.data.pairing) return
-    const accountToken = getItem<string>(StorageKeys.token)
-    if (!accountToken) {
-      wx.reLaunch({ url: '/pages/login/index' })
-      return
-    }
-    // 中继模式下 pair() 只负责确认链路已通（不需要换设备令牌）
-    if (bridge.isRelayEnabled()) {
-      this.setData({ pairing: true })
-      try {
-        await bridge.pair(accountToken, '微信小程序')
-        this.setData({ gate: 'ok', errorText: '', errorHint: '' })
-        await this.load()
-      } catch (error) {
-        const { message, hint } = describeBridgeError(error)
-        this.setData({ gate: 'error', errorText: message, errorHint: hint })
-      } finally {
-        this.setData({ pairing: false })
-      }
-      return
-    }
-    if (!bridge.getServerUrl()) {
-      this.setData({ gate: 'no-url' })
-      return
-    }
-    this.setData({ pairing: true })
-    try {
-      const result = await bridge.pair(accountToken, '微信小程序')
-      wx.showToast({ title: `已配对 ${result.desktop.name}`, icon: 'success' })
-      this.setData({ gate: 'ok', errorText: '', errorHint: '' })
-      await this.load()
-    } catch (error) {
-      const { message, hint } = describeBridgeError(error)
-      this.setData({ gate: 'error', errorText: message, errorHint: hint })
-    } finally {
-      this.setData({ pairing: false })
-    }
+  onRetryLoad() {
+    void this.load()
   },
 
   // ─── 导航 ───────────────────────────────────────────────────────────────────
@@ -387,8 +271,9 @@ Page({
   },
   onOpenSession(e: WechatMiniprogram.CustomEvent) {
     const { id, title } = e.currentTarget.dataset as { id: string; title: string }
+    const deviceId = bridge.getSelectedDeviceId()
     wx.navigateTo({
-      url: `/pages/chat/index?sessionId=${encodeURIComponent(id)}&title=${encodeURIComponent(title)}`,
+      url: `/pages/chat/index?sessionId=${encodeURIComponent(id)}&title=${encodeURIComponent(title)}&deviceId=${encodeURIComponent(deviceId)}`,
     })
   },
 
@@ -403,11 +288,12 @@ Page({
     if (!text || this.data.quickSending || this.data.gate !== 'ok') return
     this.setData({ quickSending: true })
     try {
-      const created = await bridge.createSession(text.slice(0, 30))
-      await bridge.submitTurn(created.session.id, text)
+      const deviceId = this.targetDeviceId()
+      const created = await bridge.createSession(text.slice(0, 30), undefined, deviceId)
+      await bridge.submitTurn(created.session.id, text, undefined, deviceId)
       this.setData({ quickText: '' })
       wx.navigateTo({
-        url: `/pages/chat/index?sessionId=${encodeURIComponent(created.session.id)}&title=${encodeURIComponent(created.session.title)}`,
+        url: `/pages/chat/index?sessionId=${encodeURIComponent(created.session.id)}&title=${encodeURIComponent(created.session.title)}&deviceId=${encodeURIComponent(deviceId ?? '')}`,
       })
     } catch (error) {
       wx.showToast({ title: (error as Error).message || '发起失败', icon: 'none' })

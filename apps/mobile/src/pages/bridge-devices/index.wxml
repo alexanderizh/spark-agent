@@ -1,4 +1,4 @@
-<!-- 授信设备管理：列表卡片 + 行内二次确认吊销 -->
+<!-- 授信设备管理：列表卡片 + 在线徽标 + 行内二次确认吊销 -->
 
 <view class="bd-page">
   <safe-nav-bar title="授信设备" />
@@ -21,34 +21,35 @@
     <empty-state
       icon="monitor"
       title="还没有授信设备"
-      desc="在电脑端 SparkWork 打开「设置 → 生态 → 移动端桥接 → 云端中继」，用同一账号登录后即自动授信"
+      desc="在电脑端 SparkWork 打开「设置 → 生态 → 移动端桥接 → 云端中继」，用同一 Spark 平台账号登录后即自动授信"
     />
   </view>
 
   <block wx:else>
-    <view class="bd-count">已授信 {{activeCount}} 台</view>
+    <view class="bd-count">{{onlineCount}} 台在线 · 共 {{devices.length}} 台授信</view>
 
     <view
       wx:for="{{devices}}"
       wx:key="deviceId"
-      class="bd-card {{item.status === 'revoked' ? 'bd-card--revoked' : ''}}"
+      class="bd-card {{item.online ? '' : 'bd-card--offline'}}"
     >
       <view class="bd-card-head">
         <view class="bd-card-title-row">
-          <text class="bd-card-title ellipsis">{{item.label}}</text>
-          <text
-            class="bd-tag {{item.online ? 'bd-tag--online' : (item.status === 'active' ? 'bd-tag--active' : 'bd-tag--revoked')}}"
-          >{{item.statusLabel}}</text>
+          <view class="row gap-8">
+            <view class="bd-online-dot {{item.online ? 'bd-online-dot--on' : ''}}"></view>
+            <text class="bd-card-title ellipsis">{{item.name}}</text>
+          </view>
+          <text class="bd-tag {{item.online ? 'bd-tag--online' : 'bd-tag--offline'}}">{{item.statusLabel}}</text>
         </view>
         <text class="bd-card-sub">{{item.shortId}}{{item.versionLabel ? ' · ' + item.versionLabel : ''}}</text>
       </view>
 
       <view class="bd-card-meta">
         <text>最近活跃 {{item.lastSeenLabel}}</text>
-        <text>授信于 {{item.firstSeenLabel}}</text>
+        <text>授信于 {{item.trustedLabel}}</text>
       </view>
 
-      <view wx:if="{{item.status === 'active'}}" class="bd-card-actions">
+      <view class="bd-card-actions">
         <block wx:if="{{pendingRevoke !== item.deviceId}}">
           <view class="bd-btn-revoke" data-id="{{item.deviceId}}" bindtap="onAskRevoke">吊销</view>
         </block>
@@ -60,7 +61,6 @@
           </view>
         </block>
       </view>
-      <view wx:else class="bd-card-note">已吊销 · {{item.lastSeenLabel}}</view>
     </view>
   </block>
 </view>

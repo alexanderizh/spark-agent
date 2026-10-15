@@ -169,7 +169,7 @@ async function main() {
   )
   desktop.send({ t: 'hello', deviceId: e2eDeviceId, label: 'E2E测试桌面端', version: '0.0.0' })
 
-  // 4) 小程序端连接：welcome 应报告桌面端在线
+  // 4) 小程序端连接：welcome 应报告桌面端在线（devices 列表含 e2e 设备）
   const client = new Peer('client', 'e2e-mp-01')
   try {
     await client.connect()
@@ -184,6 +184,12 @@ async function main() {
     'welcome 报告桌面端在线',
     welcomeC?.desktop?.online === true,
     JSON.stringify(welcomeC?.desktop ?? null),
+  )
+  check(
+    'welcome 携带 devices 列表（含 e2e 设备与展示名）',
+    Array.isArray(welcomeC?.devices) &&
+      welcomeC?.devices?.some((d) => d.deviceId === e2eDeviceId && d.label === 'E2E测试桌面端'),
+    JSON.stringify(welcomeC?.devices?.map((d) => d.deviceId) ?? null),
   )
 
   // 5) 调用转发：client 发 req → desktop 收到 → 回 res → client 收到
@@ -207,6 +213,20 @@ async function main() {
     )
   }
 
+  // 5.5) 多电脑定向：req 带 d=<deviceId> → 定向到达该桌面端
+  client.send({ t: 'req', id: 'e2e-r2', m: 'GET', p: '/v1/sessions?limit=1', d: e2eDeviceId })
+  const reqFrame2 = await desktop.waitFor((f) => f.t === 'req' && f.p === '/v1/sessions?limit=1')
+  check('req 带 d 定向到达桌面端', reqFrame2 != null, reqFrame2 ? `${reqFrame2.m} ${reqFrame2.p}` : '')
+  if (reqFrame2) {
+    desktop.send({ t: 'res', id: reqFrame2.id, s: 200, b: { sessions: [], total: 0 } })
+    const resFrame2 = await client.waitFor((f) => f.t === 'res' && f.id === 'e2e-r2')
+    check(
+      '定向调用应答原路返回',
+      resFrame2?.s === 200,
+      JSON.stringify(resFrame2?.b ?? null),
+    )
+  }
+
   // 6) 事件订阅：client sub → desktop 收到 → desktop 推 event → client 收到
   client.send({ t: 'sub', sessionId: 'e2e-sess-1' })
   const subFrame = await desktop.waitFor((f) => f.t === 'sub')
@@ -221,6 +241,27 @@ async function main() {
     '小程序端收到事件广播 event',
     eventFrame?.events?.[0]?.content === 'e2e 你好',
     JSON.stringify(eventFrame?.events ?? null),
+  )
+
+  // 6.5) 定向订阅：sub 带 d → desktop 收到 → event 下行带来源 d
+  client.send({ t: 'sub', sessionId: 'e2e-sess-2', d: e2eDeviceId })
+  const subFrame2 = await desktop.waitFor((f) => f.t === 'sub' && f.sessionId === 'e2e-sess-2')
+  check(
+    '定向订阅指令到达桌面端',
+    subFrame2?.sessionId === 'e2e-sess-2',
+    JSON.stringify(subFrame2 ?? null),
+  )
+  desktop.send({ t: 'event', sessionId: 'e2e-sess-2', events: [{ seq: 43, content: 'e2e 定向' }] })
+  const eventFrame2 = await client.waitFor((f) => f.t === 'event' && f.sessionId === 'e2e-sess-2')
+  check(
+    '定向订阅的事件正常送达',
+    eventFrame2?.events?.[0]?.content === 'e2e 定向',
+    JSON.stringify(eventFrame2?.events ?? null),
+  )
+  check(
+    '下行 event 帧带来源设备 d',
+    eventFrame2?.d === e2eDeviceId,
+    String(eventFrame2?.d ?? '(missing)'),
   )
 
   // 7) 桌面端下线 → 小程序端收到 presence

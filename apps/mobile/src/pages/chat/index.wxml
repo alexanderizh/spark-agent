@@ -3,6 +3,12 @@
 <view class="chat-page">
   <safe-nav-bar title="{{title}}" show-more="{{true}}" bind:more="onMore" />
 
+  <!-- 所选电脑离线：仍可看历史，发送与跟流不可用 -->
+  <view wx:if="{{deviceOffline}}" class="chat-device-offline">
+    <view class="chat-device-offline-dot"></view>
+    <text>该电脑离线，可查看历史记录；请在桌面端开启远程会话（云端中继）</text>
+  </view>
+
   <scroll-view class="chat-scroll" scroll-y scroll-into-view="{{scrollToId}}" scroll-anchoring>
     <view class="chat-body">
       <view wx:if="{{loading}}" class="loading-tip">加载历史…</view>
@@ -116,6 +122,7 @@
   <session-tasks-panel
     show="{{tasksShow}}"
     sessionId="{{sessionId}}"
+    deviceId="{{deviceId}}"
     bind:close="onTasksClose"
   />
 </view>

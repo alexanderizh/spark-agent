@@ -65,6 +65,8 @@ Component({
   properties: {
     show: { type: Boolean, value: false },
     sessionId: { type: String, value: '' },
+    /** 定向的桌面端 deviceId（'' = 主桌面端；由聊天页透传） */
+    deviceId: { type: String, value: '' },
   },
 
   data: {
@@ -90,13 +92,20 @@ Component({
       this.triggerEvent('close')
     },
 
+    /** 定向的 deviceId（'' → undefined = 主桌面端） */
+    targetDeviceId(): string | undefined {
+      const deviceId = (this as unknown as { properties: { deviceId: string } }).properties
+        .deviceId
+      return deviceId || undefined
+    },
+
     async reload() {
       const sessionId = (this as unknown as { properties: { sessionId: string } }).properties
         .sessionId
       if (!sessionId) return
       this.setData({ loading: true })
       try {
-        const { tasks } = await bridge.listSessionTasks(sessionId)
+        const { tasks } = await bridge.listSessionTasks(sessionId, this.targetDeviceId())
         this.setData({
           tasks: tasks.map((task) => ({
             id: task.id,
@@ -174,7 +183,7 @@ Component({
       }
       this.setData({ formSubmitting: true })
       try {
-        await bridge.createSessionTask(sessionId, input)
+        await bridge.createSessionTask(sessionId, input, this.targetDeviceId())
         wx.showToast({ title: '任务已创建', icon: 'success' })
         this.setData({ creating: false, form: emptyForm() })
         await this.reload()
@@ -190,7 +199,7 @@ Component({
       const enabled = e.currentTarget.dataset.enabled === true
       if (id == null) return
       try {
-        await bridge.toggleSessionTask(id, !enabled)
+        await bridge.toggleSessionTask(id, !enabled, this.targetDeviceId())
         await this.reload()
       } catch (error) {
         wx.showToast({ title: (error as Error).message || '操作失败', icon: 'none' })
@@ -201,7 +210,7 @@ Component({
       const id = e.currentTarget.dataset.id as string | undefined
       if (id == null) return
       try {
-        await bridge.runSessionTaskNow(id)
+        await bridge.runSessionTaskNow(id, this.targetDeviceId())
         wx.showToast({ title: '已触发执行', icon: 'success' })
         setTimeout(() => void this.reload(), 1500)
       } catch (error) {
@@ -219,7 +228,7 @@ Component({
         success: async (res) => {
           if (!res.confirm || id == null) return
           try {
-            await bridge.deleteSessionTask(id)
+            await bridge.deleteSessionTask(id, this.targetDeviceId())
             await this.reload()
           } catch (error) {
             wx.showToast({ title: (error as Error).message || '删除失败', icon: 'none' })

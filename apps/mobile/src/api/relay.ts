@@ -1,17 +1,22 @@
 /**
- * 云端中继传输（小程序侧）。
+ * 云端中继传输（小程序侧，唯一传输）。
  *
- * 直连要求手机与电脑在同一网络、且电脑端口可达；小程序体验版还强制 https/wss + 域名白名单，
- * 真机上基本连不通。中继模式下小程序只连 edu-server，由服务端按账号把调用转发给本人的桌面端：
+ * 局域网直连已整体移除（体验版强制 https/wss + 域名白名单，真机不可用）。
+ * 中继模式下小程序只连 Spark 平台服务（edu-server），由服务端按账号把调用转发给本人的桌面端：
  *
  *     小程序（本文件）──wss──> edu-server <──wss── 桌面端
  *
- * 于是：不需要同 Wi-Fi、不需要电脑有公网 IP、不需要配路由器，登录同一个账号即可接管会话。
+ * 不需要同 Wi-Fi、不需要电脑有公网 IP、不需要配路由器，登录同一个账号即可接管会话。
+ *
+ * 多电脑：同一账号可有多台桌面端同时在线。req/sub 帧可带 d=<deviceId> 定向到某台桌面端，
+ * 缺省 d 时服务端选「主桌面端」（最近活跃的在线桌面端）；服务端下发的 event 帧带 d=来源设备，
+ * 订阅按 (deviceId, sessionId) 维度隔离。
  *
  * 一条连接同时承载「调用」和「事件流」（用 sub/unsub 复用），因为小程序对并发 WebSocket
  * 数量有历史限制，多路复用更稳。
  *
- * 帧协议与 edu-server `src/service/mobile-bridge/relay-hub.ts` 对齐。
+ * 帧协议与 edu-server `src/service/mobile-bridge/relay-hub.ts` 对齐
+ * （见 packages/protocol/src/mobile-bridge.ts 的 MobileBridgeRelayFrame）。
  */
 
 import { getConfig } from '../config'
@@ -21,8 +26,9 @@ import { BridgeError, BRIDGE_HINTS } from './bridge-error'
 import { request } from './request'
 
 const RelayKeys = {
-  enabled: 'spark-mobile:relay-enabled',
   deviceId: 'spark-mobile:relay-device-id',
+  /** 远程会话页选中的桌面端（电脑切换条），跨页面共享 */
+  selectedDesktop: 'spark-mobile:bridge-selected-device',
 } as const
 
 /** 建连超时：握手卡住时及时失败并给出提示，而不是一直转圈 */
@@ -46,6 +52,29 @@ export interface RelayStreamHandlers {
   onClose(): void
 }
 
+// ─── 设备类型（对齐协议 MobileBridgeDeviceInfo / MobileBridgeRelayDesktopInfo） ──
+
+/** 授信设备（REST /mobile-bridge/devices 返回；含离线设备） */
+export interface RelayDeviceInfo {
+  deviceId: string
+  /** 展示名（桌面端主机名） */
+  name: string
+  version: string | null
+  online: boolean
+  lastSeenAt: string | null
+  /** 首次授信时间 */
+  trustedAt: string
+}
+
+/** 在线桌面端实时信息（welcome / presence 携带） */
+export interface RelayDesktopInfo {
+  deviceId: string
+  label: string
+  version: string | null
+  online: boolean
+  lastSeenAt: string | null
+}
+
 let socket: WechatMiniprogram.SocketTask | null = null
 let connected = false
 let connectPromise: Promise<void> | null = null
@@ -56,22 +85,18 @@ let retryCount = 0
 let intentionallyClosed = false
 let callSeq = 0
 const pending = new Map<string, PendingCall>()
-let stream: { sessionId: string; handlers: RelayStreamHandlers } | null = null
-/** 桌面端在线状态（presence 帧） */
+let stream: { sessionId: string; deviceId: string | null; handlers: RelayStreamHandlers } | null =
+  null
+/** 桌面端在线状态（presence 帧聚合：任一桌面端在线即 true） */
 let desktopOnline: boolean | null = null
-/** 在线桌面端的设备号（presence 帧；离线为 null） */
-let onlineDeviceId: string | null = null
+/** 最近一次 presence/welcome 的在线桌面端列表 */
+let presenceDevices: RelayDesktopInfo[] = []
+/** 是否收到过服务端下发的设备列表（区分「未知」与「确无在线」） */
+let presenceFresh = false
+/** 设备列表订阅者（页面刷新设备切换条 / 授信设备页实时刷新） */
+const deviceListeners = new Set<(devices: RelayDesktopInfo[]) => void>()
 
-// ─── 开关与地址 ───────────────────────────────────────────────────────────────
-
-export function isRelayEnabled(): boolean {
-  return getItem<boolean>(RelayKeys.enabled) !== false
-}
-
-export function setRelayEnabled(enabled: boolean): void {
-  setItem(RelayKeys.enabled, enabled)
-  if (!enabled) closeRelay()
-}
+// ─── 地址与本地身份 ───────────────────────────────────────────────────────────
 
 function getDeviceId(): string {
   let id = getItem<string>(RelayKeys.deviceId)
@@ -95,19 +120,56 @@ function relayWsUrl(): string | null {
   return `${wsBase}/ws/bridge/client?${query}`
 }
 
+// ─── 选中的桌面端（电脑切换；跨页面共享） ─────────────────────────────────────
+
+export function getSelectedDeviceId(): string {
+  return getItem<string>(RelayKeys.selectedDesktop) ?? ''
+}
+
+export function setSelectedDeviceId(deviceId: string): void {
+  setItem(RelayKeys.selectedDesktop, deviceId)
+}
+
 // ─── 连接管理 ─────────────────────────────────────────────────────────────────
 
 export function isRelayConnected(): boolean {
   return connected
 }
 
+/** 任一桌面端是否经中继在线（null = 尚未收到服务端状态） */
 export function isDesktopOnline(): boolean | null {
   return desktopOnline
 }
 
-/** 在线桌面端的设备号（presence 帧；离线或未知为 null），设备管理页标「在线」用 */
-export function getOnlineDeviceId(): string | null {
-  return onlineDeviceId
+/** 最近一次 presence/welcome 的在线桌面端快照（页面合并 REST 列表用） */
+export function getPresenceDevices(): RelayDesktopInfo[] {
+  return presenceDevices
+}
+
+/** 是否已收到过服务端设备列表（区分「未知」与「确无在线」） */
+export function isPresenceFresh(): boolean {
+  return presenceFresh
+}
+
+/**
+ * 订阅设备列表变化（welcome / presence 到达时回调）。
+ * 返回取消函数；页面 onHide/onUnload 时调用。
+ */
+export function onRelayDevicesChanged(listener: (devices: RelayDesktopInfo[]) => void): () => void {
+  deviceListeners.add(listener)
+  return () => {
+    deviceListeners.delete(listener)
+  }
+}
+
+function notifyDeviceListeners(): void {
+  for (const listener of deviceListeners) {
+    try {
+      listener(presenceDevices)
+    } catch {
+      /* 单个订阅者异常不影响其他订阅者 */
+    }
+  }
 }
 
 /** 确保已连接；未连接则建连并等待握手完成 */
@@ -116,15 +178,8 @@ export function ensureRelayConnected(timeoutMs = CONNECT_TIMEOUT_MS): Promise<vo
   if (connectPromise != null) return connectPromise
   const url = relayWsUrl()
   if (url == null) {
-    return Promise.reject(new BridgeError('AUTH', '尚未登录，无法连接云端中继', BRIDGE_HINTS.AUTH))
-  }
-  if (!isRelayEnabled()) {
     return Promise.reject(
-      new BridgeError(
-        'DISABLED',
-        '云端中继已关闭，请在「我的 → 远程会话」重新开启',
-        BRIDGE_HINTS.DISABLED,
-      ),
+      new BridgeError('AUTH', '尚未登录，无法连接 Spark 平台中继', BRIDGE_HINTS.AUTH),
     )
   }
 
@@ -134,7 +189,7 @@ export function ensureRelayConnected(timeoutMs = CONNECT_TIMEOUT_MS): Promise<vo
       if (!connected) {
         cleanupSocket()
         connectPromise = null
-        reject(new BridgeError('NETWORK', '连接云端中继超时', BRIDGE_HINTS.NETWORK))
+        reject(new BridgeError('TIMEOUT', '连接 Spark 平台中继超时', BRIDGE_HINTS.TIMEOUT))
       }
     }, timeoutMs)
 
@@ -154,8 +209,12 @@ export function ensureRelayConnected(timeoutMs = CONNECT_TIMEOUT_MS): Promise<vo
       send({ t: 'hello', deviceId: getDeviceId(), label: '微信小程序' })
       if (pingTimer != null) clearInterval(pingTimer)
       pingTimer = setInterval(() => send({ t: 'ping' }), PING_INTERVAL_MS)
-      // 断线重连后恢复订阅，否则「连上了但不推流」
-      if (stream != null) send({ t: 'sub', sessionId: stream.sessionId })
+      // 断线重连后恢复订阅（带上定向 d），否则「连上了但不推流」
+      if (stream != null) {
+        const sub: Record<string, unknown> = { t: 'sub', sessionId: stream.sessionId }
+        if (stream.deviceId != null) sub.d = stream.deviceId
+        send(sub)
+      }
       settle()
       stream?.handlers.onOpen?.()
     })
@@ -181,7 +240,7 @@ export function ensureRelayConnected(timeoutMs = CONNECT_TIMEOUT_MS): Promise<vo
       cleanupSocket()
       if (intentionallyClosed) return
       if (!wasConnected) {
-        settle(new BridgeError('NETWORK', '连接云端中继失败', BRIDGE_HINTS.NETWORK))
+        settle(new BridgeError('NETWORK', '连接 Spark 平台中继失败', BRIDGE_HINTS.NETWORK))
         return
       }
       stream?.handlers.onClose()
@@ -193,17 +252,22 @@ export function ensureRelayConnected(timeoutMs = CONNECT_TIMEOUT_MS): Promise<vo
 
 function classifyConnectError(errMsg: string): BridgeError {
   if (/not in domain|不在以下/.test(errMsg)) {
-    return new BridgeError('DOMAIN', '小程序未允许访问该域名', BRIDGE_HINTS.DOMAIN)
+    return new BridgeError(
+      'NETWORK',
+      '小程序未允许访问 Spark 平台服务域名',
+      '正式版需在小程序后台配置 request/socket 合法域名',
+    )
   }
   if (/timeout|超时/.test(errMsg)) {
-    return new BridgeError('NETWORK', '连接云端中继超时', BRIDGE_HINTS.NETWORK)
+    return new BridgeError('TIMEOUT', '连接 Spark 平台中继超时', BRIDGE_HINTS.TIMEOUT)
   }
-  return new BridgeError('NETWORK', `连接云端中继失败：${errMsg}`, BRIDGE_HINTS.NETWORK)
+  return new BridgeError('NETWORK', `连接 Spark 平台中继失败：${errMsg}`, BRIDGE_HINTS.NETWORK)
 }
 
 function cleanupSocket(): void {
   connected = false
   desktopOnline = null
+  presenceFresh = false
   if (pingTimer != null) {
     clearInterval(pingTimer)
     pingTimer = null
@@ -221,7 +285,7 @@ function cleanupSocket(): void {
   for (const [id, call] of pending) {
     clearTimeout(call.timer)
     pending.delete(id)
-    call.reject(new BridgeError('NETWORK', '与云端中继的连接已断开', BRIDGE_HINTS.NETWORK))
+    call.reject(new BridgeError('NETWORK', '与 Spark 平台中继的连接已断开', BRIDGE_HINTS.NETWORK))
   }
 }
 
@@ -248,33 +312,86 @@ export function closeRelay(): void {
 
 // ─── 帧处理 ───────────────────────────────────────────────────────────────────
 
-function handleFrame(raw: unknown): void {
-  let frame: {
-    t?: string
-    id?: string
-    s?: number
-    b?: unknown
-    sessionId?: string
-    events?: unknown[]
-    desktop?: { online?: boolean; deviceId?: string }
-    connId?: string
-    message?: string
+interface RelayFrame {
+  t?: string
+  id?: string
+  s?: number
+  b?: unknown
+  d?: string
+  sessionId?: string
+  events?: unknown[]
+  connId?: string
+  message?: string
+  desktop?: {
+    online?: boolean
+    deviceId?: string | null
+    label?: string | null
+    version?: string | null
+    lastSeenAt?: string | null
   }
+  devices?: Array<{
+    deviceId?: string
+    label?: string
+    name?: string
+    version?: string | null
+    online?: boolean
+    lastSeenAt?: string | null
+  }>
+}
+
+/** welcome / presence 共用：解析 devices 列表并维护内存快照（含订阅通知） */
+function applyDevicesFrame(frame: RelayFrame): void {
+  const list: RelayDesktopInfo[] = []
+  if (Array.isArray(frame.devices)) {
+    for (const item of frame.devices) {
+      if (item == null || typeof item !== 'object') continue
+      const deviceId = typeof item.deviceId === 'string' ? item.deviceId : ''
+      if (!deviceId) continue
+      list.push({
+        deviceId,
+        label:
+          typeof item.label === 'string'
+            ? item.label
+            : typeof item.name === 'string'
+              ? item.name
+              : '',
+        version: typeof item.version === 'string' ? item.version : null,
+        online: item.online !== false,
+        lastSeenAt: typeof item.lastSeenAt === 'string' ? item.lastSeenAt : null,
+      })
+    }
+  }
+  if (list.length === 0 && frame.desktop?.online === true && frame.desktop.deviceId) {
+    // 兼容旧版单桌面投影：devices 缺失时从 desktop 字段推导
+    list.push({
+      deviceId: frame.desktop.deviceId,
+      label: frame.desktop.label ?? '',
+      version: frame.desktop.version ?? null,
+      online: true,
+      lastSeenAt: frame.desktop.lastSeenAt ?? null,
+    })
+  }
+  presenceDevices = list
+  presenceFresh = true
+  desktopOnline = list.length > 0
+  notifyDeviceListeners()
+}
+
+function handleFrame(raw: unknown): void {
+  let frame: RelayFrame
   const text = typeof raw === 'string' ? raw : String(raw ?? '')
   try {
-    frame = JSON.parse(text)
+    frame = JSON.parse(text) as RelayFrame
   } catch {
     return
   }
 
   switch (frame.t) {
     case 'welcome':
-      desktopOnline = frame.desktop?.online === true
-      onlineDeviceId = desktopOnline ? (frame.desktop?.deviceId ?? null) : null
+      applyDevicesFrame(frame)
       return
     case 'presence':
-      desktopOnline = frame.desktop?.online === true
-      onlineDeviceId = desktopOnline ? (frame.desktop?.deviceId ?? null) : null
+      applyDevicesFrame(frame)
       return
     case 'pong':
       return
@@ -289,6 +406,15 @@ function handleFrame(raw: unknown): void {
     }
     case 'event': {
       if (stream == null || frame.sessionId !== stream.sessionId) return
+      // 防御：定向订阅时忽略来源设备不匹配的事件（两台电脑同名会话不串流）
+      if (
+        stream.deviceId != null &&
+        typeof frame.d === 'string' &&
+        frame.d !== '' &&
+        frame.d !== stream.deviceId
+      ) {
+        return
+      }
       if (Array.isArray(frame.events) && frame.events.length > 0) {
         stream.handlers.onEvent(frame.events)
       }
@@ -315,62 +441,75 @@ function send(frame: Record<string, unknown>): void {
 // ─── 调用 ─────────────────────────────────────────────────────────────────────
 
 /**
- * 经中继发起一次桥接调用。返回 HTTP 语义的 { status, body }，
- * 由 bridge.ts 复用与直连相同的状态码判定逻辑。
+ * 经中继发起一次桥接调用（可带 deviceId 定向到某台桌面端，缺省 = 主桌面端）。
+ * 返回 HTTP 语义的 { status, body }，由 bridge.ts 做状态码判定。
  */
 export async function relayExchange(
   path: string,
   method: string,
   data?: Record<string, unknown>,
   timeoutMs = 30_000,
+  deviceId?: string,
 ): Promise<{ status: number; body: unknown }> {
   await ensureRelayConnected()
   const id = `rq${(callSeq += 1)}`
   return new Promise<{ status: number; body: unknown }>((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id)
-      reject(new BridgeError('NETWORK', '桌面端响应超时', BRIDGE_HINTS.NETWORK))
+      reject(new BridgeError('TIMEOUT', '电脑端响应超时', BRIDGE_HINTS.TIMEOUT))
     }, timeoutMs)
     pending.set(id, { resolve, reject, timer })
-    const sent = send({ t: 'req', id, m: method, p: path, b: data ?? null })
+    const frame: Record<string, unknown> = { t: 'req', id, m: method, p: path, b: data ?? null }
+    if (deviceId != null && deviceId !== '') frame.d = deviceId
+    send(frame)
     // send 静默失败（连接刚断）时立刻报错，避免干等到超时
-    if (sent === undefined && !connected) {
+    if (!connected) {
       clearTimeout(timer)
       pending.delete(id)
-      reject(new BridgeError('NETWORK', '与云端中继的连接已断开', BRIDGE_HINTS.NETWORK))
+      reject(new BridgeError('NETWORK', '与 Spark 平台中继的连接已断开', BRIDGE_HINTS.NETWORK))
     }
   })
 }
 
 // ─── 事件流 ───────────────────────────────────────────────────────────────────
 
-/** 订阅会话事件流；返回取消函数 */
-export function relaySubscribe(sessionId: string, handlers: RelayStreamHandlers): () => void {
-  stream = { sessionId, handlers }
-  send({ t: 'sub', sessionId })
+/** 订阅会话事件流（可带 deviceId 定向）；返回取消函数 */
+export function relaySubscribe(
+  sessionId: string,
+  handlers: RelayStreamHandlers,
+  deviceId?: string,
+): () => void {
+  const target = deviceId ?? null
+  stream = { sessionId, deviceId: target, handlers }
+  const sub: Record<string, unknown> = { t: 'sub', sessionId }
+  if (target != null) sub.d = target
+  send(sub)
   void ensureRelayConnected().catch((error) => {
     handlers.onError(error instanceof Error ? error.message : String(error))
   })
   return () => {
     if (stream?.sessionId !== sessionId) return
     stream = null
-    send({ t: 'unsub' })
+    const unsub: Record<string, unknown> = { t: 'unsub', sessionId }
+    if (target != null) unsub.d = target
+    send(unsub)
   }
 }
 
-/** 中继不可用时给调用方的兜底：把 503 转成可读的中文提示 */
+/** 中继不可用时给调用方的兜底：把 503/504 转成可读的中文提示 */
 export function describeRelayStatus(status: number, body: unknown): BridgeError | null {
-  if (status !== 503) return null
-  const code =
+  if (status !== 503 && status !== 504) return null
+  const errorBody =
     body != null && typeof body === 'object'
-      ? (body as { error?: { code?: string; message?: string } }).error?.code
-      : undefined
-  const message =
-    body != null && typeof body === 'object'
-      ? (body as { error?: { code?: string; message?: string } }).error?.message
-      : undefined
+      ? (body as { error?: { code?: string; message?: string } })
+      : null
+  const code = errorBody?.error?.code
+  const message = errorBody?.error?.message
+  if (status === 504 || code === 'TIMEOUT') {
+    return new BridgeError('TIMEOUT', message ?? '电脑端响应超时', BRIDGE_HINTS.TIMEOUT)
+  }
   if (code === 'DESKTOP_OFFLINE') {
-    return new BridgeError('OFFLINE', message ?? '桌面端离线', BRIDGE_HINTS.OFFLINE)
+    return new BridgeError('DESKTOP_OFFLINE', message ?? '电脑端离线', BRIDGE_HINTS.DESKTOP_OFFLINE)
   }
   return new BridgeError('SERVER', message ?? `请求失败 (${status})`, BRIDGE_HINTS.SERVER)
 }
@@ -383,23 +522,15 @@ export function __resetRelayForTesting(): void {
   retryCount = 0
   stream = null
   desktopOnline = null
+  presenceDevices = []
+  presenceFresh = false
 }
 
-// ─── 授信设备管理（HTTP 直连 edu-server，不经 WS） ────────────────────────────
+// ─── 授信设备管理（REST 直连 edu-server，不经 WS；带账号 JWT） ────────────────
 
-export interface RelayDeviceItem {
-  deviceId: string
-  label: string
-  version: string | null
-  status: 'active' | 'revoked'
-  firstSeenAt: string
-  lastSeenAt: string
-  revokedAt: string | null
-}
-
-/** 当前账号的授信桌面设备列表（含已吊销） */
-export function listRelayDevices(): Promise<{ devices: RelayDeviceItem[] }> {
-  return request<{ devices: RelayDeviceItem[] }>('/mobile-bridge/devices')
+/** 当前账号的授信桌面设备列表（含离线设备；吊销后不再返回） */
+export function listRelayDevices(): Promise<{ devices: RelayDeviceInfo[] }> {
+  return request<{ devices: RelayDeviceInfo[] }>('/mobile-bridge/devices')
 }
 
 /**

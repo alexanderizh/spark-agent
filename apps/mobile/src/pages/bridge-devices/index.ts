@@ -5,14 +5,17 @@
  *   - 首次连接即授信：桌面端用本账号登录并开启中继时自动注册
  *   - 吊销不可逆：该设备的中继连接立即断开、deviceId 永久拒绝重连，
  *     桌面端需要「重新授信」生成全新设备身份
- * 当前在线设备由 relay presence 状态标出。
+ * 列表来自 REST（含离线设备），在线状态由中继 presence 实时刷新。
  */
 
 import {
   listRelayDevices,
   revokeRelayDevice,
-  getOnlineDeviceId,
-  type RelayDeviceItem,
+  ensureRelayConnected,
+  getPresenceDevices,
+  onRelayDevicesChanged,
+  type RelayDeviceInfo,
+  type RelayDesktopInfo,
 } from '../../api/relay'
 import { ensureAuthenticated } from '../../utils/auth-guard'
 import { formatRelativeTime } from '../../utils/format'
@@ -21,52 +24,86 @@ import { formatRelativeTime } from '../../utils/format'
 interface DeviceRowVm {
   deviceId: string
   shortId: string
-  label: string
+  name: string
   versionLabel: string
-  status: 'active' | 'revoked'
   statusLabel: string
-  lastSeenLabel: string
-  firstSeenLabel: string
   online: boolean
+  lastSeenLabel: string
+  trustedLabel: string
 }
 
 interface BridgeDevicesData {
   devices: DeviceRowVm[]
-  activeCount: number
+  onlineCount: number
   loading: boolean
   errorText: string
   /** 待吊销的 deviceId（行内二次确认） */
   pendingRevoke: string | null
 }
 
-function toRow(item: RelayDeviceItem, onlineDeviceId: string | null): DeviceRowVm {
-  const online =
-    onlineDeviceId != null && item.deviceId === onlineDeviceId && item.status === 'active'
+/** REST 列表 + presence 快照合并（presence 里的在线设备以实时状态为准） */
+function toRows(restDevices: RelayDeviceInfo[], presenceDevices: RelayDesktopInfo[]): DeviceRowVm[] {
+  const onlineIds = new Set(presenceDevices.map((item) => item.deviceId))
+  const rows = restDevices.map((item) => toRow(item, onlineIds))
+  // presence 里有、REST 还没返回的（刚授信的设备），先以在线态补进列表
+  const known = new Set(restDevices.map((item) => item.deviceId))
+  for (const live of presenceDevices) {
+    if (known.has(live.deviceId)) continue
+    const item: RelayDeviceInfo = {
+      deviceId: live.deviceId,
+      name: live.label || '桌面端',
+      version: live.version,
+      online: true,
+      lastSeenAt: live.lastSeenAt,
+      trustedAt: new Date().toISOString(),
+    }
+    rows.push(toRow(item, onlineIds))
+  }
+  return rows
+}
+
+/** REST 列表 + presence 快照合并成行视图 */
+function toRow(item: RelayDeviceInfo, onlineIds: Set<string>): DeviceRowVm {
+  const online = onlineIds.has(item.deviceId)
   return {
     deviceId: item.deviceId,
     shortId: item.deviceId.length > 12 ? `${item.deviceId.slice(0, 12)}…` : item.deviceId,
-    label: item.label || '桌面端',
+    name: item.name || '桌面端',
     versionLabel: item.version ? `v${item.version}` : '',
-    status: item.status,
-    statusLabel: item.status === 'active' ? (online ? '在线' : '已授信') : '已吊销',
-    lastSeenLabel: formatRelativeTime(item.lastSeenAt),
-    firstSeenLabel: formatRelativeTime(item.firstSeenAt),
+    statusLabel: online ? '在线' : '离线',
     online,
+    lastSeenLabel: formatRelativeTime(item.lastSeenAt),
+    trustedLabel: formatRelativeTime(item.trustedAt),
   }
 }
 
 Page({
   data: {
     devices: [],
-    activeCount: 0,
+    onlineCount: 0,
     loading: true,
     errorText: '',
     pendingRevoke: null,
   } as BridgeDevicesData,
 
+  /** REST 设备列表原始数据（presence 只含在线设备，合并用） */
+  restDevices: [] as RelayDeviceInfo[],
+  /** 设备列表订阅取消函数 */
+  unsubscribeDevices: null as (() => void) | null,
+
+  onLoad() {
+    // presence 增量：设备上下线时实时刷新在线徽标
+    this.unsubscribeDevices = onRelayDevicesChanged(() => this.rebuildRows())
+  },
+
   onShow() {
     if (!ensureAuthenticated()) return
     void this.loadDevices()
+  },
+
+  onUnload() {
+    this.unsubscribeDevices?.()
+    this.unsubscribeDevices = null
   },
 
   onPullDownRefresh() {
@@ -74,21 +111,29 @@ Page({
   },
 
   async loadDevices() {
+    // 建立中继 WS 以接收 presence 实时刷新（失败不阻塞 REST 列表）
+    void ensureRelayConnected().catch(() => undefined)
     this.setData({ loading: true, errorText: '' })
     try {
       const result = await listRelayDevices()
-      const devices = (result?.devices ?? []).map((item) => toRow(item, getOnlineDeviceId()))
-      this.setData({
-        devices,
-        activeCount: devices.filter((d) => d.status === 'active').length,
-        loading: false,
-      })
+      this.restDevices = result?.devices ?? []
+      this.rebuildRows()
     } catch (err) {
       this.setData({
         loading: false,
         errorText: err instanceof Error ? err.message : '加载失败，下拉重试',
       })
     }
+  },
+
+  /** presence 到达或列表刷新时重算行视图 */
+  rebuildRows() {
+    const devices = toRows(this.restDevices, getPresenceDevices())
+    this.setData({
+      devices,
+      onlineCount: devices.filter((item) => item.online).length,
+      loading: false,
+    })
   },
 
   /** 行内二次确认：先点「吊销」再点「确认」 */

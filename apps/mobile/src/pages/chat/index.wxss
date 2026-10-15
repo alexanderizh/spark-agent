@@ -13,6 +13,29 @@
   min-height: 0;
 }
 
+/* 所选电脑离线提示条（历史仍可见） */
+.chat-device-offline {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin: 12rpx 24rpx 0;
+  padding: 14rpx 24rpx;
+  border-radius: 14rpx;
+  background: #fdf6ec;
+  border: 1rpx solid #f5e5c8;
+  font-size: 22rpx;
+  color: #b45309;
+  line-height: 1.5;
+}
+
+.chat-device-offline-dot {
+  flex-shrink: 0;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #d97706;
+}
+
 .chat-body {
   padding: 24rpx 32rpx 24rpx;
 }
