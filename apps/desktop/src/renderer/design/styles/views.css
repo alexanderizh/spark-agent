@@ -4904,6 +4904,11 @@ body.sidebar-resizing {
   overflow: hidden;
   padding: var(--pad-3xs);
 }
+/* 与权限/模型菜单的菜单项圆角保持一致（基础 .composer-menu-item 不带 radius，
+ * 那两个菜单各自覆盖了，项目菜单此前漏掉导致选中/hover 高亮呈直角） */
+.composer-project-menu .composer-menu-item {
+  border-radius: var(--r-sm);
+}
 .composer-project-list {
   min-height: 0;
   overflow-y: auto;

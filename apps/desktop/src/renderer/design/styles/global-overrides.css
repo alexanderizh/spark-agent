@@ -53,16 +53,49 @@ textarea::-moz-selection,
 .ant-input-sm,
 .ant-input-affix-wrapper-sm,
 .ant-input-number-sm,
-.ant-input-number-sm .ant-input-number-input,
-.ant-select.ant-select-sm .ant-select-selector,
-.ant-select-single.ant-select-sm .ant-select-selector {
+.ant-input-number-sm .ant-input-number-input {
   min-height: var(--control-h-sm);
   height: var(--control-h-sm);
 }
 
-.ant-select.ant-select-sm .ant-select-selection-item,
-.ant-select.ant-select-sm .ant-select-selection-placeholder {
+/* 外框压到 24px 后文字仍不居中的收尾：antd v6 的 padding/line-height 按
+   lobehub 主题 27px 节奏推导（padding-block 1.5px、行高按字号），wrapper
+   内容区只剩 22px，内层 input 又被上面的 height 规则强制 24px，文字整体
+   下沉约 2.5px。wrapper 清零 padding-block 并居中，内层与裸输入框行高对齐
+   22px（24px 控件 - 上下边框）。裸输入框用双类提高到 (0,2,0)，无论与 antd
+   运行时 :where() 规则的先后顺序都稳定生效。 */
+.ant-input-affix-wrapper-sm {
+  align-items: center;
+  padding-block: 0;
+}
+
+.ant-input-affix-wrapper-sm > .ant-input {
+  height: auto;
+  min-height: 0;
+  padding-block: 0;
   line-height: calc(var(--control-h-sm) - 2px);
+}
+
+.ant-input.ant-input-sm {
+  padding-block: 0;
+  line-height: calc(var(--control-h-sm) - 2px);
+}
+
+/* antd v6：Select 根元素即控件本体，不再有 .ant-select-selector 内层；
+   高度由根上的 --ant-select-height 变量推导 padding-block，改变量即可
+   整体缩放（lobehub 主题 controlHeight=36 会把 sm 派生成 27px）。 */
+.ant-select.ant-select-sm {
+  --ant-select-height: var(--control-h-sm);
+}
+
+/* 小号按钮与小号输入保持同一节奏：lobehub 主题把 ant-btn-sm 派生成 27px，
+   与被统一到 24px 的小号输入控件同排时基线错位（如配置面板工具栏）。 */
+.ant-btn.ant-btn-sm {
+  height: var(--control-h-sm);
+}
+
+.ant-btn.ant-btn-sm.ant-btn-icon-only {
+  width: var(--control-h-sm);
 }
 
 /* Configuration forms use one field rhythm. Toolbar/list buttons may stay small. */

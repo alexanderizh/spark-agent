@@ -1179,7 +1179,7 @@ body.floating-sidebar-resizing * {
 }
 
 /* 图标按钮 tooltip：深色实心气泡 + 箭头，压过组件库默认的浅底描边。
-   用于消息操作栏、会话顶栏、侧栏底部按钮组。 */
+   用于消息操作栏、会话顶栏、侧栏底部按钮组、代码面板工具栏（code-viewer）。 */
 .spark-icon-tooltip {
   --spark-icon-tooltip-bg: #2c2c2e;
   border: none !important;

@@ -180,6 +180,7 @@ export function ProjectAgentScopeSection({
               : translate('chatInspector.t120Desc', { total: agents.length })}
           </span>
         </div>
+        <div className="session-panel-caption">{translate('chatInspector.t121Desc')}</div>
         <div className="project-scope-toolbar">
           <LobeInput
             className="project-scope-search"
