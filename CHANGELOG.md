@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Spark CLI 0.7.4
+
+- kernel prompt now tells the agent to stay within task scope and report (not rewrite) docs/comments that conflict with the spec, tests, or user request (from PR #207); also headless eval harness added under spark-engine/evals (PR #206, not shipped in the package).
+
 ## [0.14.17] - 2026-10-14
 
 ### 新增
