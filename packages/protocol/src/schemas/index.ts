@@ -2184,6 +2184,9 @@ export const IpcSchemaRegistry = {
     // 原始 html 上限 200_000（见 html:open-window），此处为经
     // buildSandboxedHtml 包裹 CSP/主题样式后的合成文档，留包裹余量。
     document: z.string().min(1).max(220_000),
+    // 文件预览多文件支持：登记预览 HTML 所在目录为相对资源根（绝对路径），
+    // 文档内相对引用经 capability-asset 协议从该目录解析。
+    assetRoot: z.string().min(1).max(4000).optional(),
   }),
   'html:release-runtime-doc': z.object({
     token: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{7,79}$/),

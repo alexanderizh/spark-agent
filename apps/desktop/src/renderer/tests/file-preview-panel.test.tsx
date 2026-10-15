@@ -111,12 +111,48 @@ describe('FilePreviewPanel', () => {
       // 文档经主进程登记的 capability-asset 独立容器加载（可跑脚本、无 CSP 继承），
       // 不再使用被 renderer CSP 拦截内联内容的 srcdoc。
       expect(iframe?.getAttribute('src') ?? '').toContain('capability-asset://html-render/')
+      // token 以目录段形式加载：文档内相对引用解析到 <token>/<相对路径>，
+      // 由主进程按登记的 assetRoot（文件所在目录）从磁盘解析（多文件 HTML 项目）。
+      expect(iframe?.getAttribute('src') ?? '').toMatch(
+        /^capability-asset:\/\/html-render\/[^/]+\/\?v=/,
+      )
       expect(iframe?.getAttribute('srcdoc')).toBeNull()
     })
 
     const putCalls = invoke.mock.calls.filter((call) => call[0] === 'html:put-runtime-doc')
     expect(putCalls).toHaveLength(1)
-    expect(putCalls[0]?.[1]).toMatchObject({ document: '<h1>hello</h1>' })
+    expect(putCalls[0]?.[1]).toMatchObject({ document: '<h1>hello</h1>', assetRoot: '/tmp' })
+  })
+
+  it('skips assetRoot registration for bare file names without a directory', async () => {
+    invoke = vi.fn(async (channel: string) => {
+      if (channel === 'file:read') return { content: '<p>solo</p>' }
+      if (channel === 'file:open') return { opened: true }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <FilePreviewPanel filePath="page.html" fileType="html" onClose={vi.fn()} />
+        </ToastProvider>,
+      )
+      await Promise.resolve()
+    })
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('iframe.file-preview-html')).not.toBeNull()
+    })
+
+    const putCalls = invoke.mock.calls.filter((call) => call[0] === 'html:put-runtime-doc')
+    expect(putCalls).toHaveLength(1)
+    expect(putCalls[0]?.[1]).toMatchObject({ document: '<p>solo</p>' })
+    expect(putCalls[0]?.[1]).not.toHaveProperty('assetRoot')
   })
 
   it('releases the html runtime doc on unmount', async () => {

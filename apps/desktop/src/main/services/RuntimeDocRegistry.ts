@@ -27,15 +27,19 @@ export interface RuntimeDocRegistryOptions {
   ttlMs: number
 }
 
-export interface RuntimeDocRegistry {
-  put(token: string, document: string): void
+export interface RuntimeDocRegistry<Meta = unknown> {
+  put(token: string, document: string, meta?: Meta | null): void
   release(token: string): void
   /** 命中即续期，未命中返回 null（协议层 404）。 */
   take(token: string): string | null
+  /** 命中即续期，返回 put 时登记的元数据；未命中或未登记 meta 返回 null。 */
+  takeMeta(token: string): Meta | null
 }
 
-export function createRuntimeDocRegistry(options: RuntimeDocRegistryOptions): RuntimeDocRegistry {
-  const docs = new Map<string, { html: string; expiresAt: number }>()
+export function createRuntimeDocRegistry<Meta = unknown>(
+  options: RuntimeDocRegistryOptions,
+): RuntimeDocRegistry<Meta> {
+  const docs = new Map<string, { html: string; meta: Meta | null; expiresAt: number }>()
 
   const evictExpired = (now: number): void => {
     for (const [key, entry] of docs) {
@@ -44,7 +48,7 @@ export function createRuntimeDocRegistry(options: RuntimeDocRegistryOptions): Ru
   }
 
   return {
-    put(token: string, document: string): void {
+    put(token: string, document: string, meta?: Meta | null): void {
       if (!TOKEN_PATTERN.test(token)) throw new Error(`Invalid ${options.label} token`)
       const now = Date.now()
       evictExpired(now)
@@ -56,7 +60,7 @@ export function createRuntimeDocRegistry(options: RuntimeDocRegistryOptions): Ru
           log.warn(`${options.label} registry reached ${options.maxDocs}, evicted oldest token`)
         }
       }
-      docs.set(token, { html: document, expiresAt: now + options.ttlMs })
+      docs.set(token, { html: document, meta: meta ?? null, expiresAt: now + options.ttlMs })
     },
     release(token: string): void {
       if (!TOKEN_PATTERN.test(token)) throw new Error(`Invalid ${options.label} token`)
@@ -68,6 +72,13 @@ export function createRuntimeDocRegistry(options: RuntimeDocRegistryOptions): Ru
       if (entry == null) return null
       entry.expiresAt = Date.now() + options.ttlMs
       return entry.html
+    },
+    takeMeta(token: string): Meta | null {
+      if (!TOKEN_PATTERN.test(token)) return null
+      const entry = docs.get(token)
+      if (entry == null) return null
+      entry.expiresAt = Date.now() + options.ttlMs
+      return entry.meta
     },
   }
 }

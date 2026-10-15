@@ -4,7 +4,11 @@ import { lstat, realpath } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { getOptionalCapabilityManager } from '../ipc/registerOptionalCapabilityIpc.js'
 import { createSafeFileResponse } from './SafeFileProtocol.js'
-import { HTML_RENDER_RUNTIME_HOST, takeHtmlRenderRuntimeDoc } from './HtmlRenderRuntimeDocs.js'
+import {
+  HTML_RENDER_RUNTIME_HOST,
+  resolveHtmlRenderAsset,
+  takeHtmlRenderRuntimeDoc,
+} from './HtmlRenderRuntimeDocs.js'
 import { SUB_APP_RUNTIME_HOST, takeSubAppRuntimeDoc } from './SubAppRuntimeDocs.js'
 import {
   SUB_APP_PACKAGE_RUNTIME_HOST,
@@ -30,7 +34,6 @@ type ResolveAssetRoot = (capabilityId: 'office-viewer') => Promise<string | null
 /** 沙箱文档域：host → 按命中的 token 取文档（见各 RuntimeDocs 服务）。 */
 const RUNTIME_DOC_HOSTS: Record<string, (token: string) => string | null> = {
   [SUB_APP_RUNTIME_HOST]: takeSubAppRuntimeDoc,
-  [HTML_RENDER_RUNTIME_HOST]: takeHtmlRenderRuntimeDoc,
 }
 
 export async function resolveCapabilityAssetPath(
@@ -79,7 +82,28 @@ export function registerCapabilityAssetProtocol(): void {
   protocol.handle(CAPABILITY_ASSET_SCHEME, async (request) => {
     try {
       const url = new URL(request.url)
-      // 沙箱文档：内存登记、按 token 提供（SubAppRuntimeDocs / HtmlRenderRuntimeDocs）。
+      // HTML 渲染域：纯 <token>（或 <token>/）按内存登记文档提供；带子路径的
+      // <token>/<相对路径> 按登记的 assetRoot 从磁盘解析（文件预览多文件支持）。
+      if (url.hostname === HTML_RENDER_RUNTIME_HOST) {
+        const segments = rawPathSegments(request.url).map((segment) => decodeURIComponent(segment))
+        const token = segments.shift()
+        if (token == null) return new Response('Not Found', { status: 404 })
+        if (segments.length > 0) {
+          const assetPath = await resolveHtmlRenderAsset(token, segments)
+          if (assetPath == null) return new Response('Not Found', { status: 404 })
+          return createSafeFileResponse(assetPath, request)
+        }
+        const html = takeHtmlRenderRuntimeDoc(token)
+        if (html == null) return new Response('Not Found', { status: 404 })
+        return new Response(html, {
+          status: 200,
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            'cache-control': 'no-store',
+          },
+        })
+      }
+      // 沙箱文档：内存登记、按 token 提供（SubAppRuntimeDocs）。
       const takeRuntimeDoc = RUNTIME_DOC_HOSTS[url.hostname]
       if (takeRuntimeDoc != null) {
         const token = decodeURIComponent(url.pathname.replace(/^\/+/, ''))

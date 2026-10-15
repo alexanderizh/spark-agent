@@ -5789,6 +5789,8 @@ export interface HtmlViewerOpenResponse {
 export interface HtmlRuntimeDocPutRequest {
   token: string
   document: string
+  /** 预览文件所在目录（绝对路径）；登记后文档内相对资源按该目录解析。 */
+  assetRoot?: string
 }
 export interface HtmlRuntimeDocReleaseRequest {
   token: string

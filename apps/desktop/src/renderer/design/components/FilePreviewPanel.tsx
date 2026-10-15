@@ -27,7 +27,7 @@ import type { PreviewFileType } from './ClickableFilePath'
 import { FileTypeIcon } from './FileDisplay'
 import {
   buildHtmlRenderToken,
-  htmlRenderDocUrl,
+  htmlRenderDocBaseUrl,
   putHtmlRuntimeDoc,
   releaseHtmlRuntimeDoc,
 } from '../services/render-html'
@@ -175,11 +175,14 @@ function readPreviewPanelWidth(): number {
 
 /**
  * HTML 预览不合成、不注入任何样式：文件内容经主进程登记为
- * `capability-asset://html-render/<token>` 独立文档后由 iframe 原样加载
- * （机制同 RenderHtmlBlock，见 services/render-html.ts）。独立空策略容器
+ * `capability-asset://html-render/<token>/` 独立文档后由 iframe 原样加载
+ * （机制同 RenderHtmlBlock，见 services/render-html.ts）。token 以目录段
+ * 形式加载并登记文件所在目录为 assetRoot，文档内相对引用（style.css、
+ * js/*.js 等）解析为 `<token>/<相对路径>` 由主进程按目录从磁盘解析，
+ * 多文件 HTML 项目（游戏/网页工程）得以完整渲染。独立空策略容器
  * 没有 renderer CSP 继承，脚本（含 eval/worker）、内联/外联样式、外链与
  * 相对资源全部与外部浏览器一致；iframe 视口天然裁剪内容溢出，不会波及
- * 宿主布局。
+ * 宿主布局。裸文件名（无目录段）退化为单文件形态，不登记 assetRoot。
  */
 
 export function FilePreviewPanel({
@@ -266,18 +269,20 @@ export function FilePreviewPanel({
   // iframe 用协议地址加载而非 srcdoc —— srcdoc 会继承 renderer CSP，内联脚本、
   // 外链资源全被拦，且 sandbox 不给 allow-scripts 时 JS 完全不执行。token 由
   // 文件路径派生（稳定，重开同一文件 put 幂等覆盖），version 递增强制 iframe
-  // 重新加载；卸载时 release，兜底由注册表 TTL 回收。
+  // 重新加载；卸载时 release，兜底由注册表 TTL 回收。同时登记文件所在目录为
+  // assetRoot，文档内相对资源按目录从磁盘解析（多文件 HTML 项目支持）。
   useEffect(() => {
     if (fileType !== 'html' || content === null) return
 
     let cancelled = false
     htmlDocVersionRef.current += 1
     const version = htmlDocVersionRef.current
-    putHtmlRuntimeDoc(htmlDocToken, content)
+    const assetRoot = dirnameOf(resolvedFilePath)
+    putHtmlRuntimeDoc(htmlDocToken, content, assetRoot != null ? { assetRoot } : undefined)
       .then(() => {
         if (cancelled) return
         setHtmlFrameError(null)
-        setHtmlFrame({ src: htmlRenderDocUrl(htmlDocToken, version), version })
+        setHtmlFrame({ src: htmlRenderDocBaseUrl(htmlDocToken, version), version })
       })
       .catch(() => {
         if (!cancelled) setHtmlFrameError('HTML 预览文档登记失败')
@@ -286,7 +291,7 @@ export function FilePreviewPanel({
       cancelled = true
       releaseHtmlRuntimeDoc(htmlDocToken)
     }
-  }, [content, fileType, htmlDocToken])
+  }, [content, fileType, htmlDocToken, resolvedFilePath])
 
   useEffect(() => {
     if (fileType !== 'universal' || isRemotePreviewUrl(resolvedFilePath)) return

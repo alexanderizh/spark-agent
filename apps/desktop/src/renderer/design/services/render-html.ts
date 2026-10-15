@@ -116,6 +116,15 @@ export function htmlRenderDocUrl(token: string, version: number): string {
   return `capability-asset://html-render/${token}?v=${version}`
 }
 
+/**
+ * 文件预览多文件形态：token 充当目录段（尾部斜杠），文档内相对引用
+ * （style.css、js/*.js 等）解析为 `<token>/<相对路径>`，由主进程按 put 时
+ * 登记的 assetRoot 从磁盘解析。version 递增强制 iframe 重新加载。
+ */
+export function htmlRenderDocBaseUrl(token: string, version: number): string {
+  return `capability-asset://html-render/${token}/?v=${version}`
+}
+
 /** FNV-1a 32 位哈希的 base36 表示，用于防 sanitize 后的 token 碰撞。 */
 function fnv1aBase36(input: string): string {
   let hash = 0x811c9dc5
@@ -140,8 +149,18 @@ export function buildHtmlRenderToken(toolCallId: string): string {
   return token.length < 8 ? token.padEnd(8, '0') : token.slice(0, 80)
 }
 
-export function putHtmlRuntimeDoc(token: string, document: string): Promise<void> {
-  return window.spark.invoke('html:put-runtime-doc', { token, document }).then(() => undefined)
+export function putHtmlRuntimeDoc(
+  token: string,
+  document: string,
+  options?: { assetRoot?: string },
+): Promise<void> {
+  return window.spark
+    .invoke('html:put-runtime-doc', {
+      token,
+      document,
+      ...(options?.assetRoot != null ? { assetRoot: options.assetRoot } : {}),
+    })
+    .then(() => undefined)
 }
 
 /** 卸载路径上的释放：fire-and-forget，失败由主进程 TTL 兜底回收。 */
