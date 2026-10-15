@@ -7,6 +7,7 @@ import { Switch } from 'antd'
 import { Icons } from '../../Icons'
 import { translate, useI18n } from '../../i18n'
 import { TeamInspectorSection } from '../../components/TeamInspectorSection'
+import { ProjectAgentScopeSection } from '../../components/ProjectAgentScopeSection'
 import { ChatInspectorPerf } from './ChatInspectorPerf'
 import { OutcomeRoomContainer } from '../../outcome-room/OutcomeRoomContainer'
 import { InspectorCollapsibleSection } from '../../components/InspectorCollapsibleSection'
@@ -88,7 +89,9 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
       <label className="session-env-field session-env-field--value">
         <span>{translate('chatInspector.t60')}</span>
         <input
-          aria-label={translate('chatInspector.tpl24Desc', { name: item.key.trim() || translate('chatInspector.t1') })}
+          aria-label={translate('chatInspector.tpl24Desc', {
+            name: item.key.trim() || translate('chatInspector.t1'),
+          })}
           className="form-input runtime-env-value"
           placeholder="VALUE"
           value={item.value}
@@ -99,7 +102,9 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
       <label className="session-env-field session-env-field--description">
         <span>{translate('chatInspector.t61')}</span>
         <input
-          aria-label={translate('chatInspector.tpl25Desc', { name: item.key.trim() || translate('chatInspector.t1') })}
+          aria-label={translate('chatInspector.tpl25Desc', {
+            name: item.key.trim() || translate('chatInspector.t1'),
+          })}
           className="form-input runtime-env-description"
           placeholder={translate('chatInspector.t45')}
           value={item.description ?? ''}
@@ -111,7 +116,9 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
         type="button"
         className="btn ghost sm runtime-env-remove"
         onClick={onRemove}
-        aria-label={translate('chatInspector.tpl26Desc', { name: item.key.trim() || translate('chatInspector.t2') })}
+        aria-label={translate('chatInspector.tpl26Desc', {
+          name: item.key.trim() || translate('chatInspector.t2'),
+        })}
         title={translate('chatInspector.t46')}
       >
         <Icons.Trash size={12} />
@@ -204,23 +211,9 @@ export function ChatConfigPanel({
   const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
   const { invoke: getEnvConfig } = useIpcInvoke('env-config:get')
   const { invoke: updateEnvConfig } = useIpcInvoke('env-config:update')
-  // 项目 Agent 作用域：默认 Agent + 白名单（workspace:update 持久化，悬空 ID 由主进程校验）
-  const { invoke: updateWorkspace } = useIpcInvoke('workspace:update')
   const sessionCtx = useSessionSidebar()
   const allAgents = sessionCtx.agents
   const [agentScopeCollapsed, setAgentScopeCollapsed] = useState(false)
-  const [projectDefaultAgentDraft, setProjectDefaultAgentDraft] = useState('')
-  const [allowedAgentDrafts, setAllowedAgentDrafts] = useState<Set<string>>(new Set())
-  const [agentFilter, setAgentFilter] = useState('')
-  const [savingAgentScope, setSavingAgentScope] = useState(false)
-  // 白名单列表视图：按名称搜索（不影响勾选）+ 已选置顶，Agent 多时便于查找
-  const normalizedAgentFilter = agentFilter.trim().toLowerCase()
-  const visibleAgents = allAgents
-    .filter(
-      (agent) =>
-        normalizedAgentFilter === '' || agent.name.toLowerCase().includes(normalizedAgentFilter),
-    )
-    .sort((a, b) => Number(allowedAgentDrafts.has(b.id)) - Number(allowedAgentDrafts.has(a.id)))
   const sessionId = session?.id as string | undefined
   const workspaceId = workspace?.id
 
@@ -254,38 +247,6 @@ export function ChatConfigPanel({
     void loadRuntimeConfig()
   }, [loadRuntimeConfig, sessionId, workspaceId])
 
-  // workspace 变化（含保存后 refreshData 重拉）时同步项目 Agent 草稿
-  useEffect(() => {
-    setProjectDefaultAgentDraft(workspace?.defaultAgentId ?? '')
-    setAllowedAgentDrafts(new Set(workspace?.allowedAgentIds ?? []))
-  }, [workspace?.id, workspace?.defaultAgentId, workspace?.allowedAgentIds])
-
-  const saveAgentScope = useCallback(async () => {
-    if (workspaceId == null) return
-    setSavingAgentScope(true)
-    try {
-      await updateWorkspace({
-        workspaceId,
-        // '' 归一化为清除（null）；主进程写入前校验 Agent 存在性
-        defaultAgentId: projectDefaultAgentDraft !== '' ? projectDefaultAgentDraft : null,
-        allowedAgentIds: allowedAgentDrafts.size > 0 ? Array.from(allowedAgentDrafts) : null,
-      })
-      await sessionCtx.refreshData()
-      toast.success(translate('chatInspector.t3Desc'))
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : translate('chatInspector.t4Desc'))
-    } finally {
-      setSavingAgentScope(false)
-    }
-  }, [
-    workspaceId,
-    projectDefaultAgentDraft,
-    allowedAgentDrafts,
-    updateWorkspace,
-    sessionCtx,
-    toast,
-  ])
-
   const savePromptLayer = useCallback(
     async (scope: 'project' | 'session', scopeRef: string, content: string) => {
       setSavingRuntime(true)
@@ -296,7 +257,12 @@ export function ChatConfigPanel({
           value: { enabled: content.trim().length > 0, content },
         })
         await loadRuntimeConfig()
-        toast.success(translate('chatInspector.tpl27Desc', { scope: scope === 'project' ? translate('chatInspector.t5') : translate('chatInspector.t6') }))
+        toast.success(
+          translate('chatInspector.tpl27Desc', {
+            scope:
+              scope === 'project' ? translate('chatInspector.t5') : translate('chatInspector.t6'),
+          }),
+        )
       } catch (err) {
         toast.error(err instanceof Error ? err.message : translate('chatInspector.t7'))
       } finally {
@@ -335,7 +301,13 @@ export function ChatConfigPanel({
         if (!options?.silent) {
           await loadRuntimeConfig()
           toast.success(
-            options?.successMessage ?? translate('chatInspector.tpl28Desc', { scope: scope === 'project' ? translate('chatInspector.t5') : translate('chatInspector.t6') }),
+            options?.successMessage ??
+              translate('chatInspector.tpl28Desc', {
+                scope:
+                  scope === 'project'
+                    ? translate('chatInspector.t5')
+                    : translate('chatInspector.t6'),
+              }),
           )
         }
         return true
@@ -361,7 +333,13 @@ export function ChatConfigPanel({
         const json = serializeEnvVarsJson(vars)
         await navigator.clipboard.writeText(json)
         const count = parseEnvVarsJson(json).length
-        toast.success(translate('chatInspector.tpl29Desc', { count, scope: scope === 'project' ? translate('chatInspector.t5') : translate('chatInspector.t6') }))
+        toast.success(
+          translate('chatInspector.tpl29Desc', {
+            count,
+            scope:
+              scope === 'project' ? translate('chatInspector.t5') : translate('chatInspector.t6'),
+          }),
+        )
       } catch (err) {
         toast.error(err instanceof Error ? err.message : translate('chatInspector.t9'))
       }
@@ -396,9 +374,13 @@ export function ChatConfigPanel({
         return
       }
 
-      const scopeLabel = scope === 'project' ? translate('chatInspector.t5') : translate('chatInspector.t6')
+      const scopeLabel =
+        scope === 'project' ? translate('chatInspector.t5') : translate('chatInspector.t6')
       const saved = await saveEnvLayer(scope, scopeRef, imported, {
-        successMessage: translate('chatInspector.tpl30Desc', { count: imported.length, scope: scopeLabel }),
+        successMessage: translate('chatInspector.tpl30Desc', {
+          count: imported.length,
+          scope: scopeLabel,
+        }),
       })
       if (saved) setVars(imported)
     },
@@ -452,10 +434,14 @@ export function ChatConfigPanel({
       <div className="runtime-prompt-block">
         <div className="runtime-prompt-title">
           {label}
-          <span className="session-panel-count">{translate('chatInspector.tpl17Desc', { count: vars.length })}</span>
+          <span className="session-panel-count">
+            {translate('chatInspector.tpl17Desc', { count: vars.length })}
+          </span>
         </div>
         <div className="session-panel-caption">
-          {scope === 'project' ? translate('chatInspector.t13') : translate('chatInspector.t14Desc')}
+          {scope === 'project'
+            ? translate('chatInspector.t13')
+            : translate('chatInspector.t14Desc')}
         </div>
         {vars.length === 0 && <div className="runtime-env-empty">{placeholder}</div>}
         {vars.map((item, index) => (
@@ -498,7 +484,9 @@ export function ChatConfigPanel({
               onClick={() => void saveEnvLayer(scope, scopeRef, vars)}
             >
               <Save size={12} />
-              {scope === 'project' ? translate('chatInspector.t15') : translate('chatInspector.t16')}
+              {scope === 'project'
+                ? translate('chatInspector.t15')
+                : translate('chatInspector.t16')}
             </button>
           </div>
         </div>
@@ -667,94 +655,13 @@ export function ChatConfigPanel({
                 />
               </button>
             </h4>
-            {!agentScopeCollapsed && (
-              <div className="runtime-prompt-block project-agent-block">
-                <div className="runtime-prompt-title">{translate('chatInspector.t52')}</div>
-                <div className="session-panel-caption">
-                  {translate('chatInspector.t67Desc')}
-                </div>
-                <select
-                  className="project-agent-select"
-                  aria-label={translate('chatInspector.t52')}
-                  value={projectDefaultAgentDraft}
-                  onChange={(event) => setProjectDefaultAgentDraft(event.target.value)}
-                >
-                  <option value="">{translate('chatInspector.t68')}</option>
-                  {allAgents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="runtime-prompt-title project-agent-list-title">{translate('chatInspector.t69')}</div>
-                <div className="project-agent-toolbar">
-                  <input
-                    className="project-agent-search"
-                    type="text"
-                    value={agentFilter}
-                    onChange={(event) => setAgentFilter(event.target.value)}
-                    placeholder={translate('chatInspector.tpl1Desc', { count: allAgents.length })}
-                    aria-label={translate('chatInspector.t53')}
-                  />
-                  {allowedAgentDrafts.size > 0 ? (
-                    <button
-                      type="button"
-                      className="project-agent-clear"
-                      onClick={() => setAllowedAgentDrafts(new Set())}
-                    >
-                      {translate('chatInspector.t70')}
-                    </button>
-                  ) : null}
-                </div>
-                <div className="session-panel-caption project-agent-count">
-                  {allowedAgentDrafts.size > 0
-                    ? translate('chatInspector.tpl2LongDesc', { selected: allowedAgentDrafts.size, total: allAgents.length })
-                    : translate('chatInspector.tpl3LongDesc', { total: allAgents.length })}
-                </div>
-                {visibleAgents.length > 0 ? (
-                  <div className="project-agent-list">
-                    {visibleAgents.map((agent) => {
-                      const checked = allowedAgentDrafts.has(agent.id)
-                      return (
-                        <label key={agent.id} className="project-agent-option">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              setAllowedAgentDrafts((prev) => {
-                                const next = new Set(prev)
-                                if (next.has(agent.id)) {
-                                  next.delete(agent.id)
-                                } else {
-                                  next.add(agent.id)
-                                }
-                                return next
-                              })
-                            }}
-                          />
-                          <span className="project-agent-option-name">{agent.name}</span>
-                          {agent.builtIn ? (
-                            <span className="project-agent-option-tag">{translate('chatInspector.t71')}</span>
-                          ) : null}
-                        </label>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div className="project-agent-empty">
-                    {translate('chatInspector.tpl4Desc', { query: agentFilter.trim() })}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className="btn ghost sm runtime-save-btn"
-                  disabled={savingAgentScope}
-                  onClick={() => void saveAgentScope()}
-                >
-                  <Save size={12} />
-                  {translate('chatInspector.t15')}
-                </button>
-              </div>
+            {!agentScopeCollapsed && workspaceId != null && (
+              <ProjectAgentScopeSection
+                workspaceId={workspaceId}
+                agents={allAgents}
+                defaultAgentId={workspace?.defaultAgentId}
+                allowedAgentIds={workspace?.allowedAgentIds}
+              />
             )}
           </div>
         )}
@@ -1102,10 +1009,14 @@ export function ChatInspector({
             <h4>
               {translate('chatInspector.tpl5Desc')}
               {isContextCritical && (
-                <span className="badge danger dot usage-warning-badge">{translate('chatInspector.t84')}</span>
+                <span className="badge danger dot usage-warning-badge">
+                  {translate('chatInspector.t84')}
+                </span>
               )}
               {!isContextCritical && isContextWarning && (
-                <span className="badge warning dot usage-warning-badge">{translate('chatInspector.t85')}</span>
+                <span className="badge warning dot usage-warning-badge">
+                  {translate('chatInspector.t85')}
+                </span>
               )}
             </h4>
             <ContextWindowVisualization
@@ -1124,7 +1035,9 @@ export function ChatInspector({
           <div className="inspector-section">
             <h4>
               {translate('chatInspector.t86')}
-              <span className="inspector-count">{translate('chatInspector.tpl6Desc', { count: turnUsage.totalTurns })}</span>
+              <span className="inspector-count">
+                {translate('chatInspector.tpl6Desc', { count: turnUsage.totalTurns })}
+              </span>
             </h4>
             <TurnUsageChart rows={turnUsage.rows} />
           </div>
@@ -1197,7 +1110,9 @@ export function ChatInspector({
           <InspectorCollapsibleSection
             title={translate('chatInspector.t56')}
             summary={
-              checkpointEnabled ? <span className="badge success dot">{translate('chatInspector.t91')}</span> : undefined
+              checkpointEnabled ? (
+                <span className="badge success dot">{translate('chatInspector.t91')}</span>
+              ) : undefined
             }
           >
             <div className="checkpoint-card">
@@ -1232,8 +1147,10 @@ export function ChatInspector({
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   if (diff < 60_000) return translate('chatInspector.t24')
-  if (diff < 3_600_000) return translate('chatInspector.tpl8Desc', { value: Math.floor(diff / 60_000) })
-  if (diff < 86_400_000) return translate('chatInspector.tpl9Desc', { value: Math.floor(diff / 3_600_000) })
+  if (diff < 3_600_000)
+    return translate('chatInspector.tpl8Desc', { value: Math.floor(diff / 60_000) })
+  if (diff < 86_400_000)
+    return translate('chatInspector.tpl9Desc', { value: Math.floor(diff / 3_600_000) })
   return translate('chatInspector.tpl10Desc', { value: Math.floor(diff / 86_400_000) })
 }
 
@@ -1303,7 +1220,11 @@ function PromptInspectorSection({ snapshots }: { snapshots: TurnPromptSnapshotEv
   return (
     <InspectorCollapsibleSection
       title={translate('chatInspector.t57')}
-      summary={<span className="inspector-count">{translate('chatInspector.tpl6Desc', { count: snapshots.length })}</span>}
+      summary={
+        <span className="inspector-count">
+          {translate('chatInspector.tpl6Desc', { count: snapshots.length })}
+        </span>
+      }
       headerAction={
         <Switch
           size="small"
@@ -1369,7 +1290,10 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
   const promptSummary =
     snapshot.runtimeMetrics?.sparkPromptEstimatedTokens != null
       ? `Spark Prompt ≈ ${formatTokenCount(snapshot.runtimeMetrics.sparkPromptEstimatedTokens)} tokens`
-      : translate('chatInspector.tpl11Desc', { sections: snapshot.systemPromptSections.length, chars: formatCharCount(totalPromptChars) })
+      : translate('chatInspector.tpl11Desc', {
+          sections: snapshot.systemPromptSections.length,
+          chars: formatCharCount(totalPromptChars),
+        })
 
   return (
     <div className={`prompt-turn-row ${expanded ? 'expanded' : ''}`}>
@@ -1532,7 +1456,9 @@ const PromptSectionBlock = React.memo(function PromptSectionBlock({
         </span>
         <span>{section.label}</span>
         {section.charCount > 0 && (
-          <span className="prompt-section-chars">{translate('chatInspector.tpl12Desc', { count: section.charCount })}</span>
+          <span className="prompt-section-chars">
+            {translate('chatInspector.tpl12Desc', { count: section.charCount })}
+          </span>
         )}
       </div>
       {sectionExpanded && !isPlaceholder && (
@@ -1691,11 +1617,15 @@ function TokenUsagePanel({
           <span className="token-row-value">{formatTokenCount(cacheWriteTokens)}</span>
         </div>
       )}
-      {!hasUsage && !hasSessionTotal && <div className="inspector-muted">{translate('chatInspector.t104')}</div>}
+      {!hasUsage && !hasSessionTotal && (
+        <div className="inspector-muted">{translate('chatInspector.t104')}</div>
+      )}
 
       {hasSessionTotal && (
         <>
-          <div className="token-usage-scope token-usage-scope-divider">{translate('chatInspector.t105')}</div>
+          <div className="token-usage-scope token-usage-scope-divider">
+            {translate('chatInspector.t105')}
+          </div>
           <div className="token-usage-row">
             <span className="token-row-label">{translate('chatInspector.t106')}</span>
             <span className="token-row-value">{formatTokenCount(sessionTotalTokens)}</span>
@@ -1767,15 +1697,25 @@ function ContextWindowVisualization({
       </div>
       <div className="context-usage-labels">
         {runtimeMeasured ? (
-          <span className="context-label context-label-history">{translate('chatInspector.t107')}</span>
+          <span className="context-label context-label-history">
+            {translate('chatInspector.t107')}
+          </span>
         ) : (
           <>
-            <span className="context-label context-label-system">{translate('chatInspector.t108')}</span>
-            <span className="context-label context-label-tools">{translate('chatInspector.t109')}</span>
-            <span className="context-label context-label-history">{translate('chatInspector.t110')}</span>
+            <span className="context-label context-label-system">
+              {translate('chatInspector.t108')}
+            </span>
+            <span className="context-label context-label-tools">
+              {translate('chatInspector.t109')}
+            </span>
+            <span className="context-label context-label-history">
+              {translate('chatInspector.t110')}
+            </span>
           </>
         )}
-        <span className="context-label context-label-remaining">{translate('chatInspector.t111')}</span>
+        <span className="context-label context-label-remaining">
+          {translate('chatInspector.t111')}
+        </span>
       </div>
       <div className="context-usage-detail">
         <div className="kv-row">

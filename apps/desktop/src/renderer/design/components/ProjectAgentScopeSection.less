@@ -1,0 +1,164 @@
+/**
+ * ProjectAgentScopeSection 样式（会话配置面板「项目 Agent」区块）。
+ *
+ * 层级约定：inspector-section 背景 var(--bg) → 列表容器 var(--bg-sunken)，
+ * 两者明度差保证卡片边界可辨（避免 panel/bg-soft 几乎同色的问题）。
+ * 表单控件本体交给 @lobehub/ui 皮肤，这里只管布局与列表行。
+ */
+
+.project-scope {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-md);
+  min-width: 0;
+}
+
+.project-scope-field {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--pad-sm) / 2);
+  min-width: 0;
+}
+
+.project-scope-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--pad-sm);
+  min-width: 0;
+}
+
+.project-scope-field-title {
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-weight: 550;
+  line-height: 1.4;
+}
+
+.project-scope-count {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--font-2xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.project-scope-default-select {
+  width: 100%;
+}
+
+.project-scope-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-xs);
+  min-width: 0;
+
+  .project-scope-search {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.project-scope-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 264px;
+  overflow-y: auto;
+  padding: var(--pad-3xs);
+  border: 1px solid var(--divider);
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+}
+
+.project-scope-option {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-xs);
+  min-width: 0;
+  padding: calc(var(--pad-3xs) + 1px) var(--pad-xs);
+  border-radius: var(--r-xs);
+  font-size: var(--font-sm);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+  }
+
+  &.is-checked .project-scope-option-name {
+    color: var(--text);
+    font-weight: 550;
+  }
+}
+
+/* 全选行：吸附列表顶部，滚动时行内容从其下方穿过 */
+.project-scope-option--head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex-shrink: 0;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--divider);
+  border-radius: 0;
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+
+  &:hover {
+    background: var(--bg-sunken);
+  }
+}
+
+.project-scope-check {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.project-scope-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: var(--r-xs);
+  background: var(--bg-soft);
+  box-shadow: inset 0 0 0 1.5px var(--member-accent, transparent);
+
+  img,
+  .spark-avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+  }
+}
+
+.project-scope-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.project-scope-empty {
+  padding: var(--pad-md) var(--pad-sm);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.project-scope-save {
+  flex-shrink: 0;
+}
