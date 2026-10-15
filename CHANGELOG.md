@@ -6,9 +6,9 @@
 
 ## [Unreleased]
 
-### Spark CLI 0.7.4
+### 新增
 
-- kernel prompt now tells the agent to stay within task scope and report (not rewrite) docs/comments that conflict with the spec, tests, or user request (from PR #207); also headless eval harness added under spark-engine/evals (PR #206, not shipped in the package).
+- **Spark CLI 0.7.4**：kernel prompt 新增范围约束——只改任务必需的文件；文档/注释与规格、测试或用户请求冲突时在最终回答里报告而不是重写（#207）；评测脚手架在 spark-engine/evals，不进发布包（#206）。
 
 ## [0.14.17] - 2026-10-14
 
