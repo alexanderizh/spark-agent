@@ -38,6 +38,7 @@ import {
 } from './git-panel/gitPanelVisibility'
 import { SidebarGitFooter, shouldShowSidebarGitFooter } from './SidebarGitFooter'
 import { SearchPanel } from './search-panel/SearchPanel'
+import { ToolbarTooltip } from './ToolbarTooltip'
 import {
   closeSearchPanel,
   openSearchPanel,
@@ -261,53 +262,60 @@ export function CodeViewerPanel({
     >
       <div className="cv-filetabs">
         <div className="cv-ftab-switch">
-          <button
-            type="button"
-            className={`cv-ftab-toggle${explorerVisible ? ' on' : ''}`}
-            title={explorerVisible ? '隐藏文件树' : '显示文件树'}
-            onClick={() => {
-              if (!explorerVisible) {
-                closeGitPanel()
-                closeSearchPanel()
-              }
-              onExplorerVisibleChange(!explorerVisible)
-            }}
-            disabled={workspaceId == null}
+          <ToolbarTooltip label={explorerVisible ? '隐藏文件树' : '显示文件树'}>
+            <button
+              type="button"
+              className={`cv-ftab-toggle${explorerVisible ? ' on' : ''}`}
+              onClick={() => {
+                if (!explorerVisible) {
+                  closeGitPanel()
+                  closeSearchPanel()
+                }
+                onExplorerVisibleChange(!explorerVisible)
+              }}
+              disabled={workspaceId == null}
+            >
+              <Icons.FolderClosed size={14} />
+              <span className="cv-ftab-toggle-text">文件</span>
+            </button>
+          </ToolbarTooltip>
+          <ToolbarTooltip
+            label={gitPanelVisible ? '隐藏 Git 面板' : '显示 Git 面板（与文件树互斥）'}
           >
-            <Icons.FolderClosed size={14} />
-            <span className="cv-ftab-toggle-text">文件</span>
-          </button>
-          <button
-            type="button"
-            className={`cv-ftab-toggle${gitPanelVisible ? ' on' : ''}`}
-            title={gitPanelVisible ? '隐藏 Git 面板' : '显示 Git 面板（与文件树互斥）'}
-            onClick={() => {
-              // 打开必须同时收起文件树与搜索面板（左侧栏槽位互斥），否则面板被挡住不出现
-              if (gitPanelVisible) toggleGitPanel(false)
-              else {
-                closeSearchPanel()
-                openGitPanel()
-              }
-            }}
-            disabled={workspaceId == null}
+            <button
+              type="button"
+              className={`cv-ftab-toggle${gitPanelVisible ? ' on' : ''}`}
+              onClick={() => {
+                // 打开必须同时收起文件树与搜索面板（左侧栏槽位互斥），否则面板被挡住不出现
+                if (gitPanelVisible) toggleGitPanel(false)
+                else {
+                  closeSearchPanel()
+                  openGitPanel()
+                }
+              }}
+              disabled={workspaceId == null}
+            >
+              <Icons.GitBranch size={14} />
+              <span className="cv-ftab-toggle-text">Git</span>
+            </button>
+          </ToolbarTooltip>
+          <ToolbarTooltip
+            label={searchPanelVisible ? '隐藏搜索面板' : '搜索文件或代码内容（与文件树互斥）'}
           >
-            <Icons.GitBranch size={14} />
-            <span className="cv-ftab-toggle-text">Git</span>
-          </button>
-          <button
-            type="button"
-            className={`cv-ftab-toggle${searchPanelVisible ? ' on' : ''}`}
-            title={searchPanelVisible ? '隐藏搜索面板' : '搜索文件或代码内容（与文件树互斥）'}
-            onClick={() => {
-              // openSearchPanel 内部会收起文件树与 Git 面板（左侧栏槽位互斥）
-              if (searchPanelVisible) toggleSearchPanel(false)
-              else openSearchPanel()
-            }}
-            disabled={workspaceId == null}
-          >
-            <Icons.Search size={14} />
-            <span className="cv-ftab-toggle-text">搜索</span>
-          </button>
+            <button
+              type="button"
+              className={`cv-ftab-toggle${searchPanelVisible ? ' on' : ''}`}
+              onClick={() => {
+                // openSearchPanel 内部会收起文件树与 Git 面板（左侧栏槽位互斥）
+                if (searchPanelVisible) toggleSearchPanel(false)
+                else openSearchPanel()
+              }}
+              disabled={workspaceId == null}
+            >
+              <Icons.Search size={14} />
+              <span className="cv-ftab-toggle-text">搜索</span>
+            </button>
+          </ToolbarTooltip>
         </div>
         <div className="cv-filetabs-scroll">
           {files.map((f, idx) => {
@@ -476,7 +484,11 @@ export function CodeViewerPanel({
   if (active == null) {
     return renderLayout(
       <div className="code-viewer-empty">
-        <div className="code-viewer-empty-icon">{'</>'}</div>
+        <span className="code-viewer-empty-icon">
+          <Icons.FileText size={22} />
+        </span>
+        <div className="code-viewer-empty-text">在左侧选择一个文件开始查看或编辑</div>
+        <div className="code-viewer-empty-hint">支持文件树、Git 变更与全局搜索三种入口</div>
       </div>,
     )
   }
@@ -544,6 +556,9 @@ export function CodeViewerPanel({
             )}
             {activeRuntime?.state === 'error' && (
               <div className="code-viewer-error">
+                <span className="code-viewer-error-icon">
+                  <Icons.AlertTriangle size={20} />
+                </span>
                 <div className="code-viewer-error-title">无法读取该文件</div>
                 <div className="code-viewer-error-detail">{activeRuntime.error}</div>
               </div>

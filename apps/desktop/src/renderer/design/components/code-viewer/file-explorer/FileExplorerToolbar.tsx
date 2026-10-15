@@ -5,6 +5,7 @@
 
 import type { ReactNode } from 'react'
 import { Icons } from '../../../Icons'
+import { ToolbarTooltip } from '../ToolbarTooltip'
 
 export interface FileExplorerToolbarProps {
   workspaceLabel: string
@@ -30,26 +31,41 @@ export function FileExplorerToolbar({
         {workspaceLabel || '项目文件'}
       </span>
       <span className="fe-toolbar-spacer" />
-      <button type="button" className="fe-tool-btn" title="新建文件" onClick={onNewFile}>
-        <Icons.FilePlus size={14} />
-      </button>
-      <button type="button" className="fe-tool-btn" title="新建文件夹" onClick={onNewDirectory}>
-        <Icons.FolderPlus size={14} />
-      </button>
-      <button
-        type="button"
-        className="fe-tool-btn"
-        title="切换到搜索面板（文件名 / 内容搜索）"
-        onClick={onOpenSearch}
-      >
-        <Icons.Search size={14} />
-      </button>
-      <button type="button" className="fe-tool-btn" title="折叠全部" onClick={onCollapseAll}>
-        <Icons.ChevronRight size={14} className="fe-collapse-all-icon" />
-      </button>
-      <button type="button" className="fe-tool-btn" title="刷新" onClick={onRefresh}>
-        <Icons.Refresh size={14} />
-      </button>
+      <ToolbarTooltip label="新建文件">
+        <button type="button" className="fe-tool-btn" aria-label="新建文件" onClick={onNewFile}>
+          <Icons.FilePlus size={14} />
+        </button>
+      </ToolbarTooltip>
+      <ToolbarTooltip label="新建文件夹">
+        <button
+          type="button"
+          className="fe-tool-btn"
+          aria-label="新建文件夹"
+          onClick={onNewDirectory}
+        >
+          <Icons.FolderPlus size={14} />
+        </button>
+      </ToolbarTooltip>
+      <ToolbarTooltip label="切换到搜索面板（文件名 / 内容搜索）">
+        <button
+          type="button"
+          className="fe-tool-btn"
+          aria-label="切换到搜索面板"
+          onClick={onOpenSearch}
+        >
+          <Icons.Search size={14} />
+        </button>
+      </ToolbarTooltip>
+      <ToolbarTooltip label="折叠全部">
+        <button type="button" className="fe-tool-btn" aria-label="折叠全部" onClick={onCollapseAll}>
+          <Icons.ChevronRight size={14} className="fe-collapse-all-icon" />
+        </button>
+      </ToolbarTooltip>
+      <ToolbarTooltip label="刷新">
+        <button type="button" className="fe-tool-btn" aria-label="刷新" onClick={onRefresh}>
+          <Icons.Refresh size={14} />
+        </button>
+      </ToolbarTooltip>
     </div>
   )
 }

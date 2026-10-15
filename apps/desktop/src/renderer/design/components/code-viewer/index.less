@@ -1,34 +1,35 @@
 /**
  * code-viewer 样式。
- * 深色为默认（贴合项目主基调）；浅色通过根节点 [data-cv-theme="light"] 覆盖，
- * 与 CodeViewerEditor 内 Monaco 的 vs / vs-dark 由同一 useResolvedTheme 驱动，保持一致。
+ * 深色为默认（贴合项目主基调）；浅色通过根节点 [data-cv-theme="light"] 覆盖。
+ * --cv-* 全量挂主体语义 token（背景/边框/文字/状态色随主题与密度自动跟随），
+ * Monaco 侧由 monacoInit 注册的 spark-dark / spark-light 主题对齐同一背景基准。
  */
 
-/* 数据色板（cdv 域分类色，恒值；由色值残留清理收编，值零变化） */
+/* 数据色板（cdv 域兜底色，仅当主体 primary 缺失时兜底；恒值） */
 :root {
   --cdv-blue: #4f7cff;
-  --cdv-green: #2ea043;
-  --cdv-red: #f85149;
-  --cdv-amber: #d4a72c;
 }
 
 .code-viewer-panel {
-  --cv-bg: #1e1e1f;
-  --cv-bg-2: #252527;
-  --cv-bg-3: #2d2d30;
-  --cv-border: var(--border-strong, #3a3a3d);
-  --cv-border-soft: var(--border, #333337);
-  --cv-text: #d4d4d4;
-  --cv-text-dim: #9a9aa0;
-  --cv-text-faint: #6e6e72;
+  /* 背景层级：编辑区 --bg ＜ 侧栏/工具栏 --bg-soft ＜ hover 用 --hover（半透明） */
+  --cv-bg: var(--bg, #262626);
+  --cv-bg-2: var(--bg-soft, #2c2c2c);
+  /* 实色（骨架屏 / 禁用态按钮底），hover 一律用 --hover 与主体手感一致 */
+  --cv-bg-3: var(--panel-elev, #383838);
+  /* 边框整体下调一档：强边界用 --border，分割线用 --divider（更浅更轻） */
+  --cv-border: var(--border, #3d3d3d);
+  --cv-border-soft: var(--divider, #383838);
+  --cv-text: var(--text, #e4e4e7);
+  --cv-text-dim: var(--text-muted, #9ca3af);
+  --cv-text-faint: var(--text-faint, #6b7280);
   --cv-accent: var(--primary, var(--cdv-blue));
   --cv-accent-soft: var(--primary-soft, color-mix(in srgb, var(--cdv-blue) 16%, transparent));
   --cv-accent-fg: var(--primary-fg, #fff);
-  --cv-green: var(--cdv-green);
-  --cv-red: var(--cdv-red);
-  --cv-add-bg: color-mix(in srgb, var(--cdv-green) 16%, transparent);
-  --cv-del-bg: color-mix(in srgb, var(--cdv-red) 16%, transparent);
-  --cv-warn: var(--cdv-amber);
+  --cv-green: var(--success, #22c55e);
+  --cv-red: var(--danger, #f87171);
+  --cv-add-bg: var(--diff-add-bg, rgba(34, 197, 94, 0.22));
+  --cv-del-bg: var(--diff-del-bg, rgba(248, 113, 113, 0.22));
+  --cv-warn: var(--warning, #f59e0b);
   --cv-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
 
   display: flex;
@@ -37,22 +38,16 @@
   min-height: 0;
   background: var(--cv-bg);
   color: var(--cv-text);
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   overflow: hidden;
 
   &[data-cv-theme='light'] {
-    --cv-bg: #ffffff;
-    --cv-bg-2: #f5f5f7;
-    --cv-bg-3: #ededf0;
-    --cv-border: var(--border-strong, #e3e3e8);
-    --cv-border-soft: var(--border, #eaeaee);
-    --cv-text: #2b2b2f;
-    --cv-text-dim: #686870;
-    --cv-text-faint: #9a9aa2;
+    --cv-bg-3: var(--panel-elev, #fafafa);
+    --cv-border: var(--border, #f6f3ec);
+    --cv-border-soft: var(--divider, #efede8);
     --cv-accent-soft: var(--primary-soft, color-mix(in srgb, var(--cdv-blue) 10%, transparent));
-    --cv-add-bg: color-mix(in srgb, var(--cdv-green) 10%, transparent);
-    --cv-del-bg: color-mix(in srgb, var(--cdv-red) 8%, transparent);
-    --cv-warn: #b07900;
+    --cv-add-bg: var(--diff-add-bg, rgba(16, 185, 129, 0.18));
+    --cv-del-bg: var(--diff-del-bg, rgba(239, 68, 68, 0.16));
   }
 }
 
@@ -60,16 +55,23 @@
 .cv-filetabs {
   display: flex;
   align-items: stretch;
-  height: 34px;
+  height: 36px;
   background: var(--cv-bg-2);
   border-bottom: 1px solid var(--cv-border);
   flex: none;
 }
-/* 功能切换组（图标 + 文字） */
+/* 功能切换组（文件 / Git / 搜索）：胶囊轨道 + 圆角选中 pill */
 .cv-ftab-switch {
   display: flex;
   align-items: stretch;
+  gap: 2px;
   flex: none;
+  align-self: center;
+  height: 26px;
+  margin: 0 var(--pad-xs);
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--hover);
 }
 /* tabs 滚动区：超宽横向滚动，不占位滚动条 */
 .cv-filetabs-scroll {
@@ -89,18 +91,32 @@
   align-items: center;
   gap: var(--pad-xs);
   padding: 0 var(--pad-xs) 0 var(--pad-sm);
-  height: 100%;
+  /* 36px 行内下沉为 32px 软底 chip（顶部留 4px 放 accent 指示条），底部贴齐 */
+  margin: 4px 2px 0;
+  height: calc(100% - 4px);
+  position: relative;
   cursor: pointer;
-  border-right: 1px solid var(--cv-border-soft);
+  border-radius: var(--r-xs) var(--r-xs) 0 0;
   color: var(--cv-text-dim);
   white-space: nowrap;
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
   &.active {
-    background: var(--cv-bg);
+    background: var(--hover);
     color: var(--cv-text);
+    /* 顶部 accent 指示条 */
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 8px;
+      right: 8px;
+      height: 2px;
+      border-radius: 1px;
+      background: var(--cv-accent);
+    }
   }
 }
 .cv-ftab-icon {
@@ -145,7 +161,7 @@
   cursor: pointer;
   margin-left: 2px;
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
 }
@@ -194,11 +210,11 @@
 }
 .cv-tag-dirty {
   color: var(--cv-green);
-  background: color-mix(in srgb, var(--cdv-green) 14%, transparent);
+  background: color-mix(in srgb, var(--cv-green) 14%, transparent);
 }
 .cv-tag-warn {
   color: var(--cv-warn);
-  background: color-mix(in srgb, var(--cdv-amber) 14%, transparent);
+  background: color-mix(in srgb, var(--cv-warn) 14%, transparent);
 }
 .cv-seg {
   display: flex;
@@ -256,7 +272,7 @@
   color: var(--cv-text-faint);
   cursor: pointer;
   &:hover:not(:disabled) {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
   &.on {
@@ -341,21 +357,34 @@
 .code-viewer-error {
   display: flex;
   flex-direction: column;
-  gap: var(--pad-xs);
+  gap: var(--pad-sm);
   align-items: center;
   justify-content: center;
   height: 100%;
   color: var(--cv-text-dim);
-  padding: var(--pad-xl);
+  padding: var(--pad-2xl);
   text-align: center;
 }
+.code-viewer-error-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-md, 8px);
+  background: var(--cv-del-bg);
+  color: var(--cv-red);
+}
 .code-viewer-error-title {
-  font-size: var(--font-md);
+  font-size: var(--font-base);
   color: var(--cv-text);
 }
 .code-viewer-error-detail {
-  font-size: var(--font-sm);
+  max-width: 360px;
+  font-size: var(--font-xs);
+  line-height: 1.5;
   color: var(--cv-red);
+  opacity: 0.85;
   word-break: break-all;
 }
 
@@ -367,14 +396,26 @@
   justify-content: center;
   height: 100%;
   color: var(--cv-text-faint);
+  text-align: center;
 }
 .code-viewer-empty-icon {
-  font-size: 28px;
-  opacity: 0.45;
-  font-family: var(--cv-mono);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-md, 8px);
+  background: var(--hover);
+  color: var(--cv-text-faint);
 }
 .code-viewer-empty-text {
+  color: var(--cv-text-dim);
   font-size: var(--font-base);
+}
+.code-viewer-empty-hint {
+  max-width: 300px;
+  font-size: var(--font-xs);
+  line-height: 1.5;
 }
 
 /* Monaco 容器自适应 */
@@ -457,7 +498,7 @@
   cursor: pointer;
   &:hover {
     color: var(--cv-text-dim);
-    background: var(--cv-bg-3);
+    background: var(--hover);
   }
 }
 
@@ -486,24 +527,26 @@
   flex: 1;
 }
 
-/* ── 功能切换按钮（文件 / Git / 搜索，图标 + 文字） ── */
+/* ── 功能切换按钮（文件 / Git / 搜索）：胶囊 pill，选中态圆角软底 ── */
 .cv-ftab-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--pad-xs);
+  gap: 4px;
   width: auto;
-  min-width: 56px;
-  padding: 0 var(--pad-sm);
+  min-width: 52px;
+  padding: 0 10px;
   height: 100%;
   flex: none;
   background: transparent;
   border: 0;
-  border-right: 1px solid var(--cv-border-soft);
+  border-radius: 999px;
   color: var(--cv-text-faint);
   cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
   &:hover:not(:disabled) {
-    background: var(--cv-bg-3);
     color: var(--cv-text);
   }
   &.on {
@@ -532,15 +575,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: 0;
   border-radius: var(--r-xs);
   background: transparent;
   color: var(--cv-text-dim);
   cursor: pointer;
   &:hover:not(:disabled) {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
   &:disabled {
@@ -550,7 +593,7 @@
 }
 .cv-zoom-value {
   min-width: 40px;
-  height: 22px;
+  height: 24px;
   border: 0;
   border-radius: var(--r-xs);
   background: transparent;
@@ -560,7 +603,7 @@
   text-align: center;
   cursor: pointer;
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
 }
@@ -630,7 +673,7 @@ body.cv-resizing {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   color: var(--cv-text);
   background: transparent;
 }
@@ -659,8 +702,8 @@ body.cv-resizing {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   flex: none;
   background: transparent;
   border: 0;
@@ -668,7 +711,7 @@ body.cv-resizing {
   color: var(--cv-text-faint);
   cursor: pointer;
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
   &.on {
@@ -699,13 +742,14 @@ body.cv-resizing {
   display: flex;
   align-items: center;
   gap: var(--pad-3xs);
-  height: 22px;
+  /* 行高跟随主体密度（紧凑 28 / 标准 32 / 舒适 36） */
+  height: var(--row-h, 32px);
   padding-right: var(--pad-xs);
   cursor: pointer;
   color: var(--cv-text);
   white-space: nowrap;
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
   }
   &.selected {
     background: var(--cv-accent-soft);
@@ -762,7 +806,7 @@ body.cv-resizing {
 .fe-rename-input {
   flex: 1;
   min-width: 0;
-  height: 18px;
+  height: 22px;
   background: var(--cv-bg);
   border: 1px solid var(--cv-accent);
   border-radius: var(--r-xs);
@@ -773,16 +817,44 @@ body.cv-resizing {
 }
 .fe-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--pad-xs);
-  padding: var(--pad-xl) var(--pad-md);
+  gap: var(--pad-sm);
+  padding: var(--pad-2xl) var(--pad-md);
   color: var(--cv-text-faint);
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   text-align: center;
 }
-.fe-state-error {
+.fe-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md, 8px);
+  background: var(--hover);
+  color: var(--cv-text-faint);
+}
+.fe-state-error .fe-state-icon {
+  background: var(--cv-del-bg);
   color: var(--cv-red);
+}
+.fe-state-title {
+  color: var(--cv-text-dim);
+}
+.fe-state-error .fe-state-title {
+  color: var(--cv-text);
+}
+.fe-state-detail {
+  max-width: 240px;
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  word-break: break-all;
+}
+.fe-state-error .fe-state-detail {
+  color: var(--cv-red);
+  opacity: 0.85;
 }
 .fe-spin {
   animation: cv-spin 0.9s linear infinite;

@@ -6,7 +6,7 @@
  *
  * 受控状态（expandedDirs）由外部持有以便 per-session 快照；
  * 内部状态：选中项、内联重命名目标、待确认删除项。
- * 文件操作 IPC 成功后由 watch 自动 reload 受影响目录，无需手动刷新。
+ * 文件操作 IPC 成功后由 watch 自动 reload 受影响目录；删除额外乐观刷新一次（破坏性操作即时可见）。
  */
 
 import { useState, type DragEvent } from 'react'
@@ -303,8 +303,13 @@ export function FileExplorerPanel({
     setConfirmDeletePath(null)
     if (p == null || workspaceId == null) return
     const res = await trashPath(workspaceId, p, sessionId ?? undefined)
-    if (res.ok) toast.success('已删除到回收站')
-    else toast.error(res.error ?? '删除失败')
+    if (res.ok) {
+      toast.success('已删除到回收站')
+      // 乐观刷新：删除是破坏性操作，视觉上必须立即生效（watch 事件为主通道，此处兜底）
+      tree.refresh()
+    } else {
+      toast.error(res.error ?? '删除失败')
+    }
   }
 
   const emptyMenu = buildEmptyMenuItems('', menuActions, clipboard)
@@ -328,11 +333,20 @@ export function FileExplorerPanel({
         >
           {tree.loading && (
             <div className="fe-state">
-              <Icons.Spinner size={16} className="fe-spin" /> 加载中…
+              <span className="fe-state-icon">
+                <Icons.Spinner size={16} className="fe-spin" />
+              </span>
+              <span className="fe-state-title">正在加载文件…</span>
             </div>
           )}
           {!tree.loading && tree.error != null && (
-            <div className="fe-state fe-state-error">{tree.error}</div>
+            <div className="fe-state fe-state-error">
+              <span className="fe-state-icon">
+                <Icons.AlertTriangle size={18} />
+              </span>
+              <span className="fe-state-title">无法读取文件列表</span>
+              <span className="fe-state-detail">{tree.error}</span>
+            </div>
           )}
           {!tree.loading && tree.error == null && (
             <FileTree
@@ -354,7 +368,14 @@ export function FileExplorerPanel({
               draggingPath={draggingPath}
             />
           )}
-          {showEmpty && <div className="fe-state">暂无文件</div>}
+          {showEmpty && (
+            <div className="fe-state">
+              <span className="fe-state-icon">
+                <Icons.FolderOpen size={18} />
+              </span>
+              <span className="fe-state-title">此工作区暂无文件</span>
+            </div>
+          )}
         </div>
       </Dropdown>
       <ConfirmDialog

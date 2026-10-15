@@ -2,7 +2,7 @@
  * CodeViewerEditor —— Monaco Editor 封装（源码视图）。
  *
  * - 只读 / 可编辑切换（delete 类文件强制只读）。
- * - 语言识别（getMonacoLanguage）、跟随应用主题（vs-dark / vs）。
+ * - 语言识别（getMonacoLanguage）、跟随应用主题（spark-dark / spark-light，monacoInit 注册，背景对齐主体 --bg）。
  * - path={toMonacoModelUri(filePath)}：模型带真实文件 URI，TS worker 按扩展名判定
  *   脚本类型（.tsx 才按 JSX 解析），且 tab 切换时按 path 保存/恢复视图状态。
  * - 跳转行：revealLineInCenter + deltaDecorations 高亮（点回答里 file (line N) 时用）。
@@ -119,7 +119,8 @@ export function CodeViewerEditor({
         path={toMonacoModelUri(filePath)}
         language={getMonacoLanguage(filePath)}
         value={content}
-        theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+        // spark-dark / spark-light 由 monacoInit 注册，背景对齐主体 --bg 基准
+        theme={theme === 'dark' ? 'spark-dark' : 'spark-light'}
         onMount={handleMount}
         onChange={(value) => onContentChange(value ?? '')}
         loading={<div className="code-viewer-loading">加载编辑器…</div>}

@@ -15,6 +15,7 @@ import type { KeyboardEvent } from 'react'
 import type { WorkspaceGitStatusResponse } from '@spark/protocol'
 import { Icons } from '../../../Icons'
 import { ConfirmDialog } from '../../ConfirmDialog'
+import { ToolbarTooltip } from '../ToolbarTooltip'
 import { GitGroupSection } from './GitChangesSection'
 import { GitStashSection } from './GitStashSection'
 import { GitCommitHistory } from './GitCommitHistory'
@@ -160,47 +161,58 @@ export function GitPanel({
         Git
       </span>
       <span className="gp-header-actions">
-        <button
-          type="button"
-          className="gp-icon-btn"
-          title={viewMode === 'list' ? '切换为树形目录显示' : '切换为平铺列表显示'}
-          onClick={() => setGitPanelViewMode(viewMode === 'list' ? 'tree' : 'list')}
+        <ToolbarTooltip
+          label={viewMode === 'list' ? '切换为树形目录显示' : '切换为平铺列表显示'}
+          placement="bottom"
         >
-          {viewMode === 'list' ? <Icons.FolderClosed size={14} /> : <Icons.ListTodo size={14} />}
-        </button>
-        <button
-          type="button"
-          className="gp-icon-btn"
-          title={pullTitle}
-          disabled={noRemote || !branchHasUpstream || actions.busy != null}
-          onClick={() => void actions.pull()}
-        >
-          {actions.busy === 'pull' ? (
-            <Icons.Spinner size={13} className="gp-spin" />
-          ) : (
-            <Icons.Download size={13} />
-          )}
-        </button>
-        <button
-          type="button"
-          className="gp-icon-btn"
-          title={pushTitle}
-          disabled={noRemote || detachedHead || actions.busy != null}
-          onClick={() => void actions.push()}
-        >
-          {actions.busy === 'push' ? (
-            <Icons.Spinner size={13} className="gp-spin" />
-          ) : (
-            <Icons.Upload size={13} />
-          )}
-        </button>
-        <button type="button" className="gp-icon-btn" title="刷新" onClick={handleRefresh}>
-          {headerSpinner ? (
-            <Icons.Spinner size={13} className="gp-spin" />
-          ) : (
-            <Icons.RotateCw size={13} />
-          )}
-        </button>
+          <button
+            type="button"
+            className="gp-icon-btn"
+            aria-label="切换变更列表显示方式"
+            onClick={() => setGitPanelViewMode(viewMode === 'list' ? 'tree' : 'list')}
+          >
+            {viewMode === 'list' ? <Icons.FolderClosed size={14} /> : <Icons.ListTodo size={14} />}
+          </button>
+        </ToolbarTooltip>
+        <ToolbarTooltip label={pullTitle} placement="bottom">
+          <button
+            type="button"
+            className="gp-icon-btn"
+            aria-label="拉取远端更新"
+            disabled={noRemote || !branchHasUpstream || actions.busy != null}
+            onClick={() => void actions.pull()}
+          >
+            {actions.busy === 'pull' ? (
+              <Icons.Spinner size={13} className="gp-spin" />
+            ) : (
+              <Icons.Download size={13} />
+            )}
+          </button>
+        </ToolbarTooltip>
+        <ToolbarTooltip label={pushTitle} placement="bottom">
+          <button
+            type="button"
+            className="gp-icon-btn"
+            aria-label="推送到远端"
+            disabled={noRemote || detachedHead || actions.busy != null}
+            onClick={() => void actions.push()}
+          >
+            {actions.busy === 'push' ? (
+              <Icons.Spinner size={13} className="gp-spin" />
+            ) : (
+              <Icons.Upload size={13} />
+            )}
+          </button>
+        </ToolbarTooltip>
+        <ToolbarTooltip label="刷新" placement="bottom">
+          <button type="button" className="gp-icon-btn" aria-label="刷新" onClick={handleRefresh}>
+            {headerSpinner ? (
+              <Icons.Spinner size={13} className="gp-spin" />
+            ) : (
+              <Icons.RotateCw size={13} />
+            )}
+          </button>
+        </ToolbarTooltip>
       </span>
     </div>
   )
@@ -209,7 +221,13 @@ export function GitPanel({
     return (
       <div className="gp-panel">
         {renderHeader}
-        <div className="gp-state">当前项目不是 Git 仓库</div>
+        <div className="gp-state">
+          <span className="gp-state-icon">
+            <Icons.GitBranch size={20} />
+          </span>
+          <span className="gp-state-title">当前项目不是 Git 仓库</span>
+          <span className="gp-state-detail">在项目根目录执行 git init 后即可管理变更</span>
+        </div>
       </div>
     )
   }
@@ -247,20 +265,24 @@ export function GitPanel({
           onKeyDown={handleCommitKeyDown}
         />
         <div className="gp-commit-actions">
-          <button
-            type="button"
-            className="gp-commit-btn"
-            disabled={!canCommit}
-            title={staged.length === 0 ? '没有已暂存的文件' : '提交当前已暂存的更改（⌘S）'}
-            onClick={() => void submitCommit()}
+          <ToolbarTooltip
+            label={staged.length === 0 ? '没有已暂存的文件' : '提交当前已暂存的更改（⌘S）'}
+            placement="top"
           >
-            {actions.busy === 'commit' ? (
-              <Icons.Spinner size={13} className="gp-spin" />
-            ) : (
-              <Icons.Check size={13} />
-            )}
-            提交{staged.length > 0 ? ` (${staged.length})` : ''}
-          </button>
+            <button
+              type="button"
+              className="gp-commit-btn"
+              disabled={!canCommit}
+              onClick={() => void submitCommit()}
+            >
+              {actions.busy === 'commit' ? (
+                <Icons.Spinner size={13} className="gp-spin" />
+              ) : (
+                <Icons.Check size={13} />
+              )}
+              提交{staged.length > 0 ? ` (${staged.length})` : ''}
+            </button>
+          </ToolbarTooltip>
         </div>
       </div>
 

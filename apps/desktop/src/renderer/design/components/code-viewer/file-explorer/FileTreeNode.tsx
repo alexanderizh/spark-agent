@@ -106,7 +106,7 @@ export function FileTreeNode({
     <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft">
       <div
         className={className}
-        style={{ paddingLeft: 8 + node.depth * 14 }}
+        style={{ paddingLeft: 10 + node.depth * 16 }}
         onClick={handleClick}
         onContextMenu={(e) => e.stopPropagation()}
         title={node.path}
@@ -133,7 +133,7 @@ export function FileTreeNode({
             name={node.name}
             kind={isDir ? 'folder' : 'file'}
             open={expanded}
-            size={isDir ? 15 : 14}
+            size={isDir ? 16 : 15}
           />
         </span>
         {rename != null ? (

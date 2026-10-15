@@ -10,9 +10,9 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--cv-bg);
+  background: var(--cv-bg-2);
   color: var(--cv-text);
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   user-select: none;
 }
 
@@ -21,7 +21,7 @@
 .sp-header {
   display: flex;
   align-items: center;
-  height: 34px;
+  height: 36px;
   flex: none;
   padding: 0 var(--pad-xs) 0 var(--pad-sm);
   background: var(--cv-bg-2);
@@ -42,8 +42,6 @@
 
 .sp-title {
   font-size: var(--font-sm);
-  font-weight: 600;
-  letter-spacing: 0.04em;
   color: var(--cv-text);
 }
 
@@ -68,7 +66,7 @@
     background-color 0.16s ease;
 
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
 
@@ -103,7 +101,7 @@
 
   &:hover {
     color: var(--cv-text);
-    background: var(--cv-bg-3);
+    background: var(--hover);
   }
 
   &.active {
@@ -123,7 +121,7 @@
   display: flex;
   align-items: stretch;
   gap: var(--pad-xl);
-  height: 34px;
+  height: 36px;
   flex: none;
   padding: 0 var(--pad-sm);
   border-bottom: 1px solid var(--cv-border-soft);
@@ -138,7 +136,6 @@
   background: transparent;
   color: var(--cv-text-dim);
   font-size: var(--font-sm);
-  font-weight: 500;
   cursor: pointer;
   transition: color 0.16s ease;
 
@@ -235,7 +232,7 @@
 
   &:hover {
     color: var(--cv-text);
-    background: var(--cv-bg-3);
+    background: var(--hover);
   }
 
   &:focus-visible {
@@ -252,7 +249,6 @@
   width: 28px;
   margin: 0 var(--pad-3xs) 0 2px;
   font-size: var(--font-xs);
-  font-weight: 600;
 
   &.on {
     color: var(--cv-accent);
@@ -313,21 +309,26 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 156px;
-  padding: 28px var(--pad-xl);
+  min-height: 200px;
+  padding: var(--pad-2xl) var(--pad-xl);
   text-align: center;
 }
 
 .sp-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
   margin-bottom: var(--pad-sm);
+  border-radius: var(--r-md, 8px);
+  background: var(--hover);
   color: var(--cv-text-faint);
-  opacity: 0.72;
 }
 
 .sp-empty-title {
   color: var(--cv-text-dim);
   font-size: var(--font-sm);
-  font-weight: 500;
 }
 
 .sp-empty-detail {
@@ -359,7 +360,7 @@
   cursor: pointer;
 
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
   }
 
   &:focus-visible {
@@ -398,7 +399,6 @@
 .sp-flat-title {
   color: var(--cv-text);
   font-size: var(--font-sm);
-  font-weight: 500;
 }
 
 .sp-flat-path {
@@ -453,7 +453,7 @@
     background-color 0.12s ease;
 
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
 
@@ -490,7 +490,6 @@
 
 .sp-tree-file-label {
   color: var(--cv-text);
-  font-weight: 500;
 }
 
 .sp-tree-count {
@@ -504,7 +503,6 @@
 }
 
 .sp-directory-row {
-  font-weight: 500;
 }
 
 .sp-file-row {

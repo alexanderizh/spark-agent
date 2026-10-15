@@ -12,7 +12,7 @@
   min-height: 0;
   background: transparent;
   color: var(--cv-text);
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   user-select: none;
 }
 
@@ -22,7 +22,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 34px;
+  height: 36px;
   flex: none;
   padding: 0 var(--pad-xs) 0 var(--pad-sm);
   border-bottom: 1px solid var(--cv-border);
@@ -33,8 +33,6 @@
   align-items: center;
   gap: var(--pad-xs);
   font-size: var(--font-sm);
-  font-weight: 600;
-  letter-spacing: 0.08em;
   color: var(--cv-text);
 }
 
@@ -50,14 +48,44 @@
 
 .gp-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: var(--pad-sm);
   flex: 1;
   min-height: 0;
-  padding: var(--pad-xl) var(--pad-md);
+  padding: var(--pad-2xl) var(--pad-md);
   color: var(--cv-text-faint);
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   text-align: center;
+
+  .gp-state-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--r-md, 8px);
+    background: var(--hover);
+    color: var(--cv-text-faint);
+  }
+
+  .gp-state-error-icon {
+    color: var(--cv-red);
+    background: var(--cv-del-bg);
+  }
+
+  .gp-state-title {
+    color: var(--cv-text-dim);
+    font-size: var(--font-base);
+  }
+
+  .gp-state-detail {
+    max-width: 260px;
+    font-size: var(--font-xs);
+    line-height: 1.5;
+    word-break: break-all;
+  }
 }
 
 /* ---------- 加载骨架 ---------- */
@@ -129,6 +157,10 @@
 .gp-commit-actions {
   display: flex;
 }
+/* Tooltip 宿主 span 撑满，让内部 width:100% 的提交按钮保持原布局 */
+.gp-commit-actions .cv-tip-host {
+  flex: 1;
+}
 
 .gp-commit-btn {
   display: inline-flex;
@@ -143,7 +175,6 @@
   background: var(--cv-accent);
   color: var(--cv-accent-fg);
   font-size: var(--font-sm);
-  font-weight: 500;
   cursor: pointer;
 
   &:hover:not(:disabled) {
@@ -186,7 +217,7 @@
   border-radius: var(--r-xs);
 
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
   }
 
   .gp-group-actions {
@@ -214,8 +245,6 @@
   background: transparent;
   color: var(--cv-text-dim);
   font-size: var(--font-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
   cursor: pointer;
   padding: 0;
 }
@@ -256,7 +285,6 @@
 .gp-group-count {
   flex: none;
   color: var(--cv-text-faint);
-  font-weight: 500;
   font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
 }
@@ -266,7 +294,6 @@
   align-items: center;
   color: var(--cv-accent);
   font-size: var(--font-xs);
-  font-weight: 600;
 }
 
 .gp-group-body {
@@ -295,12 +322,12 @@
   display: flex;
   align-items: center;
   gap: var(--pad-3xs);
-  height: 26px;
+  height: 28px;
   padding: 0 var(--pad-xs);
   border-radius: var(--r-xs);
 
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
   }
 
   /* hover 时行数统计让位给操作按钮 */
@@ -366,7 +393,7 @@
   align-items: center;
   gap: var(--pad-xs);
   width: 100%;
-  height: 26px;
+  height: 28px;
   padding-right: var(--pad-xs);
   border: none;
   border-radius: var(--r-xs);
@@ -377,7 +404,7 @@
   text-align: left;
 
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
   }
 
   /* 折叠切换与目录名的主点击区（批量按钮在行内，避免 button 嵌套 button） */
@@ -438,7 +465,6 @@
   text-align: center;
   font-family: var(--cv-mono);
   font-size: var(--font-xs);
-  font-weight: 600;
 
   &.add {
     color: var(--cv-green);
@@ -521,7 +547,7 @@
   cursor: pointer;
 
   &:hover {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
 
@@ -579,7 +605,6 @@
 
 .gp-commit-up {
   color: var(--cv-accent);
-  font-weight: 700;
 }
 
 .gp-commit-author {
@@ -638,7 +663,7 @@
 
   &:hover,
   &.expanded {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
 
@@ -701,7 +726,7 @@
   cursor: pointer;
 
   &:hover:not(:disabled) {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
 
@@ -774,7 +799,6 @@
   font-variant-numeric: tabular-nums;
 
   .has {
-    font-weight: 600;
   }
 }
 
@@ -801,7 +825,7 @@
   cursor: pointer;
 
   &:hover:not(:disabled) {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
 
@@ -831,7 +855,7 @@
   cursor: pointer;
 
   &:hover:not(:disabled) {
-    background: var(--cv-bg-3);
+    background: var(--hover);
     color: var(--cv-text);
   }
 
@@ -886,7 +910,6 @@
   flex: none;
   font-family: var(--font-mono, monospace);
   font-size: var(--font-sm);
-  font-weight: 600;
   color: var(--primary, #6366f1);
 }
 
@@ -941,7 +964,6 @@
 }
 
 .gp-cpop-subject {
-  font-weight: 600;
   line-height: 1.5;
   color: var(--text-strong, #11100e);
   overflow-wrap: anywhere;
@@ -977,7 +999,6 @@
 
 .gp-cpop-unpushed {
   color: var(--primary, #6366f1);
-  font-weight: 600;
 }
 
 /* 提交行右键菜单：复用全局 .action-menu / .action-menu-item 外观，

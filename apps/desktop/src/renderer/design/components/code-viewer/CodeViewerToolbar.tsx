@@ -9,6 +9,7 @@ import { Fragment } from 'react'
 import type { PreviewFileType } from '../FileDisplay'
 import { Icons } from '../../Icons'
 import { SessionFileOpenPicker } from '../SessionFileOpenPicker'
+import { ToolbarTooltip } from './ToolbarTooltip'
 import type { CodeViewMode } from './types'
 
 export interface CodeViewerToolbarProps {
@@ -71,46 +72,55 @@ export function CodeViewerToolbar({
           >
             源码
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={viewMode === 'diff'}
-            className={viewMode === 'diff' ? 'on' : ''}
-            disabled={!hasDiff}
-            title={hasDiff ? '查看本次改动' : '该文件没有可显示的改动记录'}
-            onClick={() => hasDiff && onViewModeChange('diff')}
+          <ToolbarTooltip
+            label={hasDiff ? '查看本次改动' : '该文件没有可显示的改动记录'}
+            placement="bottom"
           >
-            本次改动
-          </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'diff'}
+              className={viewMode === 'diff' ? 'on' : ''}
+              disabled={!hasDiff}
+              onClick={() => hasDiff && onViewModeChange('diff')}
+            >
+              本次改动
+            </button>
+          </ToolbarTooltip>
         </div>
-        <button
-          type="button"
-          className={`cv-icon-btn${minimapEnabled ? ' on' : ''}`}
-          onClick={onToggleMinimap}
-          disabled={viewMode === 'diff'}
-          title={
+        <ToolbarTooltip
+          label={
             viewMode === 'diff'
               ? '小地图仅在「源码」视图可用'
               : minimapEnabled
                 ? '关闭小地图'
                 : '打开小地图'
           }
-          aria-label="切换小地图"
-          aria-pressed={minimapEnabled}
+          placement="bottom"
         >
-          <Icons.Map size={14} />
-        </button>
-        {!readOnly && (dirty || saving) && (
           <button
             type="button"
-            className="cv-save-btn"
-            onClick={onSave}
-            disabled={saving || !dirty}
-            title="保存（Cmd/Ctrl+S）"
+            className={`cv-icon-btn${minimapEnabled ? ' on' : ''}`}
+            onClick={onToggleMinimap}
+            disabled={viewMode === 'diff'}
+            aria-label="切换小地图"
+            aria-pressed={minimapEnabled}
           >
-            {saving ? <Icons.Spinner size={12} /> : <Icons.Check size={12} />}
-            {saving ? '保存中' : '保存'}
+            <Icons.Map size={14} />
           </button>
+        </ToolbarTooltip>
+        {!readOnly && (dirty || saving) && (
+          <ToolbarTooltip label="保存（Cmd/Ctrl+S）" placement="bottom">
+            <button
+              type="button"
+              className="cv-save-btn"
+              onClick={onSave}
+              disabled={saving || !dirty}
+            >
+              {saving ? <Icons.Spinner size={12} /> : <Icons.Check size={12} />}
+              {saving ? '保存中' : '保存'}
+            </button>
+          </ToolbarTooltip>
         )}
         <SessionFileOpenPicker
           filePath={absPath}

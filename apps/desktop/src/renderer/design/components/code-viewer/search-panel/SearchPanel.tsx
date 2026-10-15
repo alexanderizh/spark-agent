@@ -21,6 +21,7 @@ import type {
 import { Icons } from '../../../Icons'
 import { FileTypeIcon } from '../../FileDisplay'
 import { OPEN_CODE_SEARCH_EVENT } from '../../../hooks/useKeyboard'
+import { ToolbarTooltip } from '../ToolbarTooltip'
 import { closeSearchPanel, setSearchPanelMode, useSearchPanelMode } from './searchPanelVisibility'
 import {
   buildSearchResultTree,
@@ -339,49 +340,53 @@ export function SearchPanel({
         </span>
         <span className="sp-header-spacer" />
         {mode === 'files' && (
+          <ToolbarTooltip label="刷新文件索引（文件树与磁盘不一致时使用）">
+            <button
+              type="button"
+              className="sp-icon-btn"
+              aria-label="刷新文件索引"
+              onClick={() => setRefreshTick((v) => v + 1)}
+            >
+              <Icons.RotateCw size={13} />
+            </button>
+          </ToolbarTooltip>
+        )}
+        <div className="sp-layout-switch" aria-label="搜索结果布局">
+          <ToolbarTooltip label="树形显示">
+            <button
+              type="button"
+              className={`sp-layout-btn${resultLayout === 'tree' ? ' active' : ''}`}
+              aria-label="树形显示"
+              aria-pressed={resultLayout === 'tree'}
+              onClick={() => setResultLayout('tree')}
+            >
+              <Icons.Folder size={12} />
+              <span>树形</span>
+            </button>
+          </ToolbarTooltip>
+          <ToolbarTooltip label="列表显示">
+            <button
+              type="button"
+              className={`sp-layout-btn${resultLayout === 'list' ? ' active' : ''}`}
+              aria-label="列表显示"
+              aria-pressed={resultLayout === 'list'}
+              onClick={() => setResultLayout('list')}
+            >
+              <Icons.ListFilter size={12} />
+              <span>列表</span>
+            </button>
+          </ToolbarTooltip>
+        </div>
+        <ToolbarTooltip label="关闭搜索面板">
           <button
             type="button"
             className="sp-icon-btn"
-            title="刷新文件索引（文件树与磁盘不一致时使用）"
-            aria-label="刷新文件索引"
-            onClick={() => setRefreshTick((v) => v + 1)}
+            aria-label="关闭搜索面板"
+            onClick={closeSearchPanel}
           >
-            <Icons.RotateCw size={13} />
+            <Icons.X size={13} />
           </button>
-        )}
-        <div className="sp-layout-switch" aria-label="搜索结果布局">
-          <button
-            type="button"
-            className={`sp-layout-btn${resultLayout === 'tree' ? ' active' : ''}`}
-            title="树形显示"
-            aria-label="树形显示"
-            aria-pressed={resultLayout === 'tree'}
-            onClick={() => setResultLayout('tree')}
-          >
-            <Icons.Folder size={12} />
-            <span>树形</span>
-          </button>
-          <button
-            type="button"
-            className={`sp-layout-btn${resultLayout === 'list' ? ' active' : ''}`}
-            title="列表显示"
-            aria-label="列表显示"
-            aria-pressed={resultLayout === 'list'}
-            onClick={() => setResultLayout('list')}
-          >
-            <Icons.ListFilter size={12} />
-            <span>列表</span>
-          </button>
-        </div>
-        <button
-          type="button"
-          className="sp-icon-btn"
-          title="关闭搜索面板"
-          aria-label="关闭搜索面板"
-          onClick={closeSearchPanel}
-        >
-          <Icons.X size={13} />
-        </button>
+        </ToolbarTooltip>
       </div>
 
       <div className="sp-mode-tabs">
@@ -424,35 +429,37 @@ export function SearchPanel({
             }}
           />
           {query.length > 0 && (
-            <button
-              type="button"
-              className="sp-input-action"
-              title="清空搜索"
-              aria-label="清空搜索"
-              onClick={() => {
-                setQuery('')
-                inputRef.current?.focus()
-              }}
-            >
-              <Icons.X size={12} />
-            </button>
+            <ToolbarTooltip label="清空搜索">
+              <button
+                type="button"
+                className="sp-input-action"
+                aria-label="清空搜索"
+                onClick={() => {
+                  setQuery('')
+                  inputRef.current?.focus()
+                }}
+              >
+                <Icons.X size={12} />
+              </button>
+            </ToolbarTooltip>
           )}
           {mode === 'content' && (
-            <button
-              type="button"
-              className={`sp-case-btn${caseSensitive ? ' on' : ''}`}
-              title="区分大小写"
-              aria-label="区分大小写"
-              aria-pressed={caseSensitive}
-              onClick={() =>
-                updateWorkspaceState((prev) => ({
-                  ...prev,
-                  caseSensitive: !prev.caseSensitive,
-                }))
-              }
-            >
-              Aa
-            </button>
+            <ToolbarTooltip label="区分大小写" placement="bottom">
+              <button
+                type="button"
+                className={`sp-case-btn${caseSensitive ? ' on' : ''}`}
+                aria-label="区分大小写"
+                aria-pressed={caseSensitive}
+                onClick={() =>
+                  updateWorkspaceState((prev) => ({
+                    ...prev,
+                    caseSensitive: !prev.caseSensitive,
+                  }))
+                }
+              >
+                Aa
+              </button>
+            </ToolbarTooltip>
           )}
         </div>
       </div>
@@ -822,7 +829,9 @@ function TreeChevron({ collapsed }: { collapsed: boolean }): React.ReactNode {
 function SearchEmpty({ title, detail }: { title: string; detail: string }): React.ReactNode {
   return (
     <div className="sp-empty">
-      <Icons.Search size={22} className="sp-empty-icon" />
+      <span className="sp-empty-icon">
+        <Icons.Search size={18} />
+      </span>
       <span className="sp-empty-title">{title}</span>
       <span className="sp-empty-detail">{detail}</span>
     </div>

@@ -66,6 +66,42 @@ function configureTsJsLanguageService(): void {
 
 let initialized = false
 
+/**
+ * 注册与应用主体对齐的自定义主题。
+ *
+ * 背景基准必须与 tokens.css 的 --bg 保持一致（Monaco 主题 API 不支持 CSS 变量，
+ * 只能写死十六进制；tokens.css 变更时此处需同步）：
+ * - spark-dark：基于 vs-dark，editor.background #262626（= 暗色 --bg），
+ *   替换默认 vs-dark 的 #1e1e1e 冷黑，消除「编辑器是另一个应用」的割裂感；
+ * - spark-light：基于 vs，editor.background #fafafa（= 浅色 --bg）。
+ * 其余颜色继承对应 base 主题的取值。
+ */
+function registerSparkThemes(): void {
+  monaco.editor.defineTheme('spark-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#262626',
+      'editorGutter.background': '#262626',
+      // 当前行高亮随背景变浅一档，避免在 #262626 上几乎不可见
+      'editor.lineHighlightBackground': '#2c2c2c',
+      'editorLineNumber.foreground': '#6b7280',
+      'editorLineNumber.activeForeground': '#9ca3af',
+    },
+  })
+  monaco.editor.defineTheme('spark-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#fafafa',
+      'editorGutter.background': '#fafafa',
+      'editor.lineHighlightBackground': '#f2f2f2',
+    },
+  })
+}
+
 export function ensureMonacoInit(): void {
   if (initialized) return
   initialized = true
@@ -96,6 +132,7 @@ export function ensureMonacoInit(): void {
   }
 
   configureTsJsLanguageService()
+  registerSparkThemes()
   loader.config({ monaco })
 }
 
