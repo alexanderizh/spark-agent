@@ -2068,6 +2068,54 @@ describe('ProviderService', () => {
     expect(profile.supportsMillionContext).toBe(true)
   })
 
+  it('keeps local text models and still syncs media refs when the catalog has no text models', async () => {
+    await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5', 'MiniMax-M3'],
+      apiKey: 'sk-platform-secret',
+    })
+    await service.updateManagedNewApiModelPreferences({
+      modelIds: ['MiniMax-M3'],
+      defaultModel: 'MiniMax-M3',
+    })
+
+    // 平台下线全部文本模型、仅剩图片模型时，渠道仍应照常落库：
+    // 保留本机文本模型选择，并把图片模型引用同步进渠道模型列表。
+    const profile = await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: [],
+      mediaModelRefs: [
+        {
+          manifestId: 'platform:new-image:test',
+          modelId: 'new-image',
+          templateManifestId: 'openai-images:gpt-image-2',
+          enabled: true,
+        },
+      ],
+      apiKey: 'sk-platform-secret-2',
+    })
+
+    expect(profile.modelIds).toEqual(['MiniMax-M3'])
+    expect(profile.defaultModel).toBe('MiniMax-M3')
+    expect(profile.availableModelIds).toEqual(['glm-5', 'MiniMax-M3'])
+    expect(profile.mediaModelRefs).toEqual([
+      expect.objectContaining({ modelId: 'new-image', enabled: true }),
+    ])
+  })
+
+  it('explains that the platform has no models when the catalog is empty and no local profile exists', async () => {
+    await expect(
+      service.ensureManagedNewApiProvider({
+        ownerUserId: '42',
+        baseUrl: 'https://newapi.example',
+        modelIds: [],
+        apiKey: 'sk-platform-secret',
+      }),
+    ).rejects.toThrow('Spark 平台暂未开放可用模型')
+  })
+
   it('moves tagged platform image models out of stale chat preferences during catalog refresh', async () => {
     await service.ensureManagedNewApiProvider({
       ownerUserId: '42',

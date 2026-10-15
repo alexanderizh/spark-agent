@@ -145,7 +145,9 @@ export async function bootstrapPlatformModels(
 
   const [catalog, apiKey] = await Promise.all([client.getModelCatalog(), client.ensureApiKey()])
   const models = catalog.map((item) => item.modelId)
-  if (models.length === 0) throw new PlatformModelsError('平台账户当前没有可用模型')
+  if (models.length === 0) {
+    throw new PlatformModelsError('Spark 平台暂未开放可用模型（模型目录为空），请稍后重试')
+  }
   const stored = await store.save({ baseUrl, newApiUserId, apiKey, models })
   logger?.info(
     `platform models bound: gateway=${baseUrl} models=${models.length} apiKey=${apiKey.slice(0, 8)}…`,

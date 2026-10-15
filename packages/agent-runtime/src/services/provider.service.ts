@@ -2111,14 +2111,22 @@ export class ProviderService {
       existing && isManagedProviderRow(existing)
         ? normalizeProviderConfig(JSON.parse(existing.config_json) as ProviderConfig)
         : null
+    // 平台目录仅剩媒体模型（无文本模型）时保留本地已有文本模型，渠道 Profile 照常
+    // 落库，保证媒体模型引用同步进渠道；目录彻底为空且无本地配置才无法建立渠道。
+    const effectiveAvailableModelIds =
+      availableModelIds.length > 0
+        ? availableModelIds
+        : (existingConfig?.availableModelIds ?? existingConfig?.modelIds ?? [])
     const preferredModelIds =
-      existingConfig?.modelIds.filter((model) => availableModelIds.includes(model)) ?? []
-    const modelIds = preferredModelIds.length > 0 ? preferredModelIds : availableModelIds
+      existingConfig?.modelIds.filter((model) => effectiveAvailableModelIds.includes(model)) ?? []
+    const modelIds = preferredModelIds.length > 0 ? preferredModelIds : effectiveAvailableModelIds
     const defaultModel =
       existingConfig && modelIds.includes(existingConfig.defaultModel)
         ? existingConfig.defaultModel
         : modelIds[0]
-    if (!defaultModel) throw new Error('平台账户当前没有可用模型')
+    if (!defaultModel) {
+      throw new Error('Spark 平台暂未开放可用模型，请稍后重试；平台配置完成后点击刷新即可恢复')
+    }
     const keystoreRef = keystore.makeKeystoreRef(
       'newapi',
       `spark-user-${params.ownerUserId}-api-key`,
@@ -2127,7 +2135,7 @@ export class ProviderService {
     const config = normalizeProviderConfig({
       defaultModel,
       modelIds,
-      availableModelIds,
+      availableModelIds: effectiveAvailableModelIds,
       // Claude/Anthropic SDK appends /v1/messages itself. Keeping the OpenAI-style
       // /v1 suffix here would send managed models to /v1/v1/messages.
       apiEndpoint: params.baseUrl.replace(/\/+$/, ''),
@@ -2143,7 +2151,7 @@ export class ProviderService {
         ? {
             modelContextWindows: normalizeModelContextWindows(
               existingConfig.modelContextWindows,
-              availableModelIds,
+              effectiveAvailableModelIds,
             ),
           }
         : {}),
@@ -2194,11 +2202,16 @@ export class ProviderService {
     const availableModelIds = [
       ...new Set(params.modelIds.map((model) => model.trim()).filter(Boolean)),
     ]
-    if (availableModelIds.length === 0) throw new Error('平台账户当前没有可用文本模型')
+    if (availableModelIds.length === 0) {
+      // 刷新路径保留「目录为空不覆盖本机配置」的保护契约：仅报错，不写库。
+      throw new Error('Spark 平台模型目录当前没有可用文本模型，已保留本机渠道配置；请稍后再试')
+    }
     const preferredModelIds = config.modelIds.filter((model) => availableModelIds.includes(model))
     const modelIds = preferredModelIds.length > 0 ? preferredModelIds : availableModelIds
     const defaultModel = modelIds.includes(config.defaultModel) ? config.defaultModel : modelIds[0]
-    if (!defaultModel) throw new Error('平台账户当前没有可用文本模型')
+    if (!defaultModel) {
+      throw new Error('Spark 平台模型目录当前没有可用文本模型，已保留本机渠道配置；请稍后再试')
+    }
 
     this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
       config: normalizeProviderConfig({

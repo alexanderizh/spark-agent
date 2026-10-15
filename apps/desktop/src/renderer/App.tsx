@@ -217,6 +217,17 @@ function buildRuntimeErrorDetails(
     detail: [contextText, stringifyRuntimeError(error)].filter(Boolean).join('\n\n'),
   }
 }
+
+// 全局兜底 toast 需要展示真实原因（如「Spark 平台暂未开放可用模型」）而不是笼统的
+// 「操作未完成」。这里剥掉 IPC/包装层前缀并截断，避免 toast 出现冗长的内部包装文本。
+function normalizeRuntimeReason(raw: string): string {
+  const cleaned = raw
+    .replace(/^Error invoking remote method '[^']+':\s*/i, '')
+    .replace(/^(?:[A-Za-z]+Error):\s*/, '')
+    .trim()
+  const text = cleaned.length > 0 ? cleaned : raw.trim()
+  return text.length > 160 ? `${text.slice(0, 160)}…` : text
+}
 // 浮动态侧栏会与窗口边缘保持额外留白，因此主区需要补上这段偏移。
 // 扁平态侧栏贴边显示，不应再叠加这部分 gutter。
 const SIDEBAR_VISIBLE_GUTTER = 16
@@ -1668,15 +1679,18 @@ function Shell() {
         event.reason,
         { message },
       )
-      toast.error(tr('app.error.unhandledRejection', { message }), {
-        duration: 8000,
-        actions: [
-          {
-            label: tr('app.toast.viewDetails'),
-            onClick: () => setErrorDetails(details),
-          },
-        ],
-      })
+      toast.error(
+        tr('app.error.unhandledRejection', { message: normalizeRuntimeReason(message) }),
+        {
+          duration: 8000,
+          actions: [
+            {
+              label: tr('app.toast.viewDetails'),
+              onClick: () => setErrorDetails(details),
+            },
+          ],
+        },
+      )
       event.preventDefault()
     }
 
@@ -1694,7 +1708,7 @@ function Shell() {
             event.lineno > 0 ? `${event.lineno}:${event.colno > 0 ? event.colno : 0}` : 'unknown',
         },
       )
-      toast.error(tr('app.error.runtime', { message }), {
+      toast.error(tr('app.error.runtime', { message: normalizeRuntimeReason(message) }), {
         duration: 8000,
         actions: [
           {

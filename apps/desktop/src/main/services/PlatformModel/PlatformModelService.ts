@@ -473,12 +473,19 @@ export class PlatformModelService {
       })
     }
 
-    return mapPlatformModelCatalog(
+    const mapping = mapPlatformModelCatalog(
       modelIds.map((modelId) => ({
         modelId,
         tags: tagsByModelId.get(modelId) ?? [],
       })),
     )
+    // 排查「刷新报错 / 渠道模型列表不同步」的关键观测点：记录目录总量与分类结果。
+    log.info('platform model catalog mapped', {
+      catalog: modelIds.length,
+      text: mapping.textModelIds.length,
+      media: mapping.mediaModelRefs.length,
+    })
+    return mapping
   }
 
   private async readyClient(): Promise<NewApiClient> {
