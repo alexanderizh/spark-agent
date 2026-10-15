@@ -9167,7 +9167,7 @@ export class SessionService {
         providerProfileId: null,
         modelId: null,
         agentAdapter: 'claude-sdk',
-        permissionMode: 'claude-ask',
+        permissionMode: 'claude-auto',
         reasoningEffort: 'max',
         prompt: '',
         ruleIds: [],

@@ -73,22 +73,22 @@ describe('Provider/Model resolution regression', () => {
       }
     })
 
-    it('defaults to claude-ask for claude-sdk adapter with null value', () => {
-      expect(getPermissionModeFromSession(null, 'claude-sdk')).toBe('claude-ask')
-      expect(getPermissionModeFromSession(undefined, 'claude-sdk')).toBe('claude-ask')
+    it('defaults to claude-auto for claude-sdk adapter with null value', () => {
+      expect(getPermissionModeFromSession(null, 'claude-sdk')).toBe('claude-auto')
+      expect(getPermissionModeFromSession(undefined, 'claude-sdk')).toBe('claude-auto')
     })
 
-    it('defaults to codex-default for codex adapter with null value', () => {
-      expect(getPermissionModeFromSession(null, 'codex')).toBe('codex-default')
-      expect(getPermissionModeFromSession(undefined, 'codex')).toBe('codex-default')
+    it('defaults to codex-auto-review for codex adapter with null value', () => {
+      expect(getPermissionModeFromSession(null, 'codex')).toBe('codex-auto-review')
+      expect(getPermissionModeFromSession(undefined, 'codex')).toBe('codex-auto-review')
     })
 
-    it('defaults to claude-ask for claude adapter with invalid value', () => {
-      expect(getPermissionModeFromSession('invalid-mode', 'claude-sdk')).toBe('claude-ask')
+    it('defaults to claude-auto for claude adapter with invalid value', () => {
+      expect(getPermissionModeFromSession('invalid-mode', 'claude-sdk')).toBe('claude-auto')
     })
 
-    it('defaults to codex-default for codex adapter with invalid value', () => {
-      expect(getPermissionModeFromSession('invalid-mode', 'codex')).toBe('codex-default')
+    it('defaults to codex-auto-review for codex adapter with invalid value', () => {
+      expect(getPermissionModeFromSession('invalid-mode', 'codex')).toBe('codex-auto-review')
     })
 
     it('claude modes work regardless of adapter', () => {
@@ -414,8 +414,8 @@ describe('Provider/Model resolution regression', () => {
       const claudeMode = getPermissionModeFromSession(null, 'claude-sdk')
       const codexMode = getPermissionModeFromSession(null, 'codex')
 
-      expect(claudeMode).toBe('claude-ask')
-      expect(codexMode).toBe('codex-default')
+      expect(claudeMode).toBe('claude-auto')
+      expect(codexMode).toBe('codex-auto-review')
       expect(claudeMode).not.toBe(codexMode)
     })
 

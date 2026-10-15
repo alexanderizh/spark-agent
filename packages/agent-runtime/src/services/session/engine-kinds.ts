@@ -147,9 +147,11 @@ export function getPermissionModeFromSession(
   ) {
     return value
   }
-  if (adapter === 'codex') return 'codex-default'
+  // 会话缺省权限档位取各适配器「自动」档：claude → claude-auto（自动审批）、
+  // codex → codex-auto-review（替我批准）；spark 侧维持手动审批不变。
+  if (adapter === 'codex') return 'codex-auto-review'
   if (adapter === 'spark') return 'spark-default'
-  return 'claude-ask'
+  return 'claude-auto'
 }
 
 function normalizeAgentAdapter(value: string | null | undefined): AgentAdapterKind {

@@ -115,7 +115,7 @@ export class AgentRepository extends BaseRepository {
         params.providerProfileId ?? null,
         params.modelId ?? null,
         params.agentAdapter ?? 'claude-sdk',
-        params.permissionMode ?? 'claude-ask',
+        params.permissionMode ?? 'claude-auto',
         params.reasoningEffort ?? 'max',
         params.prompt ?? '',
         this.toJson(params.ruleIds ?? []),

@@ -82,18 +82,18 @@ describe('normalizePermissionMode', () => {
     }
   })
 
-  it('空值/未知值回落 claude-ask（系统默认侧）', () => {
-    expect(normalizePermissionMode(null)).toBe('claude-ask')
-    expect(normalizePermissionMode(undefined)).toBe('claude-ask')
-    expect(normalizePermissionMode('acceptEdits')).toBe('claude-ask')
+  it('空值/未知值回落 claude-auto（系统默认侧，会话缺省自动档）', () => {
+    expect(normalizePermissionMode(null)).toBe('claude-auto')
+    expect(normalizePermissionMode(undefined)).toBe('claude-auto')
+    expect(normalizePermissionMode('acceptEdits')).toBe('claude-auto')
   })
 
-  it('非法 codex-* 脏字符串回落 claude-ask（查表化的已知差异，旧实现会回落 codex-default）', () => {
-    expect(normalizePermissionMode('codex-unknown-dirty')).toBe('claude-ask')
+  it('非法 codex-* 脏字符串回落 claude-auto（查表化的已知差异，旧实现会回落 codex 侧默认）', () => {
+    expect(normalizePermissionMode('codex-unknown-dirty')).toBe('claude-auto')
   })
 
-  it('非法 spark-* 脏字符串回落 claude-ask', () => {
-    expect(normalizePermissionMode('spark-unknown-dirty')).toBe('claude-ask')
+  it('非法 spark-* 脏字符串回落 claude-auto', () => {
+    expect(normalizePermissionMode('spark-unknown-dirty')).toBe('claude-auto')
   })
 })
 
@@ -132,9 +132,9 @@ describe('getAgentAdapterFromSession / getPermissionModeFromSession（迁移回�
     expect(getAgentAdapterFromSession(null, 'codex', 'anthropic', true)).toBe('codex')
   })
 
-  it('权限模式按 adapter 侧回落', () => {
-    expect(getPermissionModeFromSession(null, 'codex')).toBe('codex-default')
-    expect(getPermissionModeFromSession(null, 'claude-sdk')).toBe('claude-ask')
+  it('权限模式按 adapter 侧回落（claude/codex 缺省自动档，spark 维持手动）', () => {
+    expect(getPermissionModeFromSession(null, 'codex')).toBe('codex-auto-review')
+    expect(getPermissionModeFromSession(null, 'claude-sdk')).toBe('claude-auto')
     expect(getPermissionModeFromSession(null, 'spark')).toBe('spark-default')
     expect(getPermissionModeFromSession('claude-auto', 'codex')).toBe('claude-auto')
     expect(getPermissionModeFromSession('spark-accept-edits', 'spark')).toBe('spark-accept-edits')

@@ -7,6 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, us
 import type { ReactNode } from 'react'
 import { useIpcInvoke, useIpcStream } from './hooks/useIpc'
 import { createSingleFlightRefresh } from './services/single-flight-refresh'
+import { getDefaultPermissionMode } from './utils/permission-options'
 import { useOptionalToast, type ToastFn } from './components/Toast'
 import { useApp } from './AppContext'
 import { useI18n } from './i18n'
@@ -111,10 +112,8 @@ function getValidPermissionMode(
   mode: SessionPermissionMode | undefined,
   adapter: SessionAgentAdapter,
 ): SessionPermissionMode {
-  if (!mode) {
-    if (adapter === 'codex') return 'codex-default'
-    return 'claude-auto-edits'
-  }
+  // 缺省回落各适配器默认档（claude/codex 均为「自动」档，spark 手动）。
+  if (!mode) return getDefaultPermissionMode(adapter)
   return mode
 }
 

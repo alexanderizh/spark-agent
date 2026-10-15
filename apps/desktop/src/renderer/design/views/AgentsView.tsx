@@ -185,7 +185,7 @@ const EMPTY_DRAFT: AgentDraft = {
   providerProfileId: '',
   modelId: '',
   agentAdapter: 'claude-sdk',
-  permissionMode: 'claude-ask',
+  permissionMode: 'claude-auto',
   reasoningEffort: 'medium',
   reasoningBudgetTokens: '',
   prompt: '',
@@ -2455,9 +2455,10 @@ function getPermissionOptions(
 }
 
 function getDefaultPermissionMode(adapter: SessionAgentAdapter): SessionPermissionMode {
-  if (adapter === 'codex') return 'codex-default'
+  // 会话缺省权限档位：claude / codex 默认「自动」档，spark 维持手动审批。
+  if (adapter === 'codex') return 'codex-auto-review'
   if (adapter === 'spark') return 'spark-default'
-  return 'claude-ask'
+  return 'claude-auto'
 }
 
 function isPermissionModeAllowedForAdapter(

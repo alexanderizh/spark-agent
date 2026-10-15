@@ -75,6 +75,8 @@ import { ModelUsageTrendCard } from './ModelUsageTrendCard'
 import { needsSdkInstallAction } from './sdkIntegrityPresentation'
 import { CustomCommandsSection } from './custom-commands/CustomCommandsSection'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
+import { SPARK_PERMISSION_MODE_OPTIONS as SHARED_SPARK_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
+import { getDefaultPermissionMode } from '../utils/permission-options'
 import { ComputerUseSettingsSection } from '../computer-use/ComputerUseSettingsSection'
 import { AccountSyncSettingsSection } from './account-sync/AccountSyncSettingsSection'
 import { UpdateReleaseNotesCard } from './UpdateReleaseNotesCard'
@@ -5024,10 +5026,20 @@ const CODEX_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] =
     ...(tone === 'auto' || tone === 'danger' ? { tone } : {}),
   }))
 
+const SPARK_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] =
+  SHARED_SPARK_PERMISSION_MODE_OPTIONS.map(({ value, label, description, tone }) => ({
+    value,
+    label,
+    desc: description,
+    ...(tone === 'auto' || tone === 'danger' ? { tone } : {}),
+  }))
+
 function getRuntimePermissionModeOptions(
   adapter: SessionAgentAdapter,
 ): RuntimePermissionModeOption[] {
-  return adapter === 'codex' ? CODEX_RUNTIME_PERMISSION_OPTIONS : CLAUDE_RUNTIME_PERMISSION_OPTIONS
+  if (adapter === 'codex') return CODEX_RUNTIME_PERMISSION_OPTIONS
+  if (adapter === 'spark') return SPARK_RUNTIME_PERMISSION_OPTIONS
+  return CLAUDE_RUNTIME_PERMISSION_OPTIONS
 }
 
 function getValidRuntimePermissionMode(
@@ -5037,13 +5049,16 @@ function getValidRuntimePermissionMode(
   const options = getRuntimePermissionModeOptions(adapter)
   return options.some((option) => option.value === value)
     ? (value as SessionPermissionMode)
-    : (options[0]?.value ?? 'claude-ask')
+    : getDefaultPermissionMode(adapter)
 }
 
 function normalizeRuntimePermissionSettings(value: unknown): RuntimePermissionSettings {
   const source = value != null && typeof value === 'object' ? (value as RuntimePermissionPrefs) : {}
   const adapter =
-    source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
+    source.adapter === 'claude' ||
+    source.adapter === 'claude-sdk' ||
+    source.adapter === 'codex' ||
+    source.adapter === 'spark'
       ? source.adapter
       : 'claude-sdk'
   return {

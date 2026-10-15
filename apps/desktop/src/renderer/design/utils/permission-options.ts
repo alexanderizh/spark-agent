@@ -83,6 +83,17 @@ export function getPermissionModeOptions(adapter: SessionAgentAdapter): Array<Co
   return CLAUDE_PERMISSION_MODE_OPTIONS
 }
 
+/**
+ * 会话缺省权限档位：claude / codex 适配器默认取「自动」档
+ * （claude-auto 自动审批 / codex-auto-review 替我批准），spark 侧维持手动审批。
+ * 与 runtime 侧 engine-kinds.getPermissionModeFromSession 的兜底保持一致。
+ */
+export function getDefaultPermissionMode(adapter: SessionAgentAdapter): SessionPermissionMode {
+  if (adapter === 'codex') return 'codex-auto-review'
+  if (adapter === 'spark') return 'spark-default'
+  return 'claude-auto'
+}
+
 /** 校验权限模式是否适配当前 adapter，不适配则回退到该 adapter 的默认值 */
 export function getValidPermissionMode(
   value: SessionPermissionMode | undefined,
@@ -91,7 +102,7 @@ export function getValidPermissionMode(
   const options = getPermissionModeOptions(adapter)
   return options.some((option) => option.value === value)
     ? (value as SessionPermissionMode)
-    : (options[0]?.value ?? 'claude-ask')
+    : getDefaultPermissionMode(adapter)
 }
 
 /** 权限档位（跨引擎语义等价分组，与 runtime permission-mapper 的分组对齐） */

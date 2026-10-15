@@ -143,7 +143,7 @@ function reducer(state: OnboardingState, action: Action, t: TranslateFn): Onboar
     case 'set-local-cli': {
       const adapter: SessionAgentAdapter = action.kind === 'codex' ? 'codex' : 'claude-sdk'
       const permissionMode: SessionPermissionMode =
-        action.kind === 'codex' ? 'codex-default' : 'claude-auto-edits'
+        action.kind === 'codex' ? 'codex-auto-review' : 'claude-auto'
       return {
         ...state,
         providerProfileId: action.providerProfileId,
@@ -202,7 +202,7 @@ function getTemplates(t: TranslateFn): Record<TemplateId, AssistantTemplate> {
       title: t('onboarding.template.generalTitle'),
       name: t('onboarding.template.generalName'),
       desc: t('onboarding.template.generalDesc'),
-      permissionMode: 'claude-auto-edits',
+      permissionMode: 'claude-auto',
       adapter: 'claude-sdk',
       prompt: t('onboarding.template.generalPrompt'),
     },
@@ -210,7 +210,7 @@ function getTemplates(t: TranslateFn): Record<TemplateId, AssistantTemplate> {
       title: t('onboarding.template.documentTitle'),
       name: t('onboarding.template.documentName'),
       desc: t('onboarding.template.documentDesc'),
-      permissionMode: 'claude-auto-edits',
+      permissionMode: 'claude-auto',
       adapter: 'claude-sdk',
       prompt: t('onboarding.template.documentPrompt'),
     },
@@ -218,7 +218,7 @@ function getTemplates(t: TranslateFn): Record<TemplateId, AssistantTemplate> {
       title: t('onboarding.template.workTitle'),
       name: t('onboarding.template.workName'),
       desc: t('onboarding.template.workDesc'),
-      permissionMode: 'claude-auto-edits',
+      permissionMode: 'claude-auto',
       adapter: 'claude-sdk',
       prompt: t('onboarding.template.workPrompt'),
     },
@@ -226,7 +226,7 @@ function getTemplates(t: TranslateFn): Record<TemplateId, AssistantTemplate> {
       title: t('onboarding.template.developerTitle'),
       name: t('onboarding.template.developerName'),
       desc: t('onboarding.template.developerDesc'),
-      permissionMode: 'claude-auto-edits',
+      permissionMode: 'claude-auto',
       adapter: 'claude-sdk',
       prompt: t('onboarding.template.developerPrompt'),
     },

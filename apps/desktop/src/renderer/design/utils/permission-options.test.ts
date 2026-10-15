@@ -79,9 +79,9 @@ describe('mapPermissionModeAcrossAdapters', () => {
     expect(mapPermissionModeAcrossAdapters('claude-auto', 'spark')).toBe('spark-auto')
   })
 
-  it('空值兜底回目标引擎默认档', () => {
-    expect(mapPermissionModeAcrossAdapters(undefined, 'codex')).toBe('codex-default')
+  it('空值兜底回目标引擎默认档（claude/codex 缺省自动档，spark 手动）', () => {
+    expect(mapPermissionModeAcrossAdapters(undefined, 'codex')).toBe('codex-auto-review')
     expect(mapPermissionModeAcrossAdapters(undefined, 'spark')).toBe('spark-default')
-    expect(mapPermissionModeAcrossAdapters(undefined, 'claude')).toBe('claude-ask')
+    expect(mapPermissionModeAcrossAdapters(undefined, 'claude')).toBe('claude-auto')
   })
 })

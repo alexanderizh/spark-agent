@@ -194,6 +194,7 @@ import { QuickReplySuggestions } from './QuickReplySuggestions'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { SPARK_PERMISSION_MODE_OPTIONS as SHARED_SPARK_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { mapPermissionModeAcrossAdapters } from '../../utils/permission-options'
+import { getDefaultPermissionMode } from '../../utils/permission-options'
 import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
 import { sortByManualOrderWithinPinnedSections } from '../../sidebar-manual-order'
 import {
@@ -1116,7 +1117,7 @@ export function ComposerV2({
   const permissionOptions = getPermissionModeOptions(adapter)
   const sessionPermissionMode = session?.permissionMode
   const draftEffectivePermissionMode = sessionPermissionMode ?? draftPermissionMode
-  const defaultPermissionMode = permissionOptions[0]?.value ?? 'claude-ask'
+  const defaultPermissionMode = getDefaultPermissionMode(adapter)
   const effectivePermissionMode = permissionOptions.some(
     (option) => option.value === draftEffectivePermissionMode,
   )
@@ -1872,7 +1873,7 @@ export function ComposerV2({
     )
     if (fallbackProvider == null) return
     const nextAdapter = getProviderAdapterKind(fallbackProvider)
-    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
+    const nextPermissionMode = getDefaultPermissionMode(nextAdapter)
     const nextModel = getProviderDefaultModel(fallbackProvider, fallbackProvider.modelIds[0])
     setDraftAdapter(nextAdapter)
     setDraftPermissionMode(nextPermissionMode)
@@ -3780,7 +3781,7 @@ export function ComposerV2({
     const clearCliSparkOverride = cliSparkOverride != null && !keepCliSparkOverride
     if (clearCliSparkOverride) setCliSparkOverride(null)
     const nextAdapter = getProviderAdapterKind(provider)
-    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
+    const nextPermissionMode = getDefaultPermissionMode(nextAdapter)
     setDraftAdapter(nextAdapter)
     setDraftPermissionMode(nextPermissionMode)
     setSelectedProviderId(providerId)
@@ -3925,7 +3926,7 @@ export function ComposerV2({
   const handleAdapterChange = async (nextAdapter: AgentAdapter) => {
     if (nextAdapter === adapter) return
     setDraftAdapter(nextAdapter)
-    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
+    const nextPermissionMode = getDefaultPermissionMode(nextAdapter)
     setDraftPermissionMode(nextPermissionMode)
     const nextProvider = providers.find(
       (provider) => getProviderAdapterKind(provider) === nextAdapter,
@@ -6755,7 +6756,7 @@ function getValidPermissionMode(
   const options = getPermissionModeOptions(adapter)
   return options.some((option) => option.value === value)
     ? (value as PermissionModeChoice)
-    : (options[0]?.value ?? 'claude-ask')
+    : getDefaultPermissionMode(adapter)
 }
 
 function normalizeRuntimePermissionPrefs(value: unknown): {
@@ -6764,7 +6765,10 @@ function normalizeRuntimePermissionPrefs(value: unknown): {
 } {
   const source = value != null && typeof value === 'object' ? (value as ComposerPrefs) : {}
   const adapter =
-    source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
+    source.adapter === 'claude' ||
+    source.adapter === 'claude-sdk' ||
+    source.adapter === 'codex' ||
+    source.adapter === 'spark'
       ? source.adapter
       : DEFAULT_AGENT_ADAPTER
   return {
