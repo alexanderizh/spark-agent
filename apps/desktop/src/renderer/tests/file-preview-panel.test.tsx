@@ -4,6 +4,7 @@ import React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { HTML_FRAME_SANDBOX } from '@spark/shared'
 import { FilePreviewPanel } from '../design/components/FilePreviewPanel'
 import { getPreviewFileType } from '../design/components/FileDisplay'
 import { ToastProvider } from '../design/components/Toast'
@@ -104,8 +105,51 @@ describe('FilePreviewPanel', () => {
     await vi.waitFor(() => {
       const iframe = container.querySelector('iframe.file-preview-html')
       expect(iframe).not.toBeNull()
-      expect(iframe?.getAttribute('sandbox')).toBe('allow-popups allow-popups-to-escape-sandbox')
-      expect(iframe?.getAttribute('srcdoc')).toContain('hello')
+      // 与聊天 HTML 渲染块同一沙箱令牌：allow-scripts 等全开，
+      // 隔离边界由 capability-asset 跨源 origin 提供（无 allow-top-navigation）。
+      expect(iframe?.getAttribute('sandbox')).toBe(HTML_FRAME_SANDBOX)
+      // 文档经主进程登记的 capability-asset 独立容器加载（可跑脚本、无 CSP 继承），
+      // 不再使用被 renderer CSP 拦截内联内容的 srcdoc。
+      expect(iframe?.getAttribute('src') ?? '').toContain('capability-asset://html-render/')
+      expect(iframe?.getAttribute('srcdoc')).toBeNull()
     })
+
+    const putCalls = invoke.mock.calls.filter((call) => call[0] === 'html:put-runtime-doc')
+    expect(putCalls).toHaveLength(1)
+    expect(putCalls[0]?.[1]).toMatchObject({ document: '<h1>hello</h1>' })
+  })
+
+  it('releases the html runtime doc on unmount', async () => {
+    invoke = vi.fn(async (channel: string) => {
+      if (channel === 'file:read') return { content: '<h1>bye</h1>' }
+      if (channel === 'file:open') return { opened: true }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <FilePreviewPanel filePath="/tmp/bye.html" fileType="html" onClose={vi.fn()} />
+        </ToastProvider>,
+      )
+      await Promise.resolve()
+    })
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('iframe.file-preview-html')).not.toBeNull()
+    })
+
+    await act(async () => {
+      root?.unmount()
+      root = null
+    })
+
+    const releaseCalls = invoke.mock.calls.filter((call) => call[0] === 'html:release-runtime-doc')
+    expect(releaseCalls).toHaveLength(1)
   })
 })

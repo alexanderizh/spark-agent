@@ -8,7 +8,7 @@
  *   4. 文本文件（.txt, .text）
  */
 
-import { lazy, Suspense, useEffect, useState, useCallback } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -16,6 +16,7 @@ import type {
   ReactNode,
 } from 'react'
 import './FilePreviewPanel.less'
+import { HTML_FRAME_SANDBOX } from '@spark/shared'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
@@ -24,6 +25,12 @@ import { FileMarkdownView } from './FileMarkdownView'
 import type { FileViewerProps } from '@file-viewer/react'
 import type { PreviewFileType } from './ClickableFilePath'
 import { FileTypeIcon } from './FileDisplay'
+import {
+  buildHtmlRenderToken,
+  htmlRenderDocUrl,
+  putHtmlRuntimeDoc,
+  releaseHtmlRuntimeDoc,
+} from '../services/render-html'
 import {
   isRemotePreviewUrl,
   resolveViewerLoadSource,
@@ -143,29 +150,6 @@ const FILE_PREVIEW_COMPACT_BREAKPOINT = 900
 const FILE_PREVIEW_CHAT_RESERVE = 566
 const FILE_PREVIEW_VIEWPORT_GUTTER = 24
 
-const HTML_PREVIEW_CONTAINMENT_STYLE = `
-html {
-  box-sizing: border-box;
-  min-width: 0;
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-*, *::before, *::after {
-  box-sizing: inherit;
-}
-
-body {
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-img, video, canvas, svg, iframe, table {
-  max-width: 100%;
-}
-`
-
 function clampPanelWidth(width: number): number {
   if (typeof window === 'undefined') {
     return Math.min(Math.max(width, FILE_PREVIEW_MIN_WIDTH), FILE_PREVIEW_MAX_WIDTH)
@@ -189,22 +173,14 @@ function readPreviewPanelWidth(): number {
     : clampPanelWidth(FILE_PREVIEW_DEFAULT_WIDTH)
 }
 
-function buildHtmlPreviewDocument(content: string): string {
-  const containmentStyle = `<style data-spark-preview-containment>${HTML_PREVIEW_CONTAINMENT_STYLE}</style>`
-
-  if (/<head[\s>]/i.test(content)) {
-    return content.replace(/<head(\s[^>]*)?>/i, (match) => `${match}${containmentStyle}`)
-  }
-
-  if (/<html[\s>]/i.test(content)) {
-    return content.replace(
-      /<html(\s[^>]*)?>/i,
-      (match) => `${match}<head>${containmentStyle}</head>`,
-    )
-  }
-
-  return `<!doctype html><html><head>${containmentStyle}</head><body>${content}</body></html>`
-}
+/**
+ * HTML 预览不合成、不注入任何样式：文件内容经主进程登记为
+ * `capability-asset://html-render/<token>` 独立文档后由 iframe 原样加载
+ * （机制同 RenderHtmlBlock，见 services/render-html.ts）。独立空策略容器
+ * 没有 renderer CSP 继承，脚本（含 eval/worker）、内联/外联样式、外链与
+ * 相对资源全部与外部浏览器一致；iframe 视口天然裁剪内容溢出，不会波及
+ * 宿主布局。
+ */
 
 export function FilePreviewPanel({
   filePath,
@@ -220,12 +196,17 @@ export function FilePreviewPanel({
   const [error, setError] = useState<string | null>(null)
   const [openingExternal, setOpeningExternal] = useState(false)
   const [panelWidth, setPanelWidth] = useState(readPreviewPanelWidth)
+  const [htmlFrame, setHtmlFrame] = useState<{ src: string; version: number } | null>(null)
+  const [htmlFrameError, setHtmlFrameError] = useState<string | null>(null)
+  const htmlDocVersionRef = useRef(0)
   const { invoke: readFile } = useIpcInvoke('file:read')
   const { invoke: readBinaryFile } = useIpcInvoke('file:read-binary')
   const { toast } = useToast()
   const resolvedFilePath = resolvePreviewPath(filePath, workspaceRootPath)
-  const htmlPreviewDocument =
-    fileType === 'html' && content !== null ? buildHtmlPreviewDocument(content) : null
+  const htmlDocToken = useMemo(
+    () => buildHtmlRenderToken(`file-preview:${resolvedFilePath}`),
+    [resolvedFilePath],
+  )
   const activeViewerLoadState =
     viewerLoadState?.filePath === resolvedFilePath ? viewerLoadState : null
   const viewerSource =
@@ -280,6 +261,32 @@ export function FilePreviewPanel({
       cancelled = true
     }
   }, [fileType, readFile, resolvedFilePath])
+
+  // HTML 预览：文件内容登记为主进程沙箱文档（capability-asset://html-render），
+  // iframe 用协议地址加载而非 srcdoc —— srcdoc 会继承 renderer CSP，内联脚本、
+  // 外链资源全被拦，且 sandbox 不给 allow-scripts 时 JS 完全不执行。token 由
+  // 文件路径派生（稳定，重开同一文件 put 幂等覆盖），version 递增强制 iframe
+  // 重新加载；卸载时 release，兜底由注册表 TTL 回收。
+  useEffect(() => {
+    if (fileType !== 'html' || content === null) return
+
+    let cancelled = false
+    htmlDocVersionRef.current += 1
+    const version = htmlDocVersionRef.current
+    putHtmlRuntimeDoc(htmlDocToken, content)
+      .then(() => {
+        if (cancelled) return
+        setHtmlFrameError(null)
+        setHtmlFrame({ src: htmlRenderDocUrl(htmlDocToken, version), version })
+      })
+      .catch(() => {
+        if (!cancelled) setHtmlFrameError('HTML 预览文档登记失败')
+      })
+    return () => {
+      cancelled = true
+      releaseHtmlRuntimeDoc(htmlDocToken)
+    }
+  }, [content, fileType, htmlDocToken])
 
   useEffect(() => {
     if (fileType !== 'universal' || isRemotePreviewUrl(resolvedFilePath)) return
@@ -539,14 +546,34 @@ export function FilePreviewPanel({
             </Suspense>
           </div>
         )}
-        {!previewLoading && !previewError && fileType === 'html' && content !== null && (
-          <iframe
-            className="file-preview-html"
-            srcDoc={htmlPreviewDocument ?? ''}
-            sandbox="allow-popups allow-popups-to-escape-sandbox"
-            title={`${fileName} 预览`}
-          />
+        {!previewLoading && !previewError && fileType === 'html' && htmlFrameError != null && (
+          <div className="file-preview-error">
+            <Icons.AlertTriangle size={20} />
+            <span>{htmlFrameError}</span>
+          </div>
         )}
+        {!previewLoading &&
+          !previewError &&
+          fileType === 'html' &&
+          htmlFrameError == null &&
+          htmlFrame === null && (
+            <div className="file-preview-loading">
+              <Icons.Spinner size={20} />
+              <span>加载中...</span>
+            </div>
+          )}
+        {!previewLoading &&
+          !previewError &&
+          fileType === 'html' &&
+          htmlFrameError == null &&
+          htmlFrame !== null && (
+            <iframe
+              className="file-preview-html"
+              src={htmlFrame.src}
+              sandbox={HTML_FRAME_SANDBOX}
+              title={`${fileName} 预览`}
+            />
+          )}
         {!previewLoading && !previewError && fileType === 'markdown' && content !== null && (
           <div className="file-preview-markdown">
             <FileMarkdownView
