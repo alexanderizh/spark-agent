@@ -98,6 +98,9 @@
 }
 
 .home-device-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 66rpx;
   height: 66rpx;
   flex: none;
@@ -371,6 +374,8 @@
   width: 116rpx;
   height: 64rpx;
   flex: none;
+  /* Match selector value text edges by reserving the trailing chevron and gap. */
+  margin-right: 44rpx;
   display: flex;
   align-items: center;
   justify-content: flex-end;

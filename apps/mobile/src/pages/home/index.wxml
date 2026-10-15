@@ -49,7 +49,7 @@
     >
       <view class="row between home-device-heading">
         <view class="row gap-12 grow home-device-name-wrap">
-          <view class="home-device-icon center">
+          <view class="home-device-icon">
             <view class="icon icon-monitor"></view>
           </view>
           <text class="home-device-name ellipsis">{{item.name}}</text>
