@@ -1,0 +1,288 @@
+/* 会话定时任务页：列表卡片 + 页内表单（浅底白卡，与 project-sessions 同风格） */
+
+.st-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #f7f6f4;
+  padding-bottom: 160rpx;
+}
+
+.st-loading,
+.st-error {
+  margin: 24rpx 32rpx;
+  padding: 48rpx 0;
+  text-align: center;
+  font-size: 26rpx;
+  color: #8a8782;
+}
+
+.st-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.st-retry {
+  font-size: 24rpx;
+  color: #3b82f6;
+  padding: 8rpx 28rpx;
+  border-radius: 999rpx;
+  background: #eef4fe;
+}
+
+.st-hover-dim {
+  opacity: 0.7;
+}
+
+/* ─── 列表卡片 ──────────────────────────────────────────────────────────────── */
+
+.st-card {
+  margin: 20rpx 32rpx 0;
+  padding: 24rpx;
+  background: #fff;
+  border: 1rpx solid #ececec;
+  border-radius: 20rpx;
+}
+
+.st-card-head {
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.st-card-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #26251f;
+}
+
+.st-card-prompt {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: #6b6862;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.st-card-meta {
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.st-trigger-tag {
+  font-size: 20rpx;
+  color: #3b82f6;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+  background: #eef4fe;
+  flex-shrink: 0;
+}
+
+.st-meta-text {
+  font-size: 20rpx;
+  color: #a09d96;
+}
+
+.st-card-error {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: #dc2626;
+}
+
+.st-card-actions {
+  gap: 28rpx;
+  margin-top: 18rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid #f2f0ec;
+}
+
+.st-card-action {
+  font-size: 24rpx;
+  color: #3b82f6;
+}
+
+.st-card-action--danger {
+  color: #dc2626;
+}
+
+/* ─── 悬浮新建按钮 ──────────────────────────────────────────────────────────── */
+
+.st-fab-safe {
+  height: 40rpx;
+}
+
+.st-fab {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(48rpx + env(safe-area-inset-bottom));
+  padding: 20rpx 56rpx;
+  border-radius: 999rpx;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 28rpx;
+  font-weight: 600;
+  box-shadow: 0 8rpx 24rpx rgba(59, 130, 246, 0.35);
+}
+
+/* ─── 空态入口 ──────────────────────────────────────────────────────────────── */
+
+.st-empty-create {
+  margin-top: 24rpx;
+  padding: 14rpx 48rpx;
+  border-radius: 999rpx;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 26rpx;
+}
+
+/* ─── 表单 ──────────────────────────────────────────────────────────────────── */
+
+.st-form {
+  margin: 24rpx 32rpx;
+  padding: 32rpx 28rpx;
+  background: #fff;
+  border: 1rpx solid #ececec;
+  border-radius: 20rpx;
+}
+
+.st-form-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #26251f;
+  margin-bottom: 24rpx;
+}
+
+.st-field {
+  margin-bottom: 24rpx;
+}
+
+.st-field--inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.st-field-label {
+  display: block;
+  margin-bottom: 12rpx;
+  font-size: 24rpx;
+  color: #6b6862;
+}
+
+.st-field--inline .st-field-label {
+  margin-bottom: 0;
+}
+
+.st-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16rpx 20rpx;
+  border: 1rpx solid #e5e3de;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  color: #26251f;
+  background: #fafaf8;
+}
+
+.st-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 140rpx;
+  padding: 16rpx 20rpx;
+  border: 1rpx solid #e5e3de;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  line-height: 1.5;
+  color: #26251f;
+  background: #fafaf8;
+}
+
+.st-placeholder {
+  color: #b5b2ab;
+}
+
+.st-picker-value {
+  padding: 16rpx 20rpx;
+  border: 1rpx solid #e5e3de;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  color: #26251f;
+  background: #fafaf8;
+  min-width: 200rpx;
+  text-align: center;
+}
+
+.st-segments {
+  gap: 12rpx;
+}
+
+.st-segment {
+  flex: 1;
+  text-align: center;
+  padding: 14rpx 0;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  color: #6b6862;
+  background: #f2f0ec;
+}
+
+.st-segment--on {
+  color: #3b82f6;
+  background: #eef4fe;
+  font-weight: 600;
+}
+
+.st-advanced-toggle {
+  justify-content: space-between;
+  padding: 8rpx 4rpx;
+  font-size: 24rpx;
+  color: #8a8782;
+}
+
+.st-advanced-arrow {
+  font-size: 28rpx;
+  color: #a8a49a;
+  transition: transform 0.15s ease;
+}
+
+.st-advanced-arrow--open {
+  transform: rotate(90deg);
+}
+
+.st-advanced {
+  padding-top: 8rpx;
+}
+
+.st-form-actions {
+  gap: 20rpx;
+  margin-top: 12rpx;
+}
+
+.st-btn {
+  flex: 1;
+  text-align: center;
+  padding: 20rpx 0;
+  border-radius: 14rpx;
+  font-size: 28rpx;
+  color: #6b6862;
+  background: #f2f0ec;
+}
+
+.st-btn--primary {
+  color: #fff;
+  background: #3b82f6;
+}
+
+.st-btn--busy {
+  opacity: 0.6;
+}

@@ -29,8 +29,11 @@ try {
             namespace: 'smoke',
           }))
           buildApi.onLoad({ filter: /.*/, namespace: 'smoke' }, () => ({
-            contents:
+            contents: [
               'export const createLogger = () => ({ debug() {}, info() {}, warn() {}, error() {} })',
+              // MobileBridgeService 会 re-export 领域异常（侧栏排序等带错误码校验），桩里补最小实现
+              'export class SparkError extends Error { constructor(code, message, context) { super(message); this.name = "SparkError"; this.code = code; if (context !== undefined) this.context = context } }',
+            ].join('\n'),
             loader: 'js',
           }))
         },

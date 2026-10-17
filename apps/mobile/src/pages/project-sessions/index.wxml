@@ -27,6 +27,10 @@
         data-filter="{{item}}"
         bindtap="onFilterChange"
       >{{item === 'all' ? '全部' : (item === 'running' ? '进行中' : '异常')}}</view>
+      <view
+        class="ps-segment {{labelFilter !== '' ? 'ps-segment--accent' : ''}}"
+        bindtap="onOpenLabelFilterPanel"
+      >{{labelFilterText}}</view>
     </view>
     <view class="ps-search row">
       <view class="icon icon-sm icon-search"></view>
@@ -60,7 +64,7 @@
   </view>
 
   <block wx:else>
-    <view wx:if="{{groups.length === 0}}" class="ps-empty">
+    <view wx:if="{{groups.length === 0 && contentMatches.length === 0}}" class="ps-empty">
       <empty-state
         icon="chat"
         title="{{searchText ? '没有匹配的会话' : '项目下还没有会话'}}"
@@ -84,8 +88,36 @@
         >
           <view class="dot {{item.dotClass}}"></view>
           <view class="grow col gap-8 ps-row-text">
-            <text class="t-strong ellipsis">{{item.title}}</text>
+            <view class="row ps-row-title-line">
+              <text class="t-strong ellipsis grow">{{item.title}}</text>
+              <view wx:if="{{item.labelText}}" class="ps-label-tag {{item.labelClass}}">{{item.labelText}}</view>
+            </view>
             <text class="t-caption ellipsis">{{item.statusLabel}} · {{item.timeLabel}}{{item.preview ? ' · ' + item.preview : ''}}</text>
+          </view>
+          <view class="icon icon-chevron"></view>
+        </view>
+      </view>
+
+      <!-- 内容匹配（服务器 FTS5 搜索正文；与上方标题匹配去重，仅搜索时出现） -->
+      <view wx:if="{{contentMatches.length > 0}}" class="ps-group">
+        <view class="group-title">内容匹配</view>
+        <view
+          wx:for="{{contentMatches}}"
+          wx:key="sessionId"
+          class="list-row"
+          hover-class="list-row--hover"
+          data-id="{{item.sessionId}}"
+          data-title="{{item.title}}"
+          bindtap="onOpenSession"
+        >
+          <view class="ps-match-icon icon icon-sm icon-search"></view>
+          <view class="grow col gap-8 ps-row-text">
+            <view class="row ps-row-title-line">
+              <text class="t-strong ellipsis grow">{{item.title}}</text>
+              <view wx:if="{{item.labelText}}" class="ps-label-tag {{item.labelClass}}">{{item.labelText}}</view>
+            </view>
+            <text class="ps-match-snippet">{{item.snippet}}</text>
+            <text class="t-caption ellipsis">{{item.statusLabel ? item.statusLabel + ' · ' : ''}}{{item.timeLabel}}</text>
           </view>
           <view class="icon icon-chevron"></view>
         </view>
@@ -95,13 +127,30 @@
 
   <view class="ps-spacer"></view>
 
-  <!-- 悬浮胶囊：当前项目发起新会话 -->
+  <!-- 悬浮胶囊：当前项目发起新会话（配置 chips 与会话页同构：模型/权限快捷行 + 推理配置条） -->
   <capsule-composer
     mode="float"
     value="{{quickText}}"
     placeholder="{{projectId === 'default' ? '在未归属项目中发起对话…' : '在 ' + (projectName || '项目') + ' 发起对话…'}}"
     disabled="{{quickSending || deviceOffline || deviceUnavailable}}"
+    chips="{{chips}}"
     bind:input="onQuickInput"
     bind:send="onQuickSend"
+    bind:chip="onChipTap"
   />
 </view>
+
+<!-- 新会话配置面板（模型/权限/推理，与会话页共用 sheet-panel） -->
+<sheet-panel
+  show="{{panelShow}}"
+  title="{{panelTitle}}"
+  mode="{{panelMode}}"
+  options="{{panelOptions}}"
+  loading="{{panelLoading}}"
+  emptyText="{{panelEmpty}}"
+  sliderOptions="{{panelSliderLabels}}"
+  sliderIndex="{{panelSliderIndex}}"
+  bind:close="closePanel"
+  bind:select="onPanelSelect"
+  bind:sliderchange="onPanelSliderChange"
+/>

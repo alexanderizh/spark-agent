@@ -1,0 +1,24 @@
+<!-- 会话分支横幅：来源回跳 + 子分支列表入口（两半区按需渲染） -->
+
+<view wx:if="{{sourceTitle || childCount > 0}}" class="lineage-banner">
+  <view
+    wx:if="{{sourceTitle}}"
+    class="lineage-cell lineage-cell--source"
+    hover-class="lineage-hover"
+    bindtap="onSourceTap"
+  >
+    <text class="lineage-muted">分支自</text>
+    <text class="lineage-title">《{{sourceTitle}}》</text>
+    <text class="lineage-arrow">›</text>
+  </view>
+  <view
+    wx:if="{{childCount > 0}}"
+    class="lineage-cell lineage-cell--children"
+    hover-class="lineage-hover"
+    bindtap="onChildrenTap"
+  >
+    <text class="lineage-count">{{childCount}}</text>
+    <text class="lineage-muted">个分支</text>
+    <text class="lineage-arrow">›</text>
+  </view>
+</view>

@@ -18,6 +18,19 @@
     <view class="projects-switch" bindtap="onBackToComputers">返回电脑列表</view>
   </view>
 
+  <!-- 项目搜索（桌面端同款标题过滤；与置顶/手动排序叠加生效） -->
+  <view wx:if="{{!loading && !deviceUnavailable && !deviceOffline && !errorText}}" class="projects-search row">
+    <view class="icon icon-sm icon-search"></view>
+    <input
+      class="projects-search-input"
+      value="{{searchText}}"
+      placeholder="搜索项目"
+      placeholder-style="color:#b3b0ab"
+      confirm-type="search"
+      bindinput="onSearchInput"
+    />
+  </view>
+
   <view wx:if="{{loading}}" class="loading-tip">正在加载这台电脑的项目…</view>
 
   <view wx:elif="{{deviceUnavailable}}" class="projects-state">
@@ -40,24 +53,57 @@
       <empty-state icon="folder" title="这台电脑还没有项目" desc="请先在桌面端打开一个项目；其会话会归入该项目。" />
     </view>
 
+    <view wx:elif="{{pinnedView.length === 0 && normalView.length === 0}}" class="projects-state">
+      <empty-state icon="folder" title="没有匹配的项目" desc="换个关键词试试" />
+    </view>
+
     <view wx:else class="projects-list">
-      <text class="group-title">这台电脑的项目</text>
-      <view
-        wx:for="{{projects}}"
-        wx:key="id"
-        class="projects-row row"
-        hover-class="projects-row--hover"
-        data-id="{{item.id}}"
-        data-name="{{item.name}}"
-        bindtap="onOpenProject"
-      >
-        <view class="icon {{item.isVirtual ? 'icon-chat' : 'icon-folder'}} projects-row-icon"></view>
-        <view class="grow col gap-4 projects-row-copy">
-          <text class="projects-row-name ellipsis">{{item.name}}</text>
-          <text class="t-caption">{{item.sessionCount}} 条会话</text>
+      <!-- 置顶段（长按可取消置顶/调序） -->
+      <block wx:if="{{pinnedView.length > 0}}">
+        <text class="group-title">置顶</text>
+        <view
+          wx:for="{{pinnedView}}"
+          wx:key="id"
+          class="projects-row row"
+          hover-class="projects-row--hover"
+          data-id="{{item.id}}"
+          data-name="{{item.name}}"
+          bindtap="onOpenProject"
+          bindlongpress="onProjectLongPress"
+        >
+          <view class="icon icon-folder projects-row-icon"></view>
+          <view class="grow col gap-4 projects-row-copy">
+            <view class="row projects-row-name-line">
+              <text class="projects-row-name ellipsis grow">{{item.name}}</text>
+              <view class="icon icon-pin projects-row-pin"></view>
+            </view>
+            <text class="t-caption">{{item.sessionCount}} 条会话</text>
+          </view>
+          <view class="icon icon-chevron"></view>
         </view>
-        <view class="icon icon-chevron"></view>
-      </view>
+      </block>
+
+      <!-- 普通段（虚拟「未归属项目」恒在末尾，不参与排序） -->
+      <block wx:if="{{normalView.length > 0}}">
+        <text class="group-title">项目</text>
+        <view
+          wx:for="{{normalView}}"
+          wx:key="id"
+          class="projects-row row"
+          hover-class="projects-row--hover"
+          data-id="{{item.id}}"
+          data-name="{{item.name}}"
+          bindtap="onOpenProject"
+          bindlongpress="onProjectLongPress"
+        >
+          <view class="icon {{item.isVirtual ? 'icon-chat' : 'icon-folder'}} projects-row-icon"></view>
+          <view class="grow col gap-4 projects-row-copy">
+            <text class="projects-row-name ellipsis">{{item.name}}</text>
+            <text class="t-caption">{{item.sessionCount}} 条会话</text>
+          </view>
+          <view class="icon icon-chevron"></view>
+        </view>
+      </block>
     </view>
   </block>
 </view>

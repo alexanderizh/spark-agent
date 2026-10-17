@@ -277,6 +277,226 @@
   }
 }
 
+/* ─── 挂起交互卡（权限审批 + 用户问答；置于输入区上方） ────────────────────── */
+
+.ia-stack {
+  flex: none;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 12rpx 24rpx 4rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  background: #f7f6f4;
+}
+
+.ia-card {
+  background: #fff;
+  border: 1rpx solid #e9e6e1;
+  border-radius: 20rpx;
+  padding: 22rpx 24rpx 18rpx;
+}
+.ia-card--caution {
+  border-color: #f3d4c3;
+  background: #fffaf6;
+}
+
+.ia-head {
+  align-items: center;
+  margin-bottom: 10rpx;
+}
+.ia-dot {
+  flex: none;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #a8a49d;
+}
+.ia-dot--low {
+  background: #86a886;
+}
+.ia-dot--medium {
+  background: #d9a24a;
+}
+.ia-dot--high {
+  background: #d05d44;
+}
+.ia-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+.ia-risk {
+  flex: none;
+  margin-left: auto;
+  font-size: 20rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  background: #f1efe9;
+  color: #8e8b85;
+}
+.ia-risk--medium {
+  background: #fbf3e3;
+  color: #b4770f;
+}
+.ia-risk--high {
+  background: #fbeae5;
+  color: #b3402a;
+}
+
+.ia-tool {
+  margin-bottom: 6rpx;
+}
+.ia-tool-name {
+  font-size: 22rpx;
+  color: #77736d;
+}
+.ia-preview {
+  margin: 8rpx 0 4rpx;
+  padding: 14rpx 18rpx;
+  background: #f7f6f4;
+  border-radius: 12rpx;
+  font-size: 23rpx;
+  line-height: 1.5;
+  color: #4b4a46;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.ia-actions {
+  margin-top: 16rpx;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+.ia-btn {
+  flex: 1;
+  min-width: 150rpx;
+  text-align: center;
+  padding: 14rpx 0;
+  border-radius: 999rpx;
+  border: 1rpx solid #e3e0da;
+  background: #fff;
+  font-size: 24rpx;
+  color: #4b4a46;
+}
+.ia-btn--primary {
+  background: #1a1a1a;
+  border-color: #1a1a1a;
+  color: #fff;
+}
+.ia-btn--busy {
+  opacity: 0.55;
+}
+.ia-btn--disabled {
+  opacity: 0.4;
+}
+
+/* ── 问答卡 ── */
+.ia-q-item + .ia-q-item {
+  margin-top: 18rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid #f1efe9;
+}
+.ia-q-mark {
+  flex: none;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  border: 3rpx solid #d9a24a;
+  box-sizing: border-box;
+}
+.ia-q-hint {
+  flex: none;
+  font-size: 20rpx;
+  color: #b4770f;
+  background: #fbf3e3;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+}
+.ia-q-text {
+  font-size: 26rpx;
+  line-height: 1.55;
+  color: #1a1a1a;
+  margin: 4rpx 0 12rpx;
+  word-break: break-word;
+}
+
+.ia-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+.ia-option {
+  border: 1rpx solid #e9e6e1;
+  border-radius: 14rpx;
+  padding: 16rpx 18rpx;
+}
+.ia-option--selected {
+  border-color: #1a1a1a;
+  background: #f7f6f4;
+}
+.ia-check {
+  flex: none;
+  width: 22rpx;
+  height: 22rpx;
+  border-radius: 50%;
+  border: 2rpx solid #c9c6c0;
+  box-sizing: border-box;
+  margin-top: 3rpx;
+}
+.ia-check--on {
+  border-color: #1a1a1a;
+  background: #1a1a1a;
+  box-shadow: inset 0 0 0 4rpx #fff;
+}
+.ia-option-label {
+  font-size: 25rpx;
+  color: #1a1a1a;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.ia-option-desc {
+  display: block;
+  margin-top: 6rpx;
+  padding-left: 30rpx;
+  font-size: 22rpx;
+  color: #8e8b85;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.ia-other {
+  margin-top: 12rpx;
+}
+.ia-other-label {
+  font-size: 22rpx;
+  color: #8e8b85;
+}
+.ia-input {
+  margin-top: 8rpx;
+  padding: 14rpx 18rpx;
+  border: 1rpx solid #e9e6e1;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  color: #1a1a1a;
+  background: #faf9f7;
+}
+.ia-textarea {
+  margin-top: 8rpx;
+  padding: 14rpx 18rpx;
+  border: 1rpx solid #e9e6e1;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: #1a1a1a;
+  background: #faf9f7;
+  width: auto;
+  min-height: 120rpx;
+}
+.ia-placeholder {
+  color: #b3b0ab;
+}
+
 /* ─── 底部停靠输入 ─────────────────────────────────────────────────────────── */
 
 .chat-dock {
@@ -286,4 +506,28 @@
 /* 键盘弹起：底部安全区让位（键盘自身盖住安全区，组件内动态占位顶起输入框） */
 .chat-dock--kb {
   padding-bottom: 0;
+}
+
+/* ─── agent 产物图片条（presented_files；横向缩略图，点击全屏预览） ───────────── */
+
+.msg-row--media {
+  margin: 12rpx 0;
+}
+
+.media-strip {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.media-strip-inner {
+  display: inline-flex;
+  gap: 12rpx;
+  padding: 4rpx 0;
+}
+
+.media-thumb {
+  width: 220rpx;
+  height: 220rpx;
+  border-radius: 16rpx;
+  background: #efece6;
 }

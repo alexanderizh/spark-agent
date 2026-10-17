@@ -9,6 +9,14 @@
     <text>该电脑离线，可查看历史记录；请在桌面端开启远程会话（云端中继）</text>
   </view>
 
+  <!-- 会话分支横幅（fork 来源回跳 + 子分支列表；非分支会话不渲染） -->
+  <lineage-banner
+    source-title="{{lineageSourceTitle}}"
+    child-count="{{lineageChildCount}}"
+    bind:source="onLineageSource"
+    bind:children="onLineageChildren"
+  />
+
   <scroll-view
     class="chat-scroll"
     scroll-y
@@ -49,38 +57,65 @@
           <!-- 天级时间分界（居中灰字） -->
           <view wx:if="{{item.kind === 'time'}}" class="chat-time">{{item.label}}</view>
 
-          <!-- 用户消息：右侧灰色气泡 -->
+          <!-- 用户消息：右侧灰色气泡（长按 = 从此处分支） -->
           <view wx:elif="{{item.kind === 'user'}}" class="msg-row msg-row--user">
-            <!-- 附件 chips（本次会话内发送的图片/文件） -->
+            <!-- 附件 chips（本次发送用本地图；历史消息图片经缓存解析） -->
             <view wx:if="{{item.attachments.length > 0}}" class="msg-attach row">
               <block wx:for="{{item.attachments}}" wx:for-item="att" wx:key="path">
                 <image
-                  wx:if="{{att.type === 'image'}}"
+                  wx:if="{{att.type === 'image' && att.previewUrl}}"
                   class="msg-attach-thumb"
                   src="{{att.previewUrl}}"
                   mode="aspectFill"
                   data-url="{{att.previewUrl}}"
                   bindtap="onPreviewAttachment"
                 />
-                <view wx:else class="msg-attach-file row">
+                <view wx:elif="{{att.type !== 'image'}}" class="msg-attach-file row">
                   <view class="icon icon-file"></view>
                   <text class="ellipsis">{{att.name}}</text>
                 </view>
               </block>
             </view>
-            <view class="bubble-user">
+            <view
+              class="bubble-user"
+              data-key="{{item.key}}"
+              data-turnid="{{item.turnId}}"
+              data-text="{{item.text}}"
+              bindlongpress="onUserBubbleLongPress"
+            >
               <text user-select>{{item.text}}</text>
             </view>
           </view>
 
           <!-- AI 回复：全宽文档式 Markdown -->
           <view wx:elif="{{item.kind === 'assistant'}}" class="msg-row msg-row--assistant">
-            <rich-md wx:if="{{item.text}}" content="{{item.text}}" />
+            <rich-md wx:if="{{item.text}}" content="{{item.text}}" device-id="{{deviceId}}" />
             <view wx:else class="chat-typing row gap-8">
               <view class="typing-dot"></view>
               <view class="typing-dot typing-dot--2"></view>
               <view class="typing-dot typing-dot--3"></view>
             </view>
+          </view>
+
+          <!-- agent 呈现的产物图片条（横向缩略图，点击全屏预览；图片走本地缓存） -->
+          <view wx:elif="{{item.kind === 'media'}}" class="msg-row msg-row--media">
+            <scroll-view class="media-strip" scroll-x>
+              <view class="media-strip-inner">
+                <image
+                  wx:for="{{item.previews}}"
+                  wx:for-item="src"
+                  wx:for-index="pIdx"
+                  wx:key="*this"
+                  class="media-thumb"
+                  src="{{src}}"
+                  mode="aspectFill"
+                  lazy-load
+                  data-key="{{item.key}}"
+                  data-idx="{{pIdx}}"
+                  bindtap="onMediaImageTap"
+                />
+              </view>
+            </scroll-view>
           </view>
 
           <!-- 思考内容默认折叠；仍按桌面端事件逐段增量更新，点击标题可展开 -->
@@ -122,6 +157,144 @@
     </view>
   </scroll-view>
 
+  <!-- 挂起交互卡：权限审批 + 用户问答（桌面端弹卡的移动端等价物，置于输入区上方） -->
+  <view wx:if="{{approvalCards.length > 0 || questionCards.length > 0}}" class="ia-stack">
+    <!-- 权限审批卡 -->
+    <view
+      wx:for="{{approvalCards}}"
+      wx:key="requestId"
+      class="ia-card {{item.caution ? 'ia-card--caution' : ''}}"
+    >
+      <view class="ia-head row gap-8">
+        <view class="ia-dot ia-dot--{{item.riskLevel}}"></view>
+        <text class="ia-title ellipsis">权限确认 · {{item.actionLabel}}</text>
+        <text class="ia-risk ia-risk--{{item.riskLevel}}">{{item.riskLabel}}</text>
+      </view>
+      <view class="ia-tool row gap-8">
+        <text class="ia-tool-name t-mono ellipsis">{{item.toolName}}</text>
+      </view>
+      <view wx:if="{{item.hasPreview}}" class="ia-preview">
+        <text user-select>{{item.preview}}</text>
+      </view>
+      <view class="ia-actions row">
+        <view
+          class="ia-btn {{item.busy ? 'ia-btn--busy' : ''}}"
+          hover-class="hover-dim"
+          data-id="{{item.requestId}}"
+          data-decision="deny"
+          bindtap="onApprovalDecide"
+        >拒绝</view>
+        <view
+          class="ia-btn {{item.busy ? 'ia-btn--busy' : ''}}"
+          hover-class="hover-dim"
+          data-id="{{item.requestId}}"
+          data-decision="allow-session"
+          bindtap="onApprovalDecide"
+        >会话内允许</view>
+        <view
+          class="ia-btn ia-btn--primary {{item.busy ? 'ia-btn--busy' : ''}}"
+          hover-class="hover-dim"
+          data-id="{{item.requestId}}"
+          data-decision="allow-once"
+          bindtap="onApprovalDecide"
+        >允许一次</view>
+      </view>
+    </view>
+
+    <!-- 问答卡（一次提问的全部题目一卡呈现，一次提交） -->
+    <view wx:for="{{questionCards}}" wx:key="questionId" class="ia-card">
+      <view
+        class="ia-q-item"
+        wx:for="{{item.items}}"
+        wx:for-item="q"
+        wx:for-index="qIndex"
+        wx:key="index"
+      >
+        <view wx:if="{{q.header}}" class="ia-head row gap-8">
+          <view class="ia-q-mark"></view>
+          <text class="ia-title ellipsis">{{q.header}}</text>
+          <text wx:if="{{q.multiSelect}}" class="ia-q-hint">可多选</text>
+        </view>
+        <view class="ia-q-text"><text user-select>{{q.question}}</text></view>
+
+        <block wx:if="{{q.kind === 'choice'}}">
+          <view class="ia-options">
+            <view
+              wx:for="{{q.options}}"
+              wx:for-item="opt"
+              wx:key="label"
+              class="ia-option {{opt.selected ? 'ia-option--selected' : ''}}"
+              hover-class="hover-dim"
+              data-qid="{{item.questionId}}"
+              data-index="{{q.index}}"
+              data-label="{{opt.label}}"
+              bindtap="onQuestionOptionTap"
+            >
+              <view class="row gap-8">
+                <view class="ia-check {{opt.selected ? 'ia-check--on' : ''}}"></view>
+                <text class="ia-option-label">{{opt.label}}</text>
+              </view>
+              <text wx:if="{{opt.description}}" class="ia-option-desc">{{opt.description}}</text>
+            </view>
+          </view>
+          <view class="ia-other">
+            <text class="ia-other-label">{{q.otherLabel}}</text>
+            <input
+              class="ia-input"
+              value="{{q.otherText}}"
+              placeholder="{{q.otherPlaceholder}}"
+              placeholder-class="ia-placeholder"
+              data-qid="{{item.questionId}}"
+              data-index="{{q.index}}"
+              bindinput="onQuestionOtherInput"
+            />
+          </view>
+        </block>
+
+        <block wx:else>
+          <textarea
+            wx:if="{{q.multiline}}"
+            class="ia-textarea"
+            value="{{q.text}}"
+            placeholder="{{q.placeholder}}"
+            placeholder-class="ia-placeholder"
+            auto-height
+            maxlength="2000"
+            data-qid="{{item.questionId}}"
+            data-index="{{q.index}}"
+            bindinput="onQuestionTextInput"
+          />
+          <input
+            wx:else
+            class="ia-input"
+            value="{{q.text}}"
+            placeholder="{{q.placeholder}}"
+            placeholder-class="ia-placeholder"
+            data-qid="{{item.questionId}}"
+            data-index="{{q.index}}"
+            bindinput="onQuestionTextInput"
+          />
+        </block>
+      </view>
+
+      <view class="ia-actions row">
+        <view
+          wx:if="{{item.allowSkip}}"
+          class="ia-btn {{item.busy ? 'ia-btn--busy' : ''}}"
+          hover-class="hover-dim"
+          data-qid="{{item.questionId}}"
+          bindtap="onQuestionSkip"
+        >跳过</view>
+        <view
+          class="ia-btn ia-btn--primary {{item.canSubmit && !item.busy ? '' : 'ia-btn--disabled'}}"
+          hover-class="hover-dim"
+          data-qid="{{item.questionId}}"
+          bindtap="onQuestionSubmit"
+        >{{item.busy ? '提交中…' : '提交回答'}}</view>
+      </view>
+    </view>
+  </view>
+
   <view class="chat-dock {{keyboardOpen ? 'chat-dock--kb' : 'safe-bottom'}}">
     <capsule-composer
       mode="dock"
@@ -148,7 +321,7 @@
     />
   </view>
 
-  <!-- 配置选择面板（助手/模型/权限/推理/工作流/项目） -->
+  <!-- 配置选择面板（助手/模型/权限/推理/工作流/项目/技能/命令） -->
   <sheet-panel
     show="{{panelShow}}"
     title="{{panelTitle}}"
@@ -161,13 +334,5 @@
     bind:close="closePanel"
     bind:select="onPanelSelect"
     bind:sliderchange="onPanelSliderChange"
-  />
-
-  <!-- 会话内定时任务面板 -->
-  <session-tasks-panel
-    show="{{tasksShow}}"
-    sessionId="{{sessionId}}"
-    deviceId="{{deviceId}}"
-    bind:close="onTasksClose"
   />
 </view>

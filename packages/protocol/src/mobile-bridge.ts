@@ -12,6 +12,19 @@
  * 小程序实现：apps/mobile/src/api/relay.ts + apps/mobile/src/api/bridge.ts
  */
 
+import type { SessionLabelKey, SessionSearchResponse } from './ipc/index.js'
+import type { SidebarOrderState, SidebarOrderUpdateRequest } from './sidebar-order.js'
+
+export type { SessionLabelKey, SessionSearchResponse, SidebarOrderState, SidebarOrderUpdateRequest }
+
+import type { UserQuestionPrompt } from './ipc/index.js'
+import type {
+  SessionForkBindingWarningCode,
+  SessionLineage,
+} from './cross-session-collaboration.js'
+
+export type { SessionLineage }
+
 // ─── 项目（workspace 的移动端投影） ───────────────────────────────────────────
 
 export interface MobileBridgeProjectSummary {
@@ -21,6 +34,11 @@ export interface MobileBridgeProjectSummary {
   rootPath: string
   projectKind: string
   pinnedAt: string | null
+  /**
+   * 归档时间（P1 归档端点回显用；缺省 = 旧版桌面端不透出）。
+   * 列表投影经 listWorkspaces 默认排除已归档，恒为 null；仅写响应携带真实值。
+   */
+  archivedAt?: string | null
   updatedAt: string
   /** 项目下会话数（列表页角标用） */
   sessionCount: number
@@ -29,6 +47,34 @@ export interface MobileBridgeProjectSummary {
 export interface MobileBridgeProjectListResponse {
   projects: MobileBridgeProjectSummary[]
   total: number
+}
+
+/** PATCH /v1/projects/:id 请求体：全部可选，仅传需要修改的字段 */
+export interface MobileBridgeUpdateProjectRequest {
+  /** 重命名（P1 开放；保留项目「不使用项目」拒绝改名——桌面端侧栏按名称查找它） */
+  name?: string
+  pinned?: boolean
+  /** 归档（与桌面端 workspace:update 同语义；归档后从列表消失，恢复走桌面端设置页） */
+  archived?: boolean
+}
+
+export interface MobileBridgeUpdateProjectResponse {
+  project: MobileBridgeProjectSummary
+}
+
+/** DELETE /v1/projects/:id 响应（与桌面端 workspace:delete 同语义：级联删除项目下全部会话） */
+export interface MobileBridgeDeleteProjectResponse {
+  deleted: boolean
+}
+
+// ─── 会话搜索（GET /v1/search；标题 LIKE + 内容 FTS5，复用桌面端 session:search 响应形状） ──
+
+/** GET /v1/search 响应 = SessionSearchResponse（results: sessionId/title/snippet/matchType/updatedAt） */
+
+// ─── 侧栏手动排序（GET/PUT /v1/sidebar-order；类型复用 protocol/sidebar-order） ──
+
+export interface MobileBridgeSidebarOrderUpdateResponse {
+  itemIds: string[]
 }
 
 // ─── 会话 ─────────────────────────────────────────────────────────────────────
@@ -58,6 +104,10 @@ export interface MobileBridgeSessionSummary {
   /** 所属项目 id（project_id 即主 workspace id，'default' 表示未归属项目） */
   projectId?: string
   pinnedAt?: string | null
+  /** 会话标记（5 预置标签之一；null/缺省 = 未打标。有标记的会话归入置顶区） */
+  sessionLabel?: SessionLabelKey | null
+  /** 打标时间（ISO 8601；置顶区内排序时间 = pinnedAt ?? labeledAt） */
+  labeledAt?: string | null
   /** 当前运行配置（配置条展示/回显；缺省表示桌面端旧版本） */
   runtime?: MobileBridgeSessionRuntime
 }
@@ -78,6 +128,8 @@ export interface MobileBridgeUpdateSessionRequest {
   title?: string
   pinned?: boolean
   archived?: boolean
+  /** 会话标记（SESSION_LABEL_KEYS 之一）；null = 取消标记，undefined = 不修改 */
+  sessionLabel?: SessionLabelKey | null
   // ── 运行时配置（会话内切换，与桌面端 session:update 同语义） ──
   providerProfileId?: string
   /** null = 跟随渠道默认模型 */
@@ -224,6 +276,9 @@ export interface MobileBridgeUpdateScheduledTaskRequest {
   cronExpression?: string | null
   runAt?: string | null
   enabled?: boolean
+  /** 高级字段：undefined 不改；移动端编辑表单始终携带当前值 */
+  timeoutSeconds?: number
+  maxRetries?: number
 }
 
 export interface MobileBridgeScheduledTaskMutationResponse {
@@ -273,6 +328,105 @@ export interface MobileBridgeCancelResponse {
   cancelled: boolean
 }
 
+// ─── 会话分支（Session Fork：对齐桌面端「从此处分支」，子会话为独立实体） ─────
+
+/** POST /v1/sessions/:id/fork 请求体：全部可选 */
+export interface MobileBridgeForkSessionRequest {
+  /** 分支锚点：只复制到该已完成 turn（缺省 = 复制全部已完成内容） */
+  anchorTurnId?: string
+  /** 子会话标题（缺省 = 桌面端默认派生命名） */
+  title?: string
+}
+
+/** POST /v1/sessions/:id/fork 响应（lineage 复用跨会话协作协议类型，零漂移） */
+export interface MobileBridgeForkSessionResponse {
+  session: MobileBridgeSessionSummary
+  lineage: SessionLineage
+  copiedTurnCount: number
+  sourceWasRunning: boolean
+  /** 复制的 workflow 绑定当前不可用警告（桌面端同源；移动端 toast 提示） */
+  bindingWarning?: { code: SessionForkBindingWarningCode } | null
+}
+
+/** GET /v1/sessions/:id/lineage 响应：该会话的来源与直接子分支 */
+export interface MobileBridgeLineageResponse {
+  lineage: SessionLineage | null
+  children: SessionLineage[]
+}
+
+// ─── 技能列表（GET /v1/skills；移动端只读，选中后以 @name 文本注入输入框） ────
+
+export interface MobileBridgeSkillItem {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  /** db = 平台已安装技能；project = 会话工作区项目技能 */
+  source: 'db' | 'project'
+}
+
+export interface MobileBridgeSkillListResponse {
+  skills: MobileBridgeSkillItem[]
+}
+
+// ─── 挂起交互（权限审批 + 用户问答；移动端轮询拉取，见 /v1/sessions/:id/interactions） ──
+
+/**
+ * 挂起审批项（PermissionApprovalRequest 的移动端子集，审批卡数据源）。
+ * 应答经 POST /v1/sessions/:id/approvals/:requestId/resolve。
+ */
+export interface MobileBridgeApprovalItem {
+  requestId: string
+  sessionId: string
+  toolName: string
+  /** 权限动作分类（file_write / command_exec / …），移动端据此做中文标签 */
+  action: string
+  riskLevel: 'low' | 'medium' | 'high'
+  /** 工具入参（命令/文件路径等原文，端上提取可读预览） */
+  toolInput: Record<string, unknown>
+  /** 请求创建时间（ISO；旧版主进程缺省为空串） */
+  createdAt: string
+  /** 高危询问：移动端审批卡默认聚焦拒绝 */
+  defaultToNo?: boolean
+}
+
+/** 挂起问答项（复用 UserQuestionPrompt 结构；应答形状与桌面端渲染端一致） */
+export interface MobileBridgeQuestionItem {
+  questionId: string
+  sessionId: string
+  createdAt: string
+  questions: UserQuestionPrompt[]
+}
+
+/** GET /v1/sessions/:id/interactions 响应：该会话当前全部挂起交互 */
+export interface MobileBridgeInteractionsResponse {
+  approvals: MobileBridgeApprovalItem[]
+  questions: MobileBridgeQuestionItem[]
+}
+
+/** 移动端可表达的审批决定（桌面端完整枚举的子集：不含项目/全局持久化与拒绝持久化） */
+export type MobileBridgeApprovalDecision = 'allow-once' | 'allow-session' | 'deny'
+
+export interface MobileBridgeResolveApprovalRequest {
+  decision: MobileBridgeApprovalDecision
+}
+
+export interface MobileBridgeResolveApprovalResponse {
+  ok: boolean
+}
+
+export interface MobileBridgeAnswerQuestionRequest {
+  /**
+   * 与桌面端渲染端同形状：{ answers: [{ index, id, question, type, skipped, answer, … }],
+   * questionCount, answeredCount }；引擎按 question 文本/index 归一为 SDK 答案映射。
+   */
+  answers: Record<string, unknown>
+}
+
+export interface MobileBridgeAnswerQuestionResponse {
+  ok: boolean
+}
+
 // ─── 对话事件（AgentEvent 的移动端子集） ──────────────────────────────────────
 
 export type MobileBridgeEventType =
@@ -283,6 +437,7 @@ export type MobileBridgeEventType =
   | 'tool_result'
   | 'agent_status'
   | 'agent_error'
+  | 'presented_files'
 
 export interface MobileBridgeEvent {
   id: string
@@ -307,6 +462,13 @@ export interface MobileBridgeEvent {
   /** agent_status：running / idle / completed / cancelled / error */
   status?: string
   statusMessage?: string
+  /** presented_files：agent 呈现的产物文件（端上按扩展名过滤图片后走本地缓存展示） */
+  files?: { path: string; title?: string }[]
+  /**
+   * user_message：随消息提交的附件（directory 已在映射层过滤）。
+   * 端上渲染历史用户附件缩略图（图片经本地缓存解析），缺省 = 旧版桌面端不透出。
+   */
+  attachments?: { type: 'image' | 'file'; path: string; name?: string }[]
 }
 
 export interface MobileBridgeHistoryResponse {

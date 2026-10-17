@@ -1,8 +1,11 @@
 {
   "navigationStyle": "custom",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
   "usingComponents": {
     "safe-nav-bar": "../../components/safe-nav-bar/index",
     "capsule-composer": "../../components/capsule-composer/index",
-    "empty-state": "../../components/empty-state/index"
+    "empty-state": "../../components/empty-state/index",
+    "sheet-panel": "../../components/sheet-panel/index"
   }
 }

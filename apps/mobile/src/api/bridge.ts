@@ -17,7 +17,9 @@
  */
 
 import { getItem, StorageKeys } from '../utils/storage'
+import type { BridgeSessionLabelKey } from '../utils/sidebar-order'
 import * as relay from './relay'
+import { configureImageFetcher, resolveImagePath } from './image-cache'
 import { BridgeError, BRIDGE_HINTS } from './bridge-error'
 import type { BridgeErrorReason } from './bridge-error'
 
@@ -43,6 +45,10 @@ export interface BridgeSessionSummary {
   /** 所属项目 id（'default' 表示未归属项目）；旧版桌面端不返回该字段 */
   projectId?: string
   pinnedAt?: string | null
+  /** 会话标记（5 预置标签；null/缺省 = 未打标。有标记即归入置顶区，与桌面端同口径） */
+  sessionLabel?: BridgeSessionLabelKey | null
+  /** 打标时间（ISO；置顶区内排序时间 = pinnedAt ?? labeledAt） */
+  labeledAt?: string | null
   /** 当前运行配置（配置条数据源；旧版桌面端不返回） */
   runtime?: BridgeSessionRuntime
 }
@@ -118,6 +124,8 @@ export interface BridgeProjectSummary {
   rootPath: string
   projectKind: string
   pinnedAt: string | null
+  /** 归档回显（列表投影恒 null；仅 PATCH 写响应携带真实值。缺省 = 旧版桌面端） */
+  archivedAt?: string | null
   updatedAt: string
   /** 项目下未归档会话数 */
   sessionCount: number
@@ -131,6 +139,7 @@ export type BridgeEventType =
   | 'tool_result'
   | 'agent_status'
   | 'agent_error'
+  | 'presented_files'
 
 export interface BridgeEvent {
   id: string
@@ -147,6 +156,13 @@ export interface BridgeEvent {
   toolStatus?: 'success' | 'error'
   status?: string
   statusMessage?: string
+  /** presented_files：agent 呈现的产物文件（端上按扩展名过滤图片后走本地缓存展示） */
+  files?: { path: string; title?: string }[]
+  /**
+   * user_message：随消息提交的附件（旧版桌面端不透出，缺省 undefined）。
+   * 端上渲染历史附件缩略图（图片经本地缓存解析），文件仅显名。
+   */
+  attachments?: { type: 'image' | 'file'; path: string; name?: string }[]
 }
 
 // ─── 中继链路（唯一传输） ─────────────────────────────────────────────────────
@@ -331,13 +347,15 @@ export function createSession(
   )
 }
 
-/** 重命名 / 置顶 / 归档 / 运行时配置 / 项目归属（仅传需要修改的字段） */
+/** 重命名 / 置顶 / 打标 / 归档 / 运行时配置 / 项目归属（仅传需要修改的字段） */
 export function updateSession(
   sessionId: string,
   patch: {
     title?: string
     pinned?: boolean
     archived?: boolean
+    /** 会话标记；null = 取消标记 */
+    sessionLabel?: BridgeSessionLabelKey | null
     providerProfileId?: string
     modelId?: string | null
     agentAdapter?: string
@@ -353,6 +371,94 @@ export function updateSession(
     `/v1/sessions/${encodeURIComponent(sessionId)}`,
     'PATCH',
     patch as unknown as Record<string, unknown>,
+    deviceId,
+  )
+}
+
+// ─── 项目管理与侧栏手动排序（移动端反向设置桌面端侧栏） ─────────────────────────
+
+/**
+ * 项目重命名 / 置顶 / 归档；响应带更新后摘要，用于旧版桌面端「假成功」回显校验。
+ * 「不使用项目」是桌面端系统保留项目：改名/归档/删除都会被桌面端拒绝（400 + 中文原因）。
+ */
+export function updateProject(
+  projectId: string,
+  patch: { name?: string; pinned?: boolean; archived?: boolean },
+  deviceId?: string,
+): Promise<{ project: BridgeProjectSummary }> {
+  return request<{ project: BridgeProjectSummary }>(
+    `/v1/projects/${encodeURIComponent(projectId)}`,
+    'PATCH',
+    patch as unknown as Record<string, unknown>,
+    deviceId,
+  )
+}
+
+/** 项目删除（桌面端级联删除项目下全部会话；响应 deleted=false 表示项目不存在） */
+export function deleteProject(projectId: string, deviceId?: string): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(
+    `/v1/projects/${encodeURIComponent(projectId)}`,
+    'DELETE',
+    undefined,
+    deviceId,
+  )
+}
+
+/** 会话搜索结果（与桌面端 session:search 同构；snippet 为内容匹配片段） */
+export interface BridgeSessionSearchResult {
+  sessionId: string
+  title: string
+  snippet: string
+  matchType: 'title' | 'content'
+  updatedAt: string
+}
+
+/**
+ * 会话搜索（标题 LIKE + 内容 FTS5）。projectId 省略 = 全部会话；
+ * 'default' = 虚拟未归属项目（桌面端按 project_id 精确过滤）。
+ * 旧版桌面端无此端点 → 404，调用方应静默降级为仅前端标题过滤。
+ */
+export function searchSessions(
+  query: string,
+  projectId: string | undefined,
+  deviceId?: string,
+): Promise<{ results: BridgeSessionSearchResult[] }> {
+  // 小程序基础库不保证 URLSearchParams，与文件内其他端点一致手工拼 query
+  const queryPart = `q=${encodeURIComponent(query)}&limit=20${
+    projectId ? `&projectId=${encodeURIComponent(projectId)}` : ''
+  }`
+  return request<{ results: BridgeSessionSearchResult[] }>(
+    `/v1/search?${queryPart}`,
+    'GET',
+    undefined,
+    deviceId,
+  )
+}
+
+/** 侧栏手动排序状态（与桌面端 sidebar-order:list 同构） */
+export interface BridgeSidebarOrderState {
+  projectIds: string[]
+  sessionIdsByProject: Record<string, string[]>
+  pinnedSessionIdsByProject: Record<string, string[]>
+}
+
+export type BridgeSidebarOrderUpdateRequest =
+  | { scope: 'projects'; itemIds: string[] }
+  | { scope: 'sessions'; projectId: string; itemIds: string[] }
+  | { scope: 'pinned-sessions'; projectId: string; itemIds: string[] }
+
+export function getSidebarOrder(deviceId?: string): Promise<BridgeSidebarOrderState> {
+  return request<BridgeSidebarOrderState>('/v1/sidebar-order', 'GET', undefined, deviceId)
+}
+
+export function updateSidebarOrder(
+  payload: BridgeSidebarOrderUpdateRequest,
+  deviceId?: string,
+): Promise<{ itemIds: string[] }> {
+  return request<{ itemIds: string[] }>(
+    '/v1/sidebar-order',
+    'PUT',
+    payload as unknown as Record<string, unknown>,
     deviceId,
   )
 }
@@ -441,6 +547,169 @@ export function cancelTurn(sessionId: string, deviceId?: string): Promise<{ canc
   )
 }
 
+// ─── 会话分支（Session Fork：对齐桌面端「从此处分支」） ────────────────────────
+
+/** 分支血缘条目（与桌面端 SessionLineage 同构） */
+export interface BridgeLineage {
+  childSessionId: string
+  parentSessionId: string
+  /** 分支锚点 turn（null = 复制了全部已完成内容） */
+  forkAnchorTurnId: string | null
+  forkCutoffSeq: number
+  sourceTitleSnapshot: string
+  childTitle?: string
+  createdAt: string
+}
+
+/**
+ * 从指定会话 fork 出独立子会话（anchorTurnId 缺省 = 复制全部已完成内容）。
+ * 锚点未完成等错误由桌面端原样透出（BridgeError，message 可直接 toast）。
+ * 旧版桌面端无此端点会 404 → SERVER 错误，调用方可据此提示版本过低。
+ */
+export function forkSession(
+  sessionId: string,
+  input: { anchorTurnId?: string; title?: string },
+  deviceId?: string,
+): Promise<{
+  session: BridgeSessionSummary
+  lineage: BridgeLineage
+  copiedTurnCount: number
+  sourceWasRunning: boolean
+  /** 复制的 workflow 绑定当前不可用（桌面端同源；调用方 toast 提示） */
+  bindingWarning?: { code: string } | null
+}> {
+  return request<{
+    session: BridgeSessionSummary
+    lineage: BridgeLineage
+    copiedTurnCount: number
+    sourceWasRunning: boolean
+    bindingWarning?: { code: string } | null
+  }>(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/fork`,
+    'POST',
+    {
+      ...(input.anchorTurnId ? { anchorTurnId: input.anchorTurnId } : {}),
+      ...(input.title ? { title: input.title } : {}),
+    } as unknown as Record<string, unknown>,
+    deviceId,
+  )
+}
+
+/** 会话分支血缘（来源 + 直接子分支；lineage=null = 该会话不是 fork 副本） */
+export function getSessionLineage(
+  sessionId: string,
+  deviceId?: string,
+): Promise<{ lineage: BridgeLineage | null; children: BridgeLineage[] }> {
+  return request<{ lineage: BridgeLineage | null; children: BridgeLineage[] }>(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/lineage`,
+    'GET',
+    undefined,
+    deviceId,
+  )
+}
+
+// ─── 挂起交互（权限审批 + 用户问答；与桌面端审批卡/问答卡同源） ─────────────────
+
+export interface BridgeApprovalItem {
+  requestId: string
+  sessionId: string
+  toolName: string
+  /** 权限动作分类（file_write / command_exec / …） */
+  action: string
+  riskLevel: 'low' | 'medium' | 'high'
+  toolInput: Record<string, unknown>
+  /** ISO；旧版桌面端缺省为空串 */
+  createdAt: string
+  defaultToNo?: boolean
+}
+
+export interface BridgeQuestionOption {
+  label: string
+  description?: string
+  value?: string
+  allowsFreeText?: boolean
+  freeTextPlaceholder?: string
+}
+
+export interface BridgeQuestionPrompt {
+  id?: string
+  question: string
+  header: string
+  type?: 'single_choice' | 'multi_choice' | 'text'
+  required?: boolean
+  placeholder?: string
+  multiline?: boolean
+  allowSkip?: boolean
+  allowOther?: boolean
+  otherOptionLabel?: string
+  otherPlaceholder?: string
+  options?: BridgeQuestionOption[]
+  multiSelect?: boolean
+}
+
+export interface BridgeQuestionItem {
+  questionId: string
+  sessionId: string
+  createdAt: string
+  questions: BridgeQuestionPrompt[]
+}
+
+export interface BridgeInteractions {
+  approvals: BridgeApprovalItem[]
+  questions: BridgeQuestionItem[]
+}
+
+export type BridgeApprovalDecision = 'allow-once' | 'allow-session' | 'deny'
+
+/**
+ * 会话挂起交互快照（审批卡 + 问答卡轮询数据源）。
+ * 旧版桌面端没有该端点会 404：调用方 catch 后按空处理，不提示错误。
+ */
+export function getPendingInteractions(
+  sessionId: string,
+  deviceId?: string,
+): Promise<BridgeInteractions> {
+  return request<BridgeInteractions>(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/interactions`,
+    'GET',
+    undefined,
+    deviceId,
+  )
+}
+
+/** 应答权限审批（false = 审批已结束或不存在） */
+export function resolveApproval(
+  sessionId: string,
+  requestId: string,
+  decision: BridgeApprovalDecision,
+  deviceId?: string,
+): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(requestId)}/resolve`,
+    'POST',
+    { decision },
+    deviceId,
+  )
+}
+
+/**
+ * 应答用户问答。answers 与桌面端渲染端同形状：
+ * { answers: [{ index, id, question, type, skipped, answer, … }], questionCount, answeredCount }。
+ */
+export function answerQuestion(
+  sessionId: string,
+  questionId: string,
+  answers: Record<string, unknown>,
+  deviceId?: string,
+): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(questionId)}/answer`,
+    'POST',
+    { answers },
+    deviceId,
+  )
+}
+
 /** 探测桌面端是否可达（健康检查；可定向） */
 export function ping(deviceId?: string): Promise<boolean> {
   return exchange('/v1/health', 'GET', undefined, 5_000, deviceId)
@@ -524,13 +793,13 @@ export function uploadAttachments(
 }
 
 /**
- * 取附件内容：小程序访问不到桌面端本地路径，经中继取回 base64 并落成本地临时文件，
- * 返回可直接用于预览的 wxfile:// 路径。失败返回 null（调用方回退成「仅显示文件名」）。
+ * 取附件内容原始载荷（经中继 base64；图片缓存层的注入源，不直接对页面暴露）。
+ * 失败返回 null（调用方降级）。
  */
-export function fetchRelayAttachmentTempPath(
+function fetchRelayAttachmentBase64(
   path: string,
   deviceId?: string,
-): Promise<string | null> {
+): Promise<{ base64: string; mimeType?: string } | null> {
   return exchange(
     `/v1/attachments/content?path=${encodeURIComponent(path)}`,
     'GET',
@@ -541,24 +810,27 @@ export function fetchRelayAttachmentTempPath(
     .then(unwrap<{ base64?: string; mimeType?: string }>)
     .then((body) => {
       if (body?.base64 == null) return null
-      const ext = mimeToExt(body.mimeType)
-      const filePath = `${wx.env.USER_DATA_PATH}/relay-att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
-      const fs = wx.getFileSystemManager()
-      fs.writeFileSync(filePath, body.base64, 'base64')
-      return filePath
+      return { base64: body.base64, ...(body.mimeType != null ? { mimeType: body.mimeType } : {}) }
     })
     .catch(() => null)
 }
 
-function mimeToExt(mimeType?: string): string {
-  const value = (mimeType ?? '').toLowerCase()
-  if (value.includes('png')) return 'png'
-  if (value.includes('jpeg') || value.includes('jpg')) return 'jpg'
-  if (value.includes('gif')) return 'gif'
-  if (value.includes('webp')) return 'webp'
-  if (value.includes('pdf')) return 'pdf'
-  return 'bin'
+// 图片缓存层的附件拉取器（image-cache 不反向 import bridge，避免循环依赖）
+configureImageFetcher(fetchRelayAttachmentBase64)
+
+/**
+ * 取附件内容：小程序访问不到桌面端本地路径，经图片缓存层解析——
+ * 命中本地缓存零中继传输；未命中拉取后落盘持久缓存（LRU 限量）。
+ * 签名与旧版一致（调用方无感升级）。失败返回 null（调用方回退成「仅显示文件名」）。
+ */
+export function fetchRelayAttachmentTempPath(
+  path: string,
+  deviceId?: string,
+): Promise<string | null> {
+  return resolveImagePath(path, deviceId)
 }
+
+export { reconcileImageCache } from './image-cache'
 
 /** 语音转写（本地 SenseVoice → 云渠道兜底） */
 export function transcribeAudio(
@@ -619,13 +891,15 @@ export function updateSessionTask(
     cronExpression?: string | null
     runAt?: string | null
     enabled?: boolean
+    timeoutSeconds?: number
+    maxRetries?: number
   },
   deviceId?: string,
 ): Promise<{ task: BridgeScheduledTask }> {
   return request<{ task: BridgeScheduledTask }>(
     `/v1/tasks/${encodeURIComponent(taskId)}`,
     'PATCH',
-    patch as unknown as Record<string, unknown>,
+    patch as Record<string, unknown>,
     deviceId,
   )
 }
@@ -670,6 +944,33 @@ export function listCommands(
 ): Promise<{ commands: BridgeCommandItem[] }> {
   return request<{ commands: BridgeCommandItem[] }>(
     `/v1/commands?sessionId=${encodeURIComponent(sessionId)}`,
+    'GET',
+    undefined,
+    deviceId,
+  )
+}
+
+// ─── 技能列表（移动端只读选择器；选中后以 @name 文本插入输入框） ───────────────
+
+export interface BridgeSkillItem {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  /** db = 平台已安装技能；project = 会话工作区项目技能 */
+  source: 'db' | 'project'
+}
+
+/**
+ * 技能只读列表（平台已安装 + 会话项目技能，同名去重后平台技能优先）。
+ * 旧版桌面端无此端点会 404：调用方 catch 后提示版本过低并隐藏技能入口。
+ */
+export function listSkills(
+  sessionId: string,
+  deviceId?: string,
+): Promise<{ skills: BridgeSkillItem[] }> {
+  return request<{ skills: BridgeSkillItem[] }>(
+    `/v1/skills?sessionId=${encodeURIComponent(sessionId)}`,
     'GET',
     undefined,
     deviceId,

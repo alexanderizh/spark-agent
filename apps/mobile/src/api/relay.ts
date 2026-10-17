@@ -484,6 +484,19 @@ export function relaySubscribe(
   const sub: Record<string, unknown> = { t: 'sub', sessionId }
   if (target != null) sub.d = target
   send(sub)
+  if (connected && socket != null) {
+    // 共享 WS 已在连接态：ensureRelayConnected 会直接短路返回，task.onOpen 不会再触发，
+    // 必须在这里补发 onOpen，否则页面会一直以为「没连上」（聊天页 connected 恒 false，
+    // 每次发送都走乐观渲染路径，与真实事件回来后双气泡）。
+    handlers.onOpen?.()
+    return () => {
+      if (stream?.sessionId !== sessionId) return
+      stream = null
+      const unsub: Record<string, unknown> = { t: 'unsub', sessionId }
+      if (target != null) unsub.d = target
+      send(unsub)
+    }
+  }
   void ensureRelayConnected().catch((error) => {
     handlers.onError(error instanceof Error ? error.message : String(error))
   })

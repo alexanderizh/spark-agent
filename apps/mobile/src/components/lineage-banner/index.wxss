@@ -1,0 +1,52 @@
+/* 会话分支横幅（样式隔离：自带完整样式，不依赖页面 class） */
+
+.lineage-banner {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin: 8rpx 24rpx 0;
+}
+
+.lineage-cell {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  max-width: 60%;
+  padding: 10rpx 20rpx;
+  border-radius: 999rpx;
+  background: #efece6;
+}
+
+.lineage-cell--children {
+  flex-shrink: 0;
+}
+
+.lineage-hover {
+  opacity: 0.7;
+}
+
+.lineage-muted {
+  font-size: 22rpx;
+  color: #8a877f;
+  flex-shrink: 0;
+}
+
+.lineage-title {
+  font-size: 22rpx;
+  color: #4b4944;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lineage-count {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: #4b4944;
+}
+
+.lineage-arrow {
+  font-size: 24rpx;
+  color: #a8a49a;
+  flex-shrink: 0;
+}

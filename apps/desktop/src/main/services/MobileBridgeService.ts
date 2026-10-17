@@ -21,26 +21,39 @@ import { Readable, PassThrough } from 'node:stream'
 import { tmpdir } from 'node:os'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { createLogger } from '@spark/shared'
+import { createLogger, SparkError } from '@spark/shared'
+import { SESSION_LABEL_KEYS } from '@spark/protocol'
 import type {
+  MobileBridgeApprovalDecision,
   MobileBridgeAttachment,
   MobileBridgeCatalog,
   MobileBridgeCommandItem,
   MobileBridgeCreateScheduledTaskRequest,
   MobileBridgeCreateSessionResponse,
   MobileBridgeEvent,
+  MobileBridgeForkSessionRequest,
+  MobileBridgeForkSessionResponse,
   MobileBridgeHistoryResponse,
+  MobileBridgeInteractionsResponse,
+  MobileBridgeLineageResponse,
   MobileBridgeProjectListResponse,
+  MobileBridgeProjectSummary,
   MobileBridgeScheduledTask,
   MobileBridgeSessionListResponse,
   MobileBridgeSessionRuntime,
   MobileBridgeSessionSummary,
   MobileBridgeSetWorkflowBindingRequest,
+  MobileBridgeSidebarOrderUpdateResponse,
+  MobileBridgeSkillListResponse,
   MobileBridgeSubmitTurnRequest,
+  MobileBridgeUpdateProjectRequest,
   MobileBridgeUpdateScheduledTaskRequest,
   MobileBridgeUpdateSessionRequest,
   MobileBridgeUploadAttachmentsRequest,
   MobileBridgeWorkflowBindingResponse,
+  SessionSearchResponse,
+  SidebarOrderState,
+  SidebarOrderUpdateRequest,
 } from '@spark/protocol'
 
 const log = createLogger('mobile-bridge')
@@ -52,6 +65,15 @@ const HISTORY_LIMIT = 400
 const MAX_BODY_BYTES = 256 * 1024
 /** 附件上传 / 语音转写路由单独放宽的 body 上限（base64 膨胀后 ≈ 原始 8MB） */
 const MAX_UPLOAD_BODY_BYTES = 12 * 1024 * 1024
+/** 会话 PATCH 中会改变侧栏展示的字段（标题/置顶/归档/标记/项目归属）；
+ *  纯运行时配置（模型/权限/推理等）侧栏不展示，不触发侧栏广播 */
+const SIDEBAR_VISIBLE_SESSION_FIELDS: readonly (keyof MobileBridgeUpdateSessionRequest)[] = [
+  'title',
+  'pinned',
+  'archived',
+  'sessionLabel',
+  'projectId',
+]
 
 export interface MobileBridgeDeps {
   /** 项目列表（workspace 投影，含项目下会话数） */
@@ -70,6 +92,23 @@ export interface MobileBridgeDeps {
   ): Promise<MobileBridgeSessionSummary>
   /** 删除会话（含终端等副作用清理） */
   deleteSession(sessionId: string): Promise<{ deleted: boolean }>
+  /** 项目重命名 / 置顶 / 归档（返回更新后摘要，端上据此回显校验；与 workspace:update 同换算） */
+  updateProject(
+    projectId: string,
+    patch: { name?: string; pinned?: boolean; archived?: boolean },
+  ): Promise<MobileBridgeProjectSummary>
+  /** 项目删除（级联删除项目下全部会话；保留项目抛 VALIDATION_FAILED SparkError） */
+  deleteProject(projectId: string): Promise<{ deleted: boolean }>
+  /** 会话搜索（标题 LIKE + 内容 FTS5；projectId 过滤，'default' 为虚拟未归属项目） */
+  searchSessions(query: string, projectId?: string, limit?: number): Promise<SessionSearchResponse>
+  /** 侧栏手动排序读取（项目序 + 项目内会话序 + 置顶会话序） */
+  getSidebarOrder(): SidebarOrderState
+  /** 侧栏手动排序写入（校验内置：项目存在、会话归属；返回落库后的 id 顺序） */
+  updateSidebarOrder(
+    request: SidebarOrderUpdateRequest,
+  ): Promise<MobileBridgeSidebarOrderUpdateResponse>
+  /** 侧栏相关写成功后广播（渲染端订阅 stream:session:list-changed 立即重拉，双向同步） */
+  notifySidebarChanged(): void
   /**
    * 会话历史（agent 事件 → 移动端子集）。
    * beforeSeq：向上翻页游标，只返回 seq 小于该值的事件（服务端按 seq 正序返回）。
@@ -101,6 +140,23 @@ export interface MobileBridgeDeps {
   ): Promise<{ turnId: string }>
   /** 取消进行中的回合 */
   cancelTurn(sessionId: string): Promise<void>
+
+  // ─── 挂起交互（权限审批 + 用户问答；移动端审批卡/问答卡数据源，2026-10-16） ──
+
+  /** 会话挂起交互快照（无推送通道的端轮询拉取；旧版桌面端可由端上兼容为空） */
+  listPendingInteractions(sessionId: string): Promise<MobileBridgeInteractionsResponse>
+  /** 解析权限审批（requestId 必须属于该会话）；false = 审批已结束或不存在 */
+  resolveApproval(
+    sessionId: string,
+    requestId: string,
+    decision: MobileBridgeApprovalDecision,
+  ): Promise<boolean>
+  /** 应答用户问答（questionId 必须属于该会话）；false = 提问已结束或不存在 */
+  answerQuestion(
+    sessionId: string,
+    questionId: string,
+    answers: Record<string, unknown>,
+  ): Promise<boolean>
 
   // ─── 会话内配置与输入能力扩展（2026-10-14） ──────────────────────────────────
 
@@ -159,6 +215,18 @@ export interface MobileBridgeDeps {
     queued?: boolean
     message?: string
   }>
+
+  // ─── 会话分支 + 技能列表（2026-10-16） ─────────────────────────────────────
+
+  /** 从指定会话 fork 出独立子会话（对齐桌面端「从此处分支」；锚点须为已完成 turn） */
+  forkSession(
+    sessionId: string,
+    request: MobileBridgeForkSessionRequest,
+  ): Promise<MobileBridgeForkSessionResponse>
+  /** 会话分支血缘（来源 + 直接子分支；lineage=null = 该会话不是 fork 副本） */
+  getSessionLineage(sessionId: string): Promise<MobileBridgeLineageResponse>
+  /** 技能只读列表（平台已安装 + 会话项目技能；移动端选择器数据源，旧版桌面端 404） */
+  listSkills(sessionId: string): Promise<MobileBridgeSkillListResponse>
 }
 
 /**
@@ -196,7 +264,7 @@ export class MobileBridgeService {
     // CORS：小程序端无跨域限制，但保留调试便利
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
     if (req.method === 'OPTIONS') {
       res.writeHead(204)
       res.end()
@@ -220,9 +288,123 @@ export class MobileBridgeService {
     // ─── 项目（workspace 投影） ────────────────────────────────────────────────
 
     if (path === '/v1/projects' && req.method === 'GET') {
-      const limit = Math.min(Number(url.searchParams.get('limit') ?? '50') || 50, 200)
+      const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit') ?? '50') || 50, 200))
       const body = await this.requireDeps().listProjects(limit)
       this.sendJson(res, 200, body)
+      return
+    }
+
+    // 项目重命名 / 置顶 / 归档（移动端反向设置；响应带更新后摘要供端上回显校验）
+    const projectItemMatch = /^\/v1\/projects\/([^/]+)$/.exec(path)
+    if (projectItemMatch && req.method === 'PATCH') {
+      const rawId = projectItemMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const payload = await this.readJson<MobileBridgeUpdateProjectRequest>(req)
+      const patch: MobileBridgeUpdateProjectRequest = {}
+      if (payload.name !== undefined) {
+        if (typeof payload.name !== 'string' || payload.name.trim().length === 0) {
+          this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '项目名不能为空' } })
+          return
+        }
+        patch.name = payload.name.trim()
+      }
+      if (typeof payload.pinned === 'boolean') patch.pinned = payload.pinned
+      if (typeof payload.archived === 'boolean') patch.archived = payload.archived
+      if (patch.name === undefined && patch.pinned === undefined && patch.archived === undefined) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '缺少需要修改的字段' } })
+        return
+      }
+      try {
+        const project = await this.requireDeps().updateProject(decodeURIComponent(rawId), patch)
+        this.requireDeps().notifySidebarChanged()
+        this.sendJson(res, 200, { project })
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    // 项目删除（移动端反向设置；与桌面端 workspace:delete 同语义：级联删除项目下全部会话）
+    if (projectItemMatch && req.method === 'DELETE') {
+      const rawId = projectItemMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      try {
+        const body = await this.requireDeps().deleteProject(decodeURIComponent(rawId))
+        if (body.deleted) this.requireDeps().notifySidebarChanged()
+        this.sendJson(res, 200, body)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    // 会话搜索（标题 LIKE + 内容 FTS5；projectId 过滤语义与列表端点一致）
+    if (path === '/v1/search' && req.method === 'GET') {
+      const query = (url.searchParams.get('q') ?? '').trim()
+      if (!query) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '缺少搜索关键词 q' } })
+        return
+      }
+      const projectIdParam = (url.searchParams.get('projectId') ?? '').trim()
+      const limitParam = Number(url.searchParams.get('limit') ?? '20') || 20
+      const body = await this.requireDeps().searchSessions(
+        query,
+        projectIdParam || undefined,
+        Math.min(limitParam, 50),
+      )
+      this.sendJson(res, 200, body)
+      return
+    }
+
+    // ─── 侧栏手动排序（移动端与桌面端共享同一份手动序） ──────────────────────────
+
+    if (path === '/v1/sidebar-order' && req.method === 'GET') {
+      const order = await this.requireDeps().getSidebarOrder()
+      this.sendJson(res, 200, order)
+      return
+    }
+    if (path === '/v1/sidebar-order' && req.method === 'PUT') {
+      const payload = await this.readJson<SidebarOrderUpdateRequest>(req)
+      if (
+        payload?.scope !== 'projects' &&
+        payload?.scope !== 'sessions' &&
+        payload?.scope !== 'pinned-sessions'
+      ) {
+        this.sendJson(res, 400, {
+          error: { code: 'BAD_REQUEST', message: 'scope 必须是 projects/sessions/pinned-sessions' },
+        })
+        return
+      }
+      if (
+        payload.scope !== 'projects' &&
+        !(typeof payload.projectId === 'string' && payload.projectId)
+      ) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '缺少 projectId' } })
+        return
+      }
+      if (
+        !Array.isArray(payload.itemIds) ||
+        payload.itemIds.some((id) => typeof id !== 'string') ||
+        new Set(payload.itemIds).size !== payload.itemIds.length
+      ) {
+        this.sendJson(res, 400, {
+          error: { code: 'BAD_REQUEST', message: 'itemIds 必须是不含重复项的 id 数组' },
+        })
+        return
+      }
+      try {
+        const body = await this.requireDeps().updateSidebarOrder(payload)
+        this.requireDeps().notifySidebarChanged()
+        this.sendJson(res, 200, body)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
       return
     }
 
@@ -278,6 +460,15 @@ export class MobileBridgeService {
       return
     }
 
+    // ─── 技能列表（移动端只读选择器；旧版桌面端无此端点，端上 404 降级隐藏入口） ──
+
+    if (path === '/v1/skills' && req.method === 'GET') {
+      const sessionId = (url.searchParams.get('sessionId') ?? '').trim()
+      const body = await this.requireDeps().listSkills(sessionId)
+      this.sendJson(res, 200, body)
+      return
+    }
+
     const projectSessionsMatch = /^\/v1\/projects\/([^/]+)\/sessions$/.exec(path)
     if (projectSessionsMatch && req.method === 'GET') {
       const rawId = projectSessionsMatch[1]
@@ -286,7 +477,7 @@ export class MobileBridgeService {
         return
       }
       const projectId = decodeURIComponent(rawId)
-      const limit = Math.min(Number(url.searchParams.get('limit') ?? '50') || 50, 200)
+      const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit') ?? '50') || 50, 200))
       const result = await this.requireDeps().listSessions(limit, projectId)
       const body: MobileBridgeSessionListResponse = result
       this.sendJson(res, 200, body)
@@ -296,7 +487,7 @@ export class MobileBridgeService {
     // ─── 会话 ─────────────────────────────────────────────────────────────────
 
     if (path === '/v1/sessions' && req.method === 'GET') {
-      const limit = Math.min(Number(url.searchParams.get('limit') ?? '50') || 50, 200)
+      const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit') ?? '50') || 50, 200))
       const projectIdParam = url.searchParams.get('projectId')
       const result = await this.requireDeps().listSessions(
         limit,
@@ -313,6 +504,8 @@ export class MobileBridgeService {
         ...(payload.title ? { title: payload.title } : {}),
         ...(payload.projectId ? { projectId: payload.projectId } : {}),
       })
+      // 桌面端侧栏对自身 CRUD 走乐观更新，移动端新建只有靠这里广播才能实时出现
+      this.requireDeps().notifySidebarChanged()
       const body: MobileBridgeCreateSessionResponse = { session }
       this.sendJson(res, 200, body)
       return
@@ -358,11 +551,29 @@ export class MobileBridgeService {
       if (typeof payload.projectId === 'string' && payload.projectId) {
         patch.projectId = payload.projectId
       }
+      // 会话标记（null = 取消标记；非法值直接 400，不静默忽略避免端上假成功）
+      if (payload.sessionLabel !== undefined) {
+        if (
+          payload.sessionLabel !== null &&
+          !(SESSION_LABEL_KEYS as readonly string[]).includes(payload.sessionLabel)
+        ) {
+          this.sendJson(res, 400, {
+            error: { code: 'BAD_REQUEST', message: '不支持的会话标记' },
+          })
+          return
+        }
+        patch.sessionLabel = payload.sessionLabel
+      }
       if (Object.keys(patch).length === 0) {
         this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '没有需要修改的字段' } })
         return
       }
       const session = await this.requireDeps().updateSession(sessionId, patch)
+      // 置顶/打标/改名等侧栏可见字段实时回流桌面端（渲染端订阅后防抖重拉）；
+      // 纯运行时配置补丁（快速发起建会话后紧跟的模型/权限/推理 patch）不打扰侧栏重拉
+      if (SIDEBAR_VISIBLE_SESSION_FIELDS.some((field) => patch[field] !== undefined)) {
+        this.requireDeps().notifySidebarChanged()
+      }
       const runtime = await this.requireDeps().getSessionRuntime(sessionId)
       this.sendJson(res, 200, { session: { ...session, ...(runtime != null ? { runtime } : {}) } })
       return
@@ -376,6 +587,8 @@ export class MobileBridgeService {
       }
       const sessionId = decodeURIComponent(rawId)
       const result = await this.requireDeps().deleteSession(sessionId)
+      // 删除实时回流桌面端侧栏（乐观更新模型感知不到外部删除，会一直滞留旧条目）
+      this.requireDeps().notifySidebarChanged()
       this.sendJson(res, 200, result)
       return
     }
@@ -388,7 +601,10 @@ export class MobileBridgeService {
         return
       }
       const sessionId = decodeURIComponent(rawId)
-      const limit = Math.min(Number(url.searchParams.get('limit') ?? 200) || 200, HISTORY_LIMIT)
+      const limit = Math.max(
+        1,
+        Math.min(Number(url.searchParams.get('limit') ?? 200) || 200, HISTORY_LIMIT),
+      )
       // 向上翻页游标：仅接受正整数（非法值静默忽略 = 按最新页返回，向后兼容旧客户端）
       const beforeSeqRaw = url.searchParams.get('beforeSeq')
       const beforeSeq =
@@ -463,6 +679,131 @@ export class MobileBridgeService {
       const sessionId = decodeURIComponent(rawId)
       await this.requireDeps().cancelTurn(sessionId)
       this.sendJson(res, 200, { cancelled: true })
+      return
+    }
+
+    // ─── 会话分支（Session Fork：对齐桌面端「从此处分支」；子会话为独立实体） ──
+
+    const forkMatch = /^\/v1\/sessions\/([^/]+)\/fork$/.exec(path)
+    if (forkMatch && req.method === 'POST') {
+      const rawId = forkMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const sessionId = decodeURIComponent(rawId)
+      const payload = await this.readJson<MobileBridgeForkSessionRequest>(req)
+      // anchorTurnId / title 只接受非空字符串（缺省 = 复制全部已完成内容 / 沿用自动标题）
+      if (
+        payload.anchorTurnId != null &&
+        !(typeof payload.anchorTurnId === 'string' && payload.anchorTurnId.trim())
+      ) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: 'anchorTurnId 无效' } })
+        return
+      }
+      if (payload.title != null && !(typeof payload.title === 'string' && payload.title.trim())) {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: 'title 无效' } })
+        return
+      }
+      let body
+      try {
+        body = await this.requireDeps().forkSession(sessionId, payload)
+      } catch (error) {
+        // 源会话不存在→404、锚点无效→400（装配层转 SparkError）；其余 rethrow 兜底 500
+        this.sendSparkError(res, error)
+        return
+      }
+      log.info(
+        `mobile bridge session forked: session=${sessionId} child=${body.session.id} turns=${body.copiedTurnCount}`,
+      )
+      // 子会话是侧栏可见实体：通知桌面端刷新（复用既有双向同步通道）
+      this.requireDeps().notifySidebarChanged()
+      this.sendJson(res, 200, body)
+      return
+    }
+
+    const lineageMatch = /^\/v1\/sessions\/([^/]+)\/lineage$/.exec(path)
+    if (lineageMatch && req.method === 'GET') {
+      const rawId = lineageMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const body = await this.requireDeps().getSessionLineage(decodeURIComponent(rawId))
+      this.sendJson(res, 200, body)
+      return
+    }
+
+    // ─── 挂起交互（审批/问答轮询 + 应答；移动端无下行推送通道） ────────────────
+
+    const interactionsMatch = /^\/v1\/sessions\/([^/]+)\/interactions$/.exec(path)
+    if (interactionsMatch && req.method === 'GET') {
+      const rawId = interactionsMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const body = await this.requireDeps().listPendingInteractions(decodeURIComponent(rawId))
+      this.sendJson(res, 200, body)
+      return
+    }
+
+    const approvalMatch = /^\/v1\/sessions\/([^/]+)\/approvals\/([^/]+)\/resolve$/.exec(path)
+    if (approvalMatch && req.method === 'POST') {
+      const rawSessionId = approvalMatch[1]
+      const rawRequestId = approvalMatch[2]
+      if (rawSessionId == null || rawRequestId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const payload = await this.readJson<{ decision?: string }>(req)
+      const decision = payload.decision
+      if (decision !== 'allow-once' && decision !== 'allow-session' && decision !== 'deny') {
+        this.sendJson(res, 400, {
+          error: { code: 'BAD_REQUEST', message: 'decision 必须是 allow-once/allow-session/deny' },
+        })
+        return
+      }
+      const ok = await this.requireDeps().resolveApproval(
+        decodeURIComponent(rawSessionId),
+        decodeURIComponent(rawRequestId),
+        decision,
+      )
+      if (!ok) {
+        this.sendJson(res, 404, {
+          error: { code: 'NOT_FOUND', message: '审批已结束或不存在，请刷新后重试' },
+        })
+        return
+      }
+      this.sendJson(res, 200, { ok: true })
+      return
+    }
+
+    const questionMatch = /^\/v1\/sessions\/([^/]+)\/questions\/([^/]+)\/answer$/.exec(path)
+    if (questionMatch && req.method === 'POST') {
+      const rawSessionId = questionMatch[1]
+      const rawQuestionId = questionMatch[2]
+      if (rawSessionId == null || rawQuestionId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const payload = await this.readJson<{ answers?: unknown }>(req)
+      if (payload.answers == null || typeof payload.answers !== 'object') {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: '缺少 answers' } })
+        return
+      }
+      const ok = await this.requireDeps().answerQuestion(
+        decodeURIComponent(rawSessionId),
+        decodeURIComponent(rawQuestionId),
+        payload.answers as Record<string, unknown>,
+      )
+      if (!ok) {
+        this.sendJson(res, 404, {
+          error: { code: 'NOT_FOUND', message: '提问已结束或不存在，请刷新后重试' },
+        })
+        return
+      }
+      this.sendJson(res, 200, { ok: true })
       return
     }
 
@@ -678,7 +1019,14 @@ export class MobileBridgeService {
         this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
         return
       }
-      const body = await this.requireDeps().runSessionTaskNow(decodeURIComponent(rawId))
+      let body
+      try {
+        body = await this.requireDeps().runSessionTaskNow(decodeURIComponent(rawId))
+      } catch (error) {
+        // 任务不存在→404（装配层抛 SparkError NOT_FOUND）；其余 rethrow 兜底 500
+        this.sendSparkError(res, error)
+        return
+      }
       this.sendJson(res, 200, body)
       return
     }
@@ -939,6 +1287,24 @@ export class MobileBridgeService {
     const payload = JSON.stringify(body)
     res.writeHead(status, { 'Content-Type': 'application/json' })
     res.end(payload)
+  }
+
+  /**
+   * SparkError → HTTP 语义响应（侧栏排序校验等带错误码的领域异常）。
+   * NOT_FOUND 映射 404，VALIDATION_FAILED 映射 400；其余按内部错误兜底 500。
+   */
+  private sendSparkError(res: ServerResponse, error: unknown): void {
+    if (error instanceof SparkError) {
+      if (error.code === 'NOT_FOUND') {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: error.message } })
+        return
+      }
+      if (error.code === 'VALIDATION_FAILED') {
+        this.sendJson(res, 400, { error: { code: 'BAD_REQUEST', message: error.message } })
+        return
+      }
+    }
+    throw error
   }
 }
 

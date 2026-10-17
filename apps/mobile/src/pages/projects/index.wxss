@@ -65,6 +65,34 @@
   font-weight: 600;
 }
 
+/* ─── 项目搜索 ─────────────────────────────────────────────────────────────── */
+
+.projects-search {
+  margin: 0 32rpx 20rpx;
+  background: #fff;
+  border: 1rpx solid #ececec;
+  border-radius: 999rpx;
+  padding: 14rpx 24rpx;
+  gap: 12rpx;
+}
+.projects-search-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: #1a1a1a;
+}
+
+/* ─── 置顶标识 ─────────────────────────────────────────────────────────────── */
+
+.projects-row-name-line {
+  align-items: center;
+  gap: 10rpx;
+  min-width: 0;
+}
+.projects-row-pin {
+  flex: none;
+  color: #d97706;
+}
+
 .projects-list {
   padding: 12rpx 32rpx 48rpx;
 }

@@ -491,6 +491,10 @@ import {
   resolveRemoteSelection,
 } from './remote-command-utils.js'
 import { describeDeliveryError } from '../services/remoteDeliveryRetry.js'
+import {
+  assertWorkspaceCreateReservedName,
+  assertWorkspaceUpdateReservedName,
+} from './workspace-reserved-name.js'
 import type {
   RemoteSelectionKind,
   RemoteSelectionRow,
@@ -5512,6 +5516,11 @@ export function registerAllIpcHandlers(): void {
       return auth.getAccessToken()
     },
     getRelayBaseUrl: () => getAuthService().getEduClient().getBaseUrl(),
+    // 挂起交互（移动端审批卡/问答卡）：与桌面弹卡、远程连接桥共用同一权限服务与问答注册表
+    getPermissionService,
+    getPendingUserQuestions: () => pendingUserQuestions,
+    // 技能只读列表（移动端技能选择器数据源）
+    getSkillService,
   })
 
   // 启动时仅在宿主机存在对应 CLI 时补种内置本地 provider。
@@ -8078,6 +8087,20 @@ export function registerAllIpcHandlers(): void {
       throw new Error('workspace:open requires rootPath')
     }
 
+    // 保留名守卫：openWorkspace 本身无重名校验，create.name 或缺省时的
+    // basename(rootPath) 都可能撞上「不使用项目」——第二个同名工作区会破坏
+    // 主进程按名称查找（根目录搬迁、定时任务/终端落点）
+    if ((req.create?.name ?? path.basename(path.resolve(rootPath))) === NO_PROJECT_WORKSPACE_NAME) {
+      const rows = new WorkspaceRepository(getDatabase()).listAll(100, 0, {
+        includeArchived: true,
+      })
+      assertWorkspaceCreateReservedName({
+        rootPath,
+        createName: req.create?.name,
+        existingNoProject: rows.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME) ?? null,
+      })
+    }
+
     log.info(`workspace:open requested, rootPath=${rootPath}`)
     const workspace = await getWorkspaceService().openWorkspace(rootPath, req.create?.name, {
       create: req.create != null,
@@ -8117,6 +8140,15 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('workspace:update', async (req) => {
     log.info(`workspace:update requested, workspaceId=${req.workspaceId}`)
+    // 保留名守卫：任何工作区不得改名为「不使用项目」（防重名误认）；
+    // 保留工作区自身不得改名或归档（name/archived 均缺省的配置类补丁不受影响）
+    if (req.name !== undefined || req.archived !== undefined) {
+      const target = new WorkspaceRepository(getDatabase()).get(req.workspaceId)
+      assertWorkspaceUpdateReservedName(
+        target == null ? null : { id: target.id, name: target.name, rootPath: target.root_path },
+        { name: req.name, archived: req.archived },
+      )
+    }
     // 项目默认 Agent：写入前校验目标 agent 存在，避免项目长期挂着失效引用
     if (req.defaultAgentId != null && req.defaultAgentId !== '') {
       const agent = getAgentRepository().get(req.defaultAgentId)

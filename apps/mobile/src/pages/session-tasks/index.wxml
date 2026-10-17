@@ -1,0 +1,174 @@
+<!-- 会话定时任务页：列表三态 + 页内表单态（新建/编辑共用） -->
+
+<view class="st-page">
+  <safe-nav-bar title="定时任务" show-back="{{true}}" />
+
+  <!-- 表单态 -->
+  <block wx:if="{{mode === 'form'}}">
+    <view class="st-form">
+      <view class="st-form-title">{{editingTaskId ? '编辑任务' : '新建任务'}}</view>
+
+      <view class="st-field">
+        <text class="st-field-label">任务名称</text>
+        <input
+          class="st-input"
+          value="{{form.name}}"
+          placeholder="如：每天整理会话摘要"
+          placeholder-class="st-placeholder"
+          bindinput="onFormName"
+        />
+      </view>
+
+      <view class="st-field">
+        <text class="st-field-label">执行提示词</text>
+        <textarea
+          class="st-textarea"
+          value="{{form.prompt}}"
+          placeholder="到点后以该提示词在本会话发起一轮执行"
+          placeholder-class="st-placeholder"
+          auto-height
+          maxlength="2000"
+          bindinput="onFormPrompt"
+        />
+      </view>
+
+      <view class="st-field">
+        <text class="st-field-label">触发方式</text>
+        <view class="st-segments row">
+          <view
+            wx:for="{{triggerTypes}}"
+            wx:key="*this"
+            class="st-segment {{form.triggerType === item ? 'st-segment--on' : ''}}"
+            data-type="{{item}}"
+            bindtap="onTriggerSelect"
+          >{{triggerTypeLabels[item]}}</view>
+        </view>
+      </view>
+
+      <block wx:if="{{form.triggerType === 'once'}}">
+        <view class="st-field st-field--inline">
+          <text class="st-field-label">执行日期</text>
+          <picker mode="date" value="{{form.runDate}}" bindchange="onRunDate">
+            <view class="st-picker-value">{{form.runDate || '选择日期'}}</view>
+          </picker>
+        </view>
+        <view class="st-field st-field--inline">
+          <text class="st-field-label">执行时间</text>
+          <picker mode="time" value="{{form.runTime}}" bindchange="onRunTime">
+            <view class="st-picker-value">{{form.runTime || '选择时间'}}</view>
+          </picker>
+        </view>
+      </block>
+
+      <view wx:elif="{{form.triggerType === 'interval'}}" class="st-field">
+        <text class="st-field-label">间隔（分钟）</text>
+        <input
+          class="st-input"
+          type="number"
+          value="{{form.intervalMinutes}}"
+          placeholder="如 60 表示每小时"
+          placeholder-class="st-placeholder"
+          bindinput="onIntervalMinutes"
+        />
+      </view>
+
+      <view wx:else class="st-field">
+        <text class="st-field-label">Cron 表达式</text>
+        <input
+          class="st-input"
+          value="{{form.cronExpression}}"
+          placeholder="5 字段，如 0 9 * * *；服务端校验"
+          placeholder-class="st-placeholder"
+          bindinput="onCronExpression"
+        />
+      </view>
+
+      <view class="st-advanced-toggle row" hover-class="st-hover-dim" bindtap="onToggleAdvanced">
+        <text>高级选项</text>
+        <text class="st-advanced-arrow {{advancedOpen ? 'st-advanced-arrow--open' : ''}}">›</text>
+      </view>
+      <view wx:if="{{advancedOpen}}" class="st-advanced">
+        <view class="st-field">
+          <text class="st-field-label">单次超时（秒）</text>
+          <input
+            class="st-input"
+            type="number"
+            value="{{form.timeoutSeconds}}"
+            placeholder="缺省 300"
+            placeholder-class="st-placeholder"
+            bindinput="onTimeoutSeconds"
+          />
+        </view>
+        <view class="st-field">
+          <text class="st-field-label">失败重试次数</text>
+          <input
+            class="st-input"
+            type="number"
+            value="{{form.maxRetries}}"
+            placeholder="缺省 0"
+            placeholder-class="st-placeholder"
+            bindinput="onMaxRetries"
+          />
+        </view>
+      </view>
+
+      <view class="st-form-actions row">
+        <view class="st-btn" hover-class="st-hover-dim" bindtap="onCancelForm">取消</view>
+        <view
+          class="st-btn st-btn--primary {{saving ? 'st-btn--busy' : ''}}"
+          hover-class="st-hover-dim"
+          bindtap="onSave"
+        >{{saving ? '保存中…' : '保存'}}</view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 列表态 -->
+  <block wx:else>
+    <view wx:if="{{loading}}" class="st-loading">加载任务…</view>
+
+    <view wx:elif="{{loadError}}" class="st-error">
+      <text>{{loadError}}</text>
+      <view class="st-retry" bindtap="loadTasks">重试</view>
+    </view>
+
+    <empty-state
+      wx:elif="{{cards.length === 0}}"
+      icon="timer"
+      title="还没有定时任务"
+      desc="创建任务后，到点会在本会话自动执行提示词"
+    >
+      <view class="st-empty-create" bindtap="onCreate">新建任务</view>
+    </empty-state>
+
+    <block wx:else>
+      <view wx:for="{{cards}}" wx:key="task.id" class="st-card">
+        <view class="st-card-head row">
+          <text class="st-card-name ellipsis">{{item.task.name}}</text>
+          <switch
+            checked="{{item.task.enabled}}"
+            color="#3b82f6"
+            data-id="{{item.task.id}}"
+            bindchange="onToggle"
+          />
+        </view>
+        <text class="st-card-prompt">{{item.task.prompt}}</text>
+        <view class="st-card-meta row">
+          <text class="st-trigger-tag">{{item.triggerLabel}}</text>
+          <text wx:if="{{item.nextRunLabel}}" class="st-meta-text">下次 {{item.nextRunLabel}}</text>
+          <text wx:if="{{item.lastRunLabel}}" class="st-meta-text">上次 {{item.lastRunLabel}}</text>
+          <text class="st-meta-text">已执行 {{item.task.executionCount}} 次</text>
+        </view>
+        <text wx:if="{{item.task.lastError}}" class="st-card-error">{{item.task.lastError}}</text>
+        <view class="st-card-actions row">
+          <view class="st-card-action" hover-class="st-hover-dim" data-id="{{item.task.id}}" bindtap="onRunNow">立即运行</view>
+          <view class="st-card-action" hover-class="st-hover-dim" data-id="{{item.task.id}}" bindtap="onEdit">编辑</view>
+          <view class="st-card-action st-card-action--danger" hover-class="st-hover-dim" data-id="{{item.task.id}}" data-name="{{item.task.name}}" bindtap="onDelete">删除</view>
+        </view>
+      </view>
+
+      <view class="st-fab-safe"></view>
+      <view class="st-fab" hover-class="st-hover-dim" bindtap="onCreate">＋ 新建任务</view>
+    </block>
+  </block>
+</view>

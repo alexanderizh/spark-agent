@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/utils/sidebar-order.ts",
+    "src/api/bridge.ts",
+    "src/pages/projects/index.ts",
+    "src/pages/project-sessions/index.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

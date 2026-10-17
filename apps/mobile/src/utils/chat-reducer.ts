@@ -16,15 +16,19 @@ import type { BridgeEvent } from '../api/bridge'
 export interface ChatMessage {
   /** 稳定 key：用户消息用事件 id，助手气泡用 segmentId ?? turnId */
   key: string
-  role: 'user' | 'assistant' | 'thinking' | 'tool' | 'status'
+  role: 'user' | 'assistant' | 'thinking' | 'tool' | 'status' | 'media'
   text: string
-  /** 所属回合（助手消息记录，final 收尾归并本 turn 分段用） */
+  /** 所属回合（用户消息 = fork 分支锚点数据源；助手消息 final 收尾归并本 turn 分段用） */
   turnId?: string
   /** 工具名（role=tool） */
   toolName?: string
   toolStatus?: 'running' | 'success' | 'error'
   /** 状态文案（role=status） */
   tone?: 'running' | 'done' | 'error'
+  /** 桌面端图片绝对路径（role=media；presented_files 过滤后的图片子集） */
+  paths?: string[]
+  /** 随消息提交的附件（role=user；历史事件透传，图片缩略图经本地缓存解析） */
+  attachments?: { type: 'image' | 'file'; path: string; name?: string }[]
   createdAt: string
 }
 
@@ -53,6 +57,18 @@ export function filterUnseenEvents(
     unseen.push(event)
   }
   return unseen
+}
+
+/** presented_files → 可展示图片子集（按扩展名过滤，与桌面端 PresentedMedia 白名单一致） */
+const IMAGE_EXTENSIONS = /\.(png|jpe?g|webp|gif|bmp)$/i
+
+function imagePathsFromPresentedFiles(event: BridgeEvent): string[] {
+  if (!Array.isArray(event.files)) return []
+  return event.files
+    .filter((file): file is { path: string; title?: string } => {
+      return typeof file?.path === 'string' && IMAGE_EXTENSIONS.test(file.path)
+    })
+    .map((file) => file.path)
 }
 
 /** 运行中状态 → 人类可读文案 */
@@ -94,6 +110,10 @@ export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): Chat
           key: `u:${event.id}`,
           role: 'user',
           text: event.content ?? '',
+          turnId: event.turnId,
+          ...(Array.isArray(event.attachments) && event.attachments.length > 0
+            ? { attachments: event.attachments }
+            : {}),
           createdAt: event.timestamp,
         })
         running = true
@@ -102,18 +122,46 @@ export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): Chat
 
       case 'assistant_message': {
         // 最终完整消息（isFinal，无 segmentId）：桌面端在流式分段之外会补一条
-        // final 收尾消息，文本与已渲染的分段拼接一致 —— 若不归并会渲染双份。
-        // 口径与桌面端 reconcileFinalText 一致：final 到达时替换本 turn 最后一个
-        // 助手气泡的文本（相等则无操作），不再新开气泡。
+        // final 收尾消息。口径与桌面端渲染管线一致：按内容去重收尾、不覆盖此前
+        // 各段叙述 —— 分段气泡必须保留原位，穿插其间的工具日志才不会被打乱时序
+        // （旧行为把全部分段归并成一条大正文，工具日志会被整体挤到正文之后）。
         if (event.isFinal === true && event.segmentId == null) {
           const finalText = event.content ?? ''
-          // 归并本 turn 的全部分段气泡为一条 final 气泡（与桌面端单消息多段聚合同观感）
           const turnAssistantIndexes: number[] = []
           messages.forEach((item, index) => {
             if (item.role === 'assistant' && item.turnId === event.turnId) {
               turnAssistantIndexes.push(index)
             }
           })
+          if (turnAssistantIndexes.length === 0) {
+            // 无已渲染分段（历史只有 final 或流式事件缺失）：final 即正文
+            messages.push({
+              key: `a:${event.turnId}`,
+              role: 'assistant',
+              text: finalText,
+              turnId: event.turnId,
+              createdAt: event.timestamp,
+            })
+            break
+          }
+          const lastIndex = turnAssistantIndexes[turnAssistantIndexes.length - 1]
+          const last = messages[lastIndex]
+          const sameText = (a: string, b: string) => a.trim() === b.trim()
+          const joined = turnAssistantIndexes.map((i) => messages[i].text).join('')
+          if (sameText(joined, finalText)) {
+            // 分段拼接已等于 final 全文：丢弃 final，分段原位保留（正常路径）
+            break
+          }
+          if (sameText(last.text, finalText)) {
+            // final 只覆盖最后一个分段（如 Claude result 仅含末段文本）：无操作收尾
+            break
+          }
+          if (joined.length > 0 && finalText.startsWith(joined)) {
+            // final 是分段拼接的扩展：差量补到最后一段，保持分段原位
+            last.text += finalText.slice(joined.length)
+            break
+          }
+          // 内容对不上（分段缺失/漂移）：内容正确性优先，退化为归并成一条 final 气泡
           const anchorIndex = turnAssistantIndexes[0]
           for (let i = turnAssistantIndexes.length - 1; i >= 0; i -= 1) {
             messages.splice(turnAssistantIndexes[i], 1)
@@ -244,6 +292,22 @@ export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): Chat
           tone: 'error',
           createdAt: event.timestamp,
         })
+        break
+      }
+
+      case 'presented_files': {
+        // agent 显式呈现的产物图片：独立媒体条（不参与文本 delta 拼接）；
+        // 空数组（全部为非图片）不入时间线
+        const imagePaths = imagePathsFromPresentedFiles(event)
+        if (imagePaths.length > 0) {
+          messages.push({
+            key: `m:${event.id}`,
+            role: 'media',
+            text: '',
+            paths: imagePaths,
+            createdAt: event.timestamp,
+          })
+        }
         break
       }
 

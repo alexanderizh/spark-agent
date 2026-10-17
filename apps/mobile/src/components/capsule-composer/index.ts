@@ -6,7 +6,8 @@
  *
  * 键盘策略：两种模式统一关闭 adjust-position（原生整页上推在 float 模式下完全不生效、
  * 在 dock 模式下把输入框顶死在键盘上沿），改为监听 textarea 的 keyboardheightchange
- * 自行抬升：float 用内联 bottom 抬到键盘上方；dock 在组件尾部加等高占位把输入框顶起，
+ * 自行抬升：float 用内联 bottom 抬到键盘上方（安全区 padding 保留，输入区浮在键盘上沿，
+ * 与首页同款）；dock 在组件尾部加等高占位把输入框顶起，
  * 页面消息区（flex:1）自动压缩，可边打字边看流式回复。keyboardchange 事件转发给页面，
  * 供页面收起底部安全区避免与键盘高度叠加出缝。
  *

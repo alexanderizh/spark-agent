@@ -4,15 +4,16 @@
   box-sizing: border-box;
 }
 
-/* 悬浮模式：fixed 覆盖在列表之上，距底部安全区 24rpx；
-   键盘弹起时由内联 style 把 bottom 抬到键盘上方（键盘盖住安全区，不叠加） */
+/* 悬浮模式：fixed 覆盖在列表之上，与首页 composer 同款定位模型——
+   bottom 贴底、安全区 + 24rpx 收进 padding-bottom；键盘弹起时由内联 style 把
+   bottom 抬到键盘上方（padding 安全区保留，输入区浮在键盘上沿留出同款空隙） */
 .composer--float {
   position: fixed;
   left: 32rpx;
   right: 32rpx;
-  bottom: calc(env(safe-area-inset-bottom) + 24rpx);
+  bottom: 0;
   z-index: 20;
-  transition: bottom 0.16s ease-out;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 24rpx);
 }
 
 /* 停靠模式：聊天页文档流内；键盘弹起时 kb-spacer 顶起（安全区由页面收起） */

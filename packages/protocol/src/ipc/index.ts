@@ -2255,6 +2255,8 @@ export type PermissionDecisionScope = 'project' | 'global'
 // Tool approval flow (main → renderer push, then renderer → main respond)
 export interface PermissionApprovalRequest {
   requestId: string
+  /** 请求创建时间（ISO；移动端桥接等无推送通道的端据此展示与排序） */
+  createdAt?: string
   /** Session turn that produced this approval; used to route remote approvals safely. */
   turnId?: string
   /** Claude SDK control_request id, retained for out-of-band audit/correlation. */
@@ -9018,7 +9020,7 @@ export interface IpcStreamChannelMap {
   }
   /** 主进程经工作流试跑等路径创建会话后，通知渲染端刷新会话列表（修复试跑期间侧栏列表不更新）。 */
   'stream:session:list-changed': {
-    source: 'workflow-test-run'
+    source: 'workflow-test-run' | 'mobile-bridge'
     sessionId?: string
   }
 }

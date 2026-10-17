@@ -8,9 +8,22 @@
 
 import type { ChatMessage } from './chat-reducer'
 
+/** 用户消息附件（历史事件透传；图片缩略图经本地缓存解析后渲染） */
+export interface TimelineUserAttachment {
+  type: 'image' | 'file'
+  path: string
+  name?: string
+}
+
 export type TimelineItem =
   | { kind: 'time'; key: string; label: string }
-  | { kind: 'user'; key: string; text: string }
+  | {
+      kind: 'user'
+      key: string
+      text: string
+      turnId?: string
+      attachments?: TimelineUserAttachment[]
+    }
   | { kind: 'assistant'; key: string; text: string }
   | { kind: 'thinking'; key: string; text: string; expanded?: boolean }
   | {
@@ -20,6 +33,7 @@ export type TimelineItem =
       toolStatus: 'running' | 'success' | 'error'
     }
   | { kind: 'status'; key: string; text: string; tone: 'running' | 'done' | 'error' }
+  | { kind: 'media'; key: string; paths: string[]; previews?: string[] }
 
 function dayLabel(iso: string): string {
   const d = new Date(iso)
@@ -52,14 +66,23 @@ export function buildTimelineItems(messages: ChatMessage[]): TimelineItem[] {
     }
     switch (msg.role) {
       case 'user':
-        items.push({ kind: 'user', key: msg.key, text: msg.text })
+        items.push({
+          kind: 'user',
+          key: msg.key,
+          text: msg.text,
+          ...(msg.turnId != null ? { turnId: msg.turnId } : {}),
+          ...(msg.attachments != null && msg.attachments.length > 0
+            ? { attachments: msg.attachments }
+            : {}),
+        })
         break
       case 'assistant':
         items.push({ kind: 'assistant', key: msg.key, text: msg.text })
         break
       case 'thinking': {
         // 同一回合可能产生多个思考片段；归并成一个折叠入口，避免每段各占一行。
-        const existing = msg.turnId ? thinkingByTurn.get(msg.turnId) : undefined
+        const turnDayKey = msg.turnId ? `${msg.turnId}:${day}` : ''
+        const existing = turnDayKey ? thinkingByTurn.get(turnDayKey) : undefined
         if (existing) {
           existing.text += msg.text
           break
@@ -70,7 +93,7 @@ export function buildTimelineItems(messages: ChatMessage[]): TimelineItem[] {
           text: msg.text,
         }
         items.push(thinkingItem)
-        if (msg.turnId) thinkingByTurn.set(msg.turnId, thinkingItem)
+        if (turnDayKey) thinkingByTurn.set(turnDayKey, thinkingItem)
         break
       }
       case 'tool':
@@ -83,6 +106,11 @@ export function buildTimelineItems(messages: ChatMessage[]): TimelineItem[] {
         break
       case 'status':
         items.push({ kind: 'status', key: msg.key, text: msg.text, tone: msg.tone ?? 'done' })
+        break
+      case 'media':
+        if (msg.paths != null && msg.paths.length > 0) {
+          items.push({ kind: 'media', key: msg.key, paths: msg.paths })
+        }
         break
     }
   }

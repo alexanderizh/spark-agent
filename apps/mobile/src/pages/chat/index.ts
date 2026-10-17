@@ -8,10 +8,11 @@
  *
  * 能力面（2026-10-14 扩展）：
  *   配置条    助手 / 模型 / 权限策略 / 推理强度 / 工作流 / 项目 → 半屏面板切换
- *   附件      图片/文件上传（桌面端落盘）→ 随回合提交
+ *   附件      图片/文件上传（桌面端落盘）→ 随回合提交；技能/命令快捷插入
  *   语音      按住说话 → 桌面端转写（本地 SenseVoice → 云渠道）→ 填入输入框
  *   命令      / 前缀补全 → executeCommand（设置型主进程生效，技能型转发 agent）
- *   定时任务  session 作用域面板（session-tasks-panel 组件）
+ *   定时任务  独立任务页（pages/session-tasks，chat 页菜单跳转）
+ *   分支      长按用户气泡「从此处分支」→ 复制子会话；lineage-banner 展示分支关系
  *
  * 渲染分层：BridgeEvent → chat-reducer(消息列表) → chat-view(渲染项+时间分界) → setData。
  * 流式期间 setData 做了 100ms 合并节流，避免高频 delta 卡顿。
@@ -30,6 +31,18 @@ import {
   type TimelineItem,
 } from '../../utils/chat-view'
 import { formatRelativeTime } from '../../utils/format'
+import {
+  buildApprovalCardViews,
+  buildQuestionAnswerPayload,
+  buildQuestionCardViews,
+  buildQuestionSkipPayload,
+  emptyQuestionDraft,
+  questionDraftKey,
+  type ApprovalCardView,
+  type QuestionCardView,
+  type QuestionDraft,
+} from '../../utils/interaction-view'
+import { PERMISSION_LABELS, REASONING_LABELS } from '../../utils/session-config'
 import { getItem, setItem, StorageKeys } from '../../utils/storage'
 
 interface ComposerAttachmentView {
@@ -55,32 +68,16 @@ interface PanelOptionView {
   disabled?: boolean
 }
 
-type PanelKind = 'agent' | 'model' | 'permission' | 'reasoning' | 'workflow' | 'project'
-
-const REASONING_LABELS: Record<string, string> = {
-  minimal: '最省',
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '超高',
-  max: '极致',
-}
-
-const PERMISSION_LABELS: Record<string, string> = {
-  'claude-ask': '每步确认',
-  'claude-auto-edits': '自动编辑',
-  'claude-plan': '规划模式',
-  'claude-auto': '自动',
-  'claude-bypass': '免确认',
-  'codex-default': '默认',
-  'codex-auto-review': '自动审查',
-  'codex-full-access': '完全访问',
-  'spark-default': '默认',
-  'spark-accept-edits': '接受编辑',
-  'spark-plan': '规划模式',
-  'spark-bypass': '免确认',
-  'spark-auto': '自动',
-}
+type PanelKind =
+  | 'agent'
+  | 'model'
+  | 'permission'
+  | 'reasoning'
+  | 'workflow'
+  | 'project'
+  | 'skill'
+  | 'command'
+  | 'branch'
 
 interface ChatPageData {
   sessionId: string
@@ -108,6 +105,11 @@ interface ChatPageData {
   hideExecutionDetails: boolean
   /** 键盘弹起中（dock 安全区让位，避免与键盘高度叠加出缝） */
   keyboardOpen: boolean
+  // ── 分支（Session Fork 血缘横幅） ──
+  /** fork 来源会话标题（'' = 当前会话不是 fork 副本，横幅隐藏） */
+  lineageSourceTitle: string
+  /** 直接子分支数（0 = 横幅右半隐藏） */
+  lineageChildCount: number
   // ── 配置条与面板 ──
   chips: ChipView[]
   panelShow: boolean
@@ -124,15 +126,21 @@ interface ChatPageData {
   commands: bridge.BridgeCommandItem[]
   /** 斜杠命令补全面板显隐（输入以 / 开头且尚未带参数时显示） */
   showCommands: boolean
+  /** 桌面端支持 /v1/skills（false = 旧版桌面端，附件菜单隐藏技能入口） */
+  skillsAvailable: boolean
   recording: boolean
   transcribing: boolean
-  // ── 定时任务 ──
-  tasksShow: boolean
+  // ── 挂起交互卡（权限审批 + 用户问答，置于输入区上方） ──
+  approvalCards: (ApprovalCardView & { busy?: boolean })[]
+  questionCards: QuestionCardView[]
 }
 
 const FLUSH_INTERVAL_MS = 100
 /** 附件单回合上限（与桌面端 normalizeTurnAttachments 一致） */
 const MAX_ATTACHMENTS = 20
+/** 挂起交互轮询间隔：回合进行中或有卡片挂起时 3s，空闲 15s 兜底（桌面端无下行推送） */
+const INTERACTION_POLL_ACTIVE_MS = 3_000
+const INTERACTION_POLL_IDLE_MS = 15_000
 
 Page({
   data: {
@@ -153,6 +161,8 @@ Page({
     hasMoreHistory: false,
     hideExecutionDetails: false,
     keyboardOpen: false,
+    lineageSourceTitle: '',
+    lineageChildCount: 0,
     chips: [] as ChipView[],
     panelShow: false,
     panelKind: '' as PanelKind | '',
@@ -166,9 +176,11 @@ Page({
     attachments: [] as ComposerAttachmentView[],
     commands: [] as bridge.BridgeCommandItem[],
     showCommands: false,
+    skillsAvailable: false,
     recording: false,
     transcribing: false,
-    tasksShow: false,
+    approvalCards: [] as ApprovalCardView[],
+    questionCards: [] as QuestionCardView[],
   } as ChatPageData,
 
   /** 最近一次渲染的消息快照（节流合并的基准） */
@@ -191,6 +203,18 @@ Page({
   expandedThinkingKeys: new Set<string>(),
   /** 命令目录原始数据（补全过滤用） */
   commandCatalog: [] as bridge.BridgeCommandItem[],
+  /** 技能目录原始数据（技能选择面板数据源；旧版桌面端为空） */
+  skillCatalog: [] as bridge.BridgeSkillItem[],
+  /** 当前会话分支血缘（横幅与跳转数据源；null = 非分支会话） */
+  lineage: null as bridge.BridgeLineage | null,
+  /** 直接子分支（点开分支列表用） */
+  lineageChildren: [] as bridge.BridgeLineage[],
+  /** 已发起过缓存解析的 media 消息 key（流式全量重绘时防重复触发） */
+  mediaResolvedKeys: new Set<string>(),
+  /** 已发起过缓存解析的历史附件用户消息 key */
+  userAttachResolvedKeys: new Set<string>(),
+  /** 历史附件图片解析结果（消息 key → 桌面路径 → 本地缓存路径） */
+  userAttachPreviews: {} as Record<string, Record<string, string>>,
   /** 设备列表订阅取消函数（onShow 校验所选电脑在线状态 + 实时刷新） */
   unsubscribeDevices: null as (() => void) | null,
   /** 已加载的全部历史事件（按 seq 升序累积；向上翻页时前插） */
@@ -203,9 +227,21 @@ Page({
   /** 原始事件游标，即使服务端映射器过滤掉本页所有事件也能继续向前翻页。 */
   historyCursor: null as number | null,
   historyGeneration: 0,
+  /** 挂起交互轮询定时器（自适应间隔；onUnload 回收） */
+  interactionTimer: 0 as ReturnType<typeof setTimeout> | 0,
+  /** 页面已卸载标记：在途轮询回来后不得再布防下一轮（防 onUnload 后定时器泄漏） */
+  interactionPollStopped: false,
+  /** 服务端挂起交互原始快照（用于新旧对比与乐观移除） */
+  pendingApprovals: [] as bridge.BridgeApprovalItem[],
+  pendingQuestions: [] as bridge.BridgeQuestionItem[],
+  /** 问答卡本地草稿（cardKey = `${questionId}#${index}`） */
+  questionDrafts: {} as Record<string, QuestionDraft>,
+  /** 应答提交中的卡片（审批 requestId / 问答 questionId），渲染 busy 态防重复提交 */
+  submittingKeys: new Set<string>(),
 
   onLoad(options: Record<string, string | undefined>) {
     this.expandedThinkingKeys = new Set<string>()
+    this.interactionPollStopped = false
     const deviceId = options.deviceId ?? ''
     if (!deviceId) {
       // 聊天必须继承项目层传入的电脑，缺少上下文时回到顶层重新选择。
@@ -227,9 +263,10 @@ Page({
     })
     // presence 增量：所选电脑上下线时刷新顶部离线提示条
     this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.refreshDeviceOnline())
-    // 配置目录/命令目录异步补齐，不阻塞首屏历史
+    // 配置目录/命令目录/技能目录异步补齐，不阻塞首屏历史
     void this.loadCatalog()
     void this.loadCommands()
+    void this.loadSkills()
   },
 
   onShow() {
@@ -242,6 +279,9 @@ Page({
     if (this.flushTimer) clearTimeout(this.flushTimer)
     if (this.watchdogTimer) clearInterval(this.watchdogTimer)
     this.watchdogTimer = 0
+    this.interactionPollStopped = true
+    if (this.interactionTimer) clearTimeout(this.interactionTimer)
+    this.interactionTimer = 0
     this.closeStream?.()
     this.closeStream = null
     this.unsubscribeDevices?.()
@@ -320,6 +360,10 @@ Page({
       this.flushTimeline(true)
       this.connectStream()
       this.startWatchdog()
+      // 分支血缘横幅（旧版桌面端 404 静默隐藏）
+      void this.loadLineage()
+      // 挂起交互立刻对一次账（进入页面可能正有等确认的审批/问答），随后自适应轮询
+      void this.pollInteractions()
     } catch (error) {
       if (generation === this.historyGeneration) {
         const message = (error as Error).message || '历史加载失败'
@@ -434,6 +478,16 @@ Page({
           this.latestTimeline = timeline
           this.lastEventAt = Date.now()
           this.flushTimeline()
+          // 桌面端弹审批/问答会先落 waiting 状态事件：立刻对一次账，卡片不用等下一轮轮询
+          if (
+            unseenEvents.some(
+              (event) =>
+                event.type === 'agent_status' &&
+                (event.status === 'waiting_permission' || event.status === 'waiting_user'),
+            )
+          ) {
+            void this.pollInteractions()
+          }
         },
         onError: () => {
           this.setData({ connected: false })
@@ -486,20 +540,85 @@ Page({
     this.flushTimer = setTimeout(paint, FLUSH_INTERVAL_MS)
   },
 
-  /** 用户气泡附件渲染：把发送时挂载的附件映射到对应文本的用户项上（预填 previewUrl） */
+  /**
+   * 渲染项装饰：
+   *   thinking  展开态回填
+   *   user      附件视图（本次发送用本地图；历史消息图片经本地缓存异步解析）
+   *   media     产物图片条（桌面路径经本地缓存异步解析为 previews）
+   */
   decorateItem(item: TimelineItem): TimelineItem {
     if (item.kind === 'thinking') {
       return { ...item, expanded: this.expandedThinkingKeys.has(item.key) }
     }
+    if (item.kind === 'media') {
+      const previews = item.previews ?? []
+      if (previews.length !== item.paths.length) void this.resolveMediaItem(item.key, item.paths)
+      return previews.length > 0 ? { ...item, previews } : item
+    }
     if (item.kind !== 'user') return item
-    const attachments = this.sentAttachmentsByText[item.text]
-    if (attachments == null || attachments.length === 0) return item
-    const views = attachments.map((att) => ({
+    // 优先本次会话发送时挂载的附件（手机本地原图直显）
+    const sent = this.sentAttachmentsByText[item.text]
+    if (sent != null && sent.length > 0) {
+      const views = sent.map((att) => ({
+        ...att,
+        // 小程序访问不到桌面端本地路径，直接预览手机本地那份原图
+        previewUrl: att.type === 'image' ? ((att as { localPath?: string }).localPath ?? '') : '',
+      }))
+      return { ...item, attachments: views } as TimelineItem
+    }
+    // 历史消息透传的附件（旧版桌面端无该字段）：图片经本地缓存解析后可预览
+    const historyAtts = item.attachments
+    if (historyAtts == null || historyAtts.length === 0) return item
+    if (!this.userAttachResolvedKeys.has(item.key)) {
+      void this.resolveUserAttachments(item.key, historyAtts)
+    }
+    const views = historyAtts.map((att) => ({
       ...att,
-      // 小程序访问不到桌面端本地路径，直接预览手机本地那份原图
-      previewUrl: att.type === 'image' ? ((att as { localPath?: string }).localPath ?? '') : '',
+      previewUrl: att.type === 'image' ? (this.userAttachPreviews[item.key]?.[att.path] ?? '') : '',
     }))
     return { ...item, attachments: views } as TimelineItem
+  },
+
+  /**
+   * media 条图片解析：桌面路径 → 本地缓存路径，完成后回填对应渲染项的 previews。
+   * 并发去重由 image-cache inflight 保证；mediaResolvedKeys 防流式全量重绘重复触发。
+   */
+  async resolveMediaItem(key: string, paths: string[]) {
+    if (this.mediaResolvedKeys.has(key)) return
+    this.mediaResolvedKeys.add(key)
+    const deviceId = this.targetDeviceId()
+    const resolved = await Promise.all(
+      paths.map((path) => bridge.fetchRelayAttachmentTempPath(path, deviceId)),
+    )
+    const previews = resolved.filter((path): path is string => path != null)
+    if (previews.length === 0) return
+    const index = this.data.items.findIndex((item) => item.kind === 'media' && item.key === key)
+    if (index < 0) return
+    this.setData({ [`items[${index}].previews`]: previews })
+  },
+
+  /** 历史用户附件图片解析（同 media 条机制；解析结果按 key+path 记录） */
+  async resolveUserAttachments(
+    key: string,
+    attachments: NonNullable<Extract<TimelineItem, { kind: 'user' }>['attachments']>,
+  ) {
+    if (this.userAttachResolvedKeys.has(key)) return
+    this.userAttachResolvedKeys.add(key)
+    const deviceId = this.targetDeviceId()
+    const images = attachments.filter((att) => att.type === 'image')
+    if (images.length === 0) return
+    const resolved = await Promise.all(
+      images.map((att) => bridge.fetchRelayAttachmentTempPath(att.path, deviceId)),
+    )
+    const byPath: Record<string, string> = {}
+    images.forEach((att, i) => {
+      const local = resolved[i]
+      if (local != null) byPath[att.path] = local
+    })
+    if (Object.keys(byPath).length === 0) return
+    this.userAttachPreviews = { ...this.userAttachPreviews, [key]: byPath }
+    // 重刷渲染项（decorateItem 会按新 previews 重组 attachment views）
+    if (this.latestTimeline != null) this.flushTimeline(true, { keepScroll: true })
   },
 
   onThinkingToggle(e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { key: string }>) {
@@ -584,14 +703,16 @@ Page({
         attachmentPaths.length > 0 ? attachmentPaths : undefined,
         this.targetDeviceId(),
       )
-      // 用户消息会经流回来；若流未连上，本地先乐观渲染（流恢复后按文本去重）
+      // 用户消息会经流回来；若流未连上，本地先乐观渲染（流恢复后按文本去重）。
+      // key 口径必须与 chat-reducer 一致：事件 id 是裸 id，渲染 key 由 reducer 统一加 `u:` 前缀
+      // ——之前把带前缀的 key 塞进事件 id，渲染 key 变成 `u:u:local-…`，去重永远删不掉（双气泡）。
       if (!this.data.connected) {
-        const localKey = `u:local-${Date.now()}`
-        this.localPending = { key: localKey, text }
+        const localId = `local-${Date.now()}`
+        this.localPending = { key: `u:${localId}`, text }
         const base = this.latestTimeline ?? emptyTimeline()
         this.latestTimeline = applyEvents(base, [
           {
-            id: localKey,
+            id: localId,
             seq: -1,
             turnId: 'local',
             type: 'user_message',
@@ -614,6 +735,266 @@ Page({
     } catch (error) {
       wx.showToast({ title: (error as Error).message || '取消失败', icon: 'none' })
     }
+  },
+
+  // ─── 挂起交互（权限审批卡 + 问答卡；桌面端无下行推送，轮询对账） ─────────────
+
+  /** 轮询一次挂起交互并按结果刷新卡片；随后自适应安排下一轮 */
+  async pollInteractions() {
+    if (this.interactionPollStopped) return
+    if (this.interactionTimer) {
+      clearTimeout(this.interactionTimer)
+      this.interactionTimer = 0
+    }
+    if (!this.data.deviceOffline) {
+      try {
+        const snapshot = await bridge.getPendingInteractions(
+          this.data.sessionId,
+          this.targetDeviceId(),
+        )
+        this.applyInteractions(snapshot)
+      } catch {
+        // 旧版桌面端没有该端点 / 网络抖动：静默等下一轮，不弹错误
+      }
+    }
+    const active =
+      this.data.running ||
+      this.pendingApprovals.length > 0 ||
+      this.pendingQuestions.length > 0 ||
+      this.data.approvalCards.length > 0 ||
+      this.data.questionCards.length > 0
+    if (this.interactionPollStopped) return
+    this.interactionTimer = setTimeout(
+      () => void this.pollInteractions(),
+      active ? INTERACTION_POLL_ACTIVE_MS : INTERACTION_POLL_IDLE_MS,
+    )
+  },
+
+  /** 服务端快照 → 卡片视图；新出现的审批/问答轻微震动提醒 */
+  applyInteractions(snapshot: bridge.BridgeInteractions) {
+    const approvals = Array.isArray(snapshot.approvals) ? snapshot.approvals : []
+    const questions = Array.isArray(snapshot.questions) ? snapshot.questions : []
+    const knownApprovalIds = new Set(this.pendingApprovals.map((item) => item.requestId))
+    const knownQuestionIds = new Set(this.pendingQuestions.map((item) => item.questionId))
+    const hasNew =
+      approvals.some((item) => !knownApprovalIds.has(item.requestId)) ||
+      questions.some((item) => !knownQuestionIds.has(item.questionId))
+    this.pendingApprovals = approvals
+    this.pendingQuestions = questions
+    // 已不在挂起列表的题目草稿一并回收，防止同一 questionId 复用后残留旧选择
+    const liveDraftKeys = new Set<string>()
+    for (const item of questions) {
+      item.questions.forEach((_, index) =>
+        liveDraftKeys.add(questionDraftKey(item.questionId, index)),
+      )
+    }
+    for (const key of Object.keys(this.questionDrafts)) {
+      if (!liveDraftKeys.has(key)) delete this.questionDrafts[key]
+    }
+    if (hasNew) wx.vibrateShort({ type: 'medium' })
+    this.refreshInteractionCards()
+  },
+
+  /** 由挂起快照重建两张卡片列表（草稿驱动选中态；提交中渲染 busy） */
+  refreshInteractionCards() {
+    const approvalCards = buildApprovalCardViews(this.pendingApprovals).map((card) => ({
+      ...card,
+      busy: this.submittingKeys.has(card.requestId),
+    }))
+    const questionCards = buildQuestionCardViews(this.pendingQuestions, this.questionDrafts).map(
+      (card) => ({
+        ...card,
+        busy: this.submittingKeys.has(card.questionId),
+      }),
+    )
+    this.setData({ approvalCards, questionCards })
+  },
+
+  /** 审批卡应答：乐观移卡，失败回滚（下一轮轮询会按服务端真实状态兜底） */
+  async onApprovalDecide(
+    e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { id: string; decision: string }>,
+  ) {
+    const requestId = e.currentTarget.dataset.id
+    const decision = e.currentTarget.dataset.decision
+    if (
+      !requestId ||
+      (decision !== 'allow-once' && decision !== 'allow-session' && decision !== 'deny')
+    ) {
+      return
+    }
+    if (this.submittingKeys.has(requestId)) return
+    this.submittingKeys.add(requestId)
+    this.refreshInteractionCards()
+    try {
+      await bridge.resolveApproval(this.data.sessionId, requestId, decision, this.targetDeviceId())
+      this.pendingApprovals = this.pendingApprovals.filter((item) => item.requestId !== requestId)
+      wx.showToast({
+        title: decision === 'deny' ? '已拒绝' : '已允许',
+        icon: 'success',
+      })
+    } catch (error) {
+      wx.showToast({ title: (error as Error).message || '操作失败', icon: 'none' })
+    } finally {
+      this.submittingKeys.delete(requestId)
+      this.refreshInteractionCards()
+    }
+  },
+
+  /** 选项点击：单选替换 / 多选切换（与桌面端 UserQuestionDock.handleSelectOption 同语义） */
+  onQuestionOptionTap(
+    e: WechatMiniprogram.BaseEvent<
+      WechatMiniprogram.IAnyObject,
+      { qid: string; index: number; label: string }
+    >,
+  ) {
+    const { qid, index, label } = e.currentTarget.dataset
+    if (!qid || typeof index !== 'number' || typeof label !== 'string') return
+    const key = questionDraftKey(qid, index)
+    const question = this.findQuestion(qid, index)
+    if (question == null) return
+    const draft = this.questionDrafts[key] ?? emptyQuestionDraft()
+    const multi = this.isMultiChoiceQuestion(question)
+    let next: QuestionDraft
+    if (multi) {
+      const selected = draft.selectedLabels.includes(label)
+      next = {
+        ...draft,
+        skipped: false,
+        text: '',
+        selectedLabels: selected
+          ? draft.selectedLabels.filter((item) => item !== label)
+          : [...draft.selectedLabels, label],
+        selectedValues: selected
+          ? draft.selectedValues.filter((_, i) => draft.selectedLabels[i] !== label)
+          : [...draft.selectedValues, this.optionValue(question, label)],
+      }
+    } else {
+      const allowsFreeText = (question.options ?? []).some(
+        (option) => option.label === label && option.allowsFreeText === true,
+      )
+      next = {
+        ...draft,
+        skipped: false,
+        text: '',
+        selectedLabels: [label],
+        selectedValues: [this.optionValue(question, label)],
+        // allowsFreeText 选项保留已输入的其他文本（与桌面端一致），其余选项清空
+        otherText: allowsFreeText ? draft.otherText : '',
+      }
+    }
+    this.questionDrafts = { ...this.questionDrafts, [key]: next }
+    this.refreshInteractionCards()
+  },
+
+  /** 「其他」自由输入：单选视为选中「其他」，多选仅记录文本（与桌面端 handleOtherTextChange 同语义） */
+  onQuestionOtherInput(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
+    const qid = e.currentTarget.dataset.qid as string | undefined
+    const index = e.currentTarget.dataset.index as number | undefined
+    if (!qid || typeof index !== 'number') return
+    const key = questionDraftKey(qid, index)
+    const question = this.findQuestion(qid, index)
+    if (question == null) return
+    const draft = this.questionDrafts[key] ?? emptyQuestionDraft()
+    const value = e.detail.value ?? ''
+    const next: QuestionDraft = this.isMultiChoiceQuestion(question)
+      ? { ...draft, skipped: false, otherText: value, text: '' }
+      : {
+          ...draft,
+          skipped: false,
+          selectedLabels: [this.otherLabelOf(question)],
+          selectedValues: [this.otherLabelOf(question)],
+          otherText: value,
+          text: '',
+        }
+    this.questionDrafts = { ...this.questionDrafts, [key]: next }
+    this.refreshInteractionCards()
+  },
+
+  /** 文本型题目输入 */
+  onQuestionTextInput(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
+    const qid = e.currentTarget.dataset.qid as string | undefined
+    const index = e.currentTarget.dataset.index as number | undefined
+    if (!qid || typeof index !== 'number') return
+    const key = questionDraftKey(qid, index)
+    const draft = this.questionDrafts[key] ?? emptyQuestionDraft()
+    this.questionDrafts = {
+      ...this.questionDrafts,
+      [key]: { ...draft, text: e.detail.value ?? '' },
+    }
+    this.refreshInteractionCards()
+  },
+
+  /** 提交整卡（一次 AskUserQuestion 的全部题目一次提交，载荷与桌面端渲染端同构） */
+  async onQuestionSubmit(
+    e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { qid: string }>,
+  ) {
+    const questionId = e.currentTarget.dataset.qid
+    if (!questionId || this.submittingKeys.has(questionId)) return
+    const item = this.pendingQuestions.find((entry) => entry.questionId === questionId)
+    if (item == null) return
+    // 与桌面端同语义：必答题未就绪不允许提交（WXML 按钮置灰，这里兜底防连点）
+    const card = this.data.questionCards.find((entry) => entry.questionId === questionId)
+    if (card == null || card.canSubmit !== true || card.busy === true) return
+    this.submittingKeys.add(questionId)
+    this.refreshInteractionCards()
+    try {
+      const answers = buildQuestionAnswerPayload(item.questions, this.questionDrafts, questionId)
+      await bridge.answerQuestion(this.data.sessionId, questionId, answers, this.targetDeviceId())
+      this.pendingQuestions = this.pendingQuestions.filter(
+        (entry) => entry.questionId !== questionId,
+      )
+      wx.showToast({ title: '已回答', icon: 'success' })
+    } catch (error) {
+      wx.showToast({ title: (error as Error).message || '提交失败', icon: 'none' })
+    } finally {
+      this.submittingKeys.delete(questionId)
+      this.refreshInteractionCards()
+    }
+  },
+
+  /** 跳过整卡 */
+  async onQuestionSkip(
+    e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { qid: string }>,
+  ) {
+    const questionId = e.currentTarget.dataset.qid
+    if (!questionId || this.submittingKeys.has(questionId)) return
+    const item = this.pendingQuestions.find((entry) => entry.questionId === questionId)
+    if (item == null) return
+    this.submittingKeys.add(questionId)
+    this.refreshInteractionCards()
+    try {
+      const answers = buildQuestionSkipPayload(item.questions, this.questionDrafts, questionId)
+      await bridge.answerQuestion(this.data.sessionId, questionId, answers, this.targetDeviceId())
+      this.pendingQuestions = this.pendingQuestions.filter(
+        (entry) => entry.questionId !== questionId,
+      )
+      wx.showToast({ title: '已跳过', icon: 'none' })
+    } catch (error) {
+      wx.showToast({ title: (error as Error).message || '操作失败', icon: 'none' })
+    } finally {
+      this.submittingKeys.delete(questionId)
+      this.refreshInteractionCards()
+    }
+  },
+
+  findQuestion(questionId: string, index: number): bridge.BridgeQuestionPrompt | null {
+    const item = this.pendingQuestions.find((entry) => entry.questionId === questionId)
+    const question = item?.questions[index]
+    return question ?? null
+  },
+
+  isMultiChoiceQuestion(question: bridge.BridgeQuestionPrompt): boolean {
+    const type = question.type ?? (question.multiSelect === true ? 'multi_choice' : 'single_choice')
+    return type === 'multi_choice'
+  },
+
+  otherLabelOf(question: bridge.BridgeQuestionPrompt): string {
+    return question.otherOptionLabel?.trim() || '其他'
+  },
+
+  optionValue(question: bridge.BridgeQuestionPrompt, label: string): string {
+    const option = (question.options ?? []).find((item) => item.label === label)
+    return option?.value ?? label
   },
 
   // ─── 配置目录与 chips ────────────────────────────────────────────────────────
@@ -877,6 +1258,20 @@ Page({
     const kind = this.data.panelKind as PanelKind | ''
     const id = e.detail.id
     if (kind === '') return
+    // 技能/命令是「插入输入框」型选择：不发起会话配置写请求
+    if (kind === 'skill' || kind === 'command') {
+      const name = kind === 'skill' ? this.skillNameById(id) : this.commandNameById(id)
+      if (name != null) this.insertTextToken(kind === 'skill' ? `@${name} ` : `/${name} `)
+      this.closePanel()
+      return
+    }
+    // 分支列表：点选跳转子会话
+    if (kind === 'branch') {
+      this.closePanel()
+      const child = this.lineageChildren.find((entry) => entry.childSessionId === id)
+      this.navigateToSession(id, child?.childTitle ?? child?.sourceTitleSnapshot ?? '分支会话')
+      return
+    }
     this.setData({ panelLoading: true })
     try {
       if (kind === 'agent') {
@@ -950,12 +1345,25 @@ Page({
       wx.showToast({ title: `最多 ${MAX_ATTACHMENTS} 个附件`, icon: 'none' })
       return
     }
+    // 菜单动态构建：旧版桌面端无 /v1/skills → 隐藏「技能」；命令目录为空 → 隐藏「命令」
+    const entries: ('image' | 'file' | 'skill' | 'command')[] = ['image', 'file']
+    if (this.data.skillsAvailable) entries.push('skill')
+    if (this.commandCatalog.length > 0) entries.push('command')
+    const labels: Record<(typeof entries)[number], string> = {
+      image: '图片',
+      file: '文件',
+      skill: '技能',
+      command: '命令',
+    }
     wx.showActionSheet({
-      itemList: ['图片', '文件'],
+      itemList: entries.map((entry) => labels[entry]),
       itemColor: '#1a1a1a',
       success: (res) => {
-        if (res.tapIndex === 0) void this.chooseImage(remaining)
-        if (res.tapIndex === 1) void this.chooseFile(remaining)
+        const picked = entries[res.tapIndex]
+        if (picked === 'image') void this.chooseImage(remaining)
+        else if (picked === 'file') void this.chooseFile(remaining)
+        else if (picked === 'skill') this.openSkillPanel()
+        else if (picked === 'command') this.openCommandPanel()
       },
       fail: () => {
         /* 用户取消 */
@@ -1119,6 +1527,177 @@ Page({
     this.setData({ inputText: `/${e.detail.name} `, showCommands: false })
   },
 
+  // ─── 技能 / 命令选择（对齐桌面 Composer：纯文本 token 插入输入框） ─────────────
+
+  async loadSkills() {
+    try {
+      const { skills } = await bridge.listSkills(this.data.sessionId, this.targetDeviceId())
+      this.skillCatalog = skills
+      this.setData({ skillsAvailable: true })
+    } catch {
+      // 旧版桌面端无 /v1/skills（404）：隐藏技能入口，不提示错误
+      this.skillCatalog = []
+      this.setData({ skillsAvailable: false })
+    }
+  },
+
+  openSkillPanel() {
+    const enabled = this.skillCatalog.filter((skill) => skill.enabled)
+    if (enabled.length === 0) {
+      wx.showToast({ title: '没有可用技能', icon: 'none' })
+      return
+    }
+    const sourceLabel = (skill: bridge.BridgeSkillItem): string =>
+      skill.source === 'project' ? '项目技能' : '技能'
+    this.openPanel({
+      kind: 'skill',
+      title: '插入技能',
+      options: enabled.map((skill) => ({
+        id: skill.id,
+        label: `@${skill.name}`,
+        sub: skill.description
+          ? `${skill.description}（${sourceLabel(skill)}）`
+          : sourceLabel(skill),
+      })),
+      empty: '没有可用技能',
+    })
+  },
+
+  openCommandPanel() {
+    if (this.commandCatalog.length === 0) {
+      wx.showToast({ title: '命令目录为空', icon: 'none' })
+      return
+    }
+    this.openPanel({
+      kind: 'command',
+      title: '插入命令',
+      options: this.commandCatalog.map((command) => ({
+        id: command.name,
+        label: `/${command.name}`,
+        sub: command.usage ? `${command.description} · ${command.usage}` : command.description,
+      })),
+      empty: '没有可用命令',
+    })
+  },
+
+  skillNameById(id: string): string | null {
+    return this.skillCatalog.find((skill) => skill.id === id)?.name ?? null
+  },
+
+  commandNameById(name: string): string | null {
+    return this.commandCatalog.some((command) => command.name === name) ? name : null
+  },
+
+  /** 在输入框光标语义末尾追加 token（与 onCommandPick 同机制：整体替换为已填内容 + token） */
+  insertTextToken(token: string) {
+    const current = this.data.inputText
+    // 输入框已有斜杠命令草稿时追加到其后，否则追加到现有文本之后
+    const base = current.trimEnd()
+    this.setData({ inputText: base ? `${base} ${token}` : token, showCommands: false })
+  },
+
+  // ─── 会话分支（Session Fork：长按用户气泡从该轮创建子会话） ───────────────────
+
+  async loadLineage() {
+    try {
+      const { lineage, children } = await bridge.getSessionLineage(
+        this.data.sessionId,
+        this.targetDeviceId(),
+      )
+      this.lineage = lineage
+      this.lineageChildren = children
+      this.setData({
+        lineageSourceTitle: lineage?.sourceTitleSnapshot ?? '',
+        lineageChildCount: children.length,
+      })
+    } catch {
+      // 旧版桌面端无 /v1/sessions/:id/lineage（404）：静默隐藏横幅
+      this.lineage = null
+      this.lineageChildren = []
+      this.setData({ lineageSourceTitle: '', lineageChildCount: 0 })
+    }
+  },
+
+  /** 横幅「分支自《源》›」：跳回父会话 */
+  onLineageSource() {
+    const parent = this.lineage?.parentSessionId
+    if (!parent) return
+    this.navigateToSession(parent, this.lineage?.sourceTitleSnapshot ?? '来源会话')
+  },
+
+  /** 横幅「N 个分支」：sheet-panel 列出直接子分支，点选跳转 */
+  onLineageChildren() {
+    if (this.lineageChildren.length === 0) return
+    const options = this.lineageChildren.map((child) => ({
+      id: child.childSessionId,
+      label: child.childTitle ?? child.sourceTitleSnapshot,
+      sub: `分支自「${child.sourceTitleSnapshot}」 · ${formatRelativeTime(child.createdAt)}`,
+    }))
+    this.openPanel({ kind: 'branch', title: '分支列表', options })
+  },
+
+  onUserBubbleLongPress(
+    e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { turnid: string }>,
+  ) {
+    const turnId = e.currentTarget.dataset.turnid
+    if (typeof turnId !== 'string' || !turnId) return
+    wx.showActionSheet({
+      itemList: ['从此处分支'],
+      itemColor: '#1a1a1a',
+      success: (res) => {
+        if (res.tapIndex === 0) void this.forkFromTurn(turnId)
+      },
+      fail: () => {
+        /* 用户取消 */
+      },
+    })
+  },
+
+  /** 从指定回合 fork 子会话（可选自定义标题；错误原样透出，如锚点未完成） */
+  async forkFromTurn(turnId: string) {
+    wx.showModal({
+      title: '从此处分支',
+      content: '将复制该会话到此轮消息为止，生成一个独立子会话。',
+      editable: true,
+      placeholderText: '子会话标题（可留空）',
+      success: async (res) => {
+        if (!res.confirm) return
+        const title = (res.content ?? '').trim()
+        try {
+          const result = await bridge.forkSession(
+            this.data.sessionId,
+            { anchorTurnId: turnId, ...(title ? { title } : {}) },
+            this.targetDeviceId(),
+          )
+          if (result.sourceWasRunning) {
+            wx.showToast({ title: '源会话仍在运行，已复制当前内容', icon: 'none', duration: 2500 })
+          } else if (result.bindingWarning != null) {
+            wx.showToast({
+              title: '分支已创建，但复制的工作流绑定当前不可用',
+              icon: 'none',
+              duration: 2500,
+            })
+          } else {
+            wx.showToast({ title: '分支已创建', icon: 'success' })
+          }
+          setTimeout(() => {
+            this.navigateToSession(result.session.id, result.session.title)
+          }, 600)
+        } catch (error) {
+          wx.showToast({ title: (error as Error).message || '分支创建失败', icon: 'none' })
+        }
+      },
+    })
+  },
+
+  /** 跳转到指定会话（fork 跳转/分支列表共用；navigateTo 保留返回栈回到当前会话） */
+  navigateToSession(sessionId: string, title: string) {
+    const { deviceId } = this.data
+    wx.navigateTo({
+      url: `/pages/chat/index?sessionId=${encodeURIComponent(sessionId)}&deviceId=${encodeURIComponent(deviceId)}&title=${encodeURIComponent(title)}`,
+    })
+  },
+
   // ─── 会话操作（导航栏 ··· 菜单） ─────────────────────────────────────────────
 
   onMore() {
@@ -1133,7 +1712,7 @@ Page({
       itemColor: '#1a1a1a',
       success: (res) => {
         if (res.tapIndex === 0) void this.onRename()
-        if (res.tapIndex === 1) this.setData({ tasksShow: true })
+        if (res.tapIndex === 1) this.openSessionTasksPage()
         if (res.tapIndex === 2) void this.onRefreshConfig()
         if (res.tapIndex === 3) this.onToggleToolRecords()
         if (res.tapIndex === 4) void this.onDelete()
@@ -1144,7 +1723,15 @@ Page({
     })
   },
 
-  /** 隐藏/显示工具调用记录（本地持久化，立即重渲染） */
+  /** 定时任务独立管理页（替代旧半屏面板；列表/表单/空态都在新页面内） */
+  openSessionTasksPage() {
+    const { sessionId, deviceId, title } = this.data
+    wx.navigateTo({
+      url: `/pages/session-tasks/index?sessionId=${encodeURIComponent(sessionId)}&deviceId=${encodeURIComponent(deviceId)}&title=${encodeURIComponent(title)}`,
+    })
+  },
+
+  /** 隐藏/显示工具与思考记录（本地持久化，立即重渲染） */
   onToggleToolRecords() {
     const next = !this.data.hideExecutionDetails
     this.setData({ hideExecutionDetails: next })
@@ -1167,10 +1754,6 @@ Page({
     } catch (error) {
       wx.showToast({ title: (error as Error).message || '刷新失败', icon: 'none' })
     }
-  },
-
-  onTasksClose() {
-    this.setData({ tasksShow: false })
   },
 
   async onRename() {

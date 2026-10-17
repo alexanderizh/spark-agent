@@ -523,6 +523,7 @@ export class PermissionService {
         if (this._pendingApprovals.delete(requestId)) {
           this._approvalSessions.delete(requestId)
           this._approvalExpireNotifiers.delete(requestId)
+          this._approvalRequests.delete(requestId)
           // 必须先通知渲染端再 resolve：否则卡片会永远挂在界面上，用户事后点「允许」
           // 拿到的是 ok:false，而 agent 早已按拒绝继续走了。
           fireExpired({
@@ -539,6 +540,7 @@ export class PermissionService {
         clearTimeout(timer)
         this._approvalSessions.delete(requestId)
         this._approvalExpireNotifiers.delete(requestId)
+        this._approvalRequests.delete(requestId)
         resolve(decision)
       })
       this._approvalSessions.set(requestId, params.sessionId)
@@ -560,8 +562,10 @@ export class PermissionService {
       } catch {
         // ignore: hook 基础设施故障不阻塞会话
       }
-      params.pushFn({
+      const request: PermissionApprovalRequest = {
         requestId,
+        // 创建时间随请求体走：移动端桥接等轮询端据此展示与排序（旧消费方可忽略）
+        createdAt: new Date().toISOString(),
         ...(params.options.sdkRequestId != null
           ? { sdkRequestId: params.options.sdkRequestId }
           : {}),
@@ -583,7 +587,10 @@ export class PermissionService {
           ? { suppressAlwaysAllowRule: true }
           : {}),
         ...(params.options.mcpServer != null ? { mcpServer: params.options.mcpServer } : {}),
-      })
+      }
+      // 请求体登记进挂起表（listPendingApprovals 的数据源）；与 resolver 同生命周期清理
+      this._approvalRequests.set(requestId, request)
+      params.pushFn(request)
     })
   }
 
@@ -593,8 +600,24 @@ export class PermissionService {
     this._pendingApprovals.delete(requestId)
     this._approvalSessions.delete(requestId)
     this._approvalExpireNotifiers.delete(requestId)
+    this._approvalRequests.delete(requestId)
     resolve(decision)
     return true
+  }
+
+  /**
+   * 指定会话当前挂起的审批请求（含完整请求体）。
+   *
+   * 桌面端渲染端走 pushStreamEvent 实时弹卡，而移动端桥接没有下行推送通道，
+   * 只能轮询：这里暴露挂起快照（PermissionApprovalRequest 原样返回），
+   * 供 MobileBridge 装配 GET /v1/sessions/:id/interactions。
+   */
+  listPendingApprovals(sessionId: string): PermissionApprovalRequest[] {
+    const requests: PermissionApprovalRequest[] = []
+    for (const [requestId, request] of this._approvalRequests) {
+      if (this._approvalSessions.get(requestId) === sessionId) requests.push(request)
+    }
+    return requests
   }
 
   /**
@@ -609,6 +632,7 @@ export class PermissionService {
       this._pendingApprovals.delete(requestId)
       this._approvalSessions.delete(requestId)
       this._approvalExpireNotifiers.delete(requestId)
+      this._approvalRequests.delete(requestId)
       // 与超时同理：用户没做任何操作，卡片必须由主进程主动收回
       notifyExpired?.({ requestId, sessionId, reason: 'cancelled' })
       resolve('deny')
@@ -686,6 +710,12 @@ export class PermissionService {
 
   private _pendingApprovals = new Map<string, (d: PermissionApprovalDecision) => void>()
   private _approvalSessions = new Map<string, string>() // requestId → sessionId（用于 cancel）
+  /**
+   * requestId → 完整审批请求体。渲染端走实时推送拿请求，移动端桥接只有轮询，
+   * listPendingApprovals 据此返回挂起快照；生命周期与 _pendingApprovals 严格同步
+   * （resolve / 超时 / 会话取消三处清理点一致），避免残留成幽灵审批卡。
+   */
+  private _approvalRequests = new Map<string, PermissionApprovalRequest>()
   /**
    * requestId → 失效通知器。审批在用户没操作的情况下消失（超时 / 会话取消）时调用，
    * 让渲染端收起那张已经没有意义的审批卡片。

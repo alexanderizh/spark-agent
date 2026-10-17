@@ -4,7 +4,16 @@ import * as bridge from '../../api/bridge'
 import { getState as getAuthState } from '../../store/auth'
 import { getItem, StorageKeys } from '../../utils/storage'
 import { logMobileError } from '../../utils/logger'
-import type { BridgeCatalog, BridgeProjectSummary, RelayDeviceInfo } from '../../api/bridge'
+import {
+  buildModelOptions,
+  buildPermissionOptions,
+  buildReasoningOptions,
+  DEFAULT_MODEL_OPTION,
+  DEFAULT_PERMISSION_OPTION,
+  DEFAULT_REASONING_OPTION,
+  type SessionConfigOption,
+} from '../../utils/session-config'
+import type { BridgeProjectSummary, RelayDeviceInfo } from '../../api/bridge'
 
 interface ComputerOption {
   deviceId: string
@@ -12,14 +21,6 @@ interface ComputerOption {
   pickerLabel: string
   online: boolean
   lastSeenAt?: string
-}
-
-interface PickerOption {
-  id: string
-  label: string
-  value?: string
-  providerProfileId?: string
-  modelId?: string | null
 }
 
 interface HomeData {
@@ -35,11 +36,13 @@ interface HomeData {
   composerDeviceId: string
   composerDeviceIndex: number
   composerDeviceLabel: string
-  projectOptions: PickerOption[]
+  projectOptions: SessionConfigOption[]
   projectIndex: number
-  modelOptions: PickerOption[]
+  modelOptions: SessionConfigOption[]
   modelIndex: number
-  reasoningOptions: PickerOption[]
+  permissionOptions: SessionConfigOption[]
+  permissionIndex: number
+  reasoningOptions: SessionConfigOption[]
   reasoningIndex: number
   configSummary: string
   configOpen: boolean
@@ -56,45 +59,9 @@ interface HomeData {
   keyboardHeight: number
 }
 
-const DEFAULT_PROJECT: PickerOption = { id: 'default', label: '未归属项目' }
-const DEFAULT_MODEL: PickerOption = { id: 'default', label: '电脑默认模型' }
-const DEFAULT_REASONING: PickerOption = { id: 'default', label: '电脑默认' }
-const REASONING_LABELS: Record<string, string> = {
-  minimal: '最省',
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '超高',
-  max: '极致',
-}
+const DEFAULT_PROJECT: SessionConfigOption = { id: 'default', label: '未归属项目' }
 
-function buildModelOptions(catalog: BridgeCatalog): PickerOption[] {
-  const options = [DEFAULT_MODEL]
-  for (const provider of catalog.providers) {
-    if (provider.isAutoRouter || provider.models.length === 0) {
-      options.push({
-        id: `${provider.id}::`,
-        label: provider.isAutoRouter
-          ? `${provider.name} · 自动路由`
-          : `${provider.name} · 默认模型`,
-        providerProfileId: provider.id,
-        modelId: null,
-      })
-      continue
-    }
-    for (const model of provider.models) {
-      options.push({
-        id: `${provider.id}::${model.id}`,
-        label: `${provider.name} · ${model.name}`,
-        providerProfileId: provider.id,
-        modelId: model.id,
-      })
-    }
-  }
-  return options
-}
-
-function buildProjectOptions(projects: BridgeProjectSummary[]): PickerOption[] {
+function buildProjectOptions(projects: BridgeProjectSummary[]): SessionConfigOption[] {
   return [DEFAULT_PROJECT, ...projects.map((project) => ({ id: project.id, label: project.name }))]
 }
 
@@ -114,11 +81,13 @@ Page({
     composerDeviceLabel: '暂无已授信电脑',
     projectOptions: [DEFAULT_PROJECT],
     projectIndex: 0,
-    modelOptions: [DEFAULT_MODEL],
+    modelOptions: [DEFAULT_MODEL_OPTION],
     modelIndex: 0,
-    reasoningOptions: [DEFAULT_REASONING],
+    permissionOptions: [DEFAULT_PERMISSION_OPTION],
+    permissionIndex: 0,
+    reasoningOptions: [DEFAULT_REASONING_OPTION],
     reasoningIndex: 0,
-    configSummary: '选择电脑、项目和模型',
+    configSummary: '选择电脑、项目、模型和权限',
     configOpen: false,
     configLoading: false,
     configError: '',
@@ -253,9 +222,11 @@ Page({
       this.setData({
         projectOptions: [DEFAULT_PROJECT],
         projectIndex: 0,
-        modelOptions: [DEFAULT_MODEL],
+        modelOptions: [DEFAULT_MODEL_OPTION],
         modelIndex: 0,
-        reasoningOptions: [DEFAULT_REASONING],
+        permissionOptions: [DEFAULT_PERMISSION_OPTION],
+        permissionIndex: 0,
+        reasoningOptions: [DEFAULT_REASONING_OPTION],
         reasoningIndex: 0,
       })
     }
@@ -305,9 +276,11 @@ Page({
       composerDeviceLabel: device.pickerLabel,
       projectOptions: [DEFAULT_PROJECT],
       projectIndex: 0,
-      modelOptions: [DEFAULT_MODEL],
+      modelOptions: [DEFAULT_MODEL_OPTION],
       modelIndex: 0,
-      reasoningOptions: [DEFAULT_REASONING],
+      permissionOptions: [DEFAULT_PERMISSION_OPTION],
+      permissionIndex: 0,
+      reasoningOptions: [DEFAULT_REASONING_OPTION],
       reasoningIndex: 0,
     })
     this.refreshComposerSummary()
@@ -320,12 +293,14 @@ Page({
     const device = this.data.devices.find((item) => item.deviceId === this.data.composerDeviceId)
     const project = this.data.projectOptions[this.data.projectIndex]
     const model = this.data.modelOptions[this.data.modelIndex]
+    const permission = this.data.permissionOptions[this.data.permissionIndex]
     const reasoning = this.data.reasoningOptions[this.data.reasoningIndex]
     const configSummary = [
       device?.name ?? '选择电脑',
       project?.label ?? DEFAULT_PROJECT.label,
-      model?.label ?? DEFAULT_MODEL.label,
-      reasoning?.label ?? DEFAULT_REASONING.label,
+      model?.label ?? DEFAULT_MODEL_OPTION.label,
+      permission?.label ?? DEFAULT_PERMISSION_OPTION.label,
+      reasoning?.label ?? DEFAULT_REASONING_OPTION.label,
     ].join(' · ')
     const canQuickSend =
       this.data.quickText.trim().length > 0 &&
@@ -373,20 +348,16 @@ Page({
       if (generation !== this.configGeneration) return
       const projectOptions = buildProjectOptions(projectResult.projects)
       const modelOptions = buildModelOptions(catalog)
-      const reasoningOptions = [
-        DEFAULT_REASONING,
-        ...catalog.reasoningEfforts.map((effort) => ({
-          id: effort,
-          label: REASONING_LABELS[effort] ?? effort,
-          value: effort,
-        })),
-      ]
+      const permissionOptions = buildPermissionOptions(catalog)
+      const reasoningOptions = buildReasoningOptions(catalog)
       this.configLoadedDeviceId = deviceId
       this.setData({
         projectOptions,
         projectIndex: Math.min(this.data.projectIndex, projectOptions.length - 1),
         modelOptions,
         modelIndex: Math.min(this.data.modelIndex, modelOptions.length - 1),
+        permissionOptions,
+        permissionIndex: Math.min(this.data.permissionIndex, permissionOptions.length - 1),
         reasoningOptions,
         reasoningIndex: Math.min(this.data.reasoningIndex, reasoningOptions.length - 1),
       })
@@ -416,9 +387,11 @@ Page({
       composerDeviceLabel: device.pickerLabel,
       projectOptions: [DEFAULT_PROJECT],
       projectIndex: 0,
-      modelOptions: [DEFAULT_MODEL],
+      modelOptions: [DEFAULT_MODEL_OPTION],
       modelIndex: 0,
-      reasoningOptions: [DEFAULT_REASONING],
+      permissionOptions: [DEFAULT_PERMISSION_OPTION],
+      permissionIndex: 0,
+      reasoningOptions: [DEFAULT_REASONING_OPTION],
       reasoningIndex: 0,
       configError: '',
     })
@@ -439,6 +412,14 @@ Page({
     const modelIndex = Number(event.detail.value)
     if (!this.data.modelOptions[modelIndex]) return
     this.setData({ modelIndex })
+    this.refreshComposerSummary()
+  },
+
+  onPermissionChange(event: WechatMiniprogram.CustomEvent<{ value: string }>) {
+    if (this.data.pendingSessionId) return
+    const permissionIndex = Number(event.detail.value)
+    if (!this.data.permissionOptions[permissionIndex]) return
+    this.setData({ permissionIndex })
     this.refreshComposerSummary()
   },
 
@@ -494,15 +475,20 @@ Page({
       if (!this.data.pendingConfigApplied) {
         stage = 'apply-session-config'
         const model = this.data.modelOptions[this.data.modelIndex]
+        const permission = this.data.permissionOptions[this.data.permissionIndex]
         const reasoning = this.data.reasoningOptions[this.data.reasoningIndex]
         const patch: {
           providerProfileId?: string
           modelId?: string | null
+          permissionMode?: string
           reasoningEffort?: string
         } = {}
         if (model?.providerProfileId) {
           patch.providerProfileId = model.providerProfileId
           patch.modelId = model.modelId ?? null
+        }
+        if (permission != null && permission.id !== 'default') {
+          patch.permissionMode = permission.id
         }
         if (reasoning?.value) patch.reasoningEffort = reasoning.value
         if (Object.keys(patch).length > 0) {

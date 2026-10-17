@@ -7,6 +7,7 @@
     "pages/project-sessions/index",
     "pages/bridge-devices/index",
     "pages/chat/index",
+    "pages/session-tasks/index",
     "pages/profile/index",
     "pages/sync/index",
     "pages/devices/index",

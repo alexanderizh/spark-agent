@@ -114,6 +114,12 @@
   color: #fff;
   font-weight: 500;
 }
+/* 标记筛选 chip 命中时用琥珀描边（与置顶语义同色系，不与状态筛选混淆） */
+.ps-segment--accent {
+  background: #fdf3e3;
+  color: #b45309;
+  font-weight: 500;
+}
 
 .ps-search {
   background: #fff;
@@ -140,8 +146,43 @@
 .ps-row-text {
   margin: 0 20rpx;
 }
+.ps-row-title-line {
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
 .list-row--hover {
   background: #f2f1ef;
+}
+
+/* ─── 会话标记标签（5 预置色，与桌面端 session-labels.less 浅色变量同族） ────── */
+
+.ps-label-tag {
+  flex: none;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  line-height: 30rpx;
+}
+.ps-label-tag.label-suspended {
+  background: #fef3c7;
+  color: #b45309;
+}
+.ps-label-tag.label-not-started {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.ps-label-tag.label-pending-review {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+.ps-label-tag.label-pending-advance {
+  background: #cffafe;
+  color: #0e7490;
+}
+.ps-label-tag.label-undelivered {
+  background: #ffe4e6;
+  color: #e11d48;
 }
 
 .ps-error,
@@ -149,8 +190,30 @@
   padding: 48rpx 40rpx;
 }
 
-/* ─── 底部占位 ─────────────────────────────────────────────────────────────── */
+/* ─── 底部占位（悬浮胶囊含快捷行/配置条，高度留足） ────────────────────────── */
 
 .ps-spacer {
-  height: calc(env(safe-area-inset-bottom) + 200rpx);
+  height: calc(env(safe-area-inset-bottom) + 340rpx);
+}
+
+/* ─── 内容匹配段（服务器 FTS5 搜索正文命中） ───────────────────────────────── */
+
+.ps-match-icon {
+  width: 32rpx;
+  height: 32rpx;
+  margin-right: 20rpx;
+  flex-shrink: 0;
+  color: #b3b0ab;
+}
+
+/* 片段最多两行，超出省略（snippet 可能较长，单行 ellipsis 会截掉关键命中） */
+.ps-match-snippet {
+  font-size: 24rpx;
+  line-height: 34rpx;
+  color: #6b6862;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  word-break: break-all;
 }

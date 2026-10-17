@@ -13,29 +13,41 @@
 
 import { app } from 'electron'
 import fs from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import path from 'node:path'
 import { hostname } from 'node:os'
 import { randomUUID, randomBytes } from 'node:crypto'
 import type {
   AgentEvent,
+  MobileBridgeApprovalDecision,
+  MobileBridgeApprovalItem,
   MobileBridgeAttachment,
   MobileBridgeCatalog,
   MobileBridgeCommandItem,
   MobileBridgeCreateScheduledTaskRequest,
   MobileBridgeEvent,
   MobileBridgeProjectSummary,
+  MobileBridgeQuestionItem,
   MobileBridgeRelaySettings,
   MobileBridgeRelayStatus,
   MobileBridgeScheduledTask,
   MobileBridgeSessionRuntime,
   MobileBridgeSessionSummary,
   MobileBridgeSetWorkflowBindingRequest,
+  MobileBridgeSkillItem,
   MobileBridgeUpdateScheduledTaskRequest,
   MobileBridgeUploadAttachmentsRequest,
   MobileBridgeWorkflowBindingResponse,
+  PermissionApprovalRequest,
   ScheduledTaskItem,
+  SessionListResponse,
+  UserQuestionRequest,
 } from '@spark/protocol'
-import { isConversationalProviderCandidate } from '@spark/protocol'
+import {
+  isConversationalProviderCandidate,
+  NO_PROJECT_WORKSPACE_NAME,
+  SESSION_LABEL_KEYS,
+} from '@spark/protocol'
 import type {
   SessionChatMode,
   SessionPermissionMode,
@@ -46,18 +58,27 @@ import type {
   ScheduledTaskService,
   SessionService,
   SettingsService,
+  SkillService,
   WorkspaceService,
 } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
-import { typedIpcHandle } from './typed-ipc.js'
-import { AgentRepository, SessionRepository, WorkflowRepository } from '@spark/storage'
+import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
+import { SidebarOrderController } from './registerSidebarOrderIpc.js'
+import {
+  AgentRepository,
+  SessionRepository,
+  SettingsRepository,
+  WorkflowRepository,
+  WorkspaceRepository,
+} from '@spark/storage'
 import { PASTED_IMAGE_MAX_EDGE, resizePastedImageBuffer } from '../services/PastedImageResizer.js'
+import { isPathWithinRoots } from './mobile-bridge-path-policy.js'
 import type { RemoteVoiceTranscriber } from '../services/remoteVoiceTranscription.js'
 import { DEFAULT_MOBILE_BRIDGE_RELAY_SETTINGS } from '@spark/protocol'
 import { MobileBridgeService, type MobileBridgeDeps } from '../services/MobileBridgeService.js'
 import { MobileBridgeRelayClient } from '../services/MobileBridgeRelayClient.js'
 import { getAuthService } from '../services/Auth/AuthService.js'
-import { createLogger } from '@spark/shared'
+import { createLogger, SparkError } from '@spark/shared'
 
 const log = createLogger('mobile-bridge:ipc')
 
@@ -73,8 +94,14 @@ export interface MobileBridgeIpcDeps {
   getSessionService(): SessionService
   getSettingsService(): SettingsService
   getWorkspaceService(): WorkspaceService
-  /** 删除会话时关闭该会话名下的内置终端 PTY（与 session:delete 行为对齐）；最小结构类型避免依赖桌面端本地实现 */
-  getTerminalService(): { disposeBySession(sessionId: string, opts?: { defer?: boolean }): number }
+  /**
+   * 删除会话/项目时关闭名下内置终端 PTY（与 session:delete、workspace:delete 行为对齐）；
+   * 最小结构类型避免依赖桌面端本地实现
+   */
+  getTerminalService(): {
+    disposeBySession(sessionId: string, opts?: { defer?: boolean }): number
+    disposeByWorkspaceId(workspaceId: string, opts?: { defer?: boolean }): number
+  }
   /** 归档会话时同步暂停关联定时任务（与 session:update 行为对齐） */
   getScheduledTaskService(): ScheduledTaskService
   /**
@@ -87,12 +114,28 @@ export interface MobileBridgeIpcDeps {
   createMobileSession(title?: string, projectId?: string): Promise<MobileBridgeSessionSummary>
   /** 渠道列表（catalog 过滤 LLM 渠道用） */
   getProviderService(): ProviderService
+  /** 技能服务（移动端技能选择器只读列表；桥接不做 ensureBuiltInSkills 等重扫动作） */
+  getSkillService(): SkillService
   /** 入站语音转写（本地 SenseVoice → 云渠道兜底；与远程连接共用实例） */
   getVoiceTranscriber(): RemoteVoiceTranscriber
   /** edu-server access token（云端中继握手用）；未登录返回 null */
   getRelayAccessToken(): Promise<string | null>
   /** edu-server 基址（中继地址留空时回落到这里） */
   getRelayBaseUrl(): string
+  /** 权限审批服务（挂起列表 + 移动端应答；与桌面审批/远程连接共用同一实例） */
+  getPermissionService(): {
+    listPendingApprovals(sessionId: string): PermissionApprovalRequest[]
+    resolveApproval(requestId: string, decision: MobileBridgeApprovalDecision): boolean
+  }
+  /** 挂起用户问答注册表（AskUserQuestion；与桌面弹卡/远程问答桥共用同一实例） */
+  getPendingUserQuestions(): {
+    list(sessionId?: string): UserQuestionRequest[]
+    resolve(
+      sessionId: string,
+      questionId: string,
+      answers: Record<string, unknown>,
+    ): Promise<boolean>
+  }
 }
 
 /** 云端中继持久化形态：开关/地址 + 本机设备身份（deviceId/secret/label，重新授信时整体换新） */
@@ -190,7 +233,23 @@ function toMobileEvent(event: AgentEvent): MobileBridgeEvent | null {
   }
   switch (event.type) {
     case 'user_message':
-      return { ...base, type: 'user_message', content: event.content }
+      return {
+        ...base,
+        type: 'user_message',
+        content: event.content,
+        // 随消息附件透传（目录引用不透出）；端上渲染历史附件缩略图（图片走本地缓存）
+        ...(event.attachments != null
+          ? {
+              attachments: event.attachments
+                .filter((att) => att.type !== 'directory')
+                .map((att) => ({
+                  type: att.type as 'image' | 'file',
+                  path: att.path,
+                  ...(att.name != null ? { name: att.name } : {}),
+                })),
+            }
+          : {}),
+      }
     case 'assistant_message':
       return {
         ...base,
@@ -227,6 +286,9 @@ function toMobileEvent(event: AgentEvent): MobileBridgeEvent | null {
       }
     case 'agent_error':
       return { ...base, type: 'agent_error', statusMessage: event.message }
+    case 'presented_files':
+      // agent 呈现的产物文件全量透传；端上按扩展名过滤图片后走本地缓存展示
+      return { ...base, type: 'presented_files', files: event.files }
     default:
       return null
   }
@@ -341,16 +403,63 @@ function mapScheduledTask(item: ScheduledTaskItem): MobileBridgeScheduledTask {
   }
 }
 
+// ─── 挂起交互投影：桌面审批/问答请求 → 移动端卡片数据（exactOptionalPropertyTypes 同口径） ──
+
+function toBridgeApproval(request: PermissionApprovalRequest): MobileBridgeApprovalItem {
+  return {
+    requestId: request.requestId,
+    sessionId: request.sessionId,
+    toolName: request.toolName,
+    action: request.action,
+    riskLevel: request.riskLevel,
+    toolInput: request.toolInput,
+    createdAt: request.createdAt ?? '',
+    ...(request.defaultToNo === true ? { defaultToNo: true } : {}),
+  }
+}
+
+function toBridgeQuestion(request: UserQuestionRequest): MobileBridgeQuestionItem {
+  return {
+    questionId: request.questionId,
+    sessionId: request.sessionId,
+    createdAt: request.createdAt,
+    questions: request.questions,
+  }
+}
+
+/** SessionService 会话条目 → 移动端摘要（fork 子会话返回用；与 updateSession 装配同口径） */
+function toBridgeSessionSummary(
+  session: SessionListResponse['sessions'][number],
+): MobileBridgeSessionSummary {
+  return {
+    id: session.id,
+    title: session.title,
+    status: session.status,
+    updatedAt: session.updatedAt,
+    preview: '',
+    projectId: session.projectId,
+    pinnedAt: session.pinnedAt ?? null,
+    sessionLabel: session.sessionLabel ?? null,
+    labeledAt: session.labeledAt ?? null,
+  }
+}
+
 /** 附件白名单根目录（与粘贴图片落盘同一目录，消息长期引用不能放 temp） */
 function mobileAttachmentRootDir(): string {
   return path.join(app.getPath('userData'), 'attachments', 'pasted-images')
 }
 
-/** 路径是否落在附件白名单目录内（规范化后前缀校验，防 ../ 逃逸） */
+/**
+ * 工作区白名单根目录提供器（buildDeps 装配时注入）。
+ * agent 产物落在本机工作区内，小程序经中继查看时必须放行——但项目会增删，
+ * 根列表必须动态求值：装配层提供惰性取值 + 30s TTL 缓存（见 buildDeps）。
+ * 未装配时（模块加载早期）只放行 pasted-images 根，行为与旧版一致。
+ */
+let workspaceRootsProvider: () => string[] = () => []
+
+/** 路径是否落在附件/工作区白名单目录内（规范化后前缀校验，防 ../ 逃逸） */
 function isWhitelistedAttachmentPath(candidate: string): boolean {
-  const root = path.resolve(mobileAttachmentRootDir())
-  const resolved = path.resolve(candidate)
-  return resolved === root || resolved.startsWith(root + path.sep)
+  return isPathWithinRoots(candidate, [mobileAttachmentRootDir(), ...workspaceRootsProvider()])
 }
 
 function mimeFromExtension(fileName: string): string {
@@ -388,7 +497,64 @@ function imageExtensionFromMime(mimeType: string | undefined, fallbackName: stri
     : 'png'
 }
 
+/**
+ * 侧栏手动排序控制器（桥接用惰性单例）。
+ * 与 registerSidebarOrderIpc 的 IPC 实例分开：桥接的数据库就绪时机不同，
+ * 延迟到首次调用再建，避免装配期触碰 getDatabase()。
+ */
+let sidebarOrderController: SidebarOrderController | null = null
+function getSidebarOrderController(): SidebarOrderController {
+  if (sidebarOrderController != null) return sidebarOrderController
+  const db = getDatabase()
+  sidebarOrderController = new SidebarOrderController({
+    settings: new SettingsRepository(db),
+    workspaces: new WorkspaceRepository(db),
+    sessions: new SessionRepository(db),
+  })
+  return sidebarOrderController
+}
+
+/** 附件单文件读取上限（工作区内大文件整体读入会放大 3 份峰值内存，超限拒绝） */
+const MAX_ATTACHMENT_READ_BYTES = 20 * 1024 * 1024
+
 function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
+  // 工作区白名单根：惰性求值 + 30s TTL（附件校验高频调用，不能每附件扫全表；
+  // 拉取失败保留上一份缓存——启动早期 DB 未就绪时不放行任何工作区路径）
+  const workspaceRootsCache: { roots: string[]; fetchedAt: number } = { roots: [], fetchedAt: 0 }
+  const WORKSPACE_ROOTS_TTL_MS = 30_000
+  workspaceRootsProvider = () => {
+    const now = Date.now()
+    if (now - workspaceRootsCache.fetchedAt < WORKSPACE_ROOTS_TTL_MS) {
+      return workspaceRootsCache.roots
+    }
+    try {
+      const workspaces = deps.getWorkspaceService().listWorkspaces(500, 0, {})
+      workspaceRootsCache.roots = workspaces
+        .map((workspace) => workspace.root_path)
+        .filter(
+          (rootPath): rootPath is string => typeof rootPath === 'string' && rootPath.length > 0,
+        )
+        .map((rootPath) => {
+          try {
+            // realpath 归一：macOS /tmp→/private/tmp、网盘同步目录等 symlink 根，
+            // 不归一会让「前缀白名单」与「读取时 realpath 复核」两层互相打架，
+            // 工作区内合法附件被整片误拒
+            return realpathSync(rootPath)
+          } catch {
+            log.warn(`mobile bridge workspace root missing, skipped: ${rootPath}`)
+            return null
+          }
+        })
+        .filter((rootPath): rootPath is string => rootPath != null)
+    } catch (error) {
+      log.warn(
+        `mobile bridge workspace roots refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    workspaceRootsCache.fetchedAt = now
+    return workspaceRootsCache.roots
+  }
+
   return {
     listProjects: async (limit) => {
       const db = getDatabase()
@@ -423,6 +589,8 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
           rootPath: workspace.root_path,
           projectKind: workspace.project_kind,
           pinnedAt: workspace.pinned_at,
+          // 列表投影恒 null（listWorkspaces 默认排除已归档）；真实值仅写响应携带
+          archivedAt: workspace.archived_at ?? null,
           updatedAt: workspace.updated_at,
           sessionCount: mergedCounts.get(workspace.id) ?? 0,
         }))
@@ -456,13 +624,46 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
               }),
             ]
           : projectIds.map((id) => sessionRepository.list({ limit, projectId: id }))
-      const sessions = queryResults
-        .flatMap((result) => result.sessions)
+      // 置顶区语义与桌面端渲染 sortSessionsByPinned 同口径：
+      // pinnedAt 或会话标记任一存在即入置顶区，区内按有效置顶时间（pinnedAt ?? labeledAt）倒序，
+      // 普通区按 updatedAt 倒序（session-pure-utils 解析语义：标记非法时两者都视为 null）。
+      const toSessionLabelMeta = (row: { metadata_json: string }) => {
+        let sessionLabel: MobileBridgeSessionSummary['sessionLabel'] = null
+        let labeledAt: string | null = null
+        try {
+          const meta = JSON.parse(row.metadata_json || '{}') as {
+            sessionLabel?: unknown
+            labeledAt?: unknown
+          }
+          if (
+            typeof meta.sessionLabel === 'string' &&
+            (SESSION_LABEL_KEYS as readonly string[]).includes(meta.sessionLabel)
+          ) {
+            sessionLabel = meta.sessionLabel as MobileBridgeSessionSummary['sessionLabel']
+            if (typeof meta.labeledAt === 'string' && meta.labeledAt) labeledAt = meta.labeledAt
+          }
+        } catch {
+          /* 标记解析失败按未打标处理 */
+        }
+        return { sessionLabel, labeledAt }
+      }
+      const sessionRows = queryResults.flatMap((result) => result.sessions)
+      const metaBySession = new Map(
+        sessionRows.map((row) => [row.id, toSessionLabelMeta(row)] as const),
+      )
+      const sessions = sessionRows
         .sort((a, b) => {
-          const pinOrder = Number(b.pinned_at != null) - Number(a.pinned_at != null)
-          if (pinOrder !== 0) return pinOrder
-          const pinnedAtOrder = (b.pinned_at ?? '').localeCompare(a.pinned_at ?? '')
-          if (pinnedAtOrder !== 0) return pinnedAtOrder
+          const metaA = metaBySession.get(a.id)
+          const metaB = metaBySession.get(b.id)
+          const zoneA = a.pinned_at != null || metaA?.sessionLabel != null
+          const zoneB = b.pinned_at != null || metaB?.sessionLabel != null
+          if (zoneA !== zoneB) return zoneA ? -1 : 1
+          if (zoneA && zoneB) {
+            const pinTimeA = a.pinned_at ?? metaA?.labeledAt ?? ''
+            const pinTimeB = b.pinned_at ?? metaB?.labeledAt ?? ''
+            const pinOrder = pinTimeB.localeCompare(pinTimeA)
+            if (pinOrder !== 0) return pinOrder
+          }
           return b.updated_at.localeCompare(a.updated_at)
         })
         .slice(0, limit)
@@ -483,6 +684,7 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
         } catch {
           /* 预览缺失不阻塞列表 */
         }
+        const labelMeta = metaBySession.get(row.id)
         return {
           id: row.id,
           title: row.title,
@@ -491,6 +693,8 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
           preview,
           projectId: row.project_id,
           pinnedAt: row.pinned_at,
+          sessionLabel: labelMeta?.sessionLabel ?? null,
+          labeledAt: labelMeta?.labeledAt ?? null,
         }
       })
       return { sessions: rows, total }
@@ -513,6 +717,13 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
       }
       if (chatMode != null && !ALL_CHAT_MODES.has(chatMode)) {
         throw new Error(`不支持的聊天模式：${chatMode}`)
+      }
+      // 会话标记白名单（route 层已校验，这里兜底拒绝脏值；null = 取消标记，直接放行）
+      if (
+        patch.sessionLabel != null &&
+        !(SESSION_LABEL_KEYS as readonly string[]).includes(patch.sessionLabel)
+      ) {
+        throw new Error(`不支持的会话标记：${String(patch.sessionLabel)}`)
       }
       const result = await deps.getSessionService().updateSession({
         sessionId,
@@ -541,7 +752,107 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
         preview: '',
         projectId: session.projectId,
         pinnedAt: session.pinnedAt ?? null,
+        // 打标回显：端上校验写请求是否真被桌面端接受（旧版本不识别该字段）
+        sessionLabel: session.sessionLabel ?? null,
+        labeledAt: session.labeledAt ?? null,
       }
+    },
+
+    // ─── 项目与侧栏排序（移动端反向设置桌面端侧栏） ──────────────────────────────
+
+    updateProject: async (projectId, patch) => {
+      // 保留项目守卫：桌面端侧栏按名称查找「不使用项目」工作区（分组不变量），
+      // 重命名/归档会破坏该查找；删除在 deleteProject 单独守卫。
+      if (patch.name !== undefined || patch.archived !== undefined) {
+        const existing = new WorkspaceRepository(getDatabase()).get(projectId)
+        if (existing?.name === NO_PROJECT_WORKSPACE_NAME) {
+          throw new SparkError('VALIDATION_FAILED', '「不使用项目」是系统保留项目，不能改名或归档')
+        }
+      }
+      // 反向守卫：把其他项目改名为保留名同样会产生重名，破坏按名称查找
+      // （与保留项目同名的工作区会被 main 进程多处 find(w => w.name === ...) 误认）
+      if (patch.name === NO_PROJECT_WORKSPACE_NAME) {
+        throw new SparkError('VALIDATION_FAILED', '「不使用项目」是系统保留名称，不能作为项目名')
+      }
+      const workspace = deps.getWorkspaceService().updateWorkspace(projectId, {
+        // 与 workspace:update IPC 同换算：name 原文；pinned/archived 布尔 → ISO 时间 / null
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.pinned !== undefined
+          ? { pinnedAt: patch.pinned ? new Date().toISOString() : null }
+          : {}),
+        ...(patch.archived !== undefined
+          ? { archivedAt: patch.archived ? new Date().toISOString() : null }
+          : {}),
+      })
+      const countRow = getDatabase()
+        .raw.prepare(
+          `SELECT COUNT(*) AS count FROM sessions WHERE project_id = ? AND archived_at IS NULL`,
+        )
+        .get(projectId) as { count: number }
+      return {
+        id: workspace.id,
+        name: workspace.name,
+        rootPath: workspace.root_path,
+        projectKind: workspace.project_kind,
+        pinnedAt: workspace.pinned_at,
+        // 归档回显：端上据此校验写请求是否真被桌面端接受（旧版本 400 不会走到这里）
+        archivedAt: workspace.archived_at ?? null,
+        updatedAt: workspace.updated_at,
+        sessionCount: countRow.count,
+      }
+    },
+
+    deleteProject: async (projectId) => {
+      // 保留项目守卫：删掉「不使用项目」会破坏桌面端侧栏的名称查找与新建临时会话落点
+      const existing = new WorkspaceRepository(getDatabase()).get(projectId)
+      if (existing?.name === NO_PROJECT_WORKSPACE_NAME) {
+        throw new SparkError('VALIDATION_FAILED', '「不使用项目」是系统保留项目，不能删除')
+      }
+      // 与 workspace:delete IPC 同链路：级联删会话 + 后台清事件 + 关终端 PTY + 删项目
+      const sessionRepo = new SessionRepository(getDatabase())
+      const deletedSessionIds = sessionRepo.deleteByWorkspaceId(projectId)
+      for (const sessionId of deletedSessionIds) {
+        deps.getSessionService().cleanupSessionEventsInBackground(sessionId)
+      }
+      deps.getTerminalService().disposeByWorkspaceId(projectId, { defer: true })
+      const deleted = deps.getWorkspaceService().deleteWorkspace(projectId)
+      return { deleted }
+    },
+
+    searchSessions: async (query, projectId, limit) => {
+      const effectiveLimit = Math.max(1, Math.min(limit ?? 20, 50))
+      if (projectId != null && projectId !== 'default') {
+        // 真实项目直接透传 workspaceId（与桌面端 session:search 同语义）
+        return deps.getSessionService().searchSessions({
+          query,
+          workspaceId: projectId,
+          limit: effectiveLimit,
+        })
+      }
+      const result = await deps.getSessionService().searchSessions({
+        query,
+        limit: effectiveLimit,
+      })
+      if (projectId == null) return result
+      // 'default'（虚拟未归属）会话 workspace_ids 为空数组，workspaceId 过滤命不中：
+      // 全量搜索后按 project_id 精确回滤（结果 ≤ limit 条，逐条回查成本可忽略）
+      const stmt = getDatabase().raw.prepare('SELECT project_id FROM sessions WHERE id = ?')
+      const results = result.results.filter((item) => {
+        const row = stmt.get(item.sessionId) as { project_id: string } | undefined
+        return row?.project_id === 'default'
+      })
+      return { results }
+    },
+
+    getSidebarOrder: () => getSidebarOrderController().list(),
+
+    updateSidebarOrder: async (request) => ({
+      itemIds: getSidebarOrderController().update(request),
+    }),
+
+    // 手机上的置顶/打标/调序写成功后广播，桌面端侧栏订阅后立即重拉（双向同步闭环）
+    notifySidebarChanged: () => {
+      pushStreamEvent('stream:session:list-changed', { source: 'mobile-bridge' })
     },
 
     deleteSession: async (sessionId) => {
@@ -631,6 +942,29 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
 
     cancelTurn: async (sessionId) => {
       await deps.getSessionService().cancelTurn(sessionId)
+    },
+
+    // ─── 挂起交互（审批 + 问答；移动端审批卡/问答卡数据源与应答通道） ──────────
+
+    listPendingInteractions: async (sessionId) => ({
+      approvals: deps.getPermissionService().listPendingApprovals(sessionId).map(toBridgeApproval),
+      questions: deps.getPendingUserQuestions().list(sessionId).map(toBridgeQuestion),
+    }),
+
+    resolveApproval: async (sessionId, requestId, decision) => {
+      // 先确认 requestId 属于该会话再应答：防跨会话串单（桌面端渲染端按推送对账，无此问题）
+      const pending = deps
+        .getPermissionService()
+        .listPendingApprovals(sessionId)
+        .some((request) => request.requestId === requestId)
+      if (!pending) return false
+      return deps.getPermissionService().resolveApproval(requestId, decision)
+    },
+
+    answerQuestion: async (sessionId, questionId, answers) => {
+      const store = deps.getPendingUserQuestions()
+      if (!store.list(sessionId).some((request) => request.questionId === questionId)) return false
+      return store.resolve(sessionId, questionId, answers)
     },
 
     // ─── 会话内配置与输入能力扩展（2026-10-14） ────────────────────────────────
@@ -784,9 +1118,27 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
     },
 
     readAttachmentContent: async (candidate) => {
-      if (!isWhitelistedAttachmentPath(candidate)) return null
+      if (!isWhitelistedAttachmentPath(candidate)) {
+        // 安全敏感事件留痕（探测/越权读取在日志可追溯）
+        log.warn(`mobile bridge attachment rejected (outside whitelist): ${candidate}`)
+        return null
+      }
       try {
-        const data = await fs.readFile(candidate)
+        // realpath 复核：candidate 或其父级是 symlink 指向白名单外时拒绝（防逃逸），
+        // 同步前缀校验防 ../ 逃逸，这里补上软链这一层
+        const realPath = await fs.realpath(candidate)
+        if (!isWhitelistedAttachmentPath(realPath)) {
+          log.warn(`mobile bridge attachment rejected (symlink escape): ${candidate}`)
+          return null
+        }
+        // 体积上限：工作区内构建产物/日志可能巨大，整体读入 + base64 + JSON 序列化
+        // 会在主进程产生约 3 份峰值副本（本项目有长任务 OOM 前科），超限拒绝
+        const stats = await fs.stat(realPath)
+        if (stats.size > MAX_ATTACHMENT_READ_BYTES) {
+          log.warn(`mobile bridge attachment rejected (too large ${stats.size}B): ${candidate}`)
+          return null
+        }
+        const data = await fs.readFile(realPath)
         return { data, mimeType: mimeFromExtension(candidate) }
       } catch {
         return null
@@ -842,6 +1194,9 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
     },
 
     updateSessionTask: async (taskId, request: MobileBridgeUpdateScheduledTaskRequest) => {
+      // 能力面收窄到 session 作用域（与协议声明一致，global/project 任务不经移动桥接改）
+      const existing = deps.getScheduledTaskService().getTask(taskId)
+      if (existing == null || existing.scope !== 'session') return null
       const updates: Record<string, unknown> = {}
       if (request.name !== undefined) updates.name = request.name
       if (request.prompt !== undefined) updates.prompt_template = request.prompt
@@ -850,6 +1205,8 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
       if (request.cronExpression !== undefined) updates.cron_expression = request.cronExpression
       if (request.runAt !== undefined) updates.run_at = request.runAt
       if (request.enabled !== undefined) updates.enabled = request.enabled
+      if (request.timeoutSeconds !== undefined) updates.timeout_seconds = request.timeoutSeconds
+      if (request.maxRetries !== undefined) updates.max_retries = request.maxRetries
       const service = deps.getScheduledTaskService()
       if (Object.keys(updates).length === 0) {
         const existing = service.getTask(taskId)
@@ -859,16 +1216,29 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
       return updated != null ? mapScheduledTask(updated) : null
     },
 
-    deleteSessionTask: async (taskId) => deps.getScheduledTaskService().deleteTask(taskId),
+    deleteSessionTask: async (taskId) => {
+      const service = deps.getScheduledTaskService()
+      const task = service.getTask(taskId)
+      if (task == null || task.scope !== 'session') return false
+      return service.deleteTask(taskId)
+    },
 
     toggleSessionTask: async (taskId, enabled) => {
       const service = deps.getScheduledTaskService()
+      const existing = service.getTask(taskId)
+      if (existing == null || existing.scope !== 'session') return null
       const task = enabled ? service.enableTask(taskId) : service.disableTask(taskId)
       return task != null ? mapScheduledTask(task) : null
     },
 
     runSessionTaskNow: async (taskId) => {
-      await deps.getScheduledTaskService().runNow(taskId)
+      const service = deps.getScheduledTaskService()
+      // 不存在任务先 404（runNow 内部抛普通 Error 会兜成 500），并约束 session 作用域
+      const task = service.getTask(taskId)
+      if (task == null || task.scope !== 'session') {
+        throw new SparkError('NOT_FOUND', '任务不存在')
+      }
+      await service.runNow(taskId)
       return { started: true }
     },
 
@@ -898,6 +1268,94 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
         ...(result.queued === true ? { queued: true } : {}),
         ...(result.forwardToAgent === true ? { message: '命令已转发给助手执行' } : {}),
       }
+    },
+
+    // ─── 会话分支（Session Fork；与桌面端「从此处分支」同源） ──────────────────
+
+    forkSession: async (sessionId, request) => {
+      let result
+      try {
+        result = await deps.getSessionService().forkSession({
+          sourceSessionId: sessionId,
+          ...(request.anchorTurnId != null && request.anchorTurnId.trim()
+            ? { anchorTurnId: request.anchorTurnId.trim() }
+            : {}),
+          ...(request.title != null && request.title.trim() ? { title: request.title.trim() } : {}),
+        })
+      } catch (error) {
+        // 服务层抛普通 Error：已知用户错误转 SparkError 供路由层映射 404/400，
+        // 未识别错误原样 rethrow（保持 500 兜底，不把内部故障伪装成用户错误）
+        const message = error instanceof Error ? error.message : String(error)
+        if (message.includes('不存在或已删除')) throw new SparkError('NOT_FOUND', message)
+        if (message.includes('只能从已完成')) throw new SparkError('VALIDATION_FAILED', message)
+        throw error
+      }
+      return {
+        session: toBridgeSessionSummary(result.session),
+        lineage: result.lineage,
+        copiedTurnCount: result.copiedTurnCount,
+        sourceWasRunning: result.sourceWasRunning,
+        ...(result.bindingWarning != null ? { bindingWarning: result.bindingWarning } : {}),
+      }
+    },
+
+    getSessionLineage: (sessionId) => deps.getSessionService().getSessionLineage(sessionId),
+
+    // ─── 技能列表（移动端只读选择器；不做 ensureBuiltInSkills 等重扫动作） ──────
+
+    listSkills: async (sessionId) => {
+      const skills: MobileBridgeSkillItem[] = []
+      try {
+        for (const skill of deps.getSkillService().listSkills()) {
+          let description = ''
+          try {
+            const manifest = JSON.parse(skill.manifestJson) as {
+              description?: string
+              desc?: string
+            }
+            description = (manifest.desc ?? manifest.description ?? '').trim()
+          } catch {
+            /* manifest 损坏按空描述展示，不阻塞列表 */
+          }
+          skills.push({
+            id: skill.id,
+            name: skill.name,
+            description,
+            enabled: skill.enabled,
+            source: 'db',
+          })
+        }
+      } catch (error) {
+        log.warn(
+          `mobile bridge skill list failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+      if (sessionId) {
+        // 会话工作区项目技能（扫描失败不拖垮平台技能列表）；同名以平台技能优先去重
+        try {
+          for (const project of deps.getSessionService().listProjectSkills(sessionId)) {
+            // 去重按 trim+lowercase，与项目技能内部去重口径一致（避免 Search/search 重复出现）
+            if (
+              skills.some(
+                (skill) => skill.name.trim().toLowerCase() === project.name.trim().toLowerCase(),
+              )
+            )
+              continue
+            skills.push({
+              id: project.id,
+              name: project.name,
+              description: project.description,
+              enabled: true,
+              source: 'project',
+            })
+          }
+        } catch (error) {
+          log.warn(
+            `mobile bridge project skills scan failed: ${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
+      }
+      return { skills }
     },
   }
 }
@@ -975,4 +1433,6 @@ export function registerMobileBridgeIpc(deps: MobileBridgeIpcDeps): void {
 export function __resetMobileBridgeServiceForTesting(): void {
   service = null
   relayClient = null
+  sidebarOrderController = null
+  workspaceRootsProvider = () => []
 }
