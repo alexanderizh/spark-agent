@@ -28,8 +28,10 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    // packages/storage 无自己的 vitest.config 但有大量测试文件，不列进来则
-    // 根目录调用会静默漏收集（假绿），必须一并路由。
+    // packages/storage 与 packages/shared 无自己的 vitest.config 但有大量测试
+    // 文件，不列进来则根目录调用会静默漏收集（假绿），必须一并路由——shared
+    // 尤其隐蔽：其 package.json 的 test:unit 从包目录运行时同样向上命中本文件，
+    // 被路由到其他包后 shared 自己的测试全部跳过。
     //
     // projects 条目必须相对「本配置文件所在目录」解析为绝对路径：无自配的包
     // （如 packages/protocol）从包目录运行 vitest 时会向上搜索命中本文件，
@@ -39,6 +41,7 @@ export default defineConfig({
       'apps/desktop',
       'packages/agent-runtime',
       'packages/protocol',
+      'packages/shared',
       'packages/storage',
       'spark-engine',
     ].map(

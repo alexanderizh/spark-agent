@@ -695,11 +695,6 @@ export class SessionMcpTooling {
           name: provider.name,
           model: provider.model,
           provider: provider.provider,
-          modelManifests: provider.manifests.map((manifest) => ({
-            id: manifest.id,
-            modelId: manifest.modelId,
-            capabilities: manifest.capabilities.map((capability) => capability.id),
-          })),
         })),
         ...(primary.baseUrl !== undefined ? { apiEndpoint: primary.baseUrl } : {}),
       }),

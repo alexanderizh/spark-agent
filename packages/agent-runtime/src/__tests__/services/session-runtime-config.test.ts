@@ -1723,13 +1723,6 @@ describe('buildMediaGenerationSystemPrompt', () => {
       apiType: 'sync',
       outputDir: '/tmp/media',
       capabilities: ['video.generate'],
-      modelManifests: [
-        {
-          id: 'volcengine:seedance',
-          modelId: 'doubao-seedance',
-          capabilities: ['video.generate'],
-        },
-      ],
     })
 
     expect(prompt).toContain('must call `mcp__spark_media__describe_model`')
@@ -1754,9 +1747,6 @@ describe('buildMediaGenerationSystemPrompt', () => {
       name: `渠道${i}`,
       model: `model-${i}`,
       provider: 'openai-images',
-      modelManifests: [
-        { id: `custom:model-${i}`, modelId: `model-${i}`, capabilities: ['image.generate'] },
-      ],
     }))
     const prompt = buildMediaGenerationSystemPrompt({
       name: 'Media',

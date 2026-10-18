@@ -18,6 +18,31 @@ export function estimateTokens(text: string | null | undefined): number {
 }
 
 /**
+ * BPE 精确编码的字符上限：实测 o200k 对「同字符长串」（分隔线墙/重复字符墙，
+ * BPE 最坏情况）呈超线性膨胀——5k 字符 85ms、12k 字符 575ms、35k 字符 >120s，
+ * 会同步冻结事件循环；混合真实文本则极快（5.4k 字符 ~1ms）。超过该上限的
+ * 输入不再走精确编码。
+ */
+const EXACT_ENCODE_MAX_CHARS = 6_000
+
+/**
+ * 有界 token 估算：输入不超过 exactMaxChars 时与 estimateTokens 完全一致；
+ * 超过时退化为保守字符数（不编码，O(1)）。
+ *
+ * 适用场景：输入长度无上界、且消费方只做「阈值量级判断」（如 >30k 判高强度）
+ * 的热路径——超长输入按字符数计在阈值判断上只会偏保守（大文本 → 强模型），
+ * 语义安全。需要精确计数的预算裁剪（clipTextHeadTail 等）不要用本函数。
+ */
+export function estimateTokensBounded(
+  text: string | null | undefined,
+  exactMaxChars: number = EXACT_ENCODE_MAX_CHARS,
+): number {
+  if (text == null || text.length === 0) return 0
+  if (text.length <= exactMaxChars) return encode(text).length
+  return text.length
+}
+
+/**
  * 估算 token 数 + 每条 entry 的固定开销。
  *
  * 保留 memory-reader 旧实现 `Math.ceil(len * 1.5) + 20` 中 +20 的语义

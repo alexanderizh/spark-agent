@@ -22,13 +22,11 @@ export function buildMediaGenerationSystemPrompt(input: {
   apiType: string
   outputDir: string
   capabilities: string[]
-  modelManifests?: Array<{ id: string; modelId: string; capabilities: string[] }>
   providerConfigurations?: Array<{
     id: string
     name: string
     model: string
     provider: string
-    modelManifests: Array<{ id: string; modelId: string; capabilities: string[] }>
   }>
   apiEndpoint?: string
 }): string {

@@ -1,4 +1,4 @@
-import { createLogger, estimateTokens } from '@spark/shared'
+import { createLogger, estimateTokensBounded } from '@spark/shared'
 import { z } from 'zod'
 import type { ProviderProfileRow } from '@spark/storage'
 import {
@@ -625,7 +625,9 @@ export class AutoRouterService {
       // estimatedTokens 含 eventCount*400，长会话里任何短消息都会被顶过 30k 阈值
       // 判成 high，快路径必须绕开该历史项。另要求未命中任何高强度正则：规则分类
       // 先判低再判高，"翻译并重构"这类双命中会被规则判成 low，快路径必须排除。
-      const ruleIntensity = ruleClassifyIntensity(text, estimateTokens(text))
+      // 有界估算：用户消息长度无上界，BPE 对长同字符串超线性慢（35k 字符 >120s），
+      // 超过 6k 字符退化为字符数（阈值判断只会偏保守，快路径仍安全）。
+      const ruleIntensity = ruleClassifyIntensity(text, estimateTokensBounded(text))
       if (ruleIntensity === 'low' && !RULE_HIGH_PATTERNS.some((pattern) => pattern.test(text))) {
         intensity = 'low'
         reason = '本地快路径（规则判定为low）'

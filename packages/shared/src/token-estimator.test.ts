@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { clipTextHeadTail, estimateTokens, estimateTokensWithOverhead } from './token-estimator.js'
+import {
+  clipTextHeadTail,
+  estimateTokens,
+  estimateTokensBounded,
+  estimateTokensWithOverhead,
+} from './token-estimator.js'
 
 describe('token-estimator', () => {
   describe('estimateTokens', () => {
@@ -92,6 +97,41 @@ const x: number = 42
       const tokens = estimateTokens(md)
       expect(tokens).toBeGreaterThan(15)
       expect(tokens).toBeLessThan(60)
+    })
+  })
+
+  describe('estimateTokensBounded', () => {
+    it('上限内与 estimateTokens 完全一致（精确编码）', () => {
+      const text = '请帮我 create a new React component for the 用户列表 page.'
+      expect(estimateTokensBounded(text)).toBe(estimateTokens(text))
+    })
+
+    it('returns 0 for empty/null/undefined', () => {
+      expect(estimateTokensBounded('')).toBe(0)
+      expect(estimateTokensBounded(null)).toBe(0)
+      expect(estimateTokensBounded(undefined)).toBe(0)
+    })
+
+    it('超过上限退化为字符数（不触发 BPE 编码）', () => {
+      const long = 'a'.repeat(6_001)
+      expect(estimateTokensBounded(long)).toBe(6_001)
+    })
+
+    it('超长同字符墙（BPE 最坏情况）必须在毫秒级返回，不得冻结事件循环', () => {
+      // 回归锚点：精确 encode 对 35k 同字符中文字符串实测 >120s（超线性膨胀）。
+      // 有界版本必须走字符数退路，50ms 内完成（CI 机器波动余量）。
+      const wall = `翻译${'超'.repeat(35_000)}`
+      const t0 = Date.now()
+      const tokens = estimateTokensBounded(wall)
+      expect(Date.now() - t0).toBeLessThan(50)
+      expect(tokens).toBe(wall.length)
+    })
+
+    it('自定义 exactMaxChars 生效', () => {
+      expect(estimateTokensBounded('hello world hello world', 5)).toBe(23)
+      expect(estimateTokensBounded('hello world hello world', 100)).toBe(
+        estimateTokens('hello world hello world'),
+      )
     })
   })
 

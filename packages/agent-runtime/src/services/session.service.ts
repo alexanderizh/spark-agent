@@ -589,6 +589,7 @@ import {
 import {
   createLogger,
   estimateTokens,
+  estimateTokensBounded,
   resolveModelContextWindowForProvider,
   resolveSoftContextLimitForWindow,
 } from '@spark/shared'
@@ -11784,7 +11785,10 @@ export class SessionService {
             config: routerConfig,
             userMessage: params.message,
             eventCount: params.eventCount,
-            estimatedTokens: estimateTokens(params.message) + params.eventCount * 400,
+            // 有界估算：用户消息长度无上界，BPE 对长同字符串（分隔线墙等最坏
+            // 情况）超线性慢（35k 字符 >120s 会冻结本会话进程）；超 6k 字符退化
+            // 为字符数，阈值判断只会偏保守（大文本 → 强模型）。
+            estimatedTokens: estimateTokensBounded(params.message) + params.eventCount * 400,
             recentUserMessages: params.eventRepo
               .listRecentByType(params.sessionId, 'user_message', 3)
               .filter((row) => row.turn_id !== params.turnId)
