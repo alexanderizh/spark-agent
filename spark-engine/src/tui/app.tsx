@@ -45,6 +45,7 @@ import { WorkingLine } from './components/spinner.js'
 import { WelcomeBox } from './components/welcome.js'
 import { ModelPicker, ProviderConfigForm } from './model-flow.js'
 import { displayModelName } from './display-name.js'
+import { liveTail } from './live-tail.js'
 import { helpDetail } from './slash-commands.js'
 import type { ModelRuntimeController } from './use-model-runtime.js'
 import { contextStatsLine, projectTranscript, type ActiveToolProjection } from './projection.js'
@@ -176,6 +177,36 @@ function noticeColor(theme: TuiTheme, tone: NoticeState['tone']): string {
   if (tone === 'info') return theme.dim
   return theme.warn
 }
+
+/**
+ * Fixed bottom chrome rows while a turn streams: working line (1), the dark
+ * input band (3: paddingY top/bottom plus the input row), status bar (1), and
+ * one spare row for transient editor hints (paste/clipboard notices).
+ */
+const LIVE_CHROME_ROWS = 6
+
+/**
+ * Rows reserved for the notice line under the transcript. Notices render
+ * through the same tail window as the live strip, so they can never push the
+ * frame past one screen (a long /help or /context used to do exactly that).
+ */
+const LIVE_NOTICE_ROWS = 3
+
+/** Minimum live rows even on tiny terminals, so something stays readable. */
+const LIVE_MIN_ROWS = 4
+
+/** Thinking shares the live budget but stays a bounded preview. */
+const LIVE_THINKING_MAX_ROWS = 6
+
+/**
+ * Live tool-status rows are capped: a fan-out turn can schedule many tools at
+ * once, and an unbounded list grows the live frame past the budget. Older
+ * entries collapse into a single "N more tools" hint line.
+ */
+const ACTIVE_TOOLS_MAX_VISIBLE = 3
+
+/** One visible tool costs its own row plus the trailing margin. */
+const ACTIVE_TOOL_ROWS = 2
 
 export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const { exit, suspendTerminal } = useApp()
@@ -704,6 +735,54 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   // controls, and only the live strip below is redrawn (Claude Code / Codex
   // CLI behavior). Keeping rows inside a fixed redrawn viewport instead traps
   // them out of the scrollback, so wheel-up shows nothing earlier.
+  //
+  // The live strip itself is clamped to a tail window when the terminal height
+  // is known: an unbounded stream outgrows one screen, and once Ink emits more
+  // rows than fit, its erase accounting desyncs and the repaint shreds the
+  // frame (content shoved off the top, bottom chrome wiped to blank — the
+  // "answer pushed the input out of the window" failure). The omitted rows
+  // land in the scrollback as soon as the turn settles.
+  //
+  // The budget is computed per frame from every live consumer: chrome (6),
+  // notice window (3), active tools (dynamic), and each streaming block's own
+  // margin plus omitted-rows hint (2 per visible block). A flat height-based
+  // constant missed the block overheads, so a thinking+text stream overflowed
+  // the screen by several rows and shredded the frame again.
+  const activeTools = projection.activeTools
+  const visibleToolCount = Math.min(activeTools.length, ACTIVE_TOOLS_MAX_VISIBLE)
+  const toolsRows =
+    activeTools.length === 0
+      ? 0
+      : 1 +
+        visibleToolCount * ACTIVE_TOOL_ROWS +
+        (activeTools.length > visibleToolCount ? 1 : 0)
+  const blockOverhead =
+    (showThinking && liveThinking !== '' ? 2 : 0) + (liveText !== '' ? 2 : 0)
+  const liveBudget =
+    capabilities.height === undefined
+      ? undefined
+      : Math.max(
+          LIVE_MIN_ROWS,
+          capabilities.height - 1 - LIVE_CHROME_ROWS - LIVE_NOTICE_ROWS - toolsRows - blockOverhead,
+        )
+  const thinkingRows =
+    liveThinking === '' || liveBudget === undefined
+      ? 0
+      : Math.min(LIVE_THINKING_MAX_ROWS, Math.max(2, Math.floor(liveBudget / 4)))
+  const textBudget =
+    liveBudget === undefined ? undefined : Math.max(LIVE_MIN_ROWS, liveBudget - thinkingRows)
+  const thinkingTail =
+    showThinking && liveThinking !== ''
+      ? liveBudget === undefined
+        ? { text: liveThinking, omittedRows: 0 }
+        : liveTail(liveThinking, Math.max(4, capabilities.width - 2), thinkingRows)
+      : undefined
+  const textTail =
+    liveText !== ''
+      ? textBudget === undefined
+        ? { text: liveText, omittedRows: 0 }
+        : liveTail(liveText, capabilities.width, textBudget)
+      : undefined
   const output = (
     <>
       {empty && !pickerOpen && (
@@ -725,17 +804,32 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         theme={theme}
         capabilities={capabilities}
       />
-      {showThinking && liveThinking && (
-        <Box marginTop={1}>
-          <Text color={theme.dim}>▍ {liveThinking}</Text>
+      {thinkingTail !== undefined && (
+        <Box marginTop={1} flexDirection="column">
+          {thinkingTail.omittedRows > 0 && (
+            <Text color={theme.dim}>
+              … 上方 {thinkingTail.omittedRows} 行思考进行中，完成后完整保留在历史里
+            </Text>
+          )}
+          <Text color={theme.dim}>▍ {thinkingTail.text}</Text>
         </Box>
       )}
-      {liveText && (
-        <Box marginTop={1}>
-          <Text>{liveText}</Text>
+      {liveText !== '' && (
+        <Box marginTop={1} flexDirection="column">
+          {textTail?.omittedRows !== undefined && textTail.omittedRows > 0 && (
+            <Text color={theme.dim}>
+              … 上方 {textTail.omittedRows} 行输出进行中，完成后完整显示
+            </Text>
+          )}
+          <Text>{textTail === undefined ? liveText : textTail.text}</Text>
         </Box>
       )}
-      <ActiveTools tools={projection.activeTools} capabilities={capabilities} theme={theme} />
+      <ActiveTools
+        tools={projection.activeTools}
+        maxVisible={ACTIVE_TOOLS_MAX_VISIBLE}
+        capabilities={capabilities}
+        theme={theme}
+      />
     </>
   )
 
@@ -846,7 +940,30 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           theme={theme}
         />
       )}
-      {notice && <Text color={noticeColor(theme, notice.tone)}>{notice.text}</Text>}
+      {notice && (
+        <Text color={noticeColor(theme, notice.tone)}>
+          {(() => {
+            // A long notice (/help, /context) is itself part of the live
+            // frame; unbounded it pushes the chrome out of the window. While
+            // a turn streams the notice shares a tight window with the live
+            // strip; otherwise it may use the screen minus the chrome, so
+            // command listings stay readable.
+            const streaming = activeTurns > 0 || liveText !== '' || liveThinking !== ''
+            const maxRows = streaming
+              ? LIVE_NOTICE_ROWS
+              : capabilities.height === undefined
+                ? undefined
+                : Math.max(LIVE_NOTICE_ROWS, capabilities.height - 1 - LIVE_CHROME_ROWS)
+            const clipped =
+              maxRows === undefined
+                ? { text: notice.text, omittedRows: 0 }
+                : liveTail(notice.text, capabilities.width, maxRows)
+            return clipped.omittedRows > 0
+              ? `… 上方 ${clipped.omittedRows} 行已折叠\n${clipped.text}`
+              : clipped.text
+          })()}
+        </Text>
+      )}
     </>
   )
 
@@ -856,21 +973,20 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       : undefined
 
   return (
-    // A fixed frame height pins the input + status chrome to the terminal's
-    // bottom edge (Codex CLI behavior): a flexGrow spacer absorbs whatever the
-    // transcript leaves free, so streaming content never drags the editor
-    // around. Terminals without a known height (pipes, test renderers) fall
-    // back to the old follow-the-content layout.
-    <Box
-      flexDirection="column"
-      width={capabilities.width}
-      {...(capabilities.height === undefined ? {} : { height: capabilities.height })}
-    >
+    // Follow-the-content layout (Claude Code CLI behavior): the settled
+    // transcript streams into the terminal scrollback through ink's <Static>,
+    // which occupies no live-frame space. A fixed-height frame with a flexGrow
+    // spacer would turn that absent height into ~one screen of blank rows the
+    // moment a turn ends — shoving the newest content out of the viewport and
+    // stranding the chrome below a wall of emptiness. The chrome therefore
+    // hugs the content instead, and overflow safety lives in the live budget:
+    // every streaming block is tail-windowed so live rows + chrome never
+    // exceed the terminal height (that is what desyncs Ink's erase accounting).
+    <Box flexDirection="column" width={capabilities.width}>
       {output}
       {overlays}
-      <Box flexGrow={1} flexShrink={1} />
       {activeTurns > 0 && (
-        <Box marginBottom={1}>
+        <Box>
           <WorkingLine
             label={cancelling ? '正在中断 · 等待工具清理' : action}
             detail={`${

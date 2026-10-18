@@ -4,5 +4,7 @@
 
 Hello from Spark.
 
- >   向 Spark 描述任务，/ 查看命令
-   fake-m1 │ manual │ high                                                /help
+
+  >   向 Spark 描述任务，/ 查看命令
+
+fake-m1 │ manual │ high                                                    /help

@@ -8,6 +8,7 @@ import {
 } from '../../images/attachments.js'
 import type { ImageInputSeam } from '../../images/seam.js'
 import { shouldSwallowImeKeypress } from '../ime-guard.js'
+import { displayColumns } from '../live-tail.js'
 import { SLASH_COMMANDS } from '../slash-commands.js'
 import {
   glyphs,
@@ -64,6 +65,22 @@ const LOCKED_IMAGE_PASTE_NOTICE =
 /** Pasted input above either limit is rendered as an atomic collapsed block. */
 const PASTE_COLLAPSE_MIN_LINES = 8
 const PASTE_COLLAPSE_MIN_CHARACTERS = 1_000
+
+/**
+ * East Asian wide cells occupy two terminal columns but Yoga lays them out as
+ * one, so the frame's right rail drifts right and wraps as soon as the row
+ * contains CJK text. Padding the row back by the diff keeps the layout width
+ * equal to the painted width. Rows past the widest one absorb a few stray
+ * columns, which only shows in rare multi-line CJK drafts.
+ */
+function wideCellPadding(text: string): number {
+  let widest = 0
+  for (const line of text.split('\n')) {
+    const diff = displayColumns(line) - Array.from(line).length
+    if (diff > widest) widest = diff
+  }
+  return widest
+}
 
 /**
  * Draft block: a collapsed text paste, or an atomic image placeholder. The
@@ -813,36 +830,55 @@ export function InputEditor(props: InputEditorProps): ReactElement {
           )}
         </Box>
       )}
+      {/* Frameless full-row dark panel. paddingY lifts the empty editor to a
+          3-row band (blank + input + blank) so the bottom chrome reads as a
+          roomy input surface instead of a squeezed single strip; multi-line
+          drafts grow it naturally. No outer margin: the streaming working
+          line above sits directly on the band, keeping the gap one padding
+          row instead of three stacked blanks. Locked editors and terminals
+          without rich backgrounds render the same rows without the fill. */}
       <Box
-        paddingX={1}
+        paddingX={2}
+        paddingY={1}
         {...(props.locked || !supportsRichBackground(props.capabilities)
           ? {}
           : { backgroundColor: props.theme.userBg })}
       >
-        <Text color={props.locked ? props.theme.dim : props.theme.accent}>{symbols.user} </Text>
-        {props.locked ? (
-          <Text color={props.theme.dim}>(输入已锁定)</Text>
-        ) : value === '' ? (
-          <>
-            <Text inverse> </Text>
-            <Text color={props.theme.dim}> 向 Spark 描述任务，/ 查看命令</Text>
-          </>
-        ) : (
-          <Text>
-            {before}
-            {cursorAtCollapsedPaste ? (
-              <Text inverse> </Text>
-            ) : currentIsLineBreak ? (
-              <>
-                <Text inverse> </Text>
-                {'\n'}
-              </>
-            ) : (
-              <Text inverse>{sanitizeDisplayText(current ?? '') || ' '}</Text>
-            )}
-            {after}
+          <Text color={props.locked ? props.theme.dim : props.theme.accent}>
+            {symbols.user}{' '}
           </Text>
-        )}
+          {props.locked ? (
+            <>
+              <Text color={props.theme.dim}>(输入已锁定)</Text>
+              <Text>{' '.repeat(wideCellPadding(' (输入已锁定)'))}</Text>
+            </>
+          ) : value === '' ? (
+            <>
+              <Text inverse> </Text>
+              <Text color={props.theme.dim}> 向 Spark 描述任务，/ 查看命令</Text>
+              <Text>
+                {' '.repeat(wideCellPadding('  向 Spark 描述任务，/ 查看命令'))}
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text>
+                {before}
+                {cursorAtCollapsedPaste ? (
+                  <Text inverse> </Text>
+                ) : currentIsLineBreak ? (
+                  <>
+                    <Text inverse> </Text>
+                    {'\n'}
+                  </>
+                ) : (
+                  <Text inverse>{sanitizeDisplayText(current ?? '') || ' '}</Text>
+                )}
+                {after}
+              </Text>
+              <Text>{' '.repeat(wideCellPadding(value))}</Text>
+            </>
+          )}
       </Box>
       {pasteBlocks.length > 0 && !props.locked && (
         <Text color={props.theme.dim}>

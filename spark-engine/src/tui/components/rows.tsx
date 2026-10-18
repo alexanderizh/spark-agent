@@ -79,15 +79,30 @@ function renderTranscriptRow(
 
 export interface ActiveToolsProps {
   readonly tools: readonly ActiveToolProjection[]
+  /**
+   * Newest tools kept visible; older ones collapse into a hint line. A fan-out
+   * turn can schedule many tools and an unbounded list grows the live frame
+   * past the terminal (the live-budget accounting reserves rows for the cap).
+   */
+  readonly maxVisible?: number
   readonly capabilities: TerminalCapabilities
   readonly theme: TuiTheme
 }
 
-export function ActiveTools({ tools, capabilities, theme }: ActiveToolsProps): ReactElement {
+export function ActiveTools({
+  tools,
+  maxVisible,
+  capabilities,
+  theme,
+}: ActiveToolsProps): ReactElement {
   const symbols = glyphs(capabilities)
+  const overflow = maxVisible !== undefined && tools.length > maxVisible
+  const visible = overflow && maxVisible !== undefined ? tools.slice(-maxVisible) : tools
+  const omitted = overflow && maxVisible !== undefined ? tools.length - visible.length : 0
   return (
     <Box flexDirection="column" marginTop={tools.length > 0 ? 1 : 0}>
-      {tools.map((tool) => (
+      {omitted > 0 && <Text color={theme.dim}>… 还有 {omitted} 个工具在后台运行</Text>}
+      {visible.map((tool) => (
         <Box key={tool.callId} marginBottom={1}>
           <Text>
             <Text color={tool.status === 'running' ? theme.accent : theme.dim}>

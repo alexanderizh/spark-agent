@@ -44,13 +44,13 @@ export function StatusBar(props: StatusBarProps): ReactElement {
     )
 
   return (
-    <Box width="100%" paddingX={1} flexWrap="wrap">
+    <Box width="100%" flexWrap="wrap">
       {/*
-        Two blank cells keep the row aligned with the input prompt's `❯ `.
-        Running state lives in the WorkingLine above the input; the status bar
-        itself stays a quiet, never-animated chrome line.
+        No leading inset: the left edge aligns with the frameless input
+        panel above (both start at column 0). Running state lives in the
+        WorkingLine above the input; the status bar itself stays a quiet,
+        never-animated chrome line.
       */}
-      <Text>{'  '}</Text>
       <Box flexGrow={1} flexShrink={1} flexWrap="wrap">
         {segments.map((segment, index) => (
           <Box key={index}>
