@@ -78,6 +78,7 @@ describe('canvas agent model options', () => {
       allowDecomposition: true,
       maxConcurrentSubtasks: 3,
       subagentIntensityMapping: true,
+      fastPathEnabled: true,
     },
   })
 
@@ -124,9 +125,7 @@ describe('canvas agent model options', () => {
     const routerGroup = groups.find((group) => group.provider.id === 'router-1')
     expect(routerGroup).toBeDefined()
     expect(routerGroup?.adapter).toBe('claude-sdk')
-    expect(routerGroup?.models).toEqual([
-      { modelId: '', label: CANVAS_AUTO_ROUTER_MODEL_LABEL },
-    ])
+    expect(routerGroup?.models).toEqual([{ modelId: '', label: CANVAS_AUTO_ROUTER_MODEL_LABEL }])
   })
 
   it('resolves router selection to an empty model id (dispatcher decides per turn)', () => {

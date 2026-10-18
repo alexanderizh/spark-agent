@@ -6041,7 +6041,8 @@ export function registerAllIpcHandlers(): void {
     const result = await new AutoRouterService({
       complete: (prompt, opts) => modelService.complete(prompt, opts),
       getProviderRow: (providerId) => providerRepo.get(providerId),
-      getLatestDecisionIntensity: () => null,
+      // 连通性探针不消费决策历史（testDispatcher 专用，恒空）
+      getLatestDecision: () => null,
     }).testDispatcher({ dispatcher: req.dispatcher })
     if (!result.ok) {
       log.warn(

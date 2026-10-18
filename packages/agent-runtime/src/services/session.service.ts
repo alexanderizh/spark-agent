@@ -11758,16 +11758,23 @@ export class SessionService {
         : await new AutoRouterService({
             complete: (prompt, opts) => modelServiceForRouter.complete(prompt, opts),
             getProviderRow: (providerId) => providerRepoForRouter.get(providerId),
-            getLatestDecisionIntensity: (sessionId) => {
+            getLatestDecision: (sessionId) => {
               const latest = params.eventRepo.getLatestByType(sessionId, 'auto_router_decision')
               if (latest == null) return null
               const parsed = safeJsonParseLoose(latest.event_json) as {
                 intensity?: unknown
+                routerId?: unknown
               } | null
               const intensity = parsed?.intensity
-              return intensity === 'high' || intensity === 'balanced' || intensity === 'low'
-                ? intensity
-                : null
+              const routerId = parsed?.routerId
+              return {
+                intensity:
+                  intensity === 'high' || intensity === 'balanced' || intensity === 'low'
+                    ? intensity
+                    : null,
+                // 旧事件 payload 可能缺 routerId（缺省 = 未知来源，快路径不启用）
+                routerId: typeof routerId === 'string' ? routerId : null,
+              }
             },
           }).routeTurn({
             sessionId: params.sessionId,
@@ -11820,6 +11827,7 @@ export class SessionService {
           ? { skippedFrozenExecutors: routing.skippedFrozenExecutors }
           : {}),
         ...(routing.healthFallbackUsed === true ? { healthFallbackUsed: true } : {}),
+        ...(routing.fastPathUsed === true ? { fastPathUsed: true } : {}),
       },
       params.eventRepo,
     )

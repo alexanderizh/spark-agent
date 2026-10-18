@@ -121,6 +121,11 @@ export interface AutoRouterConfig {
   maxConcurrentSubtasks: number
   /** 是否将强度档位映射注入引擎子代理环境变量（仅 claude 引擎生效）。 */
   subagentIntensityMapping: boolean
+  /**
+   * 本地快路径开关（明确延续语/明确低强度消息跳过分流 LLM，省一次完整模型往返）。
+   * 解析层 default(true)：存量 config_json 缺该字段时视为开启；显式 false 为排查开关。
+   */
+  fastPathEnabled: boolean
 }
 
 // ─── Zod Schema ──────────────────────────────────────────────────────────────
@@ -172,6 +177,7 @@ export const AutoRouterConfigSchema = z.object({
   allowDecomposition: z.boolean().default(true),
   maxConcurrentSubtasks: z.number().int().min(1).max(10).default(3),
   subagentIntensityMapping: z.boolean().default(true),
+  fastPathEnabled: z.boolean().default(true),
 })
 
 // ─── 解析与判定 ──────────────────────────────────────────────────────────────
@@ -226,6 +232,7 @@ export function createDefaultAutoRouterConfig(adapter: RouterAdapter): AutoRoute
     allowDecomposition: true,
     maxConcurrentSubtasks: 3,
     subagentIntensityMapping: true,
+    fastPathEnabled: true,
   }
 }
 

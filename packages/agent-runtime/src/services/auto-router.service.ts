@@ -1,4 +1,4 @@
-import { createLogger } from '@spark/shared'
+import { createLogger, estimateTokens } from '@spark/shared'
 import { z } from 'zod'
 import type { ProviderProfileRow } from '@spark/storage'
 import {
@@ -98,14 +98,54 @@ export interface AutoRouterRouteResult {
    * （比直接报错好：冻结中的模型可能已恢复）。缺省 = false。
    */
   healthFallbackUsed?: boolean
+  /**
+   * 本地快路径命中（明确延续语/明确低强度消息跳过分流 LLM）。
+   * 缺省 = 未命中（走了 LLM 分流或兜底链）。观察字段，透出到决策事件。
+   */
+  fastPathUsed?: boolean
 }
+
+/** 会话最近一条分流决策的快照（强度粘性与快路径一致性校验的依据）。 */
+export interface AutoRouterLatestDecision {
+  intensity: RouterIntensity | null
+  /** 写下该决策的 router id（缺省 = 旧事件/未知来源，快路径不启用）。 */
+  routerId: string | null
+}
+
+/**
+ * 分流决策产出（callDispatcher 与本地快路径共用同一形态）：
+ * 成功 / 轮次取消 / 失败（超时/HTTP/schema，附人话摘要）三态。
+ */
+type DispatcherOutcome =
+  | {
+      decision: AutoRouterDispatchDecision
+      cancelled: false
+      attemptCount: number
+      failureStage?: undefined
+      failureDetail?: undefined
+    }
+  | {
+      decision: null
+      cancelled: true
+      attemptCount: number
+      failureStage?: undefined
+      failureDetail?: undefined
+    }
+  | {
+      decision: null
+      cancelled: false
+      attemptCount: number
+      failureStage: 'timeout' | 'http' | 'schema'
+      /** 人话失败摘要（HTTP 状态 + 业务 message），透出到降级 reason/日志/事件。 */
+      failureDetail?: string
+    }
 
 /** 依赖注入（全部可 mock，服务自身无 IO 依赖）。 */
 export interface AutoRouterServiceDeps {
   complete: ModelService['complete']
   getProviderRow: (providerId: string) => ProviderProfileRow | null
-  /** 反查会话最近一条分流决策的强度（强度粘性）。 */
-  getLatestDecisionIntensity: (sessionId: string) => RouterIntensity | null
+  /** 反查会话最近一条分流决策（强度粘性与快路径 routerId 一致性校验）。 */
+  getLatestDecision: (sessionId: string) => AutoRouterLatestDecision | null
   /** 执行器健康注册表（测试注入隔离实例；缺省用进程内单例）。 */
   healthRegistry?: AutoRouterHealthRegistry
 }
@@ -123,8 +163,14 @@ const RULE_HIGH_PATTERNS: RegExp[] = [
   /implement|refactor|architect|redesign/i,
 ]
 
+/**
+ * 明确延续语模式：锚定整条消息，仅匹配"继续/好的/嗯"等裸延续回复，
+ * "继续重构"这类带任务的复合消息不命中。快路径据此判定"维持上一轮强度"。
+ */
+const RULE_CONTINUATION_PATTERN = /^(好的|嗯|ok|OK|可以|行|继续|go on|continue)[。!！.\s]*$/
+
 const RULE_LOW_PATTERNS: RegExp[] = [
-  /^(好的|嗯|ok|OK|可以|行|继续|go on|continue)[。!！.\s]*$/,
+  RULE_CONTINUATION_PATTERN,
   /翻译/,
   /错别字/,
   /改个?名/,
@@ -246,7 +292,8 @@ export class AutoRouterService {
 
   async routeTurn(input: AutoRouterRouteInput): Promise<AutoRouterRouteResult> {
     const t0 = Date.now()
-    const prevIntensity = this.deps.getLatestDecisionIntensity(input.sessionId)
+    const latestDecision = this.deps.getLatestDecision(input.sessionId)
+    const prevIntensity = latestDecision?.intensity ?? null
 
     // 1. 执行器有效性校验（剔除失效条目，warn 日志）
     const { validExecutors, invalidEntries } = this.validateExecutors(input.config)
@@ -304,8 +351,39 @@ export class AutoRouterService {
       })
     }
 
-    // 3. 分流 LLM 调用（取消联动：100ms 轮询轮次取消状态中止 HTTP）
-    const decision = await this.callDispatcher(input, prevIntensity)
+    // 3. 分流决策：先尝试本地快路径（明确延续语/明确低强度消息直接定强度，跳过
+    //    分流 LLM 的一次完整模型往返；生产实测分流耗时 p50 3.3s / p90 17.2s）。
+    //    只替换 decision，不 early-return：step 5/6 的健康避让与强度粘性照常执行。
+    let fastPathUsed = false
+    let decision: DispatcherOutcome
+    if (input.config.fastPathEnabled !== false) {
+      const fast = this.tryFastPathDecision(input, latestDecision, validExecutors)
+      if (fast.kind === 'cancelled') {
+        decision = { decision: null, cancelled: true, attemptCount: 0 }
+      } else if (fast.kind === 'hit') {
+        log.info('routing fast path hit', {
+          turnId: input.turnId,
+          routerId: input.routerId,
+          intensity: fast.intensity,
+          reason: fast.reason,
+        })
+        decision = {
+          decision: {
+            intensity: fast.intensity,
+            decompose: false,
+            subtasks: [],
+            reason: fast.reason,
+          },
+          cancelled: false,
+          attemptCount: 0,
+        }
+        fastPathUsed = true
+      } else {
+        decision = await this.callDispatcher(input, prevIntensity)
+      }
+    } else {
+      decision = await this.callDispatcher(input, prevIntensity)
+    }
     const latencyMs = Date.now() - t0
 
     if (decision.cancelled) {
@@ -458,6 +536,7 @@ export class AutoRouterService {
       invalidEntries,
       skippedFrozenExecutors,
       healthFallbackUsed,
+      fastPathUsed,
     })
   }
 
@@ -506,6 +585,59 @@ export class AutoRouterService {
   }
 
   // ─── 内部 ───────────────────────────────────────────────────────────────
+
+  /**
+   * 本地快路径决策（零 LLM 往返）：
+   * - 明确延续语（"继续/好的/嗯"等裸回复）且同 router 存在上一轮强度 → 维持上一轮强度
+   *   （复刻分流器 system prompt 规则 1 的确定性部分）；
+   * - 明确低强度消息（命中低强度规则且未命中任何高强度正则）→ low。
+   *
+   * 命中守卫（全部满足才命中，任一不满足返回 miss 继续走分流 LLM）：
+   * - 轮次未取消（快路径绕过 callDispatcher 的取消轮询，必须自检）；
+   * - 上一条决策与当前 router 一致（成员路径/切换渠道后写下的决策不继承强度语义）；
+   * - 目标强度档存在启用且健康的执行器（否则 step 5 会回落其他档位并把
+   *   fallbackUsed 置 true，UI 误显示"分流降级"——不如让 LLM 正常分流）。
+   */
+  private tryFastPathDecision(
+    input: AutoRouterRouteInput,
+    latestDecision: AutoRouterLatestDecision | null,
+    validExecutors: AutoRouterExecutorRef[],
+  ):
+    | { kind: 'hit'; intensity: RouterIntensity; reason: string }
+    | { kind: 'cancelled' }
+    | {
+        kind: 'miss'
+      } {
+    if (input.isTurnCancelled()) return { kind: 'cancelled' }
+    if (latestDecision?.routerId !== input.routerId) return { kind: 'miss' }
+
+    const text = input.userMessage.trim()
+    if (text.length === 0) return { kind: 'miss' }
+
+    const prevIntensity = latestDecision.intensity
+    let intensity: RouterIntensity | null = null
+    let reason = ''
+    if (RULE_CONTINUATION_PATTERN.test(text) && prevIntensity != null) {
+      intensity = prevIntensity
+      reason = `本地快路径（延续上一轮${prevIntensity}强度）`
+    } else {
+      // 低强度规则：与 ruleClassifyIntensity 同一套正则，但 token 用消息自身估算——
+      // estimatedTokens 含 eventCount*400，长会话里任何短消息都会被顶过 30k 阈值
+      // 判成 high，快路径必须绕开该历史项。另要求未命中任何高强度正则：规则分类
+      // 先判低再判高，"翻译并重构"这类双命中会被规则判成 low，快路径必须排除。
+      const ruleIntensity = ruleClassifyIntensity(text, estimateTokens(text))
+      if (ruleIntensity === 'low' && !RULE_HIGH_PATTERNS.some((pattern) => pattern.test(text))) {
+        intensity = 'low'
+        reason = '本地快路径（规则判定为low）'
+      }
+    }
+    if (intensity == null) return { kind: 'miss' }
+
+    const pool = validExecutors.filter((entry) => entry.intensity === intensity)
+    if (this.health.firstHealthy(pool) == null) return { kind: 'miss' }
+
+    return { kind: 'hit', intensity, reason }
+  }
 
   private validateExecutors(config: AutoRouterConfig): {
     validExecutors: AutoRouterExecutorRef[]
@@ -589,33 +721,11 @@ export class AutoRouterService {
     return skipped
   }
 
+  /** 分流 LLM 调用（取消联动：100ms 轮询轮次取消状态中止 HTTP）。 */
   private async callDispatcher(
     input: AutoRouterRouteInput,
     prevIntensity: RouterIntensity | null,
-  ): Promise<
-    | {
-        decision: AutoRouterDispatchDecision
-        cancelled: false
-        attemptCount: number
-        failureStage?: undefined
-        failureDetail?: undefined
-      }
-    | {
-        decision: null
-        cancelled: true
-        attemptCount: number
-        failureStage?: undefined
-        failureDetail?: undefined
-      }
-    | {
-        decision: null
-        cancelled: false
-        attemptCount: number
-        failureStage: 'timeout' | 'http' | 'schema'
-        /** 人话失败摘要（HTTP 状态 + 业务 message），透出到降级 reason/日志/事件。 */
-        failureDetail?: string
-      }
-  > {
+  ): Promise<DispatcherOutcome> {
     const abortController = new AbortController()
     const cancelPoll = setInterval(() => {
       if (input.isTurnCancelled()) abortController.abort()
@@ -723,6 +833,7 @@ export class AutoRouterService {
     invalidEntries: Array<{ entryId: string; providerId: string; reason: string }>
     skippedFrozenExecutors?: AutoRouterRouteResult['skippedFrozenExecutors']
     healthFallbackUsed?: boolean
+    fastPathUsed?: boolean
   }): AutoRouterRouteResult {
     return {
       ok: args.resolved != null,
@@ -748,6 +859,7 @@ export class AutoRouterService {
         ? { skippedFrozenExecutors: args.skippedFrozenExecutors }
         : {}),
       ...(args.healthFallbackUsed === true ? { healthFallbackUsed: true } : {}),
+      ...(args.fastPathUsed === true ? { fastPathUsed: true } : {}),
     }
   }
 }

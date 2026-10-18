@@ -1251,6 +1251,11 @@ export interface AutoRouterDecisionEvent extends BaseEvent {
    * （比直接报错好：冻结中的模型可能已恢复）。缺省 = false。
    */
   healthFallbackUsed?: boolean
+  /**
+   * 本地快路径命中（明确延续语/明确低强度消息跳过分流 LLM 直接定强度）。
+   * 缺省 = 走了 LLM 分流或兜底链。观察字段，不参与控制流。
+   */
+  fastPathUsed?: boolean
 }
 
 export type AgentEvent =

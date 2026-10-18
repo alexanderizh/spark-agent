@@ -89,6 +89,7 @@ const ROUTER: ProviderProfile = {
     allowDecomposition: true,
     maxConcurrentSubtasks: 3,
     subagentIntensityMapping: true,
+    fastPathEnabled: true,
   },
 }
 

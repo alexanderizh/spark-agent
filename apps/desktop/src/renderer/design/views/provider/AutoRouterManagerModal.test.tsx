@@ -152,6 +152,7 @@ function routerProfile(id: string, name: string): ProviderProfile {
       allowDecomposition: true,
       maxConcurrentSubtasks: 3,
       subagentIntensityMapping: true,
+      fastPathEnabled: true,
     },
   }
 }

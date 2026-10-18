@@ -73,9 +73,7 @@ describe('classifyExecutorFailure 错误码优先归类', () => {
 
   it('错误码优先于文本：权限超时文本会被误判为可重试，错误码纠正为 environment', () => {
     // 回归对照：纯文本路径确实把它判成 retryable（这正是需要错误码的原因）
-    expect(classifyExecutorFailureText('permission request timed out after 300s')).toBe(
-      'retryable',
-    )
+    expect(classifyExecutorFailureText('permission request timed out after 300s')).toBe('retryable')
     expect(
       classifyExecutorFailure({ code: 'PERMISSION_TIMEOUT', text: 'permission request timed out' }),
     ).toBe('environment')
@@ -169,10 +167,12 @@ describe('AutoRouterHealthRegistry 递进冻结与半开恢复', () => {
 type CompleteMock = ReturnType<typeof vi.fn<ModelService['complete']>>
 
 function okComplete(text: string): CompleteMock {
-  return vi.fn<ModelService['complete']>(async (): Promise<CompleteResult> => ({
-    available: true,
-    text,
-  }))
+  return vi.fn<ModelService['complete']>(
+    async (): Promise<CompleteResult> => ({
+      available: true,
+      text,
+    }),
+  )
 }
 
 function makeProviderRow(id: string): ProviderProfileRow {
@@ -191,12 +191,22 @@ function makeProviderRow(id: string): ProviderProfileRow {
 
 function makeAvoidanceConfig(): AutoRouterConfig {
   const config = createDefaultAutoRouterConfig('claude')
-  config.dispatcher = { providerProfileId: 'p-dispatch', modelId: 'dispatch-mini', timeoutMs: 8_000 }
+  config.dispatcher = {
+    providerProfileId: 'p-dispatch',
+    modelId: 'dispatch-mini',
+    timeoutMs: 8_000,
+  }
   // 同强度（high）两条：首条为主、次条为热备
   config.executors = [
     { id: 'e-h1', providerProfileId: 'p-h1', modelId: 'opus-a', intensity: 'high', enabled: true },
     { id: 'e-h2', providerProfileId: 'p-h2', modelId: 'opus-b', intensity: 'high', enabled: true },
-    { id: 'e-bal', providerProfileId: 'p-bal', modelId: 'sonnet-mid', intensity: 'balanced', enabled: true },
+    {
+      id: 'e-bal',
+      providerProfileId: 'p-bal',
+      modelId: 'sonnet-mid',
+      intensity: 'balanced',
+      enabled: true,
+    },
   ]
   return config
 }
@@ -232,7 +242,7 @@ describe('AutoRouterService 选执行器健康避让', () => {
     return new AutoRouterService({
       complete,
       getProviderRow: (id) => rows.get(id) ?? null,
-      getLatestDecisionIntensity: () => null,
+      getLatestDecision: () => null,
       healthRegistry: registry,
     })
   }
@@ -272,9 +282,7 @@ describe('AutoRouterService 选执行器健康避让', () => {
     expect(result.healthFallbackUsed).toBe(true)
     // 避让清单排除最终选中的执行器（否则「避让了 A」同时「路由到 A」自相矛盾）
     expect(result.skippedFrozenExecutors?.length).toBe(2)
-    expect(
-      result.skippedFrozenExecutors?.some((item) => item.providerId === 'p-h1'),
-    ).toBe(false)
+    expect(result.skippedFrozenExecutors?.some((item) => item.providerId === 'p-h1')).toBe(false)
   })
 
   it('无冻结 → 行为与既有语义一致（取第一条）', async () => {
