@@ -1442,13 +1442,65 @@ describe('claude stream usage mapping (message_start / message_delta)', () => {
     ])
   })
 
+  it('captures cache read/write from message_start (Anthropic 规范位置) into usage_update', () => {
+    const ctx = { ...baseCtx }
+    const start = usageEvents(
+      mapSDKMessageToEvents(
+        streamEvent({
+          type: 'message_start',
+          message: {
+            usage: {
+              input_tokens: 120,
+              output_tokens: 0,
+              cache_read_input_tokens: 90_000,
+              cache_creation_input_tokens: 3_000,
+            },
+          },
+        }),
+        ctx,
+      ),
+    )
+    // 修复回归：此前 message_start 只取 input_tokens，缓存读写被系统性丢弃
+    // （usage_ledger.cache_write_tokens 全渠道恒 0 的我方根因）
+    expect(start).toEqual([
+      expect.objectContaining({
+        type: 'usage_update',
+        inputTokens: 120,
+        cacheHitTokens: 90_000,
+        cacheWriteTokens: 3_000,
+      }),
+    ])
+
+    // message_delta 只带累计 output_tokens（规范行为）：缓存快照保留不丢
+    const delta = usageEvents(
+      mapSDKMessageToEvents(
+        streamEvent({ type: 'message_delta', usage: { output_tokens: 250 } }),
+        ctx,
+      ),
+    )
+    expect(delta).toEqual([
+      expect.objectContaining({
+        inputTokens: 120,
+        outputTokens: 250,
+        cacheHitTokens: 90_000,
+        cacheWriteTokens: 3_000,
+      }),
+    ])
+  })
+
   it('does not double count assistant-message usage after message_delta already advanced', () => {
     const ctx = { ...baseCtx }
     mapSDKMessageToEvents(
-      streamEvent({ type: 'message_start', message: { usage: { input_tokens: 100, output_tokens: 0 } } }),
+      streamEvent({
+        type: 'message_start',
+        message: { usage: { input_tokens: 100, output_tokens: 0 } },
+      }),
       ctx,
     )
-    mapSDKMessageToEvents(streamEvent({ type: 'message_delta', usage: { output_tokens: 500 } }), ctx)
+    mapSDKMessageToEvents(
+      streamEvent({ type: 'message_delta', usage: { output_tokens: 500 } }),
+      ctx,
+    )
     const events = mapSDKMessageToEvents(
       {
         type: 'assistant',
@@ -1472,21 +1524,28 @@ describe('claude stream usage mapping (message_start / message_delta)', () => {
   it('accumulates output across requests and resets the per-request baseline at message_start', () => {
     const ctx = { ...baseCtx }
     mapSDKMessageToEvents(
-      streamEvent({ type: 'message_start', message: { usage: { input_tokens: 100, output_tokens: 0 } } }),
+      streamEvent({
+        type: 'message_start',
+        message: { usage: { input_tokens: 100, output_tokens: 0 } },
+      }),
       ctx,
     )
-    mapSDKMessageToEvents(streamEvent({ type: 'message_delta', usage: { output_tokens: 500 } }), ctx)
+    mapSDKMessageToEvents(
+      streamEvent({ type: 'message_delta', usage: { output_tokens: 500 } }),
+      ctx,
+    )
 
     // 请求 2 开始：输出基线归零，但 usage_update 仍发轮内累计（台账单调差值依赖）。
     const start2 = usageEvents(
       mapSDKMessageToEvents(
-        streamEvent({ type: 'message_start', message: { usage: { input_tokens: 200, output_tokens: 0 } } }),
+        streamEvent({
+          type: 'message_start',
+          message: { usage: { input_tokens: 200, output_tokens: 0 } },
+        }),
         ctx,
       ),
     )
-    expect(start2).toEqual([
-      expect.objectContaining({ inputTokens: 200, outputTokens: 500 }),
-    ])
+    expect(start2).toEqual([expect.objectContaining({ inputTokens: 200, outputTokens: 500 })])
 
     const delta2 = usageEvents(
       mapSDKMessageToEvents(
@@ -1497,15 +1556,16 @@ describe('claude stream usage mapping (message_start / message_delta)', () => {
         ctx,
       ),
     )
-    expect(delta2).toEqual([
-      expect.objectContaining({ inputTokens: 200, outputTokens: 800 }),
-    ])
+    expect(delta2).toEqual([expect.objectContaining({ inputTokens: 200, outputTokens: 800 })])
   })
 
   it('advances turn-cumulative usage from assistant messages when message_delta is absent', () => {
     const ctx = { ...baseCtx }
     mapSDKMessageToEvents(
-      streamEvent({ type: 'message_start', message: { usage: { input_tokens: 100, output_tokens: 0 } } }),
+      streamEvent({
+        type: 'message_start',
+        message: { usage: { input_tokens: 100, output_tokens: 0 } },
+      }),
       ctx,
     )
     const events = mapSDKMessageToEvents(

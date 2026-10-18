@@ -429,7 +429,15 @@ export interface SDKStreamEvent {
     delta?: { type: string; text?: string; thinking?: string; partial_json?: string }
     content_block?: { type: string; id?: string; name?: string; text?: string; thinking?: string }
     index?: number
-    message?: { usage?: { input_tokens: number; output_tokens: number } }
+    message?: {
+      usage?: {
+        input_tokens: number
+        output_tokens: number
+        /** 缓存计数的规范位置就在 message_start.usage（delta 通常只带 output） */
+        cache_read_input_tokens?: number
+        cache_creation_input_tokens?: number
+      }
+    }
     /**
      * message_delta 携带的请求内累计 usage（Anthropic 流协议的标准位置）。
      * output_tokens 恒有；input/cache 字段按上游实现可选（部分兼容渠道不回传）。

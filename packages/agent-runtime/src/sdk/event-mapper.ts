@@ -1377,6 +1377,23 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
         if (usage.input_tokens > 0 || state.inputTokens == null) {
           state.inputTokens = usage.input_tokens
         }
+        // Anthropic 流协议里缓存计数的规范位置在 message_start.usage
+        // （message_delta 通常只带累计 output_tokens）；此前只在此取
+        // input_tokens，缓存读写被系统性丢弃——usage_ledger 的
+        // cache_write_tokens 全渠道恒 0 即此根因（部分中转在 delta 自带
+        // 全量 usage，才偶有 read 可见）。与 delta 分支同语义赋值。
+        if (
+          usage.cache_read_input_tokens != null &&
+          (usage.cache_read_input_tokens > 0 || state.cacheHitTokens == null)
+        ) {
+          state.cacheHitTokens = usage.cache_read_input_tokens
+        }
+        if (
+          usage.cache_creation_input_tokens != null &&
+          (usage.cache_creation_input_tokens > 0 || state.cacheWriteTokens == null)
+        ) {
+          state.cacheWriteTokens = usage.cache_creation_input_tokens
+        }
         return [
           {
             ...baseEvent(ctx),
@@ -1385,6 +1402,8 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
             model: '',
             inputTokens: usage.input_tokens,
             outputTokens: state.turnOutputTokens,
+            ...(state.cacheHitTokens != null ? { cacheHitTokens: state.cacheHitTokens } : {}),
+            ...(state.cacheWriteTokens != null ? { cacheWriteTokens: state.cacheWriteTokens } : {}),
           },
         ]
       }
