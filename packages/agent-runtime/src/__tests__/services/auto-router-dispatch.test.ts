@@ -523,6 +523,24 @@ describe('本地快路径（明确延续/明确低强度消息跳过分流 LLM�
     expect(complete).toHaveBeenCalledTimes(1)
     expect(result.fastPathUsed).toBeUndefined()
   })
+
+  it('低强度分支的消息自身 token 超 30k 阈值 → miss（消息自身口径的阈值守卫）', async () => {
+    const complete = okComplete('{"intensity":"high","decompose":false,"subtasks":[],"reason":"长文"}')
+    const service = makeService(complete, { latestDecision: fastLatest('high') })
+    // 命中 /翻译/ 但消息自身估算 >30k token：规则口径返回 high，非 low → 不命中
+    const longMessage = `翻译${'超'.repeat(35_000)}`
+    const result = await service.routeTurn(makeInput({ userMessage: longMessage }))
+    expect(complete).toHaveBeenCalledTimes(1)
+    expect(result.fastPathUsed).toBeUndefined()
+  })
+
+  it('空消息（纯空白）→ miss，走 LLM', async () => {
+    const complete = okComplete('{"intensity":"balanced","decompose":false,"subtasks":[],"reason":"空"}')
+    const service = makeService(complete, { latestDecision: fastLatest('low') })
+    const result = await service.routeTurn(makeInput({ userMessage: '   \n  ' }))
+    expect(complete).toHaveBeenCalledTimes(1)
+    expect(result.fastPathUsed).toBeUndefined()
+  })
 })
 
 describe('ruleClassifyIntensity 规则兜底', () => {

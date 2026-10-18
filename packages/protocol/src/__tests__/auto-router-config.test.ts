@@ -38,7 +38,8 @@ describe('AutoRouterConfigSchema', () => {
     expect(parsed.allowDecomposition).toBe(true)
     expect(parsed.maxConcurrentSubtasks).toBe(3)
     expect(parsed.subagentIntensityMapping).toBe(true)
-    expect(parsed.executors[2]?.enabled).toBe(false)
+    // 存量 config_json 缺该字段 → 默认开启（快路径无须迁移即生效）
+    expect(parsed.fastPathEnabled).toBe(true)
   })
 
   it('缺 dispatcher 或 executors 条目非法时报错', () => {
