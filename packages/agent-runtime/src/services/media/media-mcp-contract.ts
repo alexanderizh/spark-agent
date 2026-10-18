@@ -34,17 +34,23 @@ export function buildMediaGenerationSystemPrompt(input: {
 }): string {
   const caps =
     input.capabilities.length > 0 ? input.capabilities.join(', ') : 'audio.speech, video.generate'
-  const manifestLines = (input.modelManifests ?? []).map(
-    (manifest) =>
-      `  - ${manifest.id} (${manifest.modelId}): ${manifest.capabilities.join(', ') || 'no declared capabilities'}`,
+  // P1-6 瘦身：逐路由清单（随路由数线性增长，19 路由时 ~5k 字符）与工具动词
+  // 枚举均与 `mcp__spark_media__list_models` 输出 / 工具 description 重复——
+  // 改为「渠道名 [默认模型]」有界摘要（截断 12 个，超出走 list_models），
+  // 行为契约段全部保留；渠道名保留路由可发现性（"用百炼画"类请求免查询）。
+  const configurations = input.providerConfigurations ?? []
+  const routeSegments = configurations.map(
+    (configuration) => `${configuration.name} [${configuration.model}]`,
   )
-  const providerLines = (input.providerConfigurations ?? []).flatMap((configuration) => [
-    `  - ${configuration.name} [${configuration.id}] — ${configuration.provider}, default ${configuration.model}`,
-    ...configuration.modelManifests.map(
-      (manifest) =>
-        `    - ${manifest.id} (${manifest.modelId}): ${manifest.capabilities.join(', ') || 'no declared capabilities'}`,
-    ),
-  ])
+  const ROUTE_NAME_LIMIT = 12
+  const shown = routeSegments.slice(0, ROUTE_NAME_LIMIT).join(', ')
+  const hidden = Math.max(0, routeSegments.length - ROUTE_NAME_LIMIT)
+  const routeSummary =
+    routeSegments.length > 0
+      ? `- Configured provider routes (${routeSegments.length}): ${shown}${
+          hidden > 0 ? `, …(+${hidden} more via list_models)` : ''
+        }; default ${input.model}. Call \`mcp__spark_media__list_models\` to inspect every model route, capability, and manifest id.`
+      : '- No extra provider routes configured; call `mcp__spark_media__list_models` to inspect the active model.'
   return [
     '## Media Generation Capability',
     'The current runtime has configured multimedia models (image / audio / video) and can route each selected model to its owning provider.',
@@ -57,28 +63,12 @@ export function buildMediaGenerationSystemPrompt(input: {
     `- API base URL: ${input.apiEndpoint ?? '(provider default)'}`,
     `- Declared capabilities: ${caps}`,
     `- Output directory: ${input.outputDir}`,
-    ...(manifestLines.length > 0 ? ['', 'Configured model manifests:', ...manifestLines] : []),
-    ...(providerLines.length > 0
-      ? ['', 'Configured provider/model routes:', ...providerLines]
-      : []),
+    routeSummary,
     '',
-    'Available tools (call the one matching the user intent):',
-    '- `mcp__spark_media__list_models` — inspect configured media models and capabilities.',
-    '- `mcp__spark_media__describe_model` — inspect parameter schema before calling a model.',
-    '- `mcp__spark_media__generate_image` — text-to-image / image-to-image.',
-    '- `mcp__spark_media__edit_image` — edit / compose existing images with a prompt.',
-    '- `mcp__spark_media__generate_audio` — text-to-speech or text-to-music, depending on the selected model.',
-    '- `mcp__spark_media__transcribe_audio` — audio-to-text transcription.',
-    '- `mcp__spark_media__generate_video` — text-to-video / image-to-video.',
-    '- `mcp__spark_media__upload_file` — upload/import a file to the configured provider file platform.',
-    '- `mcp__spark_media__get_file` / `list_files` — retrieve provider file metadata.',
-    '- `mcp__spark_media__delete_file` — delete a provider file after explicit user confirmation.',
-    '- `mcp__spark_media__list_tasks` — list asynchronous tasks; Bailian supports the official 24-hour query window.',
-    '- `mcp__spark_media__get_task` — inspect a media task returned by generation tools or a Bailian task ID.',
-    '- `mcp__spark_media__cancel_task` — cancel a pending/running media task when supported.',
+    'Available tools (each description carries its own usage and constraints): `mcp__spark_media__generate_image`, `mcp__spark_media__generate_video`, and `mcp__spark_media__describe_model` (inspect parameter schemas before calling a model), plus edit_image / generate_audio / transcribe_audio / upload_file / get_file / list_files / delete_file / list_tasks / get_task / cancel_task under the same `mcp__spark_media__` prefix. `delete_file` requires explicit user confirmation first.',
     '',
     'Image generation and image editing may also be available through the active model, SDK, CLI, or executor. Treat `mcp__spark_media__generate_image` and `mcp__spark_media__edit_image` as Spark platform routes, not as replacements for those native capabilities.',
-    "For image requests, use these as routing guidelines rather than hard restrictions: normally honor an explicit route choice, but explain and adapt if it is unavailable or clearly unsuitable. When multiple routes are suitable, ask the user only when the choice materially affects quality, cost, latency, privacy, or workflow; otherwise choose a reasonable route without blocking the task. If the user did not specify a route, consider the active model or executor's native image capability first by default, while still using the Spark platform route whenever it better fits the task, native generation is unavailable, or the user selects Spark.",
+    "For image requests they are routing guidelines rather than hard restrictions: honor an explicit route choice; explain and adapt if it is unavailable or clearly unsuitable; ask the user only when the choice materially affects quality, cost, latency, privacy, or workflow — otherwise choose a reasonable route without blocking the task. Without an explicit choice, consider the active model or executor's native image capability first, and use the Spark platform route whenever it better fits the task, native generation is unavailable, or the user selects Spark.",
     '',
     'Before calling `generate_video`, `generate_image`, or `edit_image`, you must call `mcp__spark_media__describe_model` for the selected model/capability unless you already inspected it in this turn.',
     'When the user names a configured model, pass that exact manifest id or model id in the generation tool `model` field. The media server will select the matching provider credentials and endpoint; never substitute the default model silently.',

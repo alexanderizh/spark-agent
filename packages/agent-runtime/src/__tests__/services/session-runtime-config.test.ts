@@ -1747,6 +1747,40 @@ describe('buildMediaGenerationSystemPrompt', () => {
     )
     expect(prompt).not.toContain('ask the user which route to use before generating')
   })
+
+  it('路由清单摘要化（P1-6）：数量 + 默认模型 + list_models 指引，不随路由数线性增长', () => {
+    const routes = Array.from({ length: 19 }, (_, i) => ({
+      id: `provider-${i}`,
+      name: `渠道${i}`,
+      model: `model-${i}`,
+      provider: 'openai-images',
+      modelManifests: [
+        { id: `custom:model-${i}`, modelId: `model-${i}`, capabilities: ['image.generate'] },
+      ],
+    }))
+    const prompt = buildMediaGenerationSystemPrompt({
+      name: 'Media',
+      model: 'default-model',
+      provider: 'openai-images',
+      apiType: 'sync',
+      outputDir: '/tmp/media',
+      capabilities: ['image.generate'],
+      providerConfigurations: routes,
+    })
+    expect(prompt).toContain('provider routes (19)')
+    expect(prompt).toContain('渠道0 [model-0]')
+    expect(prompt).toContain('default default-model')
+    expect(prompt).toContain('mcp__spark_media__list_models')
+    // 超出 12 个渠道名截断，指向 list_models（规模有界）
+    expect(prompt).toContain('+7 more via list_models')
+    // 逐路由 manifest 明细不再进入提示词（与 list_models 输出重复且线性增长）
+    expect(prompt).not.toContain('provider/model routes:')
+    expect(prompt).not.toContain('custom:model-0')
+    // 删除文件需用户确认的红线保留
+    expect(prompt).toContain('explicit user confirmation')
+    // 规模恒定：19 路由下总长显著小于逐条清单（原 5.4k chars 量级）
+    expect(prompt.length).toBeLessThan(4_000)
+  })
 })
 
 describe('SessionService runtime provider/model resolution', () => {
