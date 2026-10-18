@@ -1,7 +1,5 @@
 import type { EnvVarItem } from '@spark/protocol'
 
-type EnvJsonObject = Record<string, string>
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value != null && !Array.isArray(value)
 }
@@ -40,19 +38,26 @@ function keepFirstEnvVarByKey(vars: EnvVarItem[]): EnvVarItem[] {
 }
 
 /**
- * 把环境变量草稿导出为通用 JSON 键值对象。
+ * 把环境变量草稿导出为项目原生数组格式 `[{ key, value, description? }]`，
+ * 使复制→粘贴闭环保留描述；粘贴端仍兼容通用 `{ "KEY": "value" }` 键值对象。
  * 空键名会被忽略；重复键与后端持久化规则一致，保留第一个值。
  */
 export function serializeEnvVarsJson(vars: EnvVarItem[]): string {
   const seen = new Set<string>()
-  const entries = vars.flatMap<[string, string]>((item) => {
+  const entries = vars.flatMap<EnvVarItem>((item) => {
     const key = item.key.trim()
     if (key.length === 0 || seen.has(key)) return []
     seen.add(key)
-    return [[key, item.value]]
+    const description = item.description?.trim() ?? ''
+    return [
+      {
+        key,
+        value: item.value,
+        ...(description.length > 0 ? { description } : {}),
+      },
+    ]
   })
-  const env = Object.fromEntries(entries) as EnvJsonObject
-  return JSON.stringify(env, null, 2)
+  return JSON.stringify(entries, null, 2)
 }
 
 /**

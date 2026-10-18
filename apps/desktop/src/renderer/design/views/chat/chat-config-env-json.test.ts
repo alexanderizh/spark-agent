@@ -2,25 +2,36 @@ import { describe, expect, it } from 'vitest'
 import { parseEnvVarsJson, serializeEnvVarsJson } from './chat-config-env-json'
 
 describe('chat config environment variable JSON', () => {
-  it('serializes non-empty keys as a formatted key-value object', () => {
+  it('serializes non-empty keys as the native array shape, exporting descriptions', () => {
     expect(
       serializeEnvVarsJson([
-        { key: ' API_KEY ', value: 'secret', description: 'not exported' },
-        { key: '', value: 'ignored' },
+        { key: ' API_KEY ', value: 'secret', description: ' access token ' },
+        { key: '', value: 'ignored', description: 'dropped with empty key' },
         { key: 'PORT', value: '3000' },
+        { key: 'EMPTY_DESC', value: 'x', description: '   ' },
       ]),
-    ).toBe('{\n  "API_KEY": "secret",\n  "PORT": "3000"\n}')
+    ).toBe(
+      '[\n  {\n    "key": "API_KEY",\n    "value": "secret",\n    "description": "access token"\n  },\n  {\n    "key": "PORT",\n    "value": "3000"\n  },\n  {\n    "key": "EMPTY_DESC",\n    "value": "x"\n  }\n]',
+    )
+  })
+
+  it('round-trips descriptions through copy and paste', () => {
+    const vars = [
+      { key: 'API_KEY', value: 'secret', description: 'access token' },
+      { key: 'PORT', value: '3000' },
+    ]
+    expect(parseEnvVarsJson(serializeEnvVarsJson(vars))).toEqual(vars)
   })
 
   it('uses the first value when duplicate keys are serialized, matching persistence', () => {
     expect(
       JSON.parse(
         serializeEnvVarsJson([
-          { key: 'TOKEN', value: 'old' },
+          { key: 'TOKEN', value: 'old', description: 'kept' },
           { key: 'TOKEN', value: 'new' },
         ]),
       ),
-    ).toEqual({ TOKEN: 'old' })
+    ).toEqual([{ key: 'TOKEN', value: 'old', description: 'kept' }])
   })
 
   it('parses a key-value object', () => {
