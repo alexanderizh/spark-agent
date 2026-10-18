@@ -1,4 +1,5 @@
-import { Switch } from 'antd'
+import { Switch, Tooltip } from 'antd'
+import { Icons } from '../../Icons'
 import {
   SPARK_EXECUTOR_UNAVAILABLE_HINTS,
   sparkExecutorAvailability,
@@ -28,7 +29,15 @@ export function SparkExecutorSwitch({
   return (
     <>
       <label className="pv_form_label">
-        执行引擎
+        <span className="pv_form_label_title">
+          Spark执行引擎
+          <Tooltip
+            title="开启时使用自建引擎执行任务，关闭则根据接口协议自动选择 Claude SDK 或 Codex Runtime"
+            overlayStyle={{ maxWidth: 340 }}
+          >
+            <Icons.HelpCircle className="pv_form_label_help" size={13} />
+          </Tooltip>
+        </span>
       </label>
       <div className="pv_form_control_inline pv_spark_executor_control">
         <Switch

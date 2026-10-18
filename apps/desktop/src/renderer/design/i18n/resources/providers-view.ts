@@ -292,7 +292,7 @@ export const PROVIDERS_VIEW_RESOURCE = {
     'providersView.tpl33Desc': "将 {{model}} 设为默认",
     'providersView.tpl34Desc': "移除自定义模型 {{model}}",
     'providersView.tpl35Desc': "留空 → {{model}}",
-    'providersView.tpl36LongDesc': "Claude 适配器（SDK）会固定追加 /v1/messages：地址需以 /v1/messages 结尾才能自洽；非标准尾缀（如 …/v3/messages）请开启「执行引擎（Spark）」以原样直连。",
+    'providersView.tpl36LongDesc': "Claude 适配器（SDK）会固定追加 /v1/messages：地址需以 /v1/messages 结尾才能自洽；非标准尾缀（如 …/v3/messages）请开启「Spark执行引擎」以原样直连。",
     'providersView.tpl37LongDesc': "生成/提交请求按所填地址原样发送；上传、下载与异步任务轮询仍基于该地址派生路径。视频等异步渠道开启后可能查不到任务结果，同步渠道（图片、语音合成）不受影响。",
     'providersView.t.voiceNameLabel': "音色名称",
     'providersView.tpl38LongDesc': "使用上方 Dry-run 的示例参数，在主进程内编译最终 URL、鉴权和请求体。API Key 仅以占位符参与编译，不会显示真实密钥，也不会请求 Provider。",

@@ -1891,7 +1891,7 @@ describe('ProviderEditPanel spark executor switch', () => {
     expect(sparkSwitch).not.toBeNull()
     expect(sparkSwitch?.hasAttribute('disabled')).toBe(true)
     expect(container.textContent).toContain(
-      'Chat Completions 不支持 Spark 执行器，请切换至 Responses API',
+      'Chat Completions 不支持 Spark执行引擎，请切换至 Responses API',
     )
     const hint = container.querySelector('.pv_spark_executor_hint')
     expect(hint?.parentElement?.classList.contains('pv_spark_executor_control')).toBe(true)
