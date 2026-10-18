@@ -561,7 +561,7 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
             '移动端',
             '手机',
             '云端中继',
-            '授信',
+            '设备',
             '远程会话',
             '桥接',
             'mobile',

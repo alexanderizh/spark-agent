@@ -142,7 +142,7 @@ async function main() {
     })
   })
 
-  // 3) 桌面端连接（临时设备身份，首次连接即授信）：
+  // 3) 桌面端连接（临时设备身份，首次连接即自动注册）：
   //    首帧认证协议 —— query 只带 token+deviceId，open 后先发 auth 帧，
   //    服务端验证 deviceSecret 通过后回 welcome 并注册进 hub，之后才发业务帧
   const e2eDeviceId = `e2e-${crypto.randomUUID().slice(0, 12)}`
@@ -272,7 +272,7 @@ async function main() {
   )
   check('桌面端下线广播 presence', presence != null, presence ? 'offline 已送达' : '8s 未收到')
 
-  // 8) 授信设备管理接口：列表可见 + 吊销 + 吊销后该设备永久拒绝（4403）
+  // 8) 设备管理接口：列表可见 + 吊销 + 吊销后该设备永久拒绝（4403）
   try {
     const listRes = await fetch(`${HTTP_BASE}/api/v1/mobile-bridge/devices`, {
       headers: { Authorization: `Bearer ${TOKEN}` },

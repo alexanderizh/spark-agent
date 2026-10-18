@@ -78,7 +78,7 @@ Page({
     devicesError: '',
     composerDeviceId: '',
     composerDeviceIndex: 0,
-    composerDeviceLabel: '暂无已授信电脑',
+    composerDeviceLabel: '暂无已接入电脑',
     projectOptions: [DEFAULT_PROJECT],
     projectIndex: 0,
     modelOptions: [DEFAULT_MODEL_OPTION],
@@ -173,7 +173,7 @@ Page({
     }
   },
 
-  /** 合并授信设备快照与在线 presence。 */
+  /** 合并设备快照与在线 presence。 */
   rebuildDevices() {
     const presence = bridge.getRelayPresenceDevices()
     const presenceFresh = bridge.isRelayPresenceFresh()
@@ -239,7 +239,7 @@ Page({
       selectedDeviceId,
       composerDeviceId,
       composerDeviceIndex,
-      composerDeviceLabel: devices[composerDeviceIndex]?.pickerLabel ?? '暂无已授信电脑',
+      composerDeviceLabel: devices[composerDeviceIndex]?.pickerLabel ?? '暂无已接入电脑',
     })
     this.refreshComposerSummary()
   },

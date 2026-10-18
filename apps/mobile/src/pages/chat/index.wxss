@@ -8,9 +8,39 @@
   box-sizing: border-box;
 }
 
+/* 消息区包裹层：承载 scroll-view 与悬浮「最新」按钮（按钮锚定消息区右下角，不随 dock 高度漂移） */
+.chat-scroll-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
 .chat-scroll {
   flex: 1;
   min-height: 0;
+}
+
+/* 悬浮「最新」按钮：用户上滑查看历史时出现，点击回底并恢复跟随 */
+.chat-jump-latest {
+  position: absolute;
+  right: 32rpx;
+  bottom: 32rpx;
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 14rpx 26rpx;
+  border-radius: 999rpx;
+  background: #ffffff;
+  border: 1rpx solid #e5e2dd;
+  box-shadow: 0 6rpx 20rpx rgba(26, 26, 26, 0.1);
+  font-size: 24rpx;
+  color: #52525b;
+}
+
+.chat-jump-latest-chevron {
+  transform: scale(0.7);
 }
 
 /* 所选电脑离线提示条（历史仍可见） */

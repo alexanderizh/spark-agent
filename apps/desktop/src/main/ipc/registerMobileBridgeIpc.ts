@@ -138,11 +138,11 @@ export interface MobileBridgeIpcDeps {
   }
 }
 
-/** 云端中继持久化形态：开关/地址 + 本机设备身份（deviceId/secret/label，重新授信时整体换新） */
+/** 云端中继持久化形态：开关/地址 + 本机设备身份（deviceId/secret/label，重置设备身份时整体换新） */
 interface RelayStoreShape {
   settings: MobileBridgeRelaySettings
   deviceId: string
-  /** 设备密钥：授信凭据，仅本机明文保存；服务端只存 SHA-256 哈希 */
+  /** 设备密钥：接入凭据，仅本机明文保存；服务端只存 SHA-256 哈希 */
   deviceSecret: string
   /** 设备展示名（默认取主机名；连接时上报，设置页与小程序设备管理展示用） */
   label: string
@@ -166,7 +166,7 @@ function readRelayStore(settings: SettingsService): RelayStoreShape {
   const record = raw as Record<string, unknown>
   const deviceId =
     typeof record.deviceId === 'string' && record.deviceId ? record.deviceId : randomUUID()
-  // 旧版本 store 没有 secret：补生成（服务端首见即注册，等价于一次重新授信）
+  // 旧版本 store 没有 secret：补生成（服务端首见即自动注册）
   const deviceSecret =
     typeof record.deviceSecret === 'string' && record.deviceSecret
       ? record.deviceSecret
@@ -1383,8 +1383,8 @@ export function registerMobileBridgeIpc(deps: MobileBridgeIpcDeps): void {
   })
 
   typedIpcHandle('mobile-bridge:reset-relay-identity', async () => {
-    // 重新授信：生成全新设备身份（旧 deviceId 已被服务端永久拉黑，复用无意义），
-    // 展示名同步刷新为主机名（主机名改动后重授信即可更新上报的 label）
+    // 重置设备身份：生成全新设备身份（旧 deviceId 已被服务端永久拉黑，复用无意义），
+    // 展示名同步刷新为主机名（主机名改动后重置设备身份即可更新上报的 label）
     const store = readRelayStore(settings)
     writeRelayStore(settings, {
       ...store,

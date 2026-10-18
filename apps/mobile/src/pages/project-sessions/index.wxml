@@ -6,7 +6,7 @@
   <!-- 当前项目 -->
   <view class="ps-title-row">
     <text class="page-title ellipsis">{{projectName}}</text>
-    <view class="ps-title-action" bindtap="onOpenBridgeDevices">授信设备</view>
+    <view class="ps-title-action" bindtap="onOpenBridgeDevices">设备管理</view>
   </view>
 
   <!-- 电脑是上层上下文；此处只显示归属，返回顶层后才能切换 -->
@@ -50,7 +50,7 @@
   <view wx:if="{{loading}}" class="loading-tip">加载中…</view>
 
   <view wx:elif="{{deviceUnavailable}}" class="ps-error">
-    <empty-state icon="monitor" title="这台电脑已解除授信" desc="返回项目列表，或回到电脑顶层重新选择" />
+    <empty-state icon="monitor" title="这台电脑已被吊销" desc="返回项目列表，或回到电脑顶层重新选择" />
     <view class="ps-back-button" bindtap="onBackToProjects">返回项目列表</view>
   </view>
 
@@ -127,7 +127,7 @@
 
   <view class="ps-spacer"></view>
 
-  <!-- 悬浮胶囊：当前项目发起新会话（配置 chips 与会话页同构：模型/权限快捷行 + 推理配置条） -->
+  <!-- 底部会话发起栏（通栏暖白底，样式对齐首页发起区；快捷行/配置条与会话页同构） -->
   <capsule-composer
     mode="float"
     value="{{quickText}}"

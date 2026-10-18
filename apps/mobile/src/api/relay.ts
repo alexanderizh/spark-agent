@@ -54,7 +54,7 @@ export interface RelayStreamHandlers {
 
 // ─── 设备类型（对齐协议 MobileBridgeDeviceInfo / MobileBridgeRelayDesktopInfo） ──
 
-/** 授信设备（REST /mobile-bridge/devices 返回；含离线设备） */
+/** 接入设备（REST /mobile-bridge/devices 返回；含离线设备） */
 export interface RelayDeviceInfo {
   deviceId: string
   /** 展示名（桌面端主机名） */
@@ -62,7 +62,7 @@ export interface RelayDeviceInfo {
   version: string | null
   online: boolean
   lastSeenAt: string | null
-  /** 首次授信时间 */
+  /** 首次接入时间 */
   trustedAt: string
 }
 
@@ -93,7 +93,7 @@ let desktopOnline: boolean | null = null
 let presenceDevices: RelayDesktopInfo[] = []
 /** 是否收到过服务端下发的设备列表（区分「未知」与「确无在线」） */
 let presenceFresh = false
-/** 设备列表订阅者（页面刷新设备切换条 / 授信设备页实时刷新） */
+/** 设备列表订阅者（页面刷新设备切换条 / 设备管理页实时刷新） */
 const deviceListeners = new Set<(devices: RelayDesktopInfo[]) => void>()
 
 // ─── 地址与本地身份 ───────────────────────────────────────────────────────────
@@ -539,16 +539,16 @@ export function __resetRelayForTesting(): void {
   presenceFresh = false
 }
 
-// ─── 授信设备管理（REST 直连 edu-server，不经 WS；带账号 JWT） ────────────────
+// ─── 设备管理（REST 直连 edu-server，不经 WS；带账号 JWT） ────────────────
 
-/** 当前账号的授信桌面设备列表（含离线设备；吊销后不再返回） */
+/** 当前账号的已接入桌面设备列表（含离线设备；吊销后不再返回） */
 export function listRelayDevices(): Promise<{ devices: RelayDeviceInfo[] }> {
   return request<{ devices: RelayDeviceInfo[] }>('/mobile-bridge/devices')
 }
 
 /**
- * 吊销一台授信设备（不可逆）：该设备的中继连接会被服务端立即断开，
- * 且其 deviceId 永久拒绝重连；桌面端需「重新授信」生成新身份。
+ * 吊销一台已接入设备（不可逆）：该设备的中继连接会被服务端立即断开，
+ * 且其 deviceId 永久拒绝重连；桌面端需「重置设备身份」生成新身份。
  */
 export function revokeRelayDevice(
   deviceId: string,

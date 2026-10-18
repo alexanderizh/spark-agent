@@ -16,6 +16,7 @@
  *
  * 渲染分层：BridgeEvent → chat-reducer(消息列表) → chat-view(渲染项+时间分界) → setData。
  * 流式期间 setData 做了 100ms 合并节流，避免高频 delta 卡顿。
+ * 滚动策略：贴底才跟随流式自动回底；用户上滑查看历史即停止跟随（悬浮「最新」回底）。
  */
 
 import * as bridge from '../../api/bridge'
@@ -92,8 +93,10 @@ interface ChatPageData {
   inputText: string
   loading: boolean
   connected: boolean
-  /** scroll-into-view 目标（固定锚点 id） */
+  /** scroll-into-view 目标（固定锚点 id；'' = 不锚定，跟随用户滚动位置） */
   scrollToId: string
+  /** 悬浮「最新」按钮显隐（用户上滑查看历史时出现） */
+  showJumpLatest: boolean
   /** 历史向上翻页中（顶部提示「加载更早消息…」） */
   loadingEarlier: boolean
   /** 首屏历史已经成功返回；与空历史及请求失败区分 */
@@ -141,6 +144,10 @@ const MAX_ATTACHMENTS = 20
 /** 挂起交互轮询间隔：回合进行中或有卡片挂起时 3s，空闲 15s 兜底（桌面端无下行推送） */
 const INTERACTION_POLL_ACTIVE_MS = 3_000
 const INTERACTION_POLL_IDLE_MS = 15_000
+/** 距底部 ≤ 该像素视为「贴底」：贴底才跟随流式内容自动回底 */
+const BOTTOM_STICKY_THRESHOLD_PX = 100
+/** 松手后惯性滚动仍视为用户滚动的窗口（ms），窗口外的 scroll 事件是程序化回底/锚定调整 */
+const SCROLL_MOMENTUM_WINDOW_MS = 800
 
 Page({
   data: {
@@ -155,6 +162,7 @@ Page({
     loading: true,
     connected: false,
     scrollToId: '',
+    showJumpLatest: false,
     loadingEarlier: false,
     historyLoaded: false,
     historyError: '',
@@ -238,6 +246,17 @@ Page({
   questionDrafts: {} as Record<string, QuestionDraft>,
   /** 应答提交中的卡片（审批 requestId / 问答 questionId），渲染 busy 态防重复提交 */
   submittingKeys: new Set<string>(),
+  /**
+   * 用户滚动意图：true = 贴底，跟随流式内容自动回底；
+   * 用户上滑查看历史后转 false，流式刷新不再回底（不再抢滚动视口）。
+   */
+  stickBottom: true as boolean,
+  /** scroll-view 视口高度 px（onReady 测量；键盘弹起后复测），用于算距底距离 */
+  scrollViewHeight: 0 as number,
+  /** 手指正按在消息区上（拖拽中的 scroll 事件才算用户滚动） */
+  scrollTouching: false as boolean,
+  /** 最近一次松手时间戳：松手后的惯性滚动在窗口期内仍视为用户滚动 */
+  lastScrollTouchEndAt: 0 as number,
 
   onLoad(options: Record<string, string | undefined>) {
     this.expandedThinkingKeys = new Set<string>()
@@ -267,6 +286,10 @@ Page({
     void this.loadCatalog()
     void this.loadCommands()
     void this.loadSkills()
+  },
+
+  onReady() {
+    this.measureScrollViewHeight()
   },
 
   onShow() {
@@ -375,6 +398,8 @@ Page({
   },
 
   onRetryHistory() {
+    this.stickBottom = true
+    this.setData({ showJumpLatest: false })
     void this.init()
   },
 
@@ -635,9 +660,66 @@ Page({
   },
 
   scrollToBottom() {
+    // 用户上滑查看历史时不再抢滚动视口：仅贴底跟随态才回底；
+    // 强制回底走 onJumpLatest / onSend（先恢复 stickBottom 再调本方法）。
+    if (!this.stickBottom) return
     setTimeout(() => {
       this.setData({ scrollToId: 'chat-anchor' })
     }, 60)
+  },
+
+  // ─── 滚动意图跟踪（贴底跟随 / 上滑停止跟随 + 悬浮「最新」按钮） ─────────────
+
+  /** 测量消息区视口高度（scroll 事件里算距底距离用） */
+  measureScrollViewHeight() {
+    wx
+      .createSelectorQuery()
+      .in(this)
+      .select('.chat-scroll')
+      .boundingClientRect((rect) => {
+        if (rect != null && rect.height > 0) this.scrollViewHeight = rect.height
+      })
+      .exec()
+  },
+
+  /**
+   * 用户滚动意图判定：距底 ≤ 阈值视为贴底（恢复跟随），超过则停止跟随并亮出「最新」按钮。
+   * 只采信触摸驱动的 scroll 事件（拖拽中 / 松手惯性窗口内）：
+   * 程序化回底与 scroll-anchoring 前插调整也会触发 scroll，但期间没有触摸，不算用户意图。
+   */
+  onChatScroll(e: WechatMiniprogram.CustomEvent<{ scrollTop: number; scrollHeight: number }>) {
+    const userDriven =
+      this.scrollTouching || Date.now() - this.lastScrollTouchEndAt < SCROLL_MOMENTUM_WINDOW_MS
+    if (!userDriven) return
+    if (this.scrollViewHeight <= 0) return
+    const { scrollTop, scrollHeight } = e.detail
+    if (typeof scrollTop !== 'number' || typeof scrollHeight !== 'number') return
+    const sticky =
+      scrollHeight - scrollTop - this.scrollViewHeight <= BOTTOM_STICKY_THRESHOLD_PX
+    if (sticky === this.stickBottom) return
+    this.stickBottom = sticky
+    if (sticky) {
+      this.setData({ showJumpLatest: false })
+    } else {
+      // 清空锚点：后续流式重绘不再携带 scroll-into-view，滚动位置完全交给用户
+      this.setData({ scrollToId: '', showJumpLatest: true })
+    }
+  },
+
+  onScrollTouchStart() {
+    this.scrollTouching = true
+  },
+
+  onScrollTouchEnd() {
+    this.scrollTouching = false
+    this.lastScrollTouchEndAt = Date.now()
+  },
+
+  /** 悬浮「最新」：强制回底并恢复贴底跟随 */
+  onJumpLatest() {
+    this.stickBottom = true
+    this.setData({ showJumpLatest: false })
+    this.scrollToBottom()
   },
 
   // ─── 输入 ───────────────────────────────────────────────────────────────────
@@ -662,6 +744,9 @@ Page({
       return
     }
     this.setData({ inputText: '', showCommands: false })
+    // 发送即回到底部：恢复贴底跟随，新消息照常自动回底
+    this.stickBottom = true
+    this.setData({ showJumpLatest: false })
     const attachmentPaths = attachments.map((item) => item.path)
     const sentAttachments = attachments.map((item) => ({
       type: item.type,
@@ -1743,7 +1828,9 @@ Page({
   /** 输入框键盘高度变化（组件转发）：弹起时收起 dock 底部安全区，避免键盘上方出缝 */
   onComposerKeyboard(e: WechatMiniprogram.CustomEvent<{ height: number }>) {
     const open = e.detail.height > 0
-    if (open !== this.data.keyboardOpen) this.setData({ keyboardOpen: open })
+    if (open !== this.data.keyboardOpen) {
+      this.setData({ keyboardOpen: open }, () => this.measureScrollViewHeight())
+    }
   },
 
   async onRefreshConfig() {

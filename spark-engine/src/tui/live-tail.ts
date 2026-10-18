@@ -44,7 +44,7 @@ export interface LiveTail {
 const MIN_TAIL_WIDTH = 4
 
 /** Display rows `line` occupies once Ink wraps it at `width` columns. */
-function wrappedRowCount(line: string, width: number): number {
+export function wrappedRowCount(line: string, width: number): number {
   return Math.max(1, Math.ceil(displayColumns(line) / width))
 }
 

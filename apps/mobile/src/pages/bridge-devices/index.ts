@@ -1,10 +1,10 @@
 /**
- * 授信设备管理（云端中继）。
+ * 设备管理（云端中继）。
  *
  * 管理可通过云端中继访问本账号会话的桌面设备：
- *   - 首次连接即授信：桌面端用本账号登录并开启中继时自动注册
+ *   - 首次连接自动注册接入：桌面端用本账号登录并开启中继时自动注册
  *   - 吊销不可逆：该设备的中继连接立即断开、deviceId 永久拒绝重连，
- *     桌面端需要「重新授信」生成全新设备身份
+ *     桌面端需要「重置设备身份」生成全新设备身份
  * 列表来自 REST（含离线设备），在线状态由中继 presence 实时刷新。
  */
 
@@ -45,7 +45,7 @@ interface BridgeDevicesData {
 function toRows(restDevices: RelayDeviceInfo[], presenceDevices: RelayDesktopInfo[]): DeviceRowVm[] {
   const onlineIds = new Set(presenceDevices.map((item) => item.deviceId))
   const rows = restDevices.map((item) => toRow(item, onlineIds))
-  // presence 里有、REST 还没返回的（刚授信的设备），先以在线态补进列表
+  // presence 里有、REST 还没返回的（刚注册接入的设备），先以在线态补进列表
   const known = new Set(restDevices.map((item) => item.deviceId))
   for (const live of presenceDevices) {
     if (known.has(live.deviceId)) continue

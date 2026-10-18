@@ -4,16 +4,19 @@
   box-sizing: border-box;
 }
 
-/* 悬浮模式：fixed 覆盖在列表之上，与首页 composer 同款定位模型——
-   bottom 贴底、安全区 + 24rpx 收进 padding-bottom；键盘弹起时由内联 style 把
-   bottom 抬到键盘上方（padding 安全区保留，输入区浮在键盘上沿留出同款空隙） */
+/* 悬浮模式：fixed 通栏底栏（对齐首页会话发起区 .home-composer）——
+   暖白实色底 + 顶部发丝线，列表从其下方滚过不再透底叠影；
+   键盘弹起时由内联 style 把 bottom 抬到键盘上方（安全区收进 padding-bottom 保留） */
 .composer--float {
   position: fixed;
-  left: 32rpx;
-  right: 32rpx;
+  left: 0;
+  right: 0;
   bottom: 0;
   z-index: 20;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 24rpx);
+  padding: 12rpx 24rpx calc(env(safe-area-inset-bottom) + 18rpx);
+  border-top: 1rpx solid #eceae7;
+  /* 全不透明（色值同首页 rgba(250,249,247,0.98) 的实色）：列表内容从下方滚过，半透明会留 ~11% 残影 */
+  background: #faf9f7;
 }
 
 /* 停靠模式：聊天页文档流内；键盘弹起时 kb-spacer 顶起（安全区由页面收起） */
@@ -38,6 +41,17 @@
 .composer--focus .composer-shell {
   background: #fff;
   border-color: #e0ddd8;
+}
+
+/* float 模式输入壳对齐首页 compose-shell：常态白底 + 发丝描边 + 轻投影 */
+.composer--float .composer-shell {
+  background: #fff;
+  border-color: #e5e3df;
+  box-shadow: 0 5rpx 18rpx rgba(26, 26, 26, 0.045);
+}
+/* 复合特异度高于上面两条单类规则：聚焦仅描边略加深，白底与投影保留 */
+.composer--float.composer--focus .composer-shell {
+  border-color: #d5d2cb;
 }
 
 /* 左侧功能钮：语音 / 加号 */

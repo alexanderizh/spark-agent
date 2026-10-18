@@ -35,7 +35,7 @@ const RETRY_MAX_MS = 30_000
 /**
  * 服务端设备信任拒绝码（与 edu-server configuration.ts 的握手验证对齐）：
  * 这些是「身份被拒」而不是「网络故障」——重连不会成功，必须停止退避循环，
- * 由用户在桌面端重新授信（生成全新设备身份）或在小程序端检查设备管理。
+ * 由用户在桌面端重置设备身份（生成全新设备身份）或在小程序端检查设备管理。
  */
 const CLOSE_CODE_DEVICE_REVOKED = 4403
 const CLOSE_CODE_BAD_SECRET = 4401
@@ -50,7 +50,7 @@ export interface MobileBridgeRelayClientDeps {
   getAccessToken(): Promise<string | null>
   /** 本机设备标识（稳定，重启不变） */
   getDeviceId(): string
-  /** 设备密钥（授信凭据，仅本机明文保存；服务端只存哈希） */
+  /** 设备密钥（接入凭据，仅本机明文保存；服务端只存哈希） */
   getDeviceSecret(): string
   /** 设备展示名（默认主机名；auth/hello 帧上报，小程序「我的桌面端」里显示） */
   getDeviceLabel(): string
@@ -93,7 +93,7 @@ export class MobileBridgeRelayClient {
   private connectTimer: ReturnType<typeof setTimeout> | null = null
   private retryCount = 0
   private stopped = true
-  /** 身份被拒（4401/4403/4429）：停止自动重连，等用户重新授信 */
+  /** 身份被拒（4401/4403/4429）：停止自动重连，等用户重置设备身份 */
   private identityRejected = false
   private unsubscribe: (() => void) | null = null
   private connectionId: string | null = null
@@ -159,7 +159,7 @@ export class MobileBridgeRelayClient {
   }
 
   /**
-   * 重新授信：清除身份拒绝标志并立即重连。
+   * 重置设备身份：清除身份拒绝标志并立即重连。
    * 调用前装配层应已生成全新设备身份（新 deviceId + secret），
    * 否则服务端仍会按旧身份拒绝。
    */
@@ -203,7 +203,7 @@ export class MobileBridgeRelayClient {
   private async open(): Promise<void> {
     if (this.stopped) return
     // 身份被拒（吊销/密钥错误/超上限）后不再自动重连；
-    // 只有用户显式「重新授信」（resetIdentity）才会解锁。
+    // 只有用户显式「重置设备身份」（resetIdentity）才会解锁。
     if (this.identityRejected) return
     // 每一次建连前都先清掉「排队的重连」和「残留的旧连接」。
     // 否则 restart() 之后旧定时器还会再开一条：服务端看到同一账号有多个桌面端，
@@ -326,12 +326,12 @@ export class MobileBridgeRelayClient {
       this.unsubscribe = null
       this.connectionId = null
 
-      // 设备信任拒绝：重连不会改变结果，停止退避循环，等待用户重新授信。
+      // 设备信任拒绝：重连不会改变结果，停止退避循环，等待用户重置设备身份。
       const closeCode = Number(event?.code ?? 0)
       if (closeCode === CLOSE_CODE_DEVICE_REVOKED) {
         this.identityRejected = true
         this.lastError =
-          '此设备已被吊销（可在小程序「远程会话 → 设备管理」中查看）。需要重新授信：生成新设备身份并连接。'
+          '此设备已被吊销（可在小程序「远程会话 → 设备管理」中查看）。请在桌面端设置中重置设备身份后重新连接。'
         log.warn('relay rejected: device revoked (4403)')
         this.notify()
         return
@@ -339,7 +339,7 @@ export class MobileBridgeRelayClient {
       if (closeCode === CLOSE_CODE_BAD_SECRET) {
         this.identityRejected = true
         this.lastError =
-          '设备密钥校验失败（4401）。可能是本机身份数据损坏，请「重新授信」生成新设备身份。'
+          '设备密钥校验失败（4401）。可能是本机身份数据损坏，请「重置设备身份」生成新设备身份。'
         log.warn('relay rejected: bad device secret (4401)')
         this.notify()
         return
@@ -347,7 +347,7 @@ export class MobileBridgeRelayClient {
       if (closeCode === CLOSE_CODE_TOO_MANY_DEVICES) {
         this.identityRejected = true
         this.lastError =
-          '账号授信设备数已达上限（4429）。请先在小程序「远程会话 → 设备管理」吊销不用的设备。'
+          '账号接入设备数已达上限（4429）。请先在小程序「远程会话 → 设备管理」吊销不用的设备。'
         log.warn('relay rejected: too many devices (4429)')
         this.notify()
         return

@@ -51,15 +51,10 @@ async function setupApp(height: number | undefined) {
   )
 }
 
-describe('follow-the-content layout', () => {
-  // Regression: the frame used to pin the chrome with a fixed height plus a
-  // flexGrow spacer. The settled transcript streams through ink <Static>,
-  // which occupies no frame space — the spacer turned that absent height into
-  // a near-screen blank wall between the newest content and the input band,
-  // pushing the content out of the viewport. The layout must stay
-  // follow-the-content: blank runs above the chrome are transcript margins,
-  // never a spacer.
-  it('keeps the chrome directly under the content after a turn', async () => {
+describe('pinned-bottom layout', () => {
+  // Without a known height (pipes, tests) the frame and spacer collapse: the
+  // layout stays follow-the-content and the chrome hugs the newest content.
+  it('keeps the chrome directly under the content without a known height', async () => {
     const app = await setupApp(undefined)
     app.stdin.write('hi there')
     await new Promise<void>((resolve) => setImmediate(resolve))
@@ -73,22 +68,44 @@ describe('follow-the-content layout', () => {
     app.unmount()
   })
 
-  // The live frame must not depend on the terminal height at all: height-bound
-  // behavior belongs to the per-block tail budgets, so tests without a known
-  // height exercise the same layout as a real terminal.
-  it('renders identically with and without a known terminal height', async () => {
-    const withHeight = await setupApp(30)
+  // Codex-style app surface: with a known height the chrome docks to the
+  // window's bottom edge even when content is sparse, the frame never
+  // outgrows the terminal (a full-height frame scrolls every repaint and
+  // desyncs Ink's erase accounting), and the latest exchange stays visible
+  // above the input band instead of vanishing into the scrollback.
+  it('docks the chrome at the bottom edge with a known height', async () => {
+    const app = await setupApp(30)
     for (let index = 0; index < 6; index += 1)
       await new Promise<void>((resolve) => setImmediate(resolve))
-    const heightFrame = stripAnsi(withHeight.lastFrame() ?? '')
-    withHeight.unmount()
+    const emptyFrame = stripAnsi(app.lastFrame() ?? '')
+    const emptyRows = emptyFrame.split('\n')
+    expect(emptyRows.length).toBeLessThanOrEqual(29)
+    expect(emptyRows.at(-1)).toContain('fake-m1')
+    // Sparse state: welcome content anchors at the top, blank absorbs the rest.
+    expect(emptyFrame).toContain('Spark')
+    expect(maxBlankRun(emptyFrame)).toBeGreaterThan(MAX_BLANK_RUN)
 
-    const withoutHeight = await setupApp(undefined)
-    for (let index = 0; index < 6; index += 1)
+    app.stdin.write('hi there')
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    app.stdin.write('\r')
+    for (let index = 0; index < 30; index += 1)
       await new Promise<void>((resolve) => setImmediate(resolve))
-    const noHeightFrame = stripAnsi(withoutHeight.lastFrame() ?? '')
-    withoutHeight.unmount()
 
-    expect(heightFrame).toBe(noHeightFrame)
+    const frame = stripAnsi(app.lastFrame() ?? '')
+    const rows = frame.split('\n')
+    // ink-testing-library concatenates the <Static> scrollback copy in front
+    // of the live frame; a real terminal scrolls it above the viewport. The
+    // live frame starts at the pane tail's copy of the user message, so slice
+    // there and assert the live frame alone fits height-1 rows.
+    let tailAnchor = 0
+    rows.forEach((line, index) => {
+      if (line.includes('hi there')) tailAnchor = index
+    })
+    expect(rows.length - tailAnchor).toBeLessThanOrEqual(29)
+    expect(rows.at(-1)).toContain('fake-m1')
+    expect(rows.at(-3)).toContain('Spark')
+    expect(frame).toContain('hi there')
+    expect(frame).toContain('First answer body.')
+    app.unmount()
   })
 })

@@ -1,14 +1,14 @@
-<!-- 授信设备管理：列表卡片 + 在线徽标 + 行内二次确认吊销 -->
+<!-- 设备管理：列表卡片 + 在线徽标 + 行内二次确认吊销 -->
 
 <view class="bd-page">
-  <safe-nav-bar title="授信设备" />
+  <safe-nav-bar title="设备管理" />
 
   <view class="bd-title-row">
-    <text class="page-title">授信设备</text>
+    <text class="page-title">设备管理</text>
   </view>
 
   <view class="bd-lede">
-    通过云端中继访问你会话的桌面设备。首次连接自动授信；<text class="bd-lede-strong">吊销后立即断开且不可恢复</text>，被吊销的电脑需在桌面端「重新授信」。
+    通过云端中继访问你会话的桌面设备。电脑首次连接会自动注册接入；<text class="bd-lede-strong">吊销后立即断开且不可恢复</text>，需要恢复时在桌面端「重置设备身份」。
   </view>
 
   <view wx:if="{{loading}}" class="loading-tip">加载中…</view>
@@ -20,13 +20,13 @@
   <view wx:elif="{{devices.length === 0}}" class="bd-empty">
     <empty-state
       icon="monitor"
-      title="还没有授信设备"
-      desc="在电脑端 SparkWork 打开「设置 → 生态 → 移动端桥接 → 云端中继」，用同一 Spark 平台账号登录后即自动授信"
+      title="还没有接入的设备"
+      desc="在电脑端 SparkWork 打开「设置 → 生态 → 移动端桥接 → 云端中继」，用同一 Spark 平台账号登录后即自动注册接入"
     />
   </view>
 
   <block wx:else>
-    <view class="bd-count">{{onlineCount}} 台在线 · 共 {{devices.length}} 台授信</view>
+    <view class="bd-count">{{onlineCount}} 台在线 · 共 {{devices.length}} 台设备</view>
 
     <view
       wx:for="{{devices}}"
@@ -46,7 +46,7 @@
 
       <view class="bd-card-meta">
         <text>最近活跃 {{item.lastSeenLabel}}</text>
-        <text>授信于 {{item.trustedLabel}}</text>
+        <text>首次接入 {{item.trustedLabel}}</text>
       </view>
 
       <view class="bd-card-actions">

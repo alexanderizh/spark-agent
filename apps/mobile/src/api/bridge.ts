@@ -213,7 +213,7 @@ export function setSelectedDeviceId(deviceId: string): void {
   relay.setSelectedDeviceId(deviceId)
 }
 
-// ─── 授信设备管理（REST，带账号 JWT） ─────────────────────────────────────────
+// ─── 设备管理（REST，带账号 JWT） ─────────────────────────────────────────
 
 export type { RelayDeviceInfo } from './relay'
 export { listRelayDevices, revokeRelayDevice } from './relay'

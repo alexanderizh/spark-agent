@@ -8,8 +8,8 @@
  * 本页只负责：
  *   1. 云端中继总开关
  *   2. 连接状态徽标（已连接 / 连接中 / 未连接 / 已吊销）
- *   3. 服务器地址（只读，派生自 Spark 平台账号服务地址）与本机授信设备展示
- *   4. 「重新授信」：设备被吊销后生成全新设备身份并重连
+ *   3. 服务器地址（只读，派生自 Spark 平台账号服务地址）与本机接入设备展示
+ *   4. 「重置设备身份」：设备被吊销后生成全新设备身份并重连
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Button, Tag } from '@lobehub/ui'
@@ -113,7 +113,7 @@ export function MobileBridgeSettingsSection() {
       setPendingReset(false)
       toast.success('已生成新设备身份并重连')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '重新授信失败')
+      toast.error(err instanceof Error ? err.message : '重置设备身份失败')
     } finally {
       setBusy(false)
     }
@@ -153,7 +153,7 @@ export function MobileBridgeSettingsSection() {
           desc={
             revoked ? (
               <span className="mobile-bridge-danger">
-                {relay?.lastError ?? '设备已被吊销，需重新授信后才能恢复连接'}
+                {relay?.lastError ?? '设备已被吊销，重置设备身份后才能恢复连接'}
               </span>
             ) : enabled && relay?.lastError ? (
               <span className="mobile-bridge-danger">{relay.lastError}</span>
@@ -194,7 +194,7 @@ export function MobileBridgeSettingsSection() {
 
         <SettingsRow
           title="本机设备"
-          desc={`展示名 ${relay?.label || '—'}（默认取本机主机名，连接时上报）。同一账号可有多台桌面端同时在线，可在小程序「远程会话」的设备管理中查看与吊销所有授信设备。`}
+          desc={`展示名 ${relay?.label || '—'}（默认取本机主机名，连接时上报）。同一账号可有多台桌面端同时在线，可在小程序「远程会话」的设备管理中查看与吊销所有已接入设备。`}
           right={
             <div className="mobile-bridge-actions">
               {deviceId ? (
@@ -210,14 +210,14 @@ export function MobileBridgeSettingsSection() {
         />
 
         <SettingsRow
-          title="设备授信"
+          title="设备身份"
           desc={
             revoked ? (
               <span className="mobile-bridge-danger">
-                此设备已在小程序端被吊销，中继已停止自动重连。点击「重新授信」生成全新设备身份并重连；旧身份会被服务端永久拒绝。
+                此设备已在小程序端被吊销，中继已停止自动重连。点击「重置设备身份」生成全新设备身份并重连；旧身份会被服务端永久拒绝。
               </span>
             ) : (
-              '重新授信会生成全新的设备身份（旧身份立即作废）。设备被吊销或本机身份数据异常时，用它恢复连接。'
+              '重置设备身份会生成全新的设备身份（旧身份立即作废）。设备被吊销或本机身份数据异常时，用它恢复连接。'
             )
           }
           right={
@@ -229,7 +229,7 @@ export function MobileBridgeSettingsSection() {
                   loading={busy}
                   onClick={() => void handleResetIdentity()}
                 >
-                  确认重新授信
+                  确认重置设备身份
                 </Button>
                 <Button size="small" disabled={busy} onClick={() => setPendingReset(false)}>
                   取消
@@ -242,7 +242,7 @@ export function MobileBridgeSettingsSection() {
                 disabled={loading || relay == null}
                 onClick={() => setPendingReset(true)}
               >
-                重新授信
+                重置设备身份
               </Button>
             )
           }

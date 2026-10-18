@@ -318,7 +318,7 @@ async function main() {
     client.getStatus().connected === false && hub.stats().desktops === 0,
     JSON.stringify(hub.stats()),
   )
-  // 恢复正确密钥并重新授信（resetIdentity 解锁身份拒绝标志）
+  // 恢复正确密钥并重置设备身份（resetIdentity 解锁身份拒绝标志）
   clientDeps.getDeviceSecret = () => 'test-secret-hex'
   await client.resetIdentity()
   await sleep(700)
@@ -404,7 +404,7 @@ async function main() {
     JSON.stringify(client.getStatus()),
   )
 
-  // 9) 设备被吊销（close 4403）→ 停止自动重连 + 状态可感知 + 重新授信恢复
+  // 9) 设备被吊销（close 4403）→ 停止自动重连 + 状态可感知 + 重置设备身份恢复
   await client.start()
   await sleep(600)
   check('重新启动后连上（为吊销做准备）', client.getStatus().connected === true)
@@ -426,13 +426,13 @@ async function main() {
     JSON.stringify(hub.stats()),
   )
 
-  // 重新授信：装配层会换新身份（这里以新 deviceId 模拟），resetIdentity 后应恢复
+  // 重置设备身份：装配层会换新身份（这里以新 deviceId 模拟），resetIdentity 后应恢复
   clientDeps.getDeviceId = () => 'mac-01-new'
   clientDeps.getDeviceSecret = () => 'fresh-secret'
   await client.resetIdentity()
   await sleep(800)
   const reStatus = client.getStatus()
-  check('重新授信后恢复连接', reStatus.connected === true, JSON.stringify(reStatus))
+  check('重置设备身份后恢复连接', reStatus.connected === true, JSON.stringify(reStatus))
   check('revoked 标志清除', reStatus.revoked === false)
   check('状态里暴露新设备号', reStatus.deviceId === 'mac-01-new', String(reStatus.deviceId))
 

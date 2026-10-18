@@ -46,9 +46,10 @@ import { WelcomeBox } from './components/welcome.js'
 import { ModelPicker, ProviderConfigForm } from './model-flow.js'
 import { displayModelName } from './display-name.js'
 import { liveTail } from './live-tail.js'
+import { selectPaneTail, textRowCount } from './pane-tail.js'
 import { helpDetail } from './slash-commands.js'
 import type { ModelRuntimeController } from './use-model-runtime.js'
-import { contextStatsLine, projectTranscript, type ActiveToolProjection } from './projection.js'
+import { contextStatsLine, projectTranscript, type ActiveToolProjection, type TranscriptRow } from './projection.js'
 import {
   describeUpdateOutcome,
   type SparkUpdateRunner,
@@ -184,6 +185,9 @@ function noticeColor(theme: TuiTheme, tone: NoticeState['tone']): string {
  * one spare row for transient editor hints (paste/clipboard notices).
  */
 const LIVE_CHROME_ROWS = 6
+
+/** Stable empty list so the no-tail branch keeps one PaneTail shape. */
+const NO_SETTLED_ROWS: readonly TranscriptRow[] = []
 
 /**
  * Rows reserved for the notice line under the transcript. Notices render
@@ -783,6 +787,62 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         ? { text: liveText, omittedRows: 0 }
         : liveTail(liveText, capabilities.width, textBudget)
       : undefined
+
+  // ---- Pinned-bottom frame accounting (height known only) ----
+  //
+  // The window is a Codex-style app surface: content anchors to the top, the
+  // input band docks to the bottom edge, and a flexGrow spacer absorbs the
+  // slack between them. The frame is height-1 rows, never height: ink writes
+  // every frame with a trailing newline, so a full-height frame scrolls the
+  // terminal one row per repaint and the erase accounting desyncs (the frame
+  // shred). Every pane consumer is bounded: the live strip by the budgets
+  // above, the settled tail below, notices by their row caps — so the frame
+  // can never outgrow the window. When the height is unknown (pipes, tests)
+  // the spacer collapses to zero rows and the layout stays follow-the-content.
+  const streaming = activeTurns > 0 || liveText !== '' || liveThinking !== ''
+  const overlayOpen =
+    pending !== undefined ||
+    permPickerOpen ||
+    effortPickerOpen ||
+    sessionPickerOpen ||
+    pickerOpen ||
+    configFormOpen
+  const chromeRows = 4 // input band (3) + status bar (1)
+  const frameHeight = capabilities.height === undefined ? undefined : capabilities.height - 1
+  const paneBudget =
+    frameHeight === undefined ? undefined : Math.max(0, frameHeight - chromeRows - 1)
+  // Idle tall notices (/help, /context) own the whole pane and the tail
+  // yields; while streaming the notice shares the tight 3-row window.
+  const noticeRows =
+    notice === undefined ? 0 : streaming ? LIVE_NOTICE_ROWS : (paneBudget ?? LIVE_NOTICE_ROWS)
+  const liveActualRows =
+    (thinkingTail === undefined
+      ? 0
+      : 1 +
+        (thinkingTail.omittedRows > 0 ? 1 : 0) +
+        textRowCount(thinkingTail.text, capabilities.width)) +
+    (liveText === ''
+      ? 0
+      : 1 +
+        ((textTail?.omittedRows ?? 0) > 0 ? 1 : 0) +
+        textRowCount(textTail?.text ?? liveText, capabilities.width))
+  const paneUsedRows =
+    liveActualRows +
+    toolsRows +
+    (activeTurns > 0 ? 1 : 0) + // working line
+    noticeRows +
+    (updateRunning ? 1 : 0) // update-check line
+  const tailBudget =
+    paneBudget === undefined || overlayOpen
+      ? 0
+      : Math.max(0, paneBudget - paneUsedRows)
+  const settledRows = showThinking
+    ? projection.settled
+    : projection.settled.filter((row) => row.kind !== 'thinking')
+  const paneTail =
+    tailBudget === 0
+      ? { rows: NO_SETTLED_ROWS, estimatedRows: 0, omittedRows: 0 }
+      : selectPaneTail(settledRows, capabilities.width, tailBudget)
   const output = (
     <>
       {empty && !pickerOpen && (
@@ -796,14 +856,24 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           cannot reuse the previous session's Static row positions. */}
       <Transcript
         key={session.sessionId}
-        rows={
-          showThinking
-            ? projection.settled
-            : projection.settled.filter((row) => row.kind !== 'thinking')
-        }
+        rows={settledRows}
         theme={theme}
         capabilities={capabilities}
       />
+      {/* Inline tail of the settled transcript: with a known height the live
+          frame covers the viewport, so scrollback writes vanish above it the
+          moment a turn settles. Re-rendering the tail keeps the newest
+          exchange visible above the input band; the full history stays in the
+          scrollback (the tail rows reappear there when scrolling up — an
+          accepted seam). Suppressed while a picker owns the pane. */}
+      {paneTail.rows.length > 0 && (
+        <Transcript
+          rows={paneTail.rows}
+          theme={theme}
+          capabilities={capabilities}
+          staticOutput={false}
+        />
+      )}
       {thinkingTail !== undefined && (
         <Box marginTop={1} flexDirection="column">
           {thinkingTail.omittedRows > 0 && (
@@ -946,14 +1016,13 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
             // A long notice (/help, /context) is itself part of the live
             // frame; unbounded it pushes the chrome out of the window. While
             // a turn streams the notice shares a tight window with the live
-            // strip; otherwise it may use the screen minus the chrome, so
-            // command listings stay readable.
-            const streaming = activeTurns > 0 || liveText !== '' || liveThinking !== ''
+            // strip; otherwise it owns the pane (the settled tail yields via
+            // its notice reservation), so command listings stay readable.
             const maxRows = streaming
               ? LIVE_NOTICE_ROWS
               : capabilities.height === undefined
                 ? undefined
-                : Math.max(LIVE_NOTICE_ROWS, capabilities.height - 1 - LIVE_CHROME_ROWS)
+                : Math.max(LIVE_NOTICE_ROWS, paneBudget ?? capabilities.height - 1 - LIVE_CHROME_ROWS)
             const clipped =
               maxRows === undefined
                 ? { text: notice.text, omittedRows: 0 }
@@ -973,16 +1042,22 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       : undefined
 
   return (
-    // Follow-the-content layout (Claude Code CLI behavior): the settled
-    // transcript streams into the terminal scrollback through ink's <Static>,
-    // which occupies no live-frame space. A fixed-height frame with a flexGrow
-    // spacer would turn that absent height into ~one screen of blank rows the
-    // moment a turn ends — shoving the newest content out of the viewport and
-    // stranding the chrome below a wall of emptiness. The chrome therefore
-    // hugs the content instead, and overflow safety lives in the live budget:
-    // every streaming block is tail-windowed so live rows + chrome never
-    // exceed the terminal height (that is what desyncs Ink's erase accounting).
-    <Box flexDirection="column" width={capabilities.width}>
+    // Pinned-bottom app frame (Codex CLI look): content anchors to the top of
+    // the window, the input band docks to the bottom edge, and the flexGrow
+    // spacer absorbs the slack between them — the whole window reads as the
+    // CLI's output surface, never glued under the newest row. With a known
+    // height the frame is height-1 rows, never height: ink writes every frame
+    // with a trailing newline, so a full-height frame scrolls the terminal one
+    // row per repaint and the erase accounting desyncs into a shredded frame.
+    // Overflow safety lives in the budgets above: live strip, settled tail,
+    // notices and tools are each bounded, so the frame can never outgrow the
+    // window. Without a known height (pipes, tests) the frame and spacer
+    // collapse and the layout stays follow-the-content.
+    <Box
+      flexDirection="column"
+      width={capabilities.width}
+      {...(frameHeight === undefined ? {} : { height: frameHeight })}
+    >
       {output}
       {overlays}
       {activeTurns > 0 && (
@@ -1003,6 +1078,10 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           />
         </Box>
       )}
+      {/* Bottom anchor: eats all spare pane rows so the chrome stays docked
+          to the window's bottom edge even when content is sparse. Collapses
+          to zero rows when the height is unknown. */}
+      <Box flexGrow={1} />
       <InputEditor
         active={!pickerOpen}
         locked={

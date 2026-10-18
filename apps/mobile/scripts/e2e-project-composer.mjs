@@ -5,7 +5,7 @@
  * 配置 chips / 半屏面板 / float 定位（底部安全区模型与首页一致）。
  *
  * 前置：微信开发者工具打开 apps/mobile/dist 并开启自动化端口 9420；
- * 模拟器内已登录且至少一台授信电脑在线（权限/模型目录依赖真实 catalog）。
+ * 模拟器内已登录且至少一台已接入电脑在线（权限/模型目录依赖真实 catalog）。
  */
 import automator from 'miniprogram-automator'
 
@@ -28,7 +28,7 @@ async function main() {
   const homeData = await page.data()
   const onlineDevice = (homeData.devices ?? []).find((item) => item.online)
   check(
-    '首页拿到授信电脑',
+    '首页拿到接入电脑',
     (homeData.devices ?? []).length > 0,
     `${homeData.devices?.length ?? 0} 台`,
   )
@@ -78,19 +78,20 @@ async function main() {
   check('项目页已打开', page.path.includes('project-sessions'), page.path)
 
   const composer = await page.$('.composer--float')
-  check('悬浮胶囊存在', composer != null)
+  check('底部会话发起栏存在', composer != null)
   if (composer) {
-    // 安全区 padding 模型（与首页同款）：根节点贴底，env(safe-area)+24rpx 收在 padding-bottom；
-    // 键盘弹起时仅内联覆盖 bottom=键盘高度，padding 安全区保留。量最末内容块 chip-bar 的底距验证。
+    // 安全区 padding 模型（与首页 .home-composer 同款）：根节点贴底，
+    // env(safe-area)+18rpx 收在 padding-bottom；键盘弹起时仅内联覆盖 bottom=键盘高度，
+    // padding 安全区保留。量最末内容块 chip-bar 的底距验证。
     const safeInset = system.windowHeight - system.safeArea.bottom
     const chipBar = await page.$('.composer--float .chip-bar')
     check('配置条（推理）存在', chipBar != null)
     if (chipBar) {
       const [offset, size] = await Promise.all([chipBar.offset(), chipBar.size()])
       const gap = system.windowHeight - (offset.top + size.height)
-      const expected = safeInset + 12.5 // 24rpx @390pt 宽 ≈ 12.5px
+      const expected = safeInset + 9 // 18rpx @390pt 宽 ≈ 9px
       check(
-        '底部保留 安全区+24rpx padding（键盘弹起时同源保留）',
+        '底部保留 安全区+18rpx padding（键盘弹起时同源保留）',
         Math.abs(gap - expected) <= 2,
         `底距 ${gap.toFixed(1)}px / 期望 ${expected.toFixed(1)}px（safeInset=${safeInset}）`,
       )

@@ -17,14 +17,20 @@
     bind:children="onLineageChildren"
   />
 
-  <scroll-view
-    class="chat-scroll"
-    scroll-y
-    scroll-into-view="{{scrollToId}}"
-    scroll-anchoring
-    upper-threshold="120"
-    bindscrolltoupper="loadEarlier"
-  >
+  <!-- 消息区（含悬浮「最新」按钮：用户上滑查看历史时出现，点击回底并恢复跟随） -->
+  <view class="chat-scroll-area">
+    <scroll-view
+      class="chat-scroll"
+      scroll-y
+      scroll-into-view="{{scrollToId}}"
+      scroll-anchoring
+      upper-threshold="120"
+      bindscrolltoupper="loadEarlier"
+      bindscroll="onChatScroll"
+      bindtouchstart="onScrollTouchStart"
+      bindtouchend="onScrollTouchEnd"
+      bindtouchcancel="onScrollTouchEnd"
+    >
     <view class="chat-body">
       <view wx:if="{{loading}}" class="loading-tip">加载历史…</view>
 
@@ -155,7 +161,19 @@
 
       <view class="chat-anchor" id="chat-anchor"></view>
     </view>
-  </scroll-view>
+    </scroll-view>
+
+    <!-- 距底超过阈值（用户上滑）才显示；贴底跟随期间隐藏 -->
+    <view
+      wx:if="{{showJumpLatest}}"
+      class="chat-jump-latest"
+      hover-class="hover-dim"
+      bindtap="onJumpLatest"
+    >
+      <view class="icon icon-chevron-down chat-jump-latest-chevron"></view>
+      <text>最新</text>
+    </view>
+  </view>
 
   <!-- 挂起交互卡：权限审批 + 用户问答（桌面端弹卡的移动端等价物，置于输入区上方） -->
   <view wx:if="{{approvalCards.length > 0 || questionCards.length > 0}}" class="ia-stack">

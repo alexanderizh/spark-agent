@@ -62,7 +62,7 @@
           <text class="list-row-value">{{desktopStatusLabel}}</text>
         </view>
         <view class="list-row" bindtap="onGoBridgeDevices">
-          <text class="list-row-label grow">授信设备</text>
+          <text class="list-row-label grow">设备管理</text>
           <text class="t-faint">›</text>
         </view>
       </view>

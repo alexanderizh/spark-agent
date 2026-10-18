@@ -9,7 +9,7 @@
  *
  * 覆盖：握手、调用转发与应答、多电脑 deviceId 定向（另一台不受打扰）、
  *       503 离线提示、事件订阅（带 d）与来源隔离、presence devices 设备列表、
- *       授信设备 REST 形状、断线时挂起调用立即失败。
+ *       接入设备 REST 形状、断线时挂起调用立即失败。
  *
  * 运行：node scripts/smoke-relay.mjs
  */
@@ -185,7 +185,7 @@ global.wx = {
     void parsed
     return task
   },
-  /** 授信设备管理 REST（edu-server HTTP 接口）的桩：返回协议 v2 形状 */
+  /** 设备管理 REST（edu-server HTTP 接口）的桩：返回协议 v2 形状 */
   request: ({ url, method, success }) => {
     restCalls.push({ url, method })
     const body = url.includes('/mobile-bridge/devices') ? REST_DEVICES : { ok: true, running: true }
@@ -276,15 +276,15 @@ async function main() {
   await sleep(250)
   check('另一台电脑（mac-01）没有收到定向调用', desktop1.reqCount() === d1Baseline)
 
-  // 5) 授信设备管理 REST：形状对齐协议（name / trustedAt / online）
+  // 5) 设备管理 REST：形状对齐协议（name / trustedAt / online）
   const restResult = await bridge.listRelayDevices()
   const restDevices = restResult?.devices ?? []
   check(
-    '授信设备 REST 列表形状（含离线设备）',
+    '接入设备 REST 列表形状（含离线设备）',
     restDevices.length === 2 && restDevices[0]?.name === 'MacBook Pro' && restDevices[0]?.trustedAt != null,
     JSON.stringify(restDevices.map((d) => `${d.deviceId}:${d.online}`)),
   )
-  check('授信设备 REST 走 /api/v1/mobile-bridge/devices', restCalls.some((c) => c.url.includes('/api/v1/mobile-bridge/devices')))
+  check('接入设备 REST 走 /api/v1/mobile-bridge/devices', restCalls.some((c) => c.url.includes('/api/v1/mobile-bridge/devices')))
 
   // 6) 桌面端全部离线：503 DESKTOP_OFFLINE 要变成可读的中文原因
   desktop1.socket.terminate()

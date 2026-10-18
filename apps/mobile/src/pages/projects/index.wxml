@@ -6,7 +6,7 @@
       <text class="page-title">项目</text>
       <text class="projects-subtitle">先选电脑，再浏览它自己的项目</text>
     </view>
-    <view class="projects-manage" bindtap="onOpenBridgeDevices">授信设备</view>
+    <view class="projects-manage" bindtap="onOpenBridgeDevices">设备管理</view>
   </view>
 
   <view class="projects-device-context row">
@@ -34,7 +34,7 @@
   <view wx:if="{{loading}}" class="loading-tip">正在加载这台电脑的项目…</view>
 
   <view wx:elif="{{deviceUnavailable}}" class="projects-state">
-    <empty-state icon="monitor" title="这台电脑已解除授信" desc="返回电脑列表，选择一台仍受信任的电脑" />
+    <empty-state icon="monitor" title="这台电脑已被吊销" desc="返回电脑列表，选择其他已接入的电脑" />
     <view class="projects-action" bindtap="onBackToComputers">返回电脑列表</view>
   </view>
 

@@ -203,14 +203,21 @@ describe('TUI execution feedback', () => {
       app.stdin.write('\r')
       await tick()
       expect(app.lastFrame()?.split('Inspect the file first.')).toHaveLength(2)
-      expect(app.lastFrame()?.split('Write finished.')).toHaveLength(3)
+      // The pane tail re-renders the newest settled rows under the scrollback
+      // copy, so each turn-2 occurrence (tool detail + answer) shows twice.
+      expect(app.lastFrame()?.split('Write finished.')).toHaveLength(5)
       app.stdin.write('\u000f')
       await tick()
       app.stdin.write('write third')
       await tick()
       app.stdin.write('\r')
       await tick()
-      expect(app.lastFrame()?.split('Inspect the file first.')).toHaveLength(3)
+      expect(app.lastFrame()?.split('Inspect the file first.')).toHaveLength(5)
+      // Occurrences: turn-1 and turn-2 thinking in the scrollback copy, plus
+      // the pane tail re-rendering the newest two turns' thinking (toggle is
+      // back on). The tail surfaces turn-3 thinking the scrollback quirk used
+      // to swallow.
+      app.unmount()
     } finally {
       app.unmount()
     }

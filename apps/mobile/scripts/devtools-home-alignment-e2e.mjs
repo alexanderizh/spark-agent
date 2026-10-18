@@ -38,7 +38,7 @@ async function main() {
     await sleep(2200)
     let page = await miniProgram.currentPage()
     const deviceIcons = await page.$$('.home-device-icon')
-    check('首页已加载授信电脑', deviceIcons.length > 0, `${deviceIcons.length} 台`)
+    check('首页已加载接入电脑', deviceIcons.length > 0, `${deviceIcons.length} 台`)
 
     let maxIconOffset = 0
     for (const container of deviceIcons) {

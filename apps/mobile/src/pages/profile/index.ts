@@ -173,7 +173,7 @@ Page({
     wx.reLaunch({ url: '/pages/home/index' })
   },
 
-  /** 授信设备管理（云端中继的桌面设备列表与吊销） */
+  /** 设备管理（云端中继的桌面设备列表与吊销） */
   onGoBridgeDevices() {
     wx.navigateTo({ url: '/pages/bridge-devices/index' })
   },

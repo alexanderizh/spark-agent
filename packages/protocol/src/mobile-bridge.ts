@@ -2,7 +2,7 @@
  * 移动桥接（MobileBridge）协议。
  *
  * SparkWork 移动端（微信小程序）通过云端中继访问桌面端：
- *   - 同一 Spark 平台账号即授权（无需配对；桌面端以「授信设备」身份连中继）
+ *   - 同一 Spark 平台账号即授权（无需配对；桌面端以「接入设备」身份连中继）
  *   - 会话：项目 / 列表 / 新建 / 历史 / 提交回合 / 取消等
  *   - 流式：WebSocket 按 seq 增量推送 agent 事件
  *   - 多电脑：同一账号允许多台桌面端同时在线，调用与订阅按 deviceId 定向
@@ -500,9 +500,9 @@ export interface MobileBridgeErrorBody {
   }
 }
 
-// ─── 授信设备（REST：小程序管理同一账号下的桌面端） ───────────────────────────
+// ─── 接入设备（REST：小程序管理同一账号下的桌面端） ───────────────────────────
 
-/** 账号下一台桌面端（授信设备）的信息 */
+/** 账号下一台桌面端（接入设备）的信息 */
 export interface MobileBridgeDeviceInfo {
   deviceId: string
   /** 展示名（桌面端主机名，连接时上报） */
@@ -510,7 +510,7 @@ export interface MobileBridgeDeviceInfo {
   version: string | null
   online: boolean
   lastSeenAt: string | null
-  /** 首次授信时间 */
+  /** 首次接入时间 */
   trustedAt: string
 }
 
@@ -526,7 +526,7 @@ export interface MobileBridgeIpcChannelMap {
     Partial<MobileBridgeRelaySettings>,
     MobileBridgeRelayStatus,
   ]
-  /** 设备被吊销后重新授信：生成全新设备身份并立即重连 */
+  /** 设备被吊销后重置设备身份：生成全新设备身份并立即重连 */
   'mobile-bridge:reset-relay-identity': [{}, MobileBridgeRelayStatus]
 }
 
@@ -536,7 +536,7 @@ export interface MobileBridgeIpcChannelMap {
 // 小程序也连 edu-server，服务端按 userId 配对转发 → 账户即达、跨网络可用。
 // 局域网直连模式已整体移除（体验版强制 https/wss + 域名白名单，真机不可用）。
 //
-// 多电脑：同一账号可有多台桌面端同时在线（各自持有独立授信身份）。
+// 多电脑：同一账号可有多台桌面端同时在线（各自持有独立设备身份）。
 //   - 小程序的 req/sub 帧可带 d=<deviceId> 定向到某台桌面端；
 //     缺省 d 时服务端选「主桌面端」（最近活跃的在线桌面端），兼容旧版小程序。
 //   - 服务端下发的 event 帧带 d=<来源 deviceId>，订阅按 (deviceId, sessionId) 维度隔离，
@@ -576,20 +576,20 @@ export interface MobileBridgeRelayStatus {
   connectionId: string | null
   /** 服务端最近一次心跳/交互时间 */
   lastSeenAt: string | null
-  /** 本机授信设备 ID（账号下的设备身份，可在小程序端管理） */
+  /** 本机接入设备 ID（账号下的设备身份，可在小程序端管理） */
   deviceId: string | null
   /** 本机设备展示名（主机名，连接时上报；设置页展示用） */
   label: string | null
   /**
    * 设备是否被吊销（close 4403）。吊销后不再自动重连，
-   * 需用户在桌面端「重新授信」（生成全新设备身份）。
+   * 需用户在桌面端「重置设备身份」（生成全新设备身份）。
    */
   revoked: boolean
 }
 
 /**
  * 单台在线桌面端的实时信息（welcome / presence / devices 携带）。
- * REST 的 MobileBridgeDeviceInfo 额外含 offline 项（授信表合并），字段语义一致。
+ * REST 的 MobileBridgeDeviceInfo 额外含 offline 项（设备表合并），字段语义一致。
  */
 export interface MobileBridgeRelayDesktopInfo {
   deviceId: string
@@ -613,7 +613,7 @@ export type MobileBridgeRelayFrame =
       /** 首帧认证：WS 建立后、任何业务帧之前发送（服务端默认 10s 未收到即断开） */
       t: 'auth'
       deviceId: string
-      /** 设备密钥（授信凭据）。绝不放进 URL query，只走本帧 */
+      /** 设备密钥（接入凭据）。绝不放进 URL query，只走本帧 */
       secret: string
       label?: string
       version?: string
