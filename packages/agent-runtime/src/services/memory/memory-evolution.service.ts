@@ -113,11 +113,12 @@ export class MemoryEvolutionService {
       // ── FTS 路 ──
       const ftsEntries = this.searchRepo.searchBm25(query, channelOpts).map((h) => h.entry)
 
-      // ── 向量路（不可用自动降级，样式同 memory-search.service searchWithStatus） ──
+      // ── 向量路（不可用自动降级，样式同 memory-search.service searchWithStatus；
+      // embedQuery 带 LRU 缓存，跨轮重复的候选串免远程往返） ──
       let vecEntries: MemoryEntryRow[] = []
       if (this.embeddingService != null) {
         try {
-          const embedded = await this.embeddingService.embedTexts([query])
+          const embedded = await this.embeddingService.embedQuery(query)
           if (embedded != null && embedded.vectors.length > 0) {
             vecEntries = this.searchRepo
               .searchKnn(embedded.vectors[0]!, channelOpts)
@@ -147,10 +148,7 @@ export class MemoryEvolutionService {
  * 校验：decision ∈ {ADD,UPDATE,DELETE,NOOP}；UPDATE/DELETE 的 targetId 必须在相似条目列表里。
  * 返回 null 表示无法解析（调用方保守 ADD）。
  */
-function parseVerdict(
-  raw: string,
-  similar: Array<{ id: string }>,
-): EvolutionVerdict | null {
+function parseVerdict(raw: string, similar: Array<{ id: string }>): EvolutionVerdict | null {
   try {
     let json = raw.trim()
     const match = json.match(/\{[\s\S]*\}/)
@@ -158,7 +156,12 @@ function parseVerdict(
     const obj = JSON.parse(json) as { decision?: unknown; targetId?: unknown; reason?: unknown }
 
     const decision = typeof obj.decision === 'string' ? obj.decision.toUpperCase() : ''
-    if (decision !== 'ADD' && decision !== 'UPDATE' && decision !== 'DELETE' && decision !== 'NOOP') {
+    if (
+      decision !== 'ADD' &&
+      decision !== 'UPDATE' &&
+      decision !== 'DELETE' &&
+      decision !== 'NOOP'
+    ) {
       return null
     }
 
@@ -168,7 +171,11 @@ function parseVerdict(
       const id = typeof obj.targetId === 'string' ? obj.targetId.trim() : ''
       if (!validIds.has(id)) {
         // targetId 不在召回列表 → 无法安全执行 UPDATE/DELETE，退化为 ADD（保守）
-        return { decision: 'ADD', targetId: null, reason: `targetId "${id}" not in similar list, fallback ADD` }
+        return {
+          decision: 'ADD',
+          targetId: null,
+          reason: `targetId "${id}" not in similar list, fallback ADD`,
+        }
       }
       targetId = id
     }

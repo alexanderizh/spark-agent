@@ -12,7 +12,7 @@
 
 import { createLogger } from '@spark/shared'
 import type { MemorySearchRepository, MemoryEntryRow, VecIndexSource } from '@spark/storage'
-import { hashEmbeddingInput } from '@spark/storage'
+import { hashEmbeddingInput, hashIndexInput } from '@spark/storage'
 import type { ModelService, EmbedResult } from '../model.service.js'
 
 const log = createLogger('memory:embedding')
@@ -21,6 +21,30 @@ const log = createLogger('memory:embedding')
 const BACKFILL_BATCH_SIZE = 16
 /** 探测失败后的负缓存时长（避免每次检索都打一次失败请求） */
 const UNAVAILABLE_CACHE_MS = 5 * 60 * 1000
+/** 查询向量 LRU 上限（2048 维 number[] 约 16KB/条，100 条约 1.6MB） */
+const QUERY_VECTOR_CACHE_LIMIT = 100
+
+/**
+ * 查询向量 LRU（模块级）。EmbeddingService 在 session 单例 / search_memory 桥 /
+ * IPC rebuild 等多处被独立 new，实例级缓存覆盖不全；key 含 provider + model +
+ * 代际 + query 哈希，跨实例共享安全（同名模型不同渠道、vec 表重建后的新代际
+ * 都自然隔离，旧代际条目待 LRU 淘汰即可，无失效广播需求）。
+ */
+const queryVectorCache = new Map<string, number[]>()
+
+function queryCacheKey(
+  provider: string | null | undefined,
+  model: string | null | undefined,
+  generation: number,
+  queryHash: string,
+): string {
+  return `${provider ?? '-'}\n${model ?? '-'}\n${generation}\n${queryHash}`
+}
+
+/** 测试隔离用：清空模块级查询向量缓存。生产代码不需要调用。 */
+export function clearQueryVectorCacheForTests(): void {
+  queryVectorCache.clear()
+}
 
 export class EmbeddingService {
   private unavailableUntil = 0
@@ -97,6 +121,71 @@ export class EmbeddingService {
     } catch (err) {
       log.warn(`embedTexts failed (degrading): ${err instanceof Error ? err.message : String(err)}`)
       this.unavailableUntil = Date.now() + UNAVAILABLE_CACHE_MS
+      return null
+    }
+  }
+
+  /**
+   * 单条查询向量化（带 LRU 缓存）。每轮记忆注入的 seedQuery（agent 名 + 描述 +
+   * workspace 名）在会话内稳定，第 2 轮起命中缓存可跳过一次远程 embedding 往返。
+   * 批量回填 / rebuild 维度探测继续走 embedTexts（不进缓存，条目向量以
+   * upsertVec 事务内的输入摘要比对为准，缓存无参与空间）。
+   *
+   * 命中后仍执行 loadVecExtension（幂等、首载后有标志位短路）并复核
+   * vecSource / 代际：searchKnn 前置依赖扩展已加载，不能因命中跳过；配置切换
+   * 或表重建导致的失配条目就地删除并回落网络重算。
+   * 可观察行为变化（可接受）：provider 负缓存（探测失败 5 分钟）期内命中仍
+   * 返回向量——缓存的是历史事实，不依赖当前网络可用性；负缓存只拦截 miss
+   * 路径（embedTexts 内部自查），避免故障窗口把已缓存查询也拖成 FTS-only。
+   */
+  async embedQuery(query: string): Promise<{ vectors: number[][]; generation: number } | null> {
+    try {
+      if (query.length === 0) return { vectors: [], generation: this.currentGeneration() }
+      if (!this.isConfigured()) return null
+
+      const queryHash = hashIndexInput([query])
+      const source = this.vecSource()
+      const generation = this.currentGeneration()
+
+      const key = queryCacheKey(source.provider, source.model, generation, queryHash)
+      const hit = queryVectorCache.get(key)
+      if (hit != null) {
+        // LRU 触碰：删除重插保持该条目新鲜
+        queryVectorCache.delete(key)
+        queryVectorCache.set(key, hit)
+        const vecOk = await this.searchRepo.loadVecExtension()
+        const current = this.vecSource()
+        if (
+          vecOk &&
+          current.provider === source.provider &&
+          current.model === source.model &&
+          this.currentGeneration() === generation
+        ) {
+          return { vectors: [hit], generation }
+        }
+        // 复核失配（配置/代际在触碰后被改）：删除陈旧条目，落到网络重算
+        queryVectorCache.delete(key)
+      }
+
+      const embedded = await this.embedTexts([query])
+      if (embedded == null) return null
+      const vector = embedded.vectors[0]
+      if (vector == null) return embedded
+
+      // 写入键用【embed 后】的 source/代际：embedTexts 内部 ensureVecTable 可能
+      // 刚建表（0→1）或因维度变化重建表，请求时的 generation 已失真
+      const postSource = this.vecSource()
+      queryVectorCache.set(
+        queryCacheKey(postSource.provider, postSource.model, embedded.generation, queryHash),
+        vector,
+      )
+      if (queryVectorCache.size > QUERY_VECTOR_CACHE_LIMIT) {
+        const oldest = queryVectorCache.keys().next().value
+        if (oldest != null) queryVectorCache.delete(oldest)
+      }
+      return embedded
+    } catch (err) {
+      log.warn(`embedQuery failed (degrading): ${err instanceof Error ? err.message : String(err)}`)
       return null
     }
   }

@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { EmbeddingService } from './embedding.service.js'
+import { EmbeddingService, clearQueryVectorCacheForTests } from './embedding.service.js'
 import { MemoryRepository, MemorySearchRepository, SparkDatabase } from '@spark/storage'
 import type { ModelService, EmbedResult } from '../model.service.js'
 import { join } from 'path'
@@ -37,7 +37,10 @@ describe('EmbeddingService', () => {
   }
 
   beforeEach(() => {
-    // 测试隔离：上一用例可能清空 settings.memory（未配置分支），每个用例重置
+    // 测试隔离：上一用例可能清空 settings.memory（未配置分支），每个用例重置；
+    // 模块级查询向量缓存同样逐用例清空（跨用例的临时库 generation 从头计数，
+    // 同 key 会撞上上一用例的缓存）
+    clearQueryVectorCacheForTests()
     settings.memory = { embeddingProviderId: 'prov-1', embeddingModel: 'embed-model' }
     testDir = join(
       tmpdir(),
@@ -219,5 +222,94 @@ describe('EmbeddingService', () => {
     await embedding.backfillMissingVectors()
     const stillMissing = searchRepo.listEntriesMissingVec(10)
     expect(stillMissing).toEqual([])
+  })
+
+  // ─── embedQuery：单条查询向量的 LRU 缓存（P1-4） ──────────────────────────
+  describe('embedQuery 查询向量缓存', () => {
+    it('同配置同 query 第二次命中缓存：不再发远程请求，向量与代际一致', async () => {
+      embedFn.mockImplementation(async (texts: string[]) => makeEmbedResult(texts))
+      const first = await embedding.embedQuery('Eva 的偏好')
+      expect(first).not.toBeNull()
+      expect(embedFn).toHaveBeenCalledTimes(1)
+
+      const second = await embedding.embedQuery('Eva 的偏好')
+      expect(embedFn).toHaveBeenCalledTimes(1) // 未发第二次远程请求
+      expect(second).not.toBeNull()
+      expect(second!.vectors).toEqual(first!.vectors)
+      expect(second!.generation).toBe(first!.generation)
+    })
+
+    it('不同 query 不命中（key 含 query 哈希）', async () => {
+      embedFn.mockImplementation(async (texts: string[]) => makeEmbedResult(texts))
+      await embedding.embedQuery('查询甲')
+      await embedding.embedQuery('查询乙')
+      expect(embedFn).toHaveBeenCalledTimes(2)
+    })
+
+    it('切换 embedding 渠道/模型后同 query 不命中（key 含 provider+model）', async () => {
+      embedFn.mockImplementation(async (texts: string[]) => makeEmbedResult(texts))
+      await embedding.embedQuery('同一个问题')
+      settings.memory = { embeddingProviderId: 'prov-2', embeddingModel: 'embed-model' }
+      await embedding.embedQuery('同一个问题')
+      expect(embedFn).toHaveBeenCalledTimes(2)
+    })
+
+    it('vec 表重建（代际递增）后同 query 不命中，重算并写新代际', async () => {
+      embedFn.mockImplementation(async (texts: string[]) => makeEmbedResult(texts))
+      const first = await embedding.embedQuery('重建前的问题')
+      expect(first).not.toBeNull()
+
+      searchRepo.rebuildVecTable(4, { provider: 'prov-1', model: 'embed-model' })
+      const after = await embedding.embedQuery('重建前的问题')
+      expect(embedFn).toHaveBeenCalledTimes(2)
+      expect(after).not.toBeNull()
+      expect(after!.generation).toBeGreaterThan(first!.generation)
+      // 新代际条目可再次命中
+      await embedding.embedQuery('重建前的问题')
+      expect(embedFn).toHaveBeenCalledTimes(2)
+    })
+
+    it('provider 负缓存期内：已缓存 query 仍返回向量，新 query 才被拦截', async () => {
+      embedFn.mockImplementation(async (texts: string[]) => makeEmbedResult(texts))
+      await embedding.embedQuery('缓存过的问题')
+
+      // 渠道故障：新 query 触发失败 → 实例进入 5 分钟负缓存
+      embedFn.mockImplementation(async () => ({
+        available: false,
+        reason: 'HTTP 503',
+      }))
+      const miss = await embedding.embedQuery('没缓存过的问题')
+      expect(miss).toBeNull()
+
+      // 命中不受负缓存拦截（历史事实，不依赖当前可用性）——方案 P1-4 明确语义
+      const hit = await embedding.embedQuery('缓存过的问题')
+      expect(hit).not.toBeNull()
+      expect(hit!.vectors).toHaveLength(1)
+    })
+
+    it('回填路径不写查询缓存：backfill 后同文本 embedQuery 仍走远程', async () => {
+      embedFn.mockImplementation(async (texts: string[]) => makeEmbedResult(texts))
+      repo.insert({
+        id: 'usr_p14_backfill',
+        scope: 'user',
+        scope_ref: null,
+        type: 'user',
+        name: 'p14-entry',
+        description: 'backfill must not seed query cache',
+        file_path: join(testDir, 'usr_p14_backfill.md'),
+        confidence: 0.9,
+        hit_count: 0,
+        last_hit_at: null,
+        source_session_id: null,
+        archived: 0,
+      })
+      await embedding.backfillMissingVectors()
+      expect(searchRepo.listEntriesMissingVec(10)).toEqual([])
+
+      // 用与条目 embedding 输入完全相同的文本查询：若回填写进了查询缓存会直接
+      // 命中（embed 不再被调）；断言仍发远程请求
+      await embedding.embedQuery('p14-entry\nbackfill must not seed query cache')
+      expect(embedFn).toHaveBeenCalledTimes(2)
+    })
   })
 })

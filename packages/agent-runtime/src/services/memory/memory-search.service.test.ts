@@ -156,8 +156,8 @@ function makeService(opts: {
     }),
   }
   const embeddingService = {
-    // S1B.3：embedTexts 返回 { vectors, generation }，检索路径只用向量
-    embedTexts: vi.fn(async () =>
+    // S1B.3：embedQuery 返回 { vectors, generation }（检索路径的缓存入口），只用向量
+    embedQuery: vi.fn(async () =>
       opts.vectors != null ? { vectors: opts.vectors, generation: 1 } : null,
     ),
   }
@@ -238,7 +238,7 @@ describe('MemorySearchService.searchWithStatus（S3.1 四态接口）', () => {
     expect(r.status).toBe('disabled')
     expect(r.hits).toEqual([])
     expect(searchRepo.searchBm25).not.toHaveBeenCalled()
-    expect(embeddingService.embedTexts).not.toHaveBeenCalled()
+    expect(embeddingService.embedQuery).not.toHaveBeenCalled()
   })
 
   it('旧签名兼容：matched/empty/degraded-served 均返回 hits 数组（不触发 null fallback）', async () => {
@@ -268,7 +268,7 @@ describe('MemorySearchService.search', () => {
     expect(hits).not.toBeNull()
     expect(hits!.map((h) => h.entry.id)).toEqual(['a'])
     expect(hits![0]!.sources).toEqual(['fts'])
-    expect(embeddingService.embedTexts).toHaveBeenCalled()
+    expect(embeddingService.embedQuery).toHaveBeenCalled()
     expect(searchRepo.searchKnn).not.toHaveBeenCalled()
   })
 
@@ -303,7 +303,7 @@ describe('MemorySearchService.search', () => {
       searchKnn: vi.fn(),
     }
     const embeddingService = {
-      embedTexts: vi.fn(async () => {
+      embedQuery: vi.fn(async () => {
         throw new Error('provider 500')
       }),
     }

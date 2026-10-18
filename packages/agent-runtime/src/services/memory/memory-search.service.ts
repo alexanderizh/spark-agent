@@ -128,8 +128,9 @@ export class MemorySearchService {
     let vectorServed = false
     if (this.embeddingService != null) {
       try {
-        // S1B.3：embedTexts 返回 { vectors, generation }，检索路径只用向量
-        const embedded = await this.embeddingService.embedTexts([query])
+        // S1B.3：embedQuery 返回 { vectors, generation }（带 LRU 缓存——seedQuery
+        // 会话内稳定，第 2 轮起命中跳过远程往返），检索路径只用向量
+        const embedded = await this.embeddingService.embedQuery(query)
         if (embedded != null && embedded.vectors.length > 0) {
           vecEntries = this.searchRepo
             .searchKnn(embedded.vectors[0]!, channelOpts)
