@@ -32,6 +32,7 @@ import {
   type TimelineItem,
 } from '../../utils/chat-view'
 import { formatRelativeTime } from '../../utils/format'
+import { logMobileError } from '../../utils/logger'
 import {
   buildApprovalCardViews,
   buildQuestionAnswerPayload,
@@ -149,6 +150,17 @@ const BOTTOM_STICKY_THRESHOLD_PX = 100
 /** 松手后惯性滚动仍视为用户滚动的窗口（ms），窗口外的 scroll 事件是程序化回底/锚定调整 */
 const SCROLL_MOMENTUM_WINDOW_MS = 800
 
+/** 单张图片保存到系统相册（回调 → Promise；拒绝授权时 errMsg 带 auth deny） */
+function saveImageToPhotosAlbum(filePath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    wx.saveImageToPhotosAlbum({
+      filePath,
+      success: () => resolve(),
+      fail: (err) => reject(new Error(err.errMsg ?? 'saveImageToPhotosAlbum fail')),
+    })
+  })
+}
+
 Page({
   data: {
     sessionId: '',
@@ -219,6 +231,8 @@ Page({
   lineageChildren: [] as bridge.BridgeLineage[],
   /** 已发起过缓存解析的 media 消息 key（流式全量重绘时防重复触发） */
   mediaResolvedKeys: new Set<string>(),
+  /** 正在保存到相册的 media 消息 key（防重复点击；渲染态经 decorateItem 回填） */
+  mediaSavingKeys: new Set<string>(),
   /** 已发起过缓存解析的历史附件用户消息 key */
   userAttachResolvedKeys: new Set<string>(),
   /** 历史附件图片解析结果（消息 key → 桌面路径 → 本地缓存路径） */
@@ -578,7 +592,9 @@ Page({
     if (item.kind === 'media') {
       const previews = item.previews ?? []
       if (previews.length !== item.paths.length) void this.resolveMediaItem(item.key, item.paths)
-      return previews.length > 0 ? { ...item, previews } : item
+      const saving = this.mediaSavingKeys.has(item.key)
+      if (previews.length === 0 && !saving) return item
+      return { ...item, previews: previews.length > 0 ? previews : undefined, saving }
     }
     if (item.kind !== 'user') return item
     // 优先本次会话发送时挂载的附件（手机本地原图直显）
@@ -646,6 +662,90 @@ Page({
     if (this.latestTimeline != null) this.flushTimeline(true, { keepScroll: true })
   },
 
+  /** 按 key 查找 media 渲染项（预览与保存共用） */
+  findMediaItem(key: string): Extract<TimelineItem, { kind: 'media' }> | null {
+    const item = this.data.items.find((it) => it.kind === 'media' && it.key === key)
+    return item != null && item.kind === 'media' ? item : null
+  },
+
+  /** 缩略图点击 → 全屏预览（同条多图可左右滑动） */
+  onMediaImageTap(
+    e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { key: string; idx: number }>,
+  ) {
+    const key = e.currentTarget.dataset.key
+    if (typeof key !== 'string' || key.length === 0) return
+    const item = this.findMediaItem(key)
+    const previews = item?.previews
+    if (previews == null || previews.length === 0) return
+    const idx = e.currentTarget.dataset.idx
+    const current =
+      typeof idx === 'number' && idx >= 0 && idx < previews.length ? previews[idx] : previews[0]
+    wx.previewImage({ urls: previews, current })
+  },
+
+  /** 底部操作按钮组：保存整条图片到系统相册（移动端承载桌面端「复制/下载图片」） */
+  async onMediaSave(e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { key: string }>) {
+    const key = e.currentTarget.dataset.key
+    if (typeof key !== 'string' || key.length === 0) return
+    if (this.mediaSavingKeys.has(key)) return
+    const item = this.findMediaItem(key)
+    const previews = item?.previews ?? []
+    if (previews.length === 0) {
+      wx.showToast({ title: '图片还在加载中，请稍后再试', icon: 'none' })
+      return
+    }
+
+    this.mediaSavingKeys.add(key)
+    this.setMediaItemSaving(key, true)
+    let saved = 0
+    let denied = false
+    for (const filePath of previews) {
+      try {
+        await saveImageToPhotosAlbum(filePath)
+        saved += 1
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (message.includes('auth deny') || message.includes('authorize')) {
+          denied = true
+        } else {
+          logMobileError('mobile-chat', 'media-save-album', error)
+        }
+      }
+    }
+    this.mediaSavingKeys.delete(key)
+    this.setMediaItemSaving(key, false)
+
+    if (saved === 0 && denied) {
+      wx.showModal({
+        title: '需要相册权限',
+        content: '保存图片需要「添加到相册」权限，请在设置中开启',
+        confirmText: '去设置',
+        success: (res) => {
+          if (res.confirm) void wx.openSetting({})
+        },
+      })
+      return
+    }
+    if (saved === 0) {
+      wx.showToast({ title: '保存失败，请重试', icon: 'none' })
+      return
+    }
+    wx.showToast({
+      title:
+        saved === previews.length
+          ? `已保存 ${saved} 张到相册`
+          : `已保存 ${saved}/${previews.length} 张`,
+      icon: 'success',
+    })
+  },
+
+  /** 回填单条 media 渲染项的 saving 态（按钮 busy 展示） */
+  setMediaItemSaving(key: string, saving: boolean) {
+    const index = this.data.items.findIndex((it) => it.kind === 'media' && it.key === key)
+    if (index < 0) return
+    this.setData({ [`items[${index}].saving`]: saving })
+  },
+
   onThinkingToggle(e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { key: string }>) {
     const key = e.currentTarget.dataset.key
     if (typeof key !== 'string' || key.length === 0) return
@@ -672,8 +772,7 @@ Page({
 
   /** 测量消息区视口高度（scroll 事件里算距底距离用） */
   measureScrollViewHeight() {
-    wx
-      .createSelectorQuery()
+    wx.createSelectorQuery()
       .in(this)
       .select('.chat-scroll')
       .boundingClientRect((rect) => {
@@ -694,8 +793,7 @@ Page({
     if (this.scrollViewHeight <= 0) return
     const { scrollTop, scrollHeight } = e.detail
     if (typeof scrollTop !== 'number' || typeof scrollHeight !== 'number') return
-    const sticky =
-      scrollHeight - scrollTop - this.scrollViewHeight <= BOTTOM_STICKY_THRESHOLD_PX
+    const sticky = scrollHeight - scrollTop - this.scrollViewHeight <= BOTTOM_STICKY_THRESHOLD_PX
     if (sticky === this.stickBottom) return
     this.stickBottom = sticky
     if (sticky) {

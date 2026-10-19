@@ -33,7 +33,14 @@ export type TimelineItem =
       toolStatus: 'running' | 'success' | 'error'
     }
   | { kind: 'status'; key: string; text: string; tone: 'running' | 'done' | 'error' }
-  | { kind: 'media'; key: string; paths: string[]; previews?: string[] }
+  | {
+      kind: 'media'
+      key: string
+      paths: string[]
+      previews?: string[]
+      /** 保存到相册进行中（底部操作按钮组 busy 态；页面实例态经 decorateItem 回填） */
+      saving?: boolean
+    }
 
 function dayLabel(iso: string): string {
   const d = new Date(iso)

@@ -122,6 +122,18 @@
                 />
               </view>
             </scroll-view>
+            <!-- 气泡底部操作按钮组：保存到相册（移动端承载桌面端「复制/下载图片」） -->
+            <view class="media-actions row">
+              <view
+                class="media-action {{item.saving ? 'media-action--saving' : ''}}"
+                hover-class="hover-dim"
+                data-key="{{item.key}}"
+                bindtap="onMediaSave"
+              >
+                <view class="icon-download"></view>
+                <text>{{item.saving ? '保存中…' : '保存到相册'}}</text>
+              </view>
+            </view>
           </view>
 
           <!-- 思考内容默认折叠；仍按桌面端事件逐段增量更新，点击标题可展开 -->

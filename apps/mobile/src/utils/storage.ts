@@ -13,6 +13,8 @@ export const StorageKeys = {
   user: `${PREFIX}user`,
   /** 聊天页是否隐藏工具调用与思考记录（本地偏好，跨会话生效；复用历史键名） */
   chatHideToolEvents: `${PREFIX}chat-hide-tool-events`,
+  /** 会话列表「置顶」分组折叠状态（本地偏好；值为 `${deviceId}/${projectId}` → 是否折叠 的映射） */
+  sessionListPinnedCollapsed: `${PREFIX}session-list-pinned-collapsed`,
 } as const
 
 export function getItem<T>(key: string): T | null {

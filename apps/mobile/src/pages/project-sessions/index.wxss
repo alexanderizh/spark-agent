@@ -143,6 +143,27 @@
   display: block;
   margin-bottom: 8rpx;
 }
+/* 置顶分组折叠头：分组标题 + 条数 + 折叠指示 chevron，点击整行切换 */
+.ps-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8rpx;
+}
+.ps-group-head--press {
+  opacity: 0.55;
+}
+.ps-group-chevron {
+  width: 28rpx;
+  height: 28rpx;
+  flex: none;
+  background-size: 28rpx 28rpx;
+  transition: transform 160ms ease;
+}
+/* 折叠时 chevron 由向下转为向右（逆时针 90°），与 chat 页思考记录折叠同族动效 */
+.ps-group-chevron--collapsed {
+  transform: rotate(-90deg);
+}
 .ps-row-text {
   margin: 0 20rpx;
 }

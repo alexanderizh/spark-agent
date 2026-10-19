@@ -74,28 +74,40 @@
 
     <block wx:else>
       <view wx:for="{{groups}}" wx:for-item="group" wx:key="key" class="ps-group">
-        <view class="group-title">{{group.label}}</view>
+        <!-- 置顶组标题可点折叠（含条数与折叠指示），其余分组保持纯标题 -->
         <view
-          wx:for="{{group.rows}}"
-          wx:key="id"
-          class="list-row"
-          hover-class="list-row--hover"
-          data-id="{{item.id}}"
-          data-title="{{item.title}}"
-          data-pinned="{{item.pinnedAt != null}}"
-          bindtap="onOpenSession"
-          bindlongpress="onRowLongPress"
+          wx:if="{{group.key === 'pinned'}}"
+          class="ps-group-head"
+          hover-class="ps-group-head--press"
+          bindtap="onTogglePinnedGroup"
         >
-          <view class="dot {{item.dotClass}}"></view>
-          <view class="grow col gap-8 ps-row-text">
-            <view class="row ps-row-title-line">
-              <text class="t-strong ellipsis grow">{{item.title}}</text>
-              <view wx:if="{{item.labelText}}" class="ps-label-tag {{item.labelClass}}">{{item.labelText}}</view>
-            </view>
-            <text class="t-caption ellipsis">{{item.statusLabel}} · {{item.timeLabel}}{{item.preview ? ' · ' + item.preview : ''}}</text>
-          </view>
-          <view class="icon icon-chevron"></view>
+          <text class="group-title">{{group.label}} · {{group.rows.length}}</text>
+          <view class="icon icon-chevron-down ps-group-chevron {{pinnedCollapsed ? 'ps-group-chevron--collapsed' : ''}}"></view>
         </view>
+        <view wx:else class="group-title">{{group.label}}</view>
+        <block wx:if="{{group.key !== 'pinned' || !pinnedCollapsed}}">
+          <view
+            wx:for="{{group.rows}}"
+            wx:key="id"
+            class="list-row"
+            hover-class="list-row--hover"
+            data-id="{{item.id}}"
+            data-title="{{item.title}}"
+            data-pinned="{{item.pinnedAt != null}}"
+            bindtap="onOpenSession"
+            bindlongpress="onRowLongPress"
+          >
+            <view class="dot {{item.dotClass}}"></view>
+            <view class="grow col gap-8 ps-row-text">
+              <view class="row ps-row-title-line">
+                <text class="t-strong ellipsis grow">{{item.title}}</text>
+                <view wx:if="{{item.labelText}}" class="ps-label-tag {{item.labelClass}}">{{item.labelText}}</view>
+              </view>
+              <text class="t-caption ellipsis">{{item.statusLabel}} · {{item.timeLabel}}{{item.preview ? ' · ' + item.preview : ''}}</text>
+            </view>
+            <view class="icon icon-chevron"></view>
+          </view>
+        </block>
       </view>
 
       <!-- 内容匹配（服务器 FTS5 搜索正文；与上方标题匹配去重，仅搜索时出现） -->

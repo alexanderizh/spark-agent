@@ -35,6 +35,7 @@ import {
   type BridgeSessionLabelKey,
 } from '../../utils/sidebar-order'
 import type { BridgeCatalog, BridgeSessionSummary, BridgeSidebarOrderState } from '../../api/bridge'
+import { StorageKeys, getItem, setItem } from '../../utils/storage'
 
 type StatusFilter = 'all' | 'running' | 'error' | 'idle'
 
@@ -116,6 +117,8 @@ interface ProjectSessionsData {
   quickModelId: string
   quickPermissionId: string
   quickReasoningId: string
+  /** 「置顶」分组是否折叠（本地偏好，按 电脑+项目 记忆） */
+  pinnedCollapsed: boolean
 }
 
 /** 今天 0 点（本地时区） */
@@ -222,6 +225,7 @@ Page({
     quickModelId: DEFAULT_MODEL_OPTION.id,
     quickPermissionId: DEFAULT_PERMISSION_OPTION.id,
     quickReasoningId: DEFAULT_REASONING_OPTION.id,
+    pinnedCollapsed: false,
   } as ProjectSessionsData,
 
   /** 全量缓存（前端过滤：状态 + 标记 + 标题搜索） */
@@ -249,6 +253,8 @@ Page({
   modelOptions: [] as SessionConfigOption[],
   permissionOptions: [] as SessionConfigOption[],
   reasoningOptions: [] as SessionConfigOption[],
+  /** 置顶分组折叠偏好缓存（`${deviceId}/${projectId}` → 是否折叠；冷启动时从本地存储恢复） */
+  pinnedCollapsedMap: {} as Record<string, boolean>,
 
   onLoad(options: Record<string, string | undefined>) {
     const deviceId = options.deviceId ?? ''
@@ -271,6 +277,14 @@ Page({
       projectId,
       projectName: options.projectName ? decodeURIComponent(options.projectName) : '',
       autoFocusSearch: options.search === '1',
+    })
+    // 置顶分组折叠偏好：按 电脑+项目 维度记忆，跨冷启动生效
+    // 注意 wx.getStorageSync 对不存在的键返回 ""（不是 null），必须做对象形态守卫
+    const storedCollapse = getItem<Record<string, boolean>>(StorageKeys.sessionListPinnedCollapsed)
+    this.pinnedCollapsedMap =
+      storedCollapse != null && typeof storedCollapse === 'object' ? storedCollapse : {}
+    this.setData({
+      pinnedCollapsed: this.pinnedCollapsedMap[pinnedCollapseKey(deviceId, projectId)] === true,
     })
     // presence 增量只更新固定电脑状态；切换电脑必须先返回顶层。
     this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.onPresenceUpdate())
@@ -464,6 +478,14 @@ Page({
     this.setData({ searchText: e.detail.value })
     this.applyFilters()
     this.scheduleContentSearch()
+  },
+
+  /** 「置顶」分组折叠/展开：仅切换本地展示与偏好，不影响列表数据 */
+  onTogglePinnedGroup() {
+    const collapsed = !this.data.pinnedCollapsed
+    this.setData({ pinnedCollapsed: collapsed })
+    this.pinnedCollapsedMap[pinnedCollapseKey(this.data.deviceId, this.data.projectId)] = collapsed
+    setItem(StorageKeys.sessionListPinnedCollapsed, this.pinnedCollapsedMap)
   },
 
   // ─── 内容搜索（服务器标题 LIKE + FTS5；前端标题过滤保留作即时层） ─────────────
@@ -961,6 +983,11 @@ Page({
 /** 虚拟「未归属项目」没有可校验的排序 scope：手动排序只在真实项目开放 */
 function projectIdSupportsOrder(projectId: string): boolean {
   return projectId !== '' && projectId !== 'default'
+}
+
+/** 置顶折叠偏好的映射键：按 电脑+项目 维度隔离 */
+function pinnedCollapseKey(deviceId: string, projectId: string): string {
+  return `${deviceId}/${projectId}`
 }
 
 /** 在分组结果里定位会话所在段（供长按菜单的上移/下移定位） */

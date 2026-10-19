@@ -561,3 +561,35 @@
   border-radius: 16rpx;
   background: #efece6;
 }
+
+/* 气泡底部操作按钮组（保存到相册；对齐思考折叠行的轻量样式语言） */
+.media-actions {
+  margin-top: 12rpx;
+}
+
+.media-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 22rpx;
+  border: 1rpx solid #e9e6e1;
+  border-radius: 999rpx;
+  background: #faf9f7;
+  font-size: 22rpx;
+  color: #8e8b85;
+}
+
+.media-action--saving {
+  opacity: 0.55;
+}
+
+.icon-download {
+  width: 26rpx;
+  height: 26rpx;
+  flex: none;
+  background-color: transparent;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e8e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4'/%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3Cpath d='M12 15V3'/%3E%3C/svg%3E");
+}
