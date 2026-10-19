@@ -1504,29 +1504,71 @@ describe('MessageBuilder', () => {
     ])
   })
 
-  it('appends one presented_files block per event instead of overwriting previous batches', () => {
-    // 后端媒体产物逐批就地发出（每批一条独立 presented_files 事件），前端必须
-    // 逐批追加块；否则一批新图会覆盖上一批，turn 里只剩最后一张图。
+  it('aggregates every presented_files batch of a turn into one gallery block anchored at the first batch', () => {
+    // 后端媒体产物逐批就地发出（每批一条独立 presented_files 事件）。若逐批各建一个块，
+    // 每块只有一张图，多图会纵向堆叠——横向胶片条（is-image-gallery）只在单块多图时生效。
+    // 设计定稿：轮级聚合——同轮所有批次并入第一个 presented 块，条带锚定在首批就地位置，
+    // 随批次到达逐张追加；agent 在生图间的进度播报（assistant_message）不影响聚合。
+    // 旧逻辑「覆盖第一个已有块」会冲掉上一批，同样不可取。
     const builder = new MessageBuilder()
 
     builder.processEvent({
       ...baseEvent('presented_files'),
       type: 'presented_files',
-      files: [{ path: '/workspace/old.png' }],
+      files: [{ path: '/workspace/apple.png' }],
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '第一张完成。继续第二张 —— 蓝色海洋：',
+      provider: 'claude',
+      isFinal: true,
+    })
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      id: 'tool-call-2',
+      type: 'tool_call',
+      toolCallId: 'call-2',
+      toolName: 'generate_image',
+      toolInput: {},
+      source: 'mcp',
     })
     builder.processEvent({
       ...baseEvent('presented_files'),
       id: 'presented-files-2',
       type: 'presented_files',
-      files: [{ path: '/workspace/report.pdf', title: 'Final report' }],
+      files: [{ path: '/workspace/ocean.png' }],
+    })
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      id: 'tool-call-3',
+      type: 'tool_call',
+      toolCallId: 'call-3',
+      toolName: 'generate_image',
+      toolInput: {},
+      source: 'mcp',
+    })
+    builder.processEvent({
+      ...baseEvent('presented_files'),
+      id: 'presented-files-3',
+      type: 'presented_files',
+      files: [{ path: '/workspace/forest.png' }],
     })
 
     expect(builder.getAllMessages()[0]?.blocks).toEqual([
-      { kind: 'presented_files', files: [{ path: '/workspace/old.png' }] },
       {
         kind: 'presented_files',
-        files: [{ path: '/workspace/report.pdf', title: 'Final report' }],
+        files: [
+          { path: '/workspace/apple.png' },
+          { path: '/workspace/ocean.png' },
+          { path: '/workspace/forest.png' },
+        ],
       },
+      expect.objectContaining({ kind: 'text', content: '第一张完成。继续第二张 —— 蓝色海洋：' }),
+      expect.objectContaining({ kind: 'tool_call', toolCallId: 'call-2' }),
+      expect.objectContaining({ kind: 'tool_call', toolCallId: 'call-3' }),
     ])
   })
 

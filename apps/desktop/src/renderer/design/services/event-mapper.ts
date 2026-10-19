@@ -26,6 +26,7 @@ import {
   type TurnFileSummaryGeneratedGroup,
 } from './turn-file-summary'
 import { isQuickReplySuggestionsTool, parseQuickReplies } from './quick-reply-suggestions'
+import { findTurnPresentedGalleryBlock } from './presented-media-blocks'
 import { isRenderHtmlTool, parseRenderHtmlInput, parseRenderHtmlResult } from './render-html'
 import {
   isRenderDiagramTool,
@@ -1275,17 +1276,23 @@ export class MessageBuilder {
 
       case 'presented_files': {
         // 每条 presented_files 事件是一个独立批次（后端 drainPending/markAgentPresented
-        // 逐批发出，事件 id 互不相同，且后端以 emitted 集合保证同 turn 内路径不重复），
-        // 必须逐条追加块；旧逻辑「覆盖第一个已有块」会把上一批媒体冲掉，只剩最后一张。
-        // 同一事件重复投递由 processEvent 入口的 processedEventIds 去重，不会产生重复块。
+        // 逐批就地发出，事件 id 互不相同，且后端以 emitted 集合保证同 turn 内路径不重复）。
+        // 旧逻辑「覆盖第一个已有块」会把上一批媒体冲掉，只剩最后一张；而逐批各建一个块
+        // 会让每块只有一张图、纵向堆叠——横向胶片条（is-image-gallery）只在单块多图时生效。
+        // 设计定稿：轮级聚合——同轮所有批次并入第一个 presented 块（锚定在首批就地位置，
+        // 随批次到达逐张追加成一条横排）。聚合策略见 presented-media-blocks.ts 模块注释。
+        // 同一事件重复投递由 processEvent 入口的 processedEventIds 去重，不会重复并入。
         const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
-        msg.blocks.push({
-          kind: 'presented_files',
-          files: event.files.map((file) => ({
-            path: file.path,
-            ...(file.title != null ? { title: file.title } : {}),
-          })),
-        })
+        const presentedFiles = event.files.map((file) => ({
+          path: file.path,
+          ...(file.title != null ? { title: file.title } : {}),
+        }))
+        const galleryBlock = findTurnPresentedGalleryBlock(msg.blocks)
+        if (galleryBlock != null) {
+          galleryBlock.files.push(...presentedFiles)
+        } else {
+          msg.blocks.push({ kind: 'presented_files', files: presentedFiles })
+        }
         break
       }
 
