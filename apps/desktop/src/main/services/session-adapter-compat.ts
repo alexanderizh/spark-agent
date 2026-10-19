@@ -84,3 +84,45 @@ export function resolveCompatibleSessionAdapter(
   }
   return 'codex'
 }
+
+/**
+ * listProviders 的 ProviderProfile（及同构 provider 行）→ 兼容性判定所需的最小渠道信息。
+ * 原 ipc/index.ts 内部函数收敛于此，供主进程各「切渠道」入口共用。
+ */
+export function toAdapterCompatProvider(profile: {
+  id: string
+  provider: string
+  providerType?: string | undefined
+  codexApiKind?: 'chat' | 'responses' | 'embedding' | undefined
+  autoRouterConfig?: { adapter?: 'claude' | 'codex' } | undefined
+}): AdapterCompatProviderInput {
+  return {
+    id: profile.id,
+    providerType: profile.providerType ?? profile.provider,
+    ...(profile.codexApiKind != null ? { codexApiKind: profile.codexApiKind } : {}),
+    ...(profile.autoRouterConfig?.adapter != null
+      ? { autoRouterAdapter: profile.autoRouterConfig.adapter }
+      : {}),
+  }
+}
+
+/**
+ * 渠道切换的引擎校准：会话当前引擎能执行该渠道时返回 null（不动引擎与权限），
+ * 不能执行时返回校准后的引擎（调用方应连同权限模式一起回落）。
+ * currentAdapter 接受历史值与脏值（'claude' / 空串 / 未知值 → 按 claude-sdk 归一），
+ * 与渠道删除级联 resolveRebindAdapter 的归一口径一致。
+ */
+export function calibrateSessionAdapter(
+  currentAdapter: string,
+  provider: AdapterCompatProviderInput,
+): SessionAgentAdapter | null {
+  const normalized: SessionAgentAdapter =
+    currentAdapter === 'claude' ||
+    currentAdapter === 'claude-sdk' ||
+    currentAdapter === 'codex' ||
+    currentAdapter === 'spark'
+      ? currentAdapter
+      : 'claude-sdk'
+  const calibrated = resolveCompatibleSessionAdapter(provider, normalized)
+  return isSameEngineKind(calibrated, normalized) ? null : calibrated
+}

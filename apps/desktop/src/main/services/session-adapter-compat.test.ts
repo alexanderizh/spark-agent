@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '@spark/protocol'
 
 import {
+  calibrateSessionAdapter,
   resolveCompatibleSessionAdapter,
   type AdapterCompatProviderInput,
 } from './session-adapter-compat.js'
@@ -82,5 +83,30 @@ describe('resolveCompatibleSessionAdapter', () => {
     expect(resolveCompatibleSessionAdapter({ id: 'legacy', providerType: 'openai' }, 'spark')).toBe(
       'spark',
     )
+  })
+})
+
+describe('calibrateSessionAdapter', () => {
+  it('引擎与新渠道协议不兼容时返回校准引擎（codex×Anthropic 小程序切模型根因组合）', () => {
+    expect(calibrateSessionAdapter('codex', anthropicProvider)).toBe('claude-sdk')
+    expect(calibrateSessionAdapter('claude-sdk', openaiResponsesProvider)).toBe('codex')
+  })
+
+  it('兼容时返回 null（不动会话引擎与权限，归一化差异不算切换）', () => {
+    expect(calibrateSessionAdapter('claude-sdk', anthropicProvider)).toBeNull()
+    expect(calibrateSessionAdapter('claude', anthropicProvider)).toBeNull()
+    expect(calibrateSessionAdapter('codex', openaiResponsesProvider)).toBeNull()
+    expect(calibrateSessionAdapter('spark', anthropicProvider)).toBeNull()
+    expect(calibrateSessionAdapter('spark', openaiResponsesProvider)).toBeNull()
+  })
+
+  it('chat-completions 渠道 spark 校准为 codex', () => {
+    expect(calibrateSessionAdapter('spark', openaiChatProvider)).toBe('codex')
+  })
+
+  it('历史值与脏值按 claude-sdk 归一（与渠道删除级联同口径）', () => {
+    expect(calibrateSessionAdapter('', anthropicProvider)).toBeNull()
+    expect(calibrateSessionAdapter('legacy-junk', anthropicProvider)).toBeNull()
+    expect(calibrateSessionAdapter('', openaiResponsesProvider)).toBe('codex')
   })
 })

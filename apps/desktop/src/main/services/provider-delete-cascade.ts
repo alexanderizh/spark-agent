@@ -23,11 +23,7 @@ import {
   type SessionAgentAdapter,
 } from '@spark/protocol'
 
-import {
-  isSameEngineKind,
-  resolveCompatibleSessionAdapter,
-  type AdapterCompatProviderInput,
-} from './session-adapter-compat.js'
+import { calibrateSessionAdapter, toAdapterCompatProvider } from './session-adapter-compat.js'
 
 /** 重绑候选：启用中的非 router 对话渠道（默认位优先）。 */
 export function pickRebindFallbackProvider(
@@ -53,17 +49,6 @@ export function resolveRebindModel(
   return fallback.defaultModel
 }
 
-function toCompatInput(profile: ProviderProfile): AdapterCompatProviderInput {
-  return {
-    id: profile.id,
-    providerType: profile.providerType ?? profile.provider,
-    ...(profile.codexApiKind != null ? { codexApiKind: profile.codexApiKind } : {}),
-    ...(profile.autoRouterConfig?.adapter != null
-      ? { autoRouterAdapter: profile.autoRouterConfig.adapter }
-      : {}),
-  }
-}
-
 /**
  * 引擎校准：会话当前引擎不能执行重绑渠道时改落可用引擎；兼容时返回 null
  * （不动会话的引擎与权限，claude/claude-sdk 归一化差异也不算切换）。
@@ -72,15 +57,7 @@ export function resolveRebindAdapter(
   currentAdapter: string,
   fallback: ProviderProfile,
 ): SessionAgentAdapter | null {
-  const normalized: SessionAgentAdapter =
-    currentAdapter === 'claude' ||
-    currentAdapter === 'claude-sdk' ||
-    currentAdapter === 'codex' ||
-    currentAdapter === 'spark'
-      ? currentAdapter
-      : 'claude-sdk'
-  const calibrated = resolveCompatibleSessionAdapter(toCompatInput(fallback), normalized)
-  return isSameEngineKind(calibrated, normalized) ? null : calibrated
+  return calibrateSessionAdapter(currentAdapter, toAdapterCompatProvider(fallback))
 }
 
 export interface ProviderRebindPlan {

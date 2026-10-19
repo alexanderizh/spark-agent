@@ -91,6 +91,7 @@ import { fetchLinkMetadata } from '../services/LinkMetadataService.js'
 import {
   resolveCompatibleSessionAdapter,
   isSameEngineKind,
+  toAdapterCompatProvider,
   type AdapterCompatProviderInput,
 } from '../services/session-adapter-compat.js'
 import { resolveProviderRebindPlan } from '../services/provider-delete-cascade.js'
@@ -3691,24 +3692,6 @@ async function validateMobileAccountToken(
 }
 
 const REMOTE_SESSION_QUERY_LIMIT = 1000
-
-/** listProviders 的 ProviderProfile → 兼容性判定所需的最小渠道信息。 */
-function toAdapterCompatProvider(profile: {
-  id: string
-  provider: string
-  providerType?: string | undefined
-  codexApiKind?: 'chat' | 'responses' | 'embedding' | undefined
-  autoRouterConfig?: { adapter?: 'claude' | 'codex' } | undefined
-}): AdapterCompatProviderInput {
-  return {
-    id: profile.id,
-    providerType: profile.providerType ?? profile.provider,
-    ...(profile.codexApiKind != null ? { codexApiKind: profile.codexApiKind } : {}),
-    ...(profile.autoRouterConfig?.adapter != null
-      ? { autoRouterAdapter: profile.autoRouterConfig.adapter }
-      : {}),
-  }
-}
 
 /**
  * 渠道删除级联：重绑名下会话到可用对话渠道 + 清理远程连接默认值中的悬空引用。

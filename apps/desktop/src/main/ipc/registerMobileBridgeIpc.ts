@@ -72,6 +72,7 @@ import {
   WorkspaceRepository,
 } from '@spark/storage'
 import { PASTED_IMAGE_MAX_EDGE, resizePastedImageBuffer } from '../services/PastedImageResizer.js'
+import { calibrateMobileBridgeSessionAdapter } from '../services/mobile-bridge-session-adapter.js'
 import { isPathWithinRoots } from './mobile-bridge-path-policy.js'
 import type { RemoteVoiceTranscriber } from '../services/remoteVoiceTranscription.js'
 import { DEFAULT_MOBILE_BRIDGE_RELAY_SETTINGS } from '@spark/protocol'
@@ -725,12 +726,35 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
       ) {
         throw new Error(`不支持的会话标记：${String(patch.sessionLabel)}`)
       }
+      // 引擎×渠道协议校准：移动端 PATCH 只带 provider/model，不带引擎。切换到
+      // 与会话引擎不兼容的渠道协议时（如 codex 会话切 Anthropic 渠道），在此
+      // 按新渠道校准引擎并回落权限档位，否则下一轮 turn 撞引擎守卫直接报错。
+      // 调用方显式传了 agentAdapter 时不校准（显式值优先，不做二次改写）。
+      const providerSwitchCalibration =
+        patch.providerProfileId != null && adapter == null
+          ? await calibrateMobileBridgeSessionAdapter({
+              sessionId,
+              providerProfileId: patch.providerProfileId,
+              providers: await deps.getProviderService().listProviders(),
+              getCurrentAdapter: (id) =>
+                new SessionRepository(getDatabase()).get(id)?.agent_adapter ?? null,
+            })
+          : null
       const result = await deps.getSessionService().updateSession({
         sessionId,
         ...rest,
         // SessionUpdateRequest.agentId 非空可空；移动端 null = 清除绑定，此处以「不修改」表达
         ...(agentId != null ? { agentId } : {}),
         ...(adapter != null ? { agentAdapter: adapter } : {}),
+        ...(providerSwitchCalibration != null
+          ? {
+              agentAdapter: providerSwitchCalibration.agentAdapter,
+              // 引擎权限值集互斥（codex-* 原值跨引擎无效），未显式指定时回落新引擎默认档
+              ...(permissionMode == null
+                ? { permissionMode: providerSwitchCalibration.permissionMode }
+                : {}),
+            }
+          : {}),
         // 白名单校验后显式收窄（Set.has 不改变静态类型）
         ...(permissionMode != null
           ? { permissionMode: permissionMode as SessionPermissionMode }
