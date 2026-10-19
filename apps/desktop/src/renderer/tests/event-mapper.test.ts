@@ -1504,13 +1504,15 @@ describe('MessageBuilder', () => {
     ])
   })
 
-  it('keeps only the latest explicit file presentation for a turn', () => {
+  it('appends one presented_files block per event instead of overwriting previous batches', () => {
+    // 后端媒体产物逐批就地发出（每批一条独立 presented_files 事件），前端必须
+    // 逐批追加块；否则一批新图会覆盖上一批，turn 里只剩最后一张图。
     const builder = new MessageBuilder()
 
     builder.processEvent({
       ...baseEvent('presented_files'),
       type: 'presented_files',
-      files: [{ path: '/workspace/old.pdf' }],
+      files: [{ path: '/workspace/old.png' }],
     })
     builder.processEvent({
       ...baseEvent('presented_files'),
@@ -1520,10 +1522,27 @@ describe('MessageBuilder', () => {
     })
 
     expect(builder.getAllMessages()[0]?.blocks).toEqual([
+      { kind: 'presented_files', files: [{ path: '/workspace/old.png' }] },
       {
         kind: 'presented_files',
         files: [{ path: '/workspace/report.pdf', title: 'Final report' }],
       },
+    ])
+  })
+
+  it('ignores a redelivered presented_files event with the same id', () => {
+    const builder = new MessageBuilder()
+    const event = {
+      ...baseEvent('presented_files'),
+      type: 'presented_files' as const,
+      files: [{ path: '/workspace/only.png' }],
+    }
+
+    builder.processEvent(event)
+    builder.processEvent(event)
+
+    expect(builder.getAllMessages()[0]?.blocks).toEqual([
+      { kind: 'presented_files', files: [{ path: '/workspace/only.png' }] },
     ])
   })
 

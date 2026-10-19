@@ -1274,17 +1274,18 @@ export class MessageBuilder {
       }
 
       case 'presented_files': {
+        // 每条 presented_files 事件是一个独立批次（后端 drainPending/markAgentPresented
+        // 逐批发出，事件 id 互不相同，且后端以 emitted 集合保证同 turn 内路径不重复），
+        // 必须逐条追加块；旧逻辑「覆盖第一个已有块」会把上一批媒体冲掉，只剩最后一张。
+        // 同一事件重复投递由 processEvent 入口的 processedEventIds 去重，不会产生重复块。
         const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
-        const existing = msg.blocks.find(
-          (block): block is Extract<UIBlock, { kind: 'presented_files' }> =>
-            block.kind === 'presented_files',
-        )
-        const files = event.files.map((file) => ({
-          path: file.path,
-          ...(file.title != null ? { title: file.title } : {}),
-        }))
-        if (existing != null) existing.files = files
-        else msg.blocks.push({ kind: 'presented_files', files })
+        msg.blocks.push({
+          kind: 'presented_files',
+          files: event.files.map((file) => ({
+            path: file.path,
+            ...(file.title != null ? { title: file.title } : {}),
+          })),
+        })
         break
       }
 
