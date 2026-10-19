@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent } from '@spark/protocol'
+import type { AgentEvent, ExecutionRunCreateParams, ExecutionRunRecord } from '@spark/protocol'
 import { SessionService } from '../../services/session.service.js'
 
 type GoalStatus =
@@ -66,7 +66,11 @@ vi.mock('@spark/shared/keystore', () => ({
   maskSecret: (secret: string) => `${secret.slice(0, 4)}****`,
 }))
 
-vi.mock('@spark/storage', () => {
+// 真实模块全量铺底（白名单式 mock 每逢 SessionService 新增仓储依赖就会缺导出），
+// 仅覆盖本测试驱动的仓储；其余真实仓储类构造是平凡的（只存 db 引用），
+// 供 ExecutionSupervisor / ToolAuditRecorder 等构造期实例化。
+vi.mock('@spark/storage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@spark/storage')>()
   const cloneGoal = (goal: StoredGoal): StoredGoal => ({
     ...goal,
     successCriteria: [...goal.successCriteria],
@@ -243,11 +247,88 @@ vi.mock('@spark/storage', () => {
     updateStatus(): void {}
   }
 
+  // SessionService 构造 ToolAuditRecorder 时会实例化；补齐 recorder 用到的
+  // 四个方法（appendLedger/finish/finalizeByCorrelation/reconcileStale）
+  class ToolInvocationRepository {
+    appendLedger(): void {}
+    finish(): void {}
+    finalizeByCorrelation(): void {}
+    reconcileStale(): void {}
+  }
+
+  // goal loop 启动会走 ExecutionSupervisor.ensureTurnRun（无 config 门禁且不
+  // 吞异常）→ findByRootTurnId。返回既有记录使其直通，绕开 create + outbox
+  // 的真实落库；其余簿记入口（ensureGoalRun/onTurnStarted 等）均有 try/catch
+  // 或提前返回守卫，按最小面提供。
+  const fakeExecutionRun = (
+    overrides: Partial<ExecutionRunRecord> = {},
+  ): ExecutionRunRecord => ({
+    id: 'erun_test',
+    sessionId: null,
+    rootTurnId: null,
+    parentRunId: null,
+    parentStepId: null,
+    kind: 'turn',
+    status: 'running',
+    requestedRecoveryMode: 'none',
+    capabilityCeiling: 2,
+    currentGuaranteedLevel: 2,
+    inputRef: '',
+    runtimeKind: 'claude',
+    runtimeBindingJson: null,
+    definitionFingerprint: '',
+    latestCheckpointId: null,
+    latestRecoveryPlanId: null,
+    leaseOwner: null,
+    leaseEpoch: 0,
+    leaseExpiresAt: null,
+    heartbeatAt: null,
+    attempt: 0,
+    interruptionReason: null,
+    createdAt: '2026-06-30T10:00:00.000Z',
+    updatedAt: '2026-06-30T10:00:00.000Z',
+    completedAt: null,
+    ...overrides,
+  })
+
+  class ExecutionRunRepository {
+    findByRootTurnId(turnId: string): ExecutionRunRecord {
+      return fakeExecutionRun({ id: `erun_${turnId}`, rootTurnId: turnId })
+    }
+
+    get(): null {
+      return null
+    }
+
+    create(params: ExecutionRunCreateParams): ExecutionRunRecord {
+      return fakeExecutionRun({
+        id: params.id,
+        sessionId: params.sessionId ?? null,
+        rootTurnId: params.rootTurnId ?? null,
+        kind: params.kind,
+      })
+    }
+
+    markRunning(): void {}
+
+    acquireLease(): { ok: false } {
+      return { ok: false }
+    }
+  }
+
+  class ExecutionOutboxRepository {
+    enqueue(): void {}
+  }
+
   return {
+    ...actual,
     EventRepository,
     ProviderProfileRepository: EmptyRepository,
     RulesRepository: EmptyRepository,
     SessionRepository,
+    ToolInvocationRepository,
+    ExecutionRunRepository,
+    ExecutionOutboxRepository,
     WorkspaceRepository: EmptyRepository,
     McpServerRepository: EmptyRepository,
     SettingsRepository: EmptyRepository,
