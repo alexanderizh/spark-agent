@@ -8095,10 +8095,19 @@ export function registerAllIpcHandlers(): void {
       const rows = new WorkspaceRepository(getDatabase()).listAll(100, 0, {
         includeArchived: true,
       })
+      // WorkspaceRow 是 snake_case 列名投影，守卫接口要求 camelCase 最小字段
+      const existingNoProjectRow = rows.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME)
       assertWorkspaceCreateReservedName({
         rootPath,
         createName: req.create?.name,
-        existingNoProject: rows.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME) ?? null,
+        existingNoProject:
+          existingNoProjectRow == null
+            ? null
+            : {
+                id: existingNoProjectRow.id,
+                name: existingNoProjectRow.name,
+                rootPath: existingNoProjectRow.root_path,
+              },
       })
     }
 

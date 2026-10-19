@@ -18,10 +18,13 @@ export interface WorkspaceNameRow {
   rootPath: string
 }
 
-/** workspace:update 中与守卫相关的字段（其余字段不受守卫影响） */
+/**
+ * workspace:update 中与守卫相关的字段（其余字段不受守卫影响）。
+ * IPC 请求以缺省（undefined）表示不改动，仓储层以 null 表示清除，两种都接受。
+ */
 export interface WorkspaceUpdateReservedNamePatch {
-  name?: string | null
-  archived?: boolean | null
+  name?: string | null | undefined
+  archived?: boolean | null | undefined
 }
 
 /**
