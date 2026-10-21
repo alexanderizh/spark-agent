@@ -68,6 +68,27 @@ export { ComputerVerificationRepository } from './computer-verification.reposito
 export type { ComputerVerificationRow } from './computer-verification.repository.js'
 export { ComputerActuatorLeaseRepository } from './computer-actuator-lease.repository.js'
 export type { ComputerActuatorLeaseRow } from './computer-actuator-lease.repository.js'
+export {
+  RemoteAgentTaskRepository,
+  RemoteAgentTaskConflictError,
+  RemoteAgentTaskTransitionError,
+} from './remote-agent-task.repository.js'
+export type {
+  RemoteAgentTaskRow,
+  CreateRemoteAgentTaskParams,
+  UpdateRemoteAgentTaskParams,
+} from './remote-agent-task.repository.js'
+export {
+  RemoteAgentExecutionRepository,
+  RemoteAgentExecutionConflictError,
+} from './remote-agent-execution.repository.js'
+export type {
+  RemoteAgentExecutionRow,
+  RemoteAgentExecutionPhase,
+  RemoteAgentDispatchStatus,
+  RemoteAgentExecutionAttachment,
+  ReserveRemoteAgentExecutionParams,
+} from './remote-agent-execution.repository.js'
 export type {
   ApplicationSnapshotRow,
   SnapshotBlobRow,

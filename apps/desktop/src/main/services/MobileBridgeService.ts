@@ -242,6 +242,13 @@ interface HttpRequestOrigin {
 
 export class MobileBridgeService {
   private deps: MobileBridgeDeps | null = null
+  private remoteAgentRelayHandler:
+    | ((
+        method: string,
+        urlPath: string,
+        body: unknown,
+      ) => Promise<{ status: number; body: unknown }>)
+    | null = null
   /** sessionId → 该会话当前订阅连接集合（中继订阅者；广播用） */
   private readonly streamClients = new Map<string, Set<WsConnection>>()
   /** sessionId → 轮询定时器 */
@@ -249,6 +256,20 @@ export class MobileBridgeService {
 
   setDeps(deps: MobileBridgeDeps): void {
     this.deps = deps
+  }
+
+  /** Keep the remote-agent protocol in its own service while reusing the authenticated relay. */
+  setRemoteAgentRelayHandler(
+    handler: (
+      method: string,
+      urlPath: string,
+      body: unknown,
+    ) => Promise<{
+      status: number
+      body: unknown
+    }>,
+  ): void {
+    this.remoteAgentRelayHandler = handler
   }
 
   // ─── HTTP 语义路由（唯一入口：进程内中继合成请求） ───────────────────────────
@@ -1050,6 +1071,22 @@ export class MobileBridgeService {
     body: unknown,
   ): Promise<{ status: number; body: unknown }> {
     const pathOnly = (urlPath ?? '').split('?')[0] ?? ''
+    if (pathOnly.startsWith('/v1/remote-agent/')) {
+      if (this.remoteAgentRelayHandler == null) {
+        return {
+          status: 503,
+          body: { error: { code: 'UNAVAILABLE', message: '远程 Agent 服务尚未就绪' } },
+        }
+      }
+      const requestBytes = Buffer.byteLength(JSON.stringify(body ?? null) ?? 'null', 'utf8')
+      if (requestBytes > MAX_UPLOAD_BODY_BYTES) {
+        return {
+          status: 413,
+          body: { error: { code: 'BAD_REQUEST', message: '远程 Agent 请求体超过 12 MiB' } },
+        }
+      }
+      return this.remoteAgentRelayHandler(method, urlPath, body)
+    }
     if (method === 'GET' && pathOnly === '/v1/attachments/content') {
       return this.readRelayAttachment(urlPath)
     }

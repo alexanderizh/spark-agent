@@ -212,6 +212,11 @@ export {
   ComputerApprovalRepository,
   ComputerVerificationRepository,
   ComputerActuatorLeaseRepository,
+  RemoteAgentTaskRepository,
+  RemoteAgentTaskConflictError,
+  RemoteAgentTaskTransitionError,
+  RemoteAgentExecutionRepository,
+  RemoteAgentExecutionConflictError,
   SubAppRepository,
   SubAppConflictError,
   SubAppDataConflictError,
@@ -231,6 +236,14 @@ export type {
   ImportSubAppDataInput,
   ImportSubAppParams,
   ImportSubAppReleaseInput,
+  RemoteAgentTaskRow,
+  CreateRemoteAgentTaskParams,
+  UpdateRemoteAgentTaskParams,
+  RemoteAgentExecutionRow,
+  RemoteAgentExecutionPhase,
+  RemoteAgentDispatchStatus,
+  RemoteAgentExecutionAttachment,
+  ReserveRemoteAgentExecutionParams,
 } from './repositories/index.js'
 
 export type {

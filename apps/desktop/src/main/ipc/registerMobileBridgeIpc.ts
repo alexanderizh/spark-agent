@@ -78,6 +78,7 @@ import type { RemoteVoiceTranscriber } from '../services/remoteVoiceTranscriptio
 import { DEFAULT_MOBILE_BRIDGE_RELAY_SETTINGS } from '@spark/protocol'
 import { MobileBridgeService, type MobileBridgeDeps } from '../services/MobileBridgeService.js'
 import { MobileBridgeRelayClient } from '../services/MobileBridgeRelayClient.js'
+import { RemoteAgentExecutionService } from '../services/RemoteAgentExecutionService.js'
 import { getAuthService } from '../services/Auth/AuthService.js'
 import { createLogger, SparkError } from '@spark/shared'
 
@@ -220,7 +221,24 @@ function getService(deps: MobileBridgeIpcDeps): MobileBridgeService {
   // 局域网直连移除后服务不再有独立持久化（旧 LAN store 见文件头注释）；
   // 这里只负责装配业务 deps，供中继合成请求按需调用。
   service = new MobileBridgeService()
-  service.setDeps(buildDeps(deps))
+  const bridgeDeps = buildDeps(deps)
+  service.setDeps(bridgeDeps)
+  const remoteAgentExecution = new RemoteAgentExecutionService({
+    getDatabase,
+    getSessionService: deps.getSessionService,
+    getAccountUserId: () => {
+      try {
+        return getAuthService().getCurrentUserId()
+      } catch {
+        return null
+      }
+    },
+    getDeviceId: () => readRelayStore(deps.getSettingsService()).deviceId,
+    saveAttachments: bridgeDeps.saveAttachments,
+  })
+  service.setRemoteAgentRelayHandler((method, urlPath, body) =>
+    remoteAgentExecution.handleRelayRequest(method, urlPath, body),
+  )
   return service
 }
 

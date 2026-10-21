@@ -95,12 +95,13 @@ export class MobileBridgeRelayClient {
   private stopped = true
   /** 身份被拒（4401/4403/4429）：停止自动重连，等用户重置设备身份 */
   private identityRejected = false
-  private unsubscribe: (() => void) | null = null
+  /** 当前连接上已安装的会话事件订阅；断线时销毁回调，重连后按 desired set 重建。 */
+  private readonly subscriptions = new Map<string, () => void>()
+  /** 服务端要求维持的会话集合，用于重连恢复。 */
+  private readonly subscribedSessionIds = new Set<string>()
   private connectionId: string | null = null
   private lastError: string | null = null
   private lastSeenAt: string | null = null
-  /** 当前订阅的会话（重连后需要重新订阅） */
-  private subscribedSessionId: string | null = null
   /**
    * 是否已收到服务端 welcome（= 首帧认证通过并注册进中继）。
    * 「已连接」徽标以此为准则而非 socket 建立：WS 建立后到认证通过前
@@ -149,6 +150,7 @@ export class MobileBridgeRelayClient {
   /** 停止并清理所有定时器 */
   stop(): void {
     this.stopped = true
+    this.clearSubscriptions()
     this.teardownSocket()
     if (this.retryTimer != null) {
       clearTimeout(this.retryTimer)
@@ -175,9 +177,7 @@ export class MobileBridgeRelayClient {
   }
 
   private teardownSocket(): void {
-    this.unsubscribe?.()
-    this.unsubscribe = null
-    this.subscribedSessionId = null
+    this.clearActiveSubscriptions()
     if (this.pingTimer != null) {
       clearInterval(this.pingTimer)
       this.pingTimer = null
@@ -322,8 +322,7 @@ export class MobileBridgeRelayClient {
         clearTimeout(this.connectTimer)
         this.connectTimer = null
       }
-      this.unsubscribe?.()
-      this.unsubscribe = null
+      this.clearActiveSubscriptions()
       this.connectionId = null
 
       // 设备信任拒绝：重连不会改变结果，停止退避循环，等待用户重置设备身份。
@@ -379,8 +378,9 @@ export class MobileBridgeRelayClient {
           label: this.deps.getDeviceLabel(),
           version: this.deps.getVersion(),
         })
-        // 重连后恢复订阅，否则「连上了但不推流」
-        if (this.subscribedSessionId != null) this.subscribeSession(this.subscribedSessionId)
+        // Hub 会在 welcome 后只重放仍有客户端持有的订阅；清掉断线期间已失效的本地集合，
+        // 再由重放帧重建回调，避免把已释放的旧订阅重新挂回去。
+        this.subscribedSessionIds.clear()
         if (this.pingTimer != null) clearInterval(this.pingTimer)
         this.pingTimer = setInterval(() => this.send({ t: 'ping' }), PING_INTERVAL_MS)
         this.notify()
@@ -419,9 +419,8 @@ export class MobileBridgeRelayClient {
         return
       }
       case 'unsub':
-        this.unsubscribe?.()
-        this.unsubscribe = null
-        this.subscribedSessionId = null
+        if (frame.sessionId) this.unsubscribeSession(frame.sessionId)
+        else this.clearSubscriptions()
         return
       default:
         return
@@ -429,14 +428,42 @@ export class MobileBridgeRelayClient {
   }
 
   private subscribeSession(sessionId: string): void {
-    // 重连时会收到两条订阅（服务端补发 + 本端恢复），同一会话只订一次，
-    // 否则订阅回调会被反复重建。
-    if (this.subscribedSessionId === sessionId && this.unsubscribe != null) return
-    this.unsubscribe?.()
-    this.subscribedSessionId = sessionId
-    this.unsubscribe = this.deps.subscribe(sessionId, (events) => {
+    if (!sessionId) return
+    this.subscribedSessionIds.add(sessionId)
+    // 重连时可能先收到服务端补发，再由本端恢复；Map 保证同一会话只装配一次。
+    if (this.subscriptions.has(sessionId)) return
+    const unsubscribe = this.deps.subscribe(sessionId, (events) => {
       this.send({ t: 'event', sessionId, events })
     })
+    this.subscriptions.set(sessionId, unsubscribe)
+  }
+
+  private unsubscribeSession(sessionId: string): void {
+    this.subscribedSessionIds.delete(sessionId)
+    const unsubscribe = this.subscriptions.get(sessionId)
+    if (unsubscribe == null) return
+    this.subscriptions.delete(sessionId)
+    try {
+      unsubscribe()
+    } catch {
+      log.warn('mobile bridge session unsubscribe failed')
+    }
+  }
+
+  private clearActiveSubscriptions(): void {
+    for (const unsubscribe of this.subscriptions.values()) {
+      try {
+        unsubscribe()
+      } catch {
+        log.warn('mobile bridge session unsubscribe failed')
+      }
+    }
+    this.subscriptions.clear()
+  }
+
+  private clearSubscriptions(): void {
+    this.clearActiveSubscriptions()
+    this.subscribedSessionIds.clear()
   }
 
   private send(frame: Record<string, unknown>): void {

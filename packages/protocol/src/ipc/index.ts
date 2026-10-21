@@ -144,6 +144,7 @@ import type { NotificationsIpcChannelMap } from '../notifications.js'
 import type { HookV2IpcChannelMap } from '../hooks-v2.js'
 import type { AccountSyncIpcChannelMap } from '../account-sync.js'
 import type { MobileBridgeIpcChannelMap } from '../mobile-bridge.js'
+import type { RemoteAgentIpcChannelMap, RemoteAgentIpcStreamChannelMap } from '../remote-agent.js'
 import type { WorkflowBundleIpcChannelMap } from '../workflow-bundle-ipc.js'
 import type { SessionWorkflowBindingIpcChannelMap } from '../session-workflow-binding.js'
 import type { SessionWorkflowBindingCreate } from '../session-workflow-binding.js'
@@ -7660,6 +7661,7 @@ export interface IpcChannelMap
     HookV2IpcChannelMap,
     AccountSyncIpcChannelMap,
     MobileBridgeIpcChannelMap,
+    RemoteAgentIpcChannelMap,
     WorkflowBundleIpcChannelMap,
     SessionWorkflowBindingIpcChannelMap,
     WikiIpcChannelMap,
@@ -8749,7 +8751,7 @@ export type IpcResponse<C extends IpcChannel> = IpcChannelMap[C][1]
  *
  * 使用 ipcMain.webContents.send / ipcRenderer.on 监听
  */
-export interface IpcStreamChannelMap {
+export interface IpcStreamChannelMap extends RemoteAgentIpcStreamChannelMap {
   /** Agent 事件流（主进程推送，渲染进程监听驱动 Timeline UI）*/
   'stream:session:agent-event': AgentEvent
   /** 梦境整理状态变化（设置页状态条 / 全局 dreaming 指示刷新） */

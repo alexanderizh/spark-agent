@@ -123,6 +123,7 @@ import type { ImportProviderResolution } from '../services/HistoryImport/History
 import { registerAuthIpc } from '../services/Auth/registerAuthIpc.js'
 import { registerAccountSyncIpc } from '../services/AccountSync/registerAccountSyncIpc.js'
 import { registerMobileBridgeIpc } from './registerMobileBridgeIpc.js'
+import { registerRemoteAgentIpc } from './registerRemoteAgentIpc.js'
 import { getAuthService } from '../services/Auth/AuthService.js'
 import type { MobileBridgeSessionSummary } from '@spark/protocol'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
@@ -5467,6 +5468,17 @@ export function registerAllIpcHandlers(): void {
   // 移动桥接（SparkWork 小程序直连桌面端）：配对/项目/会话/流式。设置里关闭时不监听。
   // 语音转写与远程连接同链路：本地 SenseVoice 优先，云渠道 audio.transcription 兜底。
   let mobileVoiceTranscriber: RemoteVoiceTranscriber | null = null
+  const getMobileBridgeRelayAccessToken = async (): Promise<string | null> => {
+    const auth = getAuthService()
+    if (auth.getAccessToken() == null) return null
+    // WebSocket 握手不走 HTTP 401 续期链路：先调用 /me 让客户端续期，再取最新 token。
+    try {
+      await auth.getMe()
+    } catch {
+      // 网络不可用时沿用现有 token 尝试握手。
+    }
+    return auth.getAccessToken()
+  }
   registerMobileBridgeIpc({
     getSessionService,
     getSettingsService,
@@ -5486,24 +5498,33 @@ export function registerAllIpcHandlers(): void {
       }
       return mobileVoiceTranscriber
     },
-    getRelayAccessToken: async () => {
-      const auth = getAuthService()
-      if (auth.getAccessToken() == null) return null
-      // WebSocket 握手不走 HTTP 401 续期链路：过期 token 会被服务端直接断连。
-      // 先打一次 /me 让 EduServerClient 有机会续期，再取最新 token。
-      try {
-        await auth.getMe()
-      } catch {
-        // 网络不可用时沿用已有 token 试一次
-      }
-      return auth.getAccessToken()
-    },
+    getRelayAccessToken: getMobileBridgeRelayAccessToken,
     getRelayBaseUrl: () => getAuthService().getEduClient().getBaseUrl(),
     // 挂起交互（移动端审批卡/问答卡）：与桌面弹卡、远程连接桥共用同一权限服务与问答注册表
     getPermissionService,
     getPendingUserQuestions: () => pendingUserQuestions,
     // 技能只读列表（移动端技能选择器数据源）
     getSkillService,
+  })
+  registerRemoteAgentIpc({
+    getRelayAccessToken: getMobileBridgeRelayAccessToken,
+    getRelayBaseUrl: () => {
+      try {
+        return getAuthService().getEduClient().getBaseUrl()
+      } catch {
+        return ''
+      }
+    },
+    getClientLabel: () => `${app.getName()} Remote Agent`,
+    getVersion: () => app.getVersion(),
+    getCurrentUserId: () => {
+      try {
+        return getAuthService().getCurrentUserId()
+      } catch {
+        return null
+      }
+    },
+    addLogoutHook: (hook) => getAuthService().addLogoutHook(async () => hook()),
   })
 
   // 启动时仅在宿主机存在对应 CLI 时补种内置本地 provider。
