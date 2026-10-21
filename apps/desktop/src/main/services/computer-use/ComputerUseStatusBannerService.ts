@@ -31,13 +31,17 @@ export class ComputerUseStatusBannerService {
   private readonly unsubscribeTimeline: () => void
   private window: BrowserWindow | null = null
   private disposed = false
+  private enabled: boolean
+  private latestState: readonly ComputerUsePipSessionState[] = []
   private readonly retireTimers = new Set<NodeJS.Timeout>()
 
   constructor(options: {
+    enabled?: boolean
     projection: ComputerUsePipProjection
     timeline: { subscribe(listener: (event: ComputerUseEvent) => void): () => void }
   }) {
     this.projection = options.projection
+    this.enabled = options.enabled ?? true
     this.unsubscribeTimeline = options.timeline.subscribe((event) => {
       try {
         this.render(this.projection.record(event))
@@ -45,6 +49,13 @@ export class ComputerUseStatusBannerService {
         // Best-effort: a failed fold just leaves the pill as-is.
       }
     })
+  }
+
+  setEnabled(enabled: boolean): void {
+    if (this.enabled === enabled || this.disposed) return
+    this.enabled = enabled
+    if (enabled) this.render(this.latestState)
+    else this.closeWindow()
   }
 
   dispose(): void {
@@ -57,6 +68,7 @@ export class ComputerUseStatusBannerService {
   }
 
   private render(state: readonly ComputerUsePipSessionState[]): void {
+    this.latestState = state
     if (this.disposed) return
     const top = state[state.length - 1]
     if (top == null) {
@@ -65,6 +77,10 @@ export class ComputerUseStatusBannerService {
     }
     if (top.status === 'completed' || top.status === 'stopped' || top.status === 'failed') {
       this.scheduleRetire(top.computerSessionId)
+    }
+    if (!this.enabled) {
+      this.closeWindow()
+      return
     }
     const win = this.ensureWindow()
     if (win.isDestroyed()) return

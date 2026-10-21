@@ -69,8 +69,8 @@ export interface ComputerUseServices {
   readonly approvalGate: ComputerActionApprovalGate
   /** Optional live PIP panel; present only when the pipPanel flag is enabled. */
   readonly pip?: ComputerUsePipService
-  /** Optional top-center status pill; present only when the statusBanner flag is enabled. */
-  readonly statusBanner?: ComputerUseStatusBannerService
+  /** Top-center status pill; runtime user preferences control its visibility. */
+  readonly statusBanner: ComputerUseStatusBannerService
   readonly evidence?: NativeObservationEvidenceSink & {
     readLatestImage(
       computerSessionId: string,
@@ -239,12 +239,11 @@ export function createComputerUseServices(
     : null
   // The pill folds the timeline into its own projection instance (the fold is
   // stateful; sharing one would double-consume events).
-  const statusBanner = getComputerUseV2FlagStore().isEnabled('statusBanner')
-    ? new ComputerUseStatusBannerService({
-        timeline,
-        projection: new ComputerUsePipProjection({ sessions: labeledSessions }),
-      })
-    : null
+  const statusBanner = new ComputerUseStatusBannerService({
+    enabled: getComputerUseV2FlagStore().isEnabled('statusBanner'),
+    timeline,
+    projection: new ComputerUsePipProjection({ sessions: labeledSessions }),
+  })
   const snapshotCapture = options.snapshotCapture ?? createDefaultSnapshotCapture(database, backend)
   return {
     sessions,
@@ -261,7 +260,7 @@ export function createComputerUseServices(
     coordinator,
     approvalGate,
     ...(pip == null ? {} : { pip }),
-    ...(statusBanner == null ? {} : { statusBanner }),
+    statusBanner,
     ...(usableEvidence == null ? {} : { evidence: usableEvidence }),
     ...(snapshotCapture == null ? {} : { snapshots: snapshotCapture }),
     armKillSwitch: (accelerator) =>

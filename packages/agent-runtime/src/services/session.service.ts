@@ -35,6 +35,7 @@ import type {
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 import { resolveModelDefaultReasoningEffort } from './provider-model-settings.js'
+import { createAppliedPromptSummary, type PromptSectionSnapshot } from './session-prompt-summary.js'
 import { resolveSessionTitleTarget } from './session/session-title-target.js'
 import { ensureSessionWorkspaceRootPath } from './session-workspace-root.js'
 import {
@@ -5029,7 +5030,7 @@ export class SessionService {
     // 文本块，避免每轮几十 KB 的提示词快照长期累积撑大 spark.db。
     {
       const runtimeLogEnabled = readRuntimeLogEnabled(new SettingsRepository(this.db))
-      const promptSections: Array<{ label: string; content: string; charCount: number }> = []
+      const promptSections: PromptSectionSnapshot[] = []
       if (composedSkillSystemPrompt && composedSkillSystemPrompt.trim().length > 0) {
         promptSections.push({
           label: 'Skill Prompt',
@@ -5044,14 +5045,8 @@ export class SessionService {
           charCount: composedSystemPrompt.length,
         })
       }
-      // 只统计本轮由 Spark 实际注入的 System / Skill 提示词，不估算 SDK 内置预设
-      // （Claude Code / Codex 的内置提示词对宿主不可见，也不属于我们的应用范围）。
-      const appliedPromptChars = promptSections.reduce((sum, section) => sum + section.charCount, 0)
-      promptSections.push({
-        label: '本轮应用提示词',
-        content: `本轮 Spark 实际应用提示词（System + Skill）：${appliedPromptChars.toLocaleString('zh-CN')} 字符（不含 SDK 内置预设）`,
-        charCount: 0,
-      })
+      // 只统计本轮由 Spark 实际注入的 System / Skill 提示词，不估算 SDK 内置预设。
+      promptSections.push(createAppliedPromptSummary(promptSections))
       const toolCountEstimate = 12 // built-in coding agent tools (Read, Write, Edit, Bash, Glob, Grep, ...)
       const runtimeLoadStatus = [
         makeRuntimeLoadStatus('managed-agent', 'Managed Agent Prompt', managedAgentPrompt),

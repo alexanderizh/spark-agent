@@ -1,11 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
 
+const electronMocks = vi.hoisted(() => ({
+  created: 0,
+  destroyed: 0,
+  executeJavaScript: vi.fn(() => Promise.resolve()),
+}))
+
 vi.mock('electron', () => ({
   BrowserWindow: class {
     destroyed = false
     webContents = {
-      executeJavaScript: () => Promise.resolve(),
+      executeJavaScript: electronMocks.executeJavaScript,
       setWindowOpenHandler: () => undefined,
+    }
+
+    constructor() {
+      electronMocks.created += 1
     }
 
     on(): void {}
@@ -20,6 +30,7 @@ vi.mock('electron', () => ({
     }
     destroy(): void {
       this.destroyed = true
+      electronMocks.destroyed += 1
     }
   },
   screen: { getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }) },
@@ -51,6 +62,49 @@ describe('Status banner markup contract', () => {
 })
 
 describe('Status banner session retirement', () => {
+  it('applies runtime preference changes to the current session', () => {
+    electronMocks.created = 0
+    electronMocks.destroyed = 0
+    electronMocks.executeJavaScript.mockClear()
+    let onTimelineEvent: ((event: ComputerUseEvent) => void) | undefined
+    const service = new ComputerUseStatusBannerService({
+      enabled: false,
+      projection: new ComputerUsePipProjection({
+        sessions: {
+          listLabeled: () => [{ computerSessionId: 'computer-1', label: '我的桌面' }],
+        },
+      }),
+      timeline: {
+        subscribe: (listener) => {
+          onTimelineEvent = listener
+          return () => undefined
+        },
+      },
+    })
+
+    onTimelineEvent?.({
+      id: 'event-1',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      computerSessionId: 'computer-1',
+      timestamp: '2026-10-22T00:00:00.000Z',
+      seq: 1,
+      type: 'computer_action_requested',
+      actionId: 'action-1',
+      riskLevel: 'L1',
+      summary: '正在操作',
+    })
+    expect(electronMocks.created).toBe(0)
+
+    service.setEnabled(true)
+    expect(electronMocks.created).toBe(1)
+    expect(electronMocks.executeJavaScript).toHaveBeenCalledOnce()
+
+    service.setEnabled(false)
+    expect(electronMocks.destroyed).toBe(1)
+    service.dispose()
+  })
+
   it('retires terminal sessions from the projection after the linger period', async () => {
     vi.useFakeTimers()
     let onTimelineEvent: ((event: ComputerUseEvent) => void) | undefined

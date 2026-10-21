@@ -93,9 +93,12 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
   }
   const owners = new Map<string, string>()
 
+  const initialSettings = loadSettings(settingsStore)
+  applyControlIndicatorSettings(initialSettings)
+  const initialServices = services()
+  initialServices.statusBanner.setEnabled(initialSettings.controlIndicators.statusBanner)
   reconcilePersistedKillSwitch(settingsStore, services)
-  applyControlIndicatorSettings(loadSettings(settingsStore))
-  services().timeline.subscribe((activityEvent) => {
+  initialServices.timeline.subscribe((activityEvent) => {
     const mainWindow = getMainWindow()
     if (mainWindow == null || mainWindow.isDestroyed()) return
     mainWindow.webContents.send('stream:computer-use:activity-event', activityEvent)
@@ -135,6 +138,7 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
       const runtime = services()
       armKillSwitchBestEffort(next, runtime)
       applyControlIndicatorSettings(next)
+      runtime.statusBanner.setEnabled(next.controlIndicators.statusBanner)
       await applyDisabledEnvironmentTransition(current, next, runtime)
       settingsStore.set(SETTINGS_CATEGORY, SETTINGS_KEY, next)
       return next
