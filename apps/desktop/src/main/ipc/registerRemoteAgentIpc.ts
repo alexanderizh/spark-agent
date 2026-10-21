@@ -36,7 +36,7 @@ let beforeQuitHookRegistered = false
 
 function getRelayClient(deps: RemoteAgentIpcDeps): RemoteAgentRelayClient {
   if (relayClient != null) return relayClient
-  relayClient = new RemoteAgentRelayClient({
+  const client = new RemoteAgentRelayClient({
     getBaseUrl: deps.getRelayBaseUrl,
     getAccessToken: deps.getRelayAccessToken,
     getClientLabel: deps.getClientLabel,
@@ -50,10 +50,11 @@ function getRelayClient(deps: RemoteAgentIpcDeps): RemoteAgentRelayClient {
       coordinator?.handleDevicesChange(devices)
     },
   })
+  relayClient = client
   coordinator = new RemoteAgentCoordinator({
     getDatabase,
     getCurrentUserId: deps.getCurrentUserId,
-    getRelayClient: () => relayClient!,
+    getRelayClient: () => client,
     getArtifactRoot: () => path.join(app.getPath('userData'), 'remote-agent-results'),
     onTaskUpdated: (task) => pushStreamEvent('stream:remote-agent:task-updated', task),
     onTaskEvents: (events) => pushStreamEvent('stream:remote-agent:task-events', events),
@@ -66,7 +67,7 @@ function getRelayClient(deps: RemoteAgentIpcDeps): RemoteAgentRelayClient {
     beforeQuitHookRegistered = true
     app.once('before-quit', () => relayClient?.stop())
   }
-  return relayClient
+  return client
 }
 
 function stoppedStatus(): RemoteAgentRelayStatus {
