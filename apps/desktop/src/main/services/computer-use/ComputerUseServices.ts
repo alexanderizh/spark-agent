@@ -43,6 +43,7 @@ import { AppControlExecutorBackend } from './AppControlExecutorBackend.js'
 import { computerUseV2RolloutController } from './ComputerUseV2RolloutController.js'
 import { ComputerDesktopExecutionCoordinator } from './ComputerDesktopExecutionCoordinator.js'
 import { ComputerUsePipService } from './ComputerUsePipService.js'
+import { ComputerUseStatusBannerService } from './ComputerUseStatusBannerService.js'
 import { ComputerUsePipProjection } from './ComputerUsePipProjection.js'
 import { getComputerUseV2FlagStore } from './computerUseV2Flags.js'
 
@@ -68,6 +69,8 @@ export interface ComputerUseServices {
   readonly approvalGate: ComputerActionApprovalGate
   /** Optional live PIP panel; present only when the pipPanel flag is enabled. */
   readonly pip?: ComputerUsePipService
+  /** Optional top-center status pill; present only when the statusBanner flag is enabled. */
+  readonly statusBanner?: ComputerUseStatusBannerService
   readonly evidence?: NativeObservationEvidenceSink & {
     readLatestImage(
       computerSessionId: string,
@@ -195,6 +198,23 @@ export function createComputerUseServices(
     options.shortcutRegistrar ?? FAIL_CLOSED_SHORTCUT_REGISTRAR,
     options.onKillSwitchError,
   )
+  // Shared session-label adapter: the PIP panel and the status pill must show
+  // the same labels, so the mapping lives in exactly one place.
+  const labeledSessions = {
+    listLabeled: () =>
+      sessions.listActiveSessionIds().map((computerSessionId) => {
+        const session = sessions.getSession(computerSessionId)
+        return {
+          computerSessionId,
+          label:
+            session?.environment === 'my_desktop'
+              ? '我的桌面'
+              : session != null
+                ? '桌面'
+                : '电脑操作',
+        }
+      }),
+  }
   const pip = getComputerUseV2FlagStore().isEnabled('pipPanel')
     ? new ComputerUsePipService({
         timeline,
@@ -214,23 +234,15 @@ export function createComputerUseServices(
             coordinator,
             approvalGate,
           }),
-        projection: new ComputerUsePipProjection({
-          sessions: {
-            listLabeled: () =>
-              sessions.listActiveSessionIds().map((computerSessionId) => {
-                const session = sessions.getSession(computerSessionId)
-                return {
-                  computerSessionId,
-                  label:
-                    session?.environment === 'my_desktop'
-                      ? '我的桌面'
-                      : session != null
-                        ? '桌面'
-                        : '电脑操作',
-                }
-              }),
-          },
-        }),
+        projection: new ComputerUsePipProjection({ sessions: labeledSessions }),
+      })
+    : null
+  // The pill folds the timeline into its own projection instance (the fold is
+  // stateful; sharing one would double-consume events).
+  const statusBanner = getComputerUseV2FlagStore().isEnabled('statusBanner')
+    ? new ComputerUseStatusBannerService({
+        timeline,
+        projection: new ComputerUsePipProjection({ sessions: labeledSessions }),
       })
     : null
   const snapshotCapture = options.snapshotCapture ?? createDefaultSnapshotCapture(database, backend)
@@ -249,6 +261,7 @@ export function createComputerUseServices(
     coordinator,
     approvalGate,
     ...(pip == null ? {} : { pip }),
+    ...(statusBanner == null ? {} : { statusBanner }),
     ...(usableEvidence == null ? {} : { evidence: usableEvidence }),
     ...(snapshotCapture == null ? {} : { snapshots: snapshotCapture }),
     armKillSwitch: (accelerator) =>
@@ -273,6 +286,7 @@ export function createComputerUseServices(
       }),
     dispose: async () => {
       pip?.dispose()
+      statusBanner?.dispose()
       killSwitch.dispose()
       await coordinator.dispose()
       await Promise.allSettled(

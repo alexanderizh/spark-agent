@@ -29,6 +29,16 @@ describe('ComputerUseV2FlagStore', () => {
     })
   })
 
+  it('gates the top status banner by its environment key and user override layer', () => {
+    const envOff = new ComputerUseV2FlagStore({ SPARK_COMPUTER_USE_V2_STATUS_BANNER: '0' })
+    expect(envOff.isEnabled('statusBanner')).toBe(false)
+
+    const store = new ComputerUseV2FlagStore({})
+    expect(store.isEnabled('statusBanner')).toBe(true)
+    store.setUserOverride('statusBanner', false)
+    expect(store.isEnabled('statusBanner')).toBe(false)
+  })
+
   it('applies an in-process rollback without mutating configuration', () => {
     const store = new ComputerUseV2FlagStore({ SPARK_COMPUTER_USE_V2_ACTION_BATCH: 'true' })
 

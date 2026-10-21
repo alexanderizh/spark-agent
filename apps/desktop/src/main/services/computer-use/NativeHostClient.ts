@@ -288,7 +288,7 @@ export class NativeHostClient {
   async executeAction(
     envelope: ComputerActionEnvelope,
     signal?: AbortSignal,
-    options: { showVirtualCursor?: boolean } = {},
+    options: { showVirtualCursor?: boolean; highlightTargetWindow?: boolean } = {},
   ): Promise<{
     response: Extract<NativeHostResponse, { type: 'action_result' }>
     bytes: Buffer | null
@@ -298,9 +298,10 @@ export class NativeHostClient {
         {
           type: 'execute_action',
           envelope,
-          // Only send the flag when the overlay is disabled: absent keeps the
+          // Only send the flags when the overlays are disabled: absent keeps the
           // historical shown behaviour and stays valid against older hosts.
           ...(options.showVirtualCursor === false ? { showVirtualCursor: false } : {}),
+          ...(options.highlightTargetWindow === false ? { highlightTargetWindow: false } : {}),
         },
         'action_result',
         signal,

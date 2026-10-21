@@ -18,6 +18,7 @@ import {
 } from '@spark/storage'
 import { getDatabase } from '../db.js'
 import { ComputerUseBrokerError } from '../services/computer-use/ComputerUseBrokerError.js'
+import { getComputerUseV2FlagStore } from '../services/computer-use/computerUseV2Flags.js'
 import type { CreateManagedComputerSessionInput } from '../services/computer-use/ComputerSessionManager.js'
 import {
   getComputerUseServices,
@@ -46,6 +47,10 @@ export const DEFAULT_COMPUTER_USE_SETTINGS: ComputerUseSettings = ComputerUseSet
   fullRecordingEnabled: false,
   evidenceRetentionDays: 30,
   killSwitch: 'CommandOrControl+Shift+Esc',
+  controlIndicators: {
+    virtualCursor: false,
+    windowHighlight: true,
+  },
   remote: {
     observe: false,
     approveL2: false,
@@ -89,6 +94,7 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
   const owners = new Map<string, string>()
 
   reconcilePersistedKillSwitch(settingsStore, services)
+  applyControlIndicatorSettings(loadSettings(settingsStore))
   services().timeline.subscribe((activityEvent) => {
     const mainWindow = getMainWindow()
     if (mainWindow == null || mainWindow.isDestroyed()) return
@@ -128,6 +134,7 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
       const next = ComputerUseSettingsSchema.parse({ ...current, ...patch })
       const runtime = services()
       armKillSwitchBestEffort(next, runtime)
+      applyControlIndicatorSettings(next)
       await applyDisabledEnvironmentTransition(current, next, runtime)
       settingsStore.set(SETTINGS_CATEGORY, SETTINGS_KEY, next)
       return next
@@ -162,6 +169,7 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
           computerSessionId: created.id,
           appId: target.app.id,
           windowId: target.window.id,
+          ...(target.app.processId == null ? {} : { processId: target.app.processId }),
         })
       }
       try {
@@ -279,6 +287,7 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
         computerSessionId,
         appId: target.app.id,
         windowId: target.window.id,
+        ...(target.app.processId == null ? {} : { processId: target.app.processId }),
       })
       return { computerSession: session, targetWindowId: target.window.id }
     }),
@@ -451,6 +460,20 @@ function reconcilePersistedKillSwitch(
   if (!parsed.success || !parsed.data.enabled || !parsed.data.environments.myDesktop) return
   const accelerator = parsed.data.killSwitch
   if (accelerator != null) getServices().armKillSwitch(accelerator)
+}
+
+/**
+ * Mirrors the persisted control-indicator preferences into the V2 flag store
+ * as user overrides. Layering (rollback > user preference > env > default) is
+ * documented on the store; this only ever writes the preference layer.
+ */
+function applyControlIndicatorSettings(settings: ComputerUseSettings): void {
+  const store = getComputerUseV2FlagStore()
+  // Preserve the persisted field for backward compatibility, but the virtual
+  // cursor is no longer part of the product experience.
+  store.setUserOverride('visibleControlIndicator', false)
+  store.setUserOverride('windowHighlightIndicator', settings.controlIndicators.windowHighlight)
+  store.setUserOverride('statusBanner', settings.controlIndicators.statusBanner)
 }
 
 function assertEnvironmentEnabled(

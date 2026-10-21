@@ -359,7 +359,8 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     // falls back to its own re-observe.
     guard
       let skyshot = try? await buildSkyshot(
-        envelope: envelope, before: result.before)
+        envelope: envelope, before: result.before,
+        semantic: result.execution.executionChannel == .backgroundAX)
     else { return result.execution }
     return NativeActionExecution(
       status: result.execution.status,
@@ -385,7 +386,16 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     // validateTarget polled the monitor), so a user who had just taken over
     // still ate one stray click/keystroke before the abort surfaced.
     guard !userInput.takeoverDetected(sessionID: envelope.computerSessionID) else {
+      // A real takeover means the human owns the pointer now: drop the agent
+      // cursor immediately instead of letting the idle fade linger on screen.
+      MacVirtualCursor.hide()
       throw NativeHostPlatformError.userInteractionDetected
+    }
+    // Trace the governed window with the highlight ring for the whole action
+    // (and the session, via the idle timeout) so the user always sees which
+    // window is being driven. Fire-and-forget: a missing window simply no-ops.
+    if let cgWindowID = NativeWindowIDParser.parse(envelope.targetWindowID) {
+      MacWindowHighlight.show(cgWindowID: cgWindowID)
     }
 
     if envelope.executionLane == .foregroundInput,
@@ -424,9 +434,10 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
   /// the NEXT action can chain on this frame without another observe request.
   private func buildSkyshot(
     envelope: NativeComputerActionEnvelope,
-    before: FocusedTarget
+    before: FocusedTarget,
+    semantic: Bool
   ) async throws -> NativeObservedWindow {
-    await accessibility.waitForSettle(processID: before.processID)
+    await accessibility.waitForSettle(processID: before.processID, semantic: semantic)
     let captureBindingKey = [
       before.identity.appID,
       before.identity.windowID,
@@ -909,6 +920,10 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     MacVirtualCursor.setEnabled(enabled)
   }
 
+  func setWindowHighlightEnabled(_ enabled: Bool) async {
+    MacWindowHighlight.setEnabled(enabled)
+  }
+
   func cancelSession(id: String) async {
     canceledSessions.insert(id)
     canceledSessionOrder.append(id)
@@ -920,6 +935,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       canceledSessions.remove(oldest)
     }
     userInput.unbind(sessionID: id)
+    MacWindowHighlight.hide()
     // Resident capture: releasing the session KEEPS the persistent stream and
     // the AX baseline warm for the next task on the same window — the idle
     // watch parks the stream once nobody has requested frames for a while.

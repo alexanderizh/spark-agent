@@ -592,12 +592,13 @@ describe('NativeHostComputerUseBackend', () => {
       executionChannel: null,
     })
     // Skyshot (v2) is requested on every platform: the macOS and Windows
-    // hosts both learned the optional envelope field. The visible cursor flag
-    // (visibleControlIndicator default) rides along as the third argument.
+    // hosts both learned the optional envelope field. The visible cursor and
+    // window highlight flags (their indicator defaults) ride along as the
+    // third argument.
     expect(connection.executeAction).toHaveBeenCalledWith(
       { ...envelope, includeSkyshot: true },
       signal,
-      { showVirtualCursor: true },
+      { showVirtualCursor: false, highlightTargetWindow: true },
     )
     expect(connection.observe).toHaveBeenLastCalledWith({
       snapshotId: 'snapshot-2',
@@ -860,6 +861,83 @@ describe('NativeHostComputerUseBackend', () => {
     expect(connection.observe).toHaveBeenLastCalledWith(
       expect.objectContaining({ appId: 'app-1', windowId: 'window-1' }),
     )
+  })
+
+  it('keeps an unbound focus change inside the observed process when app ids collide', async () => {
+    const observedProcessWindow = { ...FOCUSED_WINDOW, focused: false }
+    const otherProcessWindow = {
+      ...FOCUSED_WINDOW,
+      app: { ...FOCUSED_WINDOW.app, processId: 84 },
+      window: { ...FOCUSED_WINDOW.window, id: 'window-other-process', title: 'Other instance' },
+      focused: true,
+    }
+    const connection = createControlConnection([OBSERVATION])
+    vi.mocked(connection.listWindows)
+      .mockResolvedValueOnce([FOCUSED_WINDOW])
+      .mockResolvedValueOnce([observedProcessWindow, otherProcessWindow])
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'windows',
+      connect: async () => connection,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: () => 'snapshot-1',
+    })
+    const signal = new AbortController().signal
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal })
+
+    await backend.execute({
+      envelope: {
+        computerSessionId: 'computer-1',
+        actionId: 'action-1',
+        targetAppId: 'app-1',
+        targetWindowId: 'window-1',
+        action: { type: 'keypress', keys: ['ALT', 'TAB'] },
+      } as ComputerActionEnvelope,
+      observation: OBSERVATION,
+      signal,
+    })
+
+    expect(connection.observe).toHaveBeenLastCalledWith(
+      expect.objectContaining({ appId: 'app-1', windowId: 'window-1' }),
+    )
+  })
+
+  it('fails closed when the observed process disappears but another same-id process remains', async () => {
+    const otherProcessWindow = {
+      ...FOCUSED_WINDOW,
+      app: { ...FOCUSED_WINDOW.app, processId: 84 },
+      window: { ...FOCUSED_WINDOW.window, id: 'window-other-process', title: 'Other instance' },
+      focused: true,
+    }
+    const connection = createControlConnection([OBSERVATION])
+    vi.mocked(connection.listWindows)
+      .mockResolvedValueOnce([FOCUSED_WINDOW])
+      .mockResolvedValueOnce([otherProcessWindow])
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'windows',
+      connect: async () => connection,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: () => 'snapshot-1',
+    })
+    const signal = new AbortController().signal
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal })
+
+    await expect(
+      backend.execute({
+        envelope: {
+          computerSessionId: 'computer-1',
+          actionId: 'action-1',
+          targetAppId: 'app-1',
+          targetWindowId: 'window-1',
+          action: { type: 'keypress', keys: ['ALT', 'TAB'] },
+        } as ComputerActionEnvelope,
+        observation: OBSERVATION,
+        signal,
+      }),
+    ).rejects.toMatchObject({
+      code: 'focus_mismatch',
+      details: { reason: 'target_window_ambiguous' },
+    })
+    expect(connection.observe).toHaveBeenCalledOnce()
   })
 
   it('trusts an executed Host action even when its immediate visual evidence is unchanged', async () => {

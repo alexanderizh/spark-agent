@@ -248,9 +248,11 @@ export class ComputerUseAgentController {
         const atomic = this.atomicBundleFor(services).service
         const preferredAppId = sessionId == null ? null : atomic.boundAppIdFor(sessionId)
         const preferredProcessId = sessionId == null ? null : atomic.boundProcessIdFor(sessionId)
+        const preferredWindowId = sessionId == null ? null : atomic.boundWindowIdFor(sessionId)
         return this.createDesktopState(services.backend).openApp(request.app, {
           ...(preferredAppId == null ? {} : { preferredAppId }),
           ...(preferredProcessId == null ? {} : { preferredProcessId }),
+          ...(preferredWindowId == null ? {} : { preferredWindowId }),
         })
       }
       case 'get_app_state': {
@@ -328,6 +330,7 @@ export class ComputerUseAgentController {
             computerSessionId: owned.id,
             appId: target.app.id,
             windowId: target.window.id,
+            ...(target.app.processId == null ? {} : { processId: target.app.processId }),
           })
           return { computerSession: owned, targetWindowId: target.window.id }
         }
@@ -341,7 +344,11 @@ export class ComputerUseAgentController {
         const observation = await this.atomicBundleFor(services).service.observe(
           sessionId,
           context.turnId,
-          { appId: target.app.id, windowId: target.window.id },
+          {
+            appId: target.app.id,
+            windowId: target.window.id,
+            ...(target.app.processId == null ? {} : { processId: target.app.processId }),
+          },
         )
         return {
           bound: {
@@ -452,10 +459,24 @@ export class ComputerUseAgentController {
         if (request.environment !== 'my_desktop') {
           throw unavailable('This build currently provides governed execution only on My Desktop')
         }
+        const atomic = this.atomicBundleFor(services).service
+        const preferredAppId = atomic.boundAppIdFor(sessionId)
+        const preferredProcessId = atomic.boundProcessIdFor(sessionId)
+        const preferredWindowId = atomic.boundWindowIdFor(sessionId)
         const requestedAppTarget =
           request.targetApp == null
             ? null
-            : await this.appTargetResolver.resolve(request.targetApp, services.backend)
+            : await this.appTargetResolver.resolve(
+                request.targetApp,
+                services.backend,
+                preferredAppId == null && preferredProcessId == null && preferredWindowId == null
+                  ? {}
+                  : {
+                      ...(preferredAppId == null ? {} : { preferredAppId }),
+                      ...(preferredProcessId == null ? {} : { preferredProcessId }),
+                      ...(preferredWindowId == null ? {} : { preferredWindowId }),
+                    },
+              )
         const windows = requestedAppTarget == null ? await services.backend.listWindows() : []
         const target = requestedAppTarget ?? requireTargetWindow(windows, request.targetWindowId)
         const model = await this.resolveDecisionModel(sessionId)
@@ -489,6 +510,7 @@ export class ComputerUseAgentController {
             computerSessionId: computerSession.id,
             appId: target.app.id,
             windowId: target.window.id,
+            ...(target.app.processId == null ? {} : { processId: target.app.processId }),
           })
         }
         try {
@@ -722,17 +744,25 @@ export class ComputerUseAgentController {
     const atomic = this.atomicBundleFor(services).service
     const preferredAppId = atomic.boundAppIdFor(sessionId)
     const preferredProcessId = atomic.boundProcessIdFor(sessionId)
+    const preferredWindowId = atomic.boundWindowIdFor(sessionId)
     const resolved = await desktopState.getAppState({
       ...selector,
       ...(preferredAppId == null ? {} : { preferredAppId }),
       ...(preferredProcessId == null ? {} : { preferredProcessId }),
+      ...(preferredWindowId == null ? {} : { preferredWindowId }),
       includeObservation: false,
     })
     try {
       const observation = await this.atomicBundleFor(services).service.observe(
         sessionId,
         context.turnId,
-        { appId: resolved.target.app.id, windowId: resolved.target.window.id },
+        {
+          appId: resolved.target.app.id,
+          windowId: resolved.target.window.id,
+          ...(resolved.target.app.processId == null
+            ? {}
+            : { processId: resolved.target.app.processId }),
+        },
       )
       return { ...resolved, observation }
     } catch (error) {
@@ -772,14 +802,16 @@ export class ComputerUseAgentController {
     const atomic = this.atomicBundleFor(services).service
     const preferredAppId = sessionId == null ? null : atomic.boundAppIdFor(sessionId)
     const preferredProcessId = sessionId == null ? null : atomic.boundProcessIdFor(sessionId)
+    const preferredWindowId = sessionId == null ? null : atomic.boundWindowIdFor(sessionId)
     const target = await this.appTargetResolver.resolve(
       request.targetApp as string,
       services.backend,
-      preferredAppId == null && preferredProcessId == null
+      preferredAppId == null && preferredProcessId == null && preferredWindowId == null
         ? {}
         : {
             ...(preferredAppId == null ? {} : { preferredAppId }),
             ...(preferredProcessId == null ? {} : { preferredProcessId }),
+            ...(preferredWindowId == null ? {} : { preferredWindowId }),
           },
     )
     if (target == null) {

@@ -210,7 +210,7 @@ const MCP_TOOLS = [
   {
     name: 'get_app_state',
     description:
-      "Get one application state directly by exact display name, bundle id, stable app id, or window id. App selectors launch or raise the app by default. Returns native window metadata plus an accessibility/visual observation when available. With includeSnapshot the screenshot follows the REQUESTED app, not the user's focus — background apps are captured without stealing focus. A chat snapshot is optional and its failure does not discard state.",
+      "Get one application state directly by exact display name, bundle id, stable app id, or window id. App selectors launch or raise the app by default. If an app has multiple usable windows and this session has no matching bound window, the call returns candidate window ids and titles instead of guessing; inspect a candidate by windowId. Returns native window metadata plus an accessibility/visual observation when available. With includeSnapshot the screenshot follows the requested window, not the user's focus. A chat snapshot is optional and its failure does not discard state.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -226,7 +226,7 @@ const MCP_TOOLS = [
   {
     name: 'open_app',
     description:
-      'Open or raise an application directly by exact display name, bundle id, or stable app id and return its resolved native window state. Prefer this over operating-system launcher keystrokes.',
+      'Open or raise an application directly by exact display name, bundle id, or stable app id and return its native window state. If several usable windows match, it returns candidate ids and titles rather than choosing by focus or size; inspect them with get_app_state(windowId) and use the exact window id. Prefer this over operating-system launcher keystrokes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -431,7 +431,7 @@ const MCP_TOOLS = [
   {
     name: 'screenshot',
     description:
-      'Re-observe a window: full-resolution screenshot + the complete Markdown element tree with [n] ids. Without arguments it re-observes the window this session already controls. Pass `app` (display name, bundle id, or stable app id) or `windowId` to bind the session to a DIFFERENT window first — the returned tree is then the exact frame your next action resolves against, so element ids from this response are always actionable (no stale_tree between two independently captured frames). Use after the UI changed for reasons outside your actions, or when element ids went stale.',
+      'Re-observe a window: full-resolution screenshot + the complete Markdown element tree with [n] ids. Without arguments it re-observes the window this session already controls. Pass `app` to bind to a unique matching window, or pass `windowId` when you need one exact window. If several app windows match, the tool returns their ids and titles instead of guessing; inspect a candidate and retry with its windowId. The returned tree is the exact frame your next action resolves against, so its element ids are actionable. Use after the UI changed for reasons outside your actions, or when element ids went stale.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -444,7 +444,7 @@ const MCP_TOOLS = [
   {
     name: 'start_task',
     description:
-      'Start a resilient task on the real desktop. Without targetWindowId the task follows the foreground window across applications; provide targetWindowId only when the user explicitly wants a single-window task. Minimal valid input example: {"goal":"Open the app and search for the requested topic","environment":"my_desktop"}. successCriteria is optional; Spark derives visible search/input text when possible and can continue with screenshot coordinates when accessibility data is incomplete. Do not retry safe_browser or safe_desktop: this build supports my_desktop execution.',
+      'Start a resilient task on the real desktop. For a single-app task, when the user names an application, pass targetApp; it is bound to the selected window and will not drift because the user changes foreground focus. If targetApp matches several usable windows, start_task returns candidate ids/titles; inspect candidates against the goal with read-only get_app_state(windowId) (request includeSnapshot only if the tree is insufficient), then retry with the chosen windowId, or ask the user once if still unclear. For a task that explicitly requires multiple apps, leave targetApp and targetWindowId unset and switch only as the objective requires. Minimal valid input: {"goal":"Open the app and search for the requested topic","environment":"my_desktop"}. successCriteria is optional; Spark derives visible search/input text when possible. Do not retry safe_browser or safe_desktop: this build supports my_desktop execution.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -463,14 +463,14 @@ const MCP_TOOLS = [
         targetWindowId: {
           type: 'string',
           description:
-            'Optional exact window id returned by list_windows. When supplied, Spark binds the task to that window and will not follow another foreground window.',
+            'Optional exact window id returned by list_windows. Use this after comparing candidate titles and read-only app state to the task goal; Spark binds the task to that window and will not follow foreground focus.',
           minLength: 1,
           maxLength: 256,
         },
         targetApp: {
           type: 'string',
           description:
-            'Optional exact application display name or bundle identifier. Prefer this whenever the user names an app; Spark launches or raises it directly before visual planning. Do not combine with targetWindowId.',
+            'Application display name, bundle id, or stable app id. Prefer this whenever the user names an app; Spark launches or raises it, and resolves only when there is one usable window. If several windows match, inspect the returned candidates and retry with targetWindowId. Do not combine with targetWindowId.',
           minLength: 1,
           maxLength: 200,
         },
@@ -496,7 +496,10 @@ const MCP_TOOLS = [
   },
   ...['get_status', 'pause', 'resume', 'stop', 'takeover'].map((name) => ({
     name,
-    description: `${name.replace('_', ' ')} a governed Computer Use task. Pass exactly {"computerSessionId":"<id returned by start_task>"}.`,
+    description:
+      name === 'resume'
+        ? 'Resume a paused Computer Use task. If it paused because the selected window disappeared, inspect the returned candidate ids with list_windows/get_app_state, bind the selected exact window using bind_target, then resume. Pass exactly {"computerSessionId":"<id returned by start_task>"}.'
+        : `${name.replace('_', ' ')} a governed Computer Use task. Pass exactly {"computerSessionId":"<id returned by start_task>"}.`,
     inputSchema: {
       type: 'object',
       properties: { computerSessionId: { type: 'string', minLength: 1, maxLength: 200 } },
@@ -521,7 +524,7 @@ const MCP_TOOLS = [
   {
     name: 'bind_target',
     description:
-      'Point the desktop session at the window you want to work on and return its fresh tree. Pass `targetApp` (display name, bundle id, or stable app id) or `targetWindowId` — that works for ordinary atomic control at any time and is the supported way to say "switch to this app". Pass `computerSessionId` only to rebind a delegated start_task run, which must be paused first.',
+      'Point the desktop session at the exact window you want to work on and return its fresh tree. Pass targetWindowId for an exact choice. Pass targetApp only when it resolves to one usable window; if it is ambiguous, inspect list_windows/get_app_state candidates and retry with targetWindowId. For a delegated start_task run, pass computerSessionId and pause it first.',
     inputSchema: {
       type: 'object',
       properties: {

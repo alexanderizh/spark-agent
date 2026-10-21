@@ -206,6 +206,10 @@ export const NativeHostRequestSchema = z.discriminatedUnion('type', [
       // (the visibleControlIndicator rollback flag). Absent = shown, so older
       // hosts keep today's behaviour.
       showVirtualCursor: z.boolean().optional(),
+      // false hides the target-window highlight ring for this action (the
+      // windowHighlightIndicator rollback flag). Absent = shown, so older
+      // hosts keep today's behaviour.
+      highlightTargetWindow: z.boolean().optional(),
     })
     .strict(),
   z

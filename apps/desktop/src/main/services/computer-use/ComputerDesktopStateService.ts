@@ -133,6 +133,7 @@ export class ComputerDesktopStateService {
      * disambiguator between them.
      */
     preferredProcessId?: number
+    preferredWindowId?: string
   }): Promise<{
     target: NativeWindowDescriptor
     state: DesktopApplicationState
@@ -161,7 +162,10 @@ export class ComputerDesktopStateService {
 
   async openApp(
     app: string,
-    preference?: Pick<ApplicationTargetPreference, 'preferredAppId' | 'preferredProcessId'>,
+    preference?: Pick<
+      ApplicationTargetPreference,
+      'preferredAppId' | 'preferredProcessId' | 'preferredWindowId'
+    >,
   ): Promise<{
     target: NativeWindowDescriptor
     state: DesktopApplicationState
@@ -175,6 +179,9 @@ export class ComputerDesktopStateService {
       ...(preference?.preferredProcessId == null
         ? {}
         : { preferredProcessId: preference.preferredProcessId }),
+      ...(preference?.preferredWindowId == null
+        ? {}
+        : { preferredWindowId: preference.preferredWindowId }),
     })
   }
 
@@ -184,6 +191,7 @@ export class ComputerDesktopStateService {
     launchIfNeeded?: boolean
     preferredAppId?: string
     preferredProcessId?: number
+    preferredWindowId?: string
   }): Promise<NativeWindowDescriptor> {
     if ((input.app == null) === (input.windowId == null)) {
       throw new ComputerUseBrokerError(
@@ -202,6 +210,7 @@ export class ComputerDesktopStateService {
     const preference: ApplicationTargetPreference = {
       ...(input.preferredAppId == null ? {} : { preferredAppId: input.preferredAppId }),
       ...(input.preferredProcessId == null ? {} : { preferredProcessId: input.preferredProcessId }),
+      ...(input.preferredWindowId == null ? {} : { preferredWindowId: input.preferredWindowId }),
     }
     if (input.launchIfNeeded !== false) {
       const target = await this.targetResolver.resolve(app, this.inventory, preference)

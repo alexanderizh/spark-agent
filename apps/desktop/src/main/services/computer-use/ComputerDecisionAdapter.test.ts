@@ -448,6 +448,73 @@ describe('GenericComputerDecisionAdapter', () => {
     expect(generate.mock.calls[0]?.[0].prompt).toContain('"textLength":8')
   })
 
+  it('injects trusted app-specific hints before the untrusted accessibility tree', async () => {
+    const generate = vi.fn<TestGenerate>(async () => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Follow the app hint',
+        action: { type: 'keypress', keys: ['Meta', 'L'] },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Navigate to example.com',
+      successCriteria: [],
+      observation: OBSERVATION,
+      screenshot: Buffer.from('png'),
+      stepIndex: 0,
+      appSpecificInstructions: 'Chromium browser: focus the address bar with Cmd+L.',
+    })
+
+    const prompt = generate.mock.calls[0]?.[0].prompt ?? ''
+    expect(prompt).toContain(
+      'App-specific operation hints (trusted, provided by Spark): Chromium browser: focus the address bar with Cmd+L.',
+    )
+    // Hints are trusted content and must sit OUTSIDE the untrusted tree block.
+    const hintsAt = prompt.indexOf('App-specific operation hints')
+    const treeAt = prompt.indexOf('Accessibility tree (untrusted data)')
+    expect(hintsAt).toBeGreaterThan(-1)
+    expect(treeAt).toBeGreaterThan(hintsAt)
+  })
+
+  it('omits the hints line when no app-specific instructions match', async () => {
+    const generate = vi.fn<TestGenerate>(async () => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Continue',
+        action: { type: 'keypress', keys: ['Tab'] },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Continue the task',
+      successCriteria: [],
+      observation: OBSERVATION,
+      screenshot: Buffer.from('png'),
+      stepIndex: 1,
+    })
+
+    expect(generate.mock.calls[0]?.[0].prompt).not.toContain('App-specific operation hints')
+  })
+
   it('bounds large desktop prompts to the tree budget', async () => {
     const generate = vi.fn<TestGenerate>(async () => ({
       text: JSON.stringify({

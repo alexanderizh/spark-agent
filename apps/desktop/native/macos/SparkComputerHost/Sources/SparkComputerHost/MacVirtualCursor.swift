@@ -3,10 +3,8 @@ import CoreGraphics
 import Foundation
 import os
 
-/// Agent-visible virtual cursor: a transparent always-on-top overlay window
-/// that draws where the agent is about to act, mirroring the reverse-
-/// engineered Codex `ComputerUseCursor` (jelly-scale move animation, press
-/// feedback on click, idle fade-out).
+/// Legacy virtual-cursor overlay. Rendering is intentionally disabled after
+/// user feedback; event injection remains independent of this visual layer.
 ///
 /// The overlay never intercepts input (`ignoresMouseEvents`) and the host
 /// process uses a `.prohibited` activation policy, so showing this cursor
@@ -15,16 +13,17 @@ import os
 /// block or fail an action, and without a running AppKit loop (tests,
 /// headless CI) every call is a harmless no-op.
 enum MacVirtualCursor {
-  /// Master switch for the overlay (the client's visibleControlIndicator
-  /// flag, carried per execute_action request). Guarded: requests decode
-  /// off-main while overlay calls hop to the main queue.
-  private static let enabledFlag = OSAllocatedUnfairLock(initialState: true)
+  /// The legacy wire flag is still accepted, but cannot re-enable this overlay.
+  /// Guarded because requests decode off-main while overlay calls hop to main.
+  private static let enabledFlag = OSAllocatedUnfairLock(initialState: false)
 
   /// False hides the overlay for subsequent actions (input injection is
   /// unaffected — only the visual indicator disappears).
-  static func setEnabled(_ value: Bool) {
-    enabledFlag.withLock { $0 = value }
-    if !value { hide() }
+  static func setEnabled(_ _: Bool) {
+    // The virtual cursor was removed from the user-facing experience. Keep
+    // accepting the legacy wire flag, but never show the overlay.
+    enabledFlag.withLock { $0 = false }
+    hide()
   }
 
   static func isEnabled() -> Bool {

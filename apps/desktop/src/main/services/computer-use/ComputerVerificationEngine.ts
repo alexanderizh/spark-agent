@@ -52,9 +52,15 @@ function verifyCriterion(
         ? `${observation.tree.text}\n${accessibleText(observation.elements)}`
         : null)
     if (criterion.assertion.operator === 'text_present') {
-      passed = currentText?.includes(criterion.assertion.expected) ?? null
+      passed =
+        currentText == null
+          ? null
+          : containsVisualToken(currentText, criterion.assertion.expected)
     } else if (criterion.assertion.operator === 'text_absent') {
-      passed = currentText == null ? null : !currentText.includes(criterion.assertion.expected)
+      passed =
+        currentText == null
+          ? null
+          : !containsVisualToken(currentText, criterion.assertion.expected)
     }
     const hasAccessibilityEvidence =
       !observation.treeVersion.startsWith('visual-') &&
@@ -116,6 +122,25 @@ function verifyCriterion(
 
 function accessibleText(elements: ComputerElementRef[]): string {
   return elements.map((element) => `${element.name}\n${element.value ?? ''}`).join('\n')
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// A "visual token" match requires the expected text to appear without a
+// neighboring letter/digit on either side. Plain `includes` misfires on
+// accessibility serializations: e.g. "72" matched substrings like "729" or
+// "1,572", letting a task complete without the on-screen result ever existing.
+// Non-alphanumeric separators (spaces, punctuation, line breaks) still count as
+// boundaries, so multi-word expectations keep matching across element lines.
+function containsVisualToken(haystack: string, expected: string): boolean {
+  if (expected.length === 0) return false
+  const pattern = new RegExp(
+    `(?<![\\p{L}\\p{N}])${escapeRegExp(expected)}(?![\\p{L}\\p{N}])`,
+    'u',
+  )
+  return pattern.test(haystack)
 }
 
 function selectorMatches(

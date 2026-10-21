@@ -21,6 +21,7 @@ import type {
   GenericComputerDecisionAdapter,
 } from './ComputerDecisionAdapter.js'
 import { policyContextFor } from './ComputerActionPolicyContext.js'
+import { matchAppSpecificInstructions } from './ComputerAppSpecificInstructions.js'
 import { ComputerVerificationEngine } from './ComputerVerificationEngine.js'
 import { reconcileObservationTree } from './NativeHostTreeReconciler.js'
 import { isActionBatchEnabled, isIncrementalTreeEnabled } from './computerUseV2Flags.js'
@@ -47,6 +48,7 @@ const MAX_DECISION_RECOVERIES = 2
 
 interface OperatorSessions {
   setPhase(computerSessionId: string, phase: 'planning' | 'verifying' | 'handoff_required'): unknown
+  pause?(computerSessionId: string): unknown
   completeVerified(computerSessionId: string, verificationIds?: string[]): unknown
   fail(computerSessionId: string, errorCode?: ComputerUseErrorCode): unknown
 }
@@ -105,7 +107,7 @@ interface DecisionAdapter {
 }
 
 export interface ComputerTaskOperatorResult {
-  status: 'completed' | 'failed' | 'handoff_required'
+  status: 'completed' | 'failed' | 'handoff_required' | 'paused'
   verification?: ReturnType<ComputerVerificationEngine['verify']>
   reason?: string
 }
@@ -209,6 +211,12 @@ export class ComputerTaskOperator {
         let decision: ComputerDecision
         const decisionStartedAt = this.now()
         try {
+          const appHints = matchAppSpecificInstructions({
+            name: observation.foreground.app.name,
+            ...(observation.foreground.app.bundleId == null
+              ? {}
+              : { bundleId: observation.foreground.app.bundleId }),
+          })
           decision = await input.adapter.decide({
             objective: input.session.taskContract.objective,
             successCriteria: input.session.taskContract.successCriteria,
@@ -217,6 +225,7 @@ export class ComputerTaskOperator {
             screenshotMime: decisionEvidence.screenshotMime,
             stepIndex,
             allowBatch: isActionBatchEnabled(),
+            ...(appHints == null ? {} : { appSpecificInstructions: appHints }),
             ...(previousActionFailure == null ? {} : { previousActionFailure }),
             ...(previousVerificationFailure == null ? {} : { previousVerificationFailure }),
             ...(recentActions.length === 0 ? {} : { recentActions: [...recentActions] }),
@@ -551,6 +560,22 @@ export class ComputerTaskOperator {
       }
       // The loop is bounded by the session runtime and action budgets above.
     } catch (error) {
+      if (
+        error instanceof ComputerUseBrokerError &&
+        error.code === 'focus_mismatch' &&
+        error.details?.reason === 'target_window_ambiguous' &&
+        this.sessions.pause != null
+      ) {
+        this.sessions.pause(input.session.id)
+        log.warn('Computer task paused for explicit target window selection', {
+          computerSessionId: input.session.id,
+          durationMs: Math.round(this.now() - startedAt),
+          successfulActions,
+          attemptedActions,
+          candidateSelectionRequired: true,
+        })
+        return { status: 'paused', reason: error.message }
+      }
       if (error instanceof ComputerUseBrokerError && error.code === 'handoff_required') {
         log.warn('Computer task paused for user takeover', {
           computerSessionId: input.session.id,
@@ -682,6 +707,7 @@ export class ComputerTaskOperator {
         if (
           !(error instanceof ComputerUseBrokerError) ||
           !isRecoverableExecutionError(error) ||
+          error.details?.reason === 'target_window_ambiguous' ||
           attempt === MAX_TRANSIENT_RECOVERIES
         ) {
           throw error

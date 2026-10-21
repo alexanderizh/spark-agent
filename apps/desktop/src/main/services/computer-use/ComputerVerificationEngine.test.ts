@@ -104,6 +104,24 @@ describe('ComputerVerificationEngine', () => {
     ).toMatchObject({ passed: true })
   })
 
+  it('matches visual text with token boundaries so substrings never prove a result', () => {
+    const engine = new ComputerVerificationEngine()
+    const present = (text: string) =>
+      engine.verify(
+        [{ kind: 'visual', assertion: { operator: 'text_present', expected: '72' } }],
+        { ...OBSERVATION, tree: { mode: 'full', text, elementCount: 1 }, elements: [] },
+      )
+
+    // Substring collisions must NOT count as the on-screen result.
+    expect(present('recent entries 729')).toMatchObject({ passed: false })
+    expect(present('row 1,572 selected')).toMatchObject({ passed: false })
+    // Adjacent accessibility lines must not merge into the expected token.
+    expect(present('7\n2')).toMatchObject({ passed: false })
+    // A real standalone token still matches, including multi-word expectations.
+    expect(present('result: 72')).toMatchObject({ passed: true })
+    expect(present('72')).toMatchObject({ passed: true })
+  })
+
   it('accepts model visual evidence only when the application exposes no accessibility evidence', () => {
     const visualOnly = {
       ...OBSERVATION,

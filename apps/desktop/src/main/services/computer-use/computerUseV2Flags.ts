@@ -7,6 +7,8 @@ export const COMPUTER_USE_V2_FLAGS = [
   'backgroundSemanticLane',
   'activityTimeline',
   'visibleControlIndicator',
+  'windowHighlightIndicator',
+  'statusBanner',
   'actionSkyshot',
   'pipPanel',
 ] as const
@@ -29,6 +31,8 @@ const ENVIRONMENT_KEYS: Record<ComputerUseV2FlagName, string> = {
   backgroundSemanticLane: 'SPARK_COMPUTER_USE_V2_BACKGROUND_SEMANTIC_LANE',
   activityTimeline: 'SPARK_COMPUTER_USE_V2_ACTIVITY_TIMELINE',
   visibleControlIndicator: 'SPARK_COMPUTER_USE_V2_VISIBLE_CONTROL_INDICATOR',
+  windowHighlightIndicator: 'SPARK_COMPUTER_USE_V2_WINDOW_HIGHLIGHT',
+  statusBanner: 'SPARK_COMPUTER_USE_V2_STATUS_BANNER',
   actionSkyshot: 'SPARK_COMPUTER_USE_V2_ACTION_SKYSHOT',
   pipPanel: 'SPARK_COMPUTER_USE_V2_PIP_PANEL',
 }
@@ -43,7 +47,9 @@ const DEFAULTS: Record<ComputerUseV2FlagName, boolean> = {
   actionBatch: true,
   backgroundSemanticLane: true,
   activityTimeline: true,
-  visibleControlIndicator: true,
+  visibleControlIndicator: false,
+  windowHighlightIndicator: true,
+  statusBanner: true,
   actionSkyshot: true,
   pipPanel: true,
 }
@@ -51,6 +57,13 @@ const DEFAULTS: Record<ComputerUseV2FlagName, boolean> = {
 export class ComputerUseV2FlagStore {
   private readonly env: NodeJS.ProcessEnv
   private readonly runtimeRollbacks = new Map<ComputerUseV2FlagName, string>()
+  /**
+   * User-preference overrides (settings page toggles), layered ABOVE env and
+   * defaults but BELOW automatic rollbacks: a user toggle must never resurrect
+   * a capability the runtime disabled for its own safety, and a rollback must
+   * still win over a stale "enabled" preference.
+   */
+  private readonly userOverrides = new Map<ComputerUseV2FlagName, boolean>()
 
   constructor(env: NodeJS.ProcessEnv = process.env) {
     this.env = env
@@ -58,6 +71,8 @@ export class ComputerUseV2FlagStore {
 
   isEnabled(name: ComputerUseV2FlagName): boolean {
     if (this.runtimeRollbacks.has(name)) return false
+    const userOverride = this.userOverrides.get(name)
+    if (userOverride != null) return userOverride
     return resolveConfiguredFlag(name, this.env).enabled
   }
 
@@ -67,11 +82,20 @@ export class ComputerUseV2FlagStore {
     return true
   }
 
+  setUserOverride(name: ComputerUseV2FlagName, enabled: boolean | null): void {
+    if (enabled == null) this.userOverrides.delete(name)
+    else this.userOverrides.set(name, enabled)
+  }
+
   snapshot(): ComputerUseV2FlagSnapshot[] {
     return COMPUTER_USE_V2_FLAGS.map((name) => {
       const rollbackReason = this.runtimeRollbacks.get(name)
       if (rollbackReason != null) {
         return { name, enabled: false, source: 'runtime_rollback', rollbackReason }
+      }
+      const userOverride = this.userOverrides.get(name)
+      if (userOverride != null) {
+        return { name, enabled: userOverride, source: 'default' }
       }
       const configured = resolveConfiguredFlag(name, this.env)
       return { name, enabled: configured.enabled, source: configured.source }
@@ -117,6 +141,16 @@ export function isActivityTimelineEnabled(env: NodeJS.ProcessEnv = process.env):
 
 export function isVisibleControlIndicatorEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return enabledFor('visibleControlIndicator', env)
+}
+
+export function isWindowHighlightIndicatorEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return enabledFor('windowHighlightIndicator', env)
+}
+
+export function isStatusBannerEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return enabledFor('statusBanner', env)
 }
 
 function enabledFor(name: ComputerUseV2FlagName, env: NodeJS.ProcessEnv): boolean {

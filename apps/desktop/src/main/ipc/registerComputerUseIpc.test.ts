@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS: ComputerUseSettings = {
   fullRecordingEnabled: false,
   evidenceRetentionDays: 30,
   killSwitch: 'CommandOrControl+Shift+Esc',
+  controlIndicators: { virtualCursor: false, windowHighlight: true, statusBanner: true },
   remote: { observe: false, approveL2: false, control: false },
 }
 
@@ -107,7 +108,7 @@ const SESSION: ComputerSession = {
 }
 
 const WINDOW: NativeWindowDescriptor = {
-  app: { id: 'app-1', name: 'Test App', bundleId: 'com.spark.Test' },
+  app: { id: 'app-1', name: 'Test App', bundleId: 'com.spark.Test', processId: 42 },
   window: { id: 'window-1', title: 'Ready', bounds: { x: 0, y: 0, width: 800, height: 600 } },
   display: { id: 'display-1', width: 1512, height: 982, scaleFactor: 2 },
   focused: true,
@@ -470,6 +471,7 @@ describe('registerComputerUseIpc', () => {
       computerSessionId: SESSION.id,
       appId: WINDOW.app.id,
       windowId: WINDOW.window.id,
+      processId: WINDOW.app.processId,
     })
   })
 
@@ -478,7 +480,7 @@ describe('registerComputerUseIpc', () => {
     services.backend.listWindows.mockResolvedValue([
       {
         ...WINDOW,
-        app: { id: 'app-2', name: 'Other App', bundleId: 'com.other.App' },
+        app: { id: 'app-2', name: 'Other App', bundleId: 'com.other.App', processId: 77 },
         window: { ...WINDOW.window, id: 'window-2' },
       },
     ])
@@ -509,6 +511,7 @@ describe('registerComputerUseIpc', () => {
       computerSessionId: SESSION.id,
       appId: 'app-2',
       windowId: 'window-2',
+      processId: 77,
     })
   })
 
@@ -548,6 +551,7 @@ describe('registerComputerUseIpc', () => {
       computerSessionId: SESSION.id,
       appId: WINDOW.app.id,
       windowId: 'window-2',
+      processId: WINDOW.app.processId,
     })
     await expect(
       harness.handlers.get('computer-use:bind-target')!(

@@ -159,6 +159,11 @@ export class ComputerAtomicActionService {
     return this.states.get(sessionId)?.lastObservation?.foreground.app.processId ?? null
   }
 
+  /** Exact window the implicit session currently observes, when armed. */
+  boundWindowIdFor(sessionId: string): string | null {
+    return this.states.get(sessionId)?.lastObservation?.foreground.window.id ?? null
+  }
+
   /**
    * Observes a window and refreshes the cached observation.
    *
@@ -174,7 +179,7 @@ export class ComputerAtomicActionService {
   async observe(
     sessionId: string,
     turnId: string,
-    target?: { appId: string; windowId: string },
+    target?: { appId: string; windowId: string; processId?: number },
   ): Promise<ComputerObservation> {
     // Disarm on entry: a timer armed by the previous call must never abort an
     // in-flight observe/dispatch (slow reasoning models routinely think longer
@@ -196,11 +201,15 @@ export class ComputerAtomicActionService {
    * the only way to change which app an atomic session controls was to let the
    * implicit session lapse and re-acquire whatever happened to be frontmost.
    */
-  private bindTarget(state: AtomicSessionState, target: { appId: string; windowId: string }): void {
+  private bindTarget(
+    state: AtomicSessionState,
+    target: { appId: string; windowId: string; processId?: number },
+  ): void {
     this.services.backend.bindSessionTarget?.({
       computerSessionId: state.computerSessionId,
       appId: target.appId,
       windowId: target.windowId,
+      ...(target.processId == null ? {} : { processId: target.processId }),
     })
     if (state.lastObservation?.foreground.window.id !== target.windowId) {
       state.lastObservation = null
@@ -211,7 +220,7 @@ export class ComputerAtomicActionService {
   async bindAgentSessionTarget(
     sessionId: string,
     turnId: string,
-    target: { appId: string; windowId: string },
+    target: { appId: string; windowId: string; processId?: number },
   ): Promise<void> {
     this.clearIdleTimer(sessionId)
     const state = await this.ensureSession(sessionId, turnId)

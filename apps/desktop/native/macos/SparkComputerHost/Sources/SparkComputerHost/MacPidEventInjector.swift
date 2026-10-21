@@ -58,8 +58,8 @@ enum MacPidEventInjector {
     }
   }
 
-  /// Cursor-synced click: the virtual cursor presses and releases in lock
-  /// step with the injected events so the user sees the click land.
+  /// Legacy entry point that keeps per-click interruption checks. Its cursor
+  /// feedback hooks remain inert while preserving the injected click behavior.
   static func clickWithCursor(
     pid: pid_t,
     at point: CGPoint,
@@ -113,7 +113,7 @@ enum MacPidEventInjector {
     try await performDrag(pid: pid, start: start, end: end, durationMs: durationMs)
   }
 
-  /// Cursor-synced drag: the virtual cursor travels along the same path.
+  /// Legacy entry point that keeps per-step interruption checks for dragging.
   static func dragWithCursor(
     pid: pid_t,
     from start: CGPoint,

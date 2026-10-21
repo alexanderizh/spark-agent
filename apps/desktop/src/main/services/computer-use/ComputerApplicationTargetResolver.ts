@@ -1,6 +1,9 @@
 import { execFile } from 'node:child_process'
 import type { NativeWindowDescriptor } from '@spark/protocol'
+import { createLogger } from '@spark/shared'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
+
+const log = createLogger('computer-use-target-resolver')
 
 const DEFAULT_LAUNCH_TIMEOUT_MS = 8_000
 const DEFAULT_POLL_INTERVAL_MS = 100
@@ -65,6 +68,8 @@ export interface ApplicationTargetPreference {
    * reliably picks the right instance.
    */
   preferredProcessId?: number
+  /** Exact window already bound to the caller's session. */
+  preferredWindowId?: string
 }
 
 export function findApplicationWindow(
@@ -80,6 +85,16 @@ export function findApplicationWindow(
       .some((value) => value.trim().toLocaleLowerCase() === requested)
   })
   if (matches.length === 0) return null
+  if (
+    preference != null &&
+    (preference.preferredAppId != null || preference.preferredProcessId != null)
+  ) {
+    const preferredMatches = matches.filter((candidate) => matchesPreference(candidate, preference))
+    if (preferredMatches.length === 0) {
+      throw unavailablePreferredApplication(requestedApplication, matches, preference)
+    }
+    return pickWindowWithinApp(preferredMatches, requestedApplication, preference)
+  }
   // Same display name owned by SEVERAL applications (packaged SparkWork vs the
   // dev Electron build, two browsers): resolving by "whoever is focused" is how
   // a task bound for one build ended up driving the other while focus bounced.
@@ -90,11 +105,9 @@ export function findApplicationWindow(
   // of guessing — the caller re-specifies by app name or window id.
   const candidateKeys = [...new Set(matches.map(applicationIdentityKey))]
   if (candidateKeys.length > 1) {
-    const preferredMatches = matches.filter((candidate) => matchesPreference(candidate, preference))
-    if (preferredMatches.length > 0) return pickWindowWithinApp(preferredMatches)
     throw ambiguousApplication(requestedApplication, matches)
   }
-  return pickWindowWithinApp(matches)
+  return pickWindowWithinApp(matches, requestedApplication, preference)
 }
 
 function applicationIdentityKey(candidate: NativeWindowDescriptor): string {
@@ -119,20 +132,97 @@ function matchesPreference(
   return true
 }
 
-function pickWindowWithinApp(matches: NativeWindowDescriptor[]): NativeWindowDescriptor {
+function pickWindowWithinApp(
+  matches: NativeWindowDescriptor[],
+  requestedApplication: string,
+  preference?: ApplicationTargetPreference,
+): NativeWindowDescriptor {
   // Electron apps (e.g. Bilibili) frequently own a tiny tray/status/widget
   // window that the system reports as focused. Binding to that 66x20 window
   // ruins the task. Prefer real main windows; only fall back to a sub-min
   // candidate when it is the sole match so single-window apps still resolve.
   const usable = matches.filter(isUsableMainWindow)
   const pool = usable.length > 0 ? usable : matches
-  return [...pool].sort((left, right) => {
-    if (left.focused !== right.focused) return left.focused ? -1 : 1
-    return (
-      right.window.bounds.width * right.window.bounds.height -
-      left.window.bounds.width * left.window.bounds.height
+  if (preference?.preferredWindowId != null) {
+    const preferredWindow = pool.find(
+      (candidate) => candidate.window.id === preference.preferredWindowId,
     )
-  })[0] as NativeWindowDescriptor
+    if (preferredWindow != null) return preferredWindow
+    if (pool.some((candidate) => matchesPreference(candidate, preference))) {
+      if (pool.length === 1) return pool[0] as NativeWindowDescriptor
+      throw ambiguousApplicationWindow(requestedApplication, pool, preference.preferredWindowId)
+    }
+  }
+  if (pool.length === 1) return pool[0] as NativeWindowDescriptor
+  throw ambiguousApplicationWindow(requestedApplication, pool)
+}
+
+function ambiguousApplicationWindow(
+  requestedApplication: string,
+  candidates: NativeWindowDescriptor[],
+  missingWindowId?: string,
+): ComputerUseBrokerError {
+  log.warn('Computer target window selection is ambiguous', {
+    candidateCount: candidates.length,
+    candidateWindowIds: candidates.slice(0, 12).map((candidate) => candidate.window.id),
+    preferredWindowMissing: missingWindowId != null,
+  })
+  const listed = candidates.slice(0, 12).map((candidate) => ({
+    windowId: candidate.window.id,
+    title: candidate.window.title.slice(0, 160),
+  }))
+  const omittedCount = Math.max(0, candidates.length - listed.length)
+  const suffix = omittedCount === 0 ? '' : ` (${omittedCount} more; use list_windows)`
+  const detail = JSON.stringify(listed)
+  const missing =
+    missingWindowId == null
+      ? ''
+      : ` Previously bound window ${JSON.stringify(missingWindowId)} is no longer available.`
+  return new ComputerUseBrokerError(
+    'focus_mismatch',
+    `Application "${requestedApplication}" has multiple candidate windows.${missing} ` +
+      `Inspect their titles and read-only app state, then pass an exact windowId. ` +
+      `Candidates: ${detail}${suffix}`,
+    { reason: 'target_window_ambiguous' },
+    { retryable: true },
+  )
+}
+
+function unavailablePreferredApplication(
+  requestedApplication: string,
+  candidates: NativeWindowDescriptor[],
+  preference: ApplicationTargetPreference,
+): ComputerUseBrokerError {
+  const listed = candidates.slice(0, 12).map((candidate) => ({
+    appId: candidate.app.id,
+    ...(candidate.app.processId == null ? {} : { processId: candidate.app.processId }),
+    windowId: candidate.window.id,
+    title: candidate.window.title.slice(0, 160),
+  }))
+  const omittedCount = Math.max(0, candidates.length - listed.length)
+  const suffix = omittedCount === 0 ? '' : ` (${omittedCount} more; use list_windows)`
+  log.warn('Bound computer application is unavailable; refusing same-name fallback', {
+    requestedApplication,
+    preferredAppId: preference.preferredAppId ?? null,
+    preferredProcessId: preference.preferredProcessId ?? null,
+    candidateCount: candidates.length,
+    candidateAppIds: candidates.slice(0, 12).map((candidate) => candidate.app.id),
+    candidateWindowIds: candidates.slice(0, 12).map((candidate) => candidate.window.id),
+  })
+  const preferredIdentity = {
+    ...(preference.preferredAppId == null ? {} : { appId: preference.preferredAppId }),
+    ...(preference.preferredProcessId == null
+      ? {}
+      : { processId: preference.preferredProcessId }),
+  }
+  return new ComputerUseBrokerError(
+    'focus_mismatch',
+    `Previously bound application ${JSON.stringify(preferredIdentity)} is no longer available. ` +
+      `Refusing to switch to a same-named application. Review the candidates and select an ` +
+      `exact windowId: ${JSON.stringify(listed)}${suffix}`,
+    { reason: 'target_window_ambiguous' },
+    { retryable: true },
+  )
 }
 
 function ambiguousApplication(
@@ -151,8 +241,14 @@ function ambiguousApplication(
       (candidate) =>
         `${candidate.app.name} (appId=${candidate.app.id}` +
         `${candidate.app.bundleId == null ? '' : `, bundleId=${candidate.app.bundleId}`}` +
-        `${candidate.app.processId == null ? '' : `, pid=${candidate.app.processId}`})`,
+        `${candidate.app.processId == null ? '' : `, pid=${candidate.app.processId}`}` +
+        `, windowId=${candidate.window.id}, title=${JSON.stringify(candidate.window.title.slice(0, 160))})`,
     )
+  log.warn('Computer application selector matches multiple app identities', {
+    candidateCount: candidates.length,
+    candidateAppIds: matches.slice(0, 12).map((candidate) => candidate.app.id),
+    candidateWindowIds: matches.slice(0, 12).map((candidate) => candidate.window.id),
+  })
   // Same-bundle neighbours cannot be told apart by bundle id — only a window
   // id separates them. Different-bundle collisions (dev vs packaged build)
   // ARE separable by bundle id, so keep that hint instead of sending the

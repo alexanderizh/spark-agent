@@ -120,7 +120,7 @@ describe('findApplicationWindow', () => {
     ).toEqual(dev)
   })
 
-  it('keeps the same-name preference when the bound application is no longer running', () => {
+  it('does not switch to another same-name app when the bound application is gone', () => {
     const packaged = {
       app: {
         id: 'com.spark-agent.desktop',
@@ -136,14 +136,11 @@ describe('findApplicationWindow', () => {
       focused: false,
       minimized: false,
     } as NativeWindowDescriptor
-    // preferredAppId points at an app that is gone: the ambiguity is real and
-    // must still surface rather than silently binding the remaining candidate.
+    // The preferred app is gone. A singleton same-name candidate is still a
+    // different application and must not silently replace the session target.
     expect(() =>
       findApplicationWindow([packaged], 'SparkWork', { preferredAppId: 'com.github.Electron' }),
-    ).not.toThrow()
-    expect(
-      findApplicationWindow([packaged], 'SparkWork', { preferredAppId: 'com.github.Electron' }),
-    ).toEqual(packaged)
+    ).toThrow(/Previously bound application.*Refusing to switch to a same-named application/s)
   })
 
   it('disambiguates same-BUNDLE processes by pid (shared app id collapses them)', () => {

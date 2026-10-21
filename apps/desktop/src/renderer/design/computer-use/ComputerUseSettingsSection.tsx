@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@lobehub/ui'
+import { Switch } from 'antd'
 import type {
   ComputerUseCapabilitySummary,
   ComputerUseNativeHostDiagnosticReport,
+  ComputerUseSettings,
 } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { classNames } from '../utils/class-names'
@@ -22,9 +24,52 @@ interface PermissionRowModel {
 export function ComputerUseSettingsSection() {
   const [capabilities, setCapabilities] = useState<ComputerUseCapabilitySummary | null>(null)
   const [diagnostic, setDiagnostic] = useState<ComputerUseNativeHostDiagnosticReport | null>(null)
+  const [settings, setSettings] = useState<ComputerUseSettings | null>(null)
   const [busy, setBusy] = useState<'refresh' | 'diagnose' | SystemPermission | null>('refresh')
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    let canceled = false
+    window.spark
+      .invoke('computer-use:get-settings', undefined)
+      .then((next: ComputerUseSettings) => {
+        if (!canceled) setSettings(next)
+      })
+      .catch(() => undefined)
+    return () => {
+      canceled = true
+    }
+  }, [])
+
+  const updateIndicator = useCallback(
+    async (key: 'windowHighlight' | 'statusBanner', value: boolean) => {
+      setSettings((current) =>
+        current == null ? current : { ...current, controlIndicators: { ...current.controlIndicators, [key]: value } },
+      )
+      try {
+        const next = await window.spark.invoke('computer-use:update-settings', {
+          controlIndicators: {
+            virtualCursor: false,
+            windowHighlight:
+              key === 'windowHighlight' ? value : (settings?.controlIndicators.windowHighlight ?? true),
+            statusBanner:
+              key === 'statusBanner' ? value : (settings?.controlIndicators.statusBanner ?? true),
+          },
+        })
+        setSettings(next)
+      } catch (cause) {
+        setError(toErrorMessage(cause, '控制可视化设置保存失败'))
+        // Revert to the last persisted value on failure.
+        try {
+          setSettings(await window.spark.invoke('computer-use:get-settings', undefined))
+        } catch {
+          // Best-effort revert; the stale optimistic value self-corrects on reload.
+        }
+      }
+    },
+    [settings],
+  )
 
   const refresh = useCallback(async (showBusy = true) => {
     if (showBusy) setBusy('refresh')
@@ -207,6 +252,40 @@ export function ComputerUseSettingsSection() {
             </Button>
           </div>
         ))}
+      </div>
+
+      <div className="subsec-h">控制可视化</div>
+      <div className="computer-use-permission-list">
+        <div className="computer-use-permission-row">
+          <div className="computer-use-permission-icon">
+            <Icons.Monitor size={16} />
+          </div>
+          <div className="computer-use-permission-copy">
+            <div className="computer-use-permission-title">被控窗口标识</div>
+            <div className="computer-use-permission-description">
+              Agent 正在操作的窗口会显示主题色描边与 Spark 角标，随时知道它在对哪个窗口下手。
+            </div>
+          </div>
+          <Switch
+            checked={settings?.controlIndicators.windowHighlight ?? true}
+            onChange={(checked) => void updateIndicator('windowHighlight', checked)}
+          />
+        </div>
+        <div className="computer-use-permission-row">
+          <div className="computer-use-permission-icon">
+            <Icons.Bell size={16} />
+          </div>
+          <div className="computer-use-permission-copy">
+            <div className="computer-use-permission-title">顶部状态提示</div>
+            <div className="computer-use-permission-description">
+              Agent 操作电脑时在屏幕顶部显示一条状态胶囊，说明当前阶段并提醒可按 Esc 打断。
+            </div>
+          </div>
+          <Switch
+            checked={settings?.controlIndicators.statusBanner ?? true}
+            onChange={(checked) => void updateIndicator('statusBanner', checked)}
+          />
+        </div>
       </div>
 
       <div className="subsec-h">运行诊断</div>

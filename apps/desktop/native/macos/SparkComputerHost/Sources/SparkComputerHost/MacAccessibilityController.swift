@@ -613,12 +613,16 @@ final class MacAccessibilityController: @unchecked Sendable {
   /// change notifications for a quiet window and no busy indicator, bounded by
   /// the policy's hard cap. Called between an action and its post-action
   /// observation so the returned tree/screenshot describe a settled UI instead
-  /// of a mid-animation frame.
-  func waitForSettle(processID: pid_t) async {
+  /// of a mid-animation frame. `semantic` selects the shorter AX-lane budget:
+  /// a background AX call is atomic, so only the rendering pass remains.
+  func waitForSettle(processID: pid_t, semantic: Bool = false) async {
     let start = ProcessInfo.processInfo.systemUptime
     var lastGeneration = currentDirtyGeneration()
     var lastChange = start
-    try? await Task.sleep(for: .milliseconds(NativeSettlePolicy.defaultBaselineMs))
+    try? await Task.sleep(
+      for: .milliseconds(
+        semantic
+          ? NativeSettlePolicy.semanticBaselineMs : NativeSettlePolicy.defaultBaselineMs))
     while true {
       let now = ProcessInfo.processInfo.systemUptime
       let generation = currentDirtyGeneration()
@@ -630,7 +634,9 @@ final class MacAccessibilityController: @unchecked Sendable {
       if NativeSettlePolicy.decide(
         elapsedMs: Int((now - start) * 1_000),
         msSinceLastChange: Int((now - lastChange) * 1_000),
-        busy: busy) == .settled
+        busy: busy,
+        quietMs: semantic
+          ? NativeSettlePolicy.semanticQuietMs : NativeSettlePolicy.defaultQuietMs) == .settled
       {
         return
       }

@@ -22,6 +22,14 @@ public enum NativeSettlePolicy {
   public static let defaultQuietMs = 300
   public static let defaultMaxMs = 1_500
 
+  /// Semantic lane (background AX invoke/set_value/...): the AX call is
+  /// atomic — by the time it returns, the state change already happened, so
+  /// only the app's own rendering pass is left to wait for. The injected-event
+  /// lanes keep the full budget (their effects propagate through the event
+  /// queue and can trigger follow-on focus/layout churn).
+  public static let semanticBaselineMs = 110
+  public static let semanticQuietMs = 160
+
   public static func decide(
     elapsedMs: Int,
     msSinceLastChange: Int,

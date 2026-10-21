@@ -15,8 +15,8 @@ struct SparkComputerHostMain {
 
     signal(SIGPIPE, SIG_IGN)
 
-    // AppKit must own the main thread and its run loop for the virtual-cursor
-    // overlay windows. The stdio protocol loop therefore runs detached; when
+    // AppKit must own the main thread and its run loop for overlay windows.
+    // The stdio protocol loop therefore runs detached; when
     // stdin closes (parent went away) it terminates the whole process, which
     // also stops the run loop — identical lifecycle to the pre-AppKit host.
     let app = NSApplication.shared

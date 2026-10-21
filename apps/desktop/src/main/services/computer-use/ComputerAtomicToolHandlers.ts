@@ -7,6 +7,7 @@ import type {
 import type { ComputerUseServices } from './ComputerUseServices.js'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import { isTreeSufficient } from './ComputerTreeSufficiency.js'
+import { findApplicationWindow } from './ComputerApplicationTargetResolver.js'
 
 /**
  * Reference to a target: the element id from the latest tree, or a pixel
@@ -248,7 +249,7 @@ export class ComputerAtomicToolHandlers {
     switch (toolName) {
       case 'screenshot': {
         const request = parse(AtomicScreenshotSchema, args ?? {})
-        const target = await this.resolveObservationTarget(request)
+        const target = await this.resolveObservationTarget(sessionId, request)
         const observation =
           target == null
             ? await this.atomic.observe(sessionId, turnId)
@@ -605,10 +606,10 @@ export class ComputerAtomicToolHandlers {
    * surprise the user. Matching is exact against id / name / bundle id, the same
    * contract `list_windows` documents.
    */
-  private async resolveObservationTarget(request: {
-    app?: string | undefined
-    windowId?: string | undefined
-  }): Promise<{ appId: string; windowId: string } | null> {
+  private async resolveObservationTarget(
+    sessionId: string,
+    request: { app?: string | undefined; windowId?: string | undefined },
+  ): Promise<{ appId: string; windowId: string; processId?: number } | null> {
     if (request.app == null && request.windowId == null) return null
     if (request.app != null && request.windowId != null) {
       throw invalidArguments('Provide at most one of app or windowId')
@@ -626,21 +627,20 @@ export class ComputerAtomicToolHandlers {
           { retryable: true },
         )
       }
-      return { appId: match.app.id, windowId: match.window.id }
+      return {
+        appId: match.app.id,
+        windowId: match.window.id,
+        ...(match.app.processId == null ? {} : { processId: match.app.processId }),
+      }
     }
-    const expected = (request.app as string).trim().toLocaleLowerCase()
-    const matches = windows.filter((candidate) =>
-      [candidate.app.id, candidate.app.name, candidate.app.bundleId]
-        .filter((value): value is string => typeof value === 'string')
-        .some((value) => value.trim().toLocaleLowerCase() === expected),
-    )
-    const chosen =
-      matches.find((candidate) => candidate.focused) ??
-      [...matches].sort(
-        (left, right) =>
-          right.window.bounds.width * right.window.bounds.height -
-          left.window.bounds.width * left.window.bounds.height,
-      )[0]
+    const preferredAppId = this.atomic.boundAppIdFor(sessionId)
+    const preferredProcessId = this.atomic.boundProcessIdFor(sessionId)
+    const preferredWindowId = this.atomic.boundWindowIdFor(sessionId)
+    const chosen = findApplicationWindow(windows, request.app as string, {
+      ...(preferredAppId == null ? {} : { preferredAppId }),
+      ...(preferredProcessId == null ? {} : { preferredProcessId }),
+      ...(preferredWindowId == null ? {} : { preferredWindowId }),
+    })
     if (chosen == null) {
       throw new ComputerUseBrokerError(
         'focus_mismatch',
@@ -649,7 +649,11 @@ export class ComputerAtomicToolHandlers {
         { retryable: true },
       )
     }
-    return { appId: chosen.app.id, windowId: chosen.window.id }
+    return {
+      appId: chosen.app.id,
+      windowId: chosen.window.id,
+      ...(chosen.app.processId == null ? {} : { processId: chosen.app.processId }),
+    }
   }
 
   private async readScreenshot(

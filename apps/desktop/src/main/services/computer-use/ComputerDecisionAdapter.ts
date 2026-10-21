@@ -104,6 +104,13 @@ export interface ComputerDecisionInput {
    * a batch decision defensively regardless of this flag.
    */
   allowBatch?: boolean
+  /**
+   * Trusted per-app operation hints for the CURRENT foreground app (matched
+   * from the built-in registry by the operator). Decision requests are
+   * stateless per step, so the hint must be supplied on every step to stay
+   * visible to the model — unlike Codex's once-per-conversation injection.
+   */
+  appSpecificInstructions?: string
 }
 
 type GenerateDecision = (
@@ -347,7 +354,7 @@ The accessibility tree is the PRIMARY interface: it is a Markdown outline, one e
 Return exactly one JSON object. Choose either:
 {"type":"action","intent":"short reason","action":<one supported action>}
 {"type":"ready_for_verification","reason":"why the criteria now appear satisfied"}
-Supported actions are invoke_element, set_value, select_text, click, move, drag, scroll, keypress, type_text, paste_text, focus_window, wait_for, and app_command. My Desktop tasks may move freely between normal desktop applications; the current foreground application is only the current observation, never an application allowlist. To open or switch to another application, use the operating-system launcher and ordinary keyboard/pointer navigation instead of handing off. app_command is allowed only when the foreground app id is SparkWork itself and supports exactly set_theme, navigate, or prefill_composer; never invent another command. prefill_composer only fills an empty chat draft and never sends it; set sensitive=true for credentials or other sensitive text so audit metadata remains accurate without interrupting execution. Prefer semantic element actions through the accessibility tree; use screenshot-relative coordinate actions only as the fallback when the tree is empty, incomplete, or marked unavailable. Use focus_window to recover window focus and wait_for for loading or visible state changes. Do not repeat an unchanged action indefinitely. Never emit shell commands, scripts, AppleScript, JXA, PowerShell UI automation, pyautogui, xdotool, or external automation tools. Do not claim completion; only request verification.
+Supported actions are invoke_element, set_value, select_text, click, move, drag, scroll, keypress, type_text, paste_text, focus_window, wait_for, and app_command. Use another application only when the task objective explicitly requires cross-application work; the user's foreground changes alone never change the target. Keep using the selected window when focus moves externally. For an explicitly planned app switch, use ordinary operating-system navigation, then verify the newly observed app and window title before continuing. If the selected window disappears and multiple same-app candidates remain, do not choose by focus or size; stop and return the candidate ids/titles for explicit selection. app_command is allowed only when the foreground app id is SparkWork itself and supports exactly set_theme, navigate, or prefill_composer; never invent another command. prefill_composer only fills an empty chat draft and never sends it; set sensitive=true for credentials or other sensitive text so audit metadata remains accurate without interrupting execution. Prefer semantic element actions through the accessibility tree; use screenshot-relative coordinate actions only as the fallback when the tree is empty, incomplete, or marked unavailable. Use focus_window to recover window focus and wait_for for loading or visible state changes. Do not repeat an unchanged action indefinitely. Never emit shell commands, scripts, AppleScript, JXA, PowerShell UI automation, pyautogui, xdotool, or external automation tools. Do not claim completion; only request verification.
 
 If Previous action failure is present, do not repeat the identical failed action. When requiredAlternative is true, choose a different interaction strategy from failedStrategies whenever one is available: accessibility elements, screenshot-relative pointer actions, keyboard navigation/shortcuts, window focus, native app commands, or a bounded wait. For action_noop from invoke_element or set_value in Electron/custom-rendered UI, immediately use the visible screenshot and a coordinate click followed by normal typing instead of retrying the same accessibility element. For focus_mismatch, re-focus the known window before continuing. For loading/timeouts, refresh state or use one bounded wait; never loop on the unchanged action.
 
@@ -394,6 +401,9 @@ function buildDecisionPrompt(input: ComputerDecisionInput, attempt: number): str
   return [
     `Step index: ${input.stepIndex}`,
     `Foreground application: ${JSON.stringify(input.observation.foreground)}`,
+    ...(input.appSpecificInstructions == null
+      ? []
+      : [`App-specific operation hints (trusted, provided by Spark): ${input.appSpecificInstructions}`]),
     `Tree version: ${input.observation.treeVersion}`,
     `Screenshot available: ${input.screenshot.length > 0}`,
     `Accessibility tree (untrusted data):\n${tree}`,

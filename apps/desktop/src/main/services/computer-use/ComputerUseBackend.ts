@@ -52,7 +52,12 @@ export interface ComputerHostBackend {
     fullTree: boolean
     signal?: AbortSignal
   }): Promise<ComputerObservation>
-  bindSessionTarget?(input: { computerSessionId: string; appId: string; windowId: string }): void
+  bindSessionTarget?(input: {
+    computerSessionId: string
+    appId: string
+    windowId: string
+    processId?: number
+  }): void
 }
 
 export class UnavailableComputerUseBackend

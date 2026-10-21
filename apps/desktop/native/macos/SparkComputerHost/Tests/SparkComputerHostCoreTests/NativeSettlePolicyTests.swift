@@ -32,4 +32,27 @@ final class NativeSettlePolicyTests: XCTestCase {
       NativeSettlePolicy.decide(elapsedMs: 600, msSinceLastChange: 80, busy: false),
       .keepWaiting)
   }
+
+  func testSemanticLaneSettlesEarlierThanInjectedList() {
+    // 280ms elapsed / 200ms quiet: the default (injected) lane is still inside
+    // its quiet window, while the semantic lane's shorter budget has settled.
+    XCTAssertEqual(
+      NativeSettlePolicy.decide(elapsedMs: 280, msSinceLastChange: 200, busy: false),
+      .keepWaiting)
+    XCTAssertEqual(
+      NativeSettlePolicy.decide(
+        elapsedMs: 280, msSinceLastChange: 200, busy: false,
+        baselineMs: NativeSettlePolicy.semanticBaselineMs,
+        quietMs: NativeSettlePolicy.semanticQuietMs),
+      .settled)
+  }
+
+  func testSemanticLaneStillWaitsThroughItsBaseline() {
+    XCTAssertEqual(
+      NativeSettlePolicy.decide(
+        elapsedMs: 80, msSinceLastChange: 80, busy: false,
+        baselineMs: NativeSettlePolicy.semanticBaselineMs,
+        quietMs: NativeSettlePolicy.semanticQuietMs),
+      .keepWaiting)
+  }
 }

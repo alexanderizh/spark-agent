@@ -65,7 +65,7 @@ function delayWindowChurnRetry(): Promise<void> {
 async function selectTargetWithChurnRetry(
   connection: NativeHostConnection,
   options: {
-    previous?: { appId: string; windowId: string }
+    previous?: { appId: string; windowId: string; processId?: number }
     requireExactTarget: boolean
     signal: AbortSignal
   },
@@ -93,7 +93,8 @@ async function selectTargetWithChurnRetry(
       const transientJitter =
         previous != null &&
         error instanceof ComputerUseBrokerError &&
-        error.code === 'focus_mismatch'
+        error.code === 'focus_mismatch' &&
+        error.details?.reason !== 'target_window_ambiguous'
       if (!transientJitter || attempt >= WINDOW_CHURN_RETRY_MAX_ATTEMPTS) throw error
       log.warn(
         'Computer window inventory transiently missing the bound app; re-listing after a short settle',
@@ -137,7 +138,7 @@ export interface NativeHostConnection {
   executeAction(
     envelope: ComputerActionEnvelope,
     signal?: AbortSignal,
-    options?: { showVirtualCursor?: boolean },
+    options?: { showVirtualCursor?: boolean; highlightTargetWindow?: boolean },
   ): Promise<{
     response: Extract<NativeHostResponse, { type: 'action_result' }>
     bytes: Buffer | null
@@ -167,6 +168,7 @@ export interface NativeObservationEvidenceSink {
 interface ObservationSessionState {
   appId: string
   windowId: string
+  processId?: number
   frameId: string
   treeVersion: string
 }
@@ -179,7 +181,10 @@ export class NativeHostComputerUseBackend
   private readonly evidenceSink: NativeObservationEvidenceSink | null
   private readonly createId: () => string
   private readonly observationSessions = new Map<string, ObservationSessionState>()
-  private readonly targetBindings = new Map<string, { appId: string; windowId: string }>()
+  private readonly targetBindings = new Map<
+    string,
+    { appId: string; windowId: string; processId?: number }
+  >()
   private readonly supervisor: NativeHostSupervisor | null
   private supervisorDisabledByRollback = false
   private readonly unsubscribeRollout: (() => void) | null
@@ -374,10 +379,16 @@ export class NativeHostComputerUseBackend
     }
   }
 
-  bindSessionTarget(input: { computerSessionId: string; appId: string; windowId: string }): void {
+  bindSessionTarget(input: {
+    computerSessionId: string
+    appId: string
+    windowId: string
+    processId?: number
+  }): void {
     this.targetBindings.set(input.computerSessionId, {
       appId: input.appId,
       windowId: input.windowId,
+      ...(input.processId == null ? {} : { processId: input.processId }),
     })
     this.observationSessions.delete(input.computerSessionId)
   }
@@ -410,10 +421,15 @@ export class NativeHostComputerUseBackend
         async (connection) => {
           const previous = this.observationSessions.get(input.computerSessionId)
           const targetBinding = this.targetBindings.get(input.computerSessionId)
+          const previousProcessId = previous?.processId ?? targetBinding?.processId
           const previousDescriptor =
             previous == null
               ? targetBinding
-              : { appId: previous.appId, windowId: previous.windowId }
+              : {
+                  appId: previous.appId,
+                  windowId: previous.windowId,
+                  ...(previousProcessId == null ? {} : { processId: previousProcessId }),
+                }
           const target = await selectTargetWithChurnRetry(connection, {
             ...(previousDescriptor != null ? { previous: previousDescriptor } : {}),
             requireExactTarget: targetBinding != null,
@@ -489,9 +505,13 @@ export class NativeHostComputerUseBackend
           actionResult = await this.measure('action_execute_ms', () =>
             connection
               .executeAction(envelope, input.signal, {
-                // The visibleControlIndicator rollback flag rides the action
-                // request; absent keeps the overlay shown on older hosts.
+                // The visibleControlIndicator / windowHighlightIndicator
+                // rollback flags ride the action request; absent keeps the
+                // overlays shown on older hosts.
                 showVirtualCursor: getComputerUseV2FlagStore().isEnabled('visibleControlIndicator'),
+                highlightTargetWindow: getComputerUseV2FlagStore().isEnabled(
+                  'windowHighlightIndicator',
+                ),
               })
               .then((result) => {
                 actionBytes = result.bytes
@@ -553,9 +573,12 @@ export class NativeHostComputerUseBackend
             payload: actionResult.payload,
             bytes: actionBytes,
           })
+          const processId =
+            observation.foreground.app.processId ?? input.observation.foreground.app.processId
           this.observationSessions.set(envelope.computerSessionId, {
             appId: observation.foreground.app.id,
             windowId: observation.foreground.window.id,
+            ...(processId == null ? {} : { processId }),
             frameId: observation.frameId,
             treeVersion: observation.treeVersion,
           })
@@ -578,6 +601,9 @@ export class NativeHostComputerUseBackend
           ? selectFollowTarget(await connection.listWindows(input.signal), {
               appId: input.observation.foreground.app.id,
               windowId: input.observation.foreground.window.id,
+              ...(input.observation.foreground.app.processId == null
+                ? {}
+                : { processId: input.observation.foreground.app.processId }),
             })
           : input.observation.foreground
         const observation = await this.measure('action_post_observation_ms', () =>
@@ -836,9 +862,11 @@ export class NativeHostComputerUseBackend
       bytes: result.bytes,
     })
     if (input.signal.aborted) throw sessionCanceled()
+    const processId = observation.foreground.app.processId ?? input.targetProcessId
     this.observationSessions.set(input.computerSessionId, {
       appId: observation.foreground.app.id,
       windowId: observation.foreground.window.id,
+      ...(processId == null ? {} : { processId }),
       frameId: observation.frameId,
       treeVersion: observation.treeVersion,
     })
@@ -1010,23 +1038,62 @@ function sessionCanceled(): ComputerUseBrokerError {
 
 function selectControllableWindow(
   windows: NativeWindowDescriptor[],
-  previous?: { appId: string; windowId: string },
+  previous?: { appId: string; windowId: string; processId?: number },
   requireExactTarget = false,
 ): NativeWindowDescriptor {
   // Sticky app binding (Codex model): an established session keeps observing
   // ITS application even when the user focuses a different app mid-task —
   // following the foreground here would silently retarget the session onto
   // whatever the user happened to click. The previously observed window is
-  // preferred; when it died (window churn), any live window of the same app
-  // continues the session. Only sessions with no history acquire the focused
-  // window; explicitly bound sessions keep their exact-window contract.
+  // preferred. When that window disappears, only a single usable sibling can
+  // safely replace it; with multiple candidates the session fails closed
+  // instead of silently switching to the focused or largest window.
   const controllable = windows.filter((window) => !window.minimized)
   if (previous != null) {
     const previousWindow = controllable.find(
-      (window) => window.app.id === previous.appId && window.window.id === previous.windowId,
+      (window) =>
+        window.app.id === previous.appId &&
+        window.window.id === previous.windowId &&
+        (previous.processId == null || window.app.processId === previous.processId),
     )
     if (previousWindow != null) return previousWindow
-    const appWindows = controllable.filter((window) => window.app.id === previous.appId)
+    const matchingAppWindows = controllable.filter(
+      (window) =>
+        window.app.id === previous.appId &&
+        (previous.processId == null || window.app.processId === previous.processId),
+    )
+    const usableAppWindows = matchingAppWindows.filter(isUsableMainWindow)
+    const appWindows = usableAppWindows.length > 0 ? usableAppWindows : matchingAppWindows
+    if (appWindows.length === 1) {
+      const recovered = appWindows[0] as NativeWindowDescriptor
+      log.info('Computer window target recovered to the only live app window', {
+        boundAppId: previous.appId,
+        boundProcessId: previous.processId ?? null,
+        boundWindowId: previous.windowId,
+        recoveredWindowId: recovered.window.id,
+      })
+      return recovered
+    }
+    if (appWindows.length > 1) {
+      log.warn('Computer window target disappeared with multiple app candidates', {
+        boundAppId: previous.appId,
+        boundProcessId: previous.processId ?? null,
+        boundWindowId: previous.windowId,
+        candidateWindowIds: appWindows.slice(0, 12).map((window) => window.window.id),
+      })
+      throw new ComputerUseBrokerError(
+        'focus_mismatch',
+        `The target window ${JSON.stringify(previous.windowId)} is no longer available, and ` +
+          `the target application has multiple candidate windows. Inspect their titles and ` +
+          `select one explicitly: ${JSON.stringify(
+            appWindows.slice(0, 12).map((window) => ({
+              windowId: window.window.id,
+              title: window.window.title.slice(0, 160),
+            })),
+          )}`,
+        { reason: 'target_window_ambiguous' },
+      )
+    }
     const focusedAppWindow = appWindows.find((window) => window.focused)
     if (focusedAppWindow != null) return focusedAppWindow
     if (appWindows.length > 0) return largestWindow(appWindows)
@@ -1054,6 +1121,10 @@ function selectControllableWindow(
     liveWindows: summarizeWindowInventory(windows),
   })
   throw new ComputerUseBrokerError('focus_mismatch', 'No controllable window was found')
+}
+
+function isUsableMainWindow(window: NativeWindowDescriptor): boolean {
+  return window.window.bounds.width >= 120 && window.window.bounds.height >= 120
 }
 
 /**
@@ -1100,15 +1171,41 @@ function largestWindow(windows: NativeWindowDescriptor[]): NativeWindowDescripto
  */
 function selectFollowTarget(
   windows: NativeWindowDescriptor[],
-  previous: { appId: string; windowId: string },
+  previous: { appId: string; windowId: string; processId?: number },
 ): NativeWindowDescriptor {
   const controllable = windows.filter((window) => !window.minimized)
-  const appWindows = controllable.filter((window) => window.app.id === previous.appId)
+  const sameAppWindows = controllable.filter((window) => window.app.id === previous.appId)
+  const appWindows = sameAppWindows.filter(
+    (window) =>
+      (previous.processId == null || window.app.processId === previous.processId),
+  )
   const focusedAppWindow = appWindows.find((window) => window.focused)
   if (focusedAppWindow != null) return focusedAppWindow
   const previousWindow = appWindows.find((window) => window.window.id === previous.windowId)
   if (previousWindow != null) return previousWindow
   if (appWindows.length > 0) return largestWindow(appWindows)
+  if (previous.processId != null && sameAppWindows.length > 0) {
+    const candidates = sameAppWindows.slice(0, 12).map((window) => ({
+      processId: window.app.processId ?? null,
+      windowId: window.window.id,
+      title: window.window.title.slice(0, 160),
+    }))
+    log.warn('Computer target process has no live windows; refusing same-app process fallback', {
+      boundAppId: previous.appId,
+      boundProcessId: previous.processId,
+      boundWindowId: previous.windowId,
+      candidateProcessIds: sameAppWindows.slice(0, 12).map((window) => window.app.processId ?? null),
+      candidateWindowIds: sameAppWindows.slice(0, 12).map((window) => window.window.id),
+    })
+    throw new ComputerUseBrokerError(
+      'focus_mismatch',
+      `The target application process ${previous.processId} no longer has a live window. ` +
+        `Other processes with the same application id are still running; review their windows ` +
+        `and select an exact target before continuing: ${JSON.stringify(candidates)}`,
+      { reason: 'target_window_ambiguous' },
+      { retryable: true },
+    )
+  }
   const focused = controllable.filter((window) => window.focused)
   if (focused.length > 0) return largestWindow(focused)
   if (controllable.length > 0) return largestWindow(controllable)

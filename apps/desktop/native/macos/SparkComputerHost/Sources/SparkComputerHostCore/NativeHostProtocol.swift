@@ -24,7 +24,8 @@ public enum NativeHostRequest: Equatable, Sendable {
     recordBinding: Bool
   )
   case executeAction(
-    requestID: String, envelope: NativeComputerActionEnvelope, showVirtualCursor: Bool)
+    requestID: String, envelope: NativeComputerActionEnvelope, showVirtualCursor: Bool,
+    highlightTargetWindow: Bool)
   case cancelSession(requestID: String, computerSessionID: String)
   case ping(requestID: String)
 
@@ -35,7 +36,7 @@ public enum NativeHostRequest: Equatable, Sendable {
       .listWindows(let requestID),
       .captureWindow(let requestID, _, _),
       .observe(let requestID, _, _, _, _, _, _, _),
-      .executeAction(let requestID, _, _),
+      .executeAction(let requestID, _, _, _),
       .cancelSession(let requestID, _),
       .ping(let requestID):
       return requestID
@@ -168,22 +169,40 @@ public struct NativeHostRequestDecoder: Sendable {
         recordBinding: recordBinding
       )
     case "execute_action":
-      // Absent `showVirtualCursor` keeps the overlay on (historical behaviour).
+      // Keep accepting both legacy indicator fields for wire compatibility.
+      // The virtual-cursor field may be ignored; the window-highlight flag
+      // remains active. Each flag may appear alone, so validate every legal
+      // key-set combination once at the end.
       let executeKeys: Set<String> = ["protocolVersion", "requestId", "type", "envelope"]
       let showVirtualCursor: Bool
       if object["showVirtualCursor"] == nil {
-        try requireKeys(object, exactly: executeKeys)
         showVirtualCursor = true
       } else if let parsed = strictBoolean(object["showVirtualCursor"]) {
-        try requireKeys(object, exactly: executeKeys.union(["showVirtualCursor"]))
         showVirtualCursor = parsed
       } else {
         throw NativeHostProtocolError.invalidRequestFields
       }
+      let highlightTargetWindow: Bool
+      if object["highlightTargetWindow"] == nil {
+        highlightTargetWindow = true
+      } else if let parsed = strictBoolean(object["highlightTargetWindow"]) {
+        highlightTargetWindow = parsed
+      } else {
+        throw NativeHostProtocolError.invalidRequestFields
+      }
+      let allowedKeySets: [Set<String>] = [
+        executeKeys,
+        executeKeys.union(["showVirtualCursor"]),
+        executeKeys.union(["highlightTargetWindow"]),
+        executeKeys.union(["showVirtualCursor", "highlightTargetWindow"]),
+      ]
+      guard allowedKeySets.contains(Set(object.keys))
+      else { throw NativeHostProtocolError.invalidRequestFields }
       return .executeAction(
         requestID: requestID,
         envelope: try decodeComputerActionEnvelope(object["envelope"]),
-        showVirtualCursor: showVirtualCursor
+        showVirtualCursor: showVirtualCursor,
+        highlightTargetWindow: highlightTargetWindow
       )
     case "cancel_session":
       try requireKeys(

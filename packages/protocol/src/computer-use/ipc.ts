@@ -44,6 +44,20 @@ export const ComputerUseSettingsSchema = z
     fullRecordingEnabled: z.boolean(),
     evidenceRetentionDays: z.number().int().min(1).max(3_650),
     killSwitch: z.string().trim().min(1).max(120).nullable(),
+    // Defaults keep settings persisted before this field readable: a strict
+    // object would fail safeParse on legacy rows and silently reset every
+    // other computer-use setting to defaults.
+    controlIndicators: z
+      .object({
+        /** Agent-visible virtual cursor overlay while actions run. */
+        virtualCursor: z.boolean().default(true),
+        /** Accent ring + badge tracing the governed target window. */
+        windowHighlight: z.boolean().default(true),
+        /** Top-center pill announcing that Spark is driving the computer. */
+        statusBanner: z.boolean().default(true),
+      })
+      .strict()
+      .default({ virtualCursor: true, windowHighlight: true, statusBanner: true }),
     remote: z
       .object({
         observe: z.boolean(),
