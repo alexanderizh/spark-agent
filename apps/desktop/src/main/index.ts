@@ -980,6 +980,7 @@ function createWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     hasShadow: true,
+    ...(process.platform === 'win32' ? { frame: false } : {}),
     ...buildWindowChromeOptions(process.platform),
     icon: iconPath,
     // 启动页原生毛玻璃 / 深浅底色（平台分流，见 buildNativeSplashOptions）。
