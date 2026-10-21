@@ -5044,13 +5044,14 @@ export class SessionService {
           charCount: composedSystemPrompt.length,
         })
       }
-      if (resolveEngineKind(agentAdapter) === 'claude-sdk') {
-        promptSections.push({
-          label: 'Claude Code 预设',
-          content: '(SDK 内置系统提示词，约 15,000~20,000 字符，运行时由 Claude Code 注入)',
-          charCount: 0,
-        })
-      }
+      // 只统计本轮由 Spark 实际注入的 System / Skill 提示词，不估算 SDK 内置预设
+      // （Claude Code / Codex 的内置提示词对宿主不可见，也不属于我们的应用范围）。
+      const appliedPromptChars = promptSections.reduce((sum, section) => sum + section.charCount, 0)
+      promptSections.push({
+        label: '本轮应用提示词',
+        content: `本轮 Spark 实际应用提示词（System + Skill）：${appliedPromptChars.toLocaleString('zh-CN')} 字符（不含 SDK 内置预设）`,
+        charCount: 0,
+      })
       const toolCountEstimate = 12 // built-in coding agent tools (Read, Write, Edit, Bash, Glob, Grep, ...)
       const runtimeLoadStatus = [
         makeRuntimeLoadStatus('managed-agent', 'Managed Agent Prompt', managedAgentPrompt),
