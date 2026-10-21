@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { createLogger } from '@spark/shared'
 import { Tooltip } from '@lobehub/ui'
 import { Check, Copy, Download, Minus, Plus, UnfoldHorizontal, X } from 'lucide-react'
 import { useToast } from '../../components/Toast'
@@ -21,6 +22,7 @@ import './SessionShareDialog.css'
 const MIN_ZOOM = 0.2
 const MAX_ZOOM = 2.5
 const STAGE_GUTTER = 32
+const logger = createLogger('session-share')
 
 type Phase = 'prepare' | 'capture' | 'ready' | 'error'
 
@@ -183,6 +185,7 @@ export function SessionShareDialog({
         setPhase('ready')
       } catch (error) {
         if (cancelled) return
+        logger.error('event=capture_failed', error)
         setErrorMessage(error instanceof Error ? error.message : '生成长图失败')
         setPhase('error')
       }
@@ -296,8 +299,15 @@ export function SessionShareDialog({
                   </ShareIconButton>
                 </div>
                 <div className="session-share-actions">
-                  <ShareIconButton title={copied ? '已复制' : '复制'} onClick={() => void handleCopy()}>
-                    {copied ? <Check size={14} strokeWidth={1.6} /> : <Copy size={14} strokeWidth={1.6} />}
+                  <ShareIconButton
+                    title={copied ? '已复制' : '复制'}
+                    onClick={() => void handleCopy()}
+                  >
+                    {copied ? (
+                      <Check size={14} strokeWidth={1.6} />
+                    ) : (
+                      <Copy size={14} strokeWidth={1.6} />
+                    )}
                   </ShareIconButton>
                   <button type="button" className="is-primary" onClick={handleDownload}>
                     <Download size={14} />
@@ -328,7 +338,12 @@ export function SessionShareDialog({
             </>
           ) : (
             <div className="session-share-status">
-              <button type="button" className="session-share-status-close" aria-label="关闭" onClick={onClose}>
+              <button
+                type="button"
+                className="session-share-status-close"
+                aria-label="关闭"
+                onClick={onClose}
+              >
                 <X size={14} />
               </button>
               {phase === 'error' ? (

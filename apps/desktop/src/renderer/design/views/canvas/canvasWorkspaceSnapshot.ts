@@ -125,6 +125,7 @@ const HTML2CANVAS_COLOR_PROPS = [
 
 let html2canvasColorNormalizersCanvas: HTMLCanvasElement | null = null
 let html2canvasColorNormalizerElement: HTMLElement | null = null
+let html2canvasPseudoColorScopeSequence = 0
 
 function clampColorChannel(value: number): number {
   if (!Number.isFinite(value)) return 0
@@ -310,6 +311,72 @@ export function normalizeColorsForHtml2Canvas(
       // 用 !important 覆盖计算值，保证 html2canvas 在克隆阶段拿到的是 rgb()/rgba()。
       inlineStyle.setProperty(cssProp, normalized, 'important')
     }
+  }
+
+  // html2canvas 也会读取 ::before / ::after 的计算样式，但它们无法像普通节点那样写行内样式。
+  // 为伪元素生成作用域内的覆盖规则，避免伪元素中的现代颜色函数绕过上面的降级处理。
+  const pseudoOverrides: Array<{
+    elementIndex: number
+    pseudo: '::before' | '::after'
+    declarations: string[]
+  }> = []
+  for (const [elementIndex, element] of elements.entries()) {
+    for (const pseudo of ['::before', '::after'] as const) {
+      let computed: CSSStyleDeclaration
+      try {
+        computed = targetWindow.getComputedStyle(element, pseudo)
+      } catch {
+        continue
+      }
+
+      const declarations: string[] = []
+      for (let index = 0; index < computed.length; index += 1) {
+        const cssProp = computed.item(index)
+        if (!cssProp) continue
+        const value = computed.getPropertyValue(cssProp)
+        if (!HTML2CANVAS_UNSUPPORTED_COLOR.test(value)) continue
+        const normalized = normalizeCssColorForSnapshot(value)
+        if (normalized !== value) declarations.push(`${cssProp}: ${normalized} !important;`)
+      }
+      if (declarations.length > 0) {
+        pseudoOverrides.push({ elementIndex, pseudo, declarations })
+      }
+    }
+  }
+
+  if (pseudoOverrides.length > 0) {
+    const scopeAttribute = 'data-html2canvas-color-scope'
+    const pseudoAttribute = 'data-html2canvas-color-pseudo'
+    const scopeValue = `snapshot-${++html2canvasPseudoColorScopeSequence}`
+    const previousScopeValue = root.getAttribute(scopeAttribute)
+    root.setAttribute(scopeAttribute, scopeValue)
+    restores.push(() => {
+      if (previousScopeValue == null) root.removeAttribute(scopeAttribute)
+      else root.setAttribute(scopeAttribute, previousScopeValue)
+    })
+
+    const pseudoElementIndices = new Set(pseudoOverrides.map(({ elementIndex }) => elementIndex))
+    for (const elementIndex of pseudoElementIndices) {
+      const element = elements[elementIndex]
+      if (!element) continue
+      const previousPseudoValue = element.getAttribute(pseudoAttribute)
+      element.setAttribute(pseudoAttribute, String(elementIndex))
+      restores.push(() => {
+        if (previousPseudoValue == null) element.removeAttribute(pseudoAttribute)
+        else element.setAttribute(pseudoAttribute, previousPseudoValue)
+      })
+    }
+
+    const style = root.ownerDocument.createElement('style')
+    style.textContent = pseudoOverrides
+      .map(({ elementIndex, pseudo, declarations }) => {
+        const scope = `[${scopeAttribute}="${scopeValue}"]`
+        const target = `[${pseudoAttribute}="${elementIndex}"]`
+        return `${scope} ${target}${pseudo}, ${scope}${target}${pseudo} { ${declarations.join(' ')} }`
+      })
+      .join('\n')
+    root.append(style)
+    restores.push(() => style.remove())
   }
 
   if (restores.length === 0) return undefined

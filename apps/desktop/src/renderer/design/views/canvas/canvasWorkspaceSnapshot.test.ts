@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   collectSelectableGroupChildNodeIds,
   isolateCanvasSnapshotContent,
+  normalizeColorsForHtml2Canvas,
 } from './canvasWorkspaceSnapshot'
 import type { CanvasNode } from './canvas.types'
 
@@ -102,5 +103,49 @@ describe('isolateCanvasSnapshotContent', () => {
     expect(stage?.querySelector<HTMLElement>('.canvas-node-quick-footer')?.style.visibility).toBe(
       'hidden',
     )
+  })
+})
+
+describe('normalizeColorsForHtml2Canvas', () => {
+  it('把伪元素里的现代颜色函数改写进作用域覆盖样式，还原时清理干净', () => {
+    document.body.innerHTML = '<div id="share-root"><div id="share-child">内容</div></div>'
+    const root = document.querySelector<HTMLElement>('#share-root')
+    const child = document.querySelector<HTMLElement>('#share-child')
+    if (!root || !child) throw new Error('测试节点未创建')
+
+    const pseudoStyle = document.createElement('span').style
+    pseudoStyle.setProperty('color', 'color(display-p3 1 0 0)')
+    const fakeWindow = {
+      getComputedStyle: (element: Element, pseudo?: string | null) =>
+        element === child && pseudo === '::before'
+          ? pseudoStyle
+          : window.getComputedStyle(element, pseudo),
+    } as unknown as Window
+
+    const restore = normalizeColorsForHtml2Canvas(root, fakeWindow)
+    expect(restore).toBeDefined()
+
+    // 子节点带伪元素定位属性（elements 中下标 1），root 带作用域属性，覆盖样式进入 DOM。
+    expect(root.getAttribute('data-html2canvas-color-scope')).toMatch(/^snapshot-\d+$/)
+    expect(child.getAttribute('data-html2canvas-color-pseudo')).toBe('1')
+    const override = root.querySelector('style')
+    expect(override?.textContent).toContain('[data-html2canvas-color-pseudo="1"]::before')
+    expect(override?.textContent).toContain('rgb(255, 0, 0)')
+
+    restore?.()
+    expect(root.getAttribute('data-html2canvas-color-scope')).toBeNull()
+    expect(child.getAttribute('data-html2canvas-color-pseudo')).toBeNull()
+    expect(root.querySelector('style')).toBeNull()
+  })
+
+  it('伪元素没有现代颜色函数时不注入作用域样式', () => {
+    document.body.innerHTML = '<div id="plain-root"><span>文本</span></div>'
+    const root = document.querySelector<HTMLElement>('#plain-root')
+    if (!root) throw new Error('测试节点未创建')
+
+    normalizeColorsForHtml2Canvas(root)
+
+    expect(root.getAttribute('data-html2canvas-color-scope')).toBeNull()
+    expect(root.querySelector('style')).toBeNull()
   })
 })
