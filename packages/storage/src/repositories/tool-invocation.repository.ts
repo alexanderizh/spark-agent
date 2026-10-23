@@ -684,6 +684,56 @@ export class ToolInvocationRepository extends BaseRepository {
   }
 
   /**
+   * 会话经历聚合：MCP 服务器维度使用统计（检查器「会话经历」区块）。
+   * 只统计 source_kind='mcp' 且 mcp_server_id 非空的行，按服务器分组。
+   */
+  listMcpUsageBySession(sessionId: string): Array<{
+    serverId: string
+    tools: number
+    calls: number
+    lastStartedAt: string | null
+  }> {
+    return this.raw
+      .prepare(
+        `SELECT mcp_server_id AS serverId,
+                COUNT(DISTINCT tool_name) AS tools,
+                COUNT(*) AS calls,
+                MAX(started_at) AS lastStartedAt
+         FROM tool_invocations
+         WHERE session_id = ? AND source_kind = 'mcp'
+           AND mcp_server_id IS NOT NULL AND mcp_server_id != ''
+         GROUP BY mcp_server_id
+         ORDER BY calls DESC, serverId`,
+      )
+      .all(sessionId) as Array<{
+      serverId: string
+      tools: number
+      calls: number
+      lastStartedAt: string | null
+    }>
+  }
+
+  /**
+   * 会话经历聚合：按工具名精确集合取最近的账本行（技能 / 网页查阅条目提取）。
+   * 返回 ledger_seq 降序（新→旧），limit 由调用方控制预算。
+   */
+  listRecentByToolNames(
+    sessionId: string,
+    toolNames: Array<string>,
+    limit: number,
+  ): ToolInvocationRow[] {
+    if (toolNames.length === 0) return []
+    const placeholders = toolNames.map(() => '?').join(', ')
+    return this.raw
+      .prepare(
+        `SELECT * FROM tool_invocations
+         WHERE session_id = ? AND tool_name IN (${placeholders})
+         ORDER BY ledger_seq DESC LIMIT ?`,
+      )
+      .all(sessionId, ...toolNames, limit) as ToolInvocationRow[]
+  }
+
+  /**
    * 链校验：按 ledger_seq 顺序重算全链哈希。
    * 主链验不可变身份与归因字段（v2；v2 前的历史行按 v1 字段集兼容验算，审查 P2-2），
    * 终态行另验收尾态补充哈希（finished_record_hash）。

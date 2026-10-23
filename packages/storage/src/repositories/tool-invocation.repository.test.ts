@@ -648,4 +648,87 @@ describe('ToolInvocationRepository audit ledger', () => {
       ],
     })
   })
+
+  it('listMcpUsageBySession groups mcp rows by server with tools/calls/lastStartedAt', () => {
+    const appendMcp = (params: {
+      id: string
+      sessionId: string
+      toolName: string
+      serverId: string
+      startedAt: string
+    }) =>
+      repo.appendLedger({
+        id: params.id,
+        correlationId: params.id,
+        sourceKind: 'mcp',
+        sourceId: params.serverId,
+        toolName: params.toolName,
+        invocationSource: 'model',
+        mcpServerId: params.serverId,
+        sessionId: params.sessionId,
+        startedAt: params.startedAt,
+      })
+
+    appendMcp({
+      id: 'm1',
+      sessionId: 'session-journey',
+      toolName: 'mcp__search__web_search',
+      serverId: 'search',
+      startedAt: '2026-10-23T10:00:00.000Z',
+    })
+    appendMcp({
+      id: 'm2',
+      sessionId: 'session-journey',
+      toolName: 'mcp__search__fetch_url',
+      serverId: 'search',
+      startedAt: '2026-10-23T11:00:00.000Z',
+    })
+    appendMcp({
+      id: 'm3',
+      sessionId: 'session-journey',
+      toolName: 'mcp__canvas__node_add',
+      serverId: 'canvas',
+      startedAt: '2026-10-23T09:00:00.000Z',
+    })
+    // 非本会话 / 非 mcp 来源不参与聚合
+    appendMcp({
+      id: 'm4',
+      sessionId: 'session-other',
+      toolName: 'mcp__search__web_search',
+      serverId: 'search',
+      startedAt: '2026-10-23T12:00:00.000Z',
+    })
+    append({ id: 'b1', sessionId: 'session-journey', toolName: 'Bash' })
+
+    expect(repo.listMcpUsageBySession('session-journey')).toEqual([
+      {
+        serverId: 'search',
+        tools: 2,
+        calls: 2,
+        lastStartedAt: '2026-10-23T11:00:00.000Z',
+      },
+      {
+        serverId: 'canvas',
+        tools: 1,
+        calls: 1,
+        lastStartedAt: '2026-10-23T09:00:00.000Z',
+      },
+    ])
+  })
+
+  it('listRecentByToolNames returns matching rows newest-first with budget', () => {
+    append({ id: 'w1', sessionId: 'session-journey', toolName: 'WebSearch' })
+    append({ id: 'b1', sessionId: 'session-journey', toolName: 'Bash' })
+    append({ id: 'w2', sessionId: 'session-journey', toolName: 'WebFetch' })
+    append({ id: 'w3', sessionId: 'session-other', toolName: 'WebSearch' })
+
+    const rows = repo.listRecentByToolNames('session-journey', ['WebSearch', 'WebFetch'], 10)
+    expect(rows.map((row) => row.id)).toEqual(['w2', 'w1'])
+    expect(repo.listRecentByToolNames('session-journey', [], 10)).toEqual([])
+    expect(
+      repo
+        .listRecentByToolNames('session-journey', ['WebSearch', 'WebFetch'], 1)
+        .map((row) => row.id),
+    ).toEqual(['w2'])
+  })
 })

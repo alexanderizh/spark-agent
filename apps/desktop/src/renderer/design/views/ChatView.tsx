@@ -3560,6 +3560,7 @@ export function ChatView({
           checkpointAvailable={checkpointAvailable}
           checkpointEnabled={checkpointEnabled}
           onOpenCheckpointTimeline={() => setShowCheckpointTimeline(true)}
+          onFilePreview={handleFilePreview}
         />
       )}
 

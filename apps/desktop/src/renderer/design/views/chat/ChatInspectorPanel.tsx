@@ -12,6 +12,7 @@ import { ChatInspectorPerf } from './ChatInspectorPerf'
 import { OutcomeRoomContainer } from '../../outcome-room/OutcomeRoomContainer'
 import { InspectorCollapsibleSection } from '../../components/InspectorCollapsibleSection'
 import { ChatInspectorToolLog } from '../../components/ChatInspectorToolLog'
+import { ChatInspectorJourney } from '../../components/ChatInspectorJourney'
 import { WorktreePanel } from '../../components/WorktreePanel'
 import { useToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
@@ -28,6 +29,7 @@ import {
   type RuntimeContextSnapshotState,
 } from './ChatViewUtils'
 import { extractInspectorSubagents, isRecord, type InspectorTask } from './ChatInspectorUtils'
+import type { FileOpenHandler } from '../../components/fileOpenRouting'
 import type {
   AgentEvent,
   EnvConfigGetResponse,
@@ -754,6 +756,7 @@ export function ChatInspector({
   checkpointAvailable,
   checkpointEnabled,
   onOpenCheckpointTimeline,
+  onFilePreview,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -780,6 +783,8 @@ export function ChatInspector({
   checkpointAvailable: boolean
   checkpointEnabled: boolean
   onOpenCheckpointTimeline: () => void
+  /** 统一文件打开路由（ChatView handleFilePreview）：检查器内产物/附件点击预览 */
+  onFilePreview?: FileOpenHandler
 }) {
   const showTeamActivityLogs = useTeamActivityLogsVisible()
   const subagents = extractInspectorSubagents(messages)
@@ -968,6 +973,13 @@ export function ChatInspector({
         {/* 工具执行审计日志：账本时间线 + 哈希链完整性（tool-audit:* IPC）。
             固定在性能之后、上下文窗口之前（执行观测区聚在一起）。 */}
         {session != null && <ChatInspectorToolLog sessionId={session.id} />}
+
+        {/* 会话经历：技能与 MCP / 网页查阅 / 过程产物 / 输入来源四个同级折叠区块
+            （session:get-journey IPC，一次聚合共享）。紧跟工具执行区块（同属执行
+            观测区），有数据的分组才出现。产物/附件点击走统一预览路由。 */}
+        {session != null && (
+          <ChatInspectorJourney sessionId={session.id} onFilePreview={onFilePreview} />
+        )}
 
         {subagents.length > 0 && (
           <div className="inspector-section">

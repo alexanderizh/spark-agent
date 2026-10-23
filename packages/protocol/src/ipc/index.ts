@@ -113,6 +113,7 @@ import type { EvidenceCostIpcChannelMap } from '../evidence-cost.js'
 import type { ReplayPlaybookIpcChannelMap } from '../replay-playbook.js'
 import type { WikiIpcChannelMap } from '../wiki.js'
 import type { ToolAuditIpcChannelMap } from '../tool-audit.js'
+import type { SessionJourneyIpcChannelMap } from '../session-journey.js'
 import type {
   SessionAttachReferenceRequest,
   SessionAttachReferenceResponse,
@@ -7667,7 +7668,8 @@ export interface IpcChannelMap
     WorkflowBundleIpcChannelMap,
     SessionWorkflowBindingIpcChannelMap,
     WikiIpcChannelMap,
-    ToolAuditIpcChannelMap {
+    ToolAuditIpcChannelMap,
+    SessionJourneyIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]

@@ -399,6 +399,7 @@ import { registerSessionWorkflowBindingIpc } from './registerSessionWorkflowBind
 import { registerExecutionContinuityIpc } from './registerExecutionContinuityIpc.js'
 import { registerWikiIpc } from './registerWikiIpc.js'
 import { registerToolAuditIpc } from './registerToolAuditIpc.js'
+import { registerSessionJourneyIpc } from './registerSessionJourneyIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
 import { ComputerUseAgentController } from '../services/computer-use/ComputerUseAgentController.js'
 import { sparkMediaUploader } from '../services/media/SparkMediaUploader.js'
@@ -5299,6 +5300,7 @@ export function registerAllIpcHandlers(): void {
   })
   registerWikiIpc()
   registerToolAuditIpc()
+  registerSessionJourneyIpc()
   registerSessionWorkflowBindingIpc({
     getSessionService,
     onChanged: (sessionId, bindingInstanceId) => {
