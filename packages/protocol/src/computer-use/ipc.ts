@@ -53,11 +53,11 @@ export const ComputerUseSettingsSchema = z
         virtualCursor: z.boolean().default(true),
         /** Accent ring + badge tracing the governed target window. */
         windowHighlight: z.boolean().default(true),
-        /** Top-center pill announcing that Spark is driving the computer. */
-        statusBanner: z.boolean().default(true),
+        /** @deprecated Accepted only to read settings saved by older versions. */
+        statusBanner: z.boolean().optional(),
       })
       .strict()
-      .default({ virtualCursor: true, windowHighlight: true, statusBanner: true }),
+      .default({ virtualCursor: true, windowHighlight: true }),
     remote: z
       .object({
         observe: z.boolean(),

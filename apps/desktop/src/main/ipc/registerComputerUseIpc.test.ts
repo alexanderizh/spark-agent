@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS: ComputerUseSettings = {
   fullRecordingEnabled: false,
   evidenceRetentionDays: 30,
   killSwitch: 'CommandOrControl+Shift+Esc',
-  controlIndicators: { virtualCursor: false, windowHighlight: true, statusBanner: true },
+  controlIndicators: { virtualCursor: false, windowHighlight: true },
   remote: { observe: false, approveL2: false, control: false },
 }
 

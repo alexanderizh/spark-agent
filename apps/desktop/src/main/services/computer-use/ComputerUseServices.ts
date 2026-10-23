@@ -43,7 +43,6 @@ import { AppControlExecutorBackend } from './AppControlExecutorBackend.js'
 import { computerUseV2RolloutController } from './ComputerUseV2RolloutController.js'
 import { ComputerDesktopExecutionCoordinator } from './ComputerDesktopExecutionCoordinator.js'
 import { ComputerUsePipService } from './ComputerUsePipService.js'
-import { ComputerUseStatusBannerService } from './ComputerUseStatusBannerService.js'
 import { ComputerUsePipProjection } from './ComputerUsePipProjection.js'
 import { getComputerUseV2FlagStore } from './computerUseV2Flags.js'
 
@@ -69,8 +68,6 @@ export interface ComputerUseServices {
   readonly approvalGate: ComputerActionApprovalGate
   /** Optional live PIP panel; present only when the pipPanel flag is enabled. */
   readonly pip?: ComputerUsePipService
-  /** Top-center status pill; runtime user preferences control its visibility. */
-  readonly statusBanner: ComputerUseStatusBannerService
   readonly evidence?: NativeObservationEvidenceSink & {
     readLatestImage(
       computerSessionId: string,
@@ -198,8 +195,7 @@ export function createComputerUseServices(
     options.shortcutRegistrar ?? FAIL_CLOSED_SHORTCUT_REGISTRAR,
     options.onKillSwitchError,
   )
-  // Shared session-label adapter: the PIP panel and the status pill must show
-  // the same labels, so the mapping lives in exactly one place.
+  // Keep session labels in one place for the PIP panel.
   const labeledSessions = {
     listLabeled: () =>
       sessions.listActiveSessionIds().map((computerSessionId) => {
@@ -237,13 +233,6 @@ export function createComputerUseServices(
         projection: new ComputerUsePipProjection({ sessions: labeledSessions }),
       })
     : null
-  // The pill folds the timeline into its own projection instance (the fold is
-  // stateful; sharing one would double-consume events).
-  const statusBanner = new ComputerUseStatusBannerService({
-    enabled: getComputerUseV2FlagStore().isEnabled('statusBanner'),
-    timeline,
-    projection: new ComputerUsePipProjection({ sessions: labeledSessions }),
-  })
   const snapshotCapture = options.snapshotCapture ?? createDefaultSnapshotCapture(database, backend)
   return {
     sessions,
@@ -260,7 +249,6 @@ export function createComputerUseServices(
     coordinator,
     approvalGate,
     ...(pip == null ? {} : { pip }),
-    statusBanner,
     ...(usableEvidence == null ? {} : { evidence: usableEvidence }),
     ...(snapshotCapture == null ? {} : { snapshots: snapshotCapture }),
     armKillSwitch: (accelerator) =>
@@ -285,7 +273,6 @@ export function createComputerUseServices(
       }),
     dispose: async () => {
       pip?.dispose()
-      statusBanner?.dispose()
       killSwitch.dispose()
       await coordinator.dispose()
       await Promise.allSettled(

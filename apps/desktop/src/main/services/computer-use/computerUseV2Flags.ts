@@ -8,7 +8,6 @@ export const COMPUTER_USE_V2_FLAGS = [
   'activityTimeline',
   'visibleControlIndicator',
   'windowHighlightIndicator',
-  'statusBanner',
   'actionSkyshot',
   'pipPanel',
 ] as const
@@ -32,7 +31,6 @@ const ENVIRONMENT_KEYS: Record<ComputerUseV2FlagName, string> = {
   activityTimeline: 'SPARK_COMPUTER_USE_V2_ACTIVITY_TIMELINE',
   visibleControlIndicator: 'SPARK_COMPUTER_USE_V2_VISIBLE_CONTROL_INDICATOR',
   windowHighlightIndicator: 'SPARK_COMPUTER_USE_V2_WINDOW_HIGHLIGHT',
-  statusBanner: 'SPARK_COMPUTER_USE_V2_STATUS_BANNER',
   actionSkyshot: 'SPARK_COMPUTER_USE_V2_ACTION_SKYSHOT',
   pipPanel: 'SPARK_COMPUTER_USE_V2_PIP_PANEL',
 }
@@ -49,7 +47,6 @@ const DEFAULTS: Record<ComputerUseV2FlagName, boolean> = {
   activityTimeline: true,
   visibleControlIndicator: false,
   windowHighlightIndicator: true,
-  statusBanner: true,
   actionSkyshot: true,
   pipPanel: true,
 }
@@ -147,10 +144,6 @@ export function isWindowHighlightIndicatorEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return enabledFor('windowHighlightIndicator', env)
-}
-
-export function isStatusBannerEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return enabledFor('statusBanner', env)
 }
 
 function enabledFor(name: ComputerUseV2FlagName, env: NodeJS.ProcessEnv): boolean {

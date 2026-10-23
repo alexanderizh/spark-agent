@@ -96,7 +96,6 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
   const initialSettings = loadSettings(settingsStore)
   applyControlIndicatorSettings(initialSettings)
   const initialServices = services()
-  initialServices.statusBanner.setEnabled(initialSettings.controlIndicators.statusBanner)
   reconcilePersistedKillSwitch(settingsStore, services)
   initialServices.timeline.subscribe((activityEvent) => {
     const mainWindow = getMainWindow()
@@ -138,7 +137,6 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
       const runtime = services()
       armKillSwitchBestEffort(next, runtime)
       applyControlIndicatorSettings(next)
-      runtime.statusBanner.setEnabled(next.controlIndicators.statusBanner)
       await applyDisabledEnvironmentTransition(current, next, runtime)
       settingsStore.set(SETTINGS_CATEGORY, SETTINGS_KEY, next)
       return next
@@ -477,7 +475,6 @@ function applyControlIndicatorSettings(settings: ComputerUseSettings): void {
   // cursor is no longer part of the product experience.
   store.setUserOverride('visibleControlIndicator', false)
   store.setUserOverride('windowHighlightIndicator', settings.controlIndicators.windowHighlight)
-  store.setUserOverride('statusBanner', settings.controlIndicators.statusBanner)
 }
 
 function assertEnvironmentEnabled(

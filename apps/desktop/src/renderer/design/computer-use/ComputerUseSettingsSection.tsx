@@ -43,18 +43,17 @@ export function ComputerUseSettingsSection() {
   }, [])
 
   const updateIndicator = useCallback(
-    async (key: 'windowHighlight' | 'statusBanner', value: boolean) => {
+    async (value: boolean) => {
       setSettings((current) =>
-        current == null ? current : { ...current, controlIndicators: { ...current.controlIndicators, [key]: value } },
+        current == null
+          ? current
+          : { ...current, controlIndicators: { ...current.controlIndicators, windowHighlight: value } },
       )
       try {
         const next = await window.spark.invoke('computer-use:update-settings', {
           controlIndicators: {
             virtualCursor: false,
-            windowHighlight:
-              key === 'windowHighlight' ? value : (settings?.controlIndicators.windowHighlight ?? true),
-            statusBanner:
-              key === 'statusBanner' ? value : (settings?.controlIndicators.statusBanner ?? true),
+            windowHighlight: value,
           },
         })
         setSettings(next)
@@ -268,22 +267,7 @@ export function ComputerUseSettingsSection() {
           </div>
           <Switch
             checked={settings?.controlIndicators.windowHighlight ?? true}
-            onChange={(checked) => void updateIndicator('windowHighlight', checked)}
-          />
-        </div>
-        <div className="computer-use-permission-row">
-          <div className="computer-use-permission-icon">
-            <Icons.Bell size={16} />
-          </div>
-          <div className="computer-use-permission-copy">
-            <div className="computer-use-permission-title">顶部状态提示</div>
-            <div className="computer-use-permission-description">
-              Agent 操作电脑时在屏幕顶部显示一条状态胶囊，说明当前阶段并提醒可按 Esc 打断。
-            </div>
-          </div>
-          <Switch
-            checked={settings?.controlIndicators.statusBanner ?? true}
-            onChange={(checked) => void updateIndicator('statusBanner', checked)}
+            onChange={(checked) => void updateIndicator(checked)}
           />
         </div>
       </div>
