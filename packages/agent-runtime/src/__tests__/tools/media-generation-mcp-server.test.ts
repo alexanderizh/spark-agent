@@ -146,6 +146,16 @@ describe('spark_media MCP server', () => {
         req.on('end', () => {
           postedPath = req.url ?? ''
           postedHeaders = req.headers
+          // OpenAI 规范的 /images/edits 是 multipart 文件上传；JSON.parse 会炸，
+          // 按 content-type 分流捕获（JSON 分支保持 Bailian 等既有用例行为）。
+          const contentType = String(req.headers['content-type'] ?? '')
+          if (contentType.startsWith('multipart/form-data')) {
+            postedRawBody = Buffer.concat(chunks).toString('latin1')
+            postedBody = null
+            res.writeHead(200, { 'content-type': 'application/json' })
+            res.end(JSON.stringify({ data: [{ url: `${baseUrl}/asset.png` }] }))
+            return
+          }
           const currentPostedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<
             string,
             unknown
@@ -1269,6 +1279,80 @@ describe('spark_media MCP server', () => {
     expect(postedRawBody).toContain('filename="asset.png"')
     expect(postedRawBody).toContain('filename="asset2.png"')
     expect(postedRawBody).toContain('second-reference-image')
+    expect(existsSync(response.result.structuredContent.files[0])).toBe(true)
+  })
+
+  it('routes custom openai-images image edits to /images/edits instead of the generation endpoint', async () => {
+    // 自定义 openai-images 渠道（如自部署 ZImage / OpenAI 兼容网关）：合同只有一份
+    // invocation（生图端点 /images/generations），image.edit 必须按 OpenAI 规范
+    // 强制走独立 multipart 端点 /images/edits，否则编辑表单被 POST 到生图接口，
+    // 服务端 JSON 解析直接报 "Request body must be valid JSON"。
+    const manifest = {
+      id: 'custom:zimage:test',
+      providerKind: 'openai-images',
+      modelId: 'zimage-test',
+      displayName: 'zimage-test',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'] },
+          paramSchema: {},
+        },
+        {
+          id: 'image.edit',
+          label: '图片编辑',
+          input: { required: ['prompt', 'image'] },
+          output: { types: ['image'] },
+          paramSchema: {},
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images/generations',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'zimage-test-key',
+        SPARK_MEDIA_PROVIDER: 'openai-images',
+        SPARK_MEDIA_MODEL: 'zimage-test',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify([manifest]),
+      },
+    })
+
+    const response = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 12,
+      method: 'tools/call',
+      params: {
+        name: 'edit_image',
+        arguments: {
+          model: manifest.id,
+          prompt: 'add a warm sunset glow',
+          imageUrls: [`${baseUrl}/asset.png`],
+        },
+      },
+    })
+
+    expect(response.error).toBeUndefined()
+    expect(postedPath).toBe('/images/edits')
+    expect(String(postedHeaders['content-type'])).toContain('multipart/form-data; boundary=')
+    expect(postedHeaders.authorization).toBe('Bearer zimage-test-key')
+    expect(postedRawBody).toContain('name="prompt"')
+    expect(postedRawBody).toContain('add a warm sunset glow')
+    expect(postedRawBody).toContain('name="image[]"')
     expect(existsSync(response.result.structuredContent.files[0])).toBe(true)
   })
 

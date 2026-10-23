@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **多媒体图编辑端点路由**：自定义 `openai-images` 渠道（如自部署 ZImage、OpenAI 兼容网关）的 `edit_image` 此前把 multipart 编辑请求错误发到生图接口 `/images/generations`（报 "Request body must be valid JSON"），现按 OpenAI 规范强制走独立端点 `/images/edits`，与画布/进程内路径行为对齐；托管渠道与 Contract V2 自定义端点渠道不受影响。
+
 ## [0.15.8] - 2026-10-22
 
 ### 新增

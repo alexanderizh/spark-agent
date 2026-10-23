@@ -2274,8 +2274,18 @@ async function handleManifestTool(config, toolName, args, match) {
     prune.prunedParams,
   )
 
+  // OpenAI 规范下 image.edit 走独立 multipart 端点 /images/edits。协议合同
+  // 「一个 manifest 只有一份 invocation」无法表达编辑端点，自定义 openai-images
+  // 渠道（adapterFromManifest !== true，无托管端点改写）若沿用 invocation.endpoint
+  // （生图端点）会把 multipart 编辑请求发到 /images/generations，服务端 JSON
+  // 解析直接报错。这里与 TS 侧 OpenAiOfficialMediaAdapter 的硬编码路由对齐。
+  const openAiImagesEditEndpoint =
+    manifest.providerKind === 'openai-images' && capability.id === 'image.edit'
+      ? '/images/edits'
+      : null
   const endpoint =
     managedNewApiImageEndpoint(config, capability.id) ??
+    openAiImagesEditEndpoint ??
     renderTemplateString(manifest.invocation.endpoint || '', variables)
   const url = resolveMainRequestUrl(config, resolveManifestUrl(config.baseUrl, endpoint))
   const invocationHeaders = renderTemplate(manifest.invocation.headers || {}, variables)
