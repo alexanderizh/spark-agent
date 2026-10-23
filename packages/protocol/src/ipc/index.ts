@@ -5931,6 +5931,8 @@ export interface FileReadResponse {
 export interface FileReadBinaryRequest {
   /** Absolute path to the file to read. */
   filePath: string
+  /** Optional pre-read byte ceiling for callers that transfer file contents over IPC. */
+  maxBytes?: number
 }
 
 export interface FileReadBinaryResponse {
