@@ -3139,6 +3139,18 @@ export function ProviderEditPanel({
       setError(translate('providersView.t75Desc'))
       return
     }
+    // 语音域协议校验：解析层对「声明的域找不到同域契约」的 ref 不再跨域克隆
+    // （直接不解析），图片协议挂在语音渠道上的配置保存时在此拦下并给出换协议
+    // 指引，而不是等运行时 audio.speech 被能力校验拒绝后才暴露。
+    // image/video 的协议列表历史上就受切换处理器约束，不加硬校验避免误伤旧数据。
+    if (
+      isMedia &&
+      form.modelType === 'voice' &&
+      !mediaProviderOptionsForModelType('voice').includes(effectiveMediaProvider)
+    ) {
+      setError(translate('providersView.t.voiceAdapterNoSpeech'))
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -3726,12 +3738,19 @@ export function ProviderEditPanel({
                         ? (() => {
                             const candidate =
                               prev.mediaProvider || mediaProviderFromImageKind(imageProvider)
-                            return (modelType === 'image' || modelType === 'video') &&
-                              !SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS.includes(candidate)
-                              ? modelType === 'image'
-                                ? mediaProviderFromImageKind(imageProvider)
-                                : 'apimart'
-                              : candidate
+                            if (mediaProviderOptionsForModelType(modelType).includes(candidate)) {
+                              return candidate
+                            }
+                            // 候选协议不在该类型支持列表时的归位兜底。语音域按
+                            // SUPPORTED_VOICE_MEDIA_PROVIDERS 收紧后，图片渠道（如
+                            // openai-images）切成语音类型不能再沿用图片协议——否则
+                            // 解析层会把 TTS 模型跨域克隆成图片 manifest，audio.speech
+                            // 直接被能力校验拒绝。回落 custom（模板契约
+                            // POST {base}/audio/speech，自部署网关最常用）。
+                            if (modelType === 'voice') return 'custom'
+                            return modelType === 'image'
+                              ? mediaProviderFromImageKind(imageProvider)
+                              : 'apimart'
                           })()
                         : supportsMediaConfig
                           ? prev.mediaProvider

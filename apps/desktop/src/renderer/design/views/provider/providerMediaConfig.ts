@@ -84,6 +84,29 @@ export const SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS: readonly MediaProviderKind[]
   'custom',
 ]
 
+/**
+ * 语音（audio.*）域真正可用的协议白名单。只收录满足其一的协议：
+ *  - 内置目录声明了 audio.* 能力 manifest（volcengine-speech / minimax-hailuo /
+ *    zhipu / bailian / xai / google-generative-ai 音乐）；
+ *  - 走模板契约的自定义 / OpenAI 兼容渠道（custom / openai-compatible，inline
+ *    或兜底合成的 /audio/speech binary_response 契约）。
+ *
+ * 图片协议（openai-images / apimart / kling / midjourney / tencent-tokenhub /
+ * volcengine-ark / agnes）没有任何语音契约——此前 voice 下拉直接复用全量协议表，
+ * 用户给自部署 TTS 选「OpenAI 多媒体」后，模型被解析层跨域克隆成图片 manifest，
+ * audio.speech 在能力校验层直接被拒（真机案例）。语音域从此处收紧。
+ */
+export const SUPPORTED_VOICE_MEDIA_PROVIDERS: readonly MediaProviderKind[] = [
+  'custom',
+  'openai-compatible',
+  'volcengine-speech',
+  'minimax-hailuo',
+  'zhipu',
+  'bailian',
+  'xai',
+  'google-generative-ai',
+]
+
 export const MEDIA_CAPABILITY_LABELS: Record<MediaCapabilityId, string> = {
   'image.generate': '生图',
   'image.edit': '图生图 / 图片编辑',
@@ -101,9 +124,14 @@ export const MEDIA_CAPABILITY_LABELS: Record<MediaCapabilityId, string> = {
 export function mediaProviderOptionsForModelType(
   modelType: ProviderModelType,
 ): readonly MediaProviderKind[] {
-  return modelType === 'image' || modelType === 'video'
-    ? SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS
-    : USABLE_MEDIA_PROVIDER_KINDS
+  if (modelType === 'image' || modelType === 'video') {
+    return SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS
+  }
+  // 语音域按白名单下发，不再回落全量协议表：协议与能力不匹配的选项（如
+  // openai-images）不该出现在语音渠道的适配器下拉里，否则用户选中即产生
+  // 「解析层把 TTS 模型合成成图片模型」的死配置。
+  if (modelType === 'voice') return SUPPORTED_VOICE_MEDIA_PROVIDERS
+  return USABLE_MEDIA_PROVIDER_KINDS
 }
 
 export function capabilitiesForModelType(modelType: ProviderModelType): MediaCapabilityId[] {

@@ -19,6 +19,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CanvasMediaModelSummary, VoiceAssistantSettings } from '@spark/protocol'
 
+import { useProviderConfigVersion } from '../hooks/useProviderConfigVersion'
+
 /** saveError 展示时长：够读清一行错误，又不至于在下一轮操作时还占着提示位。 */
 const SAVE_ERROR_CLEAR_DELAY_MS = 5000
 
@@ -51,6 +53,8 @@ export function useVoiceTtsSettings(): UseVoiceTtsSettingsResult {
   // saveError 的自动清除定时器。每次展示前先清旧 timer，防止上一条错误的定时器
   // 把刚展示的新错误提前清掉。
   const saveErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 渠道配置变更版本号：新建/修改 TTS 渠道后触发候选下拉重新拉取。
+  const providerConfigVersion = useProviderConfigVersion()
 
   /** 展示一条保存错误，并重排 5s 自动清除。 */
   const showSaveError = useCallback((message: string) => {
@@ -77,8 +81,8 @@ export function useVoiceTtsSettings(): UseVoiceTtsSettingsResult {
     mountedRef.current = true
     let cancelled = false
 
-    // 两段并行读取，各自 try/catch 互不阻塞：候选列举失败只影响下拉候选，
-    // 不该拖垮设置本身。
+    // settings 首读：候选列举已独立成下方 effect（跟随渠道配置变更刷新），
+    // 这里只负责 settings 本身，读取失败不拖垮候选下拉。
     void (async () => {
       try {
         const res = await window.spark.invoke('voice-assistant:get-settings', {})
@@ -86,20 +90,8 @@ export function useVoiceTtsSettings(): UseVoiceTtsSettingsResult {
       } catch {
         /* 首读失败：settings 保持 null，面板整体禁用而不是展示空表单误导用户 */
       } finally {
-        // 成败都结束 loading；与候选读取无关（候选迟到只影响下拉，不阻塞表单）。
+        // 成败都结束 loading。
         if (!cancelled) setReady(true)
-      }
-    })()
-    void (async () => {
-      try {
-        // 播报候选与主进程 TTS 合成同一份「已配置渠道 + 已启用模型」口径（同设置页）。
-        const res = await window.spark.invoke('canvas:media-models:list', {
-          capability: 'audio.speech',
-          enabledOnly: true,
-        })
-        if (!cancelled) setModels(res.models)
-      } catch {
-        /* 列举失败不阻塞设置读取：候选为空时音色回落手输 */
       }
     })()
 
@@ -113,6 +105,27 @@ export function useVoiceTtsSettings(): UseVoiceTtsSettingsResult {
       }
     }
   }, [])
+
+  // 播报候选跟随渠道配置变更刷新：渠道保存会广播 stream:config:changed(scope=provider)。
+  // 旧实现只在挂载时拉一次，用户配置完 TTS 渠道后 HUD 下拉看不到新模型（需重开面板）。
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        // 播报候选与主进程 TTS 合成同一份「已配置渠道 + 已启用模型」口径（同设置页）。
+        const res = await window.spark.invoke('canvas:media-models:list', {
+          capability: 'audio.speech',
+          enabledOnly: true,
+        })
+        if (!cancelled) setModels(res.models)
+      } catch {
+        /* 列举失败不阻塞设置读取：候选为空时音色回落手输 */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [providerConfigVersion])
 
   const patch = useCallback(
     async (p: Partial<VoiceAssistantSettings>): Promise<boolean> => {

@@ -26,6 +26,7 @@ import type {
 } from '@spark/protocol'
 import { DEFAULT_VOICE_ASSISTANT_SETTINGS } from '@spark/protocol'
 import { getPermissionModeOptions, getValidPermissionMode } from '../utils/permission-options'
+import { useProviderConfigVersion } from '../hooks/useProviderConfigVersion'
 import { mediaModelDefaultVoice } from '../utils/mediaParamOptions'
 import {
   createEchoTolerantFilterOption,
@@ -133,6 +134,22 @@ export function VoiceAssistantSettingsCard() {
       } catch {
         /* 状态读取失败不阻塞设置 */
       }
+    })()
+    const off = window.spark.on('stream:voice-assistant:status', (next) => {
+      setStatus(next)
+    })
+    return () => {
+      cancelled = true
+      off()
+    }
+  }, [])
+
+  // 渠道/模型候选跟随渠道配置变更刷新：渠道保存会广播 stream:config:changed(scope=provider)。
+  // 旧实现只在挂载时拉一次，用户配置完 TTS / 识别渠道后下拉看不到新模型（需重开设置页）。
+  const providerConfigVersion = useProviderConfigVersion()
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
       try {
         // 播报渠道 / 模型 / 音色候选：与主进程 TTS 同一份「已配置渠道 + 已启用模型」口径。
         const modelsRes = await window.spark.invoke('canvas:media-models:list', {
@@ -154,14 +171,10 @@ export function VoiceAssistantSettingsCard() {
         /* 列举失败不阻塞设置读取：候选为空时识别渠道下拉仅剩自动档 */
       }
     })()
-    const off = window.spark.on('stream:voice-assistant:status', (next) => {
-      setStatus(next)
-    })
     return () => {
       cancelled = true
-      off()
     }
-  }, [])
+  }, [providerConfigVersion])
 
   const update = useCallback(
     async (patch: Partial<VoiceAssistantSettings>): Promise<boolean> => {

@@ -255,6 +255,13 @@ paramPolicy: {
   - `providerMediaConfig.ts` 的 voice 分支补上按协议的「实际请求地址」映射：minimax-hailuo → `/v1/t2a_v2`（music / asr 分别 `/v1/music_generation`、`/v1/speech_to_text`）、volcengine-speech → `/api/v3/tts/unidirectional`（speech）/ `/api/v3/tts/create`（music）、xai → `/tts`；自定义 / OpenAI 兼容仍为 `/audio/speech`。缺这条分支时预览会把所有语音渠道都显示成 `/audio/speech`。
   - `minimax-hailuo-media.adapter.ts` 的 `describeNonJsonAudioBody`：非 JSON body 落库 / 上屏前先判定是否二进制（RIFF/OggS/fLaC/ID3 签名、C0 控制字符、U+FFFD），是则只输出「类型 + 约 N 字节 + 改用自定义协议的指引」，不再 `JSON.stringify` 回显字节。
 - 判定口径：拿不准渠道该用哪个协议时，先看表单里的「实际请求地址」预览是否等于网关真实端点；预览与网关协议不一致就是配错协议了。
+- 同类变体（2026-10-23 真机案例）：语音渠道若用 `openai-images` 协议建出来，模型会被 resolver 合成 OpenAI 图片 manifest（运行时 `domains=["image"]`、`capabilities=["image.generate","image.edit"]`），audio.speech 在能力校验层直接被拒，且模型名容易照抄 MiniMax（如 `speech-2.8-hd`）。修复走 `providers_media_guide`(audio/speech) → `validate` → `configure` 重建 custom 语音契约（`/audio/speech` + `binary_response`），manifest.id 留空由工具按渠道身份生成，保存会整体替换旧 `mediaModelRefs`。
+- 验收用 `providers_media_diagnose.execute`（需用户同意）：`requestCall` 回显真实 method/url/body/响应，能一眼区分「应用侧契约错误」与「服务端故障」——网关返回 502 + worker 连接重置属服务器侧问题（如 ComfyUI 代理报 `[WinError 10054]`），不要再改应用配置。注意 `spark_media` MCP 的 `list_models` 是会话启动时的快照，配置保存后旧列表不会热刷新，查持久化状态用 `providers_get`。
+- **用户自己配置语音渠道的三层防线（2026-10-23 已落地，修「自己配就不行」）**：
+  1. 协议下拉按域收紧：`providerMediaConfig.ts` 新增 `SUPPORTED_VOICE_MEDIA_PROVIDERS`（custom / openai-compatible / volcengine-speech / minimax-hailuo / zhipu / bailian / xai / google-generative-ai），`mediaProviderOptionsForModelType('voice')` 不再回落全量协议表——`openai-images`（图片+视频适配器，无音频）等选项从语音渠道消失；
+  2. 切换/保存双兜底：`ProvidersView` 模型类型切换处理器按 `mediaProviderOptionsForModelType` 校验候选协议（voice 不合法回落 `custom`，即模板契约 `POST {base}/audio/speech`）；`handleSave` 对存量 voice 渠道的协议做硬校验，不合法直接报错（i18n key `providersView.t.voiceAdapterNoSpeech`）指引用户换协议；
+  3. 解析层禁跨域克隆：`media-model-resolver.ts` 的 `synthesizeMediaManifestForRef` 在「声明的域找不到同域基底」时返回 null（原先会克隆图片 manifest，把 TTS 模型伪装成图片模型、`audio.speech` 被能力校验拒）。同域克隆与无域声明时的行为不变，MiniMax/zhipu 等原生语音渠道不受影响（目录里有同域基底）。
+- **配置生效语义（别再误导用户重启）**：渠道保存即广播 `stream:config:changed(scope=provider)`，主进程全链路直读 DB——语音助手合成、画布任务、agent 会话都是**实时或 turn 级生效，不需要重启应用**（`resolveMediaGenerationContext` 每个 agent turn 重写 `SPARK_MEDIA_CONFIG_FILE` 快照；仅进行中的 turn 和跨 turn 存活的 warm 子进程用旧快照）。渲染层候选下拉已统一接 `useProviderConfigVersion`（语音设置卡、HUD 播报设置 hook、快速创作三个界面跟随刷新）；消息播报按钮可用性缓存 60s TTL。inline manifest 只在 `mediaProvider === 'custom'` 时生成是刻意设计：原生协议渠道的自定义模型要靠同协议目录基底克隆走原生 adapter，inline `custom` 契约会强制接管为模板适配器（`media-router.service.ts` 的 `isCustomManifest` 分支），不能给原生渠道乱生成。
 
 ## 十五、渠道 IPC 的错误必须在边界转成 SparkError，否则用户只看到通用文案
 

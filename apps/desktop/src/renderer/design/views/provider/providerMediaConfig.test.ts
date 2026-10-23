@@ -47,6 +47,24 @@ describe('provider media configuration', () => {
     expect(MEDIA_CAPABILITY_LABELS['audio.music']).toBe('音乐生成')
   })
 
+  it('restricts voice profiles to adapters that actually serve audio', () => {
+    // 守护语音域协议白名单：图片协议（openai-images 等）没有语音契约，出现在
+    // 语音渠道下拉里会让解析层把 TTS 模型克隆成图片 manifest（真机案例）。
+    const options = mediaProviderOptionsForModelType('voice')
+    expect(options).toContain('custom')
+    expect(options).toContain('openai-compatible')
+    expect(options).toContain('volcengine-speech')
+    expect(options).toContain('minimax-hailuo')
+    expect(options).toContain('zhipu')
+    expect(options).toContain('bailian')
+    expect(options).toContain('xai')
+    expect(options).not.toContain('openai-images')
+    expect(options).not.toContain('apimart')
+    expect(options).not.toContain('kling')
+    expect(options).not.toContain('tencent-tokenhub')
+    expect(options).not.toContain('volcengine-ark')
+  })
+
   it('shows protocol-accurate official request previews', () => {
     expect(
       getMediaRequestPreviewUrl(

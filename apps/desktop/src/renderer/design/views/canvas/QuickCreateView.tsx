@@ -43,6 +43,7 @@ import {
   isUnresolvableFileDrop,
 } from '../../services/composer-attachments'
 import { canvasApi } from './canvas.api'
+import { useProviderConfigVersion } from '../../hooks/useProviderConfigVersion'
 import { CanvasModelPicker } from './CanvasModelPicker'
 import { CanvasParameterControl } from './CanvasParameterControl'
 import {
@@ -695,6 +696,8 @@ export function QuickCreateView() {
   const [textModelId, setTextModelId] = useState(savedPreferences?.textModelId ?? '')
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [modelsLoading, setModelsLoading] = useState(true)
+  // 渠道配置变更版本号：配置完媒体渠道后本页候选立即刷新，不必重进页面。
+  const providerConfigVersion = useProviderConfigVersion()
   const [promptLibrary, setPromptLibrary] = useState<GlobalPromptLibraryItem[]>([])
   const [promptPickerOpen, setPromptPickerOpen] = useState(false)
   const [promptSearch, setPromptSearch] = useState('')
@@ -918,7 +921,9 @@ export function QuickCreateView() {
     return () => {
       cancelled = true
     }
-  }, [])
+    // providerConfigVersion 变化时重拉：渠道保存会广播 stream:config:changed(scope=provider)，
+    // 媒体模型 / 文本渠道候选跟随刷新（旧实现仅挂载拉一次，配置完渠道需重进页面）。
+  }, [providerConfigVersion])
 
   useEffect(() => {
     hydratingParamsRef.current = true

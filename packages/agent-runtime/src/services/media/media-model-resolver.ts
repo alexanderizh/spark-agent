@@ -158,6 +158,12 @@ export function synthesizeMediaManifestForRef(
   const domainPool = preferredDomain
     ? bases.filter((base) => base.domains.includes(preferredDomain))
     : []
+  // 声明了媒体域却找不到任何同域基底时禁止跨域克隆：语音渠道克隆图片 manifest
+  // 会把 TTS 模型伪装成「图片模型」（domains=["image"]、capabilities 只剩 image.*，
+  // audio.speech 在能力校验层被拒；真机案例 openai-images 渠道 + speech 模型）。
+  // 宁可让该 ref 不出现在列表里，也不给出必然调不通的假契约。UI 侧已按域收紧
+  // 协议下拉（SUPPORTED_VOICE_MEDIA_PROVIDERS）与保存校验，这里兜住存量数据与手改配置。
+  if (preferredDomain && domainPool.length === 0) return null
   const pool = domainPool.length > 0 ? domainPool : bases
 
   let best = pool[0] as MediaModelManifest

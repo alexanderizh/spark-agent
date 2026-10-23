@@ -196,6 +196,21 @@ describe('resolveProfileMediaModels', () => {
     expect(models[0]?.manifest.capabilities.some((cap) => cap.id === 'image.generate')).toBe(true)
   })
 
+  it('语音渠道在图片协议下不再跨域克隆，ref 直接不解析（列表为空）', () => {
+    const catalog = newCatalog()
+    const models = resolveProfileMediaModels(
+      {
+        mediaProvider: 'openai-images',
+        modelType: 'voice',
+        defaultModel: 'my-tts',
+        mediaCapabilities: ['audio.speech'],
+        mediaModelRefs: [{ manifestId: 'custom:my-tts', modelId: 'my-tts', enabled: true }],
+      },
+      catalog,
+    )
+    expect(models).toHaveLength(0)
+  })
+
   it('配置了 mediaModelRefs 时不再用 modelIds 回退补内置模型', () => {
     const catalog = newCatalog()
     const models = resolveProfileMediaModels(
@@ -321,6 +336,18 @@ describe('synthesizeMediaManifestForRef', () => {
     const manifest = synthesizeMediaManifestForRef(
       { mediaProvider: 'no-such-provider' },
       { manifestId: 'custom:foo', modelId: 'foo' },
+      catalog,
+    )
+    expect(manifest).toBeNull()
+  })
+
+  it('声明 audio 域但协议只有图片基底时返回 null，不跨域克隆图片 manifest', () => {
+    // 真机案例：openai-images 语音渠道的 speech ref 被克隆成图片 manifest，
+    // audio.speech 在能力校验层被拒。跨域克隆已移除，改为不解析。
+    const catalog = newCatalog()
+    const manifest = synthesizeMediaManifestForRef(
+      { mediaProvider: 'openai-images', mediaCapabilities: ['audio.speech'] },
+      { manifestId: 'custom:my-tts', modelId: 'my-tts' },
       catalog,
     )
     expect(manifest).toBeNull()
