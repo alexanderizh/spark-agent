@@ -275,3 +275,12 @@ paramPolicy: {
 - 状态码只补一次：client 常已把 `HTTP 400` 写进 message，再无条件追加 `（HTTP 400）` 会得到「HTTP 400 · 1210 参数错误（HTTP 400）」这种重复文案。
 - 参考实现与用例：`apps/desktop/src/main/ipc/registerProviderVoiceIpc.ts`（`runVoiceTask` + 独立测试文件，覆盖 6 种映射分支）。
 - 传输层失败也要归一：`AbortSignal.timeout` 抛的是 `DOMException: The operation was aborted due to timeout`，Node fetch 断网抛 `TypeError: fetch failed`，都不经过非 2xx 分支。它们原样冒到渠道页同样没有信息量，应在 HTTP 客户端里就转成 MediaProviderError（超时给中文秒数，网络失败复用 `@spark/shared` 的 `describeNetworkError`）。
+
+## 十六、渠道媒体字段经 MCP 工具面写入的边界（2026-10-23 实测）
+
+- `providers_update` 的 `config` 是 **merge 语义**（只传增量字段即可，其余保留），但各媒体字段的可达性不同：
+  - `mediaDefaults`（含 `timeoutMs`）：config 路径**可写**，回读确认落盘；
+  - `mediaModelRefs`：config 路径必被拒（报 `mediaModelRefs contains an invalid model reference`，即使结构与盘上完全一致）——不要经 `providers_update` 传，需要变更时走 `providers_media_configure` 或 UI；不传则原样保留；
+  - `mediaVoiceCatalog`：config 与工具顶层参数**都会被静默剥离**，MCP 工具面写不进去；它只在应用内 IPC（UI 渠道编辑「音色获取」→ `ProviderUpdateRequest` 顶层字段）可达。
+- 超时生效链路（TTS 兜底偏短的根因排查入口）：所有语音路径统一 `resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, fallback)`，`ctx.mediaDefaults` 在每次路由时直读渠道记录 → 配了 `mediaDefaults.timeoutMs` 下一次调用即生效，无需重启。**2026-10-23 起 TTS 默认兜底已从 60s 提到 120s**：`template-media.adapter.ts` 按 `capability.id.startsWith('audio.')` 条件放宽（audio.* 120s、其余能力 60s），`openai-compatible-media.adapter.ts` generateSpeech 与 `xai-media.adapter.ts` generateSpeech 重写均为固定 120_000（apimart 继承 openai-compatible 同享）；minimax / bailian / volcengine-speech 本就 ≥120s。UI 入口：渠道编辑 → 媒体默认参数区「接口超时 ms」输入框（纯 placeholder 无 label，可发现性差，用户常以为「没有配置超时的地方」）。
+- 音色目录同步的通用机制：`media-voice-catalog.client.ts`（协议层 `provider-media-voice-catalog.ts`）四模板 zhipu / minimax / volcengine-speech / custom；自部署 OpenAI 兼容音色接口用 `custom` 模板填完整 URL + `{{apiKey}}` 请求头 + `listPath`（响应中音色数组的点路径）+ `valueField`（音色值字段，字符串数组形态也必须非空）。同步入口在渠道编辑「音色获取」，候选写入 `mediaDynamicParamOptions` 后画布 / 快速创作 / 语音助手自动继承；字段映射配错时同步报错会指明检查哪两个字段。

@@ -160,12 +160,17 @@ export class TemplateMediaAdapter {
         mode: manifest.invocation.mode,
       },
     })
+    // 语音类能力（合成/音乐/转写）服务端耗时长，未配置渠道的默认请求时限放宽到
+    // 120s；其余能力维持 60s。已配置 mediaDefaults.timeoutMs 的渠道不受影响。
     let raw = await fetchJson(compiledInvocation.url, {
       method: compiledInvocation.method,
       headers: compiledInvocation.headers,
       ...(compiledInvocation.body !== undefined ? { body: compiledInvocation.body } : {}),
       fetchImpl: ctx.fetch,
-      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
+      timeoutMs: resolveMediaInterfaceTimeoutMs(
+        ctx.mediaDefaults,
+        capability.id.startsWith('audio.') ? 120_000 : 60_000,
+      ),
       binary:
         compiledInvocation.binaryResponse ||
         manifest.invocation.response.kind === 'binary_response',

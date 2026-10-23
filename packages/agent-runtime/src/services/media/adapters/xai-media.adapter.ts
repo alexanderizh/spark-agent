@@ -302,7 +302,8 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
+      // TTS 服务端合成耗时长，未配置渠道的默认兜底 120s。
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
       ...(!withTimestamps ? { binary: true } : {}),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
