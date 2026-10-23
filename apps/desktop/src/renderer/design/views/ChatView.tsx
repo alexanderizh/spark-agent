@@ -261,7 +261,11 @@ import {
   consumePendingOpenTerminalPanel,
   clearPendingOpenTerminalPanel,
 } from './chat/terminalPanelNavigation'
-import type { OpenCodeFile, CodeViewMode, CodeViewPreference } from '../components/code-viewer/types'
+import type {
+  OpenCodeFile,
+  CodeViewMode,
+  CodeViewPreference,
+} from '../components/code-viewer/types'
 import { isCodeLikeFile } from '../components/code-viewer/codeLanguage'
 import { insertToComposer } from '../components/code-viewer/composerInsert'
 import { buildComposerAttachmentsFromPaths } from '../services/composer-attachments'
@@ -1734,21 +1738,18 @@ export function ChatView({
   )
 
   // 批量关闭编辑器内文件 tab（右键菜单）；外层 code 面板保持打开。空数组直接返回。
-  const closeCodeFiles = useCallback(
-    (absPaths: string[]) => {
-      if (absPaths.length === 0) return
-      const closing = new Set(absPaths)
-      setCodeFiles((prev) => {
-        const next = prev.filter((f) => !closing.has(f.absPath))
-        setActiveCodePath((cur) => {
-          if (cur == null || !closing.has(cur)) return cur
-          return next.at(-1)?.absPath ?? null
-        })
-        return next
+  const closeCodeFiles = useCallback((absPaths: string[]) => {
+    if (absPaths.length === 0) return
+    const closing = new Set(absPaths)
+    setCodeFiles((prev) => {
+      const next = prev.filter((f) => !closing.has(f.absPath))
+      setActiveCodePath((cur) => {
+        if (cur == null || !closing.has(cur)) return cur
+        return next.at(-1)?.absPath ?? null
       })
-    },
-    [],
-  )
+      return next
+    })
+  }, [])
 
   const handleFilePreview = useCallback<FileOpenHandler>(
     (filePath, fileType, opts) => {
@@ -2007,7 +2008,11 @@ export function ChatView({
           activeSession?.id ?? null,
         )
         if (applied) {
-          toast.success(translate('chatView.tpl27Desc', { value: relPath === '' ? translate('chatView.t10') : relPath }))
+          toast.success(
+            translate('chatView.tpl27Desc', {
+              value: relPath === '' ? translate('chatView.t10') : relPath,
+            }),
+          )
         } else {
           toast.error(translate('chatView.t11Desc'))
         }
@@ -3725,7 +3730,9 @@ export function ChatView({
               <BrowserChrome variant="panel" store={panelBrowserTabsStore} />
             ) : activeUnifiedSideTab === 'side-chat' && showSideChatPanel ? (
               <SideChatPanel
-                workspaceName={sideChatWorkspace?.name ?? activeWorkspace?.name ?? translate('chatView.t29')}
+                workspaceName={
+                  sideChatWorkspace?.name ?? activeWorkspace?.name ?? translate('chatView.t29')
+                }
                 agentStatus={sideChatAgentStatus}
                 creating={sideChatCreating}
                 width={sideChatWidth}
@@ -5366,7 +5373,9 @@ function ChatStream({
         <div className={`chat-stream-inner${multiSelectMode ? ' has-multiselect' : ''}`}>
           {multiSelectMode && (
             <div className="chat-message-selectbar">
-              <span className="selectbar-count">{translate('chatView.tpl2Desc', { count: selectedMessageIds.size })}</span>
+              <span className="selectbar-count">
+                {translate('chatView.tpl2Desc', { count: selectedMessageIds.size })}
+              </span>
               <span className="selectbar-divider" />
               <button type="button" onClick={selectAllMessages}>
                 {translate('chatView.t84')}
@@ -5595,7 +5604,10 @@ function ChatStream({
                       const retryPayload = buildErrorRetryPayload(displayMessages, index)
                       // 智能续跑：失败轮已有实质产出且自动改派未进行时，错误卡额外提供
                       // 「继续完成」（发继续指令从断点续跑，不丢弃已完成进度）。
-                      const continuePayload = buildMessageErrorContinuePayload(displayMessages, index)
+                      const continuePayload = buildMessageErrorContinuePayload(
+                        displayMessages,
+                        index,
+                      )
                       const sessionTaskEntry = sessionTaskTimeline.get(msg.id)
                       return (
                         <AssistantMessageRows
@@ -6682,9 +6694,15 @@ function TeamRoundDividerBlockView({
   block: Extract<UIBlock, { kind: 'team_round_divider' }>
 }) {
   return (
-    <div className="team-round-divider" role="separator" aria-label={translate('chatView.tpl8Desc', { round: block.round + 1 })}>
+    <div
+      className="team-round-divider"
+      role="separator"
+      aria-label={translate('chatView.tpl8Desc', { round: block.round + 1 })}
+    >
       <span className="team-round-divider-line" />
-      <span className="team-round-divider-label">{translate('chatView.tpl9Desc', { round: block.round + 1, total: block.maxRounds })}</span>
+      <span className="team-round-divider-label">
+        {translate('chatView.tpl9Desc', { round: block.round + 1, total: block.maxRounds })}
+      </span>
       <span className="team-round-divider-line" />
     </div>
   )
@@ -6938,9 +6956,7 @@ function ValidationSuggestionCard({
       if (res.queued === true) {
         toast.info(translate('chatView.t49Desc'))
       } else {
-        toast.info(
-          repair ? translate('chatView.t50Desc') : translate('chatView.t51'),
-        )
+        toast.info(repair ? translate('chatView.t50Desc') : translate('chatView.t51'))
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : translate('chatView.t52'))
@@ -7869,7 +7885,10 @@ const UserMsg = React.memo(
         )}
         {mentionAgentName != null && mentionAgentName.length > 0 && (
           <div className="msg-user-mention-hint">
-            → {deliveryState != null && deliveryState !== 'accepted' ? translate('chatView.t70') : translate('chatView.t71')}{' '}
+            →{' '}
+            {deliveryState != null && deliveryState !== 'accepted'
+              ? translate('chatView.t70')
+              : translate('chatView.t71')}{' '}
             <strong>@{mentionAgentName}</strong> {translate('chatView.t103')}
           </div>
         )}
@@ -8877,7 +8896,10 @@ function ToolLogsMasterToggle({
   // 不带绿色对勾（thinking-done-badge）与 spinner，保留 chevron 箭头按展开状态旋转。
   // 自身也挂 thinking-section，故隐藏规则须用 :not(.tool-logs-master) 排除自身。
   const durationSuffix = durationMs != null ? formatTurnDuration(durationMs) : null
-  const label = durationSuffix == null ? translate('chatView.t74') : translate('chatView.tpl16Desc', { value: durationSuffix })
+  const label =
+    durationSuffix == null
+      ? translate('chatView.t74')
+      : translate('chatView.tpl16Desc', { value: durationSuffix })
   return (
     <div className={`thinking-section tool-logs-master ${open ? 'open' : ''}`}>
       <button className="thinking-toggle" onClick={onToggle} aria-expanded={open}>
@@ -9163,7 +9185,12 @@ function ToolLogEntry({
         />
         <div className="tool-log-card">
           {block.stdout && (
-            <ToolLogSection label={translate('chatView.t82')} content={block.stdout} kind="terminal" stream="stdout" />
+            <ToolLogSection
+              label={translate('chatView.t82')}
+              content={block.stdout}
+              kind="terminal"
+              stream="stdout"
+            />
           )}
           {block.stderr && (
             <ToolLogSection
@@ -9174,7 +9201,9 @@ function ToolLogEntry({
               stream="stderr"
             />
           )}
-          {block.isStreaming && <span className="tool-log-streaming">{translate('chatView.t108')}</span>}
+          {block.isStreaming && (
+            <span className="tool-log-streaming">{translate('chatView.t108')}</span>
+          )}
         </div>
       </div>
     )
@@ -9214,13 +9243,21 @@ function ToolLogEntry({
           />
         )}
         {input && (
-          <ToolLogSection label={translate('chatView.t75')} content={input} kind={isCommand ? 'terminal' : 'auto'} />
+          <ToolLogSection
+            label={translate('chatView.t75')}
+            content={input}
+            kind={isCommand ? 'terminal' : 'auto'}
+          />
         )}
         {output &&
           (richLinks != null ? (
             <ToolLogSourceList links={richLinks} />
           ) : (
-            <ToolLogSection label={translate('chatView.t82')} content={output} kind={isCommand ? 'terminal' : 'auto'} />
+            <ToolLogSection
+              label={translate('chatView.t82')}
+              content={output}
+              kind={isCommand ? 'terminal' : 'auto'}
+            />
           ))}
         {error && (
           <ToolLogSection

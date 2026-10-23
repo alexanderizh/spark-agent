@@ -27,12 +27,22 @@ import type {
   MediaGenerateOutput,
   MediaProviderContext,
 } from '../media-adapter.types.js'
-import { extractImages, extractStatus, extractTaskId, fetchJson, pollTask } from '../media-http.util.js'
+import {
+  extractImages,
+  extractStatus,
+  extractTaskId,
+  fetchJson,
+  pollTask,
+} from '../media-http.util.js'
 import type { ExtractedImage } from '../media-http.util.js'
 import { FAILED_STATUSES } from './openai-compatible-media.adapter.js'
 import { filenameHelper } from './openai-compatible-media.adapter.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
-import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
+import {
+  configuredMediaInterfaceTimeoutMs,
+  mediaPollTimeoutOptions,
+  resolveMediaInterfaceTimeoutMs,
+} from '../media-timeout.js'
 import { resolveXaiMediaReference, type XaiMediaReference } from '../xai-media-input.js'
 
 const log = createLogger('media:xai')
@@ -60,19 +70,26 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     input: MediaGenerateInput,
     ctx: MediaProviderContext,
   ): Promise<MediaGenerateOutput> {
-    const imageInputs = (input.inputFiles ?? []).filter((file) => file.type === 'image' || file.type === 'file')
+    const imageInputs = (input.inputFiles ?? []).filter(
+      (file) => file.type === 'image' || file.type === 'file',
+    )
     if (imageInputs.length > 0) return this.editImage(input, ctx)
     const prompt = (input.prompt ?? '').trim()
-    if (!prompt) throw new MediaProviderError('invalid_input', 'xAI image generation requires a prompt')
+    if (!prompt)
+      throw new MediaProviderError('invalid_input', 'xAI image generation requires a prompt')
     const params = normalizeXaiImageParams(input.modelParams)
     const n = positiveInteger(params.n) ?? 1
     const body: Record<string, unknown> = {
       model: ctx.defaultModel,
       prompt,
       n,
-      ...(stringParam(params.aspect_ratio) ? { aspect_ratio: stringParam(params.aspect_ratio) } : {}),
+      ...(stringParam(params.aspect_ratio)
+        ? { aspect_ratio: stringParam(params.aspect_ratio) }
+        : {}),
       ...(stringParam(params.resolution) ? { resolution: stringParam(params.resolution) } : {}),
-      ...(xaiResponseFormat(params.response_format) ? { response_format: xaiResponseFormat(params.response_format) } : {}),
+      ...(xaiResponseFormat(params.response_format)
+        ? { response_format: xaiResponseFormat(params.response_format) }
+        : {}),
       storage_options: buildStorageOptions(input, xaiImageExtension(params)),
       ...(stringParam(params.user) ? { user: stringParam(params.user) } : {}),
     }
@@ -91,11 +108,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
 
     const model = ctx.defaultModel
     const isVideo15 = mediaAdapterModelId(ctx).startsWith('grok-imagine-video-1.5')
-    if (
-      isVideo15 &&
-      capability !== 'video.image_to_video' &&
-      !ctx.skipParameterValidation
-    ) {
+    if (isVideo15 && capability !== 'video.image_to_video' && !ctx.skipParameterValidation) {
       throw new MediaProviderError('invalid_input', `${model} 仅支持图生视频`)
     }
     if ((input.inputFiles ?? []).some((file) => file.type === 'video')) {
@@ -108,15 +121,17 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const images = (input.inputFiles ?? []).filter(
       (file) => file.type === 'image' || file.type === 'file',
     )
-    const firstFrameFile = capability === 'video.image_to_video'
-      ? images.find((file) => file.role === 'first_frame') ?? images[0]
-      : undefined
+    const firstFrameFile =
+      capability === 'video.image_to_video'
+        ? (images.find((file) => file.role === 'first_frame') ?? images[0])
+        : undefined
     const explicitReferenceFiles = images.filter((file) => file.role === 'reference')
-    const referenceFiles = capability === 'video.reference_to_video'
-      ? explicitReferenceFiles.length > 0
-        ? explicitReferenceFiles
-        : images
-      : []
+    const referenceFiles =
+      capability === 'video.reference_to_video'
+        ? explicitReferenceFiles.length > 0
+          ? explicitReferenceFiles
+          : images
+        : []
     const selectedImageCount = (firstFrameFile ? 1 : 0) + referenceFiles.length
     const resolveStartedAt = Date.now()
     log.info(
@@ -135,7 +150,10 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     }
     if (capability === 'video.reference_to_video') {
       if (referenceRefs.length === 0) {
-        throw new MediaProviderError('invalid_input', 'xAI reference-to-video requires reference images')
+        throw new MediaProviderError(
+          'invalid_input',
+          'xAI reference-to-video requires reference images',
+        )
       }
     }
 
@@ -152,20 +170,22 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
         `xAI ${capability} duration must be between 1 and ${maxDuration} seconds`,
       )
     }
-    const aspectRatio = stringParam(params.aspectRatio ?? params.aspect_ratio)
-      ?? ctx.mediaDefaults?.video?.aspectRatio
+    const aspectRatio =
+      stringParam(params.aspectRatio ?? params.aspect_ratio) ??
+      ctx.mediaDefaults?.video?.aspectRatio
     const resolution = stringParam(params.resolution) ?? ctx.mediaDefaults?.video?.resolution
     if (resolution === '1080p' && !isVideo15 && !ctx.skipParameterValidation) {
-      throw new MediaProviderError('invalid_input', 'xAI 1080p video is only supported by Grok Imagine Video 1.5 I2V')
+      throw new MediaProviderError(
+        'invalid_input',
+        'xAI 1080p video is only supported by Grok Imagine Video 1.5 I2V',
+      )
     }
 
     const body: Record<string, unknown> = {
       model,
       ...(prompt ? { prompt } : {}),
       ...(capability === 'video.image_to_video' && firstFrame ? { image: firstFrame } : {}),
-      ...(capability === 'video.reference_to_video'
-        ? { reference_images: referenceRefs }
-        : {}),
+      ...(capability === 'video.reference_to_video' ? { reference_images: referenceRefs } : {}),
       ...(duration !== undefined ? { duration } : {}),
       ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
       ...(resolution ? { resolution } : {}),
@@ -201,25 +221,32 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     }
     const taskId = extractTaskId(data)
     if (!taskId) {
-      throw new MediaProviderError('provider_http_error', `No xAI video request_id: ${JSON.stringify(data).slice(0, 800)}`)
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No xAI video request_id: ${JSON.stringify(data).slice(0, 800)}`,
+      )
     }
     ctx.onTaskSubmitted?.({ requestId: taskId, response: data })
     log.info(
       `event=task-created capability=${capability} model=${model} requestId=${taskId} elapsedMs=${Date.now() - createStartedAt}`,
     )
-    const raw = await pollTask(`${baseEndpoint(ctx)}/videos/${encodeURIComponent(taskId)}`, authHeaders(ctx), {
-      fetchImpl: ctx.fetch,
-      intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-      ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
-      inspect: (response) => {
-        const status = extractStatus(response)
-        if (extractXaiVideoUrls(response).length > 0 || status === 'done') return 'done'
-        return FAILED_STATUSES.includes(status) ? 'failed' : 'pending'
+    const raw = await pollTask(
+      `${baseEndpoint(ctx)}/videos/${encodeURIComponent(taskId)}`,
+      authHeaders(ctx),
+      {
+        fetchImpl: ctx.fetch,
+        intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, DEFAULT_VIDEO_POLL_TIMEOUT_MS),
+        inspect: (response) => {
+          const status = extractStatus(response)
+          if (extractXaiVideoUrls(response).length > 0 || status === 'done') return 'done'
+          return FAILED_STATUSES.includes(status) ? 'failed' : 'pending'
+        },
+        logContext: `provider=xai capability=${capability} requestId=${taskId}`,
+        describeResponse: describeXaiPollResponse,
+        ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       },
-      logContext: `provider=xai capability=${capability} requestId=${taskId}`,
-      describeResponse: describeXaiPollResponse,
-      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
-    })
+    )
     const videoUrls = extractXaiVideoUrls(raw)
     if (videoUrls.length === 0) {
       throw new MediaProviderError(
@@ -238,14 +265,21 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
           videoUrl,
           input.outputDir,
           filenameHelper(input, 'video', index, videoUrls.length),
-          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
     log.info(
       `event=download-finished capability=${capability} requestId=${taskId} assetCount=${assets.length} elapsedMs=${Date.now() - downloadStartedAt}`,
     )
-    logMediaResult({ provider: this.id, capability, ok: true, assetCount: assets.length, requestId: taskId })
+    logMediaResult({
+      provider: this.id,
+      capability,
+      ok: true,
+      assetCount: assets.length,
+      requestId: taskId,
+    })
     const publicUrlError = extractXaiPublicUrlError(raw)
     return {
       provider: this.id,
@@ -256,10 +290,12 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       rawResponse: raw,
       ...(publicUrlError
         ? {
-            contractWarnings: [{
-              code: 'compat_passthrough' as const,
-              message: `xAI 官方 CDN 持久化失败，已改用临时 video.url 下载：${publicUrlError}`,
-            }],
+            contractWarnings: [
+              {
+                code: 'compat_passthrough' as const,
+                message: `xAI 官方 CDN 持久化失败，已改用临时 video.url 下载：${publicUrlError}`,
+              },
+            ],
           }
         : {}),
     }
@@ -312,7 +348,8 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       : typeof response.audio === 'string'
         ? Buffer.from(response.audio, 'base64')
         : null
-    if (!buffer) throw new MediaProviderError('provider_http_error', 'xAI TTS response did not contain audio')
+    if (!buffer)
+      throw new MediaProviderError('provider_http_error', 'xAI TTS response did not contain audio')
     const codec = stringParam(outputFormat.codec) ?? 'mp3'
     const asset = await this.artifact.writeBinaryAsset(
       'audio',
@@ -339,14 +376,18 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const prompt = (input.prompt ?? '').trim()
     // 参考图取值复用 mediaInputRef（与视频路径 generateVideo 一致）：
     // safe-file:// 本地协议地址第三方 API 无法访问，必须过滤；优先 base64 dataUrl。
-    const imageFiles = (input.inputFiles ?? []).filter((file) => file.type === 'image' || file.type === 'file')
+    const imageFiles = (input.inputFiles ?? []).filter(
+      (file) => file.type === 'image' || file.type === 'file',
+    )
     if (imageFiles.length === 0) {
       throw new MediaProviderError('invalid_input', 'xAI image edit requires input image(s)')
     }
     if (imageFiles.length > 3 && !ctx.skipParameterValidation) {
       throw new MediaProviderError('invalid_input', 'xAI image edit supports at most 3 images')
     }
-    const imageRefs = await Promise.all(imageFiles.map((file) => resolveXaiMediaReference(file, 'image', ctx)))
+    const imageRefs = await Promise.all(
+      imageFiles.map((file) => resolveXaiMediaReference(file, 'image', ctx)),
+    )
     const model = ctx.defaultModel
     const params = normalizeXaiImageParams(input.modelParams)
     // xAI 图片编辑走 POST /images/edits（不是 /images/generations）：
@@ -357,12 +398,14 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const body: Record<string, unknown> = {
       model,
       prompt,
-      ...(imageObjects.length === 1
-        ? { image: imageObjects[0] }
-        : { images: imageObjects }),
-      ...(stringParam(params.aspect_ratio) ? { aspect_ratio: stringParam(params.aspect_ratio) } : {}),
+      ...(imageObjects.length === 1 ? { image: imageObjects[0] } : { images: imageObjects }),
+      ...(stringParam(params.aspect_ratio)
+        ? { aspect_ratio: stringParam(params.aspect_ratio) }
+        : {}),
       ...(stringParam(params.resolution) ? { resolution: stringParam(params.resolution) } : {}),
-      ...(xaiResponseFormat(params.response_format) ? { response_format: xaiResponseFormat(params.response_format) } : {}),
+      ...(xaiResponseFormat(params.response_format)
+        ? { response_format: xaiResponseFormat(params.response_format) }
+        : {}),
       storage_options: buildStorageOptions(input, xaiImageExtension(params)),
       ...(stringParam(params.user) ? { user: stringParam(params.user) } : {}),
     }
@@ -388,7 +431,9 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const inputVideoFile = (input.inputFiles ?? []).find(
       (file) => file.type === 'video' || (file.type === 'file' && file.role === 'input'),
     )
-    const videoRef = inputVideoFile ? await resolveXaiMediaReference(inputVideoFile, 'video', ctx) : undefined
+    const videoRef = inputVideoFile
+      ? await resolveXaiMediaReference(inputVideoFile, 'video', ctx)
+      : undefined
     if (!videoRef) {
       throw new MediaProviderError('invalid_input', `xAI ${capability} requires an input video`)
     }
@@ -409,7 +454,10 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
         (!Number.isInteger(duration) || duration < 2 || duration > 10) &&
         !ctx.skipParameterValidation
       ) {
-        throw new MediaProviderError('invalid_input', 'xAI video extension duration must be between 2 and 10 seconds')
+        throw new MediaProviderError(
+          'invalid_input',
+          'xAI video extension duration must be between 2 and 10 seconds',
+        )
       }
       body.duration = duration
     }
@@ -439,8 +487,16 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     if (videoUrls.length === 0) {
       const taskId = extractTaskId(data)
       if (!taskId) {
-        logMediaResult({ provider: this.id, capability, ok: false, error: 'No video url or task id' })
-        throw new MediaProviderError('provider_http_error', `No video url or task id: ${JSON.stringify(data).slice(0, 800)}`)
+        logMediaResult({
+          provider: this.id,
+          capability,
+          ok: false,
+          error: 'No video url or task id',
+        })
+        throw new MediaProviderError(
+          'provider_http_error',
+          `No video url or task id: ${JSON.stringify(data).slice(0, 800)}`,
+        )
       }
       requestId = taskId
       mode = 'async'
@@ -475,13 +531,26 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     )
     const assets = await Promise.all(
       videoUrls.map((u, i) =>
-        this.artifact.downloadMediaAsset('video', u, input.outputDir, filenameHelper(input, isExtend ? 'extend' : 'edit', i, videoUrls.length), ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults)),
+        this.artifact.downloadMediaAsset(
+          'video',
+          u,
+          input.outputDir,
+          filenameHelper(input, isExtend ? 'extend' : 'edit', i, videoUrls.length),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+        ),
       ),
     )
     log.info(
       `event=download-finished capability=${capability} requestId=${requestId ?? 'inline'} assetCount=${assets.length} elapsedMs=${Date.now() - downloadStartedAt}`,
     )
-    logMediaResult({ provider: this.id, capability, ok: true, assetCount: assets.length, requestId })
+    logMediaResult({
+      provider: this.id,
+      capability,
+      ok: true,
+      assetCount: assets.length,
+      requestId,
+    })
     return {
       provider: this.id,
       model,
@@ -491,10 +560,12 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       rawResponse: raw,
       ...(extractXaiPublicUrlError(raw)
         ? {
-            contractWarnings: [{
-              code: 'compat_passthrough' as const,
-              message: `xAI 官方 CDN 持久化失败，已改用临时 video.url 下载：${extractXaiPublicUrlError(raw)}`,
-            }],
+            contractWarnings: [
+              {
+                code: 'compat_passthrough' as const,
+                message: `xAI 官方 CDN 持久化失败，已改用临时 video.url 下载：${extractXaiPublicUrlError(raw)}`,
+              },
+            ],
           }
         : {}),
     }
@@ -508,40 +579,69 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     body: Record<string, unknown>,
   ): Promise<MediaGenerateOutput> {
     const url = `${baseEndpoint(ctx)}${endpoint}`
-    logMediaCall({ provider: this.id, capability, model: ctx.defaultModel, method: 'POST', url, body })
+    logMediaCall({
+      provider: this.id,
+      capability,
+      model: ctx.defaultModel,
+      method: 'POST',
+      url,
+      body,
+    })
     const data = await fetchJson(url, {
-      method: 'POST', headers: authHeaders(ctx), body: JSON.stringify(body), fetchImpl: ctx.fetch, timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
+      method: 'POST',
+      headers: authHeaders(ctx),
+      body: JSON.stringify(body),
+      fetchImpl: ctx.fetch,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const images = extractXaiImages(data)
     if (images.length === 0) {
-      throw new MediaProviderError('provider_http_error', `No images in xAI response: ${JSON.stringify(data).slice(0, 800)}`)
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No images in xAI response: ${JSON.stringify(data).slice(0, 800)}`,
+      )
     }
     const warnings: string[] = []
-    const assets = await Promise.all(images.map(async (image, index) => {
-      const asset = await this.artifact.writeImage(
-        image.extracted,
-        input.outputDir,
-        filenameHelper(input, capability === 'image.edit' ? 'edit' : 'image', index, images.length),
-        ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
-      )
-      if (image.publicUrl) return { ...asset, url: image.publicUrl }
-      if (ctx.fallbackUploader?.canHandle('xai') && asset.filePath) {
-        try {
-          const uploaded = await ctx.fallbackUploader.upload({
-            buffer: await this.artifact.readLocalFile(asset.filePath),
-            filename: filenameHelper(input, capability === 'image.edit' ? 'edit' : 'image', index, images.length),
-            ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
-          })
-          const publicUrl = uploaded.publicUrl ?? uploaded.url
-          if (publicUrl) return { ...asset, url: publicUrl }
-        } catch (error) {
-          warnings.push(`xAI 图片官方 CDN 创建失败，Spark 平台公开地址回退也失败：${error instanceof Error ? error.message : String(error)}`)
+    const assets = await Promise.all(
+      images.map(async (image, index) => {
+        const asset = await this.artifact.writeImage(
+          image.extracted,
+          input.outputDir,
+          filenameHelper(
+            input,
+            capability === 'image.edit' ? 'edit' : 'image',
+            index,
+            images.length,
+          ),
+          ctx.fetch,
+          configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
+        )
+        if (image.publicUrl) return { ...asset, url: image.publicUrl }
+        if (ctx.fallbackUploader?.canHandle('xai') && asset.filePath) {
+          try {
+            const uploaded = await ctx.fallbackUploader.upload({
+              buffer: await this.artifact.readLocalFile(asset.filePath),
+              filename: filenameHelper(
+                input,
+                capability === 'image.edit' ? 'edit' : 'image',
+                index,
+                images.length,
+              ),
+              ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
+            })
+            const publicUrl = uploaded.publicUrl ?? uploaded.url
+            if (publicUrl) return { ...asset, url: publicUrl }
+          } catch (error) {
+            warnings.push(
+              `xAI 图片官方 CDN 创建失败，Spark 平台公开地址回退也失败：${error instanceof Error ? error.message : String(error)}`,
+            )
+          }
         }
-      }
-      warnings.push('xAI 图片官方 CDN 未返回 public_url，已保留本地产物。')
-      return asset
-    }))
+        warnings.push('xAI 图片官方 CDN 未返回 public_url，已保留本地产物。')
+        return asset
+      }),
+    )
     return {
       provider: this.id,
       model: ctx.defaultModel,
@@ -549,7 +649,12 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       assets,
       rawResponse: data,
       ...(warnings.length > 0
-        ? { contractWarnings: warnings.map((message) => ({ code: 'compat_passthrough' as const, message })) }
+        ? {
+            contractWarnings: warnings.map((message) => ({
+              code: 'compat_passthrough' as const,
+              message,
+            })),
+          }
         : {}),
     }
   }
@@ -566,7 +671,9 @@ function authHeaders(ctx: MediaProviderContext): Record<string, string> {
   }
 }
 
-function normalizeXaiImageParams(modelParams: Record<string, unknown> | undefined): Record<string, unknown> {
+function normalizeXaiImageParams(
+  modelParams: Record<string, unknown> | undefined,
+): Record<string, unknown> {
   const next: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(modelParams ?? {})) {
     if (value === undefined || value === null) continue
@@ -574,17 +681,33 @@ function normalizeXaiImageParams(modelParams: Record<string, unknown> | undefine
     next[key] = value
   }
   if (next.aspect_ratio == null && next.aspectRatio != null) next.aspect_ratio = next.aspectRatio
-  if (next.aspect_ratio == null && typeof next.size === 'string' && /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/.test(next.size)) {
+  if (
+    next.aspect_ratio == null &&
+    typeof next.size === 'string' &&
+    /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/.test(next.size)
+  ) {
     next.aspect_ratio = next.size
   }
   if (next.response_format == null) {
     if (next.responseFormat != null) next.response_format = next.responseFormat
-    if (next.output_format === 'url' || next.output_format === 'b64_json') next.response_format = next.output_format
-    if (next.outputFormat === 'url' || next.outputFormat === 'b64_json') next.response_format = next.outputFormat
+    if (next.output_format === 'url' || next.output_format === 'b64_json')
+      next.response_format = next.output_format
+    if (next.outputFormat === 'url' || next.outputFormat === 'b64_json')
+      next.response_format = next.outputFormat
   }
   if (next.image_format == null) {
-    if (next.output_format != null && next.output_format !== 'url' && next.output_format !== 'b64_json') next.image_format = next.output_format
-    if (next.outputFormat != null && next.outputFormat !== 'url' && next.outputFormat !== 'b64_json') next.image_format = next.outputFormat
+    if (
+      next.output_format != null &&
+      next.output_format !== 'url' &&
+      next.output_format !== 'b64_json'
+    )
+      next.image_format = next.output_format
+    if (
+      next.outputFormat != null &&
+      next.outputFormat !== 'url' &&
+      next.outputFormat !== 'b64_json'
+    )
+      next.image_format = next.outputFormat
   }
   delete next.aspectRatio
   delete next.responseFormat
@@ -618,7 +741,10 @@ function lastNumericParam(params: Record<string, unknown>, ...names: string[]): 
   return resolved
 }
 
-function buildStorageOptions(input: MediaGenerateInput, extension: string): Record<string, unknown> {
+function buildStorageOptions(
+  input: MediaGenerateInput,
+  extension: string,
+): Record<string, unknown> {
   const configured = stringParam(input.modelParams?.filename)
   return {
     filename: configured ?? `spark-${Date.now()}.${extension}`,
@@ -696,7 +822,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function extractXaiFileOutputStrings(value: unknown, key: 'public_url' | 'public_url_error'): string[] {
+function extractXaiFileOutputStrings(
+  value: unknown,
+  key: 'public_url' | 'public_url_error',
+): string[] {
   const found: string[] = []
   const visit = (node: unknown): void => {
     if (Array.isArray(node)) {
@@ -722,7 +851,7 @@ function extractXaiImages(value: unknown): Array<{
   extracted: ExtractedImage
   publicUrl?: string
 }> {
-  const root = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const root = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
   const items = Array.isArray(root.data) ? root.data : [value]
   const results: Array<{ extracted: ExtractedImage; publicUrl?: string }> = []
   for (const item of items) {
@@ -746,8 +875,12 @@ function normalizeTtsOutputFormat(
     const source = value as Record<string, unknown>
     return {
       ...(stringParam(source.codec) ? { codec: stringParam(source.codec) } : { codec: 'mp3' }),
-      ...(numericParam(source.sample_rate) !== undefined ? { sample_rate: numericParam(source.sample_rate) } : {}),
-      ...(numericParam(source.bit_rate) !== undefined ? { bit_rate: numericParam(source.bit_rate) } : {}),
+      ...(numericParam(source.sample_rate) !== undefined
+        ? { sample_rate: numericParam(source.sample_rate) }
+        : {}),
+      ...(numericParam(source.bit_rate) !== undefined
+        ? { bit_rate: numericParam(source.bit_rate) }
+        : {}),
     }
   }
   return {
