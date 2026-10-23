@@ -398,6 +398,7 @@ import {
   PRESENT_FILES_SYSTEM_PROMPT,
   QUICK_REPLIES_TOOL_NAMES,
   QUICK_REPLIES_SYSTEM_PROMPT,
+  IMAGE_GENERATION_GUIDE_PROMPT,
   RENDER_HTML_TOOL_NAMES,
   RENDER_HTML_SYSTEM_PROMPT,
   RENDER_DIAGRAM_TOOL_NAMES,
@@ -483,7 +484,7 @@ import { McpService } from './mcp-server.service.js'
 import type { McpOAuthTokenProvider } from './mcp-server.service.js'
 import type { McpChangeEvent } from './mcp-server.service.js'
 import { PlatformBridgeService, type PlatformBridgeDeps } from './platform-bridge.service.js'
-import { SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT } from './session-schedule-agent-tools.js'
+import { buildCapabilityCatalogPrompt, type CapabilityId } from './capability-disclosure.js'
 import type {
   VoiceControlExecutor,
   VoiceControlResult,
@@ -494,6 +495,7 @@ import {
   BROWSER_AUTOMATION_SYSTEM_PROMPT,
   BROWSER_TOOL_NAMES,
 } from './browser-automation-prompt.js'
+import { buildComputerUsePlaybookPrompt } from '../computer-use/computer-use-system-prompt.js'
 import {
   RuntimeCompositionService,
   type RuntimeSkillConfig,
@@ -580,7 +582,10 @@ import { EmbeddingService } from './memory/embedding.service.js'
 import { MemorySearchService } from './memory/memory-search.service.js'
 import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
 import { MemoryConsolidationService } from './memory/memory-consolidation.service.js'
-import { SPARK_MEDIA_TOOL_NAMES } from './media/media-mcp-contract.js'
+import {
+  MEDIA_GENERATION_GUIDE_PROMPT,
+  SPARK_MEDIA_TOOL_NAMES,
+} from './media/media-mcp-contract.js'
 import {
   AgentEventPersistenceError,
   SessionEventSequencer,
@@ -4489,26 +4494,33 @@ export class SessionService {
     // 共享段一次解析、三路径共用；可选档重型内置在此统一门控（未勾选即不
     // resolve，省子进程），提示词段与 allowedTools 随实际挂载自动收敛。
     const agentMcpSelection = splitAgentMcpSelection(runtimeAgent.mcpServerIds)
-    const mediaGenerationContext = shouldMountBuiltinMcp(
-      'spark_media',
-      adapterKind,
-      agentMcpSelection,
-    )
-      ? await this.getMcpTooling().resolveMediaGenerationContext(workspaceRootPath)
-      : null
-    const imageGenerationContext =
-      mediaGenerationContext == null &&
-      shouldMountBuiltinMcp('spark_image', adapterKind, agentMcpSelection)
-        ? await this.getMcpTooling().resolveImageGenerationContext(workspaceRootPath)
-        : null
     // 原生技能插件可用性：claude-sdk 引擎下允许摘除 spark_platform 的前提是原生
     // Skill 工具兜底可用（D5）；插件目录解析失败时强制保留 spark_platform 维持
     // skills_list / skills_load 通道，避免「技能目录可见却无任何加载手段」（M-1）。
+    // （前置解析：capabilityLoadAvailable 供下方 media/image statusPrompt 决定
+    // 尾行是否给出 capability_load 指引——目录可见必须有加载手段，M-1 同型纪律。）
     const nativeSkillPlugins = this.resolveNativeSkillPlugins()
     const platformMcpServer =
       shouldMountBuiltinMcp('spark_platform', adapterKind, agentMcpSelection) ||
       (adapterKind === 'claude-sdk' && nativeSkillPlugins == null)
         ? await this.getMcpTooling().resolvePlatformManagementMcpServer(sessionId)
+        : null
+    const capabilityLoadAvailable = platformMcpServer != null
+    const mediaGenerationContext = shouldMountBuiltinMcp(
+      'spark_media',
+      adapterKind,
+      agentMcpSelection,
+    )
+      ? await this.getMcpTooling().resolveMediaGenerationContext(workspaceRootPath, {
+          capabilityLoadAvailable,
+        })
+      : null
+    const imageGenerationContext =
+      mediaGenerationContext == null &&
+      shouldMountBuiltinMcp('spark_image', adapterKind, agentMcpSelection)
+        ? await this.getMcpTooling().resolveImageGenerationContext(workspaceRootPath, {
+            capabilityLoadAvailable,
+          })
         : null
     const pluginRuntimeMcp = shouldMountBuiltinMcp('spark_plugins', adapterKind, agentMcpSelection)
       ? await this.resolvePluginRuntimeMcpServer(
@@ -4972,22 +4984,64 @@ export class SessionService {
       WIKI_L0_PROMPT,
       ...trailingSystemPromptSections,
     )
+    // 能力引导渐进式披露：Tier B 能力手册（image/media 手册、浏览器自动化、
+    // computer-use 手册、定时任务、render_html/diagram）不再常驻注入，改为
+    // `[Capability Catalog]` 目录条目 + `capability_load` 按需加载（与技能目录
+    // 同构，注册表见 capability-disclosure.ts）。动态状态行仍常驻：模型首轮
+    // 即可判断能力边界（媒体路由、computer-use 可用性），且首调前有 load 指引。
+    // 条目与当轮实际挂载一一对应，未挂载的能力不出现；且仅当 capability_load
+    // 真实可用（spark_platform 已挂载）才出现——目录可见必须有加载手段（M-1）。
+    // 不可用时各能力回退为改造前的全文常驻注入（status 段 + 手册），保证任何
+    // MCP 白名单组合下使用手册都不丢失。
+    const capabilityCatalogIds: CapabilityId[] = []
+    if (capabilityLoadAvailable && imageGenerationContext != null) {
+      capabilityCatalogIds.push('image-generation')
+    }
+    if (capabilityLoadAvailable && mediaGenerationContext != null) {
+      capabilityCatalogIds.push('media-generation')
+    }
+    if (platformMcpServer != null) capabilityCatalogIds.push('session-schedule')
+    if (capabilityLoadAvailable && quickRepliesMcpServer != null) {
+      capabilityCatalogIds.push('render-html', 'render-diagram')
+    }
+    if (capabilityLoadAvailable && browserAutomationMcpServer != null) {
+      capabilityCatalogIds.push('browser-automation')
+    }
+    if (capabilityLoadAvailable && computerUseMcp != null) {
+      capabilityCatalogIds.push('computer-use')
+    }
+    const capabilityCatalogPrompt = buildCapabilityCatalogPrompt(capabilityCatalogIds)
     const composedSkillSystemPrompt = joinDistinctPromptSections(
       runtimeContext.skillSystemPrompt,
       projectContext.skillSystemPrompt,
-      imageGenerationContext?.systemPrompt,
-      mediaGenerationContext?.systemPrompt,
+      capabilityCatalogPrompt,
+      imageGenerationContext?.statusPrompt,
+      !capabilityLoadAvailable && imageGenerationContext != null
+        ? IMAGE_GENERATION_GUIDE_PROMPT
+        : undefined,
+      mediaGenerationContext?.statusPrompt,
+      !capabilityLoadAvailable && mediaGenerationContext != null
+        ? MEDIA_GENERATION_GUIDE_PROMPT
+        : undefined,
       platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
-      platformMcpServer != null ? SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT : undefined,
       platformMcpServer != null ? SESSION_HISTORY_SYSTEM_PROMPT : undefined,
       webSearchMcpServer != null ? WEB_SEARCH_SYSTEM_PROMPT : undefined,
       presentFilesMcpServer != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
       toolResultReaderAvailable ? TOOL_RESULT_SYSTEM_PROMPT : undefined,
       quickRepliesMcpServer != null ? QUICK_REPLIES_SYSTEM_PROMPT : undefined,
-      quickRepliesMcpServer != null ? RENDER_HTML_SYSTEM_PROMPT : undefined,
-      quickRepliesMcpServer != null ? RENDER_DIAGRAM_SYSTEM_PROMPT : undefined,
-      browserAutomationMcpServer != null ? BROWSER_AUTOMATION_SYSTEM_PROMPT : undefined,
+      !capabilityLoadAvailable && quickRepliesMcpServer != null
+        ? RENDER_HTML_SYSTEM_PROMPT
+        : undefined,
+      !capabilityLoadAvailable && quickRepliesMcpServer != null
+        ? RENDER_DIAGRAM_SYSTEM_PROMPT
+        : undefined,
       computerUseMcp?.systemPrompt,
+      !capabilityLoadAvailable && computerUseMcp != null
+        ? buildComputerUsePlaybookPrompt()
+        : undefined,
+      !capabilityLoadAvailable && browserAutomationMcpServer != null
+        ? BROWSER_AUTOMATION_SYSTEM_PROMPT
+        : undefined,
       debugMcpServer != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
       sparkWebToolEnabled ? SPARK_WEB_TOOL_SYSTEM_PROMPT : undefined,
     )
@@ -5097,6 +5151,12 @@ export class SessionService {
           'Available Skills Catalog',
           runtimeContext.skillSystemPrompt,
           runtimeContext.skillConfig.effectiveSkillIds.length,
+        ),
+        makeRuntimeLoadStatus(
+          'capability-catalog',
+          'Capability Catalog',
+          capabilityCatalogPrompt,
+          capabilityCatalogIds.length,
         ),
         makeRuntimeLoadStatus(
           'conversation-history',
@@ -11205,7 +11265,11 @@ export class SessionService {
         memberMcpServers.spark_files != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_tool_results != null ? TOOL_RESULT_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_platform != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
-        memberMcpServers.spark_platform != null ? SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT : undefined,
+        // 成员路径同步渐进式披露：session-schedule 手册不再常驻，改为目录条目
+        //（成员挂了 spark_platform 即有 capability_load 加载手段，与 host 同构）。
+        memberMcpServers.spark_platform != null
+          ? buildCapabilityCatalogPrompt(['session-schedule'])
+          : undefined,
         memberMcpServers.spark_platform != null ? SESSION_HISTORY_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_debug != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
         // 记忆三段后置到段尾（与 host 路径同构，内容不变仅段序）：member 记忆在

@@ -230,6 +230,8 @@ export type { LocalSkillCandidate, LocalSkillSource } from './services/local-ski
 export { PermissionService } from './services/permission.service.js'
 export {
   buildComputerUseSystemPrompt,
+  buildComputerUseStatusPrompt,
+  buildComputerUsePlaybookPrompt,
   type ComputerUsePromptCapabilities,
 } from './computer-use/computer-use-system-prompt.js'
 export {

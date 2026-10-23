@@ -236,6 +236,22 @@ function toolDefinitions() {
       },
     },
     {
+      name: 'capability_load',
+      description:
+        '加载某个挂载能力的完整使用引导（渐进式披露）。系统提示的 [Capability Catalog] 只给出能力目录（id + 触发描述）；在首次使用某能力的工具前，调用本工具拿到完整使用引导后再执行。引导作为工具结果进入上下文、同会话持续生效；上下文压缩后可重新 load。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: {
+            type: 'string',
+            description:
+              '能力 ID（取自 [Capability Catalog] 条目）：computer-use / browser-automation / media-generation / image-generation / session-schedule / render-html / render-diagram',
+          },
+        },
+      },
+    },
+    {
       name: 'skills_search',
       description:
         '搜索可安装的技能（聚合远程技能商店 + 内置精选目录）。返回的每个技能都带 registryId 和 id 字段，安装时原样回传即可。内置精选目录（如 ppt-master、playwright）的 registryId 为 "catalog"。',
@@ -2431,6 +2447,7 @@ async function handleToolCall(name, args) {
   const methodMap = {
     skills_list: 'skills.list',
     skills_load: 'skills.load',
+    capability_load: 'capabilities.load',
     skills_search: 'skills.search',
     skills_search_github: 'skills.search_github',
     skills_install: 'skills.install',

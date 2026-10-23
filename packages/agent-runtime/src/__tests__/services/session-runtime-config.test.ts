@@ -1951,7 +1951,14 @@ describe('SessionService runtime provider/model resolution', () => {
         ]),
       )
       expect(String(config?.skillSystemPrompt ?? '')).toContain('GOVERNED COMPUTER USE PROMPT')
+      // 渐进式披露：session-schedule 手册不再常驻，目录条目 + capability_load 指引取代。
+      expect(String(config?.skillSystemPrompt ?? '')).toContain('[Capability Catalog]')
       expect(String(config?.skillSystemPrompt ?? '')).toContain(
+        'mcp__spark_platform__capability_load',
+      )
+      expect(String(config?.skillSystemPrompt ?? '')).toContain('- session-schedule — ')
+      expect(String(config?.skillSystemPrompt ?? '')).toContain('- computer-use — ')
+      expect(String(config?.skillSystemPrompt ?? '')).not.toContain(
         'After creation succeeds, tell the user briefly and end the current turn',
       )
       expect(String(config?.skillSystemPrompt ?? '')).toContain('Archived Tool Results')
@@ -2610,8 +2617,16 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(config?.mcpServers).not.toHaveProperty('spark_image')
     // codex 引擎无 claude-sdk 的 allowedTools 概念：工具面经 skillSystemPrompt 的
     // 媒体引导暴露（与「injects spark_media into Codex adapter turns」同口径）。
-    expect(String(config?.skillSystemPrompt ?? '')).toContain('mcp__spark_media__generate_image')
-    expect(String(config?.skillSystemPrompt ?? '')).toContain('mcp__spark_media__generate_video')
+    // 渐进式披露：常驻只剩状态段（配置/路由摘要 + 首调前 load+describe_model 规则）
+    // 与目录条目，完整手册改经 capability_load 按需加载。
+    const skillPrompt = String(config?.skillSystemPrompt ?? '')
+    expect(skillPrompt).toContain('[Capability Catalog]')
+    expect(skillPrompt).toContain('- media-generation — ')
+    expect(skillPrompt).toContain('mcp__spark_platform__capability_load')
+    expect(skillPrompt).toContain('## Media Generation Capability')
+    expect(skillPrompt).toContain('mcp__spark_media__describe_model')
+    expect(skillPrompt).toContain('mcp__spark_media__list_models')
+    expect(skillPrompt).not.toContain('## Media Generation Usage Guide')
     const mediaServer = unwrapGovernedMcpServer(
       (config?.mcpServers as Record<string, TestMcpServerConfig>).spark_media,
     )
@@ -5697,6 +5712,79 @@ describe('SessionService runtime provider/model resolution', () => {
     const config = mockState.sdkConfigs[0]
     expect(config?.mcpServers).not.toHaveProperty('spark_computer')
     expect(String(config?.systemPrompt ?? '')).not.toContain('GOVERNED COMPUTER USE PROMPT')
+  })
+
+  it('falls back to full inline capability guides when spark_platform is unmounted (M-1)', async () => {
+    // 场景：claude-sdk 引擎 + agent 点选 spark_media 但未勾 spark_platform，且原生
+    // 技能插件可用（因此不触发 D5 强制保留）——capability_load 工具不存在。
+    // 门控回退：目录不出现、statusPrompt 不给 load 指引、手册全文常驻注入。
+    seedProvider({
+      id: 'agnes-provider',
+      provider_type: 'openai',
+      name: 'Agnes AI',
+      config_json: JSON.stringify({
+        defaultModel: 'agnes-2.0-flash',
+        modelIds: ['agnes-2.0-flash'],
+        apiEndpoint: 'https://apihub.agnes-ai.com/v1',
+        codexApiKind: 'responses',
+        modelType: 'multimodal',
+        mediaProvider: 'agnes',
+        mediaApiType: 'auto',
+        mediaCapabilities: ['image.generate', 'image.edit'],
+        mediaModelRefs: [
+          {
+            manifestId: 'agnes:agnes-image-2.0-flash',
+            modelId: 'agnes-image-2.0-flash',
+            enabled: true,
+          },
+        ],
+      }),
+      keystore_ref: 'key-agnes',
+      is_default: 0,
+    })
+    mockState.agents.set(
+      'media-scoped-agent',
+      makeAgent({
+        id: 'media-scoped-agent',
+        name: 'Media Scoped Agent',
+        providerProfileId: 'tencent-provider',
+        // 只点选 spark_media：spark_platform 未勾选 → capability_load 不可用
+        mcpServerIds: ['builtin:spark_media'],
+      }),
+    )
+    const service = new SessionService({} as never, (event) => events.push(event))
+    // 原生技能插件可用：claude-sdk 允许摘除 spark_platform 而不触发 D5 强制保留
+    vi.spyOn(service as never, 'resolveNativeSkillPlugins' as never).mockReturnValue([
+      '/fake-skill-plugins',
+    ] as never)
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'media-scoped-agent',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-auto-edits',
+      title: 'Media scoped without platform',
+    })
+
+    await service.sendTurn({ sessionId, message: 'draw a cat' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const config = mockState.sdkConfigs[0]
+    // spark_media 照常挂载，spark_platform 确实摘除（回退触发条件成立）
+    expect(config?.mcpServers).toMatchObject({
+      spark_media: expect.objectContaining({ type: 'stdio' }),
+    })
+    expect(config?.mcpServers).not.toHaveProperty('spark_platform')
+
+    const skillPrompt = String(config?.skillSystemPrompt ?? '')
+    // 目录与 load 指引不出现（目录可见必须有加载手段，M-1）
+    expect(skillPrompt).not.toContain('[Capability Catalog]')
+    expect(skillPrompt).not.toContain('mcp__spark_platform__capability_load')
+    // 状态段仍常驻，且尾行保留 describe_model 前置规则（仅去掉 load 半句）
+    expect(skillPrompt).toContain('## Media Generation Capability')
+    expect(skillPrompt).toContain('mcp__spark_media__describe_model')
+    // 关键回退：完整使用手册全文常驻注入（与渐进式披露前的行为一致）
+    expect(skillPrompt).toContain('## Media Generation Usage Guide')
+    expect(skillPrompt).toContain('mcp__spark_files__present_files')
   })
 
   it('treats an empty agent MCP selection as a full mount for unconfigured subagent nodes (D1)', async () => {

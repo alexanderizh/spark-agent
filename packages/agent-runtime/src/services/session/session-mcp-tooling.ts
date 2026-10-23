@@ -53,10 +53,10 @@ import {
   resolveMediaMcpProviderRoutes,
   writeMediaMcpRuntimeConfig,
 } from '../media/media-mcp-runtime-config.js'
-import { buildMediaGenerationSystemPrompt } from '../media/media-mcp-contract.js'
+import { buildMediaGenerationStatusPrompt } from '../media/media-mcp-contract.js'
 import { ensureWorkspaceManagedDirIgnored } from '../../tools/workspace-git-ignore.mjs'
 import {
-  buildImageGenerationSystemPrompt,
+  buildImageGenerationStatusPrompt,
   resolveDebugMcpServerPath,
   resolveImageGenerationMcpServerPath,
   resolveMediaGenerationMcpServerPath,
@@ -74,11 +74,13 @@ const log = createLogger('session.mcp-tooling')
 
 export type ImageGenerationRuntimeContext = {
   mcpServer: SDKMcpServerConfig
-  systemPrompt: string
+  /** 常驻状态段（配置摘要 + load 指引）；完整手册走 capability_load 按需加载。 */
+  statusPrompt: string
 }
 export type MediaGenerationRuntimeContext = {
   mcpServer: SDKMcpServerConfig
-  systemPrompt: string
+  /** 常驻状态段（配置摘要 + 路由摘要 + load 指引）；完整手册走 capability_load 按需加载。 */
+  statusPrompt: string
 }
 
 /** MCP 装配模块对 SessionService 的窄依赖面。 */
@@ -568,6 +570,7 @@ export class SessionMcpTooling {
 
   async resolveImageGenerationContext(
     workspaceRootPath: string,
+    options?: { capabilityLoadAvailable?: boolean },
   ): Promise<ImageGenerationRuntimeContext | null> {
     const providerRepo = new ProviderProfileRepository(this.db)
     if (typeof providerRepo.listAll !== 'function') return null
@@ -623,14 +626,17 @@ export class SessionMcpTooling {
             : {}),
         },
       },
-      systemPrompt: buildImageGenerationSystemPrompt({
-        name: imageProvider.name,
-        model,
-        provider: providerName,
-        apiType,
-        outputDir,
-        ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
-      }),
+      statusPrompt: buildImageGenerationStatusPrompt(
+        {
+          name: imageProvider.name,
+          model,
+          provider: providerName,
+          apiType,
+          outputDir,
+          ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
+        },
+        options,
+      ),
     }
   }
 
@@ -643,6 +649,7 @@ export class SessionMcpTooling {
    */
   async resolveMediaGenerationContext(
     workspaceRootPath: string,
+    options?: { capabilityLoadAvailable?: boolean },
   ): Promise<MediaGenerationRuntimeContext | null> {
     const serverPath = resolveMediaGenerationMcpServerPath()
     if (serverPath == null) {
@@ -683,21 +690,24 @@ export class SessionMcpTooling {
           ),
         },
       },
-      systemPrompt: buildMediaGenerationSystemPrompt({
-        name: primary.name,
-        model: primary.model,
-        provider: primary.provider,
-        apiType: primary.mode,
-        outputDir,
-        capabilities: [...new Set(providers.flatMap((provider) => provider.capabilities))],
-        providerConfigurations: providers.map((provider) => ({
-          id: provider.id,
-          name: provider.name,
-          model: provider.model,
-          provider: provider.provider,
-        })),
-        ...(primary.baseUrl !== undefined ? { apiEndpoint: primary.baseUrl } : {}),
-      }),
+      statusPrompt: buildMediaGenerationStatusPrompt(
+        {
+          name: primary.name,
+          model: primary.model,
+          provider: primary.provider,
+          apiType: primary.mode,
+          outputDir,
+          capabilities: [...new Set(providers.flatMap((provider) => provider.capabilities))],
+          providerConfigurations: providers.map((provider) => ({
+            id: provider.id,
+            name: provider.name,
+            model: provider.model,
+            provider: provider.provider,
+          })),
+          ...(primary.baseUrl !== undefined ? { apiEndpoint: primary.baseUrl } : {}),
+        },
+        options,
+      ),
     }
   }
 }

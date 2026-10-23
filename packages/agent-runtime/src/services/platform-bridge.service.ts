@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { createLogger } from '@spark/shared'
+import { resolveCapabilityGuide } from './capability-disclosure.js'
 import type { SkillService } from './skill.service.js'
 import type { SkillLoader } from '../skills/skill-loader.js'
 import type { SkillRegistryService } from './skill-registry/index.js'
@@ -749,6 +750,8 @@ export class PlatformBridgeService {
         return this.skillList(d, params)
       case 'skills.load':
         return this.skillLoad(d, params)
+      case 'capabilities.load':
+        return this.capabilityLoad(params)
       case 'skills.search':
         return this.skillSearch(d, params)
       case 'skills.search_github':
@@ -1281,6 +1284,19 @@ export class PlatformBridgeService {
       requiredTools: def?.requiredTools ?? [],
       instructions,
     }
+  }
+
+  /**
+   * 能力引导渐进式披露的「加载完整手册」工具（capability_load）。
+   * 系统提示里只有 [Capability Catalog] 目录（id + 触发描述），模型在首次
+   * 使用某能力前调用本方法拉取完整使用引导；引导是静态文本，单一事实源
+   * 见 capability-disclosure.ts（动态状态只在目录/常驻状态行渲染，不进 load）。
+   */
+  private capabilityLoad(params: Record<string, unknown>) {
+    const id = String(params.id ?? '').trim()
+    if (!id) throw new Error('capabilities.load requires a capability id')
+    const { guide } = resolveCapabilityGuide(id)
+    return { id, guide }
   }
 
   private async skillSearch(d: PlatformBridgeDeps, params: Record<string, unknown>) {

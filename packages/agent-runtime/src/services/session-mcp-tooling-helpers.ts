@@ -87,14 +87,24 @@ export function resolveMediaGenerationMcpServerPath(
   return dependencies.every((candidate) => existsSync(candidate)) ? serverPath : null
 }
 
-export function buildImageGenerationSystemPrompt(input: {
+export interface ImageGenerationPromptInput {
   name: string
   model: string
   provider: string
   apiType: string
   outputDir: string
   apiEndpoint?: string
-}): string {
+}
+
+/**
+ * 常驻状态段（Tier A）：配置摘要 + 首次调用前先 load 手册的核心规则。
+ * 静态使用规则手册见 IMAGE_GENERATION_GUIDE_PROMPT（Tier B），由
+ * `mcp__spark_platform__capability_load`（id: image-generation）按需加载。
+ */
+export function buildImageGenerationStatusPrompt(
+  input: ImageGenerationPromptInput,
+  options?: { capabilityLoadAvailable?: boolean },
+): string {
   return [
     '## Image Generation Capability',
     'The current runtime has a configured image generation model.',
@@ -106,15 +116,30 @@ export function buildImageGenerationSystemPrompt(input: {
     `- API base URL: ${input.apiEndpoint ?? '(provider default)'}`,
     `- Output directory: ${input.outputDir}`,
     '',
-    '`mcp__spark_image__generate_image` is a Spark platform image route. It does not replace image generation supplied natively by the active model, SDK, CLI, or executor.',
-    "Treat it with routing guidelines rather than hard restrictions: honor an explicit route choice; explain and adapt if it is unavailable or clearly unsuitable; ask the user only when the choice materially affects quality, cost, latency, privacy, or workflow — otherwise choose a reasonable route without blocking the task. Without an explicit choice, consider the active model or executor's native image capability first, and use `mcp__spark_image__generate_image` whenever it better fits the task, native generation is unavailable, or the user selects Spark.",
-    'Do not ask for or reveal API keys. Credentials are injected only into the local image MCP server.',
-    'If the user gives semantic sizing such as square, portrait, landscape, poster, or banner, translate it to an appropriate `size` value before calling the tool.',
-    'Pass provider-specific fields through `extraJson` only when they are relevant and reasonably supported by the configured provider.',
-    'After success, call `mcp__spark_files__present_files` with every generated local image file so the application renders a preview for the user.',
-    'Returning only a URL or filesystem path is not complete. If a provider returns only a URL, materialize it in the configured output directory before presenting it.',
-    'Do not auto-retry image generation after a provider failure; report the error and suggest model, prompt, size, or provider-configuration adjustments.',
+    // 尾行按加载手段门控：capability_load 不可用（spark_platform 未挂载）时不给
+    // load 指引，完整手册由组装点回退为全文常驻注入。
+    options?.capabilityLoadAvailable === false
+      ? 'The full usage guide for `mcp__spark_image__generate_image` is included below.'
+      : 'Before the first `mcp__spark_image__generate_image` call in this conversation, load the full usage guide via `mcp__spark_platform__capability_load` with id `image-generation`.',
   ].join('\n')
+}
+
+/** 静态使用规则手册（Tier B）：capability_load(image-generation) 的加载正文，单一事实源。 */
+export const IMAGE_GENERATION_GUIDE_PROMPT = [
+  '## Image Generation Usage Guide',
+  '`mcp__spark_image__generate_image` is a Spark platform image route. It does not replace image generation supplied natively by the active model, SDK, CLI, or executor.',
+  "Treat it with routing guidelines rather than hard restrictions: honor an explicit route choice; explain and adapt if it is unavailable or clearly unsuitable; ask the user only when the choice materially affects quality, cost, latency, privacy, or workflow — otherwise choose a reasonable route without blocking the task. Without an explicit choice, consider the active model or executor's native image capability first, and use `mcp__spark_image__generate_image` whenever it better fits the task, native generation is unavailable, or the user selects Spark.",
+  'Do not ask for or reveal API keys. Credentials are injected only into the local image MCP server.',
+  'If the user gives semantic sizing such as square, portrait, landscape, poster, or banner, translate it to an appropriate `size` value before calling the tool.',
+  'Pass provider-specific fields through `extraJson` only when they are relevant and reasonably supported by the configured provider.',
+  'After success, call `mcp__spark_files__present_files` with every generated local image file so the application renders a preview for the user.',
+  'Returning only a URL or filesystem path is not complete. If a provider returns only a URL, materialize it in the configured output directory before presenting it.',
+  'Do not auto-retry image generation after a provider failure; report the error and suggest model, prompt, size, or provider-configuration adjustments.',
+].join('\n')
+
+/** 状态段 + 完整手册的组合（测试与外部消费方的单一事实源组合口）。 */
+export function buildImageGenerationSystemPrompt(input: ImageGenerationPromptInput): string {
+  return `${buildImageGenerationStatusPrompt(input)}\n\n${IMAGE_GENERATION_GUIDE_PROMPT}`
 }
 
 export function mergeUniqueStrings(a: string[] | undefined, b: string[]): string[] {
@@ -360,6 +385,8 @@ export const PLATFORM_TOOL_NAMES: string[] = [
   // Skills
   'mcp__spark_platform__skills_list',
   'mcp__spark_platform__skills_load',
+  // Capability guides (progressive disclosure, same host as skills_load)
+  'mcp__spark_platform__capability_load',
   'mcp__spark_platform__skills_search',
   'mcp__spark_platform__skills_search_github',
   'mcp__spark_platform__skills_install',

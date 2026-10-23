@@ -5,7 +5,13 @@ export interface ComputerUsePromptCapabilities {
   unavailableReason?: string
 }
 
-export function buildComputerUseSystemPrompt(capabilities: ComputerUsePromptCapabilities): string {
+/**
+ * 常驻状态段（Tier A）：Governed 声明 + 平台/观测/执行可用性。
+ * 能力手册（Working style 等静态操作指南）不再常驻，改由
+ * `mcp__spark_platform__capability_load`（id: computer-use）按需加载，
+ * 见 services/capability-disclosure.ts。
+ */
+export function buildComputerUseStatusPrompt(capabilities: ComputerUsePromptCapabilities): string {
   const status = capabilities.available ? 'available' : 'unavailable'
   const execution = capabilities.executionAvailable === true ? 'available' : 'unavailable'
   return [
@@ -16,7 +22,12 @@ export function buildComputerUseSystemPrompt(capabilities: ComputerUsePromptCapa
     `- Observation capability: ${status}`,
     `- Governed task execution: ${execution}`,
     `- Current unavailable reason: ${capabilities.unavailableReason ?? '(none)'}`,
-    '',
+  ].join('\n')
+}
+
+/** 静态操作手册（Tier B）：capability_load(computer-use) 的加载正文，单一事实源。 */
+export function buildComputerUsePlaybookPrompt(): string {
+  return [
     '## Working style',
     'Operate like a careful human user sitting at the screen: look (tree first), decide, act with ONE tool call, then read the fresh state that comes back with every action. Every action tool response contains the updated Markdown element tree — act on THAT state, not older ones. A screenshot is attached only when the tree is still building, falls back to OCR, or the action was a noop; when it is omitted (`screenshotOmitted: "tree_sufficient"`), the tree is complete and authoritative. Call the `screenshot` tool explicitly whenever you genuinely need pixels.',
     '',
@@ -60,4 +71,9 @@ export function buildComputerUseSystemPrompt(capabilities: ComputerUsePromptCapa
     '## Honesty',
     'Never describe an application launch, URL/deep-link, or focused search box as a completed search — completion requires the verified result on screen. If a desktop task fails or needs the user, report the exact outcome and diagnostic evidence instead of substituting a shallow fallback.',
   ].join('\n')
+}
+
+/** 状态段 + 完整手册的组合（测试与外部消费方的单一事实源组合口）。 */
+export function buildComputerUseSystemPrompt(capabilities: ComputerUsePromptCapabilities): string {
+  return `${buildComputerUseStatusPrompt(capabilities)}\n\n${buildComputerUsePlaybookPrompt()}`
 }

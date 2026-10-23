@@ -1,4 +1,4 @@
-import { buildComputerUseSystemPrompt, type ComputerUseMcpProvider } from '@spark/agent-runtime'
+import { buildComputerUseStatusPrompt, type ComputerUseMcpProvider } from '@spark/agent-runtime'
 import { ComputerUseAgentBridge } from './ComputerUseAgentBridge.js'
 import { ComputerUseAgentController } from './ComputerUseAgentController.js'
 import { getSnapshotPreviewCapabilityService } from './SnapshotPreviewCapability.js'
@@ -65,7 +65,9 @@ export function createComputerUseMcpProvider(
       },
       // Desktop task authorization is task-scoped and identical in every permission mode.
       allowedTools: [...COMPUTER_USE_AGENT_TOOL_NAMES],
-      systemPrompt: buildComputerUseSystemPrompt(capabilities),
+      // 渐进式披露：常驻只注入状态段（可用性等动态信息）；完整操作手册由
+      // capability_load(computer-use) 按需加载（services/capability-disclosure.ts）。
+      systemPrompt: buildComputerUseStatusPrompt(capabilities),
     }
   }
   // turn 边界轻清理：只撤销本 turn 的 HTTP grant 与快照会话，不取消正在运行的
