@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+## [0.15.9] - 2026-10-23
+
+### 新增
+
+- **会话检查器「会话经历」区块**：新增 `session:get-journey` IPC 一次聚合「用了什么 / 查了什么 / 产出了什么 / 输入了什么」——技能与 MCP（含调用次数与最近使用）、网页查阅（检索词与抓取过的网页，page 条目可用系统浏览器打开）、过程产物（file_change 与 presented_files 去重合并，仅收集文档 / 多媒体类文件）、输入来源（用户消息附件）；数据来自已落库的审计账本与事件流，不受聊天窗口化影响。区块位于工具执行记录之下，有数据的分组才出现，产物/附件点击走统一文件预览路由。
+
+### 改进
+
+- **能力引导渐进式披露**：computer-use、浏览器自动化、媒体/图片生成、会话定时任务、render_html / render_diagram 等能力手册不再常驻注入系统提示词，改为 `[Capability Catalog]` 目录 + 新增 `mcp__spark_platform__capability_load` 工具按需加载（与技能目录同构）；动态状态行（能力可用性、媒体路由摘要）保持常驻。实测 Tier B 常驻提示词约 20.0K → 3.5K 字符（-82%），前缀缓存命中同步受益；会话检查器新增「Capability Catalog」观测条目。审查补修加载手段门控（M-1 纪律）：agent 点选 MCP 白名单未勾 spark_platform 时（capability_load 不存在），目录与 load 指引自动收敛、各能力手册回退全文常驻注入，任何白名单组合下手册不丢失。
+
 ### 修复
 
 - **多媒体图编辑端点路由**：自定义 `openai-images` 渠道（如自部署 ZImage、OpenAI 兼容网关）的 `edit_image` 此前把 multipart 编辑请求错误发到生图接口 `/images/generations`（报 "Request body must be valid JSON"），现按 OpenAI 规范强制走独立端点 `/images/edits`，与画布/进程内路径行为对齐；托管渠道与 Contract V2 自定义端点渠道不受影响。
