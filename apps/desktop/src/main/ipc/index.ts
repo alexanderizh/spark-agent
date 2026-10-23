@@ -122,7 +122,7 @@ import { HistoryImportService } from '../services/HistoryImport/HistoryImportSer
 import type { ImportProviderResolution } from '../services/HistoryImport/HistoryImportService.js'
 import { registerAuthIpc } from '../services/Auth/registerAuthIpc.js'
 import { registerAccountSyncIpc } from '../services/AccountSync/registerAccountSyncIpc.js'
-import { registerMobileBridgeIpc } from './registerMobileBridgeIpc.js'
+import { getMobileBridgeDeviceId, registerMobileBridgeIpc } from './registerMobileBridgeIpc.js'
 import { registerRemoteAgentIpc } from './registerRemoteAgentIpc.js'
 import { getAuthService } from '../services/Auth/AuthService.js'
 import type { MobileBridgeSessionSummary } from '@spark/protocol'
@@ -5516,6 +5516,7 @@ export function registerAllIpcHandlers(): void {
       }
     },
     getClientLabel: () => `${app.getName()} Remote Agent`,
+    getLocalDeviceId: () => getMobileBridgeDeviceId(getSettingsService()),
     getVersion: () => app.getVersion(),
     getCurrentUserId: () => {
       try {

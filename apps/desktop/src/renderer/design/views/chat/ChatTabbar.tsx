@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type {
   ManagedAgent,
   SessionRuntimeWorktree,
@@ -79,6 +80,7 @@ export function ChatTabbar({
   onOpenInEditor,
   onOpenInTerminal,
   onCommitSessionTitle,
+  remoteAgentEntry,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -129,6 +131,8 @@ export function ChatTabbar({
    * 不传入则保持纯文本展示，旧调用方行为不变。
    */
   onCommitSessionTitle?: (title: string) => Promise<void>
+  /** Session-scoped remote collaboration entry, owned by an isolated feature module. */
+  remoteAgentEntry?: ReactNode
 }) {
   const [showClearConfirm, setShowClearConfirm] = useState(false)
 
@@ -331,6 +335,7 @@ export function ChatTabbar({
         )}
       </div>
       <div className="row tabbar-actions">
+        {remoteAgentEntry}
         {isGitRepo || taskCount > 0 || taskCompletedCount > 0 || hasGoal ? (
           <GitSessionTrigger
             open={showGitEnvPanel}

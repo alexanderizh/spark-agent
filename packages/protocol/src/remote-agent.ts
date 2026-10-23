@@ -32,6 +32,7 @@ export type RemoteAgentErrorCode =
   | 'TASK_ID_CONFLICT'
   | 'REMOTE_REQUEST_TIMEOUT'
   | 'REMOTE_EXECUTION_FAILED'
+  | 'REMOTE_DISPATCH_INTERRUPTED'
   | 'REMOTE_CANCEL_REJECTED'
   | 'UNKNOWN'
 
@@ -151,6 +152,8 @@ export interface RemoteAgentDispatchResponse {
 
 export interface RemoteAgentDispatchStatusResponse {
   task: RemoteAgentDispatchResponse | null
+  /** True while B's current process still owns the task's idempotent dispatch lock. */
+  dispatchActive?: boolean
 }
 
 export interface RemoteAgentTaskStatusEvent {

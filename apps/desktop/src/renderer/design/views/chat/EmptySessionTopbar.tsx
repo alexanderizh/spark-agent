@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import type { ReactNode } from 'react'
 import type { SessionId, WorkspaceInfo } from '@spark/protocol'
 import {
   Clock3,
@@ -34,6 +35,7 @@ type EmptySessionTopbarProps = {
   createSession: (workspaceId?: string | null) => Promise<SessionId | null>
   openSessionSchedule: (sessionId: SessionId) => void
   closeSessionSchedule: () => void
+  remoteAgentEntry?: ReactNode
 }
 
 export function EmptySessionTopbar({
@@ -56,6 +58,7 @@ export function EmptySessionTopbar({
   createSession,
   openSessionSchedule,
   closeSessionSchedule,
+  remoteAgentEntry,
 }: EmptySessionTopbarProps) {
   const toggleSessionSchedule = useCallback(() => {
     if (showSessionSchedule) {
@@ -120,6 +123,7 @@ export function EmptySessionTopbar({
     >
       <ChatTitlebarStart {...(onExpandSidebar ? { onExpandSidebar } : {})} />
       <div className="chat-sidebar-topbar-actions">
+        {remoteAgentEntry}
         <TabbarTooltipButton
           title="环境信息"
           ariaLabel="环境信息"
@@ -176,9 +180,7 @@ export function EmptySessionTopbar({
           <TabbarIcon icon={SlidersHorizontal} />
         </TabbarTooltipButton>
         <TabbarTooltipButton
-          title={
-            activeWorkspace ? '统一侧边面板（终端/侧聊/审查/计划）' : '请先选择项目文件夹'
-          }
+          title={activeWorkspace ? '统一侧边面板（终端/侧聊/审查/计划）' : '请先选择项目文件夹'}
           ariaLabel="统一侧边面板"
           className={`icon-btn chat-header-collapsible ${showUnifiedPanel ? 'active' : ''}`}
           disabled={!activeWorkspace}

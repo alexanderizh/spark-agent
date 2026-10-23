@@ -32,6 +32,7 @@ import { CANVAS_WORKSPACE_RESOURCE } from './canvas-workspace'
 import { CHAT_RESOURCE } from './chat'
 import { CHAT_INSPECTOR_RESOURCE } from './chat-inspector'
 import { CHAT_VIEW_RESOURCE } from './chat-view'
+import { REMOTE_AGENT_RESOURCE } from './remote-agent'
 import { COMPOSER_V2_RESOURCE } from './composer-v2'
 import { MCP_VIEW_RESOURCE } from './mcp-view'
 import { MANNEQUIN_RESOURCE } from './mannequin'
@@ -82,6 +83,7 @@ export const MODULE_RESOURCES: readonly I18nResource[] = [
   CANVAS_ENTITY_EXTRACT_RESOURCE,
   BOARD_VIEW_RESOURCE,
   CHAT_VIEW_RESOURCE,
+  REMOTE_AGENT_RESOURCE,
   CHAT_INSPECTOR_RESOURCE,
   ONBOARDING_RESOURCE,
   MEMORY_PANEL_RESOURCE,

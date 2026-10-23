@@ -7,6 +7,7 @@ import type {
   RemoteAgentArtifactListResponse,
   RemoteAgentDispatchRequest,
   RemoteAgentDispatchResponse,
+  RemoteAgentDispatchStatusResponse,
   RemoteAgentTask,
   RemoteAgentTaskActionRequest,
   RemoteAgentTaskDispatchRequest,
@@ -27,6 +28,7 @@ import type { SparkDatabase } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 import { RemoteAgentRelayClient, RemoteAgentRelayError } from './RemoteAgentRelayClient.js'
 import { RemoteAgentArtifactStore } from './RemoteAgentArtifactStore.js'
+import { getRemoteAgentDispatchRecoveryAction } from './RemoteAgentDispatchRecovery.js'
 import {
   isRecord,
   isValidRemoteAgentTaskId,
@@ -37,6 +39,8 @@ import {
 const log = createLogger('remote-agent:coordinator')
 const MAX_HISTORY_EVENTS = 5_000
 const TERMINAL_SUBSCRIPTION_GRACE_MS = 1_500
+const DISPATCH_RECOVERY_RETRY_DELAY_MS = 5_000
+const MAX_DISPATCH_RECOVERY_RETRIES = 12
 const TERMINAL_STATUSES = new Set<RemoteAgentTaskStatus>([
   'completed',
   'failed',
@@ -65,6 +69,8 @@ export interface RemoteAgentCoordinatorDeps {
 export class RemoteAgentCoordinator {
   private readonly subscriptions = new Map<string, () => void>()
   private readonly terminalCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly dispatchRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly dispatchRecoveryAttempts = new Map<string, number>()
   private readonly artifacts: RemoteAgentArtifactStore
   private readonly eventQueues = new Map<string, Promise<void>>()
   private resumePromise: Promise<void> | null = null
@@ -125,7 +131,7 @@ export class RemoteAgentCoordinator {
     }
 
     if (isTerminal(task.status)) return task
-    if (task.remoteSessionId != null) {
+    if (task.status !== 'dispatching') {
       await this.reconcileTask(accountUserId, task.taskId)
       return this.repository().get(accountUserId, task.taskId) ?? task
     }
@@ -157,9 +163,15 @@ export class RemoteAgentCoordinator {
         '/v1/remote-agent/tasks',
         relayRequest,
       )
-      const accepted = parseDispatchResponse(response.body)
-      if (response.status < 200 || response.status >= 300 || accepted == null) {
-        return this.applyRemoteDispatchError(accountUserId, task, response.status, response.body)
+      const accepted =
+        response.status >= 200 && response.status < 300
+          ? parseDispatchResponse(response.body)
+          : null
+      if (accepted == null || accepted.status === 'dispatching') {
+        if (isDefinitiveDispatchRejection(response.status, response.body)) {
+          return this.applyRemoteDispatchError(accountUserId, task, response.status, response.body)
+        }
+        return this.recoverAfterDispatchUncertainty(accountUserId, task, client, relayRequest)
       }
       task = this.updateFromDispatch(accountUserId, task, accepted)
       this.ensureSubscription(accountUserId, task)
@@ -496,50 +508,116 @@ export class RemoteAgentCoordinator {
         undefined,
         20_000,
       )
-      if (response.status >= 200 && response.status < 300) {
-        const remote = parseDispatchStatus(response.body)
-        if (remote != null) {
-          const recovered = this.updateFromDispatch(accountUserId, task, remote)
+      const snapshot =
+        response.status >= 200 && response.status < 300 ? parseDispatchStatus(response.body) : null
+      if (snapshot != null) {
+        const action = getRemoteAgentDispatchRecoveryAction(snapshot, true)
+        if (action === 'adopt') {
+          const recovered = this.updateFromDispatch(accountUserId, task, snapshot.task!)
           this.ensureSubscription(accountUserId, recovered)
           await this.reconcileTask(accountUserId, task.taskId)
           return this.requireTask(accountUserId, task.taskId)
         }
+        if (action === 'wait') {
+          this.scheduleDispatchReconcile(accountUserId, task.taskId)
+          const recovered =
+            snapshot.task == null
+              ? task
+              : this.updateFromDispatch(accountUserId, task, snapshot.task)
+          if (recovered.remoteSessionId != null) this.ensureSubscription(accountUserId, recovered)
+          return (
+            this.updateTask(accountUserId, task.taskId, {
+              transportState: 'reachable',
+              errorCode: null,
+            }) ?? recovered
+          )
+        }
+      } else if (
+        response.status !== 404 &&
+        isDefinitiveDispatchRejection(response.status, response.body)
+      ) {
+        return this.applyRemoteDispatchError(accountUserId, task, response.status, response.body)
+      } else if (response.status >= 400 && response.status < 500 && response.status !== 404) {
         return (
           this.updateTask(accountUserId, task.taskId, {
             transportState: 'reachable',
             errorCode: 'REMOTE_EXECUTION_FAILED',
           }) ?? task
         )
-      } else if (response.status !== 404) {
-        return this.applyRemoteDispatchError(accountUserId, task, response.status, response.body)
-      } else {
-        // The first request may have timed out before B accepted it. Re-send the same
-        // taskId while the original request body is still available in this process.
-        const retry = await client.request(
-          task.targetDeviceId,
-          'POST',
-          '/v1/remote-agent/tasks',
-          relayRequest,
-        )
-        const accepted =
-          retry.status >= 200 && retry.status < 300 ? parseDispatchResponse(retry.body) : null
-        if (accepted != null) {
-          const recovered = this.updateFromDispatch(accountUserId, task, accepted)
-          this.ensureSubscription(accountUserId, recovered)
-          await this.reconcileTask(accountUserId, task.taskId)
-          return this.requireTask(accountUserId, task.taskId)
-        }
-        return this.applyRemoteDispatchError(accountUserId, task, retry.status, retry.body)
       }
+
+      // A reservation can exist without a submitted turn. Replaying the exact body with
+      // the same taskId is safe: B serializes that key and resumes its durable phases.
+      return await this.retryDispatchOnce(accountUserId, task, client, relayRequest)
     } catch (recoveryError) {
-      // The durable outbox row remains dispatching; reconnect will query B by taskId.
-      // A malformed but received response is a protocol error, not a connectivity failure.
       return (
         this.updateTask(accountUserId, task.taskId, {
           transportState: isRelayFailure(recoveryError) ? 'unreachable' : 'reachable',
           errorCode: relayErrorCode(recoveryError),
         }) ?? task
       )
+    }
+  }
+
+  private async retryDispatchOnce(
+    accountUserId: string,
+    task: RemoteAgentTask,
+    client: RemoteAgentRelayClient,
+    relayRequest: RemoteAgentDispatchRequest,
+  ): Promise<RemoteAgentTask> {
+    const response = await client.request(
+      task.targetDeviceId,
+      'POST',
+      '/v1/remote-agent/tasks',
+      relayRequest,
+    )
+    const accepted =
+      response.status >= 200 && response.status < 300 ? parseDispatchResponse(response.body) : null
+    if (accepted != null && accepted.status !== 'dispatching') {
+      const recovered = this.updateFromDispatch(accountUserId, task, accepted)
+      this.ensureSubscription(accountUserId, recovered)
+      await this.reconcileTask(accountUserId, task.taskId)
+      return this.requireTask(accountUserId, task.taskId)
+    }
+    if (isDefinitiveDispatchRejection(response.status, response.body)) {
+      return this.applyRemoteDispatchError(accountUserId, task, response.status, response.body)
+    }
+
+    const statusResponse = await client.request(
+      task.targetDeviceId,
+      'GET',
+      `/v1/remote-agent/tasks/${encodeURIComponent(task.taskId)}`,
+      undefined,
+      20_000,
+    )
+    const snapshot =
+      statusResponse.status >= 200 && statusResponse.status < 300
+        ? parseDispatchStatus(statusResponse.body)
+        : null
+    if (snapshot != null) {
+      const action = getRemoteAgentDispatchRecoveryAction(snapshot, false)
+      if (action === 'adopt') {
+        const recovered = this.updateFromDispatch(accountUserId, task, snapshot.task!)
+        this.ensureSubscription(accountUserId, recovered)
+        await this.reconcileTask(accountUserId, task.taskId)
+        return this.requireTask(accountUserId, task.taskId)
+      }
+      if (action === 'wait') {
+        this.scheduleDispatchReconcile(accountUserId, task.taskId)
+        const recovered =
+          snapshot.task == null ? task : this.updateFromDispatch(accountUserId, task, snapshot.task)
+        if (recovered.remoteSessionId != null) this.ensureSubscription(accountUserId, recovered)
+        return (
+          this.updateTask(accountUserId, task.taskId, {
+            transportState: 'reachable',
+            errorCode: null,
+          }) ?? recovered
+        )
+      }
+      return this.markDispatchInterrupted(accountUserId, task.taskId)
+    }
+    if (statusResponse.status === 404) {
+      return this.markDispatchInterrupted(accountUserId, task.taskId)
     }
     return (
       this.updateTask(accountUserId, task.taskId, {
@@ -563,25 +641,43 @@ export class RemoteAgentCoordinator {
     }
 
     try {
-      if (task.remoteSessionId == null) {
+      if (task.remoteSessionId == null || task.status === 'dispatching') {
         const response = await client.request(
           task.targetDeviceId,
           'GET',
           `/v1/remote-agent/tasks/${encodeURIComponent(task.taskId)}`,
         )
         if (response.status === 404) {
-          this.updateTask(accountUserId, taskId, { transportState: 'reachable' })
+          this.markDispatchInterrupted(accountUserId, taskId)
           return
         }
-        const remote =
+        const snapshot =
           response.status >= 200 && response.status < 300
             ? parseDispatchStatus(response.body)
             : null
-        if (remote == null) {
+        if (snapshot == null) {
           this.applyRemoteDispatchError(accountUserId, task, response.status, response.body)
           return
         }
-        task = this.updateFromDispatch(accountUserId, task, remote)
+        const action = getRemoteAgentDispatchRecoveryAction(snapshot, false)
+        if (action === 'interrupted') {
+          this.markDispatchInterrupted(accountUserId, taskId)
+          return
+        }
+        if (action === 'wait') {
+          this.scheduleDispatchReconcile(accountUserId, taskId)
+          if (snapshot.task != null) {
+            task = this.updateFromDispatch(accountUserId, task, snapshot.task)
+            if (task.remoteSessionId != null) this.ensureSubscription(accountUserId, task)
+          }
+          this.updateTask(accountUserId, taskId, { transportState: 'reachable' })
+          return
+        }
+        if (snapshot.task == null) {
+          this.markDispatchInterrupted(accountUserId, taskId)
+          return
+        }
+        task = this.updateFromDispatch(accountUserId, task, snapshot.task)
       }
 
       if (task.remoteSessionId == null) {
@@ -848,6 +944,31 @@ export class RemoteAgentCoordinator {
     this.subscriptions.clear()
   }
 
+  private scheduleDispatchReconcile(accountUserId: string, taskId: string): void {
+    if (this.dispatchRecoveryTimers.has(taskId)) return
+    const attempts = this.dispatchRecoveryAttempts.get(taskId) ?? 0
+    if (attempts >= MAX_DISPATCH_RECOVERY_RETRIES) return
+    this.dispatchRecoveryAttempts.set(taskId, attempts + 1)
+    const timer = setTimeout(() => {
+      this.dispatchRecoveryTimers.delete(taskId)
+      void this.reconcileTask(accountUserId, taskId).catch((error) => {
+        log.warn('remote task dispatch recovery retry failed', {
+          taskId,
+          phase: 'dispatch-recovery',
+          errorCode: relayErrorCode(error),
+        })
+      })
+    }, DISPATCH_RECOVERY_RETRY_DELAY_MS)
+    this.dispatchRecoveryTimers.set(taskId, timer)
+  }
+
+  private clearDispatchReconcile(taskId: string): void {
+    const timer = this.dispatchRecoveryTimers.get(taskId)
+    if (timer != null) clearTimeout(timer)
+    this.dispatchRecoveryTimers.delete(taskId)
+    this.dispatchRecoveryAttempts.delete(taskId)
+  }
+
   private scheduleTerminalSubscriptionCleanup(accountUserId: string, task: RemoteAgentTask): void {
     const previous = this.terminalCleanupTimers.get(task.taskId)
     if (previous != null) clearTimeout(previous)
@@ -878,6 +999,7 @@ export class RemoteAgentCoordinator {
     remote: RemoteAgentDispatchResponse,
   ): RemoteAgentTask {
     if (remote.taskId !== current.taskId) throw new Error('目标电脑返回了不匹配的 taskId')
+    if (remote.status !== 'dispatching') this.clearDispatchReconcile(current.taskId)
     return (
       this.updateTask(accountUserId, current.taskId, {
         remoteSessionId: remote.remoteSessionId,
@@ -920,8 +1042,20 @@ export class RemoteAgentCoordinator {
     if (status === 401) {
       return (
         this.updateTask(accountUserId, current.taskId, {
+          status: 'failed',
+          completedAt: new Date().toISOString(),
           transportState: 'reachable',
           errorCode: 'REMOTE_AUTH_REQUIRED',
+        }) ?? current
+      )
+    }
+    if (status >= 400 && status < 500) {
+      return (
+        this.updateTask(accountUserId, current.taskId, {
+          status: 'failed',
+          completedAt: new Date().toISOString(),
+          transportState: 'reachable',
+          errorCode: 'REMOTE_EXECUTION_FAILED',
         }) ?? current
       )
     }
@@ -931,6 +1065,30 @@ export class RemoteAgentCoordinator {
         errorCode: 'REMOTE_EXECUTION_FAILED',
       }) ?? current
     )
+  }
+
+  private markDispatchInterrupted(accountUserId: string, taskId: string): RemoteAgentTask {
+    const current = this.repository().get(accountUserId, taskId)
+    if (current == null) throw new Error('远程任务不存在或不属于当前 Spark 平台账号')
+    if (isTerminal(current.status)) return current
+    this.clearDispatchReconcile(taskId)
+    const task = this.updateTask(accountUserId, taskId, {
+      status: 'failed',
+      pendingApprovalId: null,
+      errorCode: 'REMOTE_DISPATCH_INTERRUPTED',
+      completedAt: new Date().toISOString(),
+      transportState: 'reachable',
+    })
+    if (task != null) {
+      log.warn('remote task dispatch interrupted before submission', {
+        taskId,
+        deviceId: task.targetDeviceId,
+        phase: 'dispatch-recovery',
+        errorCode: 'REMOTE_DISPATCH_INTERRUPTED',
+      })
+      return task
+    }
+    return this.requireTask(accountUserId, taskId)
   }
 
   private markUnreachable(accountUserId: string, taskId: string): void {
@@ -945,6 +1103,7 @@ export class RemoteAgentCoordinator {
     const before = this.repository().get(accountUserId, taskId)
     const task = this.repository().update(accountUserId, taskId, patch)
     if (task != null) {
+      if (task.status !== 'dispatching') this.clearDispatchReconcile(taskId)
       this.deps.onTaskUpdated(task)
       if (before != null && before.status !== task.status) {
         log.info('remote task lifecycle status changed', {
@@ -999,7 +1158,9 @@ function parseDispatchResponse(value: unknown): RemoteAgentDispatchResponse | nu
     typeof value.taskId !== 'string' ||
     !(value.remoteSessionId == null || typeof value.remoteSessionId === 'string') ||
     !(value.turnId == null || typeof value.turnId === 'string') ||
-    (value.status !== 'dispatching' && value.status !== 'queued' && value.status !== 'running')
+    (value.status !== 'dispatching' && value.status !== 'queued' && value.status !== 'running') ||
+    (value.status !== 'dispatching' &&
+      (typeof value.remoteSessionId !== 'string' || value.remoteSessionId.length === 0))
   ) {
     return null
   }
@@ -1011,10 +1172,20 @@ function parseDispatchResponse(value: unknown): RemoteAgentDispatchResponse | nu
   }
 }
 
-function parseDispatchStatus(value: unknown): RemoteAgentDispatchResponse | null {
+function parseDispatchStatus(value: unknown): RemoteAgentDispatchStatusResponse | null {
   if (!isRecord(value) || !('task' in value)) return null
-  if (value.task == null) return null
-  return parseDispatchResponse(value.task)
+  const task = value.task == null ? null : parseDispatchResponse(value.task)
+  if (value.task != null && task == null) return null
+  return {
+    task,
+    ...(typeof value.dispatchActive === 'boolean' ? { dispatchActive: value.dispatchActive } : {}),
+  }
+}
+
+function isDefinitiveDispatchRejection(status: number, body: unknown): boolean {
+  if (status < 400 || status >= 500) return false
+  const code = readRemoteErrorCode(body)
+  return code !== 'REMOTE_REQUEST_TIMEOUT'
 }
 
 function readRemoteErrorCode(value: unknown): string | null {

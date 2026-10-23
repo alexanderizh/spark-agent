@@ -3,6 +3,7 @@ import path from 'node:path'
 import type {
   RemoteAgentApprovalRequest,
   RemoteAgentArtifactFetchRequest,
+  RemoteAgentDeviceListResponse,
   RemoteAgentRelayStatus,
   RemoteAgentRemoteAgentListResponse,
   RemoteAgentRemoteProjectListResponse,
@@ -25,6 +26,7 @@ export interface RemoteAgentIpcDeps {
   getRelayBaseUrl(): string
   getRelayAccessToken(): Promise<string | null>
   getClientLabel(): string
+  getLocalDeviceId(): string
   getVersion(): string
   getCurrentUserId(): string | null
   addLogoutHook(hook: () => Promise<void>): () => void
@@ -33,6 +35,18 @@ export interface RemoteAgentIpcDeps {
 let relayClient: RemoteAgentRelayClient | null = null
 let coordinator: RemoteAgentCoordinator | null = null
 let beforeQuitHookRegistered = false
+
+function excludeLocalDevice(
+  devices: RemoteAgentDeviceListResponse['devices'],
+  getLocalDeviceId: () => string,
+): RemoteAgentDeviceListResponse['devices'] {
+  try {
+    const localDeviceId = getLocalDeviceId()
+    return devices.filter((device) => device.deviceId !== localDeviceId)
+  } catch {
+    return devices
+  }
+}
 
 function getRelayClient(deps: RemoteAgentIpcDeps): RemoteAgentRelayClient {
   if (relayClient != null) return relayClient
@@ -46,7 +60,9 @@ function getRelayClient(deps: RemoteAgentIpcDeps): RemoteAgentRelayClient {
       coordinator?.handleRelayStatus(status)
     },
     onDevicesChange: (devices) => {
-      pushStreamEvent('stream:remote-agent:devices', devices)
+      pushStreamEvent('stream:remote-agent:devices', {
+        devices: excludeLocalDevice(devices.devices, deps.getLocalDeviceId),
+      })
       coordinator?.handleDevicesChange(devices)
     },
   })
@@ -141,10 +157,12 @@ export function registerRemoteAgentIpc(deps: RemoteAgentIpcDeps): void {
     return relayClient?.getStatus() ?? stoppedStatus()
   })
 
-  typedIpcHandle(
-    'remote-agent:relay:list-devices',
-    async () => relayClient?.listDevices() ?? { devices: [] },
-  )
+  typedIpcHandle('remote-agent:relay:list-devices', async () => {
+    const response = relayClient?.listDevices() ?? { devices: [] }
+    return {
+      devices: excludeLocalDevice(response.devices, deps.getLocalDeviceId),
+    }
+  })
 
   typedIpcHandle(
     'remote-agent:target:list-projects',

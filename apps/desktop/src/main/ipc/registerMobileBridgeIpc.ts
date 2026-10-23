@@ -194,6 +194,10 @@ function readRelayStore(settings: SettingsService): RelayStoreShape {
   return shape
 }
 
+export function getMobileBridgeDeviceId(settings: SettingsService): string {
+  return readRelayStore(settings).deviceId
+}
+
 function writeRelayStore(settings: SettingsService, shape: RelayStoreShape): void {
   settings.set(SETTINGS_CATEGORY, RELAY_SETTINGS_KEY, shape)
 }

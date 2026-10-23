@@ -11,6 +11,7 @@ import type {
   MobileBridgeAttachment,
   RemoteAgentDispatchRequest,
   RemoteAgentDispatchResponse,
+  RemoteAgentDispatchStatusResponse,
   RemoteAgentRemoteAgentListResponse,
   RemoteAgentRemoteProjectListResponse,
   RemoteAgentSharedContextItem,
@@ -148,17 +149,23 @@ export class RemoteAgentExecutionService {
     if (!taskId.trim() || taskId.length > 128) {
       throw new RemoteAgentRequestError(400, 'BAD_REQUEST', 'taskId 无效')
     }
+    const lockKey = `${accountUserId}\u0000${taskId}`
+    const dispatchActive = this.activeTasks.has(lockKey)
     const execution = new RemoteAgentExecutionRepository(this.deps.getDatabase()).get(
       accountUserId,
       taskId,
     )
-    if (execution == null) {
+    if (execution == null && !dispatchActive) {
       return {
         status: 404,
         body: { error: { code: 'REMOTE_TARGET_NOT_FOUND', message: '远程任务不存在' } },
       }
     }
-    return { status: 200, body: { task: toDispatchResponse(execution) } }
+    const body: RemoteAgentDispatchStatusResponse = {
+      task: execution == null ? null : toDispatchResponse(execution),
+      dispatchActive,
+    }
+    return { status: 200, body }
   }
 
   private async dispatch(body: unknown): Promise<RemoteAgentDispatchResponse> {
