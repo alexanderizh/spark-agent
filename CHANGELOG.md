@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+## [0.15.10] - 2026-10-26
+
+### 变更
+
+- **远程任务入口更名、消息流任务时间线下线**：入口「远程协作 / Remote」更名为「远程任务 / Remote Tasks」，与会话内既有「远程任务」术语对齐；聊天消息流底部不再内嵌远程任务时间线（`RemoteAgentTaskTimeline` 组件移除，随之悬空的 `remoteAgent.timelineTitle` 文案键一并清理），任务卡片集中保留在「远程任务」入口视图内。
+
 ### 改进
 
 - **会话检查器提示词快照改为 token 口径**：`Skill Prompt` / `System Prompt` 段落徽标与轮次汇总行优先显示估算 token 数（`estimateTokens` o200k 口径，经 `turn_prompt_snapshot` 新增可选字段 `estimatedTokens` 下发），字符数仅在旧快照缺 token 数据时回退显示；「本轮应用提示词」汇总段同步切换 token 口径，避免字符数视觉偏大造成体积误判。顺手补齐 `tpl13/tpl14` 两个存量悬空 i18n 键（上下文告警文案此前一直渲染原始键名）；复查再补齐同批遗漏的 6 个悬空键 `tpl6/tpl7/tpl8/tpl9/tpl10/tpl15 Desc`（轮次计数徽标、工作区快照说明、相对时间、轮用量 tooltip），中英双语对齐，悬空键清零。
