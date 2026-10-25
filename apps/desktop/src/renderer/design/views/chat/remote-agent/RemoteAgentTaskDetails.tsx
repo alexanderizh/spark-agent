@@ -173,6 +173,26 @@ export function RemoteAgentTaskDetails({
     [events],
   )
 
+  let failureReason: string | null = null
+  if (task.status === 'failed') {
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event: RemoteAgentTaskEvent | undefined = events[index]
+      if (event == null) continue
+      if (event.type === 'agent_error' && event.content?.trim()) {
+        failureReason = event.content.trim()
+        break
+      }
+      if (
+        event.type === 'agent_status' &&
+        event.status === 'error' &&
+        event.statusMessage?.trim()
+      ) {
+        failureReason = event.statusMessage.trim()
+        break
+      }
+    }
+  }
+
   const runAction = async (name: string, action: () => Promise<unknown>) => {
     if (busyAction != null) return
     setBusyAction(name)
@@ -226,6 +246,12 @@ export function RemoteAgentTaskDetails({
         )}
         {task.errorCode === 'REMOTE_DISPATCH_INTERRUPTED' && (
           <p className="remote-agent-inline-note">{translate('remoteAgent.dispatchInterrupted')}</p>
+        )}
+        {failureReason != null && (
+          <section className="remote-agent-failure-reason">
+            <h3>{translate('remoteAgent.failureReason')}</h3>
+            <p>{failureReason}</p>
+          </section>
         )}
         {task.resultSummary != null && task.resultSummary.trim().length > 0 && (
           <section>

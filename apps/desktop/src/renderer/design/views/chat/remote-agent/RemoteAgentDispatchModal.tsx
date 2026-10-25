@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Select, TextArea } from '@lobehub/ui'
-import { Checkbox, Empty, Modal, Spin } from 'antd'
+import { Button as LobeButton, Select, TextArea } from '@lobehub/ui'
+import { Button, Checkbox, Empty, Modal, Spin } from 'antd'
 import type { RemoteAgentDispatchRequest, RemoteAgentTask } from '@spark/protocol'
 import type { UIMessage } from '../../../services/event-mapper'
 import { useIpcInvoke } from '../../../hooks/useIpc'
@@ -149,6 +149,14 @@ export function RemoteAgentDispatchModal({
 
   const onlineDevices = useMemo(() => devices.filter((device) => device.online), [devices])
   const shareOptions = useMemo(() => shareOptionsOf(messages), [messages])
+  const selectableOptions = useMemo(
+    () => shareOptions.filter((option) => option.disabled !== true),
+    [shareOptions],
+  )
+  const selectedCount = useMemo(
+    () => shareOptions.filter((option) => selectedContext.has(option.id)).length,
+    [selectedContext, shareOptions],
+  )
   const selectedBytes = useMemo(
     () =>
       shareOptions.reduce(
@@ -249,6 +257,26 @@ export function RemoteAgentDispatchModal({
     })
   }
 
+  const applyContextBatch = (kind: 'all' | 'none' | 'messages' | 'attachments') => {
+    if (kind === 'none') {
+      setSelectedContext(new Set())
+      return
+    }
+    setSelectedContext(
+      new Set(
+        selectableOptions
+          .filter((option) =>
+            kind === 'all'
+              ? true
+              : kind === 'messages'
+                ? option.kind === 'message'
+                : option.kind === 'attachment',
+          )
+          .map((option) => option.id),
+      ),
+    )
+  }
+
   const buildSharedContext = async (): Promise<RemoteAgentDispatchRequest['sharedContext']> => {
     const result: RemoteAgentDispatchRequest['sharedContext'] = []
     let attachmentBytes = 0
@@ -338,7 +366,7 @@ export function RemoteAgentDispatchModal({
     <Modal
       open={open}
       title={translate('remoteAgent.dispatch')}
-      width={620}
+      width={660}
       footer={null}
       destroyOnHidden
       onCancel={() => {
@@ -424,7 +452,17 @@ export function RemoteAgentDispatchModal({
 
         <section className="remote-agent-context-picker">
           <div className="remote-agent-context-heading">
-            <strong>{translate('remoteAgent.context')}</strong>
+            <div className="remote-agent-context-heading-row">
+              <strong>{translate('remoteAgent.context')}</strong>
+              {shareOptions.length > 0 && (
+                <span className="remote-agent-context-counter">
+                  {translate('remoteAgent.contextSelected', {
+                    selected: selectedCount,
+                    total: selectableOptions.length,
+                  })}
+                </span>
+              )}
+            </div>
             <span>{translate('remoteAgent.contextHint')}</span>
           </div>
           {shareOptions.length === 0 ? (
@@ -433,34 +471,70 @@ export function RemoteAgentDispatchModal({
               description={translate('remoteAgent.noContext')}
             />
           ) : (
-            <div className="remote-agent-context-list">
-              {shareOptions.map((option) => (
-                <Checkbox
-                  key={option.id}
-                  className={`remote-agent-context-option${option.disabled ? ' is-disabled' : ''}`}
-                  checked={selectedContext.has(option.id)}
-                  disabled={submitting || option.disabled === true}
-                  onChange={() => toggleContext(option.id)}
+            <>
+              <div className="remote-agent-context-toolbar">
+                <Button
+                  size="small"
+                  type="text"
+                  disabled={submitting || selectedCount === selectableOptions.length}
+                  onClick={() => applyContextBatch('all')}
                 >
-                  <span className="remote-agent-context-option-copy">
-                    <strong>
-                      {option.kind === 'message'
-                        ? labelForMessage(messages, option.messageId)
-                        : (option.name ?? translate('remoteAgent.attachment'))}
-                      {option.kind === 'attachment' &&
-                        ` · ${labelForMessage(messages, option.messageId)}`}
-                    </strong>
-                    <span>
-                      {option.kind === 'message'
-                        ? option.text
-                        : option.disabled
-                          ? translate('remoteAgent.directoryUnsupported')
-                          : translate('remoteAgent.attachment')}
+                  {translate('remoteAgent.contextSelectAll')}
+                </Button>
+                <Button
+                  size="small"
+                  type="text"
+                  disabled={submitting || selectedCount === 0}
+                  onClick={() => applyContextBatch('none')}
+                >
+                  {translate('remoteAgent.contextClear')}
+                </Button>
+                <Button
+                  size="small"
+                  type="text"
+                  disabled={submitting}
+                  onClick={() => applyContextBatch('messages')}
+                >
+                  {translate('remoteAgent.contextMessagesOnly')}
+                </Button>
+                <Button
+                  size="small"
+                  type="text"
+                  disabled={submitting}
+                  onClick={() => applyContextBatch('attachments')}
+                >
+                  {translate('remoteAgent.contextAttachmentsOnly')}
+                </Button>
+              </div>
+              <div className="remote-agent-context-list">
+                {shareOptions.map((option) => (
+                  <Checkbox
+                    key={option.id}
+                    className={`remote-agent-context-option${option.disabled ? ' is-disabled' : ''}`}
+                    checked={selectedContext.has(option.id)}
+                    disabled={submitting || option.disabled === true}
+                    onChange={() => toggleContext(option.id)}
+                  >
+                    <span className="remote-agent-context-option-copy">
+                      <strong>
+                        {option.kind === 'message'
+                          ? labelForMessage(messages, option.messageId)
+                          : (option.name ?? translate('remoteAgent.attachment'))}
+                        {option.kind === 'attachment' &&
+                          ` · ${labelForMessage(messages, option.messageId)}`}
+                      </strong>
+                      <span>
+                        {option.kind === 'message'
+                          ? option.text
+                          : option.disabled
+                            ? translate('remoteAgent.directoryUnsupported')
+                            : translate('remoteAgent.attachment')}
+                      </span>
                     </span>
-                  </span>
-                </Checkbox>
-              ))}
-            </div>
+                  </Checkbox>
+                ))}
+              </div>
+            </>
           )}
         </section>
 
@@ -475,10 +549,10 @@ export function RemoteAgentDispatchModal({
           </div>
         )}
         <div className="remote-agent-form-actions">
-          <Button disabled={submitting} onClick={onClose}>
+          <LobeButton disabled={submitting} onClick={onClose}>
             {translate('remoteAgent.cancel')}
-          </Button>
-          <Button
+          </LobeButton>
+          <LobeButton
             type="primary"
             loading={submitting}
             disabled={
@@ -495,7 +569,7 @@ export function RemoteAgentDispatchModal({
             onClick={() => void submit()}
           >
             {translate('remoteAgent.submit')}
-          </Button>
+          </LobeButton>
         </div>
       </div>
     </Modal>

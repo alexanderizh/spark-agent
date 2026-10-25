@@ -1,33 +1,16 @@
-.remote-agent-entry-button {
-  position: relative;
-  display: inline-flex;
-  min-width: 32px;
-  height: 30px;
-  padding: 0 var(--pad-sm);
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  background: transparent;
+/* 配置面板里的「远程任务」入口：复用 session-panel 的区块头视觉（session-panel-toggle），
+   但行为是打开抽屉而非折叠展开，右侧用箭头示意会弹出面板。 */
+.remote-agent-panel-toggle .chev {
+  color: var(--text-faint);
+  transition: transform 150ms ease;
+}
+
+.remote-agent-panel-toggle:hover .chev {
   color: var(--text-muted);
-  font-size: var(--font-xs);
-  white-space: nowrap;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-  transition:
-    background-color 150ms ease,
-    color 150ms ease,
-    border-color 150ms ease;
+  transform: translateX(1px);
 }
 
-.remote-agent-entry-button:hover {
-  border-color: var(--border);
-  background: var(--hover);
-  color: var(--text);
-}
-
-.remote-agent-entry-button:focus-visible,
+.remote-agent-panel-toggle:focus-visible,
 .remote-agent-task-card:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
@@ -272,6 +255,32 @@
   line-height: 1.5;
 }
 
+.remote-agent-failure-reason {
+  margin: var(--pad-xs) 0 0;
+  padding: var(--pad-sm);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.remote-agent-failure-reason h3 {
+  margin: 0 0 var(--pad-2xs);
+  color: var(--danger);
+  font-size: var(--font-xs);
+  font-weight: 620;
+}
+
+.remote-agent-failure-reason p {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
 .remote-agent-details {
   display: flex;
   flex-direction: column;
@@ -490,15 +499,45 @@
   gap: 3px;
 }
 
+.remote-agent-context-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-sm);
+}
+
+.remote-agent-context-counter {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .remote-agent-context-heading > span {
   color: var(--text-muted);
   font-size: var(--font-xs);
   line-height: 1.45;
 }
 
+.remote-agent-context-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2xs);
+}
+
+.remote-agent-context-toolbar .ant-btn {
+  padding: 0 6px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.remote-agent-context-toolbar .ant-btn:not(:disabled):hover {
+  color: var(--text);
+}
+
 .remote-agent-context-list {
   display: flex;
-  max-height: 210px;
+  max-height: 300px;
   flex-direction: column;
   gap: var(--pad-3xs);
   overflow-y: auto;
@@ -510,7 +549,7 @@
 .remote-agent-context-option {
   display: flex;
   min-width: 0;
-  padding: 8px 10px;
+  padding: 10px 12px;
   align-items: flex-start;
   gap: var(--pad-sm);
   color: var(--text);
@@ -577,10 +616,6 @@
     max-width: calc(100vw - 16px);
   }
 
-  .remote-agent-entry-button > span:not(.remote-agent-entry-count) {
-    display: none;
-  }
-
   .remote-agent-dispatch-modal {
     max-width: calc(100vw - 16px);
   }
@@ -592,7 +627,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .remote-agent-entry-button,
+  .remote-agent-panel-toggle .chev,
   .remote-agent-task-card {
     transition: none;
   }

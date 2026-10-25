@@ -75,11 +75,7 @@ import { useEmptyHeroUsage } from './chat/useEmptyHeroUsage'
 import { ChatTabbar } from './chat/ChatTabbar'
 import { SessionShareDialog } from './chat/SessionShareDialog'
 import { SessionShareLiveFrame } from './chat/SessionShareSheet'
-import {
-  RemoteAgentChatEntry,
-  RemoteAgentEmptySessionEntry,
-} from './chat/remote-agent/RemoteAgentChatEntry'
-import { RemoteAgentSessionProvider } from './chat/remote-agent/RemoteAgentSession'
+import { RemoteAgentSessionEntry } from './chat/remote-agent/RemoteAgentChatEntry'
 import { ContextCompactionCard } from './chat/ContextCompactionCard'
 import { EmptySessionTopbar } from './chat/EmptySessionTopbar'
 import { SessionSchedulePanel } from './chat/SessionSchedulePanel'
@@ -3244,16 +3240,6 @@ export function ChatView({
             createSession={sessionCtx.handleNewSession}
             openSessionSchedule={sessionCtx.openSessionSchedule}
             closeSessionSchedule={sessionCtx.closeSessionSchedule}
-            {...(active != null
-              ? {
-                  remoteAgentEntry: (
-                    <RemoteAgentEmptySessionEntry
-                      sessionId={active}
-                      messages={activeVisibleMessages}
-                    />
-                  ),
-                }
-              : {})}
           />
         )}
         {/* {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />} */}
@@ -3293,152 +3279,149 @@ export function ChatView({
           </div>
         )}
         {active != null && (
-          <RemoteAgentSessionProvider key={active} sessionId={active}>
-            <Fragment key="active-session-content">
-              {!showEmptyHero && (
-                <ChatTabbar
-                  key="chat-tabbar"
-                  session={activeSession}
-                  workspace={activeSessionWorkspaceForDisplay ?? activeWorkspace}
-                  onOpenInEditor={() => openUnifiedSidePanel('code')}
-                  onOpenInTerminal={() => openUnifiedSidePanel('terminal')}
-                  agentStatus={agentStatus}
-                  stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
-                  branchState={branchState}
-                  gitStatus={gitStatus}
-                  runtimeWorktree={activeSession?.runtimeWorktree ?? null}
-                  isGitRepo={isGitRepo}
-                  taskCount={activeSessionTasks.length}
-                  taskCompletedCount={
-                    activeSessionTasks.filter((task) => task.status === 'completed').length
+          <Fragment key="active-session-content">
+            {!showEmptyHero && (
+              <ChatTabbar
+                key="chat-tabbar"
+                session={activeSession}
+                workspace={activeSessionWorkspaceForDisplay ?? activeWorkspace}
+                onOpenInEditor={() => openUnifiedSidePanel('code')}
+                onOpenInTerminal={() => openUnifiedSidePanel('terminal')}
+                agentStatus={agentStatus}
+                stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
+                branchState={branchState}
+                gitStatus={gitStatus}
+                runtimeWorktree={activeSession?.runtimeWorktree ?? null}
+                isGitRepo={isGitRepo}
+                taskCount={activeSessionTasks.length}
+                taskCompletedCount={
+                  activeSessionTasks.filter((task) => task.status === 'completed').length
+                }
+                hasGoal={activeSessionGoal != null}
+                showGitEnvPanel={showGitEnvPanel}
+                onToggleGitEnvPanel={() => {
+                  // 用户手动 toggle 后标记一次，本会话内自动展开机制让位于用户意图。
+                  gitPanelUserInteractedRef.current = true
+                  gitEnvPanelViewportCollapsedRef.current = false
+                  setShowGitEnvPanel((prev) => {
+                    const next = !prev
+                    if (next) void refreshGitStatus()
+                    return next
+                  })
+                }}
+                showInspector={showInspector}
+                setShowInspector={(v: boolean) => {
+                  setShowInspector(v)
+                  if (v) {
+                    setUnifiedPanelOpen(false)
+                    clearHtmlPresentation()
+                    setShowConfigPanel(false)
                   }
-                  hasGoal={activeSessionGoal != null}
-                  showGitEnvPanel={showGitEnvPanel}
-                  onToggleGitEnvPanel={() => {
-                    // 用户手动 toggle 后标记一次，本会话内自动展开机制让位于用户意图。
-                    gitPanelUserInteractedRef.current = true
-                    gitEnvPanelViewportCollapsedRef.current = false
-                    setShowGitEnvPanel((prev) => {
-                      const next = !prev
-                      if (next) void refreshGitStatus()
-                      return next
-                    })
-                  }}
-                  showInspector={showInspector}
-                  setShowInspector={(v: boolean) => {
-                    setShowInspector(v)
-                    if (v) {
-                      setUnifiedPanelOpen(false)
-                      clearHtmlPresentation()
-                      setShowConfigPanel(false)
+                  if (v) setShowGitReviewPanel(false)
+                }}
+                showConfigPanel={showConfigPanel}
+                onToggleConfig={toggleConfigPanel}
+                showUnifiedPanel={unifiedPanelOpen}
+                onToggleUnifiedPanel={toggleUnifiedPanel}
+                showSessionSchedule={showSessionSchedule}
+                sessionScheduleEnabledCount={sessionScheduleEnabledCount}
+                onToggleSessionSchedule={() => {
+                  if (active == null) return
+                  if (showSessionSchedule) sessionCtx.closeSessionSchedule()
+                  else sessionCtx.openSessionSchedule(active)
+                }}
+                showTerminalPanel={showTerminalPanel}
+                setShowTerminalPanel={(v) =>
+                  v ? openUnifiedSidePanel('terminal') : closeUnifiedSidePanel('terminal')
+                }
+                showSideChatPanel={showSideChatPanel}
+                onToggleSideChat={() => {
+                  if (showSideChatPanel) closeUnifiedSidePanel('side-chat')
+                  else void openSideChatPanel()
+                }}
+                teamConfig={teamConfig}
+                orchestration={activeSessionOrchestration}
+                effectiveHostAgentId={effectiveHostAgentId}
+                agents={agents}
+                {...(active
+                  ? {
+                      onClearMessages: handleClearMessages,
+                      clearWillStopRun,
+                      // 头部标题原地改名：与侧边栏悬浮卡 / 弹窗改名共用同一落库逻辑
+                      onCommitSessionTitle: async (title: string) => {
+                        if (activeSession == null) return
+                        await sessionCtx.commitSessionTitle(activeSession, title)
+                      },
                     }
-                    if (v) setShowGitReviewPanel(false)
-                  }}
-                  showConfigPanel={showConfigPanel}
-                  onToggleConfig={toggleConfigPanel}
-                  showUnifiedPanel={unifiedPanelOpen}
-                  onToggleUnifiedPanel={toggleUnifiedPanel}
-                  showSessionSchedule={showSessionSchedule}
-                  sessionScheduleEnabledCount={sessionScheduleEnabledCount}
-                  onToggleSessionSchedule={() => {
-                    if (active == null) return
-                    if (showSessionSchedule) sessionCtx.closeSessionSchedule()
-                    else sessionCtx.openSessionSchedule(active)
-                  }}
-                  showTerminalPanel={showTerminalPanel}
-                  setShowTerminalPanel={(v) =>
-                    v ? openUnifiedSidePanel('terminal') : closeUnifiedSidePanel('terminal')
-                  }
-                  showSideChatPanel={showSideChatPanel}
-                  onToggleSideChat={() => {
-                    if (showSideChatPanel) closeUnifiedSidePanel('side-chat')
-                    else void openSideChatPanel()
-                  }}
-                  teamConfig={teamConfig}
-                  orchestration={activeSessionOrchestration}
-                  effectiveHostAgentId={effectiveHostAgentId}
-                  agents={agents}
-                  {...(active
-                    ? {
-                        onClearMessages: handleClearMessages,
-                        clearWillStopRun,
-                        // 头部标题原地改名：与侧边栏悬浮卡 / 弹窗改名共用同一落库逻辑
-                        onCommitSessionTitle: async (title: string) => {
-                          if (activeSession == null) return
-                          await sessionCtx.commitSessionTitle(activeSession, title)
-                        },
-                      }
-                    : {})}
-                  {...(onExpandSidebar ? { onExpandSidebar } : {})}
-                  onShareSession={() => setSessionShareOpen(true)}
-                  shareDisabled={activeVisibleMessages.length === 0}
-                  remoteAgentEntry={<RemoteAgentChatEntry messages={activeVisibleMessages} />}
-                />
-              )}
-              <HtmlRenderProvider value={htmlRenderContext}>
-                <ChatStream
-                  key="chat-stream"
-                  sessionId={active}
-                  optimisticMessages={optimisticUserMessages}
-                  onDeleteOptimisticMessages={handleDeleteOptimisticUserMessages}
-                  workspaceId={activeSessionWorkspaceId}
-                  workspaceRootPath={activeSessionWorkspaceRootPath}
-                  onStatusChange={setAgentStatus}
-                  onUsageChange={setContextInputTokens}
-                  onRuntimeContextChange={setRuntimeContext}
-                  onUsageDataChange={setSessionUsageData}
-                  onMessagesChange={handleActiveMessagesChange}
-                  onOptimisticSessionReset={handleOptimisticSessionReset}
-                  onSessionStatusChange={handleActiveSessionStatusChange}
-                  persistedSessionStatus={activeSession?.status ?? null}
-                  onContextUsageChange={setContextUsage}
-                  onContextLedgerChange={setContextLedger}
-                  onProjectContextChange={setProjectContext}
-                  onPlanProposed={(plan) => {
-                    setProposedPlan(
-                      plan == null || active == null ? null : { sessionId: active, plan },
-                    )
-                    if (plan != null) openUnifiedSidePanel('plan')
-                  }}
-                  onGoalChange={setActiveSessionGoal}
-                  onOrchestrationChange={setActiveSessionOrchestration}
-                  onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
-                  clearTrigger={clearTrigger}
-                  stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
-                  scrollToBottomTrigger={scrollToBottomTrigger}
-                  teamConfig={teamConfig}
-                  onFilePreview={handleFilePreview}
-                  onReplyTo={handleReplyTo}
-                  onReplyToMember={handleReplyToMember}
-                  onResendMessage={handleResendMessage}
-                  onEditMessage={handleEditMessage}
-                  onLoadingChange={setActiveSessionLoading}
-                  emptyStateVariant="loading"
-                  modelSwitchMarkers={modelSwitchMarkers}
-                  showTurnNavigator
-                  scrollToTurnId={
-                    lineageAnchor != null && active === lineageAnchor.sessionId
-                      ? lineageAnchor.turnId
-                      : null
-                  }
-                  onTurnScrolled={() => setLineageAnchor(null)}
-                  onRequestFork={(turnId, ordinal) => {
-                    setForkDialog({ turnId, ...(ordinal != null ? { ordinal } : {}) })
-                  }}
-                  shareCaptureHost={sessionShareOpen ? shareCaptureHost : null}
-                  shareOmitCount={shareOmitCount}
-                />
-              </HtmlRenderProvider>
-              {userQuestion != null && (
-                <UserQuestionDock
-                  key={`${userQuestion.sessionId}:${userQuestion.questionId}`}
-                  data={userQuestion}
-                  onAnswer={handleAnswerQuestion}
-                  onCancel={handleCancelQuestion}
-                />
-              )}
-            </Fragment>
-          </RemoteAgentSessionProvider>
+                  : {})}
+                {...(onExpandSidebar ? { onExpandSidebar } : {})}
+                onShareSession={() => setSessionShareOpen(true)}
+                shareDisabled={activeVisibleMessages.length === 0}
+              />
+            )}
+            <HtmlRenderProvider value={htmlRenderContext}>
+              <ChatStream
+                key="chat-stream"
+                sessionId={active}
+                optimisticMessages={optimisticUserMessages}
+                onDeleteOptimisticMessages={handleDeleteOptimisticUserMessages}
+                workspaceId={activeSessionWorkspaceId}
+                workspaceRootPath={activeSessionWorkspaceRootPath}
+                onStatusChange={setAgentStatus}
+                onUsageChange={setContextInputTokens}
+                onRuntimeContextChange={setRuntimeContext}
+                onUsageDataChange={setSessionUsageData}
+                onMessagesChange={handleActiveMessagesChange}
+                onOptimisticSessionReset={handleOptimisticSessionReset}
+                onSessionStatusChange={handleActiveSessionStatusChange}
+                persistedSessionStatus={activeSession?.status ?? null}
+                onContextUsageChange={setContextUsage}
+                onContextLedgerChange={setContextLedger}
+                onProjectContextChange={setProjectContext}
+                onPlanProposed={(plan) => {
+                  setProposedPlan(
+                    plan == null || active == null ? null : { sessionId: active, plan },
+                  )
+                  if (plan != null) openUnifiedSidePanel('plan')
+                }}
+                onGoalChange={setActiveSessionGoal}
+                onOrchestrationChange={setActiveSessionOrchestration}
+                onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
+                clearTrigger={clearTrigger}
+                stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
+                scrollToBottomTrigger={scrollToBottomTrigger}
+                teamConfig={teamConfig}
+                onFilePreview={handleFilePreview}
+                onReplyTo={handleReplyTo}
+                onReplyToMember={handleReplyToMember}
+                onResendMessage={handleResendMessage}
+                onEditMessage={handleEditMessage}
+                onLoadingChange={setActiveSessionLoading}
+                emptyStateVariant="loading"
+                modelSwitchMarkers={modelSwitchMarkers}
+                showTurnNavigator
+                scrollToTurnId={
+                  lineageAnchor != null && active === lineageAnchor.sessionId
+                    ? lineageAnchor.turnId
+                    : null
+                }
+                onTurnScrolled={() => setLineageAnchor(null)}
+                onRequestFork={(turnId, ordinal) => {
+                  setForkDialog({ turnId, ...(ordinal != null ? { ordinal } : {}) })
+                }}
+                shareCaptureHost={sessionShareOpen ? shareCaptureHost : null}
+                shareOmitCount={shareOmitCount}
+              />
+            </HtmlRenderProvider>
+            {userQuestion != null && (
+              <UserQuestionDock
+                key={`${userQuestion.sessionId}:${userQuestion.questionId}`}
+                data={userQuestion}
+                onAnswer={handleAnswerQuestion}
+                onCancel={handleCancelQuestion}
+              />
+            )}
+          </Fragment>
         )}
 
         {sessionShareOpen && activeSession != null && (
@@ -3613,6 +3596,17 @@ export function ChatView({
               : (activeSession?.agentId ?? undefined)
             return aid != null ? { agentId: aid } : {}
           })()}
+          {...(active != null
+            ? {
+                remoteAgentEntry: (
+                  <RemoteAgentSessionEntry
+                    key={active}
+                    sessionId={active}
+                    messages={activeVisibleMessages}
+                  />
+                ),
+              }
+            : {})}
         />
       )}
 

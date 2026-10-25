@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import './ChatInspectorPanel.less'
 import './SessionPanelDesign.less'
 import { CheckCircle, Save } from 'lucide-react'
@@ -190,6 +191,7 @@ export function ChatConfigPanel({
   onWidthChange,
   agentId,
   embedded = false,
+  remoteAgentEntry,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -198,6 +200,8 @@ export function ChatConfigPanel({
   /** 当前会话实际使用的 agent ID（team mode 下为 host agent ID） */
   agentId?: string
   embedded?: boolean
+  /** 远程协作入口（自带 Provider 的隔离特性模块），渲染在面板末尾 */
+  remoteAgentEntry?: ReactNode
 }) {
   // 本文件使用非响应式 translate()：顶层订阅语言变化，保证切换语言后整树重渲染。
   useI18n()
@@ -694,6 +698,9 @@ export function ChatConfigPanel({
             {!hooksCollapsed && <SessionHooksSection sessionId={sessionId} />}
           </div>
         )}
+
+        {/* 远程任务：入口由 ChatView 以隔离特性模块形式注入（自带 Provider），仅活跃会话传入 */}
+        {remoteAgentEntry}
       </div>
     </div>
   )

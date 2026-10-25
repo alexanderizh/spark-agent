@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Drawer, Empty, Spin } from 'antd'
 import { UsersRound } from 'lucide-react'
+import { Icons } from '../../../Icons'
 import type { UIMessage } from '../../../services/event-mapper'
 import { translate, useI18n } from '../../../i18n'
 import { RemoteAgentDispatchModal } from './RemoteAgentDispatchModal'
@@ -62,17 +63,25 @@ export function RemoteAgentChatEntry({ messages }: { messages: UIMessage[] }) {
 
   return (
     <>
-      <button
-        type="button"
-        className="remote-agent-entry-button"
-        aria-label={translate('remoteAgent.title')}
-        title={translate('remoteAgent.title')}
-        onClick={() => setDrawerOpen(true)}
-      >
-        <UsersRound size={14} strokeWidth={1.7} />
-        <span>{translate('remoteAgent.entry')}</span>
-        {activeTaskCount > 0 && <span className="remote-agent-entry-count">{activeTaskCount}</span>}
-      </button>
+      <div className="inspector-section">
+        <h4 className="config-panel-header">
+          <button
+            type="button"
+            className="session-panel-toggle remote-agent-panel-toggle"
+            aria-label={translate('remoteAgent.title')}
+            title={translate('remoteAgent.title')}
+            onClick={() => setDrawerOpen(true)}
+          >
+            <UsersRound size={11} strokeWidth={1.7} />
+            {translate('remoteAgent.entry')}
+            <span className="spacer" />
+            {activeTaskCount > 0 && (
+              <span className="remote-agent-entry-count">{activeTaskCount}</span>
+            )}
+            <Icons.ChevronRight size={10} className="chev" />
+          </button>
+        </h4>
+      </div>
 
       <Drawer
         className="remote-agent-drawer"
@@ -184,8 +193,8 @@ export function RemoteAgentChatEntry({ messages }: { messages: UIMessage[] }) {
   )
 }
 
-/** Empty sessions use a separate compact topbar, outside the active-session provider subtree. */
-export function RemoteAgentEmptySessionEntry({
+/** The config panel renders outside the active-session provider subtree, so the entry carries its own provider. */
+export function RemoteAgentSessionEntry({
   sessionId,
   messages,
 }: {

@@ -1,5 +1,4 @@
 import { useCallback } from 'react'
-import type { ReactNode } from 'react'
 import type { SessionId, WorkspaceInfo } from '@spark/protocol'
 import {
   Clock3,
@@ -35,7 +34,6 @@ type EmptySessionTopbarProps = {
   createSession: (workspaceId?: string | null) => Promise<SessionId | null>
   openSessionSchedule: (sessionId: SessionId) => void
   closeSessionSchedule: () => void
-  remoteAgentEntry?: ReactNode
 }
 
 export function EmptySessionTopbar({
@@ -58,7 +56,6 @@ export function EmptySessionTopbar({
   createSession,
   openSessionSchedule,
   closeSessionSchedule,
-  remoteAgentEntry,
 }: EmptySessionTopbarProps) {
   const toggleSessionSchedule = useCallback(() => {
     if (showSessionSchedule) {
@@ -123,7 +120,6 @@ export function EmptySessionTopbar({
     >
       <ChatTitlebarStart {...(onExpandSidebar ? { onExpandSidebar } : {})} />
       <div className="chat-sidebar-topbar-actions">
-        {remoteAgentEntry}
         <TabbarTooltipButton
           title="环境信息"
           ariaLabel="环境信息"
