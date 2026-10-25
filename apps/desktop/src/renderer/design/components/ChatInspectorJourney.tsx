@@ -5,10 +5,10 @@
  * （`session:get-journey` IPC，主进程聚合审计账本与事件流，不受聊天窗口化影响）。
  * 四个分组各自是独立的顶级折叠区块（与「工具执行」「上下文窗口」同层级，
  * 不再套一层总区块），有数据的分组才出现：
- * - 技能与 MCP：加载过的技能、调用过的 MCP 服务器（含调用次数）；
- * - 网页查阅：检索词与抓取过的网页（page 条目可点击用系统浏览器打开）；
  * - 过程产物：文件变更 + Agent 显式呈现的文件（主进程仅收集文档 / 多媒体，
  *   点击优先走统一预览路由 onFilePreview 打开预览，无回调时回落访达定位）；
+ * - 技能与 MCP：加载过的技能、调用过的 MCP 服务器（含调用次数）；
+ * - 网页查询：检索词与抓取过的网页（page 条目可点击用系统浏览器打开）；
  * - 输入来源：用户消息携带的图片 / 文件 / 目录附件（同上，预览优先、定位兜底）。
  *
  * 数据加载遵循 ChatInspectorToolLog 模板：useIpcInvoke + 延迟一拍加载，
@@ -82,9 +82,15 @@ export interface ChatInspectorJourneyProps {
   sessionId: string
   /** 统一文件打开路由回调（ChatView 传入）：可预览文件优先打开预览，未传时回落访达定位。 */
   onFilePreview?: FileOpenHandler | undefined
+  /** 在技能与 MCP 区块之后渲染的同级模块。 */
+  afterSkillsMcp?: ReactNode | undefined
 }
 
-export function ChatInspectorJourney({ sessionId, onFilePreview }: ChatInspectorJourneyProps) {
+export function ChatInspectorJourney({
+  sessionId,
+  onFilePreview,
+  afterSkillsMcp,
+}: ChatInspectorJourneyProps) {
   const { toast } = useToast()
   const { invoke: invokeJourney } = useIpcInvoke('session:get-journey')
   const { invoke: openExternal } = useIpcInvoke('browser:open-external')
@@ -276,37 +282,49 @@ export function ChatInspectorJourney({ sessionId, onFilePreview }: ChatInspector
   // ── 加载 / 错误 / 空态：均为独立的轻量卡片，不占用分组标题 ──
   if (error != null) {
     return (
-      <section className="inspector-section chat-journey">
-        <div className="chat-journey__error">
-          <span>会话经历加载失败：{error}</span>
-          <button type="button" onClick={() => void load()}>
-            重试
-          </button>
-        </div>
-      </section>
+      <>
+        <section className="inspector-section chat-journey">
+          <div className="chat-journey__error">
+            <span>会话经历加载失败：{error}</span>
+            <button type="button" onClick={() => void load()}>
+              重试
+            </button>
+          </div>
+        </section>
+        {afterSkillsMcp}
+      </>
     )
   }
 
   if (loading && data == null) {
     return (
-      <section className="inspector-section chat-journey" aria-busy="true">
-        <div className="chat-journey__skeleton">
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className="chat-journey__skeleton-row"
-              style={{ width: i % 2 === 0 ? '64%' : '86%' }}
-            />
-          ))}
-        </div>
-      </section>
+      <>
+        <section className="inspector-section chat-journey" aria-busy="true">
+          <div className="chat-journey__skeleton">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="chat-journey__skeleton-row"
+                style={{ width: i % 2 === 0 ? '64%' : '86%' }}
+              />
+            ))}
+          </div>
+        </section>
+        {afterSkillsMcp}
+      </>
     )
   }
 
-  if (data == null) return null
+  if (data == null) return afterSkillsMcp ?? null
 
-  // ── 四个同级折叠区块：有数据的分组才出现，最后一块携带 truncated 底注 ──
+  // ── 四个同级折叠区块：产物 → 技能与 MCP → 网页查询 → 输入来源 ──
   const sections: Array<{ key: string; title: string; count: number; children: ReactNode[] }> = [
+    {
+      key: 'artifacts',
+      title: '过程产物',
+      count: data.artifacts.length,
+      children: data.artifacts.map(renderArtifact),
+    },
     {
       key: 'skills-mcp',
       title: '技能与 MCP',
@@ -315,15 +333,9 @@ export function ChatInspectorJourney({ sessionId, onFilePreview }: ChatInspector
     },
     {
       key: 'web',
-      title: '网页查阅',
+      title: '网页查询',
       count: data.web.length,
       children: data.web.map(renderWeb),
-    },
-    {
-      key: 'artifacts',
-      title: '过程产物',
-      count: data.artifacts.length,
-      children: data.artifacts.map(renderArtifact),
     },
     {
       key: 'inputs',
@@ -333,24 +345,39 @@ export function ChatInspectorJourney({ sessionId, onFilePreview }: ChatInspector
     },
   ].filter((section) => section.count > 0)
 
-  if (sections.length === 0) return null
+  if (sections.length === 0) return afterSkillsMcp ?? null
+
+  const renderSection = (key: string) => {
+    const index = sections.findIndex((section) => section.key === key)
+    const section = index < 0 ? undefined : sections[index]
+    if (section == null) return null
+
+    return (
+      <InspectorCollapsibleSection
+        key={section.key}
+        className="chat-journey"
+        title={section.title}
+        summary={<span className="inspector-count">{section.count}</span>}
+        headerAction={renderRefresh}
+        defaultExpanded={
+          section.key === 'artifacts' || section.key === 'skills-mcp' || section.key === 'web'
+        }
+      >
+        <div className="chat-journey__list">{section.children}</div>
+        {data.truncated && index === sections.length - 1 && (
+          <div className="chat-journey__foot">仅统计最近记录（更早的历史未包含）</div>
+        )}
+      </InspectorCollapsibleSection>
+    )
+  }
 
   return (
     <>
-      {sections.map((section, index) => (
-        <InspectorCollapsibleSection
-          key={section.key}
-          className="chat-journey"
-          title={section.title}
-          summary={<span className="inspector-count">{section.count}</span>}
-          headerAction={renderRefresh}
-        >
-          <div className="chat-journey__list">{section.children}</div>
-          {data.truncated && index === sections.length - 1 && (
-            <div className="chat-journey__foot">仅统计最近记录（更早的历史未包含）</div>
-          )}
-        </InspectorCollapsibleSection>
-      ))}
+      {renderSection('artifacts')}
+      {renderSection('skills-mcp')}
+      {afterSkillsMcp}
+      {renderSection('web')}
+      {renderSection('inputs')}
     </>
   )
 }

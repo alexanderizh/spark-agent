@@ -61,4 +61,23 @@ describe('InspectorCollapsibleSection', () => {
     expect(controlledContent?.hidden).toBe(false)
     expect(container.querySelector('[data-testid="content"]')?.textContent).toBe('日志内容')
   })
+
+  it('can start expanded when requested', () => {
+    act(() =>
+      root.render(
+        <InspectorCollapsibleSection title="工具执行" defaultExpanded>
+          <div data-testid="content">工具记录</div>
+        </InspectorCollapsibleSection>,
+      ),
+    )
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '.inspector-collapsible-section__toggle',
+    )
+    const controlledContent = document.getElementById(toggle?.getAttribute('aria-controls') ?? '')
+
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+    expect(controlledContent?.hidden).toBe(false)
+    expect(container.querySelector('[data-testid="content"]')?.textContent).toBe('工具记录')
+  })
 })

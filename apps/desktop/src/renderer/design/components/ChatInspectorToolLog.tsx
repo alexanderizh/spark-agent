@@ -570,6 +570,7 @@ export function ChatInspectorToolLog({ sessionId }: ChatInspectorToolLogProps) {
     <InspectorCollapsibleSection
       className="chat-toollog"
       title="工具执行"
+      defaultExpanded
       summary={
         stats != null && stats.total > 0 ? (
           <span className="inspector-count">{stats.total} 次调用</span>

@@ -8,6 +8,7 @@ interface InspectorCollapsibleSectionProps {
   headerAction?: ReactNode
   children: ReactNode
   className?: string
+  defaultExpanded?: boolean
 }
 
 export function InspectorCollapsibleSection({
@@ -16,8 +17,9 @@ export function InspectorCollapsibleSection({
   headerAction,
   children,
   className,
+  defaultExpanded = false,
 }: InspectorCollapsibleSectionProps) {
-  const [collapsed, setCollapsed] = useState(true)
+  const [collapsed, setCollapsed] = useState(!defaultExpanded)
   const contentId = useId()
 
   return (

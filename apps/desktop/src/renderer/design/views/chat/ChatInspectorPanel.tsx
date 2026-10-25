@@ -958,38 +958,20 @@ export function ChatInspector({
           )}
         </div>
 
-        {/* Token Usage Section */}
-        <div className="inspector-section">
-          <h4>{translate('chatInspector.t82')}</h4>
-          <TokenUsagePanel
-            inputTokens={usageData.inputTokens}
-            outputTokens={usageData.outputTokens}
-            reasoningOutputTokens={usageData.reasoningOutputTokens}
-            totalTokens={
-              usageData.inputTokens + usageData.outputTokens + usageData.reasoningOutputTokens
-            }
-            cacheHitTokens={usageData.cacheHitTokens}
-            cacheHitRate={usageData.cacheHitRate}
-            cacheWriteTokens={usageData.cacheWriteTokens}
-            sessionTotal={ledgerUsage}
-          />
-        </div>
-
         {/* 性能区块 — 吞吐 / TTFT / 轮次时长；从事件回放派生（含 live 更新） */}
         <ChatInspectorPerf
           snapshots={turnPromptSnapshots}
           isSessionRunning={session?.status === 'running'}
         />
 
-        {/* 工具执行审计日志：账本时间线 + 哈希链完整性（tool-audit:* IPC）。
-            固定在性能之后、上下文窗口之前（执行观测区聚在一起）。 */}
-        {session != null && <ChatInspectorToolLog sessionId={session.id} />}
-
-        {/* 会话经历：技能与 MCP / 网页查阅 / 过程产物 / 输入来源四个同级折叠区块
-            （session:get-journey IPC，一次聚合共享）。紧跟工具执行区块（同属执行
-            观测区），有数据的分组才出现。产物/附件点击走统一预览路由。 */}
+        {/* 会话经历：过程产物 → 技能与 MCP → 工具执行 → 网页查询 → 输入来源。
+            Journey 数据仍由一次 session:get-journey IPC 聚合加载。 */}
         {session != null && (
-          <ChatInspectorJourney sessionId={session.id} onFilePreview={onFilePreview} />
+          <ChatInspectorJourney
+            sessionId={session.id}
+            onFilePreview={onFilePreview}
+            afterSkillsMcp={<ChatInspectorToolLog sessionId={session.id} />}
+          />
         )}
 
         {subagents.length > 0 && (
@@ -1025,6 +1007,36 @@ export function ChatInspector({
           </div>
         )}
 
+        {/* Token usage */}
+        <div className="inspector-section">
+          <h4>{translate('chatInspector.t82')}</h4>
+          <TokenUsagePanel
+            inputTokens={usageData.inputTokens}
+            outputTokens={usageData.outputTokens}
+            reasoningOutputTokens={usageData.reasoningOutputTokens}
+            totalTokens={
+              usageData.inputTokens + usageData.outputTokens + usageData.reasoningOutputTokens
+            }
+            cacheHitTokens={usageData.cacheHitTokens}
+            cacheHitRate={usageData.cacheHitRate}
+            cacheWriteTokens={usageData.cacheWriteTokens}
+            sessionTotal={ledgerUsage}
+          />
+        </div>
+
+        {/* Per-Turn Token Chart — 一轮一行，只展示有用量的最近 20 轮 */}
+        {turnUsage.rows.length > 0 && (
+          <div className="inspector-section">
+            <h4>
+              {translate('chatInspector.t86')}
+              <span className="inspector-count">
+                {translate('chatInspector.tpl6Desc', { count: turnUsage.totalTurns })}
+              </span>
+            </h4>
+            <TurnUsageChart rows={turnUsage.rows} />
+          </div>
+        )}
+
         {/* Context Window Section — 仅在已知上下文窗口大小时展示；
             智能路由首轮分流完成前窗口/用量是兜底错值，随参数栏一起隐藏 */}
         {contextWindow > 0 && !hideContextBudget && (
@@ -1050,19 +1062,6 @@ export function ChatInspector({
               isCritical={isContextCritical}
               runtimeMeasured={matchingRuntimeContext != null}
             />
-          </div>
-        )}
-
-        {/* Per-Turn Token Chart — 一轮一行，只展示有用量的最近 20 轮 */}
-        {turnUsage.rows.length > 0 && (
-          <div className="inspector-section">
-            <h4>
-              {translate('chatInspector.t86')}
-              <span className="inspector-count">
-                {translate('chatInspector.tpl6Desc', { count: turnUsage.totalTurns })}
-              </span>
-            </h4>
-            <TurnUsageChart rows={turnUsage.rows} />
           </div>
         )}
 
