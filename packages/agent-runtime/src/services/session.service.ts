@@ -7091,6 +7091,7 @@ export class SessionService {
 
     const workspaceIssue = await getWorkspaceRootIssue(config.workspaceRootPath)
     if (workspaceIssue != null) {
+      this.closeTeamMcpHandlesForTurn(turnId)
       if (options.userMessageAlreadyPersisted !== true) {
         this.emitAndPersist(
           sessionId,
@@ -7232,6 +7233,7 @@ export class SessionService {
         )
       }
       sessionRepo.updateStatus(sessionId, 'error')
+      this.closeTeamMcpHandlesForTurn(turnId)
       return
     }
 
@@ -7303,7 +7305,10 @@ export class SessionService {
     }
 
     const useCodexCli = config.useLocalConfig === true || config.codexCliProvider != null
-    if (this.turnRegistry.isTurnCancelled(turnId)) return
+    if (this.turnRegistry.isTurnCancelled(turnId)) {
+      this.closeTeamMcpHandlesForTurn(turnId)
+      return
+    }
     const executor = this.engineRegistry.get('codex').createExecutor(config)
     this.toolAuditRecorder.noteTurnRuntime(sessionId, turnId, 'codex', config.workspaceRootPath)
     const completeAssistantEvents: AssistantMessageEvent[] = []

@@ -13,6 +13,7 @@ export interface StoredCredentialBundle {
   tokenType?: string
   expiresAt?: string
   clientId?: string
+  clientSecret?: string
   scopes?: string[]
 }
 
@@ -45,12 +46,16 @@ export class RuntimeTokenService {
     await this.store.set(ref as KeystoreRef, JSON.stringify(bundle))
   }
 
-  async read(ref: string | null): Promise<StoredCredentialBundle | null> {
+  async read(
+    ref: string | null,
+    options: { allowLegacyPlainText?: boolean } = {},
+  ): Promise<StoredCredentialBundle | null> {
     if (ref == null || ref.trim().length === 0) return null
     const raw = await this.store.get(ref as KeystoreRef)
     if (raw == null || raw.trim().length === 0) return null
+    const value = raw.trim()
     try {
-      const parsed = JSON.parse(raw) as Partial<StoredCredentialBundle>
+      const parsed = JSON.parse(value) as Partial<StoredCredentialBundle>
       if (typeof parsed.accessToken !== 'string' || parsed.accessToken.trim().length === 0)
         return null
       return {
@@ -59,6 +64,7 @@ export class RuntimeTokenService {
         ...(typeof parsed.tokenType === 'string' ? { tokenType: parsed.tokenType } : {}),
         ...(typeof parsed.expiresAt === 'string' ? { expiresAt: parsed.expiresAt } : {}),
         ...(typeof parsed.clientId === 'string' ? { clientId: parsed.clientId } : {}),
+        ...(typeof parsed.clientSecret === 'string' ? { clientSecret: parsed.clientSecret } : {}),
         ...(Array.isArray(parsed.scopes)
           ? {
               scopes: parsed.scopes.filter(
@@ -68,6 +74,11 @@ export class RuntimeTokenService {
           : {}),
       }
     } catch {
+      if (options.allowLegacyPlainText && !value.startsWith('{') && !value.startsWith('[')) {
+        const migrated = { accessToken: value, tokenType: 'Bearer' }
+        await this.save(ref, migrated)
+        return migrated
+      }
       throw new RuntimeError(
         'AUTH_REQUIRED',
         'Stored provider credential is invalid; reauthorize the account',
@@ -83,8 +94,9 @@ export class RuntimeTokenService {
     ref: string | null,
     callback: (token: string) => Promise<T>,
     refresh?: (bundle: StoredCredentialBundle) => Promise<StoredCredentialBundle>,
+    options: { allowLegacyPlainText?: boolean } = {},
   ): Promise<T> {
-    const bundle = await this.read(ref)
+    const bundle = await this.read(ref, options)
     if (bundle == null)
       throw new RuntimeError('AUTH_REQUIRED', 'Provider account requires authorization')
     const current =
@@ -116,6 +128,8 @@ export class RuntimeTokenService {
       if (updated.refreshToken == null && bundle.refreshToken != null)
         updated.refreshToken = bundle.refreshToken
       if (updated.clientId == null && bundle.clientId != null) updated.clientId = bundle.clientId
+      if (updated.clientSecret == null && bundle.clientSecret != null)
+        updated.clientSecret = bundle.clientSecret
       if (updated.scopes == null && bundle.scopes != null) updated.scopes = bundle.scopes
       await this.save(ref, updated)
       return updated

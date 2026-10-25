@@ -18,6 +18,7 @@ describe('RuntimeTokenService', () => {
       refreshToken: 'old-refresh',
       expiresAt: new Date(Date.now() + 1_000).toISOString(),
       clientId: 'client-id',
+      clientSecret: 'client-secret',
     })
 
     let refreshCount = 0
@@ -41,6 +42,7 @@ describe('RuntimeTokenService', () => {
       accessToken: 'new-access',
       refreshToken: 'rotated-refresh',
       clientId: 'client-id',
+      clientSecret: 'client-secret',
     })
   })
 
@@ -57,6 +59,29 @@ describe('RuntimeTokenService', () => {
     const ref = service.createRef('spark.test', 'test', 'account')
     await expect(service.withAccessToken(ref, async (token) => token)).rejects.toMatchObject({
       code: 'AUTH_EXPIRED',
+    })
+  })
+
+  it('migrates legacy plain-text connector tokens in the keystore on first authorized read', async () => {
+    const values = new Map<string, string>([['legacy/github', 'github_pat_legacy-fixture']])
+    const service = new RuntimeTokenService({
+      get: async (ref) => values.get(ref) ?? null,
+      set: async (ref, value) => {
+        values.set(ref, value)
+      },
+      delete: async (ref) => values.delete(ref),
+    })
+
+    await expect(
+      service.withAccessToken('legacy/github', async (token) => token, undefined, {
+        allowLegacyPlainText: true,
+      }),
+    ).resolves.toBe('github_pat_legacy-fixture')
+    expect(values.get('legacy/github')).toBe(
+      JSON.stringify({ accessToken: 'github_pat_legacy-fixture', tokenType: 'Bearer' }),
+    )
+    await expect(service.read('legacy/github')).resolves.toMatchObject({
+      accessToken: 'github_pat_legacy-fixture',
     })
   })
 })

@@ -25,7 +25,8 @@ export class GitHubRuntimeAdapter implements ConnectorRuntimeAdapter {
     toolNamespace: 'github',
     accountMode: 'multiple',
     execution: { type: 'builtin', adapter: 'github' },
-    authMethods: ['pat', 'device-code', 'github-app'],
+    // Only PAT is currently wired to a real credential flow in the extension center.
+    authMethods: ['pat'],
     authGuides: {
       token: {
         label: '创建 Fine-grained PAT',

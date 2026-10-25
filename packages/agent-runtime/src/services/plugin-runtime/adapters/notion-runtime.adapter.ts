@@ -35,7 +35,7 @@ export class NotionRuntimeAdapter implements ConnectorRuntimeAdapter {
       oauth: {
         label: '配置 Notion OAuth 应用',
         url: 'https://www.notion.so/my-integrations',
-        description: 'OAuth 模式需要一个已配置 redirect URI 的 Notion 应用。',
+        description: 'OAuth 需要已发布的 Public Connection，并登记本机回调地址。',
       },
     },
     capabilities: [

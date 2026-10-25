@@ -19,6 +19,7 @@ export type RuntimeErrorCode = Extract<
 >
 
 export class RuntimeError extends SparkError {
+  declare readonly code: RuntimeErrorCode
   readonly retryAfterMs?: number
 
   constructor(

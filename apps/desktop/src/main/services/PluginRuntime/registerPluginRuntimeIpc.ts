@@ -9,6 +9,7 @@ import type {
   PluginRuntimeIssueConfirmationRequest,
   PluginRuntimeToolsListRequest,
 } from '@spark/protocol'
+import type { ConnectorAccount } from '@spark/protocol'
 import { shell } from 'electron'
 import {
   OAuthBroker,
@@ -17,10 +18,12 @@ import {
   registerBuiltinRuntimeAdapters,
 } from '@spark/agent-runtime'
 import { getDatabase } from '../../db.js'
+import { createLogger } from '@spark/shared'
 import { getPluginManager } from '../../ipc/registerPluginIpc.js'
 import { pushStreamEvent, typedIpcHandle } from '../../ipc/typed-ipc.js'
 
 let broker: RuntimeBroker | null = null
+const log = createLogger('plugin-runtime:ipc')
 
 export function getPluginRuntimeBroker(): RuntimeBroker {
   if (broker == null) {
@@ -71,41 +74,61 @@ export function registerPluginRuntimeIpc(): void {
   typedIpcHandle(
     'plugin-runtime:accounts:authorize',
     async (request: PluginRuntimeAccountsAuthorizeRequest) => {
+      const oauth = oauthConfigFor(request)
       const runtime = await ensureRuntime()
-      const tokens = await new OAuthBroker().authorize({
-        clientId: request.clientId,
-        authorizationUrl: request.authorizationUrl,
-        tokenUrl: request.tokenUrl,
-        scopes: request.scopes,
-        ...(request.redirectPath !== undefined ? { redirectPath: request.redirectPath } : {}),
-        ...(request.extraAuthorizationParams !== undefined
-          ? { extraAuthorizationParams: request.extraAuthorizationParams }
-          : {}),
-        authorizeExternal: async (url) => shell.openExternal(url),
-      })
-      const config = {
-        ...(request.config ?? {}),
-        oauthClientId: request.clientId,
-        oauthAuthorizationUrl: request.authorizationUrl,
-        oauthTokenUrl: request.tokenUrl,
-        // A provider that omits `scope` must not be treated as having granted
-        // every requested scope. The runtime policy will keep those tools
-        // unavailable until the provider reports the actual grant.
-        grantedScopes: tokens.scopes ?? [],
+      let account: ConnectorAccount
+      try {
+        const tokens = await new OAuthBroker().authorize({
+          clientId: request.clientId,
+          ...(request.clientSecret ? { clientSecret: request.clientSecret } : {}),
+          authorizationUrl: oauth.authorizationUrl,
+          tokenUrl: oauth.tokenUrl,
+          scopes: request.scopes,
+          ...(request.redirectPath !== undefined ? { redirectPath: request.redirectPath } : {}),
+          ...(oauth.redirectUri !== undefined ? { redirectUri: oauth.redirectUri } : {}),
+          ...(oauth.tokenExchangeMode !== undefined
+            ? { tokenExchangeMode: oauth.tokenExchangeMode }
+            : {}),
+          ...(oauth.usePkce !== undefined ? { usePkce: oauth.usePkce } : {}),
+          ...(oauth.extraAuthorizationParams !== undefined
+            ? { extraAuthorizationParams: oauth.extraAuthorizationParams }
+            : {}),
+          authorizeExternal: async (url) => shell.openExternal(url),
+        })
+        const config = {
+          ...(request.config ?? {}),
+          oauthClientId: request.clientId,
+          oauthAuthorizationUrl: oauth.authorizationUrl,
+          oauthTokenUrl: oauth.tokenUrl,
+          ...(oauth.redirectUri !== undefined ? { oauthRedirectUri: oauth.redirectUri } : {}),
+          ...(oauth.tokenExchangeMode !== undefined
+            ? { oauthTokenExchangeMode: oauth.tokenExchangeMode }
+            : {}),
+          // A provider that omits `scope` must not be treated as having granted
+          // every requested scope. The runtime policy will keep those tools
+          // unavailable until the provider reports the actual grant.
+          grantedScopes: tokens.scopes ?? [],
+        }
+        account = await runtime.connect(request.runtimeId, {
+          authMethod: 'oauth2',
+          secrets: {
+            accessToken: tokens.accessToken,
+            ...(tokens.refreshToken !== undefined ? { refreshToken: tokens.refreshToken } : {}),
+            ...(tokens.expiresAt !== undefined ? { expiresAt: tokens.expiresAt } : {}),
+            ...(request.clientSecret !== undefined ? { clientSecret: request.clientSecret } : {}),
+          },
+          config,
+          ...(request.enabledCapabilities !== undefined
+            ? { enabledCapabilities: request.enabledCapabilities }
+            : {}),
+          ...(request.resourceScope !== undefined ? { resourceScope: request.resourceScope } : {}),
+        })
+      } catch (error) {
+        log.warn(
+          `connector oauth failed runtime=${request.runtimeId} code=${oauthFailureCode(error)}`,
+        )
+        throw error
       }
-      const account = await runtime.connect(request.runtimeId, {
-        authMethod: 'oauth2',
-        secrets: {
-          accessToken: tokens.accessToken,
-          ...(tokens.refreshToken !== undefined ? { refreshToken: tokens.refreshToken } : {}),
-          ...(tokens.expiresAt !== undefined ? { expiresAt: tokens.expiresAt } : {}),
-        },
-        config,
-        ...(request.enabledCapabilities !== undefined
-          ? { enabledCapabilities: request.enabledCapabilities }
-          : {}),
-        ...(request.resourceScope !== undefined ? { resourceScope: request.resourceScope } : {}),
-      })
       pushStreamEvent('stream:config:changed', {
         scope: 'plugin',
         action: 'update',
@@ -173,6 +196,63 @@ export function registerPluginRuntimeIpc(): void {
         request.ttlMs,
       ),
   )
+}
+
+function oauthConfigFor(request: PluginRuntimeAccountsAuthorizeRequest): {
+  authorizationUrl: string
+  tokenUrl: string
+  redirectUri?: string
+  tokenExchangeMode?: 'form' | 'notion'
+  usePkce?: boolean
+  extraAuthorizationParams?: Record<string, string>
+} {
+  if (request.runtimeId === 'google') {
+    if (
+      request.authorizationUrl !== 'https://accounts.google.com/o/oauth2/v2/auth' ||
+      request.tokenUrl !== 'https://oauth2.googleapis.com/token' ||
+      request.clientSecret != null ||
+      request.redirectUri != null
+    ) {
+      throw new Error('Google OAuth endpoint configuration is invalid')
+    }
+    return {
+      authorizationUrl: request.authorizationUrl,
+      tokenUrl: request.tokenUrl,
+      extraAuthorizationParams: {
+        ...request.extraAuthorizationParams,
+        access_type: request.extraAuthorizationParams?.access_type ?? 'offline',
+      },
+    }
+  }
+  if (request.runtimeId === 'notion') {
+    if (
+      request.authorizationUrl !== 'https://api.notion.com/v1/oauth/authorize' ||
+      request.tokenUrl !== 'https://api.notion.com/v1/oauth/token' ||
+      request.clientSecret == null ||
+      request.redirectUri == null
+    ) {
+      throw new Error(
+        'Notion OAuth requires its official endpoints, Client Secret, and registered redirect URI',
+      )
+    }
+    return {
+      authorizationUrl: request.authorizationUrl,
+      tokenUrl: request.tokenUrl,
+      redirectUri: request.redirectUri,
+      tokenExchangeMode: 'notion',
+      usePkce: false,
+      extraAuthorizationParams: { ...request.extraAuthorizationParams, owner: 'user' },
+    }
+  }
+  throw new Error(`OAuth is not supported by runtime ${request.runtimeId}`)
+}
+
+function oauthFailureCode(error: unknown): string {
+  if (typeof error === 'object' && error != null && 'code' in error) {
+    const code = (error as { code?: unknown }).code
+    return typeof code === 'string' ? code : 'UNKNOWN'
+  }
+  return 'UNKNOWN'
 }
 
 /** Main-process owner for Agent sessions. The MCP handle is per session/turn. */

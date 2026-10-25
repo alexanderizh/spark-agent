@@ -7,6 +7,7 @@ import type {
   PluginMarketplaceItem,
   PluginPermission,
   PluginRuntimeStatusItem,
+  RuntimeHealth,
   RuntimeConnectRequest,
 } from '@spark/protocol'
 import { Github, Google, Notion, Obsidian } from '@lobehub/icons/es/icons'
@@ -296,9 +297,16 @@ function RuntimeAccountModal({
   secret,
   vaultPath,
   clientId,
+  clientSecret,
+  redirectUri,
+  healthChecks,
+  healthBusyAccountId,
   onModeChange,
   onSecretChange,
   onClientIdChange,
+  onClientSecretChange,
+  onRedirectUriChange,
+  onHealthCheck,
   onChooseVault,
   onDisconnect,
   onToggleCapability,
@@ -310,9 +318,16 @@ function RuntimeAccountModal({
   secret: string
   vaultPath: string
   clientId: string
+  clientSecret: string
+  redirectUri: string
+  healthChecks: Record<string, RuntimeHealth>
+  healthBusyAccountId: string | null
   onModeChange: (mode: 'token' | 'oauth') => void
   onSecretChange: (value: string) => void
   onClientIdChange: (value: string) => void
+  onClientSecretChange: (value: string) => void
+  onRedirectUriChange: (value: string) => void
+  onHealthCheck: (account: ConnectorAccount) => void
   onChooseVault: () => void
   onDisconnect: (account: ConnectorAccount) => void
   onToggleCapability: (account: ConnectorAccount, capability: string) => void
@@ -350,7 +365,22 @@ function RuntimeAccountModal({
                 {account.status === 'error' && account.lastError && (
                   <small>{account.lastError}</small>
                 )}
+                {healthChecks[account.id] && (
+                  <small>
+                    检查：{healthChecks[account.id]?.message ?? healthChecks[account.id]?.status}
+                    {healthChecks[account.id]?.latencyMs != null
+                      ? ` · ${healthChecks[account.id]?.latencyMs}ms`
+                      : ''}
+                  </small>
+                )}
               </div>
+              <Button
+                type="text"
+                loading={healthBusyAccountId === account.id}
+                onClick={() => onHealthCheck(account)}
+              >
+                检查连接
+              </Button>
               <Button type="text" danger onClick={() => onDisconnect(account)}>
                 断开
               </Button>
@@ -400,12 +430,35 @@ function RuntimeAccountModal({
               autoComplete="off"
             />
           </label>
+          {runtimeId === 'notion' && (
+            <>
+              <label className="plugin-runtime-field">
+                <span>OAuth Client Secret</span>
+                <Input.Password
+                  value={clientSecret}
+                  onChange={(event) => onClientSecretChange(event.target.value)}
+                  placeholder="仅用于 Notion OAuth token 交换"
+                  autoComplete="new-password"
+                />
+              </label>
+              <label className="plugin-runtime-field">
+                <span>已登记的本机回调地址</span>
+                <Input
+                  value={redirectUri}
+                  onChange={(event) => onRedirectUriChange(event.target.value)}
+                  placeholder="http://127.0.0.1:38427/oauth/callback"
+                  autoComplete="url"
+                />
+              </label>
+            </>
+          )}
           {runtime.runtime.authGuides?.oauth && (
             <AuthGuideLink guide={runtime.runtime.authGuides.oauth} onOpen={onOpenAuthGuide} />
           )}
           <div className="plugin-runtime-note">
-            Spark 会通过本机 loopback + PKCE 打开授权页；不会把 Provider access token
-            放入插件包、SQLite 或 Agent 上下文。
+            {runtimeId === 'notion'
+              ? '请先在 Notion 应用设置中登记完全相同的本机回调地址。Client Secret 与访问令牌只保存在系统 keystore。'
+              : 'Spark 会通过本机 loopback + PKCE 打开授权页；不会把 Provider access token 放入插件包、SQLite 或 Agent 上下文。'}
           </div>
         </>
       ) : (
@@ -537,8 +590,13 @@ export function PluginMarketplaceView({ embedded = false }: { embedded?: boolean
   const [runtimeSecret, setRuntimeSecret] = useState('')
   const [runtimeVaultPath, setRuntimeVaultPath] = useState('')
   const [runtimeClientId, setRuntimeClientId] = useState('')
+  const [runtimeClientSecret, setRuntimeClientSecret] = useState('')
+  const [runtimeRedirectUri, setRuntimeRedirectUri] = useState('')
   const [runtimeBusy, setRuntimeBusy] = useState(false)
   const [runtimeMode, setRuntimeMode] = useState<'token' | 'oauth'>('token')
+  const [runtimeStateError, setRuntimeStateError] = useState<string | null>(null)
+  const [runtimeHealthChecks, setRuntimeHealthChecks] = useState<Record<string, RuntimeHealth>>({})
+  const [healthBusyAccountId, setHealthBusyAccountId] = useState<string | null>(null)
   const { invoke: listPlugins } = useIpcInvoke('plugin:list')
   const { invoke: inspectLocal } = useIpcInvoke('plugin:inspect-local')
   const { invoke: installLocal } = useIpcInvoke('plugin:install-local')
@@ -551,6 +609,7 @@ export function PluginMarketplaceView({ embedded = false }: { embedded?: boolean
   const { invoke: listRuntimeAccounts } = useIpcInvoke('plugin-runtime:accounts:list')
   const { invoke: connectRuntime } = useIpcInvoke('plugin-runtime:accounts:connect')
   const { invoke: authorizeRuntime } = useIpcInvoke('plugin-runtime:accounts:authorize')
+  const { invoke: checkRuntimeHealth } = useIpcInvoke('plugin-runtime:health-check')
   const { invoke: disconnectRuntime } = useIpcInvoke('plugin-runtime:accounts:disconnect')
   const { invoke: updateRuntimeAccount } = useIpcInvoke('plugin-runtime:accounts:update')
   const { invoke: openExternal } = useIpcInvoke('browser:open-external')
@@ -572,10 +631,14 @@ export function PluginMarketplaceView({ embedded = false }: { embedded?: boolean
       const accounts = Object.fromEntries(accountEntries)
       setRuntimeStatus(result.runtimes)
       setRuntimeAccounts(accounts)
+      setRuntimeStateError(null)
       return { runtimes: result.runtimes, accounts }
-    } catch {
+    } catch (error) {
       setRuntimeStatus([])
       setRuntimeAccounts({})
+      setRuntimeStateError(
+        error instanceof Error ? error.message : '连接器状态加载失败，请查看应用日志。',
+      )
       return { runtimes: [], accounts: {} }
     }
   }, [listRuntimes, listRuntimeAccounts])
@@ -585,7 +648,9 @@ export function PluginMarketplaceView({ embedded = false }: { embedded?: boolean
     setRuntimeSecret('')
     setRuntimeVaultPath('')
     setRuntimeClientId('')
-    setRuntimeMode(runtime.runtime.id === 'google' ? 'oauth' : 'token')
+    setRuntimeClientSecret('')
+    setRuntimeRedirectUri('')
+    setRuntimeMode(['google', 'notion'].includes(runtime.runtime.id) ? 'oauth' : 'token')
   }
 
   const inferredScopes = (runtime: PluginRuntimeStatusItem): string[] =>
@@ -608,13 +673,26 @@ export function PluginMarketplaceView({ embedded = false }: { embedded?: boolean
       if (runtimeMode === 'oauth') {
         const clientId = runtimeClientId.trim()
         if (!clientId) throw new Error('请填写 OAuth Client ID')
+        if (runtime.id === 'notion' && !runtimeClientSecret.trim())
+          throw new Error('请填写 Notion OAuth Client Secret')
+        if (runtime.id === 'notion' && !runtimeRedirectUri.trim())
+          throw new Error('请填写已在 Notion 应用中登记的回调地址')
         const urls = oauthEndpoints(runtime.id)
         const result = await authorizeRuntime({
           runtimeId: runtime.id,
           clientId,
+          ...(runtime.id === 'notion' ? { clientSecret: runtimeClientSecret.trim() } : {}),
           authorizationUrl: urls.authorizationUrl,
           tokenUrl: urls.tokenUrl,
           scopes: inferredScopes(selectedRuntime),
+          ...(runtime.id === 'notion'
+            ? {
+                redirectUri: runtimeRedirectUri.trim(),
+                tokenExchangeMode: 'notion' as const,
+                usePkce: false,
+                extraAuthorizationParams: { owner: 'user' },
+              }
+            : {}),
           ...(runtime.id === 'google'
             ? { extraAuthorizationParams: { access_type: 'offline' } }
             : {}),
@@ -632,8 +710,10 @@ export function PluginMarketplaceView({ embedded = false }: { embedded?: boolean
         const result = await connectRuntime({ runtimeId: runtime.id, request })
         toast.success(`${runtime.displayName} 已连接 ${result.account.displayName}`)
       }
+      setRuntimeHealthChecks({})
       setRuntimeSecret('')
       setRuntimeVaultPath('')
+      setRuntimeClientSecret('')
       setSelectedRuntime(null)
       await refreshRuntimeState()
     } catch (error) {
@@ -647,6 +727,11 @@ export function PluginMarketplaceView({ embedded = false }: { embedded?: boolean
     if (!selectedRuntime) return
     try {
       await disconnectRuntime({ runtimeId: selectedRuntime.runtime.id, accountId: account.id })
+      setRuntimeHealthChecks((current) => {
+        const next = { ...current }
+        delete next[account.id]
+        return next
+      })
       const snapshot = await refreshRuntimeState()
       const nextAccounts = snapshot.accounts[selectedRuntime.runtime.id] ?? []
       const nextRuntime = snapshot.runtimes.find(
@@ -657,6 +742,29 @@ export function PluginMarketplaceView({ embedded = false }: { embedded?: boolean
       toast.success(`已断开 ${accountDisplayName(account, selectedRuntime.runtime.displayName)}`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '断开账号失败')
+    }
+  }
+
+  const runRuntimeHealthCheck = async (account: ConnectorAccount) => {
+    if (!selectedRuntime) return
+    const runtimeId = selectedRuntime.runtime.id
+    setHealthBusyAccountId(account.id)
+    try {
+      const { health } = await checkRuntimeHealth({ runtimeId, accountId: account.id })
+      setRuntimeHealthChecks((current) => ({ ...current, [account.id]: health }))
+      if (health.status === 'healthy') toast.success('连接检查通过')
+      else toast.error(health.message ?? `连接状态：${health.status}`)
+      await refreshRuntimeState()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '连接检查失败，请查看应用日志。'
+      setRuntimeHealthChecks((current) => ({
+        ...current,
+        [account.id]: { status: 'unavailable', checkedAt: new Date().toISOString(), message },
+      }))
+      toast.error(message)
+      await refreshRuntimeState()
+    } finally {
+      setHealthBusyAccountId(null)
     }
   }
 
@@ -817,7 +925,20 @@ export function PluginMarketplaceView({ embedded = false }: { embedded?: boolean
             <h2>已安装连接器</h2>
             <span>{installedGroups.length} 个连接器</span>
           </div>
+          <Button size="small" type="text" onClick={() => void refreshRuntimeState()}>
+            刷新连接状态
+          </Button>
         </div>
+        {runtimeStateError && (
+          <div className="plugin-market-status error plugin-runtime-state-error">
+            <span className="plugin-status-dot" />
+            <div>
+              <strong>连接器状态暂时无法读取</strong>
+              <span className="plugin-market-error-detail">{runtimeStateError}</span>
+            </div>
+            <button onClick={() => void refreshRuntimeState()}>重试</button>
+          </div>
+        )}
         {installedGroups.length === 0 ? (
           <div className="plugin-empty">
             <div className="plugin-empty-icon">
@@ -1006,11 +1127,15 @@ export function PluginMarketplaceView({ embedded = false }: { embedded?: boolean
           setSelectedRuntime(null)
           setRuntimeSecret('')
           setRuntimeVaultPath('')
+          setRuntimeClientSecret('')
         }}
         okButtonProps={{
           disabled:
             runtimeMode === 'oauth'
-              ? runtimeClientId.trim().length === 0
+              ? runtimeClientId.trim().length === 0 ||
+                (selectedRuntime?.runtime.id === 'notion' &&
+                  (runtimeClientSecret.trim().length === 0 ||
+                    runtimeRedirectUri.trim().length === 0))
               : selectedRuntime?.runtime.id === 'obsidian'
                 ? runtimeVaultPath.trim().length === 0
                 : runtimeSecret.trim().length === 0,
@@ -1024,9 +1149,16 @@ export function PluginMarketplaceView({ embedded = false }: { embedded?: boolean
             secret={runtimeSecret}
             vaultPath={runtimeVaultPath}
             clientId={runtimeClientId}
+            clientSecret={runtimeClientSecret}
+            redirectUri={runtimeRedirectUri}
+            healthChecks={runtimeHealthChecks}
+            healthBusyAccountId={healthBusyAccountId}
             onModeChange={setRuntimeMode}
             onSecretChange={setRuntimeSecret}
             onClientIdChange={setRuntimeClientId}
+            onClientSecretChange={setRuntimeClientSecret}
+            onRedirectUriChange={setRuntimeRedirectUri}
+            onHealthCheck={(account) => void runRuntimeHealthCheck(account)}
             onChooseVault={async () => {
               const selected = await openDirectory({ title: '选择 Obsidian Vault' })
               if (!selected.canceled && selected.filePath) setRuntimeVaultPath(selected.filePath)

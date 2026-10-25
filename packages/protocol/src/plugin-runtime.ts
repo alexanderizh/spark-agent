@@ -219,10 +219,14 @@ export interface PluginRuntimeAccountsConnectResponse {
 export interface PluginRuntimeAccountsAuthorizeRequest {
   runtimeId: string
   clientId: string
+  clientSecret?: string
   authorizationUrl: string
   tokenUrl: string
   scopes: string[]
   redirectPath?: string
+  redirectUri?: string
+  tokenExchangeMode?: 'form' | 'notion'
+  usePkce?: boolean
   extraAuthorizationParams?: Record<string, string>
   config?: Record<string, unknown>
   enabledCapabilities?: ConnectorCapabilityKind[]
@@ -338,6 +342,7 @@ export const PluginRuntimeIpcSchemaRegistry = {
     .object({
       runtimeId: RuntimeIdSchema,
       clientId: z.string().min(1).max(300),
+      clientSecret: z.string().min(1).max(16_000).optional(),
       authorizationUrl: z.string().url().max(2_000),
       tokenUrl: z.string().url().max(2_000),
       scopes: z.array(z.string().min(1).max(500)).max(64),
@@ -345,6 +350,9 @@ export const PluginRuntimeIpcSchemaRegistry = {
         .string()
         .regex(/^\/[A-Za-z0-9._/-]{1,120}$/)
         .optional(),
+      redirectUri: z.string().url().max(2_000).optional(),
+      tokenExchangeMode: z.enum(['form', 'notion']).optional(),
+      usePkce: z.boolean().optional(),
       extraAuthorizationParams: z.record(z.string(), z.string().max(500)).optional(),
       config: RuntimeConfigSchema.optional(),
       enabledCapabilities: z.array(z.string().min(1).max(120)).max(64).optional(),

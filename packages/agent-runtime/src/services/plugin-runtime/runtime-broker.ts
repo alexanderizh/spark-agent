@@ -16,13 +16,18 @@ import {
   type ConnectorAccountRow,
   type SparkDatabase,
 } from '@spark/storage'
+import { createLogger } from '@spark/shared'
 import { RuntimeAuditService } from './audit-service.js'
 import { RuntimeError } from './runtime-errors.js'
 import { RuntimeHttpClient } from './runtime-http-client.js'
 import { OAuthBroker } from './oauth-broker.js'
 import { RuntimePolicy } from './runtime-policy.js'
 import { RuntimeRegistry } from './runtime-registry.js'
-import type { ConnectorRuntimeAdapter, RuntimeContext } from './runtime-types.js'
+import type {
+  ConnectorRuntimeAdapter,
+  RuntimeConnectResult,
+  RuntimeContext,
+} from './runtime-types.js'
 import { RuntimeTokenService } from './token-service.js'
 
 interface ConfirmationRecord {
@@ -30,6 +35,12 @@ interface ConfirmationRecord {
   accountId: string
   toolName: string
   expiresAt: number
+}
+
+const log = createLogger('plugin-runtime:broker')
+const OAUTH_TOKEN_URLS: Record<string, string> = {
+  google: 'https://oauth2.googleapis.com/token',
+  notion: 'https://api.notion.com/v1/oauth/token',
 }
 
 export interface RuntimeBrokerOptions {
@@ -114,7 +125,15 @@ export class RuntimeBroker {
       http: new RuntimeHttpClient({ ...(this.fetchImpl ? { fetchImpl: this.fetchImpl } : {}) }),
       getSecret: (name: string) => safeRequest.secrets?.[name] ?? null,
     }
-    const result = await adapter.connect(connectContext, safeRequest)
+    let result: RuntimeConnectResult
+    try {
+      result = await adapter.connect(connectContext, safeRequest)
+    } catch (error) {
+      log.warn(
+        `connector connect failed runtime=${runtimeId} auth=${safeRequest.authMethod} code=${runtimeFailureCode(error)}`,
+      )
+      throw error
+    }
     const existing = this.accounts.getByExternalId(
       adapter.descriptor.pluginId,
       runtimeId,
@@ -138,12 +157,25 @@ export class RuntimeBroker {
         : (existing?.credential_ref ?? null)
     if (result.credential != null && credentialRef != null) {
       const oauthClientId = stringConfigValue(safeRequest.config, 'oauthClientId')
-      await this.tokens.save(credentialRef, {
-        ...result.credential,
-        ...(result.credential.clientId == null && oauthClientId != null
-          ? { clientId: oauthClientId }
-          : {}),
-      })
+      try {
+        await this.tokens.save(credentialRef, {
+          ...result.credential,
+          ...(result.credential.refreshToken == null && safeRequest.secrets?.refreshToken != null
+            ? { refreshToken: safeRequest.secrets.refreshToken }
+            : {}),
+          ...(result.credential.clientSecret == null && safeRequest.secrets?.clientSecret != null
+            ? { clientSecret: safeRequest.secrets.clientSecret }
+            : {}),
+          ...(result.credential.clientId == null && oauthClientId != null
+            ? { clientId: oauthClientId }
+            : {}),
+        })
+      } catch (error) {
+        log.warn(
+          `connector credential-save failed runtime=${runtimeId} code=${runtimeFailureCode(error)}`,
+        )
+        throw error
+      }
     }
     const row = this.accounts.upsert({
       id: existing?.id ?? randomUUID(),
@@ -169,6 +201,9 @@ export class RuntimeBroker {
     if (this.accounts.getDefault(adapter.descriptor.pluginId, runtimeId) == null) {
       this.accounts.setDefault(adapter.descriptor.pluginId, runtimeId, row.id)
     }
+    log.info(
+      `connector connected runtime=${runtimeId} account=${row.id} auth=${safeRequest.authMethod}`,
+    )
     return this.toAccount(row)
   }
 
@@ -180,6 +215,7 @@ export class RuntimeBroker {
     if (wasDefault) this.accounts.clearDefault(context.row.plugin_id, runtimeId)
     this.accounts.delete(accountId)
     this.removeLegacyAccountAfterDisconnect(context.row)
+    log.info(`connector disconnected runtime=${runtimeId} account=${accountId}`)
   }
 
   updateAccount(
@@ -228,14 +264,25 @@ export class RuntimeBroker {
               : 'error',
         lastError: health.message ?? null,
       })
+      log.info(
+        `connector health-check runtime=${runtimeId} account=${accountId} status=${health.status} latencyMs=${health.latencyMs ?? 'unknown'}`,
+      )
       return health
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Health check failed'
+      const message = healthCheckFailureMessage(error)
+      const needsAuth =
+        error instanceof RuntimeError &&
+        (error.code === 'AUTH_EXPIRED' || error.code === 'AUTH_REQUIRED')
       this.accounts.update(accountId, {
         lastHealthAt: checkedAt,
-        status: 'error',
+        status: needsAuth ? 'needs_auth' : 'error',
         lastError: message,
       })
+      log.warn(
+        `connector health-check failed runtime=${runtimeId} account=${accountId} code=${runtimeFailureCode(error)}`,
+      )
+      if (error instanceof RuntimeError && error.message !== message)
+        throw new RuntimeError(error.code, message, error.context)
       throw error
     }
   }
@@ -360,6 +407,11 @@ export class RuntimeBroker {
           row.credential_ref,
           async (token) => token,
           (bundle) => this.refreshCredentials(row, bundle),
+          {
+            allowLegacyPlainText:
+              (row.runtime_id === 'github' && row.auth_method === 'pat') ||
+              (row.runtime_id === 'notion' && row.auth_method === 'api-key'),
+          },
         ),
     })
     return {
@@ -431,14 +483,28 @@ export class RuntimeBroker {
     const refreshToken = bundle.refreshToken
     const config = parseObject(row.config_json)
     const clientId = bundle.clientId ?? stringConfigValue(config, 'oauthClientId')
-    const tokenUrl = stringConfigValue(config, 'oauthTokenUrl')
+    const tokenUrl = OAUTH_TOKEN_URLS[row.runtime_id]
     if (refreshToken == null || clientId == null || tokenUrl == null)
       throw new RuntimeError('AUTH_EXPIRED', 'Provider authorization requires reconnecting')
-    return this.oauth.refresh({ clientId, tokenUrl }, refreshToken).then((updated) => ({
-      ...updated,
-      clientId,
-      ...(updated.scopes == null ? { scopes: parseArray(row.granted_scopes_json) } : {}),
-    }))
+    const tokenExchangeMode = row.runtime_id === 'notion' ? 'notion' : 'form'
+    if (tokenExchangeMode === 'notion' && bundle.clientSecret == null)
+      throw new RuntimeError('AUTH_EXPIRED', 'Notion OAuth requires reconnecting')
+    return this.oauth
+      .refresh(
+        {
+          clientId,
+          tokenUrl,
+          ...(bundle.clientSecret != null ? { clientSecret: bundle.clientSecret } : {}),
+          tokenExchangeMode,
+        },
+        refreshToken,
+      )
+      .then((updated) => ({
+        ...updated,
+        clientId,
+        ...(bundle.clientSecret != null ? { clientSecret: bundle.clientSecret } : {}),
+        ...(updated.scopes == null ? { scopes: parseArray(row.granted_scopes_json) } : {}),
+      }))
   }
 
   private ensureLegacyCompatibility(descriptor: ConnectorRuntimeDescriptor): void {
@@ -699,4 +765,26 @@ function sanitizeMetadataValue(value: unknown, path: string, depth: number): unk
     result[key] = sanitizeMetadataValue(item, `${path}.${key}`, depth + 1)
   }
   return result
+}
+
+function runtimeFailureCode(error: unknown): string {
+  return error instanceof RuntimeError ? error.code : 'UNKNOWN'
+}
+
+function healthCheckFailureMessage(error: unknown): string {
+  if (!(error instanceof RuntimeError))
+    return error instanceof Error ? error.message : '连接检查失败，请查看应用日志。'
+  switch (error.code) {
+    case 'AUTH_EXPIRED':
+    case 'AUTH_REQUIRED':
+      return '授权已失效，请重新连接账号。'
+    case 'SCOPE_REQUIRED':
+      return '授权权限不足，请调整权限后重新连接账号。'
+    case 'RATE_LIMITED':
+      return '服务请求过于频繁，请稍后重试。'
+    case 'PROVIDER_UNAVAILABLE':
+      return '服务暂时无法连接，请检查网络后重试。'
+    default:
+      return error.message
+  }
 }

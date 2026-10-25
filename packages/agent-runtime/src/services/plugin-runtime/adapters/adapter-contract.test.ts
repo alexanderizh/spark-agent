@@ -21,6 +21,7 @@ afterEach(async () => {
 
 describe('built-in connector runtime adapters', () => {
   it('exposes official credential setup guides for built-in connectors', () => {
+    expect(new GitHubRuntimeAdapter().descriptor.authMethods).toEqual(['pat'])
     expect(new GitHubRuntimeAdapter().descriptor.authGuides?.token?.url).toBe(
       'https://github.com/settings/personal-access-tokens/new',
     )

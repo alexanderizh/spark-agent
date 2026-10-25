@@ -136,6 +136,73 @@ describe('RuntimeBroker', () => {
     ).not.toThrow()
   })
 
+  it('migrates a legacy GitHub PAT and keeps the migrated account usable', async () => {
+    const database = setupDatabase()
+    new PluginRepository(database).upsert({
+      id: 'spark.github',
+      version: '1.0.0',
+      displayName: 'GitHub',
+      description: 'GitHub runtime fixture',
+      authorName: 'Spark',
+      manifestJson: JSON.stringify({}),
+      installPath: 'builtin://spark.github',
+      source: 'bundled',
+      enabled: true,
+      state: 'installed',
+      trust: 'bundled',
+      integritySha256: 'github-fixture',
+    })
+    new ConnectorConnectionRepository(database).create({
+      id: 'github-legacy',
+      provider: 'github',
+      name: 'GitHub',
+      authMethod: 'pat',
+      status: 'connected',
+      config: { enabledCapabilities: ['identity'] },
+      keystoreRef: 'legacy/github',
+      account: { id: 'octocat', login: 'octocat' },
+    })
+    const secrets = new Map([['legacy/github', 'github_pat_legacy-fixture']])
+    const tokenService = new RuntimeTokenService({
+      get: async (ref) => secrets.get(ref) ?? null,
+      set: async (ref, value) => {
+        secrets.set(ref, value)
+      },
+      delete: async (ref) => secrets.delete(ref),
+    })
+    const broker = new RuntimeBroker({
+      db: database,
+      tokenService,
+      fetchImpl: async (_input, init) => {
+        expect(new Headers(init?.headers).get('authorization')).toBe(
+          'Bearer github_pat_legacy-fixture',
+        )
+        return new Response(JSON.stringify({ id: 69, login: 'octocat' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      },
+    })
+    registerBuiltinRuntimeAdapters(broker)
+    const account = broker.listAccounts('github')[0]
+    if (account == null) throw new Error('GitHub fixture account was not migrated')
+
+    await expect(
+      broker.invoke({
+        runtimeId: 'github',
+        accountId: account.id,
+        toolName: 'get_status',
+        input: {},
+      }),
+    ).resolves.toMatchObject({ id: 69, login: 'octocat' })
+    expect(secrets.get('legacy/github')).toBe(
+      JSON.stringify({
+        accessToken: 'github_pat_legacy-fixture',
+        tokenType: 'Bearer',
+      }),
+    )
+  })
+
   it('does not recreate a legacy account after it is disconnected', async () => {
     const database = setupDatabase()
     new PluginRepository(database).upsert({
