@@ -12209,16 +12209,12 @@ export class SessionService {
     turnId: string,
     event: AgentStatusEvent,
   ): void {
-    if (event.status === 'error' && (this.pendingTurns.get(sessionId)?.length ?? 0) > 0) {
-      this.getQueueErrorPauseGate().pause(sessionId, {
-        reason: 'turn_error',
-        failedTurnId: turnId,
-        ...(event.message != null ? { errorMessage: event.message } : {}),
-        pausedAt: event.timestamp,
-      })
-    } else if (event.status === 'completed' || event.status === 'cancelled') {
-      this.getQueueErrorPauseGate().resolve(sessionId)
-    }
+    this.getQueueErrorPauseGate().updateFromStatus(
+      sessionId,
+      turnId,
+      event,
+      this.pendingTurns.get(sessionId)?.length ?? 0,
+    )
   }
 
   /**
@@ -12675,6 +12671,7 @@ export class SessionService {
     const next = queue?.shift()
     if (queue == null || next == null) {
       this.pendingTurns.delete(sessionId)
+      this.getQueueErrorPauseGate().resolve(sessionId)
       this.emitQueueChanged(sessionId)
       return
     }

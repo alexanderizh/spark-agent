@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { AgentStatusEvent } from '@spark/protocol'
 import {
   applyQueueRuntimeSelection,
   pickQueueRuntimeSelection,
@@ -32,6 +33,34 @@ describe('QueueErrorPauseGate', () => {
     gate.pause('session-1', pause)
     expect(gate.getPause('session-1', 0)).toBeNull()
     expect(gate.isBlocked('session-1', 1)).toBe(false)
+  })
+})
+
+describe('QueueErrorPauseGate status lifecycle', () => {
+  it('keeps an error pause available for work queued before the failed executor releases', () => {
+    const gate = new QueueErrorPauseGate()
+
+    const errorEvent: AgentStatusEvent = {
+      id: 'event-error',
+      status: 'error',
+      type: 'agent_status',
+      sessionId: 'session-1',
+      turnId: 'turn-failed',
+      seq: 1,
+      timestamp: '2026-10-26T00:00:00.000Z',
+      message: 'rate limited',
+    }
+    gate.updateFromStatus('session-1', 'turn-failed', errorEvent, 0)
+
+    // While the failed executor is still winding down, an empty queue must not
+    // discard the pause. A turn accepted in that window must then be blocked.
+    expect(gate.getPause('session-1', 0)).toBeNull()
+
+    expect(gate.isBlocked('session-1', 1)).toBe(true)
+    expect(gate.getPause('session-1', 1)).toMatchObject({
+      failedTurnId: 'turn-failed',
+      errorMessage: 'rate limited',
+    })
   })
 })
 

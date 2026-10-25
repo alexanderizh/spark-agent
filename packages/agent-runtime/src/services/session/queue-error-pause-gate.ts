@@ -1,4 +1,4 @@
-import type { SessionQueuePauseState } from '@spark/protocol'
+import type { AgentStatusEvent, SessionQueuePauseState } from '@spark/protocol'
 import type { SessionRuntimePatch } from './session-pure-utils.js'
 
 type QueueRuntimeCarrier = {
@@ -9,6 +9,12 @@ export type QueueRuntimeSelection = Pick<
   SessionRuntimePatch,
   'providerProfileId' | 'modelId' | 'cliSparkOverride'
 >
+
+type QueueErrorPauseEntry = {
+  pause: SessionQueuePauseState
+  /** Keep an error until the current turn releases, so late queue arrivals still see it. */
+  awaitingQueuedWork: boolean
+}
 
 type PersistedAgentStatusRow = {
   event_json: string
@@ -22,18 +28,48 @@ type PersistedAgentStatusRow = {
  * the renderer can retry.
  */
 export class QueueErrorPauseGate {
-  private readonly pauses = new Map<string, SessionQueuePauseState>()
+  private readonly pauses = new Map<string, QueueErrorPauseEntry>()
 
-  pause(sessionId: string, pause: SessionQueuePauseState): void {
-    this.pauses.set(sessionId, pause)
+  pause(sessionId: string, pause: SessionQueuePauseState, queuedTurnCount = 1): void {
+    this.pauses.set(sessionId, {
+      pause,
+      awaitingQueuedWork: queuedTurnCount <= 0,
+    })
+  }
+
+  updateFromStatus(
+    sessionId: string,
+    turnId: string,
+    event: AgentStatusEvent,
+    queuedTurnCount: number,
+  ): void {
+    if (event.status === 'error') {
+      this.pause(
+        sessionId,
+        {
+          reason: 'turn_error',
+          failedTurnId: turnId,
+          ...(event.message != null ? { errorMessage: event.message } : {}),
+          pausedAt: event.timestamp,
+        },
+        queuedTurnCount,
+      )
+    } else if (event.status === 'thinking') {
+      this.resolveForTurnStart(sessionId, turnId)
+    } else if (event.status === 'completed' || event.status === 'cancelled') {
+      this.resolve(sessionId)
+    }
   }
 
   getPause(sessionId: string, queuedTurnCount: number): SessionQueuePauseState | null {
+    const entry = this.pauses.get(sessionId)
     if (queuedTurnCount <= 0) {
-      this.pauses.delete(sessionId)
+      if (entry != null && !entry.awaitingQueuedWork) this.pauses.delete(sessionId)
       return null
     }
-    return this.pauses.get(sessionId) ?? null
+    if (entry == null) return null
+    entry.awaitingQueuedWork = false
+    return entry.pause
   }
 
   isBlocked(sessionId: string, queuedTurnCount: number): boolean {
@@ -42,6 +78,12 @@ export class QueueErrorPauseGate {
 
   resolve(sessionId: string): void {
     this.pauses.delete(sessionId)
+  }
+
+  /** Clear a stale failure once a different turn actually starts. */
+  resolveForTurnStart(sessionId: string, turnId: string): void {
+    const entry = this.pauses.get(sessionId)
+    if (entry != null && entry.pause.failedTurnId !== turnId) this.pauses.delete(sessionId)
   }
 
   clear(): void {
