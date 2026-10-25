@@ -66,6 +66,10 @@ const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, 
 const EMPTY_ENV_LAYER: EnvConfigGetResponse['project'] = { enabled: true, vars: [] }
 const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
 const LOCAL_CODEX_CLI_MODEL_DISPLAY = 'codex cli'
+// 当前阶段暂时隐藏检查器中的工作区快照入口；相关能力与数据逻辑保留，后续可重新开启。
+const SHOW_WORKSPACE_SNAPSHOT_INSPECTOR_SECTION = false
+// 当前阶段暂时隐藏检查器中的 worktree 模块；组件和相关能力保留，后续可重新开启。
+const SHOW_WORKTREE_INSPECTOR_SECTION = false
 
 type EnvVarRowProps = {
   item: EnvVarItem
@@ -1056,7 +1060,9 @@ export function ChatInspector({
         )}
 
         {/* 工程信息统一置底，并保持各自独立、默认折叠。 */}
-        {workspace && <WorktreePanel workspaceId={workspace.id} sessionId={session?.id ?? null} />}
+        {SHOW_WORKTREE_INSPECTOR_SECTION && workspace && (
+          <WorktreePanel workspaceId={workspace.id} sessionId={session?.id ?? null} />
+        )}
 
         {session != null && projectContext != null && (
           <InspectorCollapsibleSection
@@ -1118,7 +1124,7 @@ export function ChatInspector({
           </InspectorCollapsibleSection>
         )}
 
-        {checkpointAvailable && (
+        {SHOW_WORKSPACE_SNAPSHOT_INSPECTOR_SECTION && checkpointAvailable && (
           <InspectorCollapsibleSection
             title={translate('chatInspector.t56')}
             summary={
