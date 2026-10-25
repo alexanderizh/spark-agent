@@ -76,7 +76,8 @@ function hasCollapsibleProcessContent(
 
 /**
  * 自包含的产物展示块：折叠后仍需直接可见的交付物。
- * 覆盖显式交付文件（文档/媒体）、渲染成功的 HTML/图表产物，
+ * 覆盖显式交付文件（文档/媒体）、HTML/图表产物（渲染成功，或渲染失败但源码
+ * 非空、仍可查看源码/外部打开），
  * 以及面向交付结果的汇总卡片（修改文件汇总、建议验证、应用快照）；
  * 系统过程提示（上下文压缩、重试轨迹、checkpoint）与思考/工具日志仍随折叠收起；
  * 无可展示内容的块不保留，避免折叠态出现空卡片。
@@ -89,8 +90,14 @@ function isArtifactPresentationBlock(block: UIBlock): boolean {
         filterMediaPresentedFiles(block.files).length > 0
       )
     case 'html_block':
+      // 内置沙箱渲染失败但 HTML 本体完整时，卡片仍提供查看源码/外部打开入口，
+      // 属于可交付产物而非过程日志，不应被折叠卷走。
+      return block.status === 'rendered' || (block.status === 'error' && block.html.trim().length > 0)
     case 'diagram_block':
-      return block.status === 'rendered'
+      return (
+        block.status === 'rendered' ||
+        (block.status === 'error' && block.source.trim().length > 0)
+      )
     case 'turn_file_summary':
       return block.files.length > 0
     case 'validation_suggestion':

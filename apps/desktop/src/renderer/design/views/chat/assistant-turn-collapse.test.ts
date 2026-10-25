@@ -339,6 +339,70 @@ describe('projectAssistantTurnCollapse', () => {
     expect(projectAssistantTurnCollapse('completed', blocks).collapsedBlocks).toEqual([final])
   })
 
+  it('keeps error html/diagram blocks visible after collapse when their source survives', () => {
+    // 内置沙箱渲染失败但内容完整：卡片仍可查看源码/外部打开，属于交付物，
+    // 不能随折叠卷走（用户反馈：每次都要手动展开才能看到预览卡）。
+    const final = text('报告与流程图已生成。', { final: true })
+    const htmlBlock: Extract<UIBlock, { kind: 'html_block' }> = {
+      kind: 'html_block',
+      toolCallId: 'html-1',
+      html: '<!doctype html><html><body>报告</body></html>',
+      title: '数据报告',
+      height: 320,
+      status: 'error',
+      error: 'HTML 渲染工具未返回有效内容',
+      warnings: [],
+    }
+    const diagramBlock: Extract<UIBlock, { kind: 'diagram_block' }> = {
+      kind: 'diagram_block',
+      toolCallId: 'diagram-1',
+      diagramType: 'mermaid',
+      source: 'flowchart TD',
+      title: '流程图',
+      height: 320,
+      status: 'error',
+      error: '渲染超时',
+      warnings: [],
+    }
+    const blocks: UIBlock[] = [text('我先梳理结构。'), htmlBlock, diagramBlock, final]
+
+    expect(projectAssistantTurnCollapse('completed', blocks)).toEqual({
+      canCollapse: true,
+      collapsedBlocks: [final, htmlBlock, diagramBlock],
+    })
+  })
+
+  it('drops error html/diagram blocks whose source is blank after collapse', () => {
+    // 渲染失败且无任何可展示内容：保留只会出现空卡片，仍按过程内容卷起。
+    const final = text('已完成。', { final: true })
+    const blocks: UIBlock[] = [
+      {
+        kind: 'html_block',
+        toolCallId: 'html-1',
+        html: '   ',
+        title: '渲染失败',
+        height: 320,
+        status: 'error',
+        error: 'sandbox denied',
+        warnings: [],
+      },
+      {
+        kind: 'diagram_block',
+        toolCallId: 'diagram-1',
+        diagramType: 'mermaid',
+        source: '',
+        title: '渲染失败',
+        height: 320,
+        status: 'error',
+        error: '解析失败',
+        warnings: [],
+      },
+      final,
+    ]
+
+    expect(projectAssistantTurnCollapse('completed', blocks).collapsedBlocks).toEqual([final])
+  })
+
   it('keeps delivery summary cards visible after collapse', () => {
     const final = text('本轮修改完成。', { final: true })
     const fileSummary: Extract<UIBlock, { kind: 'turn_file_summary' }> = {
