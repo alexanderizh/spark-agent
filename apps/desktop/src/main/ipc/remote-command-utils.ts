@@ -1,3 +1,4 @@
+import { isConversationalProviderCandidate } from '@spark/protocol'
 import type {
   ProviderProfile,
   RemoteMessageAction,
@@ -40,6 +41,12 @@ export function buildRemoteProviderModelRows(
   }))
 }
 
+export function filterRemoteProviderCandidates(
+  providers: readonly ProviderProfile[],
+): ProviderProfile[] {
+  return providers.filter(isConversationalProviderCandidate)
+}
+
 /**
  * 解析远程视角当前生效的渠道/模型（供 /status、上下文摘要、模型与渠道列表选中态使用）。
  *
@@ -69,6 +76,25 @@ export function resolveRemoteEffectiveModelSelection(
     ...(providerId != null ? { providerId } : {}),
     ...(modelId != null && modelId.length > 0 ? { modelId } : {}),
   }
+}
+
+export function resolveRemoteModelProvider(
+  session: { providerProfileId: string; modelId: string | null | undefined } | undefined,
+  connectionDefaults: {
+    defaultProviderProfileId?: string | undefined
+    defaultModelId?: string | undefined
+  },
+  providers: ReadonlyArray<ProviderProfile>,
+): {
+  selection: { providerId?: string; modelId?: string }
+  provider?: ProviderProfile
+} {
+  const selection = resolveRemoteEffectiveModelSelection(session, connectionDefaults, providers)
+  const provider =
+    providers.find((item) => item.id === selection.providerId) ??
+    providers.find((item) => item.isDefault) ??
+    providers[0]
+  return { selection, ...(provider != null ? { provider } : {}) }
 }
 
 export const REMOTE_REASONING_ROWS: Array<RemoteSelectionRow & { id: SessionReasoningEffort }> = [
@@ -288,6 +314,56 @@ export function formatRows(rows: RemoteSelectionRow[], empty: string): string {
   return rows
     .map((row, index) => `${index + 1}. ${row.label}${row.meta != null ? ` · ${row.meta}` : ''}`)
     .join('\n')
+}
+
+const REMOTE_LIST_COMMANDS_BY_SELECTION: Readonly<Record<string, string>> = {
+  'use-channel': 'channels',
+  'use-model': 'models',
+  'use-session': 'sessions',
+  'use-agent': 'agents',
+  'use-project': 'projects',
+  'use-permission': 'permissions',
+  'use-reasoning': 'reasoning',
+}
+
+function inferRemoteListCommand(selectionCommand: string): string | undefined {
+  for (const [selectName, listName] of Object.entries(REMOTE_LIST_COMMANDS_BY_SELECTION)) {
+    if (selectionCommand.endsWith(selectName)) {
+      return `${selectionCommand.slice(0, -selectName.length)}${listName}`
+    }
+  }
+  return undefined
+}
+
+export function formatRemoteSelectionList(
+  rows: RemoteSelectionRow[],
+  empty: string,
+  kindLabel: string,
+  useCommand: string,
+  options: {
+    interactive?: boolean
+    page?: number
+    totalPages?: number
+    total?: number
+    listCommand?: string
+  } = {},
+): string {
+  if (options.interactive === true && rows.length > 0) {
+    const page = options.page ?? 1
+    const totalPages = options.totalPages ?? 1
+    return `共 ${options.total ?? rows.length} 项 · 第 ${page}/${totalPages} 页\n点击下方按钮选择${kindLabel}。`
+  }
+  const list = formatRows(rows, empty)
+  if (rows.length === 0) return list
+
+  const page = options.page ?? 1
+  const totalPages = options.totalPages ?? 1
+  const listCommand = options.listCommand ?? inferRemoteListCommand(useCommand)
+  const pageHint =
+    totalPages > 1 && listCommand != null
+      ? `\n\n共 ${options.total ?? rows.length} 项 · 第 ${page}/${totalPages} 页。发送 ${listCommand} <页码> 查看其他页。`
+      : ''
+  return `${list}${pageHint}\n\n发送序号即可选择${kindLabel}；也可发送 ${useCommand} <序号|名称>。`
 }
 
 function quoteRemoteRows(rows: RemoteSelectionRow[]): string {

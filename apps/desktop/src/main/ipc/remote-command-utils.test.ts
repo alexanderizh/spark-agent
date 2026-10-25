@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { ProviderProfile } from '@spark/protocol'
 import {
   buildRemoteProviderModelRows,
   TELEGRAM_CALLBACK_DATA_LIMIT,
@@ -7,15 +8,34 @@ import {
   buildRemoteSessionActions,
   defaultRemotePermissionMode,
   filterTelegramCallbackActions,
+  filterRemoteProviderCandidates,
   formatRows,
+  formatRemoteSelectionList,
   getRemotePermissionRows,
   paginateRemoteSelection,
   parseRemotePage,
   parseRemoteSessionFilter,
   resolveRemoteEffectiveModelSelection,
+  resolveRemoteModelProvider,
   resolveRemoteSelection,
   type RemoteSelectionRow,
 } from './remote-command-utils.js'
+
+function provider(overrides: Partial<ProviderProfile> = {}): ProviderProfile {
+  return {
+    id: 'provider-1',
+    name: 'Example',
+    provider: 'openai',
+    isDefault: false,
+    defaultModel: 'gpt-5',
+    modelIds: ['gpt-5'],
+    modelType: 'text',
+    codexApiKind: 'responses',
+    createdAt: '2026-07-18T00:00:00.000Z',
+    keystoreRef: 'provider-1',
+    ...overrides,
+  }
+}
 
 describe('buildRemoteProviderModelRows', () => {
   it('only returns the current provider enabled models and removes duplicates', () => {
@@ -28,6 +48,38 @@ describe('buildRemoteProviderModelRows', () => {
       { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna', meta: '渠道默认' },
       { id: 'gpt-5.6-sol', label: 'gpt-5.6-sol' },
     ])
+  })
+})
+
+describe('filterRemoteProviderCandidates', () => {
+  it('excludes media and embedding providers from remote channel choices', () => {
+    const chat = provider()
+    const image = provider({
+      id: 'provider-image',
+      modelType: 'image',
+      mediaProvider: 'openai-images',
+    })
+    const embedding = provider({ id: 'provider-embedding', codexApiKind: 'embedding' })
+
+    expect(filterRemoteProviderCandidates([chat, image, embedding])).toEqual([chat])
+  })
+})
+
+describe('resolveRemoteModelProvider', () => {
+  it('uses the same fallback provider as the resolved model selection', () => {
+    const configured = provider({ id: 'configured', defaultModel: 'configured-model' })
+    const first = provider({ id: 'first', defaultModel: 'first-model' })
+
+    expect(
+      resolveRemoteModelProvider(
+        { providerProfileId: '', modelId: 'session-model' },
+        { defaultProviderProfileId: 'configured', defaultModelId: 'stale-default-model' },
+        [first, configured],
+      ),
+    ).toEqual({
+      selection: { providerId: 'configured', modelId: 'session-model' },
+      provider: configured,
+    })
   })
 })
 
@@ -64,9 +116,10 @@ describe('resolveRemoteEffectiveModelSelection', () => {
   })
 
   it('falls back to connection defaults only when no session is bound', () => {
-    expect(
-      resolveRemoteEffectiveModelSelection(undefined, connectionDefaults, providers),
-    ).toEqual({ providerId: 'prov-opencode', modelId: 'opencode-x' })
+    expect(resolveRemoteEffectiveModelSelection(undefined, connectionDefaults, providers)).toEqual({
+      providerId: 'prov-opencode',
+      modelId: 'opencode-x',
+    })
   })
 
   it('uses the provider default model when the bound session has no model', () => {
@@ -219,6 +272,23 @@ describe('resolveRemoteSelection', () => {
       expect(result.title).toBe('序号已过期')
       expect(result.text).toContain('/sessions')
     }
+  })
+})
+
+describe('formatRemoteSelectionList', () => {
+  it('shows a text pagination command for remote channels without interactive buttons', () => {
+    const rows = Array.from({ length: 6 }, (_, index) => ({
+      id: `provider-${index + 1}`,
+      label: `渠道 ${index + 1}`,
+    }))
+
+    expect(
+      formatRemoteSelectionList(rows, '暂无渠道', '渠道', '!remote/use-channel', {
+        page: 2,
+        totalPages: 3,
+        total: 14,
+      }),
+    ).toContain('共 14 项 · 第 2/3 页。发送 !remote/channels <页码> 查看其他页。')
   })
 })
 

@@ -483,6 +483,8 @@ import {
   buildRemoteSelectionActions,
   buildRemoteSessionActions,
   defaultRemotePermissionMode,
+  filterRemoteProviderCandidates,
+  formatRemoteSelectionList,
   formatRows,
   getRemotePermissionRows,
   normalizeRemotePermissionInput,
@@ -491,6 +493,7 @@ import {
   parseRemoteSessionFilter,
   REMOTE_REASONING_ROWS,
   resolveRemoteEffectiveModelSelection,
+  resolveRemoteModelProvider,
   resolveRemoteSelection,
 } from './remote-command-utils.js'
 import { describeDeliveryError } from '../services/remoteDeliveryRetry.js'
@@ -3903,23 +3906,6 @@ function formatRemoteSessionStatus(status: RemoteSessionStatus): string {
   return '空闲'
 }
 
-function formatRemoteSelectionList(
-  rows: RemoteSelectionRow[],
-  empty: string,
-  kindLabel: string,
-  useCommand: string,
-  options: { interactive?: boolean; page?: number; totalPages?: number; total?: number } = {},
-): string {
-  if (options.interactive === true && rows.length > 0) {
-    const page = options.page ?? 1
-    const totalPages = options.totalPages ?? 1
-    return `共 ${options.total ?? rows.length} 项 · 第 ${page}/${totalPages} 页\n点击下方按钮选择${kindLabel}。`
-  }
-  const list = formatRows(rows, empty)
-  if (rows.length === 0) return list
-  return `${list}\n\n发送序号即可选择${kindLabel}；也可发送 ${useCommand} <序号|名称>。`
-}
-
 function supportsRemoteInteractiveLists(connection: RemoteConnectionConfig): boolean {
   return connection.channel === 'telegram' || connection.channel === 'feishu'
 }
@@ -4259,7 +4245,15 @@ async function executeRemoteCommand(
         '暂无符合条件的会话',
         '会话',
         formatRemoteCommand(connection, 'use-session'),
-        { interactive, page: page.page, totalPages: page.totalPages, total: page.total },
+        {
+          interactive,
+          page: page.page,
+          totalPages: page.totalPages,
+          total: page.total,
+          ...(filter.status != null
+            ? { listCommand: `${formatRemoteCommand(connection, 'sessions')} ${filter.status}` }
+            : {}),
+        },
       ),
       actions: buildRemoteSessionActions(page.rows, connection.commandPrefix, {
         page: page.page,
@@ -4349,7 +4343,7 @@ async function executeRemoteCommand(
     if ('error' in parsedPage) return { ok: false, title: '页码无效', text: parsedPage.error }
     const currentSession = await getRemoteSession(sessionId)
     const providers = await getProviderService().listProviders()
-    const selection = resolveRemoteEffectiveModelSelection(
+    const { selection, provider } = resolveRemoteModelProvider(
       currentSession,
       {
         defaultProviderProfileId: connection.defaultProviderProfileId,
@@ -4357,10 +4351,6 @@ async function executeRemoteCommand(
       },
       providers,
     )
-    const provider =
-      providers.find((item) => item.id === selection.providerId) ??
-      providers.find((item) => item.isDefault) ??
-      providers[0]
     if (provider == null) {
       return { ok: false, title: '暂无模型渠道', text: '请先在桌面端添加 Provider。' }
     }
@@ -4397,7 +4387,7 @@ async function executeRemoteCommand(
       `用法：${formatRemoteCommand(connection, 'channels', '[页码]')}`,
     )
     if ('error' in parsedPage) return { ok: false, title: '页码无效', text: parsedPage.error }
-    const providers = await getProviderService().listProviders()
+    const providers = filterRemoteProviderCandidates(await getProviderService().listProviders())
     const rows = providers.map((item) => ({ id: item.id, label: item.name, meta: item.provider }))
     const page = paginateRemoteSelection(rows, parsedPage.page)
     cacheRemoteSelection(selectionScope, 'providers', page.rows)
@@ -4657,9 +4647,7 @@ async function executeRemoteCommand(
     if (command.name === 'use-channel') {
       // 渠道列表只列对话渠道：多媒体生成/向量渠道承接不了文本 turn，
       // 远程 /channels 与渲染端渠道选择器保持同一口径。
-      const providers = (await getProviderService().listProviders()).filter(
-        isConversationalProviderCandidate,
-      )
+      const providers = filterRemoteProviderCandidates(await getProviderService().listProviders())
       const rows = providers.map((item) => ({
         id: item.id,
         label: item.name,
@@ -4695,11 +4683,14 @@ async function executeRemoteCommand(
     } else if (command.name === 'use-model') {
       const currentSession = await getRemoteSession(sessionId)
       const providers = await getProviderService().listProviders()
-      const providerId = currentSession?.providerProfileId ?? connection.defaultProviderProfileId
-      const provider =
-        providers.find((item) => item.id === providerId) ??
-        providers.find((item) => item.isDefault) ??
-        providers[0]
+      const { provider } = resolveRemoteModelProvider(
+        currentSession,
+        {
+          defaultProviderProfileId: connection.defaultProviderProfileId,
+          defaultModelId: connection.defaultModelId,
+        },
+        providers,
+      )
       const rows = provider != null ? buildRemoteProviderModelRows(provider) : []
       resolved = resolveRemoteSelection(target, rows, {
         kindLabel: '模型',
