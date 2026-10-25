@@ -1,6 +1,6 @@
 export const REMOTE_AGENT_RESOURCE = {
   zh: {
-    'remoteAgent.entry': '远程协作',
+    'remoteAgent.entry': '远程任务',
     'remoteAgent.title': '远程 Agent 协作者',
     'remoteAgent.tasks': '远程任务',
     'remoteAgent.dispatch': '派给远程 Agent',
@@ -15,7 +15,6 @@ export const REMOTE_AGENT_RESOURCE = {
     'remoteAgent.deviceOffline': '目标电脑离线，恢复连接后同步状态',
     'remoteAgent.noDevices': '没有在线的其他电脑',
     'remoteAgent.unknownDevice': '未知电脑',
-    'remoteAgent.timelineTitle': '远程协作任务',
     'remoteAgent.device': '目标电脑',
     'remoteAgent.project': '目标项目',
     'remoteAgent.agent': '执行 Agent',
@@ -77,7 +76,7 @@ export const REMOTE_AGENT_RESOURCE = {
     'remoteAgent.activityStatus': '执行状态',
   },
   en: {
-    'remoteAgent.entry': 'Remote',
+    'remoteAgent.entry': 'Remote Tasks',
     'remoteAgent.title': 'Remote Agent Collaborator',
     'remoteAgent.tasks': 'Remote tasks',
     'remoteAgent.dispatch': 'Dispatch to remote Agent',
@@ -92,7 +91,6 @@ export const REMOTE_AGENT_RESOURCE = {
     'remoteAgent.deviceOffline': 'Offline; syncs on reconnect.',
     'remoteAgent.noDevices': 'No other computers are online',
     'remoteAgent.unknownDevice': 'Unknown computer',
-    'remoteAgent.timelineTitle': 'Remote collaboration tasks',
     'remoteAgent.device': 'Target computer',
     'remoteAgent.project': 'Target project',
     'remoteAgent.agent': 'Agent',

@@ -80,7 +80,6 @@ import {
   RemoteAgentEmptySessionEntry,
 } from './chat/remote-agent/RemoteAgentChatEntry'
 import { RemoteAgentSessionProvider } from './chat/remote-agent/RemoteAgentSession'
-import { RemoteAgentTaskTimeline } from './chat/remote-agent/RemoteAgentTaskTimeline'
 import { ContextCompactionCard } from './chat/ContextCompactionCard'
 import { EmptySessionTopbar } from './chat/EmptySessionTopbar'
 import { SessionSchedulePanel } from './chat/SessionSchedulePanel'
@@ -3428,7 +3427,6 @@ export function ChatView({
                   }}
                   shareCaptureHost={sessionShareOpen ? shareCaptureHost : null}
                   shareOmitCount={shareOmitCount}
-                  afterMessages={<RemoteAgentTaskTimeline />}
                 />
               </HtmlRenderProvider>
               {userQuestion != null && (
