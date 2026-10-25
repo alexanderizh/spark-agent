@@ -5090,6 +5090,7 @@ export class SessionService {
           label: 'Skill Prompt',
           content: composedSkillSystemPrompt,
           charCount: composedSkillSystemPrompt.length,
+          estimatedTokens: estimateTokens(composedSkillSystemPrompt),
         })
       }
       if (composedSystemPrompt && composedSystemPrompt.trim().length > 0) {
@@ -5097,6 +5098,7 @@ export class SessionService {
           label: 'System Prompt',
           content: composedSystemPrompt,
           charCount: composedSystemPrompt.length,
+          estimatedTokens: estimateTokens(composedSystemPrompt),
         })
       }
       // 只统计本轮由 Spark 实际注入的 System / Skill 提示词，不估算 SDK 内置预设。

@@ -1147,6 +1147,8 @@ export interface PromptSection {
   content: string
   /** 字符数 */
   charCount: number
+  /** 估算 token 数（o200k 口径）；旧快照可能缺失，展示层需回退到字符数 */
+  estimatedTokens?: number
 }
 
 /**

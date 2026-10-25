@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 改进
+
+- **会话检查器提示词快照改为 token 口径**：`Skill Prompt` / `System Prompt` 段落徽标与轮次汇总行优先显示估算 token 数（`estimateTokens` o200k 口径，经 `turn_prompt_snapshot` 新增可选字段 `estimatedTokens` 下发），字符数仅在旧快照缺 token 数据时回退显示；「本轮应用提示词」汇总段同步切换 token 口径，避免字符数视觉偏大造成体积误判。顺手补齐 `tpl13/tpl14` 两个存量悬空 i18n 键（上下文告警文案此前一直渲染原始键名）；复查再补齐同批遗漏的 6 个悬空键 `tpl6/tpl7/tpl8/tpl9/tpl10/tpl15 Desc`（轮次计数徽标、工作区快照说明、相对时间、轮用量 tooltip），中英双语对齐，悬空键清零。
+
 ## [0.15.9] - 2026-10-23
 
 ### 新增

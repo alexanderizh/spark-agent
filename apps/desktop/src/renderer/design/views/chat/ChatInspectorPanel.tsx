@@ -1295,6 +1295,11 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
     () => snapshot.systemPromptSections.reduce((sum, s) => sum + s.charCount, 0),
     [snapshot.systemPromptSections],
   )
+  // token 口径优先（字符数视觉偏大）；旧快照缺 estimatedTokens 时回退字符数
+  const totalPromptTokens = useMemo(
+    () => snapshot.systemPromptSections.reduce((sum, s) => sum + (s.estimatedTokens ?? 0), 0),
+    [snapshot.systemPromptSections],
+  )
   const modelLabel =
     snapshot.providerProfileId === LOCAL_CODEX_CLI_PROVIDER_ID
       ? LOCAL_CODEX_CLI_MODEL_DISPLAY
@@ -1308,10 +1313,15 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
   const promptSummary =
     snapshot.runtimeMetrics?.sparkPromptEstimatedTokens != null
       ? `Spark Prompt ≈ ${formatTokenCount(snapshot.runtimeMetrics.sparkPromptEstimatedTokens)} tokens`
-      : translate('chatInspector.tpl11Desc', {
-          sections: snapshot.systemPromptSections.length,
-          chars: formatCharCount(totalPromptChars),
-        })
+      : totalPromptTokens > 0
+        ? translate('chatInspector.tpl23Desc', {
+            sections: snapshot.systemPromptSections.length,
+            tokens: formatTokenCount(totalPromptTokens),
+          })
+        : translate('chatInspector.tpl11Desc', {
+            sections: snapshot.systemPromptSections.length,
+            chars: formatCharCount(totalPromptChars),
+          })
 
   return (
     <div className={`prompt-turn-row ${expanded ? 'expanded' : ''}`}>
@@ -1448,7 +1458,7 @@ function TurnRuntimeMetricsBlock({ metrics }: { metrics: TurnRuntimeMetrics | un
 const PromptSectionBlock = React.memo(function PromptSectionBlock({
   section,
 }: {
-  section: { label: string; content: string; charCount: number }
+  section: { label: string; content: string; charCount: number; estimatedTokens?: number }
 }) {
   const [sectionExpanded, setSectionExpanded] = useState(false)
   const isPlaceholder = section.charCount === 0
@@ -1473,10 +1483,18 @@ const PromptSectionBlock = React.memo(function PromptSectionBlock({
           {!isPlaceholder ? (sectionExpanded ? '▾' : '▸') : '○'}
         </span>
         <span>{section.label}</span>
-        {section.charCount > 0 && (
+        {section.estimatedTokens != null && section.estimatedTokens > 0 ? (
           <span className="prompt-section-chars">
-            {translate('chatInspector.tpl12Desc', { count: section.charCount })}
+            {translate('chatInspector.tpl22Desc', {
+              count: formatTokenCount(section.estimatedTokens),
+            })}
           </span>
+        ) : (
+          section.charCount > 0 && (
+            <span className="prompt-section-chars">
+              {translate('chatInspector.tpl12Desc', { count: section.charCount })}
+            </span>
+          )
         )}
       </div>
       {sectionExpanded && !isPlaceholder && (
