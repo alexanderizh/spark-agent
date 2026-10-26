@@ -1,3 +1,4 @@
+import { useId, useState } from 'react'
 import type { SessionId } from '@spark/protocol'
 import {
   AlertTriangle,
@@ -8,6 +9,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { Button } from '@lobehub/ui'
+import { Icons } from '../Icons'
 import { useEvidenceCost, type CostAggregate, type EvidenceRecord } from './useEvidenceCost'
 import './EvidenceCostPanel.less'
 
@@ -21,6 +23,8 @@ export function EvidenceCostPanel({
   discussionId: string | undefined
 }) {
   const state = useEvidenceCost(sessionId, discussionId)
+  const [collapsed, setCollapsed] = useState(true)
+  const bodyId = useId()
   if (sessionId == null) return null
 
   const snapshot = state.snapshot
@@ -46,15 +50,40 @@ export function EvidenceCostPanel({
       ? snapshot.budgetTokens -
         aggregates.reduce((sum, aggregate) => sum + (aggregate.tokens ?? 0), 0)
       : null
+  const evidenceCount = snapshot?.evidence.length ?? 0
+  const costCount = snapshot?.costsTotal ?? snapshot?.costs.length ?? 0
 
   return (
     <section className="evidence-cost-panel" aria-label="证据与成本" data-evidence-cost-panel>
       <header className="evidence-cost-panel__header">
-        <div>
-          <span className="evidence-cost-panel__eyebrow">EVIDENCE / COST LEDGER</span>
-          <h3>证据与成本账本</h3>
-          <p>来源、核验状态与团队消耗在同一讨论上下文中可追溯。</p>
-        </div>
+        <h3 className="evidence-cost-panel__heading">
+          <button
+            type="button"
+            className="evidence-cost-panel__toggle"
+            aria-expanded={!collapsed}
+            aria-controls={bodyId}
+            title={collapsed ? '展开' : '折叠'}
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            <Icons.ChevronRight
+              aria-hidden="true"
+              size={11}
+              className={`evidence-cost-panel__chev${collapsed ? '' : ' is-open'}`}
+            />
+            <span className="evidence-cost-panel__heading-text">
+              <span className="evidence-cost-panel__eyebrow">EVIDENCE / COST LEDGER</span>
+              <span className="evidence-cost-panel__title">证据与成本账本</span>
+              <span className="evidence-cost-panel__description">
+                来源、核验状态与团队消耗在同一讨论上下文中可追溯。
+              </span>
+            </span>
+            {collapsed && (evidenceCount > 0 || costCount > 0) && (
+              <span className="evidence-cost-panel__collapsed-summary">
+                证据 {evidenceCount} · 用量 {costCount}
+              </span>
+            )}
+          </button>
+        </h3>
         <Button
           type="text"
           size="small"
@@ -66,64 +95,70 @@ export function EvidenceCostPanel({
         </Button>
       </header>
 
-      {state.loading && snapshot == null && (
-        <div className="evidence-cost-panel__state" aria-busy="true" aria-live="polite">
-          <span className="evidence-cost-panel__loading-mark" aria-hidden />
-          <strong>正在同步证据与成本…</strong>
-          <span>会话切换期间会自动丢弃旧响应。</span>
-        </div>
-      )}
+      <div id={bodyId} className="evidence-cost-panel__body" hidden={collapsed}>
+        {!collapsed && (
+          <>
+            {state.loading && snapshot == null && (
+              <div className="evidence-cost-panel__state" aria-busy="true" aria-live="polite">
+                <span className="evidence-cost-panel__loading-mark" aria-hidden />
+                <strong>正在同步证据与成本…</strong>
+                <span>会话切换期间会自动丢弃旧响应。</span>
+              </div>
+            )}
 
-      {state.error != null && (
-        <div
-          className={`evidence-cost-panel__notice ${conflict ? 'is-conflict' : ''}`}
-          role="alert"
-        >
-          {conflict ? (
-            <ShieldAlert size={16} aria-hidden />
-          ) : (
-            <AlertTriangle size={16} aria-hidden />
-          )}
-          <div>
-            <strong>{conflict ? '数据版本冲突' : '账本同步失败'}</strong>
-            <span>{state.error}</span>
-          </div>
-          <button type="button" onClick={() => void state.refresh()}>
-            重试
-          </button>
-        </div>
-      )}
+            {state.error != null && (
+              <div
+                className={`evidence-cost-panel__notice ${conflict ? 'is-conflict' : ''}`}
+                role="alert"
+              >
+                {conflict ? (
+                  <ShieldAlert size={16} aria-hidden />
+                ) : (
+                  <AlertTriangle size={16} aria-hidden />
+                )}
+                <div>
+                  <strong>{conflict ? '数据版本冲突' : '账本同步失败'}</strong>
+                  <span>{state.error}</span>
+                </div>
+                <button type="button" onClick={() => void state.refresh()}>
+                  重试
+                </button>
+              </div>
+            )}
 
-      {!state.loading && !hasContent && state.error == null && (
-        <div className="evidence-cost-panel__state is-empty">
-          <CircleHelp size={20} aria-hidden />
-          <strong>当前尚未记录证据或成本</strong>
-          <span>团队开始提交证据或记录用量后，账本会出现在这里。</span>
-        </div>
-      )}
+            {!state.loading && !hasContent && state.error == null && (
+              <div className="evidence-cost-panel__state is-empty">
+                <CircleHelp size={20} aria-hidden />
+                <strong>当前尚未记录证据或成本</strong>
+                <span>团队开始提交证据或记录用量后，账本会出现在这里。</span>
+              </div>
+            )}
 
-      {(hasContent || state.loading) && snapshot != null && (
-        <div className="evidence-cost-panel__content">
-          <div className="evidence-cost-panel__summary" aria-label="账本概览">
-            <Metric label="证据" value={snapshot.evidence.length} />
-            <Metric label="用量事件" value={snapshot.costsTotal ?? snapshot.costs.length} />
-            <Metric
-              label="预算剩余"
-              value={formatTokens(remainingTokens)}
-              warning={remainingTokens != null && remainingTokens < 0}
-            />
-          </div>
+            {(hasContent || state.loading) && snapshot != null && (
+              <div className="evidence-cost-panel__content">
+                <div className="evidence-cost-panel__summary" aria-label="账本概览">
+                  <Metric label="证据" value={snapshot.evidence.length} />
+                  <Metric label="用量事件" value={snapshot.costsTotal ?? snapshot.costs.length} />
+                  <Metric
+                    label="预算剩余"
+                    value={formatTokens(remainingTokens)}
+                    warning={remainingTokens != null && remainingTokens < 0}
+                  />
+                </div>
 
-          <div className="evidence-cost-panel__columns">
-            <EvidenceSection
-              evidence={snapshot.evidence.slice(0, MAX_VISIBLE_ITEMS)}
-              mutatingKey={state.mutatingKey}
-              onMutate={state.mutate}
-            />
-            <CostSection aggregates={aggregates} snapshot={snapshot} />
-          </div>
-        </div>
-      )}
+                <div className="evidence-cost-panel__columns">
+                  <EvidenceSection
+                    evidence={snapshot.evidence.slice(0, MAX_VISIBLE_ITEMS)}
+                    mutatingKey={state.mutatingKey}
+                    onMutate={state.mutate}
+                  />
+                  <CostSection aggregates={aggregates} snapshot={snapshot} />
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </section>
   )
 }

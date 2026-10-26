@@ -37,21 +37,48 @@ describe('EvidenceCostPanel', () => {
     container.remove()
   })
 
-  it('renders evidence provenance, unknown cost warning, and governance action', async () => {
+  const render = async () => {
     await act(async () => { root = createRoot(container); root.render(<EvidenceCostPanel sessionId={sessionId} discussionId="discussion-1" />) })
+  }
+  const toggle = async () => {
+    await act(async () => { container.querySelector<HTMLButtonElement>('.evidence-cost-panel__toggle')?.click() })
+  }
+
+  it('starts collapsed and expands on header toggle', async () => {
+    await render()
+    const toggleButton = container.querySelector<HTMLButtonElement>('.evidence-cost-panel__toggle')
+    expect(toggleButton).not.toBeNull()
+    expect(toggleButton?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('.evidence-cost-panel__body')?.hasAttribute('hidden')).toBe(true)
+    expect(container.querySelector('[data-evidence-list]')).toBeNull()
+    // 折叠态仍在标题旁保留轻量摘要
+    expect(container.textContent).toContain('证据 1 · 用量 1')
+    await toggle()
+    expect(toggleButton?.getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('.evidence-cost-panel__body')?.hasAttribute('hidden')).toBe(false)
+    expect(container.querySelector('[data-evidence-list]')).not.toBeNull()
+    await toggle()
+    expect(toggleButton?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('[data-evidence-list]')).toBeNull()
+  })
+
+  it('renders evidence provenance, unknown cost warning, and governance action', async () => {
+    await render()
+    await toggle()
     expect(container.querySelector('[data-evidence-list]')).not.toBeNull()
     expect(container.textContent).toContain('接口返回可追溯证据')
     expect(container.textContent).toContain('测试')
     expect(container.textContent).toContain('含未知')
     expect(container.textContent).toContain('部分成本缺少可计量数据')
-    await act(async () => Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('核验'))?.click())
+    await act(async () => Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === '核验')?.click())
     expect(invoke.mock.calls.find(([channel]) => channel === 'evidence-cost:mutate')?.[1]).toMatchObject({ id: 'evidence-1', expectedVersion: 1, expectedDiscussionId: 'discussion-1' })
   })
 
   it('shows loading and precise conflict recovery state', async () => {
     let reject: ((reason: Error) => void) | undefined
     invoke.mockImplementation(() => new Promise((_, rejectPromise) => { reject = rejectPromise }))
-    await act(async () => { root = createRoot(container); root.render(<EvidenceCostPanel sessionId={sessionId} discussionId="discussion-1" />) })
+    await render()
+    await toggle()
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
     await act(async () => reject?.(new Error('Expected evidence version 1, current version is 2')))
     expect(container.textContent).toContain('数据版本冲突')
@@ -63,21 +90,23 @@ describe('EvidenceCostPanel', () => {
     invoke.mockImplementation((channel: string) => channel === 'evidence-cost:get'
       ? Promise.resolve({ ...baseSnapshot, evidence: [], costs: [], aggregates: [], budgetTokens: null })
       : Promise.resolve(baseSnapshot))
-    await act(async () => { root = createRoot(container); root.render(<EvidenceCostPanel sessionId={sessionId} discussionId="discussion-1" />) })
-    expect(container.textContent).toContain('当前尚未记录证据或成本')
+    await render()
     const refresh = container.querySelector<HTMLButtonElement>('button[aria-label="重新加载证据与成本"]')
     expect(refresh).not.toBeNull()
     refresh?.focus()
     expect(document.activeElement).toBe(refresh)
+    await toggle()
+    expect(container.textContent).toContain('当前尚未记录证据或成本')
   })
 
   it('preserves the panel theme hooks and responsive layout contract', async () => {
     document.documentElement.dataset.theme = 'dark'
-    await act(async () => { root = createRoot(container); root.render(<EvidenceCostPanel sessionId={sessionId} discussionId="discussion-1" />) })
+    await render()
     const panel = container.querySelector<HTMLElement>('[data-evidence-cost-panel]')
     expect(panel).not.toBeNull()
     expect(panel?.className).toContain('evidence-cost-panel')
     expect(document.documentElement.dataset.theme).toBe('dark')
+    await toggle()
     expect(container.querySelector('[data-cost-list]')).not.toBeNull()
   })
 })

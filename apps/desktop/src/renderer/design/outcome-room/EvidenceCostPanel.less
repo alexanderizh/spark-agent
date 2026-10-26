@@ -36,14 +36,59 @@
   font-weight: 700;
   letter-spacing: 0.16em;
 }
+.evidence-cost-panel__heading {
+  margin: 0;
+  min-width: 0;
+}
+.evidence-cost-panel__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-md);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+.evidence-cost-panel__toggle:hover .evidence-cost-panel__title {
+  color: var(--text-muted);
+}
+.evidence-cost-panel__heading-text {
+  display: grid;
+  min-width: 0;
+}
 /* 面板标题对齐侧栏统一小节标题（.inspector-section h4 / .config-panel-header） */
-.evidence-cost-panel h3 {
+.evidence-cost-panel__title {
   margin: var(--pad-xs) 0 var(--pad-3xs);
   color: var(--text-faint);
   font-size: var(--font-2xs);
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+}
+.evidence-cost-panel__description {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-xs);
+}
+.evidence-cost-panel__chev {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: transform 0.15s;
+}
+.evidence-cost-panel__chev.is-open {
+  transform: rotate(90deg);
+}
+.evidence-cost-panel__collapsed-summary {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: var(--font-xs);
+  white-space: nowrap;
 }
 .evidence-cost-panel p {
   margin: 0;
