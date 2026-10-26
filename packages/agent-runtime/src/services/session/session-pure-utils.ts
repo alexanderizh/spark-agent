@@ -1378,6 +1378,33 @@ export function getProviderUseSparkExecutor(configJson: string | null | undefine
   }
 }
 
+/**
+ * 判定渠道能否承接文本对话 turn（排除多媒体生成渠道与向量渠道）。
+ * 与渲染端 isMediaProviderProfile / isEmbeddingProviderProfile 同口径：
+ * modelType ∈ {image, voice, video} 为多媒体生成渠道，codexApiKind === 'embedding'
+ * 为向量渠道；modelType='multimodal' 是多模态理解 LLM，仍属文本渠道。
+ * 脏 config_json 一律视为文本渠道（保持与旧回退逻辑一致的宽容度）。
+ */
+export function isConversationalProviderRow(
+  row: Pick<ProviderProfileRow, 'config_json'>,
+): boolean {
+  try {
+    const config = JSON.parse(row.config_json) as {
+      modelType?: unknown
+      codexApiKind?: unknown
+    }
+    if (
+      config.modelType === 'image' ||
+      config.modelType === 'voice' ||
+      config.modelType === 'video'
+    )
+      return false
+    return config.codexApiKind !== 'embedding'
+  } catch {
+    return true
+  }
+}
+
 export function getProviderModelIds(configJson: string | null | undefined): string[] {
   if (configJson == null) return []
   try {
@@ -1436,6 +1463,46 @@ export function resolveLegacyRouterFallbackProviderRow<
 }
 
 /**
+ * 引擎 × 渠道协议兼容谓词（assertEngineProviderCompatible 的非抛错版）：
+ * - codex 引擎只吃 OpenAI 系协议（provider_type ≠ 'anthropic'）；
+ * - claude / claude-sdk 引擎只吃 Anthropic 协议（provider_type === 'anthropic'）；
+ * - spark 等引擎走 CLI 桥可双协议，不做限制。
+ * 本地 CLI 行按自家引擎定型 provider_type，协议二分天然覆盖。
+ * 成员继承宿主会话渠道前用该谓词判定是否需要回退，避免把不兼容组合
+ * 一路带到 turn 起点硬校验才抛错。
+ */
+export function isEngineProviderCompatible(args: {
+  adapterKind: string
+  providerType: string
+}): boolean {
+  if (args.adapterKind === 'codex') return args.providerType !== 'anthropic'
+  if (args.adapterKind === 'claude' || args.adapterKind === 'claude-sdk') {
+    return args.providerType === 'anthropic'
+  }
+  return true
+}
+
+/**
+ * 为团队成员按其引擎挑选可回退的文本对话渠道：
+ * 候选 = 启用 ∧ 非 AutoRouter 元渠道 ∧ 文本渠道（排除多媒体/向量）∧ 协议兼容，
+ * 排序对齐渲染端 getPreferredProviderForAdapter：默认渠道优先，否则取第一个。
+ * 返回 null 表示本机没有任何与该引擎兼容的可用渠道。
+ */
+export function pickMemberProviderFallbackRow(
+  rows: readonly ProviderProfileRow[],
+  adapterKind: string,
+): ProviderProfileRow | null {
+  const candidates = rows.filter(
+    (row) =>
+      row.enabled === 1 &&
+      row.provider_type !== AUTO_ROUTER_PROVIDER_TYPE &&
+      isConversationalProviderRow(row) &&
+      isEngineProviderCompatible({ adapterKind, providerType: row.provider_type }),
+  )
+  return candidates.find((row) => row.is_default === 1) ?? candidates[0] ?? null
+}
+
+/**
  * turn / member dispatch 的最终硬校验：provider 与 model 定值后，若该模型处于
  * 定时禁用时段（峰谷定价规避）则抛错，引导用户切换模型。挂在定格点可覆盖
  * 普通分支与 CLI override 分支。
@@ -1467,18 +1534,21 @@ export function assertEngineProviderCompatible(args: {
   providerType: string
   providerName: string
 }): void {
+  if (isEngineProviderCompatible(args)) return
   const isClaudeKindAdapter =
     args.adapterKind === 'claude' || args.adapterKind === 'claude-sdk'
-  if (args.adapterKind === 'codex' && args.providerType === 'anthropic') {
+  // 团队模式会隐藏会话级模型选择器（成员/主持人默认用各自 Agent 配置的模型），
+  // 报错必须给出该模式下可操作的出路，否则用户无从自救、会话卡死。
+  const teamModeHint =
+    '；团队模式下可在 Agent 管理中为该 Agent 配置模型，或暂时退出团队模式后再切换'
+  if (isClaudeKindAdapter) {
     throw new Error(
-      `当前会话引擎为 Codex（仅支持 OpenAI 协议渠道），但渠道「${args.providerName}」是 Anthropic 协议接口，二者不兼容。请在会话中切换引擎（Claude）或改用 OpenAI 协议渠道。`,
+      `当前会话引擎为 Claude（仅支持 Anthropic 协议渠道），但渠道「${args.providerName}」是 OpenAI 系协议接口，二者不兼容。请在会话中切换引擎（Codex）或改用 Anthropic 协议渠道${teamModeHint}。`,
     )
   }
-  if (isClaudeKindAdapter && args.providerType !== 'anthropic') {
-    throw new Error(
-      `当前会话引擎为 Claude（仅支持 Anthropic 协议渠道），但渠道「${args.providerName}」是 OpenAI 系协议接口，二者不兼容。请在会话中切换引擎（Codex）或改用 Anthropic 协议渠道。`,
-    )
-  }
+  throw new Error(
+    `当前会话引擎为 Codex（仅支持 OpenAI 协议渠道），但渠道「${args.providerName}」是 Anthropic 协议接口，二者不兼容。请在会话中切换引擎（Claude）或改用 OpenAI 协议渠道${teamModeHint}。`,
+  )
 }
 
 export function buildCodexCliModelProviderConfig(params: {
