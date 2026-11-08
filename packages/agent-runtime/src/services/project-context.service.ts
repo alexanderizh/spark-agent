@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path'
-import { clipTextHeadTail, estimateTokens } from '@spark/shared'
+import { clipTextHeadTail, createLogger, estimateTokens } from '@spark/shared'
 import { parseSkillDocument, type SkillDocumentIssueCode } from '../skills/skill-document.js'
 
 export interface ProjectContextSource {
@@ -38,6 +38,8 @@ export interface ProjectContextBudget {
 export type ContextMode = 'minimal' | 'project-smart' | 'deep-research' | 'review' | 'manual'
 
 export interface ProjectContextOptions {
+  /** false skips all discovery IO; explicitly selected skills are loaded separately. */
+  enabled?: boolean
   mode?: ContextMode
   budgetTokens?: number
   /** File paths (posix-relative to root) to always include, overriding budget exclusion */
@@ -60,6 +62,8 @@ interface MarkdownDoc {
   estimatedTokens: number
   truncated: boolean
 }
+
+const log = createLogger('project-context.service')
 
 const MAX_FILE_TOKEN_BUDGET = 20_000
 const FILE_TRUNCATION_MARKER = '[Project context source truncated at file token budget]'
@@ -117,6 +121,10 @@ const TEXT_EXTENSIONS = new Set(['', '.md', '.mdc', '.txt', '.rule', '.rules'])
 
 export class ProjectContextService {
   discover(rootPath: string | undefined, options: ProjectContextOptions = {}): ProjectContext {
+    if (options.enabled === false) {
+      log.debug('Project context discovery skipped by injection filter')
+      return emptyContext()
+    }
     if (rootPath == null || rootPath.trim().length === 0) return emptyContext()
     const root = resolve(rootPath)
     if (!safeStat(root)?.isDirectory()) return emptyContext()

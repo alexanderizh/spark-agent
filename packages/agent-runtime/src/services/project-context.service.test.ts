@@ -1,8 +1,19 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as fs from 'node:fs'
 import { ProjectContextService } from './project-context.service.js'
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    statSync: vi.fn(actual.statSync),
+    readFileSync: vi.fn(actual.readFileSync),
+    readdirSync: vi.fn(actual.readdirSync),
+  }
+})
 
 const roots: string[] = []
 
@@ -13,6 +24,20 @@ afterEach(() => {
 })
 
 describe('ProjectContextService', () => {
+  it('skips all filesystem discovery when injection is disabled, including pinned files', () => {
+    const stat = vi.mocked(fs.statSync).mockClear()
+    const read = vi.mocked(fs.readFileSync).mockClear()
+    const list = vi.mocked(fs.readdirSync).mockClear()
+    const result = new ProjectContextService().discover('/unused-project', {
+      enabled: false,
+      pinnedPaths: new Set(['AGENTS.md']),
+    })
+    expect(result).toEqual({ rules: [], sources: [] })
+    expect(stat).not.toHaveBeenCalled()
+    expect(read).not.toHaveBeenCalled()
+    expect(list).not.toHaveBeenCalled()
+  })
+
   it('discovers project instruction files, skills, and agents', () => {
     const root = mkdtempSync(join(tmpdir(), 'spark-project-context-'))
     roots.push(root)

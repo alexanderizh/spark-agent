@@ -510,7 +510,7 @@ import {
   RuntimeCompositionService,
   type RuntimeSkillConfig,
 } from './runtime-composition.service.js'
-import { ProjectContextService } from './project-context.service.js'
+import { ProjectContextService, type ProjectContextOptions } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { SessionQuestionGate } from './session-question-gate.js'
 import type { HookLifecycleBridge } from './hooks/hook-lifecycle-bridge.js'
@@ -4408,10 +4408,7 @@ export class SessionService {
       Math.min(60_000, Math.floor(softContextLimitTokens * 0.25)),
     )
     const projectContextService = new ProjectContextService()
-    let projectContext = projectContextService.discover(undefined, {
-      mode: 'project-smart',
-      budgetTokens: projectContextBudgetTokens,
-    })
+    let projectContextOverrides: Pick<ProjectContextOptions, 'pinnedPaths' | 'excludedPaths'> = {}
     const workspaceIds = sessionRepo.getWorkspaceIds(sessionId)
     const primaryWorkspaceId = workspaceIds[0]
     if (workspaceIds.length > 0) {
@@ -4431,13 +4428,7 @@ export class SessionService {
         }
         // Load Context Governor pin/exclude overrides for this workspace
         const ctxPrefRepo = new ContextPreferenceRepository(this.db)
-        const { pinnedPaths, excludedPaths } = ctxPrefRepo.getOverrides(primaryWorkspaceId ?? '')
-        projectContext = projectContextService.discover(workspaceRootPath, {
-          mode: 'project-smart',
-          budgetTokens: projectContextBudgetTokens,
-          pinnedPaths,
-          excludedPaths,
-        })
+        projectContextOverrides = ctxPrefRepo.getOverrides(primaryWorkspaceId ?? '')
       }
     }
     // Keep the user's turn authoritative. Image capability is decided by the selected model;
@@ -4496,6 +4487,23 @@ export class SessionService {
         ...(runtimePatch?.skillIds !== undefined ? { replaceAgentSkills: true } : {}),
       },
     )
+    // 提示词注入过滤（项目级/会话级，会话层显式接管，见 prompt-injection-filter.ts）：
+    // 一次解析全程复用；空集 = 不过滤 = 与现状一致。
+    const promptFilterDisabled = runtimeContext.promptFilter?.effectiveDisabled ?? EMPTY_SOURCE_SET
+    // inject:projectContext 被过滤时跳过平台侧项目上下文段（CLAUDE.md/AGENTS.md/
+    // .claude/rules 等规则文件 + 项目内 agent 定义）。注意引擎侧原生读取是独立
+    // 行为：claude 引擎经 settingSources 联动（见 claude-sdk-executor），codex 引擎
+    // 仍会原生读取 cwd 的 AGENTS.md（引擎无禁用口，属已知局限）。
+    const projectContextDisabled = isPromptSourceDisabled(
+      promptFilterDisabled,
+      'inject:projectContext',
+    )
+    const projectContext = projectContextService.discover(workspaceInfo?.rootPath, {
+      mode: 'project-smart',
+      budgetTokens: projectContextBudgetTokens,
+      ...projectContextOverrides,
+      enabled: !projectContextDisabled,
+    })
     runtimeMetrics.markMcpConfigurationStarted()
     // P5 缝隙(b)：注册本 turn 生效技能面（与提示词目录同源），供 bridge 对
     // skills_list / skills_load 做会话级收敛与越权拒绝；内置平台管理 agent
@@ -4516,9 +4524,6 @@ export class SessionService {
     // 共享段一次解析、三路径共用；可选档重型内置在此统一门控（未勾选即不
     // resolve，省子进程），提示词段与 allowedTools 随实际挂载自动收敛。
     const agentMcpSelection = splitAgentMcpSelection(runtimeAgent.mcpServerIds)
-    // 提示词注入过滤（项目级/会话级，会话层显式接管，见 prompt-injection-filter.ts）：
-    // 一次解析全程复用；空集 = 不过滤 = 与现状一致。
-    const promptFilterDisabled = runtimeContext.promptFilter?.effectiveDisabled ?? EMPTY_SOURCE_SET
     const promptFilterDisabledBuiltinNames = extractDisabledBuiltinNames(promptFilterDisabled)
     // 原生技能插件可用性：claude-sdk 引擎下允许摘除 spark_platform 的前提是原生
     // Skill 工具兜底可用（D5）；插件目录解析失败时强制保留 spark_platform 维持
@@ -4549,12 +4554,22 @@ export class SessionService {
       : null
     const imageGenerationContext =
       mediaGenerationContext == null &&
-      shouldMountBuiltinMcp('spark_image', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames)
+      shouldMountBuiltinMcp(
+        'spark_image',
+        adapterKind,
+        agentMcpSelection,
+        promptFilterDisabledBuiltinNames,
+      )
         ? await this.getMcpTooling().resolveImageGenerationContext(workspaceRootPath, {
             capabilityLoadAvailable,
           })
         : null
-    const pluginRuntimeMcp = shouldMountBuiltinMcp('spark_plugins', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames)
+    const pluginRuntimeMcp = shouldMountBuiltinMcp(
+      'spark_plugins',
+      adapterKind,
+      agentMcpSelection,
+      promptFilterDisabledBuiltinNames,
+    )
       ? await this.resolvePluginRuntimeMcpServer(
           turnId,
           usePersistentCodexAppServer ? codexRuntimeLeaseKey : undefined,
@@ -4567,10 +4582,20 @@ export class SessionService {
           },
         )
       : null
-    const webSearchMcpServer = shouldMountBuiltinMcp('spark_search', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames)
+    const webSearchMcpServer = shouldMountBuiltinMcp(
+      'spark_search',
+      adapterKind,
+      agentMcpSelection,
+      promptFilterDisabledBuiltinNames,
+    )
       ? await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
       : null
-    const subAppMcpServer = shouldMountBuiltinMcp('spark_app', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames)
+    const subAppMcpServer = shouldMountBuiltinMcp(
+      'spark_app',
+      adapterKind,
+      agentMcpSelection,
+      promptFilterDisabledBuiltinNames,
+    )
       ? await this.getMcpTooling().resolveSubAppMcpServer(sessionId, workspaceRootPath)
       : null
     // 语音会话应用控制（spark_voice）：仅语音路由绑定会话 resolve 出 server；
@@ -4590,12 +4615,22 @@ export class SessionService {
       : null
     const browserAutomationMcpServer =
       this.browserAutomationMcpProvider != null &&
-      shouldMountBuiltinMcp('spark_browser', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames)
+      shouldMountBuiltinMcp(
+        'spark_browser',
+        adapterKind,
+        agentMcpSelection,
+        promptFilterDisabledBuiltinNames,
+      )
         ? await this.browserAutomationMcpProvider(sessionId, workspaceRootPath)
         : null
     let computerUseMcp: Awaited<ReturnType<ComputerUseMcpProvider>> = null
     if (
-      shouldMountBuiltinMcp('spark_computer', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames) &&
+      shouldMountBuiltinMcp(
+        'spark_computer',
+        adapterKind,
+        agentMcpSelection,
+        promptFilterDisabledBuiltinNames,
+      ) &&
       this.computerUseMcpProvider != null
     ) {
       try {
@@ -4974,8 +5009,7 @@ export class SessionService {
       workspaceDirsDisabled ? undefined : buildWorktreeSessionSystemPrompt(workspaceInfo),
       workspaceDirsDisabled ? undefined : SESSION_WORKTREE_STATE_SYSTEM_PROMPT,
       // 平台临时目录的 git 处理规则只在会话挂了工作区时才有意义（无工作区不注入）。
-      workspaceDirsDisabled ||
-      !(workspaceInfo != null && workspaceInfo.rootPath.trim().length > 0)
+      workspaceDirsDisabled || !(workspaceInfo != null && workspaceInfo.rootPath.trim().length > 0)
         ? undefined
         : WORKSPACE_TEMP_DIRS_SYSTEM_PROMPT,
       // Task 子代理是 Claude Agent SDK 的原生能力，Codex CLI 路径没有对应工具，
@@ -5002,14 +5036,6 @@ export class SessionService {
         ? buildForcedWorkflowTakeoverResultPrompt(forcedWorkflowTakeoverHolder.outcome)
         : undefined,
     ]
-    // inject:projectContext 被过滤时跳过平台侧项目上下文段（CLAUDE.md/AGENTS.md/
-    // .claude/rules 等规则文件 + 项目内 agent 定义）。注意引擎侧原生读取是独立
-    // 行为：claude 引擎经 settingSources 联动（见 claude-sdk-executor），codex 引擎
-    // 仍会原生读取 cwd 的 AGENTS.md（引擎无禁用口，属已知局限）。
-    const projectContextDisabled = isPromptSourceDisabled(
-      promptFilterDisabled,
-      'inject:projectContext',
-    )
     const memoryDisabled = isPromptSourceDisabled(promptFilterDisabled, 'inject:memory')
     const wikiL0Prompt = isPromptSourceDisabled(promptFilterDisabled, 'prompt:wikiL0')
       ? undefined
@@ -11424,11 +11450,11 @@ export class SessionService {
         // 作废、抵消续会话收益；后置后记忆变化只影响尾部。
         memberMemoryBlock,
         !isPromptSourceDisabled(memberPromptFilterDisabled, 'inject:memory') &&
-        memberMcpServers.spark_memory != null
+          memberMcpServers.spark_memory != null
           ? MEMORY_BEHAVIOR_SYSTEM_PROMPT
           : undefined,
         !isPromptSourceDisabled(memberPromptFilterDisabled, 'inject:memory') &&
-        memberMcpServers.spark_memory != null
+          memberMcpServers.spark_memory != null
           ? MEMORY_PROVENANCE_SYSTEM_PROMPT
           : undefined,
       ) ?? ''

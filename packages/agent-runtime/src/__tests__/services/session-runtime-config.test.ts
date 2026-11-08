@@ -18,6 +18,7 @@ import {
   isSdkResumeSafe,
 } from '../../services/session.service.js'
 import { registerSessionWorkflowRuntimeBaselineTests } from './session-workflow-runtime-baseline.js'
+import { registerSessionProjectContextFilterTests } from './session-project-context-filter-baseline.js'
 
 type SessionRow = {
   id: string
@@ -1350,8 +1351,8 @@ vi.mock('@spark/storage', async (importOriginal) => {
     getPreference(): null {
       return null
     }
-    getOverrides(): { pinnedPaths: string[]; excludedPaths: string[] } {
-      return { pinnedPaths: [], excludedPaths: [] }
+    getOverrides(): { pinnedPaths: Set<string>; excludedPaths: Set<string> } {
+      return { pinnedPaths: new Set(), excludedPaths: new Set() }
     }
     upsertPreference(): void {}
   }
@@ -6750,22 +6751,8 @@ describe('SessionService prompt injection filter', () => {
     expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain('[Tool Guidance]')
   })
 
-  it('inject:projectContext 过滤：平台侧项目上下文段缺失且 SDK 设置联动关闭', async () => {
-    const service = new SessionService({} as never, (event) => events.push(event))
-    const { sessionId } = await service.createSession({
-      providerProfileId: 'tencent-provider',
-      agentAdapter: 'claude-sdk',
-      permissionMode: 'claude-auto-edits',
-      title: 'Prompt filter project context session',
-    })
-    mockState.settings.set(`runtime.prompt-filter:session:${sessionId}`, {
-      disabledSources: ['inject:projectContext'],
-    })
-
-    await service.sendTurn({ sessionId, message: 'hello project context filter' })
-    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
-
-    // 平台侧项目上下文段缺失 + claude 引擎 settingSources 联动（isolation mode）
-    expect(mockState.sdkConfigs[0]?.projectSettingsEnabled).toBe(false)
-  })
+  registerSessionProjectContextFilterTests(
+    (emit) => new SessionService({} as never, emit),
+    mockState,
+  )
 })
