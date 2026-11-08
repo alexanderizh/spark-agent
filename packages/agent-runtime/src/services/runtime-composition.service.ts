@@ -1,6 +1,10 @@
-import { BUNDLE_SKILL_ID_PREFIX, type SkillItem } from '@spark/protocol'
+import { BUNDLE_SKILL_ID_PREFIX, normalizeDisabledSources, type SkillItem } from '@spark/protocol'
 import type { SettingsRepository, SkillRepository } from '@spark/storage'
 import { SkillLoader, type SkillInfo } from '../skills/skill-loader.js'
+import {
+  mergePromptFilterLayers,
+  parsePromptFilterLayer,
+} from './prompt-injection-filter.js'
 
 export type RuntimeLayerScope = 'system' | 'agent' | 'project' | 'session'
 
@@ -66,6 +70,19 @@ export interface RuntimePromptConfig {
   effectivePrompt: string
 }
 
+/** 提示词注入过滤的单层值（configured=false 表示该层未配置、继承另一层）。 */
+export interface RuntimePromptFilterLayerValue {
+  configured: boolean
+  disabledSources: string[]
+}
+
+export interface RuntimePromptFilterConfig {
+  project: RuntimePromptFilterLayerValue
+  session: RuntimePromptFilterLayerValue
+  /** 合并后生效的禁用源（会话层显式接管；空数组 = 不过滤 = 与现状一致）。 */
+  effectiveDisabledSources: string[]
+}
+
 export interface RuntimeCompositionResult {
   skillConfig: RuntimeSkillConfig
   promptConfig: RuntimePromptConfig
@@ -75,6 +92,8 @@ export interface RuntimeCompositionResult {
   customEnv?: Record<string, string>
   /** 脱敏后的环境变量清单（含键名/描述/掩码值），作为系统提示词段注入。 */
   envSystemPrompt?: string
+  /** 提示词注入过滤的生效禁用集（组装点/门控点消费；空集 = 不过滤）。 */
+  promptFilter?: { effectiveDisabled: ReadonlySet<string> }
 }
 
 const DEFAULT_AGENT_ID = 'platform-manager-agent'
@@ -82,6 +101,7 @@ const SKILLS_CATEGORY = 'runtime.skills'
 const DISABLED_SKILLS_CATEGORY = 'runtime.skills.disabled'
 const PROMPTS_CATEGORY = 'runtime.prompts'
 const ENV_CATEGORY = 'runtime.env'
+const PROMPT_FILTER_CATEGORY = 'runtime.prompt-filter'
 const MAX_SKILL_DESCRIPTION_CHARS = 220
 
 export class RuntimeCompositionService {
@@ -264,6 +284,63 @@ export class RuntimeCompositionService {
     return this.getEnvConfig(refs)
   }
 
+  /**
+   * 读取提示词注入过滤的双层配置（会话层显式接管语义，见 prompt-injection-filter.ts）。
+   * 未配置的层 configured=false；两层都未配置 → effectiveDisabledSources 为空数组
+   * （不过滤 = 与现状一致）。
+   */
+  getPromptFilterConfig(refs: RuntimeScopeRefs = {}): RuntimePromptFilterConfig {
+    const project =
+      refs.workspaceId != null
+        ? parsePromptFilterLayer(
+            this.settingsRepo.get(PROMPT_FILTER_CATEGORY, layerKey('project', refs.workspaceId)),
+          )
+        : undefined
+    const session =
+      refs.sessionId != null
+        ? parsePromptFilterLayer(
+            this.settingsRepo.get(PROMPT_FILTER_CATEGORY, layerKey('session', refs.sessionId)),
+          )
+        : undefined
+    const effective = mergePromptFilterLayers(project, session)
+    return {
+      project:
+        project !== undefined
+          ? { configured: true, disabledSources: project }
+          : { configured: false, disabledSources: [] },
+      session:
+        session !== undefined
+          ? { configured: true, disabledSources: session }
+          : { configured: false, disabledSources: [] },
+      // 排序输出，保证 UI 与签名口径稳定（Set 迭代序受插入顺序影响）。
+      effectiveDisabledSources: [...effective].sort(),
+    }
+  }
+
+  /**
+   * 写入（或删除）一层的过滤配置。disabledSources 传 undefined = 删除该层行：
+   * 会话层恢复继承项目层。写入值经注册表归一化（非法 key / locked key 剔除）。
+   */
+  updatePromptFilterConfig(
+    scope: Extract<RuntimeLayerScope, 'project' | 'session'>,
+    scopeRef: string,
+    disabledSources: string[] | undefined,
+  ): RuntimePromptFilterConfig {
+    const key = layerKey(scope, scopeRef)
+    if (disabledSources === undefined) {
+      this.settingsRepo.delete(PROMPT_FILTER_CATEGORY, key)
+    } else {
+      // 归一化：只保留注册表 filterable key，去重排序（存储口径与签名稳定）。
+      this.settingsRepo.set(PROMPT_FILTER_CATEGORY, key, {
+        disabledSources: normalizeDisabledSources(disabledSources).sort(),
+      })
+    }
+    const refs: RuntimeScopeRefs = {}
+    if (scope === 'project') refs.workspaceId = scopeRef
+    if (scope === 'session') refs.sessionId = scopeRef
+    return this.getPromptFilterConfig(refs)
+  }
+
   composeRuntimeContext(
     refs: RuntimeScopeRefs = {},
     explicitSkillPrompt?: string,
@@ -272,7 +349,13 @@ export class RuntimeCompositionService {
     const skillConfig = this.getSkillConfig(refs, overrides)
     const promptConfig = this.getPromptConfig(refs)
     const envConfig = this.getEnvConfig(refs)
-    const availableSkillsPrompt = this.buildAvailableSkillsPrompt(skillConfig.effectiveSkillIds)
+    const promptFilterConfig = this.getPromptFilterConfig(refs)
+    const effectiveDisabled = new Set(promptFilterConfig.effectiveDisabledSources)
+    // inject:skillCatalog 被过滤时跳过平台侧技能目录（渐进披露入口之一）；
+    // explicitSkillPrompt（用户点选技能的完整指令）永不过滤，两者分段拼接天然可分。
+    const availableSkillsPrompt = effectiveDisabled.has('inject:skillCatalog')
+      ? ''
+      : this.buildAvailableSkillsPrompt(skillConfig.effectiveSkillIds)
     const skillSections = [explicitSkillPrompt, availableSkillsPrompt].filter(
       (section): section is string => Boolean(section?.trim()),
     )
@@ -280,6 +363,7 @@ export class RuntimeCompositionService {
     const result: RuntimeCompositionResult = {
       skillConfig,
       promptConfig,
+      promptFilter: { effectiveDisabled },
     }
 
     if (promptConfig.effectivePrompt.trim()) {

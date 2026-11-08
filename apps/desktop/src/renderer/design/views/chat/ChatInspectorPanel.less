@@ -235,3 +235,63 @@
   color: var(--text-faint);
   font-size: var(--font-2xs);
 }
+
+/* ── 提示词注入过滤（PromptInjectionFilterSection） ── */
+
+.prompt-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-4xs, 2px);
+  margin-top: var(--pad-3xs, 4px);
+}
+
+.prompt-filter-group-title {
+  color: var(--text-faint);
+  font-size: var(--font-2xs);
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.prompt-filter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2xs);
+  min-height: 24px;
+}
+
+.prompt-filter-label {
+  min-width: 0;
+  flex: 0 0 auto;
+  font-size: var(--font-xs);
+  color: var(--text);
+}
+
+.prompt-filter-locked .prompt-filter-label,
+.prompt-filter-label.prompt-filter-locked {
+  color: var(--text-faint);
+}
+
+.prompt-filter-tokens {
+  margin-left: var(--pad-2xs);
+  padding: 0 var(--pad-3xs, 4px);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--text-faint);
+  font-size: var(--font-3xs, 9px);
+  white-space: nowrap;
+}
+
+.prompt-filter-note {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-4xs, 2px);
+  color: var(--text-faint);
+  font-size: var(--font-3xs, 9px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}

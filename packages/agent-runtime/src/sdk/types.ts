@@ -922,6 +922,18 @@ export interface SDKExecutorConfig {
    * shell/工具可通过 $KEY 读取，而真实值不出现在对话或提示词中（提示词仅含脱敏清单）。
    */
   customEnv?: Record<string, string> | undefined
+  /**
+   * 提示词注入过滤中 MCP 键的签名（resume 快照保护）：MCP 键变化改变工具面，
+   * SDK resume 会话的工具列表在 query 起点冻结，需触发 continueSession:false 重建；
+   * 纯提示词条目变化无需重建（每轮重组装 systemPrompt）。
+   */
+  promptFilterMcpSignature?: string | undefined
+  /**
+   * 是否启用 claude 引擎的 SDK 侧项目设置加载（settingSources:['project']，含
+   * .claude/settings.json 与 CLAUDE.md）。inject:projectContext 被过滤时置 false
+   * （SDK isolation mode），避免引擎侧二次注入 CLAUDE.md 使过滤收益减半。
+   */
+  projectSettingsEnabled?: boolean | undefined
   permissionMode: SparkPermissionMode
   maxTurnCount?: number | undefined
   /** Number of automatic max-turn extensions before asking the user to decide. */

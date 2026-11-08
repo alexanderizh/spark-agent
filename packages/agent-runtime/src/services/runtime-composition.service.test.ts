@@ -46,6 +46,7 @@ function makeSettingsRepo(values: Record<string, unknown>) {
     set: (category: string, key: string, value: unknown) => {
       values[`${category}:${key}`] = value
     },
+    delete: (category: string, key: string) => delete values[`${category}:${key}`],
   } as never
 }
 
@@ -263,5 +264,118 @@ describe('RuntimeCompositionService bundle-skill isolation', () => {
     // 显式配置后本就不回落全量(bundle 或其他),但显式引用的 bundle 技能必须生效
     expect(config.effectiveSkillIds).toContain(bundleSkillId)
     expect(config.effectiveSkillIds).not.toContain('skill:regular')
+  })
+})
+
+describe('RuntimeCompositionService prompt-filter（提示词注入过滤）', () => {
+  it('两层都未配置 → 空集生效（不过滤 = 与现状一致），configured 均为 false', () => {
+    const service = new RuntimeCompositionService(makeSkillRepo([]), makeSettingsRepo({}))
+
+    const config = service.getPromptFilterConfig({
+      workspaceId: 'workspace-1',
+      sessionId: 'session-1',
+    })
+
+    expect(config.project).toEqual({ configured: false, disabledSources: [] })
+    expect(config.session).toEqual({ configured: false, disabledSources: [] })
+    expect(config.effectiveDisabledSources).toEqual([])
+  })
+
+  it('仅项目层配置 → 会话层继承项目层', () => {
+    const service = new RuntimeCompositionService(
+      makeSkillRepo([]),
+      makeSettingsRepo({
+        'runtime.prompt-filter:project:workspace-1': {
+          disabledSources: ['inject:memory', 'mcp:spark_browser'],
+        },
+      }),
+    )
+
+    const config = service.getPromptFilterConfig({
+      workspaceId: 'workspace-1',
+      sessionId: 'session-1',
+    })
+
+    expect(config.project).toEqual({
+      configured: true,
+      disabledSources: ['inject:memory', 'mcp:spark_browser'],
+    })
+    expect(config.session.configured).toBe(false)
+    // 排序输出（Set 迭代序不稳定，统一 sort）
+    expect(config.effectiveDisabledSources).toEqual(['inject:memory', 'mcp:spark_browser'])
+  })
+
+  it('会话层显式接管：空数组 = 全开，可临时开回项目层禁项', () => {
+    const service = new RuntimeCompositionService(
+      makeSkillRepo([]),
+      makeSettingsRepo({
+        'runtime.prompt-filter:project:workspace-1': { disabledSources: ['mcp:spark_media'] },
+        'runtime.prompt-filter:session:session-1': { disabledSources: [] },
+      }),
+    )
+
+    const config = service.getPromptFilterConfig({
+      workspaceId: 'workspace-1',
+      sessionId: 'session-1',
+    })
+
+    expect(config.session).toEqual({ configured: true, disabledSources: [] })
+    expect(config.effectiveDisabledSources).toEqual([])
+  })
+
+  it('update 写入归一化（locked/非法 key 剔除），undefined 删除行恢复继承', () => {
+    const values: Record<string, unknown> = {}
+    const service = new RuntimeCompositionService(makeSkillRepo([]), makeSettingsRepo(values))
+    const refs = { workspaceId: 'workspace-1', sessionId: 'session-1' }
+
+    // 会话层接管（非法 key 被剔除）
+    const updated = service.updatePromptFilterConfig('session', 'session-1', [
+      'inject:memory',
+      'locked:envVars',
+      'bogus-key',
+    ])
+    expect(updated.session).toEqual({ configured: true, disabledSources: ['inject:memory'] })
+
+    // 删除会话行 → 恢复继承（两层都未配置）
+    const restored = service.updatePromptFilterConfig('session', 'session-1', undefined)
+    expect(restored.session.configured).toBe(false)
+
+    // refs 无对应层时也安全（未配置 → 空集）
+    expect(service.getPromptFilterConfig(refs).effectiveDisabledSources).toEqual([])
+  })
+
+  it('composeRuntimeContext 暴露 effectiveDisabled，skillCatalog 过滤时目录段消失', () => {
+    const service = new RuntimeCompositionService(
+      makeSkillRepo([skillRow({ id: 'skill:review', name: 'Review', enabled: 1 })]),
+      makeSettingsRepo({
+        'runtime.prompt-filter:session:session-1': { disabledSources: ['inject:skillCatalog'] },
+      }),
+    )
+
+    const filtered = service.composeRuntimeContext({ sessionId: 'session-1' })
+    expect(filtered.promptFilter?.effectiveDisabled.has('inject:skillCatalog')).toBe(true)
+    expect(filtered.skillSystemPrompt).toBeUndefined()
+
+    // 未过滤会话（对照）目录段正常
+    const baseline = service.composeRuntimeContext({})
+    expect(baseline.skillSystemPrompt).toContain('[Available Skills Catalog]')
+    expect(baseline.promptFilter?.effectiveDisabled.size).toBe(0)
+  })
+
+  it('skillCatalog 过滤时 explicitSkillPrompt（用户点选技能）保留', () => {
+    const service = new RuntimeCompositionService(
+      makeSkillRepo([]),
+      makeSettingsRepo({
+        'runtime.prompt-filter:session:session-1': { disabledSources: ['inject:skillCatalog'] },
+      }),
+    )
+
+    const result = service.composeRuntimeContext(
+      { sessionId: 'session-1' },
+      '[Selected Project Skill: demo]\n完整指令正文',
+    )
+
+    expect(result.skillSystemPrompt).toContain('[Selected Project Skill: demo]')
+    expect(result.skillSystemPrompt).not.toContain('[Available Skills Catalog]')
   })
 })

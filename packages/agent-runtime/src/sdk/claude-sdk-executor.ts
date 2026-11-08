@@ -809,7 +809,10 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
           : {}),
         env: runtimeEnv,
         settings,
-        settingSources: ['project'],
+        // inject:projectContext 被过滤时进入 SDK isolation mode（官方语义：
+        // Pass [] to disable filesystem settings）：项目 .claude/settings.json
+        // 与 CLAUDE.md 均不再由引擎侧加载，与平台侧过滤口径一致。
+        settingSources: config.projectSettingsEnabled === false ? [] : ['project'],
         persistSession: true,
         debug: true,
         stderr: (data: string) => {

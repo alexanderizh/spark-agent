@@ -6559,3 +6559,213 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(mockState.events.filter((row) => row.event_type === 'plan_rejected')).toHaveLength(0)
   })
 })
+
+// ─── 提示词注入过滤（项目级 + 会话级，会话层显式接管） ─────────────────────
+
+describe('SessionService prompt injection filter', () => {
+  let events: AgentEvent[]
+
+  beforeEach(() => {
+    mockState.sessions.clear()
+    mockState.providers.clear()
+    mockState.events.length = 0
+    mockState.skills.length = 0
+    mockState.rules.length = 0
+    mockState.mcpServers.length = 0
+    mockState.sdkConfigs.length = 0
+    mockState.sdkTurns.length = 0
+    mockState.workspaces.clear()
+    mockState.agents.clear()
+    mockState.workflows.clear()
+    mockState.workflowBindings.clear()
+    mockState.discussions.clear()
+    mockState.threadMessages.length = 0
+    mockState.workflowRuns.clear()
+    mockState.turnRequests.clear()
+    mockState.settings.clear()
+    vi.mocked(keystore.getSecret).mockClear().mockResolvedValue('test-api-key')
+    events = []
+
+    seedProvider({
+      id: 'tencent-provider',
+      provider_type: 'anthropic',
+      name: 'Tencent Coding',
+      config_json: JSON.stringify({
+        defaultModel: 'glm-5',
+        modelIds: ['glm-5'],
+        apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+      }),
+      keystore_ref: 'key-tencent',
+      is_default: 1,
+    })
+  })
+
+  it('默认（未配置过滤）注入全部常驻段（现状基线）', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-auto-edits',
+      title: 'Prompt filter baseline session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'hello baseline' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const systemPrompt = String(mockState.sdkConfigs[0]?.systemPrompt ?? '')
+    const skillPrompt = String(mockState.sdkConfigs[0]?.skillSystemPrompt ?? '')
+    // 常驻段全部在（过滤空集 = 字节级现状）
+    expect(systemPrompt).toContain('[Tool Guidance]')
+    expect(systemPrompt).toContain('[Memory Behavior]')
+    expect(systemPrompt).toContain('[Memory Provenance]')
+    expect(systemPrompt).toContain('wiki_* = 可检索的知识库')
+    expect(skillPrompt).toContain('## Platform Management Capability')
+    expect(mockState.sdkConfigs[0]?.projectSettingsEnabled).toBe(true)
+  })
+
+  it('会话层过滤纯提示词段：toolGuidance/wikiL0/memory 三类段缺失、其余保留', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-auto-edits',
+      title: 'Prompt filter sections session',
+    })
+    mockState.settings.set(`runtime.prompt-filter:session:${sessionId}`, {
+      disabledSources: [
+        'prompt:toolGuidance',
+        'prompt:wikiL0',
+        'inject:memory',
+        'prompt:subagentHint',
+      ],
+    })
+
+    await service.sendTurn({ sessionId, message: 'hello filtered' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const systemPrompt = String(mockState.sdkConfigs[0]?.systemPrompt ?? '')
+    // 被过滤段缺失
+    expect(systemPrompt).not.toContain('[Tool Guidance]')
+    expect(systemPrompt).not.toContain('[Memory Behavior]')
+    expect(systemPrompt).not.toContain('[Memory Provenance]')
+    expect(systemPrompt).not.toContain('wiki_* = 可检索的知识库')
+    // 未过滤段保留（核心行为 / 平台管理声明）
+    expect(systemPrompt).toContain('[Core Agent Behavior]')
+    expect(String(mockState.sdkConfigs[0]?.skillSystemPrompt ?? '')).toContain(
+      '## Platform Management Capability',
+    )
+  })
+
+  it('mcp 键过滤：spark_computer 不挂载且能力声明段缺失（工具面同摘）', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    service.setComputerUseMcpProvider(async (sessionId) => ({
+      server: {
+        type: 'stdio',
+        command: '/app/SparkWork',
+        args: ['/resources/tools/computer-use-mcp-server.mjs'],
+        env: { SPARK_COMPUTER_SESSION_ID: sessionId },
+      },
+      allowedTools: ['mcp__spark_computer__get_capabilities'],
+      systemPrompt: 'GOVERNED COMPUTER USE PROMPT',
+    }))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-auto-edits',
+      title: 'Prompt filter mcp session',
+    })
+    mockState.settings.set(`runtime.prompt-filter:session:${sessionId}`, {
+      disabledSources: ['mcp:spark_computer'],
+    })
+
+    await service.sendTurn({ sessionId, message: 'control my computer' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const config = mockState.sdkConfigs[0]
+    const servers = config?.mcpServers as Record<string, TestMcpServerConfig>
+    // MCP 未挂载 + 声明段/工具面随挂载自动收敛
+    expect(servers).not.toHaveProperty('spark_computer')
+    expect(config?.allowedTools ?? []).not.toContain('mcp__spark_computer__get_capabilities')
+    const skillPrompt = String(config?.skillSystemPrompt ?? '')
+    expect(skillPrompt).not.toContain('GOVERNED COMPUTER USE PROMPT')
+    expect(skillPrompt).not.toContain('- computer-use — ')
+    // 必需档不受影响
+    expect(unwrapGovernedMcpServer(servers.spark_platform)).toMatchObject({
+      type: 'stdio',
+    })
+  })
+
+  it('过滤 mcp:spark_platform（claude 引擎）：platform 不挂载且无全文手册回退', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-auto-edits',
+      title: 'Prompt filter platform session',
+    })
+    mockState.settings.set(`runtime.prompt-filter:session:${sessionId}`, {
+      disabledSources: ['mcp:spark_platform'],
+    })
+
+    await service.sendTurn({ sessionId, message: 'hello platform filter' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const config = mockState.sdkConfigs[0]
+    const servers = config?.mcpServers as Record<string, TestMcpServerConfig>
+    const skillPrompt = String(config?.skillSystemPrompt ?? '')
+    if (servers.spark_platform == null) {
+      // 显式过滤生效（原生技能插件可用时）：platform 声明缺失，且各能力手册
+      // 不回退全文常驻（回退抑制）——过滤意图不能被更大的手册正文抵消。
+      expect(skillPrompt).not.toContain('## Platform Management Capability')
+      expect(skillPrompt).not.toContain('[Capability Catalog]')
+      expect(skillPrompt).not.toContain('BROWSER_AUTOMATION_GUIDE_PROMPT_FULL_TEXT')
+    } else {
+      // M-1 兜底（原生插件不可用）：platform 强制保留，过滤当轮 no-op（声明在）。
+      expect(skillPrompt).toContain('## Platform Management Capability')
+    }
+    // 必需档恒挂
+    expect(servers).toHaveProperty('spark_files')
+    expect(servers).toHaveProperty('spark_tool_results')
+  })
+
+  it('会话层显式空数组接管：临时开回项目层禁项', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-auto-edits',
+      title: 'Prompt filter takeover session',
+    })
+    // 项目层禁 toolGuidance；会话层显式空数组 = 全开（接管语义，非并集）
+    mockState.settings.set('runtime.prompt-filter:project:ws-filter-takeover', {
+      disabledSources: ['prompt:toolGuidance'],
+    })
+    mockState.settings.set(`runtime.prompt-filter:session:${sessionId}`, {
+      disabledSources: [],
+    })
+
+    await service.sendTurn({ sessionId, message: 'hello takeover' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain('[Tool Guidance]')
+  })
+
+  it('inject:projectContext 过滤：平台侧项目上下文段缺失且 SDK 设置联动关闭', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-auto-edits',
+      title: 'Prompt filter project context session',
+    })
+    mockState.settings.set(`runtime.prompt-filter:session:${sessionId}`, {
+      disabledSources: ['inject:projectContext'],
+    })
+
+    await service.sendTurn({ sessionId, message: 'hello project context filter' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    // 平台侧项目上下文段缺失 + claude 引擎 settingSources 联动（isolation mode）
+    expect(mockState.sdkConfigs[0]?.projectSettingsEnabled).toBe(false)
+  })
+})

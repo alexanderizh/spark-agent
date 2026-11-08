@@ -9462,6 +9462,18 @@ export function registerAllIpcHandlers(): void {
     return getRuntimeCompositionService().updateEnvConfig(req.scope, req.scopeRef, req.value)
   })
 
+  typedIpcHandle('prompt-filter:get', async (req) => {
+    return getRuntimeCompositionService().getPromptFilterConfig(req)
+  })
+
+  typedIpcHandle('prompt-filter:update', async (req) => {
+    return getRuntimeCompositionService().updatePromptFilterConfig(
+      req.scope,
+      req.scopeRef,
+      req.disabledSources,
+    )
+  })
+
   // ─── Agent Management Handlers ────────────────────────────────────────
 
   typedIpcHandle('agent:list', async (req) => {

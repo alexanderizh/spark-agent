@@ -3587,6 +3587,35 @@ export interface EnvConfigUpdateRequest {
 
 export interface EnvConfigUpdateResponse extends EnvConfigGetResponse {}
 
+// ─── Prompt Injection Filter（提示词注入过滤：项目级 + 会话级） ────────────
+
+export interface PromptFilterConfigGetRequest {
+  workspaceId?: string
+  sessionId?: string
+}
+
+/** 单层过滤配置。configured=false 表示该层未配置（继承另一层）。 */
+export interface PromptFilterLayerValue {
+  configured: boolean
+  disabledSources: string[]
+}
+
+export interface PromptFilterConfigGetResponse {
+  project: PromptFilterLayerValue
+  session: PromptFilterLayerValue
+  /** 合并后生效的禁用源（排序后数组；空数组 = 不过滤 = 与现状一致）。 */
+  effectiveDisabledSources: string[]
+}
+
+export interface PromptFilterConfigUpdateRequest {
+  scope: Extract<RuntimeConfigScope, 'project' | 'session'>
+  scopeRef: string
+  /** 归一化后的禁用源；undefined = 删除该层配置（会话层恢复继承项目层）。 */
+  disabledSources: string[] | undefined
+}
+
+export interface PromptFilterConfigUpdateResponse extends PromptFilterConfigGetResponse {}
+
 // ─── Agent Management Channels ─────────────────────────────────────────────
 
 export interface ManagedAgent {
@@ -7929,6 +7958,8 @@ export interface IpcChannelMap
   'prompt-config:update': [PromptConfigUpdateRequest, PromptConfigUpdateResponse]
   'env-config:get': [EnvConfigGetRequest, EnvConfigGetResponse]
   'env-config:update': [EnvConfigUpdateRequest, EnvConfigUpdateResponse]
+  'prompt-filter:get': [PromptFilterConfigGetRequest, PromptFilterConfigGetResponse]
+  'prompt-filter:update': [PromptFilterConfigUpdateRequest, PromptFilterConfigUpdateResponse]
 
   // Agents
   'agent:list': [AgentListRequest, AgentListResponse]

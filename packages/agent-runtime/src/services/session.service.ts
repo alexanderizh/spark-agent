@@ -458,6 +458,12 @@ import {
   shouldMountBuiltinMcp,
   splitAgentMcpSelection,
 } from './agent-mcp-policy.js'
+import {
+  EMPTY_SOURCE_SET,
+  extractDisabledBuiltinNames,
+  isPromptSourceDisabled,
+  promptFilterMcpSignature,
+} from './prompt-injection-filter.js'
 import { buildNativeSkillsFilter, buildSkillFaceSignature } from './native-skill-filter.js'
 import { MediaPresentationCollector } from './media/media-presentation-collector.js'
 export {
@@ -1318,7 +1324,12 @@ export class SessionService {
    */
   private readonly lastBuiltMcpFaces = new Map<
     string,
-    { mcpVersion: number; agentMcpSignature: string; skillFaceSignature: string }
+    {
+      mcpVersion: number
+      agentMcpSignature: string
+      skillFaceSignature: string
+      promptFilterMcpSignature: string
+    }
   >()
 
   /**
@@ -1328,6 +1339,10 @@ export class SessionService {
    * （effectiveSkillIds）——SDK resume 会话的工具面在 query 起点冻结，技能选择
    * 中途变化若不重建，会出现「目录可见却被 Skill 工具拒绝」的过滤面漂移。
    * 读取即刷新（LRU touch）。
+   *
+   * promptFilterMcpSignature（提示词注入过滤）：只含 mcp:* 键——MCP 键变化改变
+   * 工具面必须重建；纯提示词条目变化每轮重组装 systemPrompt / codex 首轮用户
+   * 消息，无需重建。缺省 ''（内存态 Map，无持久化迁移问题）。
    *
    * firstSeen 语义按调用方分野：host 首轮传 true 无害（本无可续会话，保守正确，
    * 默认值）；成员讨论续会话首见须传 'continue'——成员首轮依赖「continueSession:
@@ -1339,6 +1354,7 @@ export class SessionService {
     agentMcpSignature: string,
     skillFaceSignature: string,
     firstSeen: 'rebuild' | 'continue' = 'rebuild',
+    promptFilterMcpSignature = '',
   ): boolean {
     const prev = this.lastBuiltMcpFaces.get(sessionId)
     const shouldRebuild =
@@ -1346,12 +1362,14 @@ export class SessionService {
       (prev != null &&
         (prev.mcpVersion !== this.mcpVersion ||
           prev.agentMcpSignature !== agentMcpSignature ||
-          prev.skillFaceSignature !== skillFaceSignature))
+          prev.skillFaceSignature !== skillFaceSignature ||
+          prev.promptFilterMcpSignature !== promptFilterMcpSignature))
     if (prev != null) this.lastBuiltMcpFaces.delete(sessionId)
     this.lastBuiltMcpFaces.set(sessionId, {
       mcpVersion: this.mcpVersion,
       agentMcpSignature,
       skillFaceSignature,
+      promptFilterMcpSignature,
     })
     if (this.lastBuiltMcpFaces.size > 128) {
       const oldest = this.lastBuiltMcpFaces.keys().next().value
@@ -4498,6 +4516,10 @@ export class SessionService {
     // 共享段一次解析、三路径共用；可选档重型内置在此统一门控（未勾选即不
     // resolve，省子进程），提示词段与 allowedTools 随实际挂载自动收敛。
     const agentMcpSelection = splitAgentMcpSelection(runtimeAgent.mcpServerIds)
+    // 提示词注入过滤（项目级/会话级，会话层显式接管，见 prompt-injection-filter.ts）：
+    // 一次解析全程复用；空集 = 不过滤 = 与现状一致。
+    const promptFilterDisabled = runtimeContext.promptFilter?.effectiveDisabled ?? EMPTY_SOURCE_SET
+    const promptFilterDisabledBuiltinNames = extractDisabledBuiltinNames(promptFilterDisabled)
     // 原生技能插件可用性：claude-sdk 引擎下允许摘除 spark_platform 的前提是原生
     // Skill 工具兜底可用（D5）；插件目录解析失败时强制保留 spark_platform 维持
     // skills_list / skills_load 通道，避免「技能目录可见却无任何加载手段」（M-1）。
@@ -4505,7 +4527,12 @@ export class SessionService {
     // 尾行是否给出 capability_load 指引——目录可见必须有加载手段，M-1 同型纪律。）
     const nativeSkillPlugins = this.resolveNativeSkillPlugins()
     const platformMcpServer =
-      shouldMountBuiltinMcp('spark_platform', adapterKind, agentMcpSelection) ||
+      shouldMountBuiltinMcp(
+        'spark_platform',
+        adapterKind,
+        agentMcpSelection,
+        promptFilterDisabledBuiltinNames,
+      ) ||
       (adapterKind === 'claude-sdk' && nativeSkillPlugins == null)
         ? await this.getMcpTooling().resolvePlatformManagementMcpServer(sessionId)
         : null
@@ -4514,6 +4541,7 @@ export class SessionService {
       'spark_media',
       adapterKind,
       agentMcpSelection,
+      promptFilterDisabledBuiltinNames,
     )
       ? await this.getMcpTooling().resolveMediaGenerationContext(workspaceRootPath, {
           capabilityLoadAvailable,
@@ -4521,12 +4549,12 @@ export class SessionService {
       : null
     const imageGenerationContext =
       mediaGenerationContext == null &&
-      shouldMountBuiltinMcp('spark_image', adapterKind, agentMcpSelection)
+      shouldMountBuiltinMcp('spark_image', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames)
         ? await this.getMcpTooling().resolveImageGenerationContext(workspaceRootPath, {
             capabilityLoadAvailable,
           })
         : null
-    const pluginRuntimeMcp = shouldMountBuiltinMcp('spark_plugins', adapterKind, agentMcpSelection)
+    const pluginRuntimeMcp = shouldMountBuiltinMcp('spark_plugins', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames)
       ? await this.resolvePluginRuntimeMcpServer(
           turnId,
           usePersistentCodexAppServer ? codexRuntimeLeaseKey : undefined,
@@ -4539,10 +4567,10 @@ export class SessionService {
           },
         )
       : null
-    const webSearchMcpServer = shouldMountBuiltinMcp('spark_search', adapterKind, agentMcpSelection)
+    const webSearchMcpServer = shouldMountBuiltinMcp('spark_search', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames)
       ? await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
       : null
-    const subAppMcpServer = shouldMountBuiltinMcp('spark_app', adapterKind, agentMcpSelection)
+    const subAppMcpServer = shouldMountBuiltinMcp('spark_app', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames)
       ? await this.getMcpTooling().resolveSubAppMcpServer(sessionId, workspaceRootPath)
       : null
     // 语音会话应用控制（spark_voice）：仅语音路由绑定会话 resolve 出 server；
@@ -4562,12 +4590,12 @@ export class SessionService {
       : null
     const browserAutomationMcpServer =
       this.browserAutomationMcpProvider != null &&
-      shouldMountBuiltinMcp('spark_browser', adapterKind, agentMcpSelection)
+      shouldMountBuiltinMcp('spark_browser', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames)
         ? await this.browserAutomationMcpProvider(sessionId, workspaceRootPath)
         : null
     let computerUseMcp: Awaited<ReturnType<ComputerUseMcpProvider>> = null
     if (
-      shouldMountBuiltinMcp('spark_computer', adapterKind, agentMcpSelection) &&
+      shouldMountBuiltinMcp('spark_computer', adapterKind, agentMcpSelection, promptFilterDisabledBuiltinNames) &&
       this.computerUseMcpProvider != null
     ) {
       try {
@@ -4907,32 +4935,52 @@ export class SessionService {
       }
     }
 
-    const memoryBlock = await this.loadMemoryBlockForTurn(
-      sessionId,
-      workspaceRootPath,
-      primaryWorkspaceId,
-      runtimeAgent,
+    // inject:memory 被过滤时跳过记忆块加载（三段一开关：块 + 行为引导 + 来源
+    // 说明，拆开会产生「有块无规则」的不连贯中间态）。连带跳过该轮的记忆抽取
+    // 触发（consolidation）——记忆 store 不受损，下一个未过滤会话会再触发；
+    // spark_memory MCP 属必需档，检索工具仍可用。
+    const memoryBlock = isPromptSourceDisabled(promptFilterDisabled, 'inject:memory')
+      ? undefined
+      : await this.loadMemoryBlockForTurn(
+          sessionId,
+          workspaceRootPath,
+          primaryWorkspaceId,
+          runtimeAgent,
+        )
+    // 提示词注入过滤的快捷口径：未过滤时保持各段原条件表达式不变（字节级兼容）。
+    const toolGuidancePrompt = isPromptSourceDisabled(promptFilterDisabled, 'prompt:toolGuidance')
+      ? undefined
+      : TOOL_GUIDANCE_SYSTEM_PROMPT
+    const workspaceDirsDisabled = isPromptSourceDisabled(
+      promptFilterDisabled,
+      'prompt:workspaceDirs',
     )
+    const subagentHintPrompt =
+      resolveEngineKind(agentAdapter) === 'claude-sdk' &&
+      !isPromptSourceDisabled(promptFilterDisabled, 'prompt:subagentHint')
+        ? SUBAGENT_USAGE_HINT_SYSTEM_PROMPT
+        : undefined
 
     const systemPromptSections = [
       APPLICATION_FOUNDATION_SYSTEM_PROMPT,
-      TOOL_GUIDANCE_SYSTEM_PROMPT,
+      toolGuidancePrompt,
       managedAgentPrompt,
       teamMemberContextPrompt,
       orchestrationModePrompt,
       teamRosterPrompt,
       teamInstructionsPrompt,
-      buildWorktreeSessionSystemPrompt(workspaceInfo),
-      SESSION_WORKTREE_STATE_SYSTEM_PROMPT,
+      // prompt:workspaceDirs 一个开关覆盖 worktree 三段（主题重叠：worktree 会话
+      // 提示、worktree 状态上报工具说明、平台临时目录 git 处理规则）。
+      workspaceDirsDisabled ? undefined : buildWorktreeSessionSystemPrompt(workspaceInfo),
+      workspaceDirsDisabled ? undefined : SESSION_WORKTREE_STATE_SYSTEM_PROMPT,
       // 平台临时目录的 git 处理规则只在会话挂了工作区时才有意义（无工作区不注入）。
-      workspaceInfo != null && workspaceInfo.rootPath.trim().length > 0
-        ? WORKSPACE_TEMP_DIRS_SYSTEM_PROMPT
-        : undefined,
+      workspaceDirsDisabled ||
+      !(workspaceInfo != null && workspaceInfo.rootPath.trim().length > 0)
+        ? undefined
+        : WORKSPACE_TEMP_DIRS_SYSTEM_PROMPT,
       // Task 子代理是 Claude Agent SDK 的原生能力，Codex CLI 路径没有对应工具，
       // 引导语只在 claude-sdk/claude adapter 下注入，避免对 Codex 会话产生误导。
-      resolveEngineKind(agentAdapter) === 'claude-sdk'
-        ? SUBAGENT_USAGE_HINT_SYSTEM_PROMPT
-        : undefined,
+      subagentHintPrompt,
       automation.unattended ? UNATTENDED_AUTOMATION_SYSTEM_PROMPT : undefined,
       runtimeRulesPrompt,
       runtimeContext.systemPrompt,
@@ -4954,9 +5002,21 @@ export class SessionService {
         ? buildForcedWorkflowTakeoverResultPrompt(forcedWorkflowTakeoverHolder.outcome)
         : undefined,
     ]
+    // inject:projectContext 被过滤时跳过平台侧项目上下文段（CLAUDE.md/AGENTS.md/
+    // .claude/rules 等规则文件 + 项目内 agent 定义）。注意引擎侧原生读取是独立
+    // 行为：claude 引擎经 settingSources 联动（见 claude-sdk-executor），codex 引擎
+    // 仍会原生读取 cwd 的 AGENTS.md（引擎无禁用口，属已知局限）。
+    const projectContextDisabled = isPromptSourceDisabled(
+      promptFilterDisabled,
+      'inject:projectContext',
+    )
+    const memoryDisabled = isPromptSourceDisabled(promptFilterDisabled, 'inject:memory')
+    const wikiL0Prompt = isPromptSourceDisabled(promptFilterDisabled, 'prompt:wikiL0')
+      ? undefined
+      : WIKI_L0_PROMPT
     const composedSystemPrompt = joinDistinctPromptSections(
       ...systemPromptSections,
-      projectContext.systemPrompt,
+      projectContextDisabled ? undefined : projectContext.systemPrompt,
       // 记忆三段紧邻对话历史（内容不变，仅段序调整）：memoryBlock 每轮可能因记忆
       // 抽取/更新而变化，原先排在项目上下文之前会连带废掉其后（可能很大的）
       // CLAUDE.md/AGENTS.md 段的前缀缓存；挪到项目上下文之后，变化只影响对话历史
@@ -4964,11 +5024,11 @@ export class SessionService {
       // 记忆摘要，再说明两套记忆的区别与"记住"路由规则。无条件注入（所有 adapter
       // 都挂载了应用记忆工具）。
       memoryBlock,
-      MEMORY_BEHAVIOR_SYSTEM_PROMPT,
-      MEMORY_PROVENANCE_SYSTEM_PROMPT,
+      memoryDisabled ? undefined : MEMORY_BEHAVIOR_SYSTEM_PROMPT,
+      memoryDisabled ? undefined : MEMORY_PROVENANCE_SYSTEM_PROMPT,
       // 知识库 L0 能力声明：只说明"有这么一个可检索知识库以及取用顺序"，
       // 不含任何知识内容（§8 零预注入第一原则）。所有知识仍须 wiki_* 主动取用。
-      WIKI_L0_PROMPT,
+      wikiL0Prompt,
       // decomposed（Phase 3）：分流决策预填的子任务派发建议（仅 router 拆分轮次注入）
       autoRouterDispatchPrompt,
       // 语音会话应用控制引导（仅语音路由绑定会话挂载 spark_voice 工具的轮次注入）
@@ -4983,9 +5043,9 @@ export class SessionService {
       // 记忆三段实际渲染在项目上下文之后（见 composedSystemPrompt），账本计量
       // 仍归入 System Prompt 分类——各段按类别字符串独立计 token，与顺序无关。
       memoryBlock,
-      MEMORY_BEHAVIOR_SYSTEM_PROMPT,
-      MEMORY_PROVENANCE_SYSTEM_PROMPT,
-      WIKI_L0_PROMPT,
+      memoryDisabled ? undefined : MEMORY_BEHAVIOR_SYSTEM_PROMPT,
+      memoryDisabled ? undefined : MEMORY_PROVENANCE_SYSTEM_PROMPT,
+      wikiL0Prompt,
       ...trailingSystemPromptSections,
     )
     // 能力引导渐进式披露：Tier B 能力手册（image/media 手册、浏览器自动化、
@@ -5015,16 +5075,26 @@ export class SessionService {
       capabilityCatalogIds.push('computer-use')
     }
     const capabilityCatalogPrompt = buildCapabilityCatalogPrompt(capabilityCatalogIds)
+    // 显式过滤 spark_platform 时的全文手册回退抑制：capability_load 不可用时各能力
+    // 会回退为全文常驻注入（M-1「手册不丢失」纪律防的是 agent 白名单的意外组合）；
+    // 但用户显式过滤 platform 后若仍注入全文手册，等于把省掉的声明段换成更大的
+    // 手册正文，与过滤意图相反。显式过滤是用户主权选择：status 状态行与工具
+    // schema 保留，可发现性不归零，仅抑制全文回退。agent 白名单导致 platform
+    // 未挂的场景不在此列（保持既有回退，字节级兼容）。
+    const platformFilteredByUser =
+      promptFilterDisabledBuiltinNames.has('spark_platform') && platformMcpServer == null
     const composedSkillSystemPrompt = joinDistinctPromptSections(
       runtimeContext.skillSystemPrompt,
-      projectContext.skillSystemPrompt,
+      // 项目内技能目录段（[Project Local Skills Catalog]）随 inject:projectContext
+      // 一起过滤（与规则文件同源，都是 ProjectContextService.discover 的产物）。
+      projectContextDisabled ? undefined : projectContext.skillSystemPrompt,
       capabilityCatalogPrompt,
       imageGenerationContext?.statusPrompt,
-      !capabilityLoadAvailable && imageGenerationContext != null
+      !capabilityLoadAvailable && !platformFilteredByUser && imageGenerationContext != null
         ? IMAGE_GENERATION_GUIDE_PROMPT
         : undefined,
       mediaGenerationContext?.statusPrompt,
-      !capabilityLoadAvailable && mediaGenerationContext != null
+      !capabilityLoadAvailable && !platformFilteredByUser && mediaGenerationContext != null
         ? MEDIA_GENERATION_GUIDE_PROMPT
         : undefined,
       platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
@@ -5033,17 +5103,17 @@ export class SessionService {
       presentFilesMcpServer != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
       toolResultReaderAvailable ? TOOL_RESULT_SYSTEM_PROMPT : undefined,
       quickRepliesMcpServer != null ? QUICK_REPLIES_SYSTEM_PROMPT : undefined,
-      !capabilityLoadAvailable && quickRepliesMcpServer != null
+      !capabilityLoadAvailable && !platformFilteredByUser && quickRepliesMcpServer != null
         ? RENDER_HTML_SYSTEM_PROMPT
         : undefined,
-      !capabilityLoadAvailable && quickRepliesMcpServer != null
+      !capabilityLoadAvailable && !platformFilteredByUser && quickRepliesMcpServer != null
         ? RENDER_DIAGRAM_SYSTEM_PROMPT
         : undefined,
       computerUseMcp?.systemPrompt,
-      !capabilityLoadAvailable && computerUseMcp != null
+      !capabilityLoadAvailable && !platformFilteredByUser && computerUseMcp != null
         ? buildComputerUsePlaybookPrompt()
         : undefined,
-      !capabilityLoadAvailable && browserAutomationMcpServer != null
+      !capabilityLoadAvailable && !platformFilteredByUser && browserAutomationMcpServer != null
         ? BROWSER_AUTOMATION_SYSTEM_PROMPT
         : undefined,
       debugMcpServer != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
@@ -5327,6 +5397,8 @@ export class SessionService {
           ? { skillSystemPrompt: composedSkillSystemPrompt }
           : {}),
         ...(runtimeContext.customEnv != null ? { customEnv: runtimeContext.customEnv } : {}),
+        promptFilterMcpSignature: promptFilterMcpSignature(promptFilterDisabled),
+        projectSettingsEnabled: !projectContextDisabled,
         ...((): { skillPlugins?: string[]; nativeSkills?: string[] | 'all' } => {
           // Claude 原生渐进式披露：以本地插件加载托管技能目录，SDK 注入 name+desc
           // 并提供原生 Skill 工具自主加载完整指令。失败/无插件时回落 skills_load 工具
@@ -5668,6 +5740,7 @@ export class SessionService {
           ? { skillSystemPrompt: composedSkillSystemPrompt }
           : {}),
         ...(runtimeContext.customEnv != null ? { customEnv: runtimeContext.customEnv } : {}),
+        promptFilterMcpSignature: promptFilterMcpSignature(promptFilterDisabled),
         ...(Object.keys(governedSparkMcpServers).length > 0
           ? { mcpServers: governedSparkMcpServers }
           : {}),
@@ -5859,6 +5932,7 @@ export class SessionService {
         ? { skillSystemPrompt: composedSkillSystemPrompt }
         : {}),
       ...(runtimeContext.customEnv != null ? { customEnv: runtimeContext.customEnv } : {}),
+      promptFilterMcpSignature: promptFilterMcpSignature(promptFilterDisabled),
       ...(agentMcpSelection.userServerIds != null
         ? { agentMcpAllowList: agentMcpSelection.userServerIds }
         : {}),
@@ -6598,6 +6672,8 @@ export class SessionService {
         sessionId,
         config.agentMcpSelectionSignature ?? '',
         config.agentSkillFaceSignature ?? '',
+        'rebuild',
+        config.promptFilterMcpSignature ?? '',
       )
     ) {
       config.continueSession = false
@@ -7303,6 +7379,8 @@ export class SessionService {
         sessionId,
         config.agentMcpSelectionSignature ?? '',
         config.agentSkillFaceSignature ?? '',
+        'rebuild',
+        config.promptFilterMcpSignature ?? '',
       )
     ) {
       config.continueSession = false
@@ -10937,6 +11015,9 @@ export class SessionService {
     // 成员生效技能配置（nativeSkills 列表过滤同源用，P4；compose 失败时保持
     // undefined → 回落 'all' 与旧行为一致）。
     let memberSkillConfig: RuntimeSkillConfig | undefined
+    // 提示词注入过滤（member）：compose 失败时保持空集（不过滤，与旧行为一致）。
+    let memberPromptFilterDisabled: ReadonlySet<string> = EMPTY_SOURCE_SET
+    let memberPromptFilterDisabledBuiltinNames: ReadonlySet<string> = EMPTY_SOURCE_SET
     let memberRulesPrompt: string | undefined
     try {
       memberRulesPrompt = buildRuntimeRulesPrompt(
@@ -10982,6 +11063,15 @@ export class SessionService {
         memberCustomEnv = memberRuntimeContext.customEnv
       }
       memberSkillConfig = memberRuntimeContext.skillConfig
+      // 提示词注入过滤（member 路径）：member 的 composeRuntimeContext 已传宿主
+      // sessionId → 纯提示词段（技能目录/env 等）自动继承宿主过滤；MCP 组在此
+      // 显式取同一集合约束成员挂载——成员在宿主会话内执行，「本会话不用浏览器」
+      // 应同样约束成员，语义自洽。
+      memberPromptFilterDisabled =
+        memberRuntimeContext.promptFilter?.effectiveDisabled ?? EMPTY_SOURCE_SET
+      memberPromptFilterDisabledBuiltinNames = extractDisabledBuiltinNames(
+        memberPromptFilterDisabled,
+      )
       // P5：member 生效面并集注册（与 host 的面可能不同，并集防误杀并行成员的
       // 合法加载；host turn 的 reset 注册先于 member 派发发生）。独立保护，
       // 注册失败不牵连技能提示词注入。
@@ -11018,17 +11108,20 @@ export class SessionService {
       // 旧库/精简测试仓储无该 helper 时按无 project scope 处理。
     }
     let memberMemoryBlock: string | undefined
-    try {
-      memberMemoryBlock = await this.loadMemoryBlockForTurn(
-        sessionId,
-        workspaceRootPath,
-        memberWorkspaceId,
-        member,
-      )
-    } catch (err) {
-      log.warn(
-        `Member memory injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
-      )
+    // inject:memory 被宿主会话过滤时成员同样跳过记忆注入（与宿主同口径）。
+    if (!isPromptSourceDisabled(memberPromptFilterDisabled, 'inject:memory')) {
+      try {
+        memberMemoryBlock = await this.loadMemoryBlockForTurn(
+          sessionId,
+          workspaceRootPath,
+          memberWorkspaceId,
+          member,
+        )
+      } catch (err) {
+        log.warn(
+          `Member memory injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
     }
     const hostAgentForPrompt = new AgentRepository(this.db).get(teamConfig.hostAgentId) ?? member
     const memberCanUseNestedTeamTools = teamConfig.allowNesting && memberDepth < teamConfig.maxDepth
@@ -11142,6 +11235,7 @@ export class SessionService {
           'spark_search',
           memberEngineKind,
           memberMcpSelection,
+          memberPromptFilterDisabledBuiltinNames,
         )
           ? await this.getMcpTooling().resolveWebSearchMcpServer(workspaceRootPath)
           : null
@@ -11150,18 +11244,29 @@ export class SessionService {
           'spark_media',
           memberEngineKind,
           memberMcpSelection,
+          memberPromptFilterDisabledBuiltinNames,
         )
           ? await this.getMcpTooling().resolveMediaGenerationContext(workspaceRootPath)
           : null
         const memberImageContext =
           memberMediaContext == null &&
-          shouldMountBuiltinMcp('spark_image', memberEngineKind, memberMcpSelection)
+          shouldMountBuiltinMcp(
+            'spark_image',
+            memberEngineKind,
+            memberMcpSelection,
+            memberPromptFilterDisabledBuiltinNames,
+          )
             ? await this.getMcpTooling().resolveImageGenerationContext(workspaceRootPath)
             : null
         // M-1 回落（成员路径同款）：claude-sdk 成员摘除 spark_platform 的前提是
         // 原生技能兜底可用；插件目录解析失败时强制保留，维持 skills_load 通道。
         const memberPlatformServer =
-          shouldMountBuiltinMcp('spark_platform', memberEngineKind, memberMcpSelection) ||
+          shouldMountBuiltinMcp(
+            'spark_platform',
+            memberEngineKind,
+            memberMcpSelection,
+            memberPromptFilterDisabledBuiltinNames,
+          ) ||
           (memberEngineKind === 'claude-sdk' && this.resolveNativeSkillPlugins() == null)
             ? await this.getMcpTooling().resolvePlatformManagementMcpServer(sessionId)
             : null
@@ -11184,6 +11289,7 @@ export class SessionService {
             'spark_browser',
             memberEngineKind,
             memberMcpSelection,
+            memberPromptFilterDisabledBuiltinNames,
           )
             ? await this.browserAutomationMcpProvider(sessionId, workspaceRootPath)
             : null
@@ -11317,8 +11423,14 @@ export class SessionService {
         // dispatch 完成后可能被抽取更新，放中段会让 member system 从中部开始前缀
         // 作废、抵消续会话收益；后置后记忆变化只影响尾部。
         memberMemoryBlock,
-        memberMcpServers.spark_memory != null ? MEMORY_BEHAVIOR_SYSTEM_PROMPT : undefined,
-        memberMcpServers.spark_memory != null ? MEMORY_PROVENANCE_SYSTEM_PROMPT : undefined,
+        !isPromptSourceDisabled(memberPromptFilterDisabled, 'inject:memory') &&
+        memberMcpServers.spark_memory != null
+          ? MEMORY_BEHAVIOR_SYSTEM_PROMPT
+          : undefined,
+        !isPromptSourceDisabled(memberPromptFilterDisabled, 'inject:memory') &&
+        memberMcpServers.spark_memory != null
+          ? MEMORY_PROVENANCE_SYSTEM_PROMPT
+          : undefined,
       ) ?? ''
 
     const sdkConfig: SDKExecutorConfig = {
@@ -11346,6 +11458,11 @@ export class SessionService {
         ? { skillSystemPrompt: memberSkillSystemPrompt }
         : {}),
       ...(memberCustomEnv != null ? { customEnv: memberCustomEnv } : {}),
+      promptFilterMcpSignature: promptFilterMcpSignature(memberPromptFilterDisabled),
+      projectSettingsEnabled: !isPromptSourceDisabled(
+        memberPromptFilterDisabled,
+        'inject:projectContext',
+      ),
       ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
       ...(memberCodexRuntimeLeaseKey != null
         ? this.codexRuntimeMcpResources.buildConfig([memberTeamServer])
@@ -11428,6 +11545,7 @@ export class SessionService {
           agentMcpSelectionSignature(member.mcpServerIds),
           memberSkillConfig != null ? buildSkillFaceSignature(memberSkillConfig) : '',
           'continue',
+          promptFilterMcpSignature(memberPromptFilterDisabled),
         ),
       ...(memberCodexRuntimeLeaseKey != null && stableMemberSessionId != null
         ? buildPersistentCodexAppServerConfig({

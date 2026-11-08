@@ -9,6 +9,7 @@ import { Icons } from '../../Icons'
 import { translate, useI18n } from '../../i18n'
 import { TeamInspectorSection } from '../../components/TeamInspectorSection'
 import { ProjectAgentScopeSection } from '../../components/ProjectAgentScopeSection'
+import { PromptInjectionFilterSection } from './PromptInjectionFilterSection'
 import { ChatInspectorPerf } from './ChatInspectorPerf'
 import { OutcomeRoomContainer } from '../../outcome-room/OutcomeRoomContainer'
 import { InspectorCollapsibleSection } from '../../components/InspectorCollapsibleSection'
@@ -644,6 +645,11 @@ export function ChatConfigPanel({
               </>
             )}
           </div>
+        )}
+
+        {/* 提示词注入过滤（项目级 + 会话级） */}
+        {hasChatConfigScope(sessionId, workspaceId) && (
+          <PromptInjectionFilterSection sessionId={sessionId} workspaceId={workspaceId} />
         )}
 
         {/* 项目 Agent：项目内新会话默认绑定 + 聊天选择器白名单 */}
