@@ -2,7 +2,7 @@
  * claude-sdk 原生技能列表过滤（缝隙 a 修复，P4）。
  *
  * 背景：主会话与成员路径原本对托管插件目录传 `nativeSkills: 'all'`，绕过 agent
- * 技能白名单。Claude Agent SDK（0.3.287+）的 `skills: string[]` 选项原生支持
+ * 技能白名单。Claude Agent SDK（0.3.319+）的 `skills: string[]` 选项原生支持
  * 列表过滤——未列出的技能「hidden from the model's listing and rejected by the
  * Skill tool」，因此传列表即可同时获得目录收敛与工具硬拒绝，无需为每个
  * agent 物化独立插件目录（计划 7.5）。
