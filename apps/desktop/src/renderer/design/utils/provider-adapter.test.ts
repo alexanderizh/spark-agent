@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { ProviderProfile } from '@spark/protocol'
-import { getProviderAdapterKind, isProviderCompatibleWithAdapter } from './provider-adapter'
+import {
+  findCompatibleProviderById,
+  getProviderAdapterKind,
+  isProviderCompatibleWithAdapter,
+} from './provider-adapter'
 
 /**
  * AutoRouter 行的引擎推断（P7 回归）。
@@ -111,5 +115,26 @@ describe('isProviderCompatibleWithAdapter', () => {
     expect(isProviderCompatibleWithAdapter(embeddingProvider, 'claude-sdk')).toBe(false)
     expect(isProviderCompatibleWithAdapter(embeddingProvider, 'codex')).toBe(false)
     expect(isProviderCompatibleWithAdapter(embeddingProvider, 'spark')).toBe(false)
+  })
+})
+
+describe('findCompatibleProviderById', () => {
+  it('returns the requested provider only when it is compatible with the adapter', () => {
+    const anthropicProvider = profile({ id: 'anthropic', name: 'Anthropic' })
+    const openAIProvider = profile({
+      id: 'openai',
+      name: 'OpenAI',
+      provider: 'openai',
+    })
+
+    expect(findCompatibleProviderById([anthropicProvider, openAIProvider], 'openai', 'codex')).toBe(
+      openAIProvider,
+    )
+    expect(
+      findCompatibleProviderById([anthropicProvider, openAIProvider], 'anthropic', 'codex'),
+    ).toBeUndefined()
+    expect(findCompatibleProviderById([anthropicProvider, openAIProvider], null, 'codex')).toBe(
+      undefined,
+    )
   })
 })

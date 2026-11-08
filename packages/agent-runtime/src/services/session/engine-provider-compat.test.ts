@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { assertEngineProviderCompatible } from './session-pure-utils.js'
 import {
-  assertEngineProviderCompatible,
   isConversationalProviderRow,
   isEngineProviderCompatible,
   pickMemberProviderFallbackRow,
-} from './session-pure-utils.js'
+  resolveIncompatibleMemberInheritedProviderRow,
+} from './member-provider-compat.js'
 import type { ProviderProfileRow } from '@spark/storage'
 
 function providerRow(overrides: Partial<ProviderProfileRow>): ProviderProfileRow {
@@ -144,5 +145,32 @@ describe('pickMemberProviderFallbackRow', () => {
     const rows = [providerRow({ id: 'openai-1', provider_type: 'openai' })]
     expect(pickMemberProviderFallbackRow(rows, 'claude-sdk')).toBeNull()
     expect(pickMemberProviderFallbackRow([], 'codex')).toBeNull()
+  })
+})
+
+describe('resolveIncompatibleMemberInheritedProviderRow', () => {
+  it('returns the compatible fallback provider', () => {
+    const inheritedProvider = providerRow({ id: 'anthropic', provider_type: 'anthropic' })
+    const fallbackProvider = providerRow({ id: 'openai', provider_type: 'openai' })
+    expect(
+      resolveIncompatibleMemberInheritedProviderRow({
+        inheritedProvider,
+        rows: [inheritedProvider, fallbackProvider],
+        adapterKind: 'codex',
+        memberName: 'worker',
+      }),
+    ).toBe(fallbackProvider)
+  })
+
+  it('explains how to recover when no compatible provider exists', () => {
+    const inheritedProvider = providerRow({ id: 'anthropic', provider_type: 'anthropic' })
+    expect(() =>
+      resolveIncompatibleMemberInheritedProviderRow({
+        inheritedProvider,
+        rows: [inheritedProvider],
+        adapterKind: 'codex',
+        memberName: 'worker',
+      }),
+    ).toThrowError(/worker.*继承的会话渠道.*没有可用的兼容渠道/)
   })
 })

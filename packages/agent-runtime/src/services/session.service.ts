@@ -330,8 +330,6 @@ import {
   getProviderUseSparkExecutor,
   assertModelNotScheduledBlocked,
   assertEngineProviderCompatible,
-  isEngineProviderCompatible,
-  pickMemberProviderFallbackRow,
   readSessionTeamConfig,
   resolveOrchestrationSource,
   resolveAutoRouterWorkerBinding,
@@ -343,6 +341,10 @@ import {
   withAgentSnapshot,
   resolveLegacyRouterFallbackProviderRow,
 } from './session/session-pure-utils.js'
+import {
+  isEngineProviderCompatible,
+  resolveIncompatibleMemberInheritedProviderRow,
+} from './session/member-provider-compat.js'
 import type { SessionRuntimePatch, WorktreePromptMeta } from './session/session-pure-utils.js'
 import {
   applySessionRuntimePatch,
@@ -10762,21 +10764,21 @@ export class SessionService {
           providerType: provider.provider_type,
         })
       ) {
-        const fallbackRow = pickMemberProviderFallbackRow(providerRepo.listAll(), memberEngineKind)
+        const inheritedProvider = provider
+        provider = resolveIncompatibleMemberInheritedProviderRow({
+          inheritedProvider,
+          rows: providerRepo.listAll(),
+          adapterKind: memberEngineKind,
+          memberName: member.name,
+        })
         log.warn('member inherited provider incompatible with member engine, falling back', {
           sessionId,
           turnId,
           memberId: member.id,
           inheritedProviderId: providerProfileId,
-          fallbackProviderId: fallbackRow?.id ?? null,
+          fallbackProviderId: provider.id,
         })
-        if (fallbackRow == null) {
-          throw new Error(
-            `成员「${member.name}」的引擎（${memberEngineKind}）与继承的会话渠道「${provider.name}」协议不兼容，且没有可用的兼容渠道。请在 Agent 管理中为该成员配置模型，或先在渠道管理中添加对应协议的渠道。`,
-          )
-        }
-        providerProfileId = fallbackRow.id
-        provider = fallbackRow
+        providerProfileId = provider.id
       }
       if (provider.provider_type === AUTO_ROUTER_PROVIDER_TYPE) {
         const memberOutcome = await this.routeAutoRouterTurn({

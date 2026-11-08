@@ -50,6 +50,18 @@ export function isProviderCompatibleWithAdapter(
     : provider.provider !== 'anthropic'
 }
 
+export function findCompatibleProviderById(
+  providers: ProviderProfile[],
+  providerId: string | null | undefined,
+  adapter: SessionAgentAdapter,
+): ProviderProfile | undefined {
+  if (providerId == null) return undefined
+  return providers.find(
+    (provider) =>
+      provider.id === providerId && isProviderCompatibleWithAdapter(provider, adapter),
+  )
+}
+
 export function getProviderAdapterKind(provider: ProviderProfile): SessionAgentAdapter {
   if (isLocalCodexCliProvider(provider)) return 'codex'
   // AutoRouter 行是按强度分流到多个执行器渠道的元渠道，自身没有可用协议推断引擎

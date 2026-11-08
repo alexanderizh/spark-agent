@@ -40,13 +40,13 @@ import {
 import { canReuseComposerSession, canShowComposerWorktreeToggle } from '../chat-session-routing'
 import { resolveComposerRunningAgentIds } from '../../services/composer-working-state'
 import {
+  findCompatibleProviderById,
   getPreferredProviderForAdapter,
   getPreferredProviderWithAdapterFallback,
   getProviderAdapterKind,
   getCliSparkOverrideProviders,
   isCliSparkConversationProvider,
   isClaudeAdapter,
-  isProviderCompatibleWithAdapter,
 } from '../../utils/provider-adapter'
 import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../../avatar'
 import { countExistingMembers } from '../../teamMembership'
@@ -3981,15 +3981,7 @@ export function ComposerV2({
 
     const provider =
       providers.find((item) => item.id === agent.providerProfileId) ??
-      providers.find(
-        (item) =>
-          item.id === session?.providerProfileId &&
-          // 继承会话遗留渠道前校验引擎×协议兼容：团队模式会隐藏会话级模型选择器，
-          // 不兼容组合一旦物化（如 codex 引擎会话绑着 OpenAI 渠道，或反向），turn
-          // 起点硬校验会拒绝执行且用户无从自救。不兼容则跳过继承，落到按引擎
-          // 过滤的兜底（getPreferredProvider 内部含 isDefault/本地 CLI 回退）。
-          isProviderCompatibleWithAdapter(item, agent.agentAdapter),
-      ) ??
+      findCompatibleProviderById(providers, session?.providerProfileId, agent.agentAdapter) ??
       getPreferredProvider(
         providers,
         { ...readComposerPrefs(), agentId: agent.id },
