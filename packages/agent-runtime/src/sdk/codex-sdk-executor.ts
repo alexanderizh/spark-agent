@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { withCodexHome } from './codex-home.js'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { delimiter, dirname, join } from 'node:path'
@@ -140,7 +141,7 @@ export class CodexSdkExecutor implements EngineExecutor {
     userMessage: string,
     config: SDKExecutorConfig,
   ): Promise<void> {
-    const effectiveConfig = await withCodexModelCatalog(config)
+    const effectiveConfig = await withCodexModelCatalog(await withCodexHome(config))
     const makeBase = (): EventBase => ({
       id: randomUUID(),
       sessionId,
@@ -155,7 +156,11 @@ export class CodexSdkExecutor implements EngineExecutor {
     const input = buildCodexSdkInput(prompt, effectiveConfig.attachments)
     const controller = new AbortController()
     const streamTerminalizer = new StreamTerminalizer()
-    const skillIsolation = resolveCodexSkillIsolation(effectiveConfig.workspaceRootPath)
+    const skillIsolation = resolveCodexSkillIsolation(effectiveConfig.workspaceRootPath, {
+      ...process.env,
+      ...effectiveConfig.codexCliProvider?.env,
+      ...effectiveConfig.customEnv,
+    })
     this.abortController = controller
     this.streamTerminalizer = streamTerminalizer
 

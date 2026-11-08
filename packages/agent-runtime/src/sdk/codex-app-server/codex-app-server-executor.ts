@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { resolveCodexHome, withCodexHome } from '../codex-home.js'
 import type { AgentEvent, TurnRuntimeMetrics } from '@spark/protocol'
 import {
   createLogger,
@@ -320,8 +321,12 @@ export class CodexAppServerExecutor
     config: SDKExecutorConfig,
   ): Promise<void> {
     this.cancelRequested = false
-    const effectiveConfig = await withCodexModelCatalog(config)
-    const skillIsolation = resolveCodexSkillIsolation(effectiveConfig.workspaceRootPath)
+    const effectiveConfig = await withCodexModelCatalog(await withCodexHome(config))
+    const skillIsolation = resolveCodexSkillIsolation(effectiveConfig.workspaceRootPath, {
+      ...process.env,
+      ...effectiveConfig.codexCliProvider?.env,
+      ...effectiveConfig.customEnv,
+    })
     // 图片附件走 Sdk 载具：app-server 的 UserInput 图片变体（url）与 exec 的
     // local_image（本地路径）语义不同，Phase 1 不冒险，文本 turn 才走流式新路径。
     if (turnHasImageAttachments(effectiveConfig.attachments)) {
@@ -651,7 +656,10 @@ export class CodexAppServerExecutor
       executablePath = bundled.executablePath
       pathDirs = bundled.pathDirs
     }
-    const env = this.options.env ?? buildAppServerEnv(config, pathDirs)
+    const env = {
+      ...(this.options.env ?? buildAppServerEnv(config, pathDirs)),
+      CODEX_HOME: resolveCodexHome(config),
+    }
     const runtimeArgs = buildCodexAppServerArgs(this.options.args, config.codexModelCatalogPath)
     const runtimeFingerprint = createCodexAppServerRuntimeFingerprint({
       executablePath,

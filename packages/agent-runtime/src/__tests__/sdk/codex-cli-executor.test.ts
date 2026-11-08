@@ -161,7 +161,9 @@ function makeConfig(overrides: Partial<SDKExecutorConfig> = {}): SDKExecutorConf
 function readSpawnProfileConfig(args: string[]): string {
   const profileName = args[args.indexOf('-p') + 1]
   if (profileName == null) return ''
-  return readFileSync(path.join(codexHome, `${profileName}.config.toml`), 'utf8')
+  const spawnOptions = spawnMock.mock.calls.at(-1)?.[2] as { env?: NodeJS.ProcessEnv } | undefined
+  const spawnHome = spawnOptions?.env?.CODEX_HOME ?? codexHome
+  return readFileSync(path.join(spawnHome, `${profileName}.config.toml`), 'utf8')
 }
 
 function captureSpawnProfileConfig(args: string[]): void {
@@ -173,11 +175,13 @@ describe('CodexCliExecutor', () => {
     previousCodexHome = process.env.CODEX_HOME
     codexHome = mkdtempSync(path.join(tmpdir(), 'spark-codex-test-'))
     process.env.CODEX_HOME = codexHome
+    vi.stubEnv('SPARK_CODEX_HOME', path.join(codexHome, 'spark-runtime'))
     lastProfileConfig = ''
     spawnMock.mockReset()
   })
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     if (previousCodexHome === undefined) {
       delete process.env.CODEX_HOME
     } else {
@@ -724,6 +728,8 @@ describe('CodexCliExecutor', () => {
       (_command: string, args: string[], options: { env?: Record<string, string> }) => {
         const child = new MockChildProcess(args)
         expect(options.env?.SPARK_CODEX_API_KEY_TEST).toBe('sk-third-party')
+        expect(options.env?.CODEX_HOME).toBe(path.join(codexHome, 'spark-runtime'))
+        expect(process.env.CODEX_HOME).toBe(codexHome)
         return child
       },
     )

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { delimiter, join, sep } from 'node:path'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
 import {
   CodexRuntimeNotInstalledError,
@@ -49,12 +49,20 @@ function makeConfig(overrides: Partial<SDKExecutorConfig> = {}): SDKExecutorConf
 }
 
 describe('CodexSdkExecutor', () => {
+  let runtimeHome: string
   beforeEach(() => {
+    runtimeHome = mkdtempSync(join(tmpdir(), 'codex-sdk-home-'))
+    vi.stubEnv('SPARK_CODEX_HOME', runtimeHome)
     codexCtor.mockClear()
     startThread.mockReset()
     resumeThread.mockReset()
     runStreamed.mockReset()
     startThread.mockReturnValue({ runStreamed })
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    rmSync(runtimeHome, { recursive: true, force: true })
   })
 
   it('uses an actionable error code when the managed Codex runtime is missing', () => {
@@ -597,6 +605,7 @@ describe('CodexSdkExecutor', () => {
         }),
         env: expect.objectContaining({
           SPARK_CODEX_API_KEY_PROVIDER: 'sk-third-party',
+          CODEX_HOME: runtimeHome,
         }),
       }),
     )

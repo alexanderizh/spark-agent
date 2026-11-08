@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import path from 'node:path'
 import { createLogger } from '@spark/shared'
 import { compareRuntimeVersions, resolveManagedCodexCli } from './codex-runtime.js'
 import type { SDKExecutorConfig } from './types.js'
+import { resolveCodexHome } from './codex-home.js'
 
 const log = createLogger('codex-model-catalog')
 
@@ -73,8 +73,7 @@ export async function ensureCodexModelCatalog(params: {
     return null
   }
 
-  const codexHome =
-    params.codexHome?.trim() || process.env.CODEX_HOME?.trim() || path.join(homedir(), '.codex')
+  const codexHome = params.codexHome?.trim() || resolveCodexHome({})
   const sourceCatalog = await readSourceCatalog(path.join(codexHome, 'models_cache.json'))
   const catalog = createCodexModelCatalog({
     model,
@@ -249,15 +248,6 @@ function isCatalogModel(value: unknown): value is CatalogModel {
 
 function cloneRecord(value: CatalogModel): CatalogModel {
   return JSON.parse(JSON.stringify(value)) as CatalogModel
-}
-
-export function resolveCodexHome(config: SDKExecutorConfig): string {
-  const candidates = [config.customEnv?.CODEX_HOME, config.codexCliProvider?.env?.CODEX_HOME]
-  return (
-    candidates.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim() ||
-    process.env.CODEX_HOME?.trim() ||
-    path.join(homedir(), '.codex')
-  )
 }
 
 function createFallbackModel(model: string): CatalogModel {

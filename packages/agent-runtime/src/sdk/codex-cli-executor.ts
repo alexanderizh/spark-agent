@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { resolveCodexHome, withCodexHome } from './codex-home.js'
 import type { AgentEvent } from '@spark/protocol'
 import {
   estimateTokens,
@@ -34,11 +35,7 @@ import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { EngineExecutor } from './engine-executor.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 import { buildDefaultGitChildEnvironment } from '../services/git-command.service.js'
-import {
-  resolveActiveCodexRuntimeVersion,
-  resolveCodexHome,
-  withCodexModelCatalog,
-} from './codex-model-catalog.js'
+import { resolveActiveCodexRuntimeVersion, withCodexModelCatalog } from './codex-model-catalog.js'
 import { diagnoseCodexModelCatalogFailure } from './codex-model-catalog-diagnostics.js'
 
 type Listener = (event: AgentEvent) => void
@@ -107,8 +104,12 @@ export class CodexCliExecutor implements EngineExecutor {
     config: SDKExecutorConfig,
   ): Promise<void> {
     this.cancelled = false
-    const effectiveConfig = await withCodexModelCatalog(config)
-    const skillIsolation = resolveCodexSkillIsolation(effectiveConfig.workspaceRootPath)
+    const effectiveConfig = await withCodexModelCatalog(await withCodexHome(config))
+    const skillIsolation = resolveCodexSkillIsolation(effectiveConfig.workspaceRootPath, {
+      ...process.env,
+      ...effectiveConfig.codexCliProvider?.env,
+      ...effectiveConfig.customEnv,
+    })
     const tempDir = await mkdtemp(path.join(tmpdir(), 'spark-codex-'))
     if (this.cancelled) {
       await rm(tempDir, { recursive: true, force: true }).catch(() => undefined)

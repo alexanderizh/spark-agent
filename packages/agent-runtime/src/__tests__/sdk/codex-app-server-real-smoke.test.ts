@@ -1,11 +1,12 @@
 import { createServer, type Server } from 'node:http'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { AgentEvent, TurnRuntimeMetrics } from '@spark/protocol'
 import { CodexAppServerExecutor } from '../../sdk/codex-app-server/codex-app-server-executor.js'
 import { CodexAppServerRuntimeSupervisor } from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
+import { CodexSdkExecutor } from '../../sdk/codex-sdk-executor.js'
 import { resolveManagedCodexCli } from '../../sdk/codex-runtime.js'
 import type { SDKExecutorConfig } from '../../sdk/types.js'
 
@@ -144,12 +145,17 @@ describe.skipIf(!RUN_SMOKE || SMOKE_EXECUTABLE_PATH == null)(
     let mock: { server: Server; port: number }
     let codexHome: string
     let previousCodexHome: string | undefined
+    let previousSparkCodexHome: string | undefined
+    let runtimeHome: string
     let previousApiKey: string | undefined
 
     beforeAll(async () => {
       mock = await startMockResponsesServer()
       codexHome = await mkdtemp(join(tmpdir(), 'codex-as-smoke-home-'))
       previousCodexHome = process.env.CODEX_HOME
+      previousSparkCodexHome = process.env.SPARK_CODEX_HOME
+      runtimeHome = join(codexHome, 'spark-runtime')
+      process.env.SPARK_CODEX_HOME = runtimeHome
       previousApiKey = process.env.MOCK_API_KEY
       process.env.CODEX_HOME = codexHome
       process.env.MOCK_API_KEY = 'smoke-test-key'
@@ -158,6 +164,8 @@ describe.skipIf(!RUN_SMOKE || SMOKE_EXECUTABLE_PATH == null)(
     afterAll(async () => {
       if (previousCodexHome === undefined) delete process.env.CODEX_HOME
       else process.env.CODEX_HOME = previousCodexHome
+      if (previousSparkCodexHome === undefined) delete process.env.SPARK_CODEX_HOME
+      else process.env.SPARK_CODEX_HOME = previousSparkCodexHome
       if (previousApiKey === undefined) delete process.env.MOCK_API_KEY
       else process.env.MOCK_API_KEY = previousApiKey
       await new Promise<void>((resolve) => mock.server.close(() => resolve()))
@@ -187,6 +195,12 @@ describe.skipIf(!RUN_SMOKE || SMOKE_EXECUTABLE_PATH == null)(
       }
       const executor = new CodexAppServerExecutor({
         executablePath: executablePath ?? process.execPath,
+        // Explicit transport env must not accidentally restore the host home.
+        env: Object.fromEntries(
+          Object.entries(process.env).filter(
+            (entry): entry is [string, string] => entry[1] != null,
+          ),
+        ),
         handshakeTimeoutMs: 20_000,
       })
       const events: AgentEvent[] = []
@@ -228,6 +242,65 @@ describe.skipIf(!RUN_SMOKE || SMOKE_EXECUTABLE_PATH == null)(
       )
       const statuses = events.filter((event) => event.type === 'agent_status')
       expect(statuses.at(-1)).toMatchObject({ status: 'completed' })
+      const runtimeFiles = await readdir(runtimeHome, { recursive: true })
+      expect(runtimeFiles.some((name) => name.endsWith('.jsonl'))).toBe(true)
+      expect(await readdir(codexHome)).toEqual(['spark-runtime'])
+    }, 90_000)
+
+    it('SDK 旧会话只复制指定 rollout，隔离后可真实续接且不触碰宿主认证', async () => {
+      const provider: SDKExecutorConfig = {
+        apiKey: 'smoke-test-key',
+        model: 'mock-gpt',
+        permissionMode: 'codex-default',
+        workspaceRootPath: tmpdir(),
+        codexCliProvider: {
+          id: 'mocksmoke',
+          wireApi: 'responses',
+          name: 'Mock Smoke Provider',
+          baseUrl: `http://127.0.0.1:${mock.port}/v1`,
+          envKey: 'MOCK_API_KEY',
+        },
+      }
+      const authPath = join(codexHome, 'auth.json')
+      // Valid file credential sentinel; the custom provider must still use MOCK_API_KEY.
+      await writeFile(authPath, '{"OPENAI_API_KEY":"host-auth-must-stay-unchanged"}')
+      const originalAuth = await readFile(authPath, 'utf8')
+      const legacyEvents: AgentEvent[] = []
+      const legacy = new CodexSdkExecutor()
+      legacy.onEvent((event) => legacyEvents.push(event))
+      await legacy.executeTurn('smoke-sdk', 'legacy-turn', 'say hi', {
+        ...provider,
+        customEnv: { CODEX_HOME: codexHome },
+      })
+      expect(legacyEvents.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+      const started = legacyEvents.find(
+        (event) =>
+          event.type === 'agent_status' && event.message?.startsWith('Codex SDK thread started: '),
+      )
+      const threadId =
+        started?.type === 'agent_status'
+          ? started.message?.replace('Codex SDK thread started: ', '')
+          : undefined
+      if (threadId == null) throw new Error('native SDK thread was not started')
+      const resumedEvents: AgentEvent[] = []
+      const resumed = new CodexSdkExecutor()
+      resumed.onEvent((event) => resumedEvents.push(event))
+      await resumed.executeTurn('smoke-sdk', 'resume-turn', 'say hi again', {
+        ...provider,
+        continueSession: true,
+        sdkSessionId: threadId,
+      })
+      expect(resumedEvents.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+      expect(resumedEvents).toContainEqual(
+        expect.objectContaining({
+          type: 'agent_status',
+          message: `Codex SDK thread started: ${threadId}`,
+        }),
+      )
+      const files = await readdir(runtimeHome, { recursive: true })
+      expect(files.some((name) => name.endsWith(`-${threadId}.jsonl`))).toBe(true)
+      expect(files).not.toContain('auth.json')
+      expect(await readFile(authPath, 'utf8')).toBe(originalAuth)
     }, 90_000)
 
     it('发布基线：真实 App Server 连续两轮复用进程并满足资源与暖启动目标', async () => {
