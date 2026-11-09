@@ -48,6 +48,7 @@ import {
   resolveBundledCodexCli,
   stringifyEnv,
 } from '../codex-sdk-executor.js'
+import { buildCodexModelProviderLaunchItems } from '../codex-cli-executor.js'
 import type {
   CodexNativeThreadBinding,
   SDKApprovalResult,
@@ -660,7 +661,11 @@ export class CodexAppServerExecutor
       ...(this.options.env ?? buildAppServerEnv(config, pathDirs)),
       CODEX_HOME: resolveCodexHome(config),
     }
-    const runtimeArgs = buildCodexAppServerArgs(this.options.args, config.codexModelCatalogPath)
+    const runtimeArgs = buildCodexAppServerArgs(
+      this.options.args,
+      config.codexModelCatalogPath,
+      config.codexCliProvider,
+    )
     const runtimeFingerprint = createCodexAppServerRuntimeFingerprint({
       executablePath,
       args: runtimeArgs,
@@ -1482,18 +1487,29 @@ function buildAppServerThreadParams(
 export function buildCodexAppServerArgs(
   args: readonly string[] | undefined,
   modelCatalogPath: string | undefined,
+  provider?: SDKExecutorConfig['codexCliProvider'],
 ): string[] | undefined {
-  if (modelCatalogPath == null || modelCatalogPath.trim().length === 0) {
+  const configItems: string[] = []
+  if (modelCatalogPath != null && modelCatalogPath.trim().length > 0) {
+    configItems.push(`model_catalog_json=${JSON.stringify(modelCatalogPath)}`)
+  }
+  // codex ≥ 0.161 的 provider 准入按进程级「当前 provider 选择」校验（openai/codex#57840），
+  // 隔离 home 的 config.toml 不含渠道定义，必须以启动覆盖注入，否则 turn/start 被
+  // ModelProviderMismatch（-32600）拒绝。详见 buildCodexModelProviderLaunchItems 注释。
+  if (provider != null) {
+    configItems.push(...buildCodexModelProviderLaunchItems(provider))
+  }
+  if (configItems.length === 0) {
     return args == null ? undefined : [...args]
   }
   // 测试替身和受管调用方可能传入自定义 argv；只有 Codex 的 app-server
   // 入口接受 `-c`，不要把配置参数误追加到其他可执行文件的参数中。
   if (args != null && args[0] !== 'app-server') return [...args]
-  return [
-    ...(args == null ? ['app-server'] : args),
-    '-c',
-    `model_catalog_json=${JSON.stringify(modelCatalogPath)}`,
-  ]
+  const result = [...(args == null ? ['app-server'] : args)]
+  for (const item of configItems) {
+    result.push('-c', item)
+  }
+  return result
 }
 
 /**

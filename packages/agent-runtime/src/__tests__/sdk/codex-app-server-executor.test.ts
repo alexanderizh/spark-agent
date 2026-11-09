@@ -176,6 +176,55 @@ describe('CodexAppServerExecutor', () => {
     ])
   })
 
+  it('自定义渠道以 -c 启动覆盖注入 model_provider（codex≥0.161 准入校验），无渠道时保持原样', () => {
+    const catalogPath = '/tmp/spark-model-catalog.json'
+    const provider = {
+      id: 'spark_73183ba2-bc58-4ba9-a215-8fe342c057cc',
+      name: 'GLM Coding',
+      wireApi: 'chat' as const,
+      baseUrl: 'https://glm.example.com/v1/',
+      envKey: 'SPARK_CODEX_API_KEY_73183BA2_BC58_4BA9_A215_8FE342C057CC',
+      env: {},
+    }
+    // 有渠道：catalog 项 + provider 项逐个以 -c 成对追加
+    expect(buildCodexAppServerArgs(undefined, catalogPath, provider)).toEqual([
+      'app-server',
+      '-c',
+      `model_catalog_json=${JSON.stringify(catalogPath)}`,
+      '-c',
+      `model_provider='spark_73183ba2-bc58-4ba9-a215-8fe342c057cc'`,
+      '-c',
+      `model_providers.spark_73183ba2-bc58-4ba9-a215-8fe342c057cc.wire_api='chat'`,
+      '-c',
+      `model_providers.spark_73183ba2-bc58-4ba9-a215-8fe342c057cc.name='GLM Coding'`,
+      '-c',
+      `model_providers.spark_73183ba2-bc58-4ba9-a215-8fe342c057cc.base_url='https://glm.example.com/v1'`,
+      '-c',
+      `model_providers.spark_73183ba2-bc58-4ba9-a215-8fe342c057cc.env_key='SPARK_CODEX_API_KEY_73183BA2_BC58_4BA9_A215_8FE342C057CC'`,
+    ])
+    // 有渠道但无 catalog：仍要返回 app-server + provider 覆盖
+    expect(buildCodexAppServerArgs(undefined, undefined, provider)).toEqual([
+      'app-server',
+      '-c',
+      `model_provider='spark_73183ba2-bc58-4ba9-a215-8fe342c057cc'`,
+      '-c',
+      `model_providers.spark_73183ba2-bc58-4ba9-a215-8fe342c057cc.wire_api='chat'`,
+      '-c',
+      `model_providers.spark_73183ba2-bc58-4ba9-a215-8fe342c057cc.name='GLM Coding'`,
+      '-c',
+      `model_providers.spark_73183ba2-bc58-4ba9-a215-8fe342c057cc.base_url='https://glm.example.com/v1'`,
+      '-c',
+      `model_providers.spark_73183ba2-bc58-4ba9-a215-8fe342c057cc.env_key='SPARK_CODEX_API_KEY_73183BA2_BC58_4BA9_A215_8FE342C057CC'`,
+    ])
+    // 无渠道：行为与旧版完全一致（undefined 入参 → undefined）
+    expect(buildCodexAppServerArgs(undefined, undefined)).toBeUndefined()
+    // 测试替身 argv 不被追加
+    expect(buildCodexAppServerArgs([FIXTURE, 'scenario.json'], catalogPath, provider)).toEqual([
+      FIXTURE,
+      'scenario.json',
+    ])
+  })
+
   it('token 级流式：delta 逐条投递，segmentId 沿用 codex-sdk 约定，终态齐全', async () => {
     const { events, error } = await runScenario({
       steps: [

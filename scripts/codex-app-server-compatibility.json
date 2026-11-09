@@ -31,7 +31,7 @@
     {
       "version": "0.167.0",
       "support": "locked",
-      "evidence": "2026-11-09 check:codex-protocol passed against installed 0.167.0 CLI via app-server generate-ts: every required request/notification/turn-start field/thread field/sandbox variant still present, no drift reported."
+      "evidence": "2026-11-09 check:codex-protocol passed against installed 0.167.0 CLI via app-server generate-ts: every required request/notification/turn-start field/thread field/sandbox variant still present, no drift reported. 2026-11-10: 0.167 引入 provider 准入校验（openai/codex#57840，turn/start 按进程级当前 provider 比对会话 provider，per-request config 覆盖不参与），自定义渠道必须以 spawn `-c` 启动覆盖注入 model_provider（buildCodexModelProviderLaunchItems），否则隔离 home 下报 -32600 modelProviderMismatch；已用原始协议探针复现并验证修复，0.144.5/0.160.0/0.167.0 三版本真实冒烟（流式/续接/发布基线）3/3 通过。"
     }
   ],
   "requiredRequests": [

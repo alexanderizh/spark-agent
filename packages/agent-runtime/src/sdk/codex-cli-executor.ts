@@ -608,24 +608,42 @@ function buildCodexProfileConfigItems(
 function buildCodexModelProviderConfigArgs(config: SDKExecutorConfig): string[] {
   const provider = config.codexCliProvider
   if (provider == null) return []
-  const id = sanitizeConfigKey(provider.id)
-  const result = [
+  return [
     ...(config.model.trim().length > 0 ? [`model=${tomlString(config.model.trim())}`] : []),
+    ...buildCodexModelProviderLaunchItems(provider),
+  ]
+}
+
+/**
+ * 自定义 OpenAI 协议渠道的进程级 `-c` 启动覆盖项（model_provider 选择 + provider 定义）。
+ * CLI 载具（profile config.toml）与 app-server 载具（spawn `-c`）共用。
+ *
+ * codex ≥ 0.161 的 provider 准入校验（openai/codex#57840）在 resume 与 turn/start 输入
+ * 准入时按「当前 provider 选择（config.toml + profiles + 启动覆盖）」比对会话保存的
+ * provider；per-request 的 config 覆盖不参与该校验，因此渠道必须以启动覆盖形式落到
+ * 进程级配置，否则隔离 home 下当前 provider 会落到内置 `openai`，触发
+ * `ModelProviderMismatch`（-32600）。env_key 仅是环境变量名，密钥本体始终经进程 env 注入。
+ */
+export function buildCodexModelProviderLaunchItems(
+  provider: NonNullable<SDKExecutorConfig['codexCliProvider']>,
+): string[] {
+  const id = sanitizeConfigKey(provider.id)
+  const items = [
     `model_provider=${tomlString(id)}`,
     `model_providers.${id}.wire_api=${tomlString(provider.wireApi)}`,
   ]
   if (provider.name != null && provider.name.trim().length > 0) {
-    result.push(`model_providers.${id}.name=${tomlString(provider.name.trim())}`)
+    items.push(`model_providers.${id}.name=${tomlString(provider.name.trim())}`)
   }
   if (provider.baseUrl != null && provider.baseUrl.trim().length > 0) {
-    result.push(
+    items.push(
       `model_providers.${id}.base_url=${tomlString(provider.baseUrl.trim().replace(/\/+$/, ''))}`,
     )
   }
   if (provider.envKey != null && provider.envKey.trim().length > 0) {
-    result.push(`model_providers.${id}.env_key=${tomlString(provider.envKey.trim())}`)
+    items.push(`model_providers.${id}.env_key=${tomlString(provider.envKey.trim())}`)
   }
-  return result
+  return items
 }
 
 /**
