@@ -47,6 +47,7 @@ import {
   getCliSparkOverrideProviders,
   isCliSparkConversationProvider,
   isClaudeAdapter,
+  isProviderCompatibleWithAdapter,
 } from '../../utils/provider-adapter'
 import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../../avatar'
 import { countExistingMembers } from '../../teamMembership'
