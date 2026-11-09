@@ -36,6 +36,7 @@ import {
 } from '../../utils/sidebar-order'
 import type { BridgeCatalog, BridgeSessionSummary, BridgeSidebarOrderState } from '../../api/bridge'
 import { StorageKeys, getItem, setItem } from '../../utils/storage'
+import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
 
 type StatusFilter = 'all' | 'running' | 'error' | 'idle'
 
@@ -288,11 +289,51 @@ Page({
     })
     // presence 增量只更新固定电脑状态；切换电脑必须先返回顶层。
     this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.onPresenceUpdate())
+    // 先读缓存立即渲染（首屏秒开），服务端数据随后由 onShow 后台刷新校准
+    const cached = readListCache<{
+      rows: SessionRow[]
+      sidebarOrder: BridgeSidebarOrderState
+      total: number
+    }>('project-sessions:' + deviceId + ':' + projectId)
+    if (cached != null) {
+      this.allRows = cached.rows
+      this.sidebarOrder = cached.sidebarOrder
+      this.setData({ total: cached.total })
+      this.applyFilters()
+      this.viewReady = true
+    }
   },
+
+  /** 视图是否已有数据（来自缓存秒开或一次成功加载） */
+  viewReady: false,
+  /** onHide 记录的离开时刻；> 0 表示本次 onShow 是「从别处返回」 */
+  hiddenAt: 0,
 
   onShow() {
     if (!this.data.deviceId) return
-    void this.bootstrap()
+    // 轻量状态刷新：仅用本地 presence 快照校正在线徽标，且只在状态真变化时才 setData
+    if (bridge.isRelayPresenceFresh()) {
+      const online = bridge
+        .getRelayPresenceDevices()
+        .some((item) => item.deviceId === this.data.deviceId)
+      const nextOffline = !online
+      if (this.data.deviceOffline !== nextOffline) this.setData({ deviceOffline: nextOffline })
+    }
+    if (!this.viewReady) {
+      void this.bootstrap()
+      return
+    }
+    if (
+      this.hiddenAt > 0 &&
+      isFresh('project-sessions:' + this.data.deviceId + ':' + this.data.projectId)
+    ) {
+      return
+    }
+    void this.bootstrap(true)
+  },
+
+  onHide() {
+    this.hiddenAt = Date.now()
   },
 
   onUnload() {
@@ -308,11 +349,12 @@ Page({
   },
 
   /** 设备列表（REST 首拉 + 中继连接）就绪后加载会话 */
-  async bootstrap() {
+  async bootstrap(silent = false) {
     void bridge.ensureRelay().catch(() => undefined)
     void this.ensureCatalog()
-    await this.refreshDeviceContext()
-    await this.load()
+    // 静默后台刷新只重拉会话列表；设备上下文（含清列表分支）留待 presence 增量维护
+    if (!silent) await this.refreshDeviceContext()
+    await this.load(silent)
   },
 
   /** 拉桌面端目录构建新会话配置 chips；失败静默（chips 隐藏，旧版桌面端兼容） */
@@ -388,13 +430,14 @@ Page({
     if (wasOffline && online) void this.load()
   },
 
-  async load() {
+  async load(silent = false) {
     // 路由必须提供明确电脑；设备被吊销或离线时不回退到其它电脑。
     if (this.data.deviceUnavailable || this.data.deviceOffline) {
-      this.setData({ loading: false, groups: [], errorText: '' })
+      // 静默后台刷新遇到离线：保留旧数据，不清空现有列表
+      if (!silent) this.setData({ loading: false, groups: [], errorText: '' })
       return
     }
-    this.setData({ loading: true })
+    if (!silent) this.setData({ loading: true })
     const deviceId = this.data.deviceId
     try {
       const [result, sidebarOrder] = await Promise.all([
@@ -425,9 +468,17 @@ Page({
       this.allRows = rows
       this.setData({ total: result.total, errorText: '' })
       this.applyFilters()
+      this.viewReady = true
+      writeListCache('project-sessions:' + this.data.deviceId + ':' + this.data.projectId, {
+        rows,
+        sidebarOrder: this.sidebarOrder,
+        total: result.total,
+      })
       // 恢复在线等场景下补拉目录（离线期间 ensureCatalog 失败过）
       if (this.catalog == null) void this.ensureCatalog()
     } catch (error) {
+      // 静默后台刷新失败时保留旧数据与视图
+      if (silent) return
       this.allRows = []
       this.filteredRows = []
       this.rawContentMatches = []

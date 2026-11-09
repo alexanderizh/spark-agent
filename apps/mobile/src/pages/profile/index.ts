@@ -11,6 +11,18 @@ import { getState, logout, patchUser, subscribe } from '../../store/auth'
 import { ensureAuthenticated } from '../../utils/auth-guard'
 import { formatFullTime, maskAccount } from '../../utils/format'
 import type { AuthUserInfo } from '../../types'
+import { isFresh, readListCache, writeListCache, invalidateListCache } from '../../utils/list-cache'
+
+const PROFILE_CACHE_KEY = 'profile:view'
+
+interface ProfileCache {
+  user: AuthUserInfo | null
+  accountMasked: string
+  createdAtLabel: string
+  avatarInitial: string
+  serverUrl: string
+  appVersion: string
+}
 
 interface ProfilePageData {
   user: AuthUserInfo | null
@@ -62,14 +74,38 @@ Page({
     desktopStatusLabel: '—',
   } as ProfilePageData,
 
+  /** onHide 记录的离开时刻；> 0 表示本次 onShow 是「从别处返回」 */
+  hiddenAt: 0,
+
+  onLoad() {
+    const cached = readListCache<ProfileCache>(PROFILE_CACHE_KEY)
+    if (cached != null) this.setData(cached)
+  },
+
   onShow() {
     if (!ensureAuthenticated()) return
     if (!unsubscribeUserUpdated) {
       unsubscribeUserUpdated = subscribe('user-updated', () => this.applyUser())
     }
+    // 本页无网络重拉：onShow 仅做本地轻量状态刷新，始终执行
     this.applyUser()
     this.setData({ serverUrl: getConfig().baseUrl, appVersion: resolveAppVersion() })
     this.applyRelayState()
+    // 缓存展示快照供下次冷启动秒开；冷启动必写，快速返回仅在缓存陈旧时补写
+    if (this.hiddenAt === 0 || !isFresh(PROFILE_CACHE_KEY)) {
+      writeListCache(PROFILE_CACHE_KEY, {
+        user: this.data.user,
+        accountMasked: this.data.accountMasked,
+        createdAtLabel: this.data.createdAtLabel,
+        avatarInitial: this.data.avatarInitial,
+        serverUrl: this.data.serverUrl,
+        appVersion: this.data.appVersion,
+      })
+    }
+  },
+
+  onHide() {
+    this.hiddenAt = Date.now()
   },
 
   /** 中继状态：连接状态与电脑端在线状态都只做展示，不阻塞页面 */
@@ -200,6 +236,7 @@ Page({
       confirmColor: '#ef4444',
       success: (res) => {
         if (!res.confirm) return
+        invalidateListCache(PROFILE_CACHE_KEY)
         void logout()
       },
     })

@@ -15,6 +15,13 @@
           data-url="{{seg.url}}"
           catchtap="onLinkTap"
         >{{seg.label}}</text>
+        <!-- 纯文本段用可选中 text：支持长按选区复制；有内联格式的段仍走 rich-text -->
+        <text
+          wx:elif="{{seg.selectable}}"
+          class="md-p-text"
+          user-select
+          catchlongpress="onNoop"
+        >{{seg.plain}}</text>
         <rich-text wx:else nodes="{{seg.nodes}}"></rich-text>
       </block>
     </view>
@@ -57,6 +64,12 @@
             data-url="{{seg.url}}"
             catchtap="onLinkTap"
           >{{seg.label}}</text>
+          <text
+            wx:elif="{{seg.selectable}}"
+            class="md-p-text"
+            user-select
+            catchlongpress="onNoop"
+          >{{seg.plain}}</text>
           <rich-text wx:else nodes="{{seg.nodes}}"></rich-text>
         </block>
       </view>

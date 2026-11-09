@@ -26,6 +26,18 @@ const distDir = join(root, 'dist')
 
 const STATIC_EXTS = new Set(['.wxml', '.wxss', '.json', '.png', '.jpg', '.jpeg', '.svg', '.gif'])
 
+/**
+ * tsc 可执行文件位置：pnpm workspace 可能把 typescript 只装在仓库根，
+ * 此时 apps/mobile/node_modules/.bin/tsc 不存在，直接拼本地路径会 127 失败。
+ */
+function tscBin() {
+  const local = join(root, 'node_modules', '.bin', 'tsc')
+  if (existsSync(local)) return local
+  const workspace = resolve(root, '..', '..', 'node_modules', '.bin', 'tsc')
+  if (existsSync(workspace)) return workspace
+  throw new Error('未找到 tsc，请在仓库根执行 pnpm install')
+}
+
 function isStaticAsset(name) {
   const dot = name.lastIndexOf('.')
   return dot >= 0 && STATIC_EXTS.has(name.slice(dot))
@@ -95,7 +107,7 @@ export const RUNTIME_CONFIG = ${JSON.stringify(config, null, 2)} as const
 async function build() {
   await mkdir(distDir, { recursive: true })
   await buildRuntimeConfig()
-  execSync(join(root, 'node_modules', '.bin', 'tsc') + ' -p tsconfig.json', {
+  execSync(`"${tscBin()}" -p tsconfig.json`, {
     stdio: 'inherit',
     cwd: root,
   })
@@ -114,7 +126,7 @@ async function watchMode() {
   await buildRuntimeConfig()
   await copyStaticAssets()
   console.log('[mobile] initial config/assets ready, starting tsc --watch')
-  const tsc = spawn(join(root, 'node_modules', '.bin', 'tsc'), ['-p', 'tsconfig.json', '--watch'], {
+  const tsc = spawn(tscBin(), ['-p', 'tsconfig.json', '--watch'], {
     stdio: 'inherit',
     cwd: root,
   })

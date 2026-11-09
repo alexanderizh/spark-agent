@@ -22,15 +22,47 @@
 import * as bridge from '../../api/bridge'
 import {
   applyEvents,
+  dedupeAssistantMessages,
   emptyTimeline,
   filterUnseenEvents,
+  withServerRunning,
   type ChatTimeline,
 } from '../../utils/chat-reducer'
 import {
+  ATTACHMENT_ONLY_FALLBACK_TEXT,
   buildTimelineItems,
+  displayTextOf,
   filterExecutionDetails,
+  isAttachmentOnlyText,
   type TimelineItem,
+  type TimelineUserAttachment,
 } from '../../utils/chat-view'
+import {
+  loadChatSnapshot,
+  mapToRecord,
+  recordToMap,
+  saveChatSnapshot,
+  type ChatSnapshot,
+  type SentAttachmentView,
+} from '../../utils/chat-cache'
+import {
+  dropQueuedMessage,
+  enqueueMessage,
+  loadSendQueue,
+  makeClientId,
+  MAX_SEND_ATTEMPTS,
+  nextSendable,
+  patchQueuedMessage,
+  sendFailureMessage,
+  type QueuedMessage,
+} from '../../utils/send-queue'
+import {
+  mergeEvents,
+  normalizeTextEvents,
+  sortEvents,
+  type MergeEventsResult,
+} from '../../utils/chat-order'
+import { markdownPlainText } from '../../utils/markdown'
 import { formatRelativeTime } from '../../utils/format'
 import { logMobileError } from '../../utils/logger'
 import {
@@ -60,6 +92,14 @@ interface ChipView {
   key: string
   label: string
   value: string
+}
+
+/** 已送达桥接端、但真实 user_message 事件还没回来的本地占位（防止消息闪一下消失） */
+interface ConfirmedView {
+  key: string
+  text: string
+  attachments: SentAttachmentView[]
+  createdAt: string
 }
 
 interface PanelOptionView {
@@ -94,8 +134,11 @@ interface ChatPageData {
   inputText: string
   loading: boolean
   connected: boolean
-  /** scroll-into-view 目标（固定锚点 id；'' = 不锚定，跟随用户滚动位置） */
-  scrollToId: string
+  /**
+   * 数值滚动位置。原来用常驻 scroll-into-view 锚点，与 scroll-anchoring 互相抢位置，
+   * 流式重绘时来回抖屏；改成交替的大数值，只在「贴底跟随」需要回底时变更。
+   */
+  scrollTop: number
   /** 悬浮「最新」按钮显隐（用户上滑查看历史时出现） */
   showJumpLatest: boolean
   /** 历史向上翻页中（顶部提示「加载更早消息…」） */
@@ -149,6 +192,10 @@ const INTERACTION_POLL_IDLE_MS = 15_000
 const BOTTOM_STICKY_THRESHOLD_PX = 100
 /** 松手后惯性滚动仍视为用户滚动的窗口（ms），窗口外的 scroll 事件是程序化回底/锚定调整 */
 const SCROLL_MOMENTUM_WINDOW_MS = 800
+/** scroll-top 回底值：交替 ±1 保证每次需要回底时值都会变化 */
+const BOTTOM_SCROLL_VALUE = 99_999_999
+/** 附件 base64 上限（桌面端 12MiB body ≈ 8MB 原始文件），前端先拦一道避免误导性 500 */
+const MAX_ATTACHMENT_BASE64_CHARS = 11 * 1024 * 1024
 
 /** 单张图片保存到系统相册（回调 → Promise；拒绝授权时 errMsg 带 auth deny） */
 function saveImageToPhotosAlbum(filePath: string): Promise<void> {
@@ -173,7 +220,7 @@ Page({
     inputText: '',
     loading: true,
     connected: false,
-    scrollToId: '',
+    scrollTop: 0,
     showJumpLatest: false,
     loadingEarlier: false,
     historyLoaded: false,
@@ -207,8 +254,8 @@ Page({
   latestTimeline: null as ChatTimeline | null,
   flushTimer: 0 as ReturnType<typeof setTimeout> | 0,
   closeStream: null as (() => void) | null,
-  /** 乐观渲染的本地用户消息占位（流式回包后按文本匹配清除，防双气泡） */
-  localPending: null as { key: string; text: string } | null,
+  /** 已送达但还没等到真实回包的本地气泡（按文本匹配清除，防双气泡 / 防闪屏） */
+  confirmedViews: [] as ConfirmedView[],
   /** 最近一次收到事件的时间（watchdog 判卡死用） */
   lastEventAt: 0,
   /** 运行中卡死看门狗：running 且长时间无事件 → 重拉全量校正 */
@@ -217,8 +264,11 @@ Page({
   catalog: null as bridge.BridgeCatalog | null,
   /** 当前运行配置（chips 数据源） */
   runtime: null as bridge.BridgeSessionRuntime | null,
-  /** 本次进入会话期间发送过的附件（按消息文本索引，用户气泡下方渲染） */
-  sentAttachmentsByText: {} as Record<string, bridge.BridgeAttachment[]>,
+  /**
+   * 附件视图按「渲染项 key」索引（原先按消息文本索引，同文本会串图）。
+   * 乐观气泡被真实事件替换时把视图迁移到真实 key，刷新后由快照恢复。
+   */
+  attachmentViews: {} as Record<string, SentAttachmentView[]>,
   /** 用户主动展开的思考段落；流式重绘时保留展开状态。 */
   expandedThinkingKeys: new Set<string>(),
   /** 命令目录原始数据（补全过滤用） */
@@ -229,14 +279,20 @@ Page({
   lineage: null as bridge.BridgeLineage | null,
   /** 直接子分支（点开分支列表用） */
   lineageChildren: [] as bridge.BridgeLineage[],
-  /** 已发起过缓存解析的 media 消息 key（流式全量重绘时防重复触发） */
+  /** 已发起过缓存解析的 media 消息 key（解析失败会回滚，允许下次重试） */
   mediaResolvedKeys: new Set<string>(),
+  /** media 图片解析结果（key → 本地预览路径数组）；实例级持久化 + 写快照，刷新不再消失 */
+  mediaPreviews: new Map<string, string[]>(),
   /** 正在保存到相册的 media 消息 key（防重复点击；渲染态经 decorateItem 回填） */
   mediaSavingKeys: new Set<string>(),
-  /** 已发起过缓存解析的历史附件用户消息 key */
+  /** 已发起过缓存解析的历史附件用户消息 key（失败回滚，允许重试） */
   userAttachResolvedKeys: new Set<string>(),
   /** 历史附件图片解析结果（消息 key → 桌面路径 → 本地缓存路径） */
   userAttachPreviews: {} as Record<string, Record<string, string>>,
+  /** 工具横线分块被用户临时展开的 key */
+  expandedDividerKeys: new Set<string>(),
+  /** 单条工具行被展开查看详情的 key */
+  expandedToolKeys: new Set<string>(),
   /** 设备列表订阅取消函数（onShow 校验所选电脑在线状态 + 实时刷新） */
   unsubscribeDevices: null as (() => void) | null,
   /** 已加载的全部历史事件（按 seq 升序累积；向上翻页时前插） */
@@ -271,6 +327,22 @@ Page({
   scrollTouching: false as boolean,
   /** 最近一次松手时间戳：松手后的惯性滚动在窗口期内仍视为用户滚动 */
   lastScrollTouchEndAt: 0 as number,
+  /** 最近一次滚动位置（写快照，返回后保持在原位） */
+  lastScrollTop: 0 as number,
+  /** 回底用的滚动值：交替取两个大数，保证每次 setData 都会重新触发 scroll-top */
+  scrollTick: 0 as number,
+  /** 页面是否已完成首次初始化：onShow 只有首次才全量 init，之后只做增量对账 */
+  initialized: false as boolean,
+  /** 本次是否从本地快照恢复（避免首屏闪「加载历史…」并保留已有视图） */
+  restoredFromSnapshot: false as boolean,
+  /** 服务端权威 running（getMessages 返回），本地归约不得覆盖它 */
+  serverRunning: false as boolean,
+  /** 已接收事件流的最大 seq，用于检测跨批次缺口 */
+  lastStreamSeq: 0 as number,
+  /** 待发队列串行 drain 中的标记 */
+  drainInFlight: false as boolean,
+  /** 快照写入节流定时器 */
+  snapshotTimer: 0 as ReturnType<typeof setTimeout> | 0,
 
   onLoad(options: Record<string, string | undefined>) {
     this.expandedThinkingKeys = new Set<string>()
@@ -294,6 +366,8 @@ Page({
       // 工具记录显隐是本地持久偏好，进入页面即生效
       hideExecutionDetails: getItem<boolean>(StorageKeys.chatHideToolEvents) === true,
     })
+    // 先从本地快照恢复时间线：首屏秒开、返回不白屏、图片预览不丢
+    this.restoreSnapshot(sessionId)
     // presence 增量：所选电脑上下线时刷新顶部离线提示条
     this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.refreshDeviceOnline())
     // 配置目录/命令目录/技能目录异步补齐，不阻塞首屏历史
@@ -302,18 +376,82 @@ Page({
     void this.loadSkills()
   },
 
+  /** 本地快照 → 首屏视图（不等网络；随后 init() 用服务端数据对账） */
+  restoreSnapshot(sessionId: string) {
+    const snapshot = loadChatSnapshot(sessionId)
+    if (snapshot == null || snapshot.events.length === 0) return
+    // 旧版本可能把「回放 delta + 历史 complete」一起写进了快照，恢复时先净化，
+    // 否则脏事件集会一直跟着页面，agent 输出反复显示两遍。
+    this.allEvents = sortEvents(normalizeTextEvents(snapshot.events))
+    this.seenEventIds = new Set(this.allEvents.map((event) => event.id))
+    this.lastStreamSeq = this.allEvents.reduce((max, event) => Math.max(max, event.seq ?? 0), 0)
+    this.historyCursor = snapshot.cursor ?? null
+    this.serverRunning = snapshot.running
+    this.attachmentViews = { ...(snapshot.sentAttachments ?? {}) }
+    this.mediaPreviews = recordToMap(snapshot.mediaPreviews)
+    this.userAttachPreviews = { ...(snapshot.userAttachPreviews ?? {}) }
+    this.latestTimeline = withServerRunning(
+      applyEvents(emptyTimeline(), this.allEvents),
+      snapshot.running,
+    )
+    this.restoredFromSnapshot = true
+    this.flushTimeline(true, { keepScroll: true })
+    this.setData({
+      loading: false,
+      historyLoaded: true,
+      hasMoreHistory: snapshot.hasMore,
+      scrollTop: snapshot.scrollTop > 0 ? snapshot.scrollTop : 0,
+    })
+  },
+
+  /** 写快照：返回/切后台时保留视图、滚动位置与已解析的图片预览 */
+  saveSnapshot() {
+    const { sessionId } = this.data
+    if (!sessionId || this.allEvents.length === 0) return
+    saveChatSnapshot({
+      sessionId,
+      events: this.allEvents,
+      running: this.serverRunning,
+      lastSeq: this.lastStreamSeq,
+      savedAt: Date.now(),
+      hasMore: this.data.hasMoreHistory,
+      cursor: this.historyCursor,
+      sentAttachments: this.attachmentViews,
+      mediaPreviews: mapToRecord(this.mediaPreviews),
+      userAttachPreviews: this.userAttachPreviews,
+      scrollTop: this.lastScrollTop,
+    } as ChatSnapshot)
+  },
+
+  scheduleSnapshot() {
+    if (this.snapshotTimer) clearTimeout(this.snapshotTimer)
+    this.snapshotTimer = setTimeout(() => {
+      this.snapshotTimer = 0
+      this.saveSnapshot()
+    }, 1500)
+  },
+
   onReady() {
     this.measureScrollViewHeight()
   },
 
   onShow() {
     this.refreshDeviceOnline()
-    void this.init()
+    // 只有首次进入才全量重建；从分支页/任务页返回时只做一次轻量对账，
+    // 视图、滚动位置、已加载的历史分页和图片预览全部保留。
+    if (!this.initialized) void this.init()
+    else void this.reconcileFromServer()
+  },
+
+  onHide() {
+    this.saveSnapshot()
   },
 
   onUnload() {
+    this.saveSnapshot()
     this.historyGeneration += 1
     if (this.flushTimer) clearTimeout(this.flushTimer)
+    if (this.snapshotTimer) clearTimeout(this.snapshotTimer)
     if (this.watchdogTimer) clearInterval(this.watchdogTimer)
     this.watchdogTimer = 0
     this.interactionPollStopped = true
@@ -350,7 +488,14 @@ Page({
     const generation = ++this.historyGeneration
     this.closeStream?.()
     this.closeStream = null
-    this.setData({ loading: true, historyError: '', historyLoaded: false, connected: false })
+    // 从快照恢复时已有视图可看，不再闪「加载历史…」把整页清空
+    const hasView = this.restoredFromSnapshot && this.latestTimeline != null
+    this.setData({
+      loading: !hasView,
+      historyError: '',
+      ...(hasView ? {} : { historyLoaded: false }),
+      connected: false,
+    })
     try {
       const [firstPage] = await Promise.all([
         bridge.getMessages(sessionId, {
@@ -386,17 +531,32 @@ Page({
         cursor = nextCursor
         skippedPages += 1
       }
-      this.allEvents = events.sort((a, b) => a.seq - b.seq)
+      this.allEvents = sortEvents(events)
       this.seenEventIds = new Set(this.allEvents.map((event) => event.id))
       this.historyCursor = cursor
+      this.serverRunning = firstPage.running === true
+      this.lastStreamSeq = this.allEvents.reduce((max, event) => Math.max(max, event.seq ?? 0), 0)
+      // 附件预览解析态按新一轮生命周期重置，但保留已解析结果（mediaPreviews Map）
+      this.userAttachResolvedKeys = new Set<string>()
+      this.mediaResolvedKeys = new Set<string>()
+      this.confirmedViews = []
+      this.initialized = true
       this.setData({ hasMoreHistory: hasMore, historyLoaded: true })
-      const timeline = applyEvents(emptyTimeline(), this.allEvents)
+      // 服务端 running 是唯一权威口径：终态事件在断线窗口丢失时，本地归约会永久
+      // 停在 running=true 并锁死输入（含图片/附件），必须用权威值覆盖。
+      const timeline = withServerRunning(
+        applyEvents(emptyTimeline(), this.allEvents),
+        this.serverRunning,
+      )
       this.latestTimeline = timeline
-      this.localPending = null
       this.lastEventAt = Date.now()
-      this.flushTimeline(true)
+      this.flushTimeline(true, {
+        keepScroll: hasView && this.lastScrollTop > 0,
+      })
       this.connectStream()
       this.startWatchdog()
+      void this.drainSendQueue()
+      this.scheduleSnapshot()
       // 分支血缘横幅（旧版桌面端 404 静默隐藏）
       void this.loadLineage()
       // 挂起交互立刻对一次账（进入页面可能正有等确认的审批/问答），随后自适应轮询
@@ -415,6 +575,93 @@ Page({
     this.stickBottom = true
     this.setData({ showJumpLatest: false })
     void this.init()
+  },
+
+  /**
+   * 所有事件入口（历史对账 / 实时流）的唯一合并点。
+   *
+   * 旧实现把「未见过的事件」直接 applyEvents(当前时间线, 新事件) 追加到末尾，
+   * 服务端补写的旧 seq 事件（续接/摘要重放、历史对账返回早于当前视图的批次、
+   * 迟到的工具结果）因此被挂到最新消息下面，视觉上就是「下午的会话跑到新内容之后」。
+   * 现在统一按 id 去重、按 seq 排序；只要出现落在已加载区间内的补写事件，
+   * 就从完整有序事件集全量重放，渲染顺序严格由 seq 决定。
+   * 正常尾追加仍走增量快路径，流式 delta 不会因为全量重放而掉帧。
+   */
+  mergeIncomingEvents(incoming: bridge.BridgeEvent[], serverRunning?: boolean): MergeEventsResult {
+    const merged = mergeEvents(this.allEvents, incoming)
+    if (merged.added.length > 0) {
+      this.allEvents = merged.events
+      for (const event of merged.added) this.seenEventIds.add(event.id)
+      this.lastStreamSeq = Math.max(this.lastStreamSeq, merged.maxSeq)
+      const base =
+        merged.hasBackfill || this.latestTimeline == null
+          ? applyEvents(emptyTimeline(), this.allEvents)
+          : applyEvents(this.latestTimeline, merged.added)
+      this.latestTimeline =
+        serverRunning === undefined ? base : withServerRunning(base, serverRunning)
+    } else if (serverRunning !== undefined && this.latestTimeline != null) {
+      // 没有新事件也要用权威 running 覆盖：终态事件在断线窗口丢失时解锁输入。
+      // 顺带净化内存里已有的重复气泡 —— 老版本留下的脏时间线不必等新事件才收敛。
+      const cleaned: ChatTimeline = {
+        messages: dedupeAssistantMessages(this.latestTimeline.messages),
+        running: this.latestTimeline.running,
+      }
+      this.latestTimeline = withServerRunning(cleaned, serverRunning)
+    }
+    return merged
+  },
+
+  /**
+   * 轻量对账：返回页面 / watchdog / WS 重连时调用。
+   * 只拉最近一页，把未见过的新事件按 seq 归并，并用服务端 running 覆盖本地归约，
+   * 不重建整页、不丢滚动位置、不重新解析已缓存的图片。
+   * 历史页会排除流式 delta，因此不用「seq 有空洞」判丢失（会误触发全量重建）；
+   * 顺序交给 mergeIncomingEvents 的排序 + 补写全量重放保证。
+   */
+  async reconcileFromServer() {
+    const { sessionId } = this.data
+    if (!sessionId) return
+    const generation = this.historyGeneration
+    try {
+      const history = await bridge.getMessages(sessionId, {
+        deviceId: this.targetDeviceId(),
+        turnLimit: 3,
+        eventLimit: 600,
+      })
+      if (generation !== this.historyGeneration) return
+      const unseen = filterUnseenEvents(this.seenEventIds, history.events)
+      // 权威状态覆盖：终态事件丢失 / 桌面端补偿了僵尸 running 都能在这里收敛
+      this.serverRunning = history.running === true
+      // 历史对账可能带回早于当前视图的补写事件，由合并器按 seq 插回原位并
+      // 全量重放时间线；增量追加是排序错乱的根因，这里不再使用。
+      this.mergeIncomingEvents(unseen, this.serverRunning)
+      if (unseen.length > 0) this.dropConfirmedForEvents(unseen)
+      this.lastEventAt = Date.now()
+      this.flushTimeline(true, { keepScroll: !this.stickBottom })
+      void this.drainSendQueue()
+      this.scheduleSnapshot()
+    } catch {
+      // 对账失败保留当前视图，watchdog 下一轮再试；不弹错误打断阅读
+    }
+  },
+
+  /** 真实 user_message 到达：移除本地占位气泡，并把附件视图迁移到真实渲染 key */
+  dropConfirmedForEvents(events: bridge.BridgeEvent[]) {
+    if (this.confirmedViews.length === 0) return
+    for (const event of events) {
+      if (event.type !== 'user_message') continue
+      const content = event.content ?? ''
+      const index = this.confirmedViews.findIndex(
+        (view) =>
+          view.text === content.trim() ||
+          (isAttachmentOnlyText(view.text) && isAttachmentOnlyText(content)),
+      )
+      if (index < 0) continue
+      const [view] = this.confirmedViews.splice(index, 1)
+      if (view != null && view.attachments.length > 0) {
+        this.attachmentViews[`u:${event.id}`] = view.attachments
+      }
+    }
   },
 
   /** A page may contain only event types omitted from the mobile timeline. */
@@ -472,9 +719,12 @@ Page({
       }
       if (freshEvents.length > 0) {
         for (const event of freshEvents) this.seenEventIds.add(event.id)
-        this.allEvents = [...freshEvents, ...this.allEvents].sort((a, b) => a.seq - b.seq)
-        const timeline = applyEvents(emptyTimeline(), this.allEvents)
-        this.latestTimeline = timeline
+        this.allEvents = sortEvents([...freshEvents, ...this.allEvents])
+        // 全量重放后仍要叠权威 running：向上翻页不该把已收敛的运行中状态改回来
+        this.latestTimeline = withServerRunning(
+          applyEvents(emptyTimeline(), this.allEvents),
+          this.serverRunning,
+        )
         // 顶部加载：保持当前视觉位置，不触发回底。
         this.flushTimeline(true, { keepScroll: true })
       }
@@ -494,29 +744,29 @@ Page({
         onOpen: () => {
           // 连接状态以真实 onOpen 为准（此前在发起连接时同步置 true，WS 失败也显示已连接）
           this.setData({ connected: true })
+          // 重连窗口内桌面端可能已经跑完整个回合：立刻用服务端状态对账，
+          // 同时把断线时留在本地队列里的消息补发出去。
+          void this.reconcileFromServer()
+          void this.drainSendQueue()
         },
         onEvent: (events) => {
           const unseenEvents = filterUnseenEvents(this.seenEventIds, events)
           if (unseenEvents.length === 0) return
-          const base = this.latestTimeline ?? emptyTimeline()
-          const timeline = applyEvents(base, unseenEvents)
-          // 乐观占位去重：真实 user_message 到达且文本匹配 → 移除本地占位，避免双气泡
-          if (this.localPending != null) {
-            const confirmed = unseenEvents.some(
-              (event) =>
-                event.type === 'user_message' &&
-                (event.content ?? '').trim() === this.localPending?.text,
-            )
-            if (confirmed) {
-              timeline.messages = timeline.messages.filter(
-                (item) => item.key !== this.localPending?.key,
-              )
-              this.localPending = null
-            }
+          // 事件帧无游标、无 ack、零留存：先按 seq 归一化合并（含乱序补写），
+          // 再由合并结果判断整批事件是否越过已应用区间留下空洞 —— 断线窗口丢了一批
+          // 就全量重建补齐（否则终态事件丢失会让 running 永久卡住）。
+          const merged = this.mergeIncomingEvents(unseenEvents)
+          if (merged.hasGap) {
+            void this.init()
+            return
           }
-          this.latestTimeline = timeline
+          // 真实用户消息回来后撤掉本地「已送达待回显」占位，防双气泡
+          this.dropConfirmedForEvents(unseenEvents)
+          // 本地归约与权威状态同步，避免下一次对账把刚到达的终态又改回 running
+          this.serverRunning = this.latestTimeline?.running ?? false
           this.lastEventAt = Date.now()
           this.flushTimeline()
+          this.scheduleSnapshot()
           // 桌面端弹审批/问答会先落 waiting 状态事件：立刻对一次账，卡片不用等下一轮轮询
           if (
             unseenEvents.some(
@@ -540,15 +790,19 @@ Page({
     )
   },
 
-  /** 运行中看门狗：running 且 45s 无任何事件 → 重拉全量校正（覆盖漏推/断流/running 卡死） */
+  /**
+   * 看门狗：长时间无事件时做一次轻量对账。
+   * 旧实现直接 init() 全量重拉，但重拉后又用历史事件自行推断 running —— 终态事件
+   * 一旦丢失就永远判 true，形成 45s 一次的白屏循环。改为用服务端权威 running 校正，
+   * 既不重建视图，也能真正解开「运行中卡死」。
+   */
   startWatchdog() {
     if (this.watchdogTimer) clearInterval(this.watchdogTimer)
     this.watchdogTimer = setInterval(() => {
-      if (this.data.running && Date.now() - this.lastEventAt > 45_000) {
-        this.lastEventAt = Date.now()
-        void this.init()
-      }
-    }, 20_000)
+      if (Date.now() - this.lastEventAt < 30_000) return
+      this.lastEventAt = Date.now()
+      if (this.data.running || !this.data.connected) void this.reconcileFromServer()
+    }, 15_000)
   },
 
   /**
@@ -560,15 +814,23 @@ Page({
       this.flushTimer = 0
       const timeline = this.latestTimeline
       if (!timeline) return
-      const items = filterExecutionDetails(
+      const base = filterExecutionDetails(
         buildTimelineItems(timeline.messages),
         this.data.hideExecutionDetails,
+        this.expandedDividerKeys,
       ).map((item) => this.decorateItem(item))
-      this.setData({
-        items,
-        running: timeline.running,
-      })
-      if (opts?.keepScroll !== true) this.scrollToBottom()
+      const items = [...base, ...this.buildPendingItems()]
+      // 差量 setData：流式 delta 只改一个 assistant 项，不再每 100ms 重设整条列表
+      const patch = this.diffItems(this.data.items, items)
+      if (timeline.running !== this.data.running) patch.running = timeline.running
+      // 回底并入同一次 setData：原来用 60ms setTimeout 二次设 scroll-into-view，
+      // 与 scroll-anchoring 反复抢位置，是「抖屏」的主因。
+      if (opts?.keepScroll !== true && this.stickBottom) {
+        this.scrollTick += 1
+        patch.scrollTop = BOTTOM_SCROLL_VALUE + (this.scrollTick % 2)
+      }
+      if (Object.keys(patch).length > 0) this.setData(patch)
+      this.scheduleSnapshot()
     }
     if (force) {
       if (this.flushTimer) clearTimeout(this.flushTimer)
@@ -577,6 +839,60 @@ Page({
     }
     if (this.flushTimer) return
     this.flushTimer = setTimeout(paint, FLUSH_INTERVAL_MS)
+  },
+
+  /** key 序列一致时只回填真正变化的项；结构变化（新增/删除/折叠）才整表替换 */
+  diffItems(prev: TimelineItem[], next: TimelineItem[]): Record<string, unknown> {
+    const sameShape =
+      prev.length === next.length && prev.every((item, index) => item.key === next[index]?.key)
+    if (!sameShape) return { items: next }
+    const patch: Record<string, unknown> = {}
+    for (let i = 0; i < next.length; i += 1) {
+      if (JSON.stringify(prev[i]) !== JSON.stringify(next[i])) {
+        patch[`items[${i}]`] = next[i]
+      }
+    }
+    return patch
+  },
+
+  /** 本地待发队列 + 已送达待回显占位 → 追加在列表末尾的用户气泡 */
+  buildPendingItems(): TimelineItem[] {
+    const out: TimelineItem[] = []
+    const toViews = (key: string, attachments: SentAttachmentView[]): TimelineUserAttachment[] =>
+      attachments.map((att) => ({
+        type: att.type,
+        path: att.path,
+        name: att.name,
+        previewUrl:
+          att.type === 'image'
+            ? att.localPath || this.userAttachPreviews[key]?.[att.path] || ''
+            : '',
+      }))
+    for (const item of loadSendQueue(this.data.sessionId)) {
+      const key = `q:${item.clientId}`
+      out.push({
+        kind: 'user',
+        key,
+        text: displayTextOf(item.text),
+        createdAt: new Date(item.createdAt).toISOString(),
+        attachmentOnly: isAttachmentOnlyText(item.text),
+        attachments: toViews(key, item.attachments),
+        sendStatus: item.status === 'failed' ? 'failed' : 'sending',
+        clientId: item.clientId,
+        sendError: item.error,
+      })
+    }
+    for (const view of this.confirmedViews) {
+      out.push({
+        kind: 'user',
+        key: view.key,
+        text: displayTextOf(view.text),
+        createdAt: view.createdAt,
+        attachmentOnly: isAttachmentOnlyText(view.text),
+        attachments: toViews(view.key, view.attachments),
+      })
+    }
+    return out
   },
 
   /**
@@ -589,23 +905,39 @@ Page({
     if (item.kind === 'thinking') {
       return { ...item, expanded: this.expandedThinkingKeys.has(item.key) }
     }
+    if (item.kind === 'tool') {
+      return { ...item, expanded: this.expandedToolKeys.has(item.key) }
+    }
     if (item.kind === 'media') {
-      const previews = item.previews ?? []
-      if (previews.length !== item.paths.length) void this.resolveMediaItem(item.key, item.paths)
+      // 解析结果存在实例级 Map 并写快照：全量重绘/返回页面都不会把它冲掉
+      const previews = this.mediaPreviews.get(item.key) ?? []
+      if (previews.length < item.paths.length && !this.mediaResolvedKeys.has(item.key)) {
+        void this.resolveMediaItem(item.key, item.paths)
+      }
       const saving = this.mediaSavingKeys.has(item.key)
-      if (previews.length === 0 && !saving) return item
-      return { ...item, previews: previews.length > 0 ? previews : undefined, saving }
+      return { ...item, previews, saving }
     }
     if (item.kind !== 'user') return item
-    // 优先本次会话发送时挂载的附件（手机本地原图直显）
-    const sent = this.sentAttachmentsByText[item.text]
+    // 本次会话发出的附件按渲染 key 索引（旧实现按文本索引，同文本会串图）
+    const sent = this.attachmentViews[item.key]
     if (sent != null && sent.length > 0) {
-      const views = sent.map((att) => ({
-        ...att,
-        // 小程序访问不到桌面端本地路径，直接预览手机本地那份原图
-        previewUrl: att.type === 'image' ? ((att as { localPath?: string }).localPath ?? '') : '',
+      const views: TimelineUserAttachment[] = sent.map((att) => ({
+        type: att.type,
+        path: att.path,
+        name: att.name,
+        // 手机本地原图优先；临时路径失效后回退到中继回源解析出的缓存路径
+        previewUrl:
+          att.type === 'image'
+            ? att.localPath || this.userAttachPreviews[item.key]?.[att.path] || ''
+            : '',
       }))
-      return { ...item, attachments: views } as TimelineItem
+      if (
+        views.some((att) => att.type === 'image' && !att.previewUrl) &&
+        !this.userAttachResolvedKeys.has(item.key)
+      ) {
+        void this.resolveUserAttachments(item.key, sent)
+      }
+      return { ...item, attachments: views }
     }
     // 历史消息透传的附件（旧版桌面端无该字段）：图片经本地缓存解析后可预览
     const historyAtts = item.attachments
@@ -613,8 +945,17 @@ Page({
     if (!this.userAttachResolvedKeys.has(item.key)) {
       void this.resolveUserAttachments(item.key, historyAtts)
     }
+    // 桌面端 submitTurn 只收路径数组，历史事件的 name 常常缺失（路径末段是随机 ID）。
+    // 用本次会话发送时记下的原始文件名兜底，避免文件 chip 显示一串乱码。
+    const localNames = new Map<string, string>()
+    Object.keys(this.attachmentViews).forEach((key) => {
+      for (const att of this.attachmentViews[key] ?? []) {
+        if (att.name && att.path) localNames.set(att.path, att.name)
+      }
+    })
     const views = historyAtts.map((att) => ({
       ...att,
+      name: att.name || localNames.get(att.path),
       previewUrl: att.type === 'image' ? (this.userAttachPreviews[item.key]?.[att.path] ?? '') : '',
     }))
     return { ...item, attachments: views } as TimelineItem
@@ -626,40 +967,60 @@ Page({
    */
   async resolveMediaItem(key: string, paths: string[]) {
     if (this.mediaResolvedKeys.has(key)) return
+    if ((this.mediaPreviews.get(key)?.length ?? 0) >= paths.length) return
     this.mediaResolvedKeys.add(key)
-    const deviceId = this.targetDeviceId()
-    const resolved = await Promise.all(
-      paths.map((path) => bridge.fetchRelayAttachmentTempPath(path, deviceId)),
-    )
-    const previews = resolved.filter((path): path is string => path != null)
-    if (previews.length === 0) return
-    const index = this.data.items.findIndex((item) => item.kind === 'media' && item.key === key)
-    if (index < 0) return
-    this.setData({ [`items[${index}].previews`]: previews })
+    try {
+      const deviceId = this.targetDeviceId()
+      const resolved = await Promise.all(
+        paths.map((path) => bridge.fetchRelayAttachmentTempPath(path, deviceId)),
+      )
+      const previews = resolved.filter((path): path is string => path != null)
+      if (previews.length === 0) {
+        // 旧实现「解析前就登记去重 key + 只写 data.items」，一次失败就永久不再重试，
+        // 且全量重绘会把已写进 items 的 previews 冲掉 → 图片刷新即消失。
+        this.mediaResolvedKeys.delete(key)
+        return
+      }
+      this.mediaPreviews.set(key, previews)
+      this.scheduleSnapshot()
+      this.flushTimeline(true, { keepScroll: !this.stickBottom })
+    } catch {
+      this.mediaResolvedKeys.delete(key)
+    }
   },
 
   /** 历史用户附件图片解析（同 media 条机制；解析结果按 key+path 记录） */
   async resolveUserAttachments(
     key: string,
-    attachments: NonNullable<Extract<TimelineItem, { kind: 'user' }>['attachments']>,
+    attachments: { type: 'image' | 'file'; path: string; name?: string; localPath?: string }[],
   ) {
     if (this.userAttachResolvedKeys.has(key)) return
-    this.userAttachResolvedKeys.add(key)
-    const deviceId = this.targetDeviceId()
-    const images = attachments.filter((att) => att.type === 'image')
+    const images = attachments.filter((att) => att.type === 'image' && att.path.length > 0)
     if (images.length === 0) return
-    const resolved = await Promise.all(
-      images.map((att) => bridge.fetchRelayAttachmentTempPath(att.path, deviceId)),
-    )
-    const byPath: Record<string, string> = {}
-    images.forEach((att, i) => {
-      const local = resolved[i]
-      if (local != null) byPath[att.path] = local
-    })
-    if (Object.keys(byPath).length === 0) return
-    this.userAttachPreviews = { ...this.userAttachPreviews, [key]: byPath }
-    // 重刷渲染项（decorateItem 会按新 previews 重组 attachment views）
-    if (this.latestTimeline != null) this.flushTimeline(true, { keepScroll: true })
+    this.userAttachResolvedKeys.add(key)
+    try {
+      const deviceId = this.targetDeviceId()
+      const resolved = await Promise.all(
+        images.map((att) => bridge.fetchRelayAttachmentTempPath(att.path, deviceId)),
+      )
+      const byPath: Record<string, string> = {}
+      images.forEach((att, i) => {
+        const local = resolved[i]
+        if (local != null) byPath[att.path] = local
+      })
+      if (Object.keys(byPath).length === 0) {
+        this.userAttachResolvedKeys.delete(key)
+        return
+      }
+      this.userAttachPreviews = { ...this.userAttachPreviews, [key]: byPath }
+      this.scheduleSnapshot()
+      // 重刷渲染项（decorateItem 会按新 previews 重组 attachment views）
+      if (this.latestTimeline != null) {
+        this.flushTimeline(true, { keepScroll: !this.stickBottom })
+      }
+    } catch {
+      this.userAttachResolvedKeys.delete(key)
+    }
   },
 
   /** 按 key 查找 media 渲染项（预览与保存共用） */
@@ -763,9 +1124,8 @@ Page({
     // 用户上滑查看历史时不再抢滚动视口：仅贴底跟随态才回底；
     // 强制回底走 onJumpLatest / onSend（先恢复 stickBottom 再调本方法）。
     if (!this.stickBottom) return
-    setTimeout(() => {
-      this.setData({ scrollToId: 'chat-anchor' })
-    }, 60)
+    this.scrollTick += 1
+    this.setData({ scrollTop: BOTTOM_SCROLL_VALUE + (this.scrollTick % 2) })
   },
 
   // ─── 滚动意图跟踪（贴底跟随 / 上滑停止跟随 + 悬浮「最新」按钮） ─────────────
@@ -787,11 +1147,12 @@ Page({
    * 程序化回底与 scroll-anchoring 前插调整也会触发 scroll，但期间没有触摸，不算用户意图。
    */
   onChatScroll(e: WechatMiniprogram.CustomEvent<{ scrollTop: number; scrollHeight: number }>) {
+    const { scrollTop, scrollHeight } = e.detail
+    if (typeof scrollTop === 'number') this.lastScrollTop = scrollTop
     const userDriven =
       this.scrollTouching || Date.now() - this.lastScrollTouchEndAt < SCROLL_MOMENTUM_WINDOW_MS
     if (!userDriven) return
     if (this.scrollViewHeight <= 0) return
-    const { scrollTop, scrollHeight } = e.detail
     if (typeof scrollTop !== 'number' || typeof scrollHeight !== 'number') return
     const sticky = scrollHeight - scrollTop - this.scrollViewHeight <= BOTTOM_STICKY_THRESHOLD_PX
     if (sticky === this.stickBottom) return
@@ -799,8 +1160,8 @@ Page({
     if (sticky) {
       this.setData({ showJumpLatest: false })
     } else {
-      // 清空锚点：后续流式重绘不再携带 scroll-into-view，滚动位置完全交给用户
-      this.setData({ scrollToId: '', showJumpLatest: true })
+      // 数值 scroll-top 只在值变化时生效：不追随贴底回底，滚动位置完全交给用户
+      this.setData({ showJumpLatest: true })
     }
   },
 
@@ -833,37 +1194,31 @@ Page({
   },
 
   async onSend(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
-    const text = (e.detail.value ?? this.data.inputText).trim()
-    if (!text || this.data.running) return
+    if (this.data.running) return
+    const rawText = (e.detail.value ?? this.data.inputText).trim()
     const attachments = this.data.attachments
     const uploadPending = attachments.some((item) => !item.uploaded)
     if (uploadPending) {
       wx.showToast({ title: '附件还在上传，稍等一下', icon: 'none' })
       return
     }
-    this.setData({ inputText: '', showCommands: false })
+    if (!rawText && attachments.length === 0) return
+    // 纯图片 / 纯文件消息：桌面端 text 强制非空，用零宽哨兵前缀过校验；
+    // 渲染层识别前缀后只画附件条、不画文字气泡（见 chat-view displayTextOf）。
+    const text = rawText || ATTACHMENT_ONLY_FALLBACK_TEXT
+    this.setData({ inputText: '', showCommands: false, attachments: [] })
     // 发送即回到底部：恢复贴底跟随，新消息照常自动回底
     this.stickBottom = true
     this.setData({ showJumpLatest: false })
-    const attachmentPaths = attachments.map((item) => item.path)
-    const sentAttachments = attachments.map((item) => ({
-      type: item.type,
-      path: item.path,
-      name: item.name,
-    }))
-    // 清空附件条；正文引用渲染用（本次会话内存内）
-    if (sentAttachments.length > 0) {
-      this.sentAttachmentsByText = {
-        ...this.sentAttachmentsByText,
-        [text]: sentAttachments,
-      }
-      this.setData({ attachments: [] })
-    }
 
     // 斜杠命令：设置型命令主进程内直接生效；不识别时按普通消息发送
-    if (text.startsWith('/')) {
+    if (rawText.startsWith('/')) {
       try {
-        const result = await bridge.executeCommand(this.data.sessionId, text, this.targetDeviceId())
+        const result = await bridge.executeCommand(
+          this.data.sessionId,
+          rawText,
+          this.targetDeviceId(),
+        )
         if (result.isCommand) {
           if (result.queued === true) {
             wx.showToast({ title: '当前回合运行中，命令已排队', icon: 'none', duration: 2500 })
@@ -874,44 +1229,115 @@ Page({
         }
       } catch (error) {
         wx.showToast({ title: (error as Error).message || '命令执行失败', icon: 'none' })
-        this.setData({ inputText: text })
+        this.setData({ inputText: rawText })
         return
       }
     }
 
+    const clientId = makeClientId()
+    const sentAttachments: SentAttachmentView[] = attachments.map((item) => ({
+      type: item.type,
+      path: item.path,
+      name: item.name,
+      // 旧实现在这里丢掉 localPath，而 decorateItem 又按它取 previewUrl，
+      // 导致本次发送的图片在气泡里根本不渲染。
+      localPath: item.localPath,
+    }))
+    enqueueMessage(this.data.sessionId, {
+      clientId,
+      text,
+      attachmentPaths: attachments.map((item) => item.path),
+      attachments: sentAttachments,
+      createdAt: Date.now(),
+      status: 'sending',
+      attempts: 0,
+    } as QueuedMessage)
+    this.flushTimeline(true)
+    this.scrollToBottom()
+    void this.drainSendQueue()
+  },
+
+  /**
+   * 串行 drain 本地待发队列：一次只发一条，失败留在队列并可重试，
+   * 中继重连 / 返回页面 / watchdog 都会再触发一次。
+   */
+  async drainSendQueue() {
+    if (this.drainInFlight) return
+    const { sessionId } = this.data
+    if (!sessionId) return
+    this.drainInFlight = true
     try {
-      await bridge.submitTurn(
-        this.data.sessionId,
-        text,
-        attachmentPaths.length > 0 ? attachmentPaths : undefined,
-        this.targetDeviceId(),
-      )
-      // 用户消息会经流回来；若流未连上，本地先乐观渲染（流恢复后按文本去重）。
-      // key 口径必须与 chat-reducer 一致：事件 id 是裸 id，渲染 key 由 reducer 统一加 `u:` 前缀
-      // ——之前把带前缀的 key 塞进事件 id，渲染 key 变成 `u:u:local-…`，去重永远删不掉（双气泡）。
-      if (!this.data.connected) {
-        const localId = `local-${Date.now()}`
-        this.localPending = { key: `u:${localId}`, text }
-        const base = this.latestTimeline ?? emptyTimeline()
-        this.latestTimeline = applyEvents(base, [
-          {
-            id: localId,
-            seq: -1,
-            turnId: 'local',
-            type: 'user_message',
-            timestamp: new Date().toISOString(),
-            content: text,
-          },
-        ])
+      for (let guard = 0; guard < 20; guard += 1) {
+        const next = nextSendable(loadSendQueue(sessionId))
+        if (next == null) break
+        patchQueuedMessage(sessionId, next.clientId, {
+          status: 'sending',
+          attempts: next.attempts + 1,
+          error: undefined,
+        })
         this.flushTimeline(true)
+        try {
+          await bridge.submitTurn(
+            sessionId,
+            next.text,
+            next.attachmentPaths.length > 0 ? next.attachmentPaths : undefined,
+            this.targetDeviceId(),
+            next.clientId,
+          )
+          dropQueuedMessage(sessionId, next.clientId)
+          // 真实 user_message 可能还没推回来：先留一个普通气泡，避免消息闪一下消失
+          this.confirmedViews.push({
+            key: `c:${next.clientId}`,
+            text: next.text,
+            attachments: next.attachments,
+            createdAt: new Date(next.createdAt).toISOString(),
+          })
+        } catch (error) {
+          if (next.attempts + 1 >= MAX_SEND_ATTEMPTS) {
+            patchQueuedMessage(sessionId, next.clientId, {
+              status: 'failed',
+              error: '重试次数已用完，请检查网络后手动重试',
+            })
+          } else {
+            patchQueuedMessage(sessionId, next.clientId, {
+              status: 'failed',
+              error: sendFailureMessage(error),
+            })
+          }
+          break
+        }
       }
-    } catch (error) {
-      this.setData({ inputText: text })
-      wx.showToast({ title: (error as Error).message || '发送失败', icon: 'none' })
+    } finally {
+      this.drainInFlight = false
+      this.flushTimeline(true)
     }
   },
 
+  /** 点击「发送失败」气泡：清空错误后立刻重试 */
+  onSendStateTap(
+    e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { clientid: string }>,
+  ) {
+    const clientId = e.currentTarget.dataset.clientid
+    if (typeof clientId !== 'string' || !clientId) return
+    const item = loadSendQueue(this.data.sessionId).find((entry) => entry.clientId === clientId)
+    if (item == null || item.status !== 'failed') return
+    patchQueuedMessage(this.data.sessionId, clientId, {
+      status: 'failed',
+      attempts: 0,
+      error: undefined,
+    })
+    this.flushTimeline(true)
+    void this.drainSendQueue()
+  },
+
   async onCancel() {
+    // 旧实现完全等不可靠的终态事件回来才解锁；先本地复位，服务端对账再校正。
+    this.serverRunning = false
+    if (this.latestTimeline != null) {
+      this.latestTimeline = withServerRunning(this.latestTimeline, false)
+    }
+    this.setData({ running: false })
+    this.flushTimeline(true, { keepScroll: true })
     try {
       await bridge.cancelTurn(this.data.sessionId, this.targetDeviceId())
       wx.showToast({ title: '已请求停止', icon: 'success' })
@@ -1529,11 +1955,16 @@ Page({
       return
     }
     // 菜单动态构建：旧版桌面端无 /v1/skills → 隐藏「技能」；命令目录为空 → 隐藏「命令」
-    const entries: ('image' | 'file' | 'skill' | 'command')[] = ['image', 'file']
+    const entries: ('image' | 'camera' | 'file' | 'skill' | 'command')[] = [
+      'image',
+      'camera',
+      'file',
+    ]
     if (this.data.skillsAvailable) entries.push('skill')
     if (this.commandCatalog.length > 0) entries.push('command')
     const labels: Record<(typeof entries)[number], string> = {
       image: '图片',
+      camera: '拍照',
       file: '文件',
       skill: '技能',
       command: '命令',
@@ -1544,6 +1975,7 @@ Page({
       success: (res) => {
         const picked = entries[res.tapIndex]
         if (picked === 'image') void this.chooseImage(remaining)
+        else if (picked === 'camera') void this.chooseImage(remaining, ['camera'])
         else if (picked === 'file') void this.chooseFile(remaining)
         else if (picked === 'skill') this.openSkillPanel()
         else if (picked === 'command') this.openCommandPanel()
@@ -1554,12 +1986,13 @@ Page({
     })
   },
 
-  async chooseImage(count: number) {
+  async chooseImage(count: number, sourceType: ('album' | 'camera')[] = ['album']) {
     try {
       const result = await wx.chooseMedia({
         count,
         mediaType: ['image'],
         sizeType: ['compressed'],
+        sourceType,
       })
       for (const file of result.tempFiles) {
         await this.uploadOneAttachment({
@@ -1616,13 +2049,31 @@ Page({
           fail: (err) => reject(new Error(err.errMsg || '读取文件失败')),
         })
       })
-      const { attachments: uploaded } = await bridge.uploadAttachments(
-        this.data.sessionId,
-        [{ name: input.name, mimeType: input.mimeType || undefined, dataBase64 }],
-        this.targetDeviceId(),
-      )
+      // 桌面端请求体上限 12MiB（base64 后 ≈ 原始 8MB）。前端先拦一道，
+      // 否则超限会被包成无信息量的 500，用户只看到「附件上传失败」。
+      if (dataBase64.length > MAX_ATTACHMENT_BASE64_CHARS) {
+        throw new Error('附件超过 8MB，请压缩后重试')
+      }
+      let uploaded: Awaited<ReturnType<typeof bridge.uploadAttachments>>['attachments'] | null =
+        null
+      let lastError: unknown = null
+      // 中继偶发抖动直接丢帧：本地重试一次，避免「图片发不出去」
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const result = await bridge.uploadAttachments(
+            this.data.sessionId,
+            [{ name: input.name, mimeType: input.mimeType || undefined, dataBase64 }],
+            this.targetDeviceId(),
+          )
+          uploaded = result.attachments
+          break
+        } catch (error) {
+          lastError = error
+        }
+      }
+      if (uploaded == null) throw lastError ?? new Error('附件上传失败')
       const first = uploaded[0]
-      if (first == null) throw new Error('上传失败')
+      if (first == null) throw new Error('附件上传失败')
       this.setData({
         [`attachments[${index}]`]: {
           type: first.type,
@@ -1633,9 +2084,9 @@ Page({
         },
       })
     } catch (error) {
-      // 上传失败：移除占位并提示
+      // 上传失败：移除占位并给出可操作的原因
       this.setData({ attachments: this.data.attachments.filter((_, i) => i !== index) })
-      wx.showToast({ title: (error as Error).message || '附件上传失败', icon: 'none' })
+      wx.showToast({ title: sendFailureMessage(error) || '附件上传失败', icon: 'none' })
     }
   },
 
@@ -1819,21 +2270,73 @@ Page({
     this.openPanel({ kind: 'branch', title: '分支列表', options })
   },
 
+  /** 统一的复制入口（系统自带「已复制」提示，不再额外 toast） */
+  copyText(text: string) {
+    if (!text) return
+    wx.setClipboardData({ data: text })
+  },
+
   onUserBubbleLongPress(
-    e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { turnid: string }>,
+    e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { turnid: string; text: string }>,
   ) {
-    const turnId = e.currentTarget.dataset.turnid
-    if (typeof turnId !== 'string' || !turnId) return
+    const { turnid: turnId, text } = e.currentTarget.dataset
+    const hasTurn = typeof turnId === 'string' && turnId.length > 0
+    const itemList = ['复制消息', ...(hasTurn ? ['从此处分支'] : [])]
     wx.showActionSheet({
-      itemList: ['从此处分支'],
+      itemList,
       itemColor: '#1a1a1a',
       success: (res) => {
-        if (res.tapIndex === 0) void this.forkFromTurn(turnId)
+        if (res.tapIndex === 0) this.copyText(displayTextOf(text))
+        else if (res.tapIndex === 1 && hasTurn) void this.forkFromTurn(turnId as string)
       },
       fail: () => {
         /* 用户取消 */
       },
     })
+  },
+
+  /** AI 回复长按：复制纯文本或 Markdown 原文；纯文本段本身支持系统选区复制 */
+  onAssistantLongPress(
+    e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { text: string }>,
+  ) {
+    const text = e.currentTarget.dataset.text
+    if (typeof text !== 'string' || !text) return
+    wx.showActionSheet({
+      itemList: ['复制为纯文本', '复制 Markdown 原文'],
+      itemColor: '#1a1a1a',
+      success: (res) => {
+        if (res.tapIndex === 0) this.copyText(markdownPlainText(text))
+        else if (res.tapIndex === 1) this.copyText(text)
+      },
+      fail: () => {
+        /* 用户取消 */
+      },
+    })
+  },
+
+  /** 文档式排版下方的「复制」按钮：一键复制纯文本 */
+  onCopyMessage(e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { text: string }>) {
+    const text = e.currentTarget.dataset.text
+    if (typeof text !== 'string' || !text) return
+    this.copyText(markdownPlainText(text))
+  },
+
+  /** 点击工具分块横线：临时展开 / 收起这段被折叠的执行记录 */
+  onDividerTap(e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { key: string }>) {
+    const key = e.currentTarget.dataset.key
+    if (typeof key !== 'string' || !key) return
+    if (this.expandedDividerKeys.has(key)) this.expandedDividerKeys.delete(key)
+    else this.expandedDividerKeys.add(key)
+    this.flushTimeline(true, { keepScroll: true })
+  },
+
+  /** 单条工具行展开摘要（工具名 / 调用结果） */
+  onToolTap(e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { key: string }>) {
+    const key = e.currentTarget.dataset.key
+    if (typeof key !== 'string' || !key) return
+    if (this.expandedToolKeys.has(key)) this.expandedToolKeys.delete(key)
+    else this.expandedToolKeys.add(key)
+    this.flushTimeline(true, { keepScroll: true })
   },
 
   /** 从指定回合 fork 子会话（可选自定义标题；错误原样透出，如锚点未完成） */
@@ -1889,7 +2392,7 @@ Page({
         '重命名',
         '定时任务',
         '刷新配置',
-        this.data.hideExecutionDetails ? '显示工具与思考记录' : '隐藏工具与思考记录',
+        this.data.hideExecutionDetails ? '显示工具与思考记录' : '工具记录收成分块横线',
         '删除会话',
       ],
       itemColor: '#1a1a1a',
@@ -1919,7 +2422,7 @@ Page({
     const next = !this.data.hideExecutionDetails
     this.setData({ hideExecutionDetails: next })
     setItem(StorageKeys.chatHideToolEvents, next)
-    wx.showToast({ title: next ? '已隐藏工具与思考记录' : '已显示工具与思考记录', icon: 'none' })
+    wx.showToast({ title: next ? '已收起为分块横线' : '已展开全部记录', icon: 'none' })
     if (this.latestTimeline != null) this.flushTimeline(true)
   },
 

@@ -112,7 +112,7 @@
       bindkeyboardheightchange="onKeyboardHeight"
     />
     <view
-      class="composer-action {{running || localValue ? 'composer-action--dark' : ''}}"
+      class="composer-action {{running || canSend ? 'composer-action--dark' : ''}}"
       hover-class="composer-action--hover"
       bindtap="onSend"
     >

@@ -20,6 +20,9 @@ import {
   type SyncHistoryItemVM,
   type SyncStatusVM,
 } from '../../utils/view-model'
+import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+
+const SYNC_CACHE_KEY = 'sync:list'
 
 interface SyncPageData {
   status: SyncStatusVM | null
@@ -51,15 +54,45 @@ Page({
     categories: SYNC_CATEGORY_VMS,
   } as SyncPageData,
 
+  /** 视图是否已有数据（来自缓存秒开或一次成功加载） */
+  viewReady: false,
+  /** onHide 记录的离开时刻；> 0 表示本次 onShow 是「从别处返回」 */
+  hiddenAt: 0,
+
   onLoad(options: Record<string, string | undefined>) {
     if (options.highlight) {
       this.setData({ highlight: options.highlight })
+    }
+    const cached = readListCache<{
+      status: SyncStatusVM | null
+      list: SyncHistoryItemVM[]
+      total: number
+      noMore: boolean
+    }>(SYNC_CACHE_KEY)
+    if (cached != null) {
+      this.setData({
+        status: cached.status,
+        list: cached.list,
+        total: cached.total,
+        noMore: cached.noMore,
+        loading: false,
+      })
+      this.viewReady = true
     }
   },
 
   onShow() {
     if (!ensureAuthenticated()) return
-    void this.loadFirst()
+    if (!this.viewReady) {
+      void this.loadFirst()
+      return
+    }
+    if (this.hiddenAt > 0 && isFresh(SYNC_CACHE_KEY)) return
+    void this.loadFirst(true)
+  },
+
+  onHide() {
+    this.hiddenAt = Date.now()
   },
 
   onPullDownRefresh() {
@@ -70,21 +103,23 @@ Page({
     void this.loadMore()
   },
 
-  async loadFirst() {
-    this.setData({ loading: true, page: 1, noMore: false })
+  async loadFirst(silent = false) {
+    if (!silent) this.setData({ loading: true, page: 1, noMore: false })
     try {
       const [status, history] = await Promise.all([
         syncApi.getSyncStatus().catch(() => null),
         syncApi.getSyncHistory({ page: 1, pageSize: PAGE_SIZE }).catch(() => null),
       ])
+      // 静默后台刷新：请求失败或用户已翻页时不覆盖现有列表，保留旧数据与滚动位置
+      if (silent && (history == null || this.data.page > 1)) return
       const list = history?.list ?? []
-      this.setData({
-        status: syncStatusVM(status),
-        list: list.map(syncHistoryItemVM),
-        total: history?.total ?? 0,
-        page: 1,
-        noMore: list.length < PAGE_SIZE,
-      })
+      const statusVm = syncStatusVM(status)
+      const listVm = list.map(syncHistoryItemVM)
+      const total = history?.total ?? 0
+      const noMore = list.length < PAGE_SIZE
+      this.setData({ status: statusVm, list: listVm, total, page: 1, noMore })
+      this.viewReady = true
+      writeListCache(SYNC_CACHE_KEY, { status: statusVm, list: listVm, total, noMore })
     } finally {
       this.setData({ loading: false })
     }

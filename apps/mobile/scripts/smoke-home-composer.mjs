@@ -21,6 +21,8 @@ let pageOptions
 const navigations = []
 
 globalThis.wx = {
+  // image-cache 在模块顶层读取 wx.env.USER_DATA_PATH；mock 里必须给，否则加载即崩
+  env: { USER_DATA_PATH: '/tmp/spark-mobile-smoke' },
   getStorageSync: () => '',
   setStorageSync: () => {},
   getRealtimeLogManager: () => ({ error: () => {} }),

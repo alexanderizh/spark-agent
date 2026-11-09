@@ -526,12 +526,15 @@ export function submitTurn(
   text: string,
   attachmentPaths?: string[],
   deviceId?: string,
+  clientMessageId?: string,
 ): Promise<{ turnId: string }> {
   return request<{ turnId: string }>(
     `/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
     'POST',
     {
       text,
+      // 端上幂等键：新版桌面端可据此去重，旧版会忽略未知字段（不影响兼容）
+      ...(clientMessageId != null ? { clientMessageId } : {}),
       ...(attachmentPaths != null && attachmentPaths.length > 0 ? { attachmentPaths } : {}),
     },
     deviceId,

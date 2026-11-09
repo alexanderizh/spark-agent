@@ -14,6 +14,9 @@ import {
   type SessionConfigOption,
 } from '../../utils/session-config'
 import type { BridgeProjectSummary, RelayDeviceInfo } from '../../api/bridge'
+import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+
+const HOME_LIST_CACHE_KEY = 'home:devices'
 
 interface ComputerOption {
   deviceId: string
@@ -108,11 +111,24 @@ Page({
   configGeneration: 0,
   configLoadedDeviceId: '',
 
+  /** 视图是否已有数据（来自缓存秒开或一次成功加载） */
+  viewReady: false,
+  /** onHide 记录的离开时刻；> 0 表示本次 onShow 是「从别处返回」而非冷启动首显 */
+  hiddenAt: 0,
+
   onLoad() {
+    const cached = readListCache<RelayDeviceInfo[]>(HOME_LIST_CACHE_KEY)
+    if (cached != null) {
+      this.restDevices = cached
+      this.setData({ devicesLoaded: true, devicesLoading: false })
+      this.rebuildDevices()
+      this.viewReady = true
+    }
     this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.onPresenceUpdate())
   },
 
   onShow() {
+    // 轻量状态刷新：状态栏 + 账号信息属于纯本地/展示态，始终更新，不触发列表重拉
     this.applyStatusBar()
     if (!getItem<string>(StorageKeys.token)) {
       wx.reLaunch({ url: '/pages/login/index' })
@@ -124,7 +140,19 @@ Page({
       accountLabel: user?.nickname ?? user?.account ?? '',
       selectedDeviceId: bridge.getSelectedDeviceId(),
     })
-    void this.bootstrap()
+    if (!this.viewReady) {
+      // 首次进入且无缓存：正常全量加载
+      void this.bootstrap()
+      return
+    }
+    // 从子页面返回且距上次成功加载 < TTL：保留现有视图与滚动位置，跳过重拉
+    if (this.hiddenAt > 0 && isFresh(HOME_LIST_CACHE_KEY)) return
+    // 冷启动读缓存后的补刷 / 数据已陈旧：静默后台刷新（不铺骨架屏、不清空列表）
+    void this.bootstrap(true)
+  },
+
+  onHide() {
+    this.hiddenAt = Date.now()
   },
 
   onUnload() {
@@ -151,9 +179,9 @@ Page({
     }
   },
 
-  async bootstrap() {
+  async bootstrap(silent = false) {
     const generation = ++this.loadGeneration
-    this.setData({ devicesLoading: true, devicesError: '' })
+    if (!silent) this.setData({ devicesLoading: true, devicesError: '' })
     void bridge.ensureRelay().catch(() => undefined)
     try {
       const result = await bridge.listRelayDevices()
@@ -161,11 +189,16 @@ Page({
       this.restDevices = result?.devices ?? []
       this.setData({ devicesLoaded: true })
       this.rebuildDevices()
+      this.viewReady = true
+      writeListCache(HOME_LIST_CACHE_KEY, this.restDevices)
     } catch (error) {
+      // 静默后台刷新失败时保留旧数据（不铺错误态、不清空列表）
       if (generation === this.loadGeneration) {
-        this.setData({
-          devicesError: error instanceof Error ? error.message : '电脑列表加载失败，请重试',
-        })
+        if (!silent) {
+          this.setData({
+            devicesError: error instanceof Error ? error.message : '电脑列表加载失败，请重试',
+          })
+        }
         logMobileError('mobile-home', 'load-devices', error)
       }
     } finally {

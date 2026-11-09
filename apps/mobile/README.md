@@ -1,6 +1,6 @@
 # SparkWork 移动端（微信小程序）
 
-> 状态: 实施中 | 最后核对: 2026-10-16
+> 状态: 实施中 | 最后核对: 2026-11-09
 
 SparkWork 桌面端的移动伴侣小程序。需求来源：scene#58「小程序」。
 
@@ -10,6 +10,18 @@ SparkWork 桌面端的移动伴侣小程序。需求来源：scene#58「小程�
 - **桌面端会话/信息管理** — 查看账号同步状态、同步历史、通过同步记录识别的桌面端设备
 - **双向互通** — 桌面端与移动端登录同一账户后，7 类数据（自定义命令/提示词/长期记忆/助手/工作流/外观/提示词库）经服务端双向流转；移动端实时呈现同步态势
 - **远程会话（MobileBridge）** — **云端中继是唯一传输**（局域网直连已移除：体验版强制 https/wss + 域名白名单，真机不可用）：小程序与桌面端都只连接 Spark 平台服务，登录同一 Spark 平台账号即可**接续已有会话或新建远程会话**，实时显示思考内容与 assistant 增量回复、工具调用和运行状态，可中途停止；多台电脑按**电脑 → 项目 → 会话**逐层浏览，项目和会话始终绑定当前电脑；**设备管理**可列表 / 实时在线 / 吊销管理
+
+## 会话体验增强（v1.5）
+
+- **纯图片 / 纯附件消息** — 桌面端 `/turns` 强制 `text` 非空，端上用 U+200B 零宽空格前缀 + 说明文字过校验，渲染层（`chat-view.displayTextOf`）识别前缀后只画附件条、不画文字气泡；无需改桌面端协议，对旧版桌面端同样可用。附件菜单补「拍照」入口，上传前做 8MB 预检并自动重试一次。
+- **消息可靠送达** — `utils/send-queue.ts` 是端上持久化待发队列（幂等 `clientMessageId` / 串行 drain / 失败保留可点重试 / WS 重连自动补发）；`utils/chat-cache.ts` 按 sessionId 缓存时间线、滚动位置与已解析图片预览。返回页面只做 `reconcileFromServer()` 增量对账，不再整页重建；列表页用 `utils/list-cache.ts` 做 30s 快照，下拉刷新始终强制重拉。
+- **运行中状态权威化** — `getMessages` 的 `running` 是唯一口径，覆盖本地归约；终态事件丢失 / 断流时 watchdog 用轻量对账解锁，不再 45s 全量重拉循环；取消立即本地复位；终态收敛残留「运行中」的工具行。实时事件流按 seq 连续性检测缺口，缺批才全量补齐（历史对账会排除流式 delta，不用这个判据）。
+- **消息顺序归一化** — `utils/chat-order.ts` 是唯一口径：**渲染顺序只认 `seq`**（`seq → timestamp → id` 稳定排序，与桌面端 `ORDER BY seq ASC, created_at ASC, rowid ASC` 对齐）。所有事件入口经 `mergeIncomingEvents()` 按 id 去重合并；服务端补写 / 晚到的旧 seq 事件会触发「完整有序事件集全量重放」插回原位，不再追加到末尾（这是「下午的横线跑到新消息之后」的根因）。展示时间在 `buildTimelineItems` 做**单调化**，倒退的 `timestamp` 钳到前一条，天分界与分块横线时间不会来回跳；事件原始 `timestamp` 不改写，快照与对账仍保留服务端值。
+- **输出不重复** — 桌面端 `ensurePoller` 在运行中的会话会从「当前回合用户消息」回放事件，回放的 **delta** 与 `init()` 历史分页返回的 **complete / final** 是同一段输出的两种形态。若两者都进 `allEvents`，`applyEvents` 会把 delta 追加到已有全文后面 → agent 输出显示两遍。三层防护：① `mergeEvents` 发现 base 已有该 `(type, turnId, segmentId)` 完整版时丢弃回放 delta；② `applyEvents` 入口用 `normalizeTextEvents` 清掉同批混合的 delta；③ `dedupeAssistantMessages` 收敛同回合相同文本气泡、兜底严格自重复文本，final 找不到同 turn 分段时先按内容查重。只有 delta 的流式分段不受影响；`restoreSnapshot` 也会净化旧版本写脏的快照事件集。
+- **不抖屏** — 差量 `setData`（key 序列不变时只回填变化项）、数值 `scroll-top` 交替值取代常驻 `scroll-into-view`、回底并入同一次 setData、图片解析前后同尺寸占位、rich-md 内容未变不重解析。
+- **输出分块与复制** — 隐藏工具/思考记录时，连续段折叠成「浅色横线 + 到达时间 + 折叠条数」，点击横线可临时展开；工具行本身也可点开摘要。用户气泡长按可复制、AI 回复提供「复制」按钮与长按菜单（纯文本 / Markdown 原文），纯文本段落用 `text user-select` 支持选区复制。
+
+> 工具/思考记录显隐仍在导航栏「···」菜单；桌面端会话里纯附件消息会显示「请查看附件」（零宽前缀不可见）。
 
 ## 快速开始
 
@@ -86,15 +98,15 @@ pnpm --filter @spark/mobile smoke:relay  # 云端中继端到端 21 条断言（
 
 ### 常见故障
 
-| 现象                                     | 原因与处理                                                                                                   |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 「电脑端没连上云端中继」                 | 桌面端「设置 → 生态 → 移动端桥接 → 云端中继」没开，或电脑没联网；开开关后看状态变「已连接」                  |
-| 一直「未连接」且提示未登录               | 桌面端没登录 Spark 平台账号；登录后最多等 30s 自动连上                                                       |
-| 能连上但会话列表空                       | 两端不是同一账号                                                                                             |
-| 桌面端提示「此设备已被吊销」             | 该电脑的设备身份在小程序端被吊销。确认是本人操作后，在桌面端该设置页点「重置设备身份」（生成全新设备身份并重连） |
-| 桌面端提示「设备密钥校验失败（4401）」   | 本机设备身份数据异常。桌面端「重置设备身份」即可                                                                 |
-| 桌面端提示「账号接入设备数已达上限（4429）」 | 账号下 active 设备超过 20 台。去小程序「远程会话 → 设备管理」吊销不用的设备                                  |
-| 上传大图很慢                             | 附件 base64 走 WS，过大的图建议先压缩（已知限制，后续可改走服务端 HTTP 中转）                                |
+| 现象                                         | 原因与处理                                                                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 「电脑端没连上云端中继」                     | 桌面端「设置 → 生态 → 移动端桥接 → 云端中继」没开，或电脑没联网；开开关后看状态变「已连接」                      |
+| 一直「未连接」且提示未登录                   | 桌面端没登录 Spark 平台账号；登录后最多等 30s 自动连上                                                           |
+| 能连上但会话列表空                           | 两端不是同一账号                                                                                                 |
+| 桌面端提示「此设备已被吊销」                 | 该电脑的设备身份在小程序端被吊销。确认是本人操作后，在桌面端该设置页点「重置设备身份」（生成全新设备身份并重连） |
+| 桌面端提示「设备密钥校验失败（4401）」       | 本机设备身份数据异常。桌面端「重置设备身份」即可                                                                 |
+| 桌面端提示「账号接入设备数已达上限（4429）」 | 账号下 active 设备超过 20 台。去小程序「远程会话 → 设备管理」吊销不用的设备                                      |
+| 上传大图很慢                                 | 附件 base64 走 WS，过大的图建议先压缩（已知限制，后续可改走服务端 HTTP 中转）                                    |
 
 ### 设备管理（账号隔离 + 设备接入）
 
@@ -129,16 +141,18 @@ TOKEN=<上一步输出> pnpm --filter @spark/mobile e2e:relay
 
 常用命令：
 
-| 命令                                      | 说明                                                                          |
-| ----------------------------------------- | ----------------------------------------------------------------------------- |
-| `pnpm --filter @spark/mobile dev`         | watch 模式（tsc --watch + 静态资产变更拷贝）                                  |
-| `pnpm --filter @spark/mobile build`       | 构建 + dist 产物完整性校验                                                    |
-| `pnpm --filter @spark/mobile typecheck`   | 纯类型检查                                                                    |
-| `pnpm --filter @spark/mobile smoke`       | 请求层冒烟测试（mock wx + 本地 HTTP，10 条断言，需先 build）                  |
-| `pnpm --filter @spark/mobile smoke:boot`  | 启动冒烟（mock 运行时逐页 require，抓白屏类加载期异常，需先 build）           |
-| `pnpm --filter @spark/mobile smoke:relay` | 云端中继端到端冒烟（真实 edu-server RelayHub + 真实 bridge/relay，21 条断言） |
-| `pnpm --filter @spark/mobile e2e:relay`   | 生产链路端到端验证（真实公网 wss 双端连接，24 条断言，需 TOKEN）              |
-| `pnpm --filter @spark/mobile icons`       | 重新生成 tabBar 图标（依赖根 node_modules 的 sharp）                          |
+| 命令                                             | 说明                                                                                                                      |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm --filter @spark/mobile dev`                | watch 模式（tsc --watch + 静态资产变更拷贝）                                                                              |
+| `pnpm --filter @spark/mobile build`              | 构建 + dist 产物完整性校验                                                                                                |
+| `pnpm --filter @spark/mobile typecheck`          | 纯类型检查                                                                                                                |
+| `pnpm --filter @spark/mobile smoke`              | 请求层冒烟测试（mock wx + 本地 HTTP，10 条断言，需先 build）                                                              |
+| `pnpm --filter @spark/mobile smoke:boot`         | 启动冒烟（mock 运行时逐页 require，抓白屏类加载期异常，需先 build）                                                       |
+| `pnpm --filter @spark/mobile smoke:relay`        | 云端中继端到端冒烟（真实 edu-server RelayHub + 真实 bridge/relay，21 条断言）                                             |
+| `pnpm --filter @spark/mobile smoke:chat-upgrade` | 会话增强回归（纯附件 / 分块横线 / 权威 running / 待发队列 / 复制纯文本，10 条断言，需先 build）                           |
+| `pnpm --filter @spark/mobile smoke:chat-order`   | 顺序与去重回归（seq 稳定排序 / 补写插回原位 / 时间单调 / 天分界 / 回放 delta 不叠加 / final 查重，14 条断言，需先 build） |
+| `pnpm --filter @spark/mobile e2e:relay`          | 生产链路端到端验证（真实公网 wss 双端连接，24 条断言，需 TOKEN）                                                          |
+| `pnpm --filter @spark/mobile icons`              | 重新生成 tabBar 图标（依赖根 node_modules 的 sharp）                                                                      |
 
 ## 技术选型
 
@@ -285,3 +299,6 @@ edu-server 源码在 `spark-edugen/edu-server`（`auth.controller.ts` / `desktop
 - **登录会话管理依赖服务端接口**：`user_sessions` 表已存在，但尚无公开 list/revoke 接口；设备页目前用同步记录的 `deviceLabel` 聚合识别桌面端设备
 - **图片验证码**为 SVG data URI，`<image>` 组件在部分端不渲染，已做「写本地文件」降级；若个别机型仍失败，需服务端增加 PNG 变体
 - **tabBar 图标**为仓库内静态 PNG（81×81），由 `scripts/gen-tabbar-icons.mjs` 生成
+- **中继零留存**：端上待发队列只保证「送到桥接端」，不替代服务端事件流；桌面端 SQLite 仍是消息事实来源。桌面端 `attachmentPaths` 只收路径数组（不带 name/type），历史附件名靠端上快照兜底，跨设备首次查看可能显示为「附件」
+- **构建依赖回退**：`build.mjs` 与 `smoke-relay.mjs` 在 `apps/mobile/node_modules` 或 `edu-server/node_modules` 缺失时回退到 Spark-Agent 工作区根的 `tsc`；`smoke-relay` 另用 `--baseUrl` / `--typeRoots` 从工作区根解析 `ws` 与 Node 类型
+- **上游 `timestamp` 不等于顺序**：桌面端 `toMobileEvent` 原样透传 `event.timestamp`，续接 / 摘要重放、SDK 占位事件复用父时间、工具结果迟到都会让 `seq` 递增而 `timestamp` 倒退。端上只把它当「显示成几点」并做单调化，**不要改成按 timestamp 排序**，也不要让 `seq` 缺口判据作用于历史对账（`queryRenderableTurns` 有意排除 delta）。真实时间若要彻底修正，需在桌面端事件写入时统一时间戳，属于跨端改动

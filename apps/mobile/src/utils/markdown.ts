@@ -40,7 +40,13 @@ function textNode(text: string): InlineNode {
 
 /** 段落内分段：正文走 rich-text，链接拆为可点 text */
 export type MdSegment =
-  | { kind: 'text'; nodes: InlineNode[] }
+  | {
+      kind: 'text'
+      nodes: InlineNode[]
+      /** 纯文本段（无内联格式）可直接用 text user-select 渲染，支持长按选区复制 */
+      plain?: string
+      selectable?: boolean
+    }
   | { kind: 'link'; url: string; label: string }
 
 /** 抽取节点树的纯文本（链接 label / 表格列宽估算用） */
@@ -58,13 +64,28 @@ export function plainTextOf(nodes: (InlineNode | InlineTextNode)[] | undefined):
   return out
 }
 
+/** 只有纯文本 span（无加粗/代码/删除线/br）才能换成 text user-select 而不丢格式 */
+function isPlainTextNodes(nodes: InlineNode[]): boolean {
+  return nodes.every((node) => {
+    if (node.name !== 'span') return false
+    if (node.attrs != null && Object.keys(node.attrs).length > 0) return false
+    const children = node.children ?? []
+    return children.every((child) => 'type' in child && child.type === 'text')
+  })
+}
+
 /** 顶层拆出链接段：md-link 节点 → 可点链接段，其余并入正文段（保持单 rich-text 渲染路径） */
 export function splitLinkSegments(nodes: InlineNode[]): MdSegment[] {
   const segments: MdSegment[] = []
   let buffer: InlineNode[] = []
   const flushBuffer = () => {
     if (buffer.length > 0) {
-      segments.push({ kind: 'text', nodes: buffer })
+      const selectable = isPlainTextNodes(buffer)
+      segments.push({
+        kind: 'text',
+        nodes: buffer,
+        ...(selectable ? { selectable: true, plain: plainTextOf(buffer) } : {}),
+      })
       buffer = []
     }
   }
@@ -481,4 +502,60 @@ export function parseMarkdown(source: string): MdBlock[] {
   }
   flushPara()
   return blocks
+}
+
+/**
+ * Markdown → 可复制纯文本。
+ *
+ * 小程序 rich-text 不支持文字选区，AI 正文因此长期「看得见复制不了」。
+ * 长按消息走「复制全文」时用这份纯文本；纯文本段落另外用 text user-select
+ * 渲染，支持真正的选区复制（见 components/rich-md）。
+ */
+export function markdownPlainText(source: string): string {
+  const parts: string[] = []
+  const segmentsText = (segments: MdSegment[]): string =>
+    segments
+      .map((seg) =>
+        seg.kind === 'link' ? `${seg.label}(${seg.url})` : (seg.plain ?? plainTextOf(seg.nodes)),
+      )
+      .join('')
+  for (const block of parseMarkdown(source)) {
+    switch (block.type) {
+      case 'p':
+        parts.push(segmentsText(block.segments))
+        break
+      case 'h':
+        parts.push(plainTextOf(block.nodes))
+        break
+      case 'code':
+        parts.push(block.text)
+        break
+      case 'quote':
+        parts.push(block.paragraphs.map((para) => segmentsText(para)).join('\n'))
+        break
+      case 'list':
+        parts.push(
+          block.items
+            .map((item, index) => {
+              const marker = block.ordered ? `${index + 1}. ` : '• '
+              const check = item.checked === true ? '[x] ' : item.checked === false ? '[ ] ' : ''
+              return `${marker}${check}${plainTextOf(item.nodes)}`
+            })
+            .join('\n'),
+        )
+        break
+      case 'image':
+        parts.push(block.alt ? `![${block.alt}](${block.url})` : block.url)
+        break
+      case 'table': {
+        const cells = (row: InlineNode[][]) => row.map((cell) => plainTextOf(cell)).join(' | ')
+        parts.push([cells(block.header), ...block.rows.map((row) => cells(row))].join('\n'))
+        break
+      }
+      case 'hr':
+        parts.push('---')
+        break
+    }
+  }
+  return parts.join('\n\n').trim()
 }

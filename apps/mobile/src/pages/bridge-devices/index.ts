@@ -19,6 +19,9 @@ import {
 } from '../../api/relay'
 import { ensureAuthenticated } from '../../utils/auth-guard'
 import { formatRelativeTime } from '../../utils/format'
+import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+
+const BRIDGE_DEVICES_CACHE_KEY = 'bridge-devices:list'
 
 /** 设备视图模型：WXML 直接绑定（Mustache 不能调用数据方法，需预计算） */
 interface DeviceRowVm {
@@ -42,7 +45,10 @@ interface BridgeDevicesData {
 }
 
 /** REST 列表 + presence 快照合并（presence 里的在线设备以实时状态为准） */
-function toRows(restDevices: RelayDeviceInfo[], presenceDevices: RelayDesktopInfo[]): DeviceRowVm[] {
+function toRows(
+  restDevices: RelayDeviceInfo[],
+  presenceDevices: RelayDesktopInfo[],
+): DeviceRowVm[] {
   const onlineIds = new Set(presenceDevices.map((item) => item.deviceId))
   const rows = restDevices.map((item) => toRow(item, onlineIds))
   // presence 里有、REST 还没返回的（刚注册接入的设备），先以在线态补进列表
@@ -91,14 +97,36 @@ Page({
   /** 设备列表订阅取消函数 */
   unsubscribeDevices: null as (() => void) | null,
 
+  /** 视图是否已有数据（来自缓存秒开或一次成功加载） */
+  viewReady: false,
+  /** onHide 记录的离开时刻；> 0 表示本次 onShow 是「从别处返回」 */
+  hiddenAt: 0,
+
   onLoad() {
     // presence 增量：设备上下线时实时刷新在线徽标
     this.unsubscribeDevices = onRelayDevicesChanged(() => this.rebuildRows())
+    const cached = readListCache<RelayDeviceInfo[]>(BRIDGE_DEVICES_CACHE_KEY)
+    if (cached != null) {
+      this.restDevices = cached
+      this.rebuildRows()
+      this.viewReady = true
+    }
   },
 
   onShow() {
     if (!ensureAuthenticated()) return
-    void this.loadDevices()
+    if (!this.viewReady) {
+      void this.loadDevices()
+      return
+    }
+    // 轻量状态刷新：用本地 presence 快照重算在线徽标（不发起网络请求）
+    this.rebuildRows()
+    if (this.hiddenAt > 0 && isFresh(BRIDGE_DEVICES_CACHE_KEY)) return
+    void this.loadDevices(true)
+  },
+
+  onHide() {
+    this.hiddenAt = Date.now()
   },
 
   onUnload() {
@@ -110,19 +138,24 @@ Page({
     void this.loadDevices().finally(() => wx.stopPullDownRefresh())
   },
 
-  async loadDevices() {
+  async loadDevices(silent = false) {
     // 建立中继 WS 以接收 presence 实时刷新（失败不阻塞 REST 列表）
     void ensureRelayConnected().catch(() => undefined)
-    this.setData({ loading: true, errorText: '' })
+    if (!silent) this.setData({ loading: true, errorText: '' })
     try {
       const result = await listRelayDevices()
       this.restDevices = result?.devices ?? []
       this.rebuildRows()
+      this.viewReady = true
+      writeListCache(BRIDGE_DEVICES_CACHE_KEY, this.restDevices)
     } catch (err) {
-      this.setData({
-        loading: false,
-        errorText: err instanceof Error ? err.message : '加载失败，下拉重试',
-      })
+      // 静默后台刷新失败时保留旧数据
+      if (!silent) {
+        this.setData({
+          loading: false,
+          errorText: err instanceof Error ? err.message : '加载失败，下拉重试',
+        })
+      }
     }
   },
 

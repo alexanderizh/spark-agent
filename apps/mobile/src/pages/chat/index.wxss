@@ -120,7 +120,9 @@
 
 .msg-row--user {
   display: flex;
-  justify-content: flex-end;
+  /* 附件条与文字气泡是上下关系，不能并排（并排会把气泡挤到换行错位） */
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 /* 用户气泡：右侧浅灰圆角 */
@@ -133,7 +135,9 @@
   font-size: 30rpx;
   line-height: 1.6;
   color: #1a1a1a;
-  word-break: break-all;
+  /* break-all 会把英文单词/路径拦腰折断，视觉上像异常换行 */
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* 用户消息附件 chips（气泡上方） */
@@ -148,6 +152,68 @@
   height: 132rpx;
   border-radius: 16rpx;
   background: #e9e6e1;
+}
+/* 预览尚未解析出来时占住同样尺寸，图片异步回填不再把列表顶得跳动 */
+.msg-attach-thumb--pending {
+  background: #eceae5;
+}
+.media-thumb--pending {
+  background: #eceae5;
+}
+.bubble-user--attach-only {
+  padding: 12rpx 24rpx;
+  font-size: 24rpx;
+  color: #6b6b6b;
+}
+
+/* 本地待发队列态 */
+.msg-send-state {
+  margin-top: 8rpx;
+  font-size: 21rpx;
+  color: #9b9489;
+}
+.msg-send-state--failed {
+  color: #b42318;
+}
+
+/* 工具/思考记录隐藏后的分块横线：浅色线 + 到达时间 + 折叠条数 */
+.chat-divider {
+  align-items: center;
+  gap: 16rpx;
+  margin: 22rpx 0 18rpx;
+}
+.chat-divider-line {
+  flex: 1;
+  height: 1rpx;
+  background: #e3e0da;
+}
+.chat-divider-label {
+  flex: none;
+  font-size: 21rpx;
+  color: #a09c95;
+}
+
+/* AI 文档式回复的复制入口 */
+.msg-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  margin: 8rpx 0 4rpx;
+  padding: 6rpx 18rpx;
+  border: 1rpx solid #e9e6e1;
+  border-radius: 999rpx;
+  background: #fff;
+  font-size: 21rpx;
+  color: #8e8b85;
+}
+.icon-copy {
+  width: 18rpx;
+  height: 18rpx;
+  flex: none;
+  box-sizing: border-box;
+  border: 2rpx solid currentColor;
+  border-radius: 3rpx;
+  box-shadow: 4rpx 4rpx 0 -2rpx #fff, 4rpx 4rpx 0 0 currentColor;
 }
 .msg-attach-file {
   gap: 8rpx;
@@ -261,9 +327,25 @@
 
 /* ─── 工具调用行 ───────────────────────────────────────────────────────────── */
 
+.tool-block {
+  margin: 4rpx 0;
+}
 .tool-line {
   padding: 10rpx 0 10rpx 4rpx;
   gap: 12rpx;
+}
+.tool-detail {
+  display: block;
+  margin: 0 0 8rpx 28rpx;
+  padding: 10rpx 16rpx;
+  border-left: 2rpx solid #e3e0da;
+  background: #faf9f7;
+  border-radius: 0 8rpx 8rpx 0;
+  font-size: 22rpx;
+  line-height: 1.55;
+  color: #6b6862;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .tool-name {
   color: #6b6b6b;

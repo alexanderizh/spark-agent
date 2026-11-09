@@ -12,6 +12,7 @@
  */
 
 import type { BridgeEvent } from '../api/bridge'
+import { normalizeTextEvents, sortEvents } from './chat-order'
 
 export interface ChatMessage {
   /** 稳定 key：用户消息用事件 id，助手气泡用 segmentId ?? turnId */
@@ -40,6 +41,25 @@ export interface ChatTimeline {
 
 export function emptyTimeline(): ChatTimeline {
   return { messages: [], running: false }
+}
+
+/**
+ * 用服务端权威 running 覆盖本地归约结果。
+ *
+ * 中继事件是「发完即丢」的直通帧，终态 agent_status 有可能在断线窗口丢失，
+ * 本地归约因此会永久停在 running=true（输入被锁死）。服务端 getMessages 的
+ * running 由最后一条 agent_status 推导，是唯一可信口径；对账后必须覆盖它。
+ */
+export function withServerRunning(timeline: ChatTimeline, running: boolean): ChatTimeline {
+  const messages = timeline.messages.map((item) =>
+    item.role === 'tool' && !running && item.toolStatus === 'running'
+      ? { ...item, toolStatus: 'success' as const, text: `${item.toolName ?? '工具'} 完成` }
+      : item,
+  )
+  const statusRows = running
+    ? messages
+    : messages.filter((item) => !(item.role === 'status' && item.tone === 'running'))
+  return { messages: statusRows, running }
 }
 
 /**
@@ -96,14 +116,70 @@ function isTerminalStatus(status: string | undefined): boolean {
 }
 
 /**
+ * 回合收尾时收敛仍标 running 的工具行。
+ * 桌面端不一定为每次 tool_call 都补 tool_result（尤其取消/异常场景），
+ * 旧行为会让这些行永远显示「运行中」，看起来像会话没结束。
+ */
+function settleRunningTools(messages: ChatMessage[]): void {
+  for (let i = 0; i < messages.length; i += 1) {
+    const item = messages[i]
+    if (item.role === 'tool' && item.toolStatus === 'running') {
+      messages[i] = {
+        ...item,
+        toolStatus: 'success',
+        text: `${item.toolName ?? '工具'} 已完成`,
+      }
+    }
+  }
+}
+
+/**
+ * 严格自重复兜底：全文恰好是「X + X」时截成 X。
+ * 保守条件（长度 ≥ 24、偶数、前后完全一致），只用于清理历史上已经写脏的
+ * 「delta 被追加到完整版之后」的气泡；正常回复不会是严格的两倍重复。
+ */
+function stripDoubledText(text: string): string {
+  const len = text.length
+  if (len < 24 || len % 2 !== 0) return text
+  const half = len / 2
+  return text.slice(0, half) === text.slice(half) ? text.slice(0, half) : text
+}
+
+/**
+ * 输出去重：同一回合里文本完全相同的两条 assistant 气泡（分段 key 与 final
+ * turnId 不一致时会出现）只保留第一条；顺带清掉严格自重复的文本。
+ * 不修改入参里的消息对象。
+ */
+export function dedupeAssistantMessages(messages: ChatMessage[]): ChatMessage[] {
+  const seen = new Set<string>()
+  const out: ChatMessage[] = []
+  for (const item of messages) {
+    if (item.role !== 'assistant') {
+      out.push(item)
+      continue
+    }
+    const text = stripDoubledText(item.text)
+    const trimmed = text.trim()
+    const dedupeKey = `${item.turnId ?? ''}\u0000${trimmed}`
+    if (trimmed.length > 0 && seen.has(dedupeKey)) continue
+    if (trimmed.length > 0) seen.add(dedupeKey)
+    out.push(text === item.text ? item : { ...item, text })
+  }
+  return out
+}
+
+/**
  * 应用一批事件（按 seq 升序）到时间线。
  * 返回新 timeline（不改入参），调用方直接 setData。
+ *
+ * 入口先做 normalizeTextEvents：同一分段若同时有 delta 与 complete，只认完整版，
+ * 否则 delta 会被追加到已有全文后面，agent 输出就显示两遍。
  */
 export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): ChatTimeline {
   const messages = [...timeline.messages]
   let running = timeline.running
 
-  for (const event of [...events].sort((a, b) => a.seq - b.seq)) {
+  for (const event of normalizeTextEvents(sortEvents(events))) {
     switch (event.type) {
       case 'user_message': {
         messages.push({
@@ -134,6 +210,16 @@ export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): Chat
             }
           })
           if (turnAssistantIndexes.length === 0) {
+            // turnId 不一致时 final 找不到同回合分段，但内容可能已由分段气泡
+            // 渲染过（桌面端 turn_id IS NULL 的会话级事件会走到这里）。
+            // 先按内容查重，避免整段输出再画一遍。
+            if (
+              messages.some(
+                (item) => item.role === 'assistant' && item.text.trim() === finalText.trim(),
+              )
+            ) {
+              break
+            }
             // 无已渲染分段（历史只有 final 或流式事件缺失）：final 即正文
             messages.push({
               key: `a:${event.turnId}`,
@@ -259,6 +345,7 @@ export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): Chat
         if (lastStatusIndex >= 0) messages.splice(lastStatusIndex, 1)
         if (isTerminalStatus(event.status)) {
           running = false
+          settleRunningTools(messages)
           if (event.status === 'error') {
             messages.push({
               key: `s:${event.id}`,
@@ -285,6 +372,7 @@ export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): Chat
         const lastStatusIndex = lastRunningStatusIndex(messages)
         if (lastStatusIndex >= 0) messages.splice(lastStatusIndex, 1)
         running = false
+        settleRunningTools(messages)
         messages.push({
           key: `s:${event.id}`,
           role: 'status',
@@ -316,5 +404,5 @@ export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): Chat
     }
   }
 
-  return { messages, running }
+  return { messages: dedupeAssistantMessages(messages), running }
 }

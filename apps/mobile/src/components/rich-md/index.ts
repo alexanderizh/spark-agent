@@ -53,15 +53,23 @@ Component({
   methods: {
     parse(
       this: {
-        setData: (d: Partial<RichMdData>) => void
+        setData: (d: Record<string, unknown>) => void
         resolveDesktopImages: (blocks: MdBlock[]) => void
-        data: { blocks: MdBlock[] }
+        data: { blocks: MdBlock[]; parsedContent?: string }
       },
       value: string,
     ) {
+      // 父层差量 setData 时同一条消息的 content 会被重复赋值；内容没变就不重解析，
+      // 否则块级节点反复重建会造成高度抖动（流式抖屏的诱因之一）。
+      if (this.data.parsedContent === value) return
       const blocks = value ? parseMarkdown(value) : []
-      this.setData({ blocks })
+      this.setData({ blocks, parsedContent: value })
       this.resolveDesktopImages(blocks)
+    },
+
+    /** 纯文本段自己撑起系统选区；吞掉长按冒泡，避免同时弹出消息的复制菜单 */
+    onNoop() {
+      /* noop */
     },
 
     /**

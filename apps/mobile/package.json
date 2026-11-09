@@ -15,6 +15,8 @@
     "smoke:chat-stream": "node scripts/smoke-chat-stream.mjs",
     "smoke:interactions": "node scripts/smoke-interactions.mjs",
     "smoke:home-composer": "node scripts/smoke-home-composer.mjs",
+    "smoke:chat-upgrade": "node scripts/smoke-chat-upgrade.mjs",
+    "smoke:chat-order": "node scripts/smoke-chat-order.mjs",
     "e2e:home-alignment": "node scripts/devtools-home-alignment-e2e.mjs",
     "e2e:project-composer": "node scripts/e2e-project-composer.mjs",
     "e2e:relay": "node scripts/e2e-relay-prod.mjs"

@@ -13,6 +13,9 @@ import * as syncApi from '../../api/sync'
 import { ensureAuthenticated } from '../../utils/auth-guard'
 import { formatRelativeTime } from '../../utils/format'
 import { categoryLabelOf } from '../../utils/view-model'
+import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+
+const DEVICES_CACHE_KEY = 'devices:list'
 
 interface DeviceAggregate {
   label: string
@@ -51,10 +54,33 @@ Page({
     currentDevice: { platform: '', system: '', version: '', sdkVersion: '' },
   } as DevicesPageData,
 
+  /** 视图是否已有数据（来自缓存秒开或一次成功加载） */
+  viewReady: false,
+  /** onHide 记录的离开时刻；> 0 表示本次 onShow 是「从别处返回」 */
+  hiddenAt: 0,
+
+  onLoad() {
+    const cached = readListCache<{ devices: DeviceAggregateVM[]; total: number }>(DEVICES_CACHE_KEY)
+    if (cached != null) {
+      this.setData({ devices: cached.devices, total: cached.total, loading: false })
+      this.viewReady = true
+    }
+  },
+
   onShow() {
     if (!ensureAuthenticated()) return
+    // 轻量状态刷新：本机系统信息（本地读取，无网络请求）
     this.loadCurrentDevice()
-    void this.loadDevices()
+    if (!this.viewReady) {
+      void this.loadDevices()
+      return
+    }
+    if (this.hiddenAt > 0 && isFresh(DEVICES_CACHE_KEY)) return
+    void this.loadDevices(true)
+  },
+
+  onHide() {
+    this.hiddenAt = Date.now()
   },
 
   onPullDownRefresh() {
@@ -77,8 +103,8 @@ Page({
     }
   },
 
-  async loadDevices() {
-    this.setData({ loading: true })
+  async loadDevices(silent = false) {
+    if (!silent) this.setData({ loading: true })
     try {
       // 拉取最近 100 条记录做聚合（设备数量有限，足够覆盖）
       const history = await syncApi.getSyncHistory({ page: 1, pageSize: HISTORY_PAGE_SIZE })
@@ -105,15 +131,21 @@ Page({
       }
       const devices = [...map.values()]
         .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
-        .map((device): DeviceAggregateVM => ({
-          label: device.label,
-          count: device.count,
-          lastSeenLabel: formatRelativeTime(device.lastSeen),
-          categoryLabels: device.categories.map(categoryLabelOf),
-        }))
-      this.setData({ devices, total: history?.total ?? list.length })
+        .map(
+          (device): DeviceAggregateVM => ({
+            label: device.label,
+            count: device.count,
+            lastSeenLabel: formatRelativeTime(device.lastSeen),
+            categoryLabels: device.categories.map(categoryLabelOf),
+          }),
+        )
+      const total = history?.total ?? list.length
+      this.setData({ devices, total })
+      this.viewReady = true
+      writeListCache(DEVICES_CACHE_KEY, { devices, total })
     } catch (error) {
-      wx.showToast({ title: (error as Error).message || '加载失败', icon: 'none' })
+      // 静默后台刷新失败时保留旧数据；主动/下拉加载失败才给出提示
+      if (!silent) wx.showToast({ title: (error as Error).message || '加载失败', icon: 'none' })
     } finally {
       this.setData({ loading: false })
     }

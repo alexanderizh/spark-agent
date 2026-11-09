@@ -48,6 +48,8 @@ interface CapsuleComposerData {
   quickChips: ComposerChip[]
   /** 键盘高度（px；0 = 收起）。float 抬 bottom / dock 加占位都以此为准 */
   keyboardHeight: number
+  /** 有文字或已上传的附件即可发送（纯图片 / 纯文件消息） */
+  canSend: boolean
 }
 
 /** 录音管理器（微信全局单例；组件多实例复用同一份） */
@@ -87,6 +89,7 @@ Component({
     localValue: '',
     quickChips: [],
     keyboardHeight: 0,
+    canSend: false,
   } as CapsuleComposerData,
 
   observers: {
@@ -95,6 +98,17 @@ Component({
       if (next !== this.data.localValue) {
         this.setData({ localValue: next })
       }
+    },
+    /** 发送按钮可用态：文字非空，或已有上传完成的附件（纯附件消息） */
+    'localValue, attachments, running, disabled'(
+      localValue: string,
+      attachments: ComposerAttachment[],
+      running: boolean,
+      disabled: boolean,
+    ) {
+      const ready = (attachments ?? []).some((item) => item.uploaded === true)
+      const canSend = !disabled && !running && (localValue.trim().length > 0 || ready)
+      if (canSend !== this.data.canSend) this.setData({ canSend })
     },
   },
 
@@ -162,15 +176,22 @@ Component({
     onSend() {
       const value = (
         this as unknown as {
-          properties: { running: boolean; disabled: boolean }
+          properties: {
+            running: boolean
+            disabled: boolean
+            attachments: ComposerAttachment[]
+          }
         }
       ).properties
       if (value.running) {
         this.triggerEvent('stop')
         return
       }
+      if (value.disabled) return
       const text = this.data.localValue.trim()
-      if (!text || value.disabled) return
+      // 纯图片 / 纯文件消息：无文字但已有落盘完成的附件时同样允许发送
+      const hasReadyAttachments = (value.attachments ?? []).some((item) => item.uploaded === true)
+      if (!text && !hasReadyAttachments) return
       this.triggerEvent('send', { value: text })
     },
 

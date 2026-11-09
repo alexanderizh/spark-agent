@@ -2,6 +2,7 @@
 
 import * as bridge from '../../api/bridge'
 import type { BridgeProjectSummary, RelayDeviceInfo } from '../../api/bridge'
+import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
 import {
   mergeManualOrderWithHidden,
   moveItem,
@@ -58,6 +59,11 @@ Page({
   /** 桌面端侧栏手动序（projects scope；空数组 = 桌面端未排过序/旧版本） */
   manualProjectIds: [] as string[],
 
+  /** 视图是否已有数据（来自缓存秒开或一次成功加载） */
+  viewReady: false,
+  /** onHide 记录的离开时刻；> 0 表示本次 onShow 是「从别处返回」 */
+  hiddenAt: 0,
+
   onLoad(options: Record<string, string | undefined>) {
     const deviceId = options.deviceId ?? ''
     if (!deviceId) {
@@ -69,10 +75,37 @@ Page({
       deviceName: decodeRouteValue(options.deviceName, '桌面端'),
     })
     this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.onPresenceUpdate())
+    const cached = readListCache<{ projects: ProjectOption[]; manualProjectIds: string[] }>(
+      'projects:' + deviceId,
+    )
+    if (cached != null) {
+      this.manualProjectIds = cached.manualProjectIds ?? []
+      this.setData({ projects: cached.projects, loading: false })
+      this.applyProjectOrder()
+      this.viewReady = true
+    }
   },
 
   onShow() {
-    if (this.data.deviceId) void this.bootstrap()
+    if (!this.data.deviceId) return
+    // 轻量状态刷新：仅用本地 presence 快照校正在线徽标，且只在状态真变化时才 setData
+    if (bridge.isRelayPresenceFresh()) {
+      const online = bridge
+        .getRelayPresenceDevices()
+        .some((item) => item.deviceId === this.data.deviceId)
+      const nextOffline = !online
+      if (this.data.deviceOffline !== nextOffline) this.setData({ deviceOffline: nextOffline })
+    }
+    if (!this.viewReady) {
+      void this.bootstrap()
+      return
+    }
+    if (this.hiddenAt > 0 && isFresh('projects:' + this.data.deviceId)) return
+    void this.bootstrap(true)
+  },
+
+  onHide() {
+    this.hiddenAt = Date.now()
   },
 
   onUnload() {
@@ -97,9 +130,9 @@ Page({
     void this.bootstrap()
   },
 
-  async bootstrap() {
+  async bootstrap(silent = false) {
     const generation = ++this.loadGeneration
-    this.setData({ loading: true, errorText: '', deviceUnavailable: false })
+    if (!silent) this.setData({ loading: true, errorText: '', deviceUnavailable: false })
     void bridge.ensureRelay().catch(() => undefined)
     try {
       const trustedResult = await bridge.listRelayDevices()
@@ -108,12 +141,15 @@ Page({
         (item: RelayDeviceInfo) => item.deviceId === this.data.deviceId,
       )
       if (!trusted) {
-        this.setData({
-          deviceUnavailable: true,
-          deviceOffline: true,
-          projects: [],
-          loading: false,
-        })
+        // 静默后台刷新不清空现有列表；设备不可用态交由 presence 增量/全量加载维护
+        if (!silent) {
+          this.setData({
+            deviceUnavailable: true,
+            deviceOffline: true,
+            projects: [],
+            loading: false,
+          })
+        }
         return
       }
 
@@ -126,7 +162,7 @@ Page({
         deviceUnavailable: false,
       })
       if (!online) {
-        this.setData({ projects: [], loading: false })
+        if (!silent) this.setData({ projects: [], loading: false })
         return
       }
 
@@ -134,13 +170,11 @@ Page({
         bridge.listProjects(100, this.data.deviceId),
         bridge.listSessions(1, 'default', this.data.deviceId),
         // 旧版桌面端没有该端点：静默回退到「置顶 + 更新时间」兜底排序
-        bridge
-          .getSidebarOrder(this.data.deviceId)
-          .catch(() => ({
-            projectIds: [],
-            sessionIdsByProject: {},
-            pinnedSessionIdsByProject: {},
-          })),
+        bridge.getSidebarOrder(this.data.deviceId).catch(() => ({
+          projectIds: [],
+          sessionIdsByProject: {},
+          pinnedSessionIdsByProject: {},
+        })),
       ])
       if (generation !== this.loadGeneration) return
       this.manualProjectIds = sidebarOrder.projectIds ?? []
@@ -162,8 +196,14 @@ Page({
       }
       this.setData({ projects, errorText: '' })
       this.applyProjectOrder()
+      this.viewReady = true
+      writeListCache('projects:' + this.data.deviceId, {
+        projects,
+        manualProjectIds: this.manualProjectIds,
+      })
     } catch (error) {
-      if (generation === this.loadGeneration) {
+      // 静默后台刷新失败时保留旧数据
+      if (generation === this.loadGeneration && !silent) {
         this.setData({
           projects: [],
           errorText: error instanceof Error ? error.message : '项目列表加载失败，请下拉重试',

@@ -19,7 +19,7 @@ import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
 const require = createRequire(import.meta.url)
@@ -31,6 +31,19 @@ const eduServer =
   process.env.SPARK_EDUGEN_DIR?.trim() ||
   resolve(root, '..', '..', '..', 'spark-edugen', 'edu-server')
 const outDir = mkdtempSync(join(tmpdir(), 'mp-relay-smoke-'))
+
+/** edu-server 未单独安装依赖时，回退到 Spark-Agent 工作区根的 tsc（同 TS 版本） */
+function resolveTsc() {
+  const candidates = [
+    join(eduServer, 'node_modules', '.bin', 'tsc'),
+    join(repoRoot, 'node_modules', '.bin', 'tsc'),
+  ]
+  const found = candidates.find((candidate) => existsSync(candidate))
+  if (found == null) {
+    throw new Error('未找到 tsc：请在 edu-server 或 Spark-Agent 仓库根执行 pnpm install')
+  }
+  return found
+}
 
 const results = []
 function check(name, ok, detail = '') {
@@ -52,7 +65,7 @@ async function waitUntil(predicate, timeoutMs = 4000) {
 
 console.log('编译 edu-server relay-hub.ts …')
 execFileSync(
-  join(eduServer, 'node_modules', '.bin', 'tsc'),
+  resolveTsc(),
   [
     join(eduServer, 'src/service/mobile-bridge/relay-hub.ts'),
     '--outDir',
@@ -65,6 +78,13 @@ execFileSync(
     'node',
     '--skipLibCheck',
     '--esModuleInterop',
+    // edu-server 未单独装依赖时，从 Spark-Agent 工作区根解析 'ws' / NodeJS 命名空间
+    '--baseUrl',
+    join(repoRoot, 'node_modules'),
+    '--typeRoots',
+    join(repoRoot, 'node_modules', '@types'),
+    '--types',
+    'node',
   ],
   { cwd: eduServer, stdio: 'pipe' },
 )
@@ -207,7 +227,10 @@ function attachDesktop(deviceId, label) {
     inbox,
     reqCount: () => inbox.filter((f) => f.t === 'req').length,
     reply: (frame, body) =>
-      socket.emit('message', Buffer.from(JSON.stringify({ t: 'res', id: frame.id, s: 200, b: body }))),
+      socket.emit(
+        'message',
+        Buffer.from(JSON.stringify({ t: 'res', id: frame.id, s: 200, b: body })),
+      ),
     pushEvent: (sessionId, events) =>
       socket.emit('message', Buffer.from(JSON.stringify({ t: 'event', sessionId, events }))),
     waitFor: async (predicate, timeoutMs = 4000) => {
@@ -258,13 +281,18 @@ async function main() {
     devicesSeen,
     JSON.stringify(bridge.getRelayPresenceDevices().map((d) => d.deviceId)),
   )
-  check('presence 设备携带展示名', bridge.getRelayPresenceDevices().some((d) => d.label === 'Mac mini'))
+  check(
+    'presence 设备携带展示名',
+    bridge.getRelayPresenceDevices().some((d) => d.label === 'Mac mini'),
+  )
   check('任一桌面端在线 → isRelayDesktopOnline=true', bridge.isRelayDesktopOnline() === true)
 
   // 4) 多电脑定向：req 带 d=mac-02 → 只有 mac-02 收到
   const d1Baseline = desktop1.reqCount()
   const targetPromise = bridge.listSessions(10, undefined, 'mac-02')
-  const targetFrame = await desktop2.waitFor((f) => f.t === 'req' && f.p === '/v1/sessions?limit=10')
+  const targetFrame = await desktop2.waitFor(
+    (f) => f.t === 'req' && f.p === '/v1/sessions?limit=10',
+  )
   check('定向调用到达指定电脑（mac-02）', targetFrame != null)
   desktop2.reply(targetFrame, { sessions: [{ id: 's2', title: 'mini 会话' }], total: 1 })
   const targetResult = await targetPromise
@@ -281,10 +309,15 @@ async function main() {
   const restDevices = restResult?.devices ?? []
   check(
     '接入设备 REST 列表形状（含离线设备）',
-    restDevices.length === 2 && restDevices[0]?.name === 'MacBook Pro' && restDevices[0]?.trustedAt != null,
+    restDevices.length === 2 &&
+      restDevices[0]?.name === 'MacBook Pro' &&
+      restDevices[0]?.trustedAt != null,
     JSON.stringify(restDevices.map((d) => `${d.deviceId}:${d.online}`)),
   )
-  check('接入设备 REST 走 /api/v1/mobile-bridge/devices', restCalls.some((c) => c.url.includes('/api/v1/mobile-bridge/devices')))
+  check(
+    '接入设备 REST 走 /api/v1/mobile-bridge/devices',
+    restCalls.some((c) => c.url.includes('/api/v1/mobile-bridge/devices')),
+  )
 
   // 6) 桌面端全部离线：503 DESKTOP_OFFLINE 要变成可读的中文原因
   desktop1.socket.terminate()

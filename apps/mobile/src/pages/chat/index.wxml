@@ -22,7 +22,7 @@
     <scroll-view
       class="chat-scroll"
       scroll-y
-      scroll-into-view="{{scrollToId}}"
+      scroll-top="{{scrollTop}}"
       scroll-anchoring
       upper-threshold="120"
       bindscrolltoupper="loadEarlier"
@@ -63,7 +63,20 @@
           <!-- 天级时间分界（居中灰字） -->
           <view wx:if="{{item.kind === 'time'}}" class="chat-time">{{item.label}}</view>
 
-          <!-- 用户消息：右侧灰色气泡（长按 = 从此处分支） -->
+          <!-- 隐藏工具/思考记录：浅色横线代替工具，把会话输出分块；横线后跟到达时间 -->
+          <view
+            wx:elif="{{item.kind === 'divider'}}"
+            class="chat-divider row"
+            data-key="{{item.key}}"
+            hover-class="hover-dim"
+            bindtap="onDividerTap"
+          >
+            <view class="chat-divider-line"></view>
+            <text class="chat-divider-label">{{item.label}} · {{item.hiddenCount}} 条工具记录{{item.expanded ? ' · 收起' : ' · 展开'}}</text>
+            <view class="chat-divider-line"></view>
+          </view>
+
+          <!-- 用户消息：右侧灰色气泡（长按 = 复制 / 从此处分支） -->
           <view wx:elif="{{item.kind === 'user'}}" class="msg-row msg-row--user">
             <!-- 附件 chips（本次发送用本地图；历史消息图片经缓存解析） -->
             <view wx:if="{{item.attachments.length > 0}}" class="msg-attach row">
@@ -76,13 +89,16 @@
                   data-url="{{att.previewUrl}}"
                   bindtap="onPreviewAttachment"
                 />
-                <view wx:elif="{{att.type !== 'image'}}" class="msg-attach-file row">
+                <!-- 图片尚未解析出预览时保留同尺寸占位，避免异步回填导致列表抖屏 -->
+                <view wx:elif="{{att.type === 'image'}}" class="msg-attach-thumb msg-attach-thumb--pending"></view>
+                <view wx:else class="msg-attach-file row">
                   <view class="icon icon-file"></view>
-                  <text class="ellipsis">{{att.name}}</text>
+                  <text class="ellipsis">{{att.name || '附件'}}</text>
                 </view>
               </block>
             </view>
             <view
+              wx:if="{{item.text}}"
               class="bubble-user"
               data-key="{{item.key}}"
               data-turnid="{{item.turnId}}"
@@ -91,15 +107,45 @@
             >
               <text user-select>{{item.text}}</text>
             </view>
+            <!-- 纯附件消息：不渲染占位文案；旧版桌面端不透传附件字段时给个最小兜底 -->
+            <view wx:elif="{{item.attachmentOnly && item.attachments.length === 0}}" class="bubble-user bubble-user--attach-only">
+              <text>附件</text>
+            </view>
+            <!-- 本地队列态：发送中 / 失败可重试 -->
+            <view
+              wx:if="{{item.sendStatus}}"
+              class="msg-send-state {{item.sendStatus === 'failed' ? 'msg-send-state--failed' : ''}}"
+              data-clientid="{{item.clientId}}"
+              bindtap="onSendStateTap"
+            >
+              <text>{{item.sendStatus === 'failed' ? '发送失败 · 点击重试' : '发送中…'}}</text>
+            </view>
           </view>
 
           <!-- AI 回复：全宽文档式 Markdown -->
-          <view wx:elif="{{item.kind === 'assistant'}}" class="msg-row msg-row--assistant">
+          <view
+            wx:elif="{{item.kind === 'assistant'}}"
+            class="msg-row msg-row--assistant"
+            data-key="{{item.key}}"
+            data-text="{{item.text}}"
+            bindlongpress="onAssistantLongPress"
+          >
             <rich-md wx:if="{{item.text}}" content="{{item.text}}" device-id="{{deviceId}}" />
             <view wx:else class="chat-typing row gap-8">
               <view class="typing-dot"></view>
               <view class="typing-dot typing-dot--2"></view>
               <view class="typing-dot typing-dot--3"></view>
+            </view>
+            <!-- 文档式排版没有气泡，补给一个明确的复制入口（长按也可复制） -->
+            <view
+              wx:if="{{item.text}}"
+              class="msg-copy row"
+              hover-class="hover-dim"
+              data-text="{{item.text}}"
+              catchtap="onCopyMessage"
+            >
+              <view class="icon icon-copy"></view>
+              <text>复制</text>
             </view>
           </view>
 
@@ -107,19 +153,25 @@
           <view wx:elif="{{item.kind === 'media'}}" class="msg-row msg-row--media">
             <scroll-view class="media-strip" scroll-x>
               <view class="media-strip-inner">
-                <image
-                  wx:for="{{item.previews}}"
+                <block
+                  wx:for="{{item.previews.length > 0 ? item.previews : item.paths}}"
                   wx:for-item="src"
                   wx:for-index="pIdx"
                   wx:key="*this"
-                  class="media-thumb"
-                  src="{{src}}"
-                  mode="aspectFill"
-                  lazy-load
-                  data-key="{{item.key}}"
-                  data-idx="{{pIdx}}"
-                  bindtap="onMediaImageTap"
-                />
+                >
+                  <image
+                    wx:if="{{item.previews.length > 0}}"
+                    class="media-thumb"
+                    src="{{src}}"
+                    mode="aspectFill"
+                    lazy-load
+                    data-key="{{item.key}}"
+                    data-idx="{{pIdx}}"
+                    bindtap="onMediaImageTap"
+                  />
+                  <!-- 未解析前用同尺寸占位，避免图片回填时整列高度突变 -->
+                  <view wx:else class="media-thumb media-thumb--pending"></view>
+                </block>
               </view>
             </scroll-view>
             <!-- 气泡底部操作按钮组：保存到相册（移动端承载桌面端「复制/下载图片」） -->
@@ -156,11 +208,19 @@
             <text wx:if="{{item.expanded}}" class="thinking-content" user-select>{{item.text}}</text>
           </view>
 
-          <!-- 工具调用行（折叠样式） -->
-          <view wx:elif="{{item.kind === 'tool'}}" class="tool-line row">
-            <view class="tool-dot dot {{item.toolStatus === 'success' ? 'dot-success' : (item.toolStatus === 'error' ? 'dot-danger' : 'dot-warning')}}"></view>
-            <text class="tool-name t-mono ellipsis">{{item.toolName}}</text>
-            <text class="tool-status">{{item.toolStatus === 'success' ? '完成' : (item.toolStatus === 'error' ? '失败' : '运行中')}}</text>
+          <!-- 工具调用行：点击展开摘要详情 -->
+          <view wx:elif="{{item.kind === 'tool'}}" class="tool-block">
+            <view
+              class="tool-line row"
+              data-key="{{item.key}}"
+              hover-class="hover-dim"
+              bindtap="onToolTap"
+            >
+              <view class="tool-dot dot {{item.toolStatus === 'success' ? 'dot-success' : (item.toolStatus === 'error' ? 'dot-danger' : 'dot-warning')}}"></view>
+              <text class="tool-name t-mono ellipsis">{{item.toolName}}</text>
+              <text class="tool-status">{{item.toolStatus === 'success' ? '完成' : (item.toolStatus === 'error' ? '失败' : '运行中')}} · {{item.expanded ? '收起' : '详情'}}</text>
+            </view>
+            <text wx:if="{{item.expanded}}" class="tool-detail" user-select>{{item.text}}</text>
           </view>
 
           <!-- 状态行（思考中 / 错误） -->
