@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+## [0.15.15] - 2026-11-09
+
+### 修复
+
+- **桌面端编译缺陷**：补回 `ComposerV2` 遗漏的 `isProviderCompatibleWithAdapter` import——0.15.13 重构会话渠道选择时删掉了该导入，却漏掉 `compatibleProviders` 过滤处的第二处引用，导致桌面端 typecheck 编译失败。本次仅补回导入，不改动任何运行逻辑与行为。
+
 ## [0.15.14] - 2026-11-08
 
 ### 新增
