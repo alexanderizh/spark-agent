@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+## [0.15.16] - 2026-11-09
+
+### 新增
+
+- **小程序会话体验增强（v1.5）**：纯图片/纯附件消息（端上以零宽前缀通过桌面端 `text` 非空校验，渲染层识别前缀后只画附件条、不画文字气泡，不改桌面端协议、旧版桌面端同样可用）；附件菜单补「拍照」入口，上传前 8MB 预检并自动重试一次；隐藏工具/思考记录时连续段折叠成「浅色横线 + 到达时间 + 折叠条数」，点击可临时展开；用户气泡长按复制，AI 回复提供「复制」按钮与长按菜单（纯文本 / Markdown 原文）。
+
+### 改进
+
+- **小程序消息可靠送达与首屏缓存**：新增端上持久化待发队列（幂等 `clientMessageId`、串行 drain、失败保留可点重试、WS 重连自动补发）；会话时间线按 sessionId 缓存滚动位置与已解析图片预览，列表页用 30s 快照；返回页面只做服务端增量对账，不再整页重建。
+- **小程序消息顺序与去重归一化**：新增顺序唯一口径模块——渲染顺序只认 `seq`（与桌面端存储 `ORDER BY seq ASC, created_at ASC, rowid ASC` 对齐），晚到的旧 seq 事件触发「完整有序事件集全量重放」插回原位，修复天分界横线跑到新消息之后的错序；展示时间单调化、倒退钳到前一条但不改写事件原始时间戳；回放 delta 与历史 complete 三层去重，agent 输出不再显示两遍；运行中状态以 `getMessages` 的 `running` 为唯一口径，终态丢失 / 断流时 watchdog 轻量对账解锁；差量 `setData` 与回底合并防抖屏。
+
+### 修复
+
+- **OpenAI 协议渠道在 codex 0.167 下报 -32600**：codex 0.167 新增 provider 准入校验（上游 openai/codex#57840），`turn/start` 按进程级当前 provider 比对会话记录的 provider，而 per-request 的 config 覆盖不参与校验——CODEX_HOME 隔离后 app-server 载具的空 `config.toml` 使当前 provider 恒为内置 `openai`，自定义渠道每个回合必报 `modelProviderMismatch`。修复：抽出共享的 provider 启动覆盖构造函数，app-server spawn 追加 `-c` 启动覆盖注入 `model_provider`（仅含环境变量名、不含密钥），参数进 runtime fingerprint 切渠道自动轮换持久进程；CLI 载具行为不变，thread 级 config 覆盖保留继续负责流量路由。0.144.5 / 0.160.0 / 0.167.0 三版本真实冒烟各 3/3 通过，兼容矩阵同步登记准入校验结论。
+
 ## [0.15.15] - 2026-11-09
 
 ### 修复
