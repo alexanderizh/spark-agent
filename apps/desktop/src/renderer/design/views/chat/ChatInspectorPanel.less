@@ -242,6 +242,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--pad-4xs, 2px);
+  min-width: 0;
   margin-top: var(--pad-3xs, 4px);
 }
 
@@ -256,15 +257,17 @@
 .prompt-filter-row {
   display: flex;
   align-items: center;
-  gap: var(--pad-2xs);
+  gap: var(--pad-3xs);
+  min-width: 0;
   min-height: 24px;
 }
 
 .prompt-filter-label {
   min-width: 0;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   font-size: var(--font-xs);
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .prompt-filter-locked .prompt-filter-label,
@@ -273,7 +276,7 @@
 }
 
 .prompt-filter-tokens {
-  margin-left: var(--pad-2xs);
+  margin-left: var(--pad-3xs);
   padding: 0 var(--pad-3xs, 4px);
   border: 1px solid var(--border-soft);
   border-radius: 999px;
