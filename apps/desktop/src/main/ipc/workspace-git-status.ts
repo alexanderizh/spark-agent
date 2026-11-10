@@ -13,6 +13,7 @@ import type {
   WorkspaceGitFileHistoryResponse,
 } from '@spark/protocol'
 import { homedir } from 'node:os'
+import path from 'node:path'
 import { isGitCommandError, type GitRepositoryState } from '@spark/agent-runtime'
 import { getUntrackedFilesLineStats } from './git-status-utils.js'
 import { getGitCommandService } from '../services/GitRuntimeService.js'
@@ -520,7 +521,56 @@ export async function getWorkspaceGitFileDiff(
   return { diff, isBinary: diff.includes('Binary files') }
 }
 
-export async function getWorkspaceGitStatus(rootPath: string): Promise<WorkspaceGitStatusResponse> {
+/**
+ * git 状态请求的单飞 + 短缓存。
+ *
+ * 背景：前端每 2 秒轮询 `workspace:git-status`，超大工作区（数万未跟踪文件）
+ * 单次真实计算可达十几秒，轮询叠加导致主进程并发扫盘、事件循环阻塞到
+ * critical 并最终触发崩溃。此处保证同一工作区：
+ * - 进行中的计算被所有并发请求共享（single-flight，不再叠加）；
+ * - 刚算完的结果在 TTL 窗口内直接复用；
+ * - 写操作（commit/push/pull/sync/切分支）后的刷新以 forceRefresh 跳过缓存。
+ */
+const GIT_STATUS_CACHE_TTL_MS = 1500
+
+type GitStatusCacheEntry = {
+  inFlight?: Promise<WorkspaceGitStatusResponse>
+  value?: WorkspaceGitStatusResponse
+  resolvedAt?: number
+}
+
+const gitStatusCache = new Map<string, GitStatusCacheEntry>()
+
+export async function getWorkspaceGitStatus(
+  rootPath: string,
+  options?: { forceRefresh?: boolean },
+): Promise<WorkspaceGitStatusResponse> {
+  const cacheKey = path.resolve(rootPath)
+  if (options?.forceRefresh !== true) {
+    const entry = gitStatusCache.get(cacheKey)
+    if (entry?.value != null && Date.now() - (entry.resolvedAt ?? 0) < GIT_STATUS_CACHE_TTL_MS) {
+      return entry.value
+    }
+    if (entry?.inFlight != null) return entry.inFlight
+  }
+
+  const run = computeWorkspaceGitStatus(rootPath)
+  gitStatusCache.set(cacheKey, { inFlight: run })
+  try {
+    const value = await run
+    gitStatusCache.set(cacheKey, { value, resolvedAt: Date.now() })
+    return value
+  } catch (error) {
+    // computeWorkspaceGitStatus 内部已兜底返回 emptyGitStatus，此分支仅防御
+    // probeRepository 等意外抛错：清掉槽位，避免缓存住 rejected promise。
+    if (gitStatusCache.get(cacheKey)?.inFlight === run) gitStatusCache.delete(cacheKey)
+    throw error
+  }
+}
+
+async function computeWorkspaceGitStatus(
+  rootPath: string,
+): Promise<WorkspaceGitStatusResponse> {
   const state = await getGitCommandService().probeRepository(rootPath)
   if (state.kind !== 'ready') return emptyGitStatus(state)
   try {

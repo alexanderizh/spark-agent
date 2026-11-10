@@ -8456,7 +8456,7 @@ export function registerAllIpcHandlers(): void {
         committed: true,
         pushed,
         commitSha: sha.stdout.trim() || null,
-        status: await getWorkspaceGitStatus(workspace.root_path),
+        status: await getWorkspaceGitStatus(workspace.root_path, { forceRefresh: true }),
       }
     } catch (err) {
       throw asSparkGitError(err, '提交失败')
@@ -8469,7 +8469,10 @@ export function registerAllIpcHandlers(): void {
     try {
       assertWorkspaceGitWorktree(await getGitCommandService().probeRepository(workspace.root_path))
       await pushWorkspaceBranch(workspace.root_path)
-      return { pushed: true, status: await getWorkspaceGitStatus(workspace.root_path) }
+      return {
+        pushed: true,
+        status: await getWorkspaceGitStatus(workspace.root_path, { forceRefresh: true }),
+      }
     } catch (err) {
       throw asSparkGitError(err, '推送失败')
     }
@@ -8484,7 +8487,7 @@ export function registerAllIpcHandlers(): void {
       return {
         synchronized: true,
         mode,
-        status: await getWorkspaceGitStatus(workspace.root_path),
+        status: await getWorkspaceGitStatus(workspace.root_path, { forceRefresh: true }),
       }
     } catch (err) {
       throw asSparkGitError(err, '同步失败')
@@ -8497,7 +8500,10 @@ export function registerAllIpcHandlers(): void {
     try {
       assertWorkspaceGitWorktree(await getGitCommandService().probeRepository(workspace.root_path))
       await pullWorkspaceBranch(workspace.root_path)
-      return { pulled: true, status: await getWorkspaceGitStatus(workspace.root_path) }
+      return {
+        pulled: true,
+        status: await getWorkspaceGitStatus(workspace.root_path, { forceRefresh: true }),
+      }
     } catch (err) {
       throw asSparkGitError(err, '拉取失败')
     }
@@ -8653,7 +8659,7 @@ export function registerAllIpcHandlers(): void {
         currentBranch: branches.currentBranch,
         branches: branches.branches,
         branchDetails: branches.branchDetails,
-        status: await getWorkspaceGitStatus(workspace.root_path),
+        status: await getWorkspaceGitStatus(workspace.root_path, { forceRefresh: true }),
       }
     } catch (err) {
       throw asSparkGitError(err, '创建并检出分支失败')

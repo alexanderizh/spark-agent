@@ -373,7 +373,7 @@ describe('pushWorkspaceBranch', () => {
     await expect(
       git(workspacePath, ['ls-remote', '--heads', 'origin', 'feature/local-review']),
     ).resolves.toContain('refs/heads/feature/local-review')
-    await expect(getWorkspaceGitStatus(workspacePath)).resolves.toMatchObject({
+    await expect(getWorkspaceGitStatus(workspacePath, { forceRefresh: true })).resolves.toMatchObject({
       remoteName: 'origin',
       remoteBranch: 'feature/local-review',
       branchHasUpstream: true,
@@ -458,7 +458,7 @@ describe('pullWorkspaceBranch', () => {
 
     await pullWorkspaceBranch(workspacePath)
 
-    const after = await getWorkspaceGitStatus(workspacePath)
+    const after = await getWorkspaceGitStatus(workspacePath, { forceRefresh: true })
     expect(after.behind).toBe(0)
     await expect(fs.readFile(path.join(workspacePath, 'remote-change.txt'), 'utf8')).resolves.toBe(
       'from remote\n',
