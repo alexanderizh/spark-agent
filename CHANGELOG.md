@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+## [0.15.17] - 2026-11-11
+
+### 新增
+
+- **小程序深色主题系统（v1.6）**：全局 `utils/theme.ts` 主题状态机——跟随系统 / 浅色 / 深色三档偏好（持久化到本地存储），`onThemeChange` 全局监听 + 回前台重解析，页面经根节点 `themeClass` 切换、原生导航栏与窗口背景经 `theme.json`（`app.json darkmode`）同步；`styles/theme-dark.wxss` 提供全套暗色 token（构建脚本 `npm run theme` 生成，`smoke:theme` 冒烟校验）；「我的」页新增外观设置区。
+- **小程序附件与配置面板组件化**：新增 `attach-sheet` / `config-sheet` 组件与 `utils/attachment-flow.ts` 统一附件选择上传链路（图片 / 拍照 / 会话文件 → base64 → 桌面端 `/attachments` 白名单落盘）；「新建会话」在首条消息发出前用 draft 占位会话 id 满足上传路由形状，附件上限 20 条、请求体 12MiB 端上先拦。
+- **小程序项目列表「运行中」徽标**：协议新增可选字段 `runningSessionCount` / `unassignedRunningSessionCount`（缺省 = 旧版桌面端，端上按 0 处理，向后兼容）；桌面端 mobile bridge 按会话 `status = 'running'` 同口径统计，worktree 会话计数并入 base workspace、未归属会话挂虚拟「未归属项目」行。
+
+### 修复
+
+- **超大工作区触发主进程阻塞崩溃（EXC_BREAKPOINT）**：会话 Git 面板每 2 秒轮询 git 状态时，未跟踪文件行数统计无缓存、无上限、无防重入——14 万未跟踪文件的工作区单次计算可达 234 秒且请求不断叠加，海量 FileHandle 高频开关把主进程事件循环打满（监控日志 critical 告警）最终原生层崩溃。四层防御：同一工作区请求单飞去重 + 1.5s 短 TTL 缓存（commit/push/pull/sync/切分支后强制刷新保证新鲜）；单次最多统计 200 个未跟踪文件；单文件超 2MB 跳过；逐字节 JS 扫描改 `Buffer.indexOf` 原生扫描、并发 16→8、新增 size+mtime 指纹缓存（未变更文件不重读）。
+- **会话检查器提示词过滤行溢出**：过滤行与标签补 `min-width: 0` / `flex: 0 1 auto` / `overflow-wrap: anywhere`，窄面板下长 token 正确换行不再把行撑爆。
+
 ## [0.15.16] - 2026-11-09
 
 ### 新增
