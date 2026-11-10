@@ -1,4 +1,4 @@
-<view class="devices-page">
+<view class="devices-page theme-root {{themeClass}}">
   <!-- 当前设备 -->
   <view class="card">
     <view class="card-head">

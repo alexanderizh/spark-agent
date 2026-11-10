@@ -14,6 +14,7 @@ import { ensureAuthenticated } from '../../utils/auth-guard'
 import { formatRelativeTime } from '../../utils/format'
 import { categoryLabelOf } from '../../utils/view-model'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+import { syncPageTheme } from '../../utils/theme'
 
 const DEVICES_CACHE_KEY = 'devices:list'
 
@@ -68,6 +69,7 @@ Page({
   },
 
   onShow() {
+    syncPageTheme(this)
     if (!ensureAuthenticated()) return
     // 轻量状态刷新：本机系统信息（本地读取，无网络请求）
     this.loadCurrentDevice()

@@ -1,0 +1,80 @@
+/* 附件菜单：底部弹层（深色由构建脚本按颜色映射生成） */
+
+.as-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+}
+
+.as-sheet {
+  width: 100%;
+  box-sizing: border-box;
+  background: #f2f0ed;
+  border-radius: 36rpx 36rpx 0 0;
+  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
+  animation: as-rise 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes as-rise {
+  from {
+    transform: translateY(40rpx);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.as-grabber {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 4rpx;
+  background: #c9c6c0;
+  margin: 0 auto 20rpx;
+}
+
+.as-card {
+  background: #fff;
+  border-radius: 28rpx;
+  overflow: hidden;
+}
+
+.as-row {
+  align-items: center;
+  gap: 22rpx;
+  padding: 26rpx 28rpx;
+  border-bottom: 1rpx solid #efede8;
+}
+.as-row:last-child {
+  border-bottom: none;
+}
+.as-row--hover {
+  background: #f7f6f4;
+}
+
+.as-icon {
+  width: 44rpx;
+  height: 44rpx;
+  background-size: 44rpx 44rpx;
+  flex: none;
+}
+
+.as-main {
+  min-width: 0;
+}
+
+.as-label {
+  font-size: 34rpx;
+  color: #1a1a1a;
+  line-height: 1.35;
+}
+
+.as-sub {
+  font-size: 25rpx;
+  color: #8e8e8e;
+  line-height: 1.35;
+  margin-top: 4rpx;
+}

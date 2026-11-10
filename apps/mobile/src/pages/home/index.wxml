@@ -1,4 +1,4 @@
-<view class="home-page">
+<view class="home-page theme-root {{themeClass}}">
   <view class="home-header" style="padding-top: {{statusBarHeight}}px;">
     <view class="home-toolbar row between" style="padding-right: {{navClearance}}px;">
       <view class="home-avatar-wrap" hover-class="home-avatar-wrap--hover" bindtap="onGoProfile">
@@ -90,7 +90,7 @@
         class="home-compose-input"
         value="{{quickText}}"
         placeholder="发起一条新的远程对话…"
-        placeholder-style="color:#aaa7a1"
+        placeholder-class="themed-placeholder"
         auto-height
         maxlength="8000"
         show-confirm-bar="{{false}}"
@@ -209,8 +209,8 @@
               step="1"
               value="{{reasoningIndex}}"
               disabled="{{configLoading || configError || pendingSessionId}}"
-              activeColor="#3b82f6"
-              backgroundColor="#d8d5d0"
+              activeColor="{{themeAccentColor}}"
+              backgroundColor="{{themeTrackColor}}"
               block-size="20"
               bindchange="onReasoningChange"
             />

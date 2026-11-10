@@ -13,6 +13,7 @@
 
 import * as authApi from '../../api/auth'
 import { loginWithSession } from '../../store/auth'
+import { syncPageTheme } from '../../utils/theme'
 
 type LoginMode = 'password' | 'code' | 'sms'
 
@@ -54,6 +55,10 @@ Page({
     codeCountdown: 0,
     submitting: false,
   } as LoginPageData,
+
+  onLoad() {
+    syncPageTheme(this)
+  },
 
   onUnload() {
     if (countdownTimer) {

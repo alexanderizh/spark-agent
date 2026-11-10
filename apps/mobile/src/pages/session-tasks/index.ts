@@ -9,6 +9,7 @@
 
 import * as bridge from '../../api/bridge'
 import { formatRelativeTime } from '../../utils/format'
+import { syncPageTheme } from '../../utils/theme'
 import {
   describeTrigger,
   emptyForm,
@@ -66,6 +67,7 @@ Page({
   } as SessionTasksPageData,
 
   onLoad(options: Record<string, string | undefined>) {
+    syncPageTheme(this)
     const sessionId = options.sessionId ?? ''
     const deviceId = options.deviceId ?? ''
     if (!sessionId || !deviceId) {

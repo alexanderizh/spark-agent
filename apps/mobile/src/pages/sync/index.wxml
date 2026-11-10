@@ -1,4 +1,4 @@
-<view class="sync-page">
+<view class="sync-page theme-root {{themeClass}}">
   <!-- 状态详情 -->
   <view class="card">
     <view class="card-head">

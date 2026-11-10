@@ -10,6 +10,7 @@
 import * as authApi from '../../api/auth'
 import { clearSession } from '../../api/request'
 import { getState } from '../../store/auth'
+import { syncPageTheme } from '../../utils/theme'
 
 interface PasswordPageData {
   phone: string
@@ -59,6 +60,7 @@ Page({
   } as PasswordPageData,
 
   onLoad() {
+    syncPageTheme(this)
     // 账号本身是手机号时预填（短信发到绑定手机号 = 账号手机号）
     const account = getState().user?.account ?? ''
     if (/^1[3-9]\d{9}$/.test(account)) {

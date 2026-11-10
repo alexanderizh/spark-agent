@@ -1,6 +1,6 @@
 <!-- 设备管理：列表卡片 + 在线徽标 + 行内二次确认吊销 -->
 
-<view class="bd-page">
+<view class="bd-page theme-root {{themeClass}}">
   <safe-nav-bar title="设备管理" />
 
   <view class="bd-title-row">

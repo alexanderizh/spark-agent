@@ -1,6 +1,6 @@
 <!-- 会话定时任务页：列表三态 + 页内表单态（新建/编辑共用） -->
 
-<view class="st-page">
+<view class="st-page theme-root {{themeClass}}">
   <safe-nav-bar title="定时任务" show-back="{{true}}" />
 
   <!-- 表单态 -->
@@ -132,14 +132,15 @@
       <view class="st-retry" bindtap="loadTasks">重试</view>
     </view>
 
-    <empty-state
-      wx:elif="{{cards.length === 0}}"
-      icon="timer"
-      title="还没有定时任务"
-      desc="创建任务后，到点会在本会话自动执行提示词"
-    >
-      <view class="st-empty-create" bindtap="onCreate">新建任务</view>
-    </empty-state>
+    <view wx:elif="{{cards.length === 0}}" class="st-empty">
+      <empty-state
+        icon="timer"
+        title="还没有定时任务"
+        desc="创建任务后，到点会在本会话自动执行提示词"
+      >
+        <view class="st-empty-create" bindtap="onCreate">新建任务</view>
+      </empty-state>
+    </view>
 
     <block wx:else>
       <view wx:for="{{cards}}" wx:key="task.id" class="st-card">
@@ -147,7 +148,7 @@
           <text class="st-card-name ellipsis">{{item.task.name}}</text>
           <switch
             checked="{{item.task.enabled}}"
-            color="#3b82f6"
+            color="{{themeAccentColor}}"
             data-id="{{item.task.id}}"
             bindchange="onToggle"
           />

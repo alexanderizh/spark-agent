@@ -3,6 +3,7 @@
 import * as bridge from '../../api/bridge'
 import type { BridgeProjectSummary, RelayDeviceInfo } from '../../api/bridge'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+import { getThemeTextColor, syncPageTheme } from '../../utils/theme'
 import {
   mergeManualOrderWithHidden,
   moveItem,
@@ -87,6 +88,7 @@ Page({
   },
 
   onShow() {
+    syncPageTheme(this)
     if (!this.data.deviceId) return
     // 轻量状态刷新：仅用本地 presence 快照校正在线徽标，且只在状态真变化时才 setData
     if (bridge.isRelayPresenceFresh()) {
@@ -191,6 +193,8 @@ Page({
           pinnedAt: null,
           updatedAt: '',
           sessionCount: unassignedResult.total,
+          // 旧版桌面端不透出（undefined → 不显示徽标）
+          runningSessionCount: projectResult.unassignedRunningSessionCount ?? 0,
           isVirtual: true,
         })
       }
@@ -311,7 +315,7 @@ Page({
     ]
     wx.showActionSheet({
       itemList: actions.map((action) => action.label),
-      itemColor: '#1a1a1a',
+      itemColor: getThemeTextColor(),
       success: (res) => actions[res.tapIndex]?.run(),
       fail: () => {
         /* 取消 */

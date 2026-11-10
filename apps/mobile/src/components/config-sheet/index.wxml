@@ -1,0 +1,54 @@
+<!-- 模型配置弹层：模型列表 + 推理强度分段 + 权限入口 -->
+
+<view wx:if="{{show}}" class="cs-mask" bindtap="onClose" catchtouchmove="noop">
+  <view class="cs-sheet" catchtap="noop">
+    <view class="cs-grabber"></view>
+
+    <view class="cs-head">
+      <text class="cs-title">{{title}}</text>
+      <text class="cs-done" hover-class="cs-done--hover" bindtap="onClose">完成</text>
+    </view>
+
+    <scroll-view class="cs-body" scroll-y>
+      <text wx:if="{{models.length > 0}}" class="cs-section">模型</text>
+      <view wx:if="{{models.length > 0}}" class="cs-card">
+        <view
+          wx:for="{{models}}"
+          wx:key="id"
+          class="cs-row row"
+          hover-class="cs-row--hover"
+          data-id="{{item.id}}"
+          bindtap="onPickModel"
+        >
+          <view class="cs-row-main grow">
+            <text class="cs-row-label">{{item.label}}</text>
+            <text wx:if="{{item.sub}}" class="cs-row-sub">{{item.sub}}</text>
+          </view>
+          <view wx:if="{{item.checked}}" class="icon icon-check cs-check"></view>
+        </view>
+      </view>
+
+      <text wx:if="{{efforts.length > 0}}" class="cs-section">推理强度</text>
+      <view wx:if="{{efforts.length > 0}}" class="cs-segment row">
+        <view
+          wx:for="{{efforts}}"
+          wx:key="id"
+          class="cs-seg {{index === effortIndex ? 'cs-seg--on' : ''}}"
+          data-index="{{index}}"
+          bindtap="onPickEffort"
+        >
+          <text class="cs-seg-text">{{item.label}}</text>
+        </view>
+      </view>
+
+      <text wx:if="{{permissionLabel}}" class="cs-section">Options</text>
+      <view wx:if="{{permissionLabel}}" class="cs-card">
+        <view class="cs-row row" hover-class="cs-row--hover" bindtap="onOpenPermission">
+          <text class="cs-row-label grow">权限</text>
+          <text class="cs-row-value">{{permissionLabel}}</text>
+          <view class="icon icon-chevron cs-chevron"></view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+</view>

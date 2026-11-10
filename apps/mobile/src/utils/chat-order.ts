@@ -72,6 +72,8 @@ export interface MergeEventsResult {
   hasBackfill: boolean
   /** 新增事件的最小 seq 越过已应用最大 seq 且中间有空洞（仅实时流场景有意义） */
   hasGap: boolean
+  /** 因「该分段已有完整版」被丢弃的回放 delta（id 也要记入已见集合，否则每个 poll tick 都重复过滤一遍） */
+  dropped: BridgeEvent[]
   /** 因「该分段已有完整版」被丢弃的回放 delta 条数 */
   droppedRedundantDeltas: number
   maxSeq: number
@@ -90,11 +92,11 @@ export function mergeEvents(base: BridgeEvent[], incoming: BridgeEvent[]): Merge
     if (isTextComplete(event)) completeSegments.add(segmentKey(event))
   }
   const added: BridgeEvent[] = []
-  let droppedRedundantDeltas = 0
+  const dropped: BridgeEvent[] = []
   for (const event of incoming) {
     if (event == null || typeof event.id !== 'string' || known.has(event.id)) continue
     if (isTextDelta(event) && completeSegments.has(segmentKey(event))) {
-      droppedRedundantDeltas += 1
+      dropped.push(event)
       continue
     }
     known.add(event.id)
@@ -114,7 +116,8 @@ export function mergeEvents(base: BridgeEvent[], incoming: BridgeEvent[]): Merge
     added: sortedAdded,
     hasBackfill,
     hasGap,
-    droppedRedundantDeltas,
+    dropped,
+    droppedRedundantDeltas: dropped.length,
     maxSeq,
   }
 }

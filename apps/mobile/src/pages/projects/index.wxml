@@ -1,4 +1,4 @@
-<view class="projects-page">
+<view class="projects-page theme-root {{themeClass}}">
   <safe-nav-bar title="" />
 
   <view class="projects-heading row between">
@@ -25,7 +25,7 @@
       class="projects-search-input"
       value="{{searchText}}"
       placeholder="搜索项目"
-      placeholder-style="color:#b3b0ab"
+      placeholder-class="themed-placeholder"
       confirm-type="search"
       bindinput="onSearchInput"
     />
@@ -77,7 +77,13 @@
               <text class="projects-row-name ellipsis grow">{{item.name}}</text>
               <view class="icon icon-pin projects-row-pin"></view>
             </view>
-            <text class="t-caption">{{item.sessionCount}} 条会话</text>
+            <view class="row projects-row-meta">
+              <text class="t-caption">{{item.sessionCount}} 条会话</text>
+              <view wx:if="{{item.runningSessionCount > 0}}" class="row projects-running-badge">
+                <view class="projects-running-dot"></view>
+                <text>运行中</text>
+              </view>
+            </view>
           </view>
           <view class="icon icon-chevron"></view>
         </view>
@@ -99,7 +105,13 @@
           <view class="icon {{item.isVirtual ? 'icon-chat' : 'icon-folder'}} projects-row-icon"></view>
           <view class="grow col gap-4 projects-row-copy">
             <text class="projects-row-name ellipsis">{{item.name}}</text>
-            <text class="t-caption">{{item.sessionCount}} 条会话</text>
+            <view class="row projects-row-meta">
+              <text class="t-caption">{{item.sessionCount}} 条会话</text>
+              <view wx:if="{{item.runningSessionCount > 0}}" class="row projects-running-badge">
+                <view class="projects-running-dot"></view>
+                <text>运行中</text>
+              </view>
+            </view>
           </view>
           <view class="icon icon-chevron"></view>
         </view>

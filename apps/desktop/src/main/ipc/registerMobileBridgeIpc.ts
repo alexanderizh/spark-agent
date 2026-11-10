@@ -598,12 +598,31 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
         const baseId = parseWorktreeBaseId(workspace.worktree_meta_json)
         if (baseId != null) worktreeBase.set(workspace.id, baseId)
       }
-      const mergedCounts = new Map(countByProject)
-      for (const [worktreeId, baseId] of worktreeBase) {
-        const count = mergedCounts.get(worktreeId) ?? 0
-        if (count > 0) mergedCounts.set(baseId, (mergedCounts.get(baseId) ?? 0) + count)
-        mergedCounts.delete(worktreeId)
+      // worktree 的计数并入 base workspace 后从顶层剔除（会话数与运行中数同口径）
+      const mergeWorktreeCounts = (
+        counts: Map<string, number>,
+      ): Map<string, number> => {
+        const merged = new Map(counts)
+        for (const [worktreeId, baseId] of worktreeBase) {
+          const count = merged.get(worktreeId) ?? 0
+          if (count > 0) merged.set(baseId, (merged.get(baseId) ?? 0) + count)
+          merged.delete(worktreeId)
+        }
+        return merged
       }
+      const mergedCounts = mergeWorktreeCounts(countByProject)
+      // 项目下运行中会话数（小程序项目列表「运行中」徽标；与会话列表「进行中」分组同口径）
+      const runningRows = db.raw
+        .prepare(
+          `SELECT project_id, COUNT(*) AS count FROM sessions
+           WHERE archived_at IS NULL AND status = 'running' GROUP BY project_id`,
+        )
+        .all() as { project_id: string; count: number }[]
+      const runningByProject = new Map<string, number>()
+      for (const row of runningRows) {
+        runningByProject.set(row.project_id, row.count)
+      }
+      const mergedRunningCounts = mergeWorktreeCounts(runningByProject)
       const projects: MobileBridgeProjectSummary[] = workspaces
         .filter((workspace) => !worktreeBase.has(workspace.id))
         .map((workspace) => ({
@@ -616,8 +635,14 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
           archivedAt: workspace.archived_at ?? null,
           updatedAt: workspace.updated_at,
           sessionCount: mergedCounts.get(workspace.id) ?? 0,
+          runningSessionCount: mergedRunningCounts.get(workspace.id) ?? 0,
         }))
-      return { projects, total: projects.length }
+      return {
+        projects,
+        total: projects.length,
+        // 未归属会话挂在虚拟 'default' 下（小程序侧合成「未归属项目」行，同样显示徽标）
+        unassignedRunningSessionCount: mergedRunningCounts.get('default') ?? 0,
+      }
     },
 
     listSessions: async (limit, projectId) => {

@@ -7,10 +7,11 @@
  * 追加到末尾，服务端补写/晚到的旧 seq 事件因此跑到最新消息下面；同时横线时间
  * 直接取 event.timestamp，而上游 seq 与 timestamp 并不保证同步。
  *
- * 本脚本固化三条口径：
+ * 本脚本固化四条口径：
  *   1. 事件合并按 id 去重 + 按 seq 排序，出现补写旧事件就全量重放（不追加）
  *   2. 展示时间单调化，不倒退、不改写事件原始 timestamp
  *   3. 同一分段的 delta 与 complete 只认完整版，agent 输出不得出现两遍
+ *   4. 被丢弃的回放 delta 要返回给调用方记入已见集合（防每个 poll tick 重复过滤）
  */
 
 import assert from 'node:assert/strict'
@@ -239,6 +240,22 @@ check('历史已有完整版时，回放 delta 被合并器丢弃，不再追加
   const timeline = reducer.applyEvents(reducer.emptyTimeline(), merged.events)
   assert.equal(timeline.messages.length, 1)
   assert.equal(timeline.messages[0].text, fullText)
+})
+
+check('被丢弃的回放 delta 在 dropped 中返回（页面据此记入已见集合，防每 tick 重复过滤）', () => {
+  const base = [completeEvent(5, 'c1')]
+  const merged = order.mergeEvents(base, replayDeltas())
+  assert.deepEqual(
+    merged.dropped.map((e) => e.id),
+    ['d1', 'd2', 'd3'],
+  )
+  // 页面把 dropped 的 id 记入 seenEventIds 后，下个 poll tick 的同批回放
+  // 在 filterUnseenEvents 就被拦下，mergeEvents 不再重复处理
+  const seen = new Set([...base, ...merged.dropped].map((e) => e.id))
+  const filtered = replayDeltas().filter((e) => !seen.has(e.id))
+  const again = order.mergeEvents(merged.events, filtered)
+  assert.equal(again.added.length, 0)
+  assert.equal(again.droppedRedundantDeltas, 0)
 })
 
 check('同一批事件里 delta 与 complete 混合时，归一化只认完整版', () => {

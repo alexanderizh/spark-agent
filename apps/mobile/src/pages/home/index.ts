@@ -15,6 +15,7 @@ import {
 } from '../../utils/session-config'
 import type { BridgeProjectSummary, RelayDeviceInfo } from '../../api/bridge'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+import { syncPageTheme } from '../../utils/theme'
 
 const HOME_LIST_CACHE_KEY = 'home:devices'
 
@@ -128,6 +129,7 @@ Page({
   },
 
   onShow() {
+    syncPageTheme(this)
     // 轻量状态刷新：状态栏 + 账号信息属于纯本地/展示态，始终更新，不触发列表重拉
     this.applyStatusBar()
     if (!getItem<string>(StorageKeys.token)) {

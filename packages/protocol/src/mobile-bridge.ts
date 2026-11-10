@@ -42,11 +42,18 @@ export interface MobileBridgeProjectSummary {
   updatedAt: string
   /** 项目下会话数（列表页角标用） */
   sessionCount: number
+  /**
+   * 项目下运行中会话数（列表页「运行中」徽标；缺省 = 旧版桌面端不透出，端上按 0 处理）。
+   * 与 sessions.status = 'running' 同口径，worktree 会话并入 base workspace。
+   */
+  runningSessionCount?: number
 }
 
 export interface MobileBridgeProjectListResponse {
   projects: MobileBridgeProjectSummary[]
   total: number
+  /** 未归属（'default'）运行中会话数（虚拟「未归属项目」行的徽标；缺省 = 旧版桌面端） */
+  unassignedRunningSessionCount?: number
 }
 
 /** PATCH /v1/projects/:id 请求体：全部可选，仅传需要修改的字段 */

@@ -15,7 +15,7 @@ SparkWork 桌面端的移动伴侣小程序。需求来源：scene#58「小程�
 
 - **纯图片 / 纯附件消息** — 桌面端 `/turns` 强制 `text` 非空，端上用 U+200B 零宽空格前缀 + 说明文字过校验，渲染层（`chat-view.displayTextOf`）识别前缀后只画附件条、不画文字气泡；无需改桌面端协议，对旧版桌面端同样可用。附件菜单补「拍照」入口，上传前做 8MB 预检并自动重试一次。
 - **消息可靠送达** — `utils/send-queue.ts` 是端上持久化待发队列（幂等 `clientMessageId` / 串行 drain / 失败保留可点重试 / WS 重连自动补发）；`utils/chat-cache.ts` 按 sessionId 缓存时间线、滚动位置与已解析图片预览。返回页面只做 `reconcileFromServer()` 增量对账，不再整页重建；列表页用 `utils/list-cache.ts` 做 30s 快照，下拉刷新始终强制重拉。
-- **运行中状态权威化** — `getMessages` 的 `running` 是唯一口径，覆盖本地归约；终态事件丢失 / 断流时 watchdog 用轻量对账解锁，不再 45s 全量重拉循环；取消立即本地复位；终态收敛残留「运行中」的工具行。实时事件流按 seq 连续性检测缺口，缺批才全量补齐（历史对账会排除流式 delta，不用这个判据）。
+- **运行中状态权威化** — `getMessages` 的 `running` 是唯一口径，覆盖本地归约；终态事件丢失 / 断流时 watchdog 用轻量对账解锁，不再 45s 全量重拉循环；取消立即本地复位；终态收敛残留「运行中」的工具行。实时事件流按 seq 连续性检测缺口；**缺帧走非破坏性 `reconcileFromServer()` 而不是 `init()`** —— `init()` 重拉的历史排除流式 delta，重放后 `allEvents` 最大 seq 会回退，后续每条 delta 都再次判定缺口，形成「init → 清空页面 → 下一批 → 又 init」的刷屏死循环；缺失的 delta 本就不可恢复（由该回合 final/complete 权威覆盖）。`init()` 也只在真正冷启动（无可渲染视图）时才闪「加载历史…」，`loadEarlier` 带 800ms 冷却防整表重渲染后 `scrolltoupper` 被程序化重触发。
 - **消息顺序归一化** — `utils/chat-order.ts` 是唯一口径：**渲染顺序只认 `seq`**（`seq → timestamp → id` 稳定排序，与桌面端 `ORDER BY seq ASC, created_at ASC, rowid ASC` 对齐）。所有事件入口经 `mergeIncomingEvents()` 按 id 去重合并；服务端补写 / 晚到的旧 seq 事件会触发「完整有序事件集全量重放」插回原位，不再追加到末尾（这是「下午的横线跑到新消息之后」的根因）。展示时间在 `buildTimelineItems` 做**单调化**，倒退的 `timestamp` 钳到前一条，天分界与分块横线时间不会来回跳；事件原始 `timestamp` 不改写，快照与对账仍保留服务端值。
 - **输出不重复** — 桌面端 `ensurePoller` 在运行中的会话会从「当前回合用户消息」回放事件，回放的 **delta** 与 `init()` 历史分页返回的 **complete / final** 是同一段输出的两种形态。若两者都进 `allEvents`，`applyEvents` 会把 delta 追加到已有全文后面 → agent 输出显示两遍。三层防护：① `mergeEvents` 发现 base 已有该 `(type, turnId, segmentId)` 完整版时丢弃回放 delta；② `applyEvents` 入口用 `normalizeTextEvents` 清掉同批混合的 delta；③ `dedupeAssistantMessages` 收敛同回合相同文本气泡、兜底严格自重复文本，final 找不到同 turn 分段时先按内容查重。只有 delta 的流式分段不受影响；`restoreSnapshot` 也会净化旧版本写脏的快照事件集。
 - **不抖屏** — 差量 `setData`（key 序列不变时只回填变化项）、数值 `scroll-top` 交替值取代常驻 `scroll-into-view`、回底并入同一次 setData、图片解析前后同尺寸占位、rich-md 内容未变不重解析。
@@ -150,7 +150,7 @@ TOKEN=<上一步输出> pnpm --filter @spark/mobile e2e:relay
 | `pnpm --filter @spark/mobile smoke:boot`         | 启动冒烟（mock 运行时逐页 require，抓白屏类加载期异常，需先 build）                                                       |
 | `pnpm --filter @spark/mobile smoke:relay`        | 云端中继端到端冒烟（真实 edu-server RelayHub + 真实 bridge/relay，21 条断言）                                             |
 | `pnpm --filter @spark/mobile smoke:chat-upgrade` | 会话增强回归（纯附件 / 分块横线 / 权威 running / 待发队列 / 复制纯文本，10 条断言，需先 build）                           |
-| `pnpm --filter @spark/mobile smoke:chat-order`   | 顺序与去重回归（seq 稳定排序 / 补写插回原位 / 时间单调 / 天分界 / 回放 delta 不叠加 / final 查重，14 条断言，需先 build） |
+| `pnpm --filter @spark/mobile smoke:chat-order`   | 顺序与去重回归（seq 稳定排序 / 补写插回原位 / 时间单调 / 天分界 / 回放 delta 不叠加 / dropped 记入已见 / final 查重，15 条断言，需先 build） |
 | `pnpm --filter @spark/mobile e2e:relay`          | 生产链路端到端验证（真实公网 wss 双端连接，24 条断言，需 TOKEN）                                                          |
 | `pnpm --filter @spark/mobile icons`              | 重新生成 tabBar 图标（依赖根 node_modules 的 sharp）                                                                      |
 
@@ -214,6 +214,7 @@ apps/mobile/
 项目会话页不提供横向换电脑入口；要切换时返回电脑顶层重新选择，避免把一台电脑的项目 ID 带到另一台。
 未归属会话显示在虚拟「未归属项目」中；从该层新建会话时不写入项目 ID。
 主项目会话列表包含归属该项目的 worktree 会话，和项目列表中的会话计数保持一致。
+项目列表对存在运行中会话的项目显示「运行中」徽标（桌面端按 `sessions.status = 'running'` 统计，worktree 会话并入所属主项目，未归属会话计入虚拟「未归属项目」；旧版桌面端不透出该字段时不显示）。
 进入聊天页时路由携带 deviceId，聊天页的历史、发送、取消、事件订阅等全部定向到同一台电脑。
 
 **主页快捷新建**：电脑顶层底部提供新会话输入框。配置入口集中打开半屏面板，选择电脑、该电脑的项目、模型渠道/模型与推理强度；切换电脑后会重新读取该电脑自己的项目和模型目录。发送首条消息时按顺序创建会话、应用显式配置并定向提交回合，随后进入带有同一 `deviceId` 的聊天页。若提交结果未确认，再次点击会打开已有会话检查，不会自动重复提交。
@@ -290,6 +291,9 @@ edu-server 源码在 `spark-edugen/edu-server`（`auth.controller.ts` / `desktop
 
 - 设计令牌与桌面端一致：中性灰、无渐变、主色 `#3b82f6`、圆角 4/6/8/12/16
   （见 `app.wxss`，对应桌面端 `styles.css`；**不用 CSS 变量**，规避低版本基础库兼容问题）
+- 外观支持浅色 / 深色 / 跟随系统，默认跟随系统；「我的 → 外观」切换并本地持久化。
+  页面根节点挂载 `theme-root {{themeClass}}`，`onShow` 调 `syncPageTheme(this)`；深色覆盖由
+  `scripts/build-theme.mjs` 生成到 `styles/theme-dark.wxss`，新增颜色样式后执行 `pnpm theme`，不要手改生成文件
 - 单位统一 rpx；登录守卫：tab 页 `onShow` 调 `ensureAuthenticated()`
 - 401 统一走 `store/auth` 的 session-expired：清态 + 跳登录页
 

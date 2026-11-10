@@ -1,4 +1,4 @@
-<view class="profile-page">
+<view class="profile-page theme-root {{themeClass}}">
   <!-- 用户卡片 -->
   <view class="card user-card">
     <view class="avatar-wrap" bindtap="onChangeAvatar">
@@ -9,23 +9,23 @@
         mode="aspectFill"
       />
       <view wx:else class="avatar-large avatar-placeholder">
-        <text class="avatar-text">{{avatarInitial}}</text>
-      </view>
+      <text class="avatar-text">{{avatarInitial}}</text>
+    </view>
       <view class="avatar-badge" wx:if="{{!uploadingAvatar}}">
-        <view class="avatar-badge-icon icon-camera"></view>
-      </view>
+      <view class="avatar-badge-icon icon-camera"></view>
+    </view>
       <view class="avatar-loading" wx:if="{{uploadingAvatar}}">…</view>
     </view>
     <view class="grow col gap-8">
       <view class="row gap-12">
-        <text class="t-title ellipsis">{{user && user.nickname ? user.nickname : '未设置昵称'}}</text>
-        <text class="edit-chip" hover-class="edit-chip--hover" bindtap="onEditNickname">编辑</text>
-      </view>
+      <text class="t-title ellipsis">{{user && user.nickname ? user.nickname : '未设置昵称'}}</text>
+      <text class="edit-chip" hover-class="edit-chip--hover" bindtap="onEditNickname">编辑</text>
+    </view>
       <text class="t-subtitle ellipsis">{{accountMasked}}</text>
       <view class="row gap-8" wx:if="{{user && user.tier}}">
-        <text class="badge {{user.tier.isPaid ? 'badge-info' : 'badge-neutral'}}">{{user.tier.name}}</text>
-        <text class="t-caption">注册于 {{createdAtLabel}}</text>
-      </view>
+      <text class="badge {{user.tier.isPaid ? 'badge-info' : 'badge-neutral'}}">{{user.tier.name}}</text>
+      <text class="t-caption">注册于 {{createdAtLabel}}</text>
+    </view>
     </view>
   </view>
 
@@ -40,51 +40,89 @@
     </view>
   </view>
 
-      <!-- 远程会话 -->
-      <view class="card">
-        <view class="card-head">
-          <text class="card-title">远程会话</text>
-        </view>
-        <view class="list-row">
-          <view class="grow col gap-4">
-            <text class="list-row-label">云端中继</text>
-            <text class="t-caption">
-              经 Spark 平台服务中转接管电脑上的会话：不需要同一 Wi-Fi、电脑也不需要公网 IP，登录同一账号即可。
-            </text>
-          </view>
-        </view>
-        <view class="list-row">
-          <text class="list-row-label grow">中继连接</text>
-          <text class="list-row-value">{{relayStatusLabel}}</text>
-        </view>
-        <view class="list-row">
-          <text class="list-row-label grow">电脑端</text>
-          <text class="list-row-value">{{desktopStatusLabel}}</text>
-        </view>
-        <view class="list-row" bindtap="onGoBridgeDevices">
-          <text class="list-row-label grow">设备管理</text>
-          <text class="t-faint">›</text>
-        </view>
-      </view>
+  <!-- 外观 -->
+  <view class="card">
+    <view class="card-head row between">
+      <text class="card-title">外观</text>
+      <text class="t-caption">当前{{themeResolvedLabel}}</text>
+    </view>
+    <view class="theme-segment" role="group" aria-label="主题模式">
+      <view
+        class="theme-option {{themePreference === 'system' ? 'theme-option--active' : ''}}"
+        data-mode="system"
+        hover-class="theme-option--hover"
+        bindtap="onSelectTheme"
+      >
+      <text class="theme-option-check">{{themePreference === 'system' ? '✓' : ''}}</text>
+      <text>跟随系统</text>
+    </view>
+      <view
+        class="theme-option {{themePreference === 'light' ? 'theme-option--active' : ''}}"
+        data-mode="light"
+        hover-class="theme-option--hover"
+        bindtap="onSelectTheme"
+      >
+      <text class="theme-option-check">{{themePreference === 'light' ? '✓' : ''}}</text>
+      <text>浅色</text>
+    </view>
+      <view
+        class="theme-option {{themePreference === 'dark' ? 'theme-option--active' : ''}}"
+        data-mode="dark"
+        hover-class="theme-option--hover"
+        bindtap="onSelectTheme"
+      >
+      <text class="theme-option-check">{{themePreference === 'dark' ? '✓' : ''}}</text>
+      <text>深色</text>
+    </view>
+    </view>
+    <text class="theme-note">跟随系统会随微信外观自动切换，选择保存在本机。</text>
+  </view>
 
-      <!-- 同步与设备 -->
-      <view class="card">
-        <view class="card-head">
-          <text class="card-title">会话与设备</text>
-        </view>
-        <view class="list-row" bindtap="onGoSessions">
-          <text class="list-row-label grow">远程会话</text>
-          <text class="t-faint">›</text>
-        </view>
-        <view class="list-row" bindtap="onGoSync">
-          <text class="list-row-label grow">同步中心</text>
-          <text class="t-faint">›</text>
-        </view>
-        <view class="list-row" bindtap="onGoDevices">
-          <text class="list-row-label grow">设备与登录会话</text>
-          <text class="t-faint">›</text>
-        </view>
+  <!-- 远程会话 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">远程会话</text>
+    </view>
+    <view class="list-row">
+      <view class="grow col gap-4">
+        <text class="list-row-label">云端中继</text>
+        <text class="t-caption">
+          经 Spark 平台服务中转接管电脑上的会话：不需要同一 Wi-Fi、电脑也不需要公网 IP，登录同一账号即可。
+        </text>
       </view>
+    </view>
+    <view class="list-row">
+      <text class="list-row-label grow">中继连接</text>
+      <text class="list-row-value">{{relayStatusLabel}}</text>
+    </view>
+    <view class="list-row">
+      <text class="list-row-label grow">电脑端</text>
+      <text class="list-row-value">{{desktopStatusLabel}}</text>
+    </view>
+    <view class="list-row" bindtap="onGoBridgeDevices">
+      <text class="list-row-label grow">设备管理</text>
+      <text class="t-faint">›</text>
+    </view>
+  </view>
+
+  <!-- 同步与设备 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">会话与设备</text>
+    </view>
+    <view class="list-row" bindtap="onGoSessions">
+      <text class="list-row-label grow">远程会话</text>
+      <text class="t-faint">›</text>
+    </view>
+    <view class="list-row" bindtap="onGoSync">
+      <text class="list-row-label grow">同步中心</text>
+      <text class="t-faint">›</text>
+    </view>
+    <view class="list-row" bindtap="onGoDevices">
+      <text class="list-row-label grow">设备与登录会话</text>
+      <text class="t-faint">›</text>
+    </view>
+  </view>
 
   <!-- 关于 -->
   <view class="card">

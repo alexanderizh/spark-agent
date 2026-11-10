@@ -104,8 +104,16 @@ export const RUNTIME_CONFIG = ${JSON.stringify(config, null, 2)} as const
   return config
 }
 
+function generateTheme() {
+  execSync(`"${process.execPath}" "${join(root, 'scripts', 'build-theme.mjs')}"`, {
+    stdio: 'inherit',
+    cwd: root,
+  })
+}
+
 async function build() {
   await mkdir(distDir, { recursive: true })
+  generateTheme()
   await buildRuntimeConfig()
   execSync(`"${tscBin()}" -p tsconfig.json`, {
     stdio: 'inherit',
@@ -123,6 +131,7 @@ async function build() {
 
 async function watchMode() {
   await mkdir(distDir, { recursive: true })
+  generateTheme()
   await buildRuntimeConfig()
   await copyStaticAssets()
   console.log('[mobile] initial config/assets ready, starting tsc --watch')
@@ -139,6 +148,7 @@ async function watchMode() {
     clearTimeout(timer)
     timer = setTimeout(async () => {
       try {
+        generateTheme()
         const n = await copyStaticAssets()
         console.log(`[mobile] static assets re-copied: ${n} (last: ${filename})`)
       } catch (error) {

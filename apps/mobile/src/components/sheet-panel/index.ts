@@ -31,6 +31,10 @@ Component({
     sliderOptions: { type: Array, value: [] as string[] },
     /** slider 模式：当前档位下标 */
     sliderIndex: { type: Number, value: 0 },
+    /** 原生 slider 不继承 WXSS 颜色，由页面主题数据注入 */
+    accentColor: { type: String, value: '#1a1a1a' },
+    trackColor: { type: String, value: '#e8e5e0' },
+    blockColor: { type: String, value: '#ffffff' },
   },
 
   data: {

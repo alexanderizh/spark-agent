@@ -8,11 +8,23 @@
  * 普通区按 进行中/今天/昨天/7天内/更早 分组、组内套手动序；
  * 条目长按弹出 重命名 / 置顶 / 标记 / 上移 / 下移 / 删除 操作。
  *
- * 底部快速发起：悬浮胶囊（与会话页输入同构）+ 配置 chips（模型/权限/推理），
- * 选择只在发送建会话后 patch 到新会话；目录加载失败时 chips 隐藏（旧版桌面端兼容）。
+ * 底部快速发起：悬浮胶囊（与会话页输入同构）+ 工具条内的模型胶囊；
+ * 模型 / 推理强度 / 权限收进同一张 config-sheet，附件走 attach-sheet（照片 / 文件），
+ * 选择只在发送建会话后 patch 到新会话；目录加载失败时胶囊隐藏（旧版桌面端兼容）。
  */
 
 import * as bridge from '../../api/bridge'
+import {
+  MAX_ATTACHMENTS,
+  PENDING_SESSION_ID,
+  pickImages,
+  pickMessageFiles,
+  remainingAttachmentSlots,
+  uploadAttachment,
+  type AttachMenuItem,
+  type LocalAttachment,
+} from '../../utils/attachment-flow'
+import { ATTACHMENT_ONLY_FALLBACK_TEXT } from '../../utils/chat-view'
 import { formatRelativeTime } from '../../utils/format'
 import {
   buildModelOptions,
@@ -37,6 +49,7 @@ import {
 import type { BridgeCatalog, BridgeSessionSummary, BridgeSidebarOrderState } from '../../api/bridge'
 import { StorageKeys, getItem, setItem } from '../../utils/storage'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+import { getThemeTextColor, syncPageTheme } from '../../utils/theme'
 
 type StatusFilter = 'all' | 'running' | 'error' | 'idle'
 
@@ -78,6 +91,23 @@ interface QuickChipView {
   value: string
 }
 
+/** 新建会话的首条消息附件（上传到桌面端后拿白名单路径，随 turns 一起提交） */
+interface QuickAttachment {
+  type: 'image' | 'file'
+  /** 桌面端落盘路径（uploaded=false 时为空） */
+  path: string
+  name: string
+  /** 本地临时路径（图片预览 + 失败重试） */
+  localPath?: string
+  uploaded: boolean
+}
+
+/** 附件菜单条目（「工作区文件」需要桌面端新接口，本轮不提供入口） */
+const ATTACH_MENU_ITEMS: AttachMenuItem[] = [
+  { key: 'image', label: '照片', icon: 'icon-photo' },
+  { key: 'file', label: '文件', sub: 'PDF、文本、代码…', icon: 'icon-paperclip' },
+]
+
 interface ProjectSessionsData {
   /** 由远程会话顶层固定传入，本页不允许修改 */
   deviceId: string
@@ -100,10 +130,21 @@ interface ProjectSessionsData {
   autoFocusSearch: boolean
   quickText: string
   quickSending: boolean
+  /** 首条消息附件（新建会话尚未创建，先上传到桌面端白名单目录） */
+  attachments: QuickAttachment[]
   deviceOffline: boolean
   deviceUnavailable: boolean
   /** 新会话配置 chips（模型/权限快捷行 + 推理配置条） */
   chips: QuickChipView[]
+  /** 附件菜单弹层 */
+  attachShow: boolean
+  attachItems: AttachMenuItem[]
+  /** 模型配置弹层（模型 / 推理强度 / 权限） */
+  configShow: boolean
+  configModels: { id: string; label: string; checked?: boolean }[]
+  configEfforts: { id: string; label: string }[]
+  configEffortIndex: number
+  configPermissionLabel: string
   /** 半屏配置面板 */
   panelShow: boolean
   panelKind: QuickPanelKind | ''
@@ -211,9 +252,17 @@ Page({
     autoFocusSearch: false,
     quickText: '',
     quickSending: false,
+    attachments: [],
     deviceOffline: false,
     deviceUnavailable: false,
     chips: [],
+    attachShow: false,
+    attachItems: ATTACH_MENU_ITEMS,
+    configShow: false,
+    configModels: [],
+    configEfforts: [],
+    configEffortIndex: 0,
+    configPermissionLabel: '',
     panelShow: false,
     panelKind: '',
     panelTitle: '',
@@ -310,6 +359,7 @@ Page({
   hiddenAt: 0,
 
   onShow() {
+    syncPageTheme(this)
     if (!this.data.deviceId) return
     // 轻量状态刷新：仅用本地 presence 快照校正在线徽标，且只在状态真变化时才 setData
     if (bridge.isRelayPresenceFresh()) {
@@ -371,21 +421,17 @@ Page({
     this.refreshQuickChips()
   },
 
-  /** 新会话配置 chips：模型/权限快捷行 + 推理配置条（capsule-composer 内部拆分） */
+  /** 输入框 chips：模型 + 推理（胶囊内回显）；权限在 config-sheet 的 Options 行，不再占 chip */
   refreshQuickChips() {
     if (this.catalog == null) {
       this.setData({ chips: [] })
       return
     }
     const model = this.modelOptions.find((item) => item.id === this.data.quickModelId)
-    const permission = this.permissionOptions.find(
-      (item) => item.id === this.data.quickPermissionId,
-    )
     const reasoning = this.reasoningOptions.find((item) => item.id === this.data.quickReasoningId)
     this.setData({
       chips: [
         { key: 'model', value: model?.label ?? DEFAULT_MODEL_OPTION.label },
-        { key: 'permission', value: permission?.label ?? DEFAULT_PERMISSION_OPTION.label },
         { key: 'reasoning', value: reasoning?.label ?? DEFAULT_REASONING_OPTION.label },
       ],
     })
@@ -670,7 +716,7 @@ Page({
     actions.push(() => void this.onDelete(id, title))
     wx.showActionSheet({
       itemList,
-      itemColor: '#1a1a1a',
+      itemColor: getThemeTextColor(),
       success: (res) => {
         actions[res.tapIndex]?.()
       },
@@ -685,7 +731,7 @@ Page({
     const itemList = [...SESSION_LABELS.map((meta) => meta.label), '清除标记']
     wx.showActionSheet({
       itemList,
-      itemColor: '#1a1a1a',
+      itemColor: getThemeTextColor(),
       success: (res) => {
         const isClear = res.tapIndex === SESSION_LABELS.length
         const meta = SESSION_LABELS[res.tapIndex]
@@ -850,13 +896,84 @@ Page({
     this.setData({ quickText: e.detail.value })
   },
 
-  // ─── 新会话配置面板（模型/权限/推理/标记筛选） ────────────────────────────────
+  // ─── 首条消息附件（新建会话：先落盘，再随 turns 提交） ────────────────────────
+
+  onAddAttachment() {
+    if (this.data.deviceOffline || this.data.deviceUnavailable) {
+      wx.showToast({ title: '电脑不在线，暂时无法传附件', icon: 'none' })
+      return
+    }
+    if (remainingAttachmentSlots(this.data.attachments.length) <= 0) {
+      wx.showToast({ title: `最多 ${MAX_ATTACHMENTS} 个附件`, icon: 'none' })
+      return
+    }
+    this.setData({ attachShow: true })
+  },
+
+  onAttachClose() {
+    this.setData({ attachShow: false })
+  },
+
+  async onAttachPick(e: WechatMiniprogram.CustomEvent<{ key: string }>) {
+    this.setData({ attachShow: false })
+    const remaining = remainingAttachmentSlots(this.data.attachments.length)
+    if (remaining <= 0) return
+    try {
+      const locals =
+        e.detail.key === 'file'
+          ? await pickMessageFiles(remaining)
+          : // 照片：相册 + 拍照都由系统选择器承载（设计稿只有一个「照片」入口）
+            await pickImages(remaining, ['album', 'camera'])
+      for (const local of locals) {
+        await this.uploadQuickAttachment(local)
+      }
+    } catch {
+      /* 用户取消选择 */
+    }
+  },
+
+  /**
+   * 单个附件上传：先插占位（带本地路径，图片立刻可预览），
+   * 成功后回写桌面端路径；失败移除占位并给出原因。
+   */
+  async uploadQuickAttachment(local: LocalAttachment) {
+    const placeholder: QuickAttachment = {
+      type: local.type,
+      path: '',
+      name: local.name,
+      localPath: local.localPath,
+      uploaded: false,
+    }
+    const attachments = [...this.data.attachments, placeholder]
+    this.setData({ attachments })
+    const index = attachments.length - 1
+    try {
+      const uploaded = await uploadAttachment(PENDING_SESSION_ID, local, this.targetDeviceId())
+      this.setData({
+        [`attachments[${index}]`]: {
+          ...uploaded,
+          localPath: local.localPath,
+          uploaded: true,
+        },
+      })
+    } catch (error) {
+      this.setData({ attachments: this.data.attachments.filter((_, i) => i !== index) })
+      wx.showToast({ title: (error as Error).message || '附件上传失败', icon: 'none' })
+    }
+  },
+
+  onRemoveAttachment(e: WechatMiniprogram.CustomEvent<{ index: number }>) {
+    const index = e.detail?.index
+    if (index == null || index < 0 || index >= this.data.attachments.length) return
+    this.setData({ attachments: this.data.attachments.filter((_, i) => i !== index) })
+  },
+
+  // ─── 新会话配置：模型胶囊弹层 + 权限 / 标记面板 ──────────────────────────────
 
   onChipTap(e: WechatMiniprogram.CustomEvent<{ key: string }>) {
     const key = e.detail.key as QuickPanelKind
-    if (key === 'model') this.openModelPanel()
+    if (key === 'model') this.onModelTap()
     else if (key === 'permission') this.openPermissionPanel()
-    else if (key === 'reasoning') this.openReasoningPanel()
   },
 
   openPanel(config: {
@@ -883,20 +1000,59 @@ Page({
     this.setData({ panelShow: false, panelKind: '' })
   },
 
-  openModelPanel() {
-    if (this.catalog == null || this.modelOptions.length <= 1) {
+  /** 模型胶囊：模型列表 + 推理强度 + 权限收进同一张 sheet（对齐设计稿） */
+  onModelTap() {
+    if (this.catalog == null) {
       wx.showToast({ title: '模型目录未就绪', icon: 'none' })
       return
     }
-    this.openPanel({
-      kind: 'model',
-      title: '模型渠道',
-      options: this.modelOptions.map((item) => ({
+    this.refreshConfigSheet()
+    this.setData({ configShow: true })
+  },
+
+  /** 重算弹层数据（选中态 / 索引 / 权限文案），选完就地回显不关面板 */
+  refreshConfigSheet() {
+    const permission = this.permissionOptions.find(
+      (item) => item.id === this.data.quickPermissionId,
+    )
+    this.setData({
+      configModels: this.modelOptions.map((item) => ({
         id: item.id,
         label: item.label,
         checked: item.id === this.data.quickModelId,
       })),
+      configEfforts: this.reasoningOptions.map((item) => ({ id: item.id, label: item.label })),
+      configEffortIndex: Math.max(
+        this.reasoningOptions.findIndex((item) => item.id === this.data.quickReasoningId),
+        0,
+      ),
+      // 「电脑默认」也要明确标出来，否则 Options 行会空着
+      configPermissionLabel: permission?.label ?? DEFAULT_PERMISSION_OPTION.label,
     })
+  },
+
+  onConfigClose() {
+    this.setData({ configShow: false })
+  },
+
+  onConfigModel(e: WechatMiniprogram.CustomEvent<{ id: string }>) {
+    this.setData({ quickModelId: e.detail.id })
+    this.refreshQuickChips()
+    this.refreshConfigSheet()
+  },
+
+  onConfigEffort(e: WechatMiniprogram.CustomEvent<{ index: number }>) {
+    const option = this.reasoningOptions[e.detail.index]
+    if (option == null) return
+    this.setData({ quickReasoningId: option.id })
+    this.refreshQuickChips()
+    this.refreshConfigSheet()
+  },
+
+  /** 权限行：收起模型弹层，走既有权限列表面板（权限项较多，单独一屏更稳） */
+  onConfigPermission() {
+    this.setData({ configShow: false })
+    this.openPermissionPanel()
   },
 
   openPermissionPanel() {
@@ -912,24 +1068,6 @@ Page({
         label: item.label,
         checked: item.id === this.data.quickPermissionId,
       })),
-    })
-  },
-
-  openReasoningPanel() {
-    if (this.catalog == null || this.reasoningOptions.length <= 1) {
-      wx.showToast({ title: '推理强度目录未就绪', icon: 'none' })
-      return
-    }
-    const sliderIndex = Math.max(
-      this.reasoningOptions.findIndex((item) => item.id === this.data.quickReasoningId),
-      0,
-    )
-    this.openPanel({
-      kind: 'reasoning',
-      title: '推理强度',
-      mode: 'slider',
-      sliderLabels: this.reasoningOptions.map((item) => item.label),
-      sliderIndex,
     })
   },
 
@@ -970,9 +1108,8 @@ Page({
       this.closePanel()
       return
     }
-    if (kind === 'model') this.setData({ quickModelId: id })
-    else if (kind === 'permission') this.setData({ quickPermissionId: id })
-    else return
+    if (kind !== 'permission') return
+    this.setData({ quickPermissionId: id })
     this.refreshQuickChips()
     this.closePanel()
   },
@@ -985,15 +1122,25 @@ Page({
     this.closePanel()
   },
 
-  async onQuickSend() {
-    const text = this.data.quickText.trim()
-    if (!text || this.data.quickSending || this.data.deviceUnavailable || this.data.deviceOffline)
+  async onQuickSend(e?: WechatMiniprogram.CustomEvent<{ value: string }>) {
+    const rawText = (e?.detail?.value ?? this.data.quickText).trim()
+    const attachments = this.data.attachments
+    if (attachments.some((item) => !item.uploaded)) {
+      wx.showToast({ title: '附件还在上传，稍等一下', icon: 'none' })
       return
+    }
+    if (this.data.quickSending || this.data.deviceUnavailable || this.data.deviceOffline) return
+    if (!rawText && attachments.length === 0) return
+    // 纯图片 / 纯文件消息：桌面端 text 强制非空，用零宽哨兵前缀过校验（与会话页同口径）
+    const text = rawText || ATTACHMENT_ONLY_FALLBACK_TEXT
+    const attachmentPaths = attachments
+      .map((item) => item.path)
+      .filter((path): path is string => path.length > 0)
     this.setData({ quickSending: true })
     try {
       const deviceId = this.targetDeviceId()
       const created = await bridge.createSession(
-        text.slice(0, 30),
+        (rawText || '新会话').slice(0, 30),
         this.data.projectId === 'default' ? undefined : this.data.projectId,
         deviceId,
       )
@@ -1020,8 +1167,13 @@ Page({
       if (Object.keys(patch).length > 0) {
         await bridge.updateSession(created.session.id, patch, deviceId)
       }
-      await bridge.submitTurn(created.session.id, text, undefined, deviceId)
-      this.setData({ quickText: '' })
+      await bridge.submitTurn(
+        created.session.id,
+        text,
+        attachmentPaths.length > 0 ? attachmentPaths : undefined,
+        deviceId,
+      )
+      this.setData({ quickText: '', attachments: [] })
       wx.navigateTo({ url: this.chatUrl(created.session.id, created.session.title) })
     } catch (error) {
       wx.showToast({ title: (error as Error).message || '发起失败', icon: 'none' })

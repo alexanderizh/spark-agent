@@ -1,0 +1,23 @@
+<!-- 附件菜单：底部卡片 + 分组行（图标 / 标题 / 副标题） -->
+
+<view wx:if="{{show}}" class="as-mask" bindtap="onClose" catchtouchmove="noop">
+  <view class="as-sheet" catchtap="noop">
+    <view class="as-grabber"></view>
+    <view class="as-card">
+      <view
+        wx:for="{{items}}"
+        wx:key="key"
+        class="as-row row"
+        hover-class="as-row--hover"
+        data-key="{{item.key}}"
+        bindtap="onPick"
+      >
+        <view class="as-icon icon {{item.icon}}"></view>
+        <view class="as-main grow">
+          <text class="as-label">{{item.label}}</text>
+          <text wx:if="{{item.sub}}" class="as-sub">{{item.sub}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

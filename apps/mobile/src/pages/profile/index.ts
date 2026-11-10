@@ -12,6 +12,7 @@ import { ensureAuthenticated } from '../../utils/auth-guard'
 import { formatFullTime, maskAccount } from '../../utils/format'
 import type { AuthUserInfo } from '../../types'
 import { isFresh, readListCache, writeListCache, invalidateListCache } from '../../utils/list-cache'
+import { setThemePreference, syncPageTheme, type ThemePreference } from '../../utils/theme'
 
 const PROFILE_CACHE_KEY = 'profile:view'
 
@@ -43,6 +44,10 @@ interface ProfilePageData {
   /** WXML 不支持三元以外的表达，状态文案在这里预计算 */
   relayStatusLabel: string
   desktopStatusLabel: string
+  /** 外观偏好与实际生效主题（由全局主题模块同步） */
+  themePreference: ThemePreference
+  themeModeLabel: string
+  themeResolvedLabel: string
 }
 
 /** 读取小程序版本号；getAccountInfoSync 在低版本基础库可能缺失，失败回退 em dash */
@@ -72,6 +77,9 @@ Page({
     relayDesktopOnline: null,
     relayStatusLabel: '未连接',
     desktopStatusLabel: '—',
+    themePreference: 'system',
+    themeModeLabel: '跟随系统',
+    themeResolvedLabel: '浅色',
   } as ProfilePageData,
 
   /** onHide 记录的离开时刻；> 0 表示本次 onShow 是「从别处返回」 */
@@ -83,6 +91,7 @@ Page({
   },
 
   onShow() {
+    syncPageTheme(this)
     if (!ensureAuthenticated()) return
     if (!unsubscribeUserUpdated) {
       unsubscribeUserUpdated = subscribe('user-updated', () => this.applyUser())
@@ -224,6 +233,14 @@ Page({
 
   onGoChangePassword() {
     wx.navigateTo({ url: '/pages/password/index' })
+  },
+
+  // ─── 外观 ───────────────────────────────────────────────────────────────────
+
+  onSelectTheme(e: WechatMiniprogram.CustomEvent) {
+    const preference = e.currentTarget.dataset.mode as ThemePreference | undefined
+    if (preference !== 'system' && preference !== 'light' && preference !== 'dark') return
+    setThemePreference(preference)
   },
 
   // ─── 退出 ───────────────────────────────────────────────────────────────────

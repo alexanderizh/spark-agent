@@ -20,6 +20,7 @@ import {
 import { ensureAuthenticated } from '../../utils/auth-guard'
 import { formatRelativeTime } from '../../utils/format'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+import { syncPageTheme } from '../../utils/theme'
 
 const BRIDGE_DEVICES_CACHE_KEY = 'bridge-devices:list'
 
@@ -114,6 +115,7 @@ Page({
   },
 
   onShow() {
+    syncPageTheme(this)
     if (!ensureAuthenticated()) return
     if (!this.viewReady) {
       void this.loadDevices()

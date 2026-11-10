@@ -11,11 +11,16 @@
  * 页面消息区（flex:1）自动压缩，可边打字边看流式回复。keyboardchange 事件转发给页面，
  * 供页面收起底部安全区避免与键盘高度叠加出缝。
  *
+ * 结构（对齐设计稿）：
+ *   上半  输入区（textarea / 录音覆盖层）
+ *   下半  工具条：+ 附件、模型胶囊（模型名 + 推理强度）、麦克风、发送 / 停止
+ *   下方  其余配置 chips（助手 / 工作流 / 项目 / 标记），模型与权限收进模型胶囊
+ *
  * 能力面：
- *   右侧圆形按钮  running 时为「停止」，否则输入非空时为「发送」
+ *   右侧圆形按钮  running 时为「停止」，否则输入非空（或已有上传完成的附件）时为「发送」
  *   麦克风        按住说话 → 松开触发 voicefile（页面层负责上传转写）
- *   加号          添加附件（图片/文件），页面层负责选择与上传
- *   配置条 chips  会话配置入口（助手/模型/权限/推理/工作流/项目）
+ *   加号          弹出附件菜单（页面层接管：照片 / 文件 / 技能 / 命令）
+ *   模型胶囊      点开「模型 / 推理强度 / 权限」面板（modeltap 事件）
  *   命令补全      输入以 / 开头时浮出，点选填充
  */
 
@@ -36,21 +41,33 @@ interface ComposerChip {
 }
 
 interface ComposerCommand {
+  key?: string
   name: string
   description: string
+}
+
+/** 模型胶囊：主值取 model chip，后缀取 reasoning chip（「电脑默认」时不显示后缀） */
+interface ComposerModelChip {
+  value: string
+  effort: string
 }
 
 interface CapsuleComposerData {
   focus: boolean
   /** 组件内持有的实时文本（非受控：输入不经过页面回流，避免真机合成期打断/发送取旧值） */
   localValue: string
-  /** 快捷行（输入框上方两个常用项：模型/权限） */
-  quickChips: ComposerChip[]
+  /** 模型胶囊（输入框下方工具条内） */
+  modelChip: ComposerModelChip
+  /** 除模型/权限/推理外的配置 chips（助手/工作流/项目/标记） */
+  extraChips: ComposerChip[]
   /** 键盘高度（px；0 = 收起）。float 抬 bottom / dock 加占位都以此为准 */
   keyboardHeight: number
   /** 有文字或已上传的附件即可发送（纯图片 / 纯文件消息） */
   canSend: boolean
 }
+
+/** 收进模型胶囊的 chip：不再在下方配置条重复出现 */
+const MODEL_SHEET_CHIP_KEYS = ['model', 'permission', 'reasoning']
 
 /** 录音管理器（微信全局单例；组件多实例复用同一份） */
 let sharedRecorder: WechatMiniprogram.RecorderManager | null = null
@@ -62,7 +79,7 @@ Component({
   properties: {
     value: { type: String, value: '' },
     mode: { type: String, value: 'float' },
-    placeholder: { type: String, value: '问点什么…' },
+    placeholder: { type: String, value: '随心输入，@ 引用文件，/ 使用命令' },
     /** 回合运行中：右侧按钮变为停止 */
     running: { type: Boolean, value: false },
     disabled: { type: Boolean, value: false },
@@ -87,7 +104,8 @@ Component({
   data: {
     focus: false,
     localValue: '',
-    quickChips: [],
+    modelChip: { value: '', effort: '' },
+    extraChips: [],
     keyboardHeight: 0,
     canSend: false,
   } as CapsuleComposerData,
@@ -139,10 +157,18 @@ Component({
   },
 
   methods: {
-    /** chips 拆分：模型/权限提为输入框上方快捷行，其余留配置条 */
+    /** chips 拆分：模型 + 推理合成胶囊，其余留下方配置条 */
     applyChips(chips: ComposerChip[]) {
-      const quickChips = chips.filter((chip) => chip.key === 'model' || chip.key === 'permission')
-      this.setData({ quickChips })
+      const list = chips ?? []
+      const model = list.find((chip) => chip.key === 'model')
+      const reasoning = list.find((chip) => chip.key === 'reasoning')
+      this.setData({
+        modelChip: {
+          value: model?.value ?? '',
+          effort: reasoning != null && reasoning.value !== '电脑默认' ? reasoning.value : '',
+        },
+        extraChips: list.filter((chip) => !MODEL_SHEET_CHIP_KEYS.includes(chip.key)),
+      })
     },
 
     onInput(e: WechatMiniprogram.TextareaInput) {
@@ -195,7 +221,11 @@ Component({
       this.triggerEvent('send', { value: text })
     },
 
-    // ─── 配置条 ──────────────────────────────────────────────────────────────
+    // ─── 配置 ────────────────────────────────────────────────────────────────
+
+    onModelTap() {
+      this.triggerEvent('modeltap')
+    },
 
     onChipTap(e: WechatMiniprogram.BaseEvent) {
       const key = e.currentTarget.dataset.key as string | undefined

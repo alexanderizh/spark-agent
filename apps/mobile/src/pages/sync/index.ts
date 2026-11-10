@@ -21,6 +21,7 @@ import {
   type SyncStatusVM,
 } from '../../utils/view-model'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+import { syncPageTheme } from '../../utils/theme'
 
 const SYNC_CACHE_KEY = 'sync:list'
 
@@ -82,6 +83,7 @@ Page({
   },
 
   onShow() {
+    syncPageTheme(this)
     if (!ensureAuthenticated()) return
     if (!this.viewReady) {
       void this.loadFirst()

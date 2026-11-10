@@ -1,0 +1,159 @@
+/* 模型配置弹层（浅色为唯一事实源，深色由 scripts/build-theme.mjs 生成） */
+
+.cs-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(15, 14, 12, 0.42);
+  display: flex;
+  align-items: flex-end;
+}
+
+.cs-sheet {
+  width: 100%;
+  max-height: 82vh;
+  box-sizing: border-box;
+  background: #f2f0ed;
+  border-radius: 36rpx 36rpx 0 0;
+  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
+  animation: cs-rise 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes cs-rise {
+  from {
+    transform: translateY(40rpx);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.cs-grabber {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 4rpx;
+  background: #c9c6c0;
+  margin: 0 auto 12rpx;
+}
+
+/* 头部：标题居中，完成靠右（绝对定位避免标题被右侧文案带偏） */
+.cs-head {
+  position: relative;
+  height: 76rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cs-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+.cs-done {
+  position: absolute;
+  right: 4rpx;
+  top: 0;
+  height: 76rpx;
+  line-height: 76rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+  padding: 0 8rpx;
+}
+.cs-done--hover {
+  opacity: 0.6;
+}
+
+.cs-body {
+  max-height: 64vh;
+}
+
+/* 分组标题：小号灰字，与卡片拉开呼吸 */
+.cs-section {
+  display: block;
+  font-size: 25rpx;
+  color: #8e8e8e;
+  padding: 22rpx 12rpx 10rpx;
+}
+
+.cs-card {
+  background: #fff;
+  border-radius: 28rpx;
+  overflow: hidden;
+}
+
+.cs-row {
+  align-items: center;
+  gap: 16rpx;
+  padding: 24rpx 28rpx;
+  border-bottom: 1rpx solid #efede8;
+}
+.cs-row:last-child {
+  border-bottom: none;
+}
+.cs-row--hover {
+  background: #f7f6f4;
+}
+
+.cs-row-main {
+  min-width: 0;
+}
+.cs-row-label {
+  font-size: 32rpx;
+  color: #1a1a1a;
+  line-height: 1.35;
+}
+.cs-row-sub {
+  font-size: 25rpx;
+  color: #8e8e8e;
+  line-height: 1.35;
+  margin-top: 4rpx;
+}
+.cs-row-value {
+  font-size: 30rpx;
+  color: #b45309;
+  flex: none;
+}
+.cs-check {
+  width: 34rpx;
+  height: 34rpx;
+  background-size: 34rpx 34rpx;
+  flex: none;
+}
+.cs-chevron {
+  width: 24rpx;
+  height: 24rpx;
+  flex: none;
+}
+
+/* 推理强度分段控件：等分五档，选中项描边加深 */
+.cs-segment {
+  background: #f2f0ed;
+  border-radius: 24rpx;
+  padding: 6rpx;
+  gap: 4rpx;
+}
+.cs-seg {
+  flex: 1;
+  min-width: 0;
+  height: 68rpx;
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cs-seg-text {
+  font-size: 27rpx;
+  color: #6b6b6b;
+  line-height: 1;
+}
+.cs-seg--on {
+  background: #fff;
+  border: 1rpx solid #d7d4cf;
+  box-shadow: 0 2rpx 6rpx rgba(26, 26, 26, 0.08);
+}
+.cs-seg--on .cs-seg-text {
+  color: #1a1a1a;
+  font-weight: 600;
+}

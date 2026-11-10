@@ -1,4 +1,4 @@
-<view class="password-page">
+<view class="password-page theme-root {{themeClass}}">
   <view class="card">
     <view class="card-head">
       <text class="card-title">验证身份</text>

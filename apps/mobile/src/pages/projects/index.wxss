@@ -93,6 +93,32 @@
   color: #d97706;
 }
 
+/* ─── 运行中会话徽标（蓝色 info 口径，与会话列表 dot-info 一致） ───────────── */
+
+.projects-row-meta {
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
+.projects-running-badge {
+  flex: none;
+  align-items: center;
+  gap: 6rpx;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+  font-size: 21rpx;
+  line-height: 30rpx;
+}
+.projects-running-dot {
+  width: 10rpx;
+  height: 10rpx;
+  flex: none;
+  border-radius: 50%;
+  background: #3b82f6;
+}
+
 .projects-list {
   padding: 12rpx 32rpx 48rpx;
 }

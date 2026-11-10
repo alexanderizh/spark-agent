@@ -80,6 +80,54 @@
   background: #f2f1ef;
 }
 
+/* ─── 外观：三档分段选择 ───────────────────────────────────────────────────── */
+
+.theme-segment {
+  display: flex;
+  flex-direction: row;
+  gap: 12rpx;
+  padding: 6rpx;
+  margin-top: 16rpx;
+  border-radius: 20rpx;
+  background: #efedea;
+}
+.theme-option {
+  flex: 1;
+  min-width: 0;
+  min-height: 68rpx;
+  padding: 12rpx 8rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  box-sizing: border-box;
+  color: #6b6b6b;
+  font-size: 26rpx;
+}
+.theme-option--active {
+  background: #fff;
+  color: #1a1a1a;
+  font-weight: 600;
+  box-shadow: 0 2rpx 8rpx rgba(26, 26, 26, 0.06);
+}
+.theme-option--hover {
+  opacity: 0.72;
+}
+.theme-option-check {
+  width: 24rpx;
+  color: #3b82f6;
+  font-size: 24rpx;
+  flex: none;
+}
+.theme-note {
+  display: block;
+  margin-top: 16rpx;
+  color: #8e8e8e;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
 /* ─── hover ────────────────────────────────────────────────────────────────── */
 
 .btn-danger-plain--hover {

@@ -1,4 +1,4 @@
-<view class="login-page">
+<view class="login-page theme-root {{themeClass}}">
   <view class="brand">
     <image class="brand-logo" src="/assets/brand/logo.png" mode="aspectFit" />
     <view class="brand-name t-strong">SparkWork</view>

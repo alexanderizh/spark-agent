@@ -1,12 +1,13 @@
-<!-- 半屏选择面板：列表选择（单选高亮）/ 滑块调节（推理强度）两种模式 -->
+<!-- 半屏选择面板：列表选择（勾选回显）/ 滑块调节（推理强度）两种模式。
+     视觉对齐设计稿：顶部抓手 + 居中标题 + 右侧「完成」，列表包进分组卡片。 -->
 
 <view wx:if="{{show}}" class="sheet-mask" bindtap="onClose" catchtouchmove="noop">
   <view class="sheet" catchtap="noop">
-    <view class="sheet-head row">
+    <view class="sheet-grabber"></view>
+
+    <view class="sheet-head">
       <text class="sheet-title">{{title}}</text>
-      <view class="sheet-close" hover-class="hover-dim" bindtap="onClose">
-        <view class="icon icon-close"></view>
-      </view>
+      <text class="sheet-done" hover-class="sheet-done--hover" bindtap="onClose">完成</text>
     </view>
 
     <view wx:if="{{loading}}" class="sheet-loading">
@@ -19,20 +20,22 @@
       <view wx:if="{{options.length === 0}}" class="sheet-empty">
         <text class="t-caption">{{emptyText || '暂无可选项'}}</text>
       </view>
-      <view
-        wx:for="{{options}}"
-        wx:key="id"
-        class="sheet-option row {{item.checked ? 'sheet-option--checked' : ''}} {{item.disabled ? 'sheet-option--disabled' : ''}}"
-        hover-class="hover-dim"
-        data-id="{{item.id}}"
-        data-disabled="{{item.disabled}}"
-        bindtap="onSelect"
-      >
-        <view class="sheet-option-main grow">
-          <text class="sheet-option-label">{{item.label}}</text>
-          <text wx:if="{{item.sub}}" class="sheet-option-sub">{{item.sub}}</text>
+      <view wx:else class="sheet-card">
+        <view
+          wx:for="{{options}}"
+          wx:key="id"
+          class="sheet-option row {{item.disabled ? 'sheet-option--disabled' : ''}}"
+          hover-class="sheet-option--hover"
+          data-id="{{item.id}}"
+          data-disabled="{{item.disabled}}"
+          bindtap="onSelect"
+        >
+          <view class="sheet-option-main grow">
+            <text class="sheet-option-label">{{item.label}}</text>
+            <text wx:if="{{item.sub}}" class="sheet-option-sub">{{item.sub}}</text>
+          </view>
+          <view wx:if="{{item.checked}}" class="icon icon-check sheet-check"></view>
         </view>
-        <view wx:if="{{item.checked}}" class="icon icon-check"></view>
       </view>
     </scroll-view>
 
@@ -46,10 +49,10 @@
         max="{{sliderMax}}"
         step="1"
         value="{{sliderIndex}}"
-        activeColor="#1a1a1a"
-        backgroundColor="#e8e5e0"
+        activeColor="{{accentColor}}"
+        backgroundColor="{{trackColor}}"
         block-size="22"
-        block-color="#ffffff"
+        block-color="{{blockColor}}"
         bindchange="onSliderChange"
         bindchanging="onSliderChanging"
       />

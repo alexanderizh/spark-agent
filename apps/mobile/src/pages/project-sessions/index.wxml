@@ -1,6 +1,6 @@
 <!-- 固定电脑下的项目/全部会话列表：大标题 + 电脑上下文 + 筛选 + 分组条目 -->
 
-<view class="ps-page">
+<view class="ps-page theme-root {{themeClass}}">
   <safe-nav-bar title="" />
 
   <!-- 当前项目 -->
@@ -38,7 +38,7 @@
         class="ps-search-input"
         value="{{searchText}}"
         placeholder="搜索会话"
-        placeholder-style="color:#b3b0ab"
+        placeholder-class="themed-placeholder"
         confirm-type="search"
         focus="{{autoFocusSearch}}"
         bindinput="onSearchInput"
@@ -146,11 +146,36 @@
     placeholder="{{projectId === 'default' ? '在未归属项目中发起对话…' : '在 ' + (projectName || '项目') + ' 发起对话…'}}"
     disabled="{{quickSending || deviceOffline || deviceUnavailable}}"
     chips="{{chips}}"
+    attachments="{{attachments}}"
     bind:input="onQuickInput"
     bind:send="onQuickSend"
     bind:chip="onChipTap"
+    bind:modeltap="onModelTap"
+    bind:addattach="onAddAttachment"
+    bind:removeattach="onRemoveAttachment"
   />
 </view>
+
+<!-- 附件菜单（照片 / 文件） -->
+<attach-sheet
+  show="{{attachShow}}"
+  items="{{attachItems}}"
+  bind:close="onAttachClose"
+  bind:pick="onAttachPick"
+/>
+
+<!-- 模型配置（模型列表 / 推理强度 / 权限） -->
+<config-sheet
+  show="{{configShow}}"
+  models="{{configModels}}"
+  efforts="{{configEfforts}}"
+  effortIndex="{{configEffortIndex}}"
+  permissionLabel="{{configPermissionLabel}}"
+  bind:close="onConfigClose"
+  bind:pickmodel="onConfigModel"
+  bind:pickeffort="onConfigEffort"
+  bind:openpermission="onConfigPermission"
+/>
 
 <!-- 新会话配置面板（模型/权限/推理，与会话页共用 sheet-panel） -->
 <sheet-panel
@@ -162,6 +187,9 @@
   emptyText="{{panelEmpty}}"
   sliderOptions="{{panelSliderLabels}}"
   sliderIndex="{{panelSliderIndex}}"
+  accentColor="{{themeTextColor}}"
+  trackColor="{{themeTrackColor}}"
+  blockColor="{{themeBlockColor}}"
   bind:close="closePanel"
   bind:select="onPanelSelect"
   bind:sliderchange="onPanelSliderChange"

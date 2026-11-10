@@ -129,6 +129,8 @@ export interface BridgeProjectSummary {
   updatedAt: string
   /** 项目下未归档会话数 */
   sessionCount: number
+  /** 项目下运行中会话数（「运行中」徽标；缺省 = 旧版桌面端不透出，按 0 处理） */
+  runningSessionCount?: number
 }
 
 export type BridgeEventType =
@@ -309,13 +311,17 @@ export function listSessions(
 export function listProjects(
   limit = 100,
   deviceId?: string,
-): Promise<{ projects: BridgeProjectSummary[]; total: number }> {
-  return request<{ projects: BridgeProjectSummary[]; total: number }>(
-    `/v1/projects?limit=${limit}`,
-    'GET',
-    undefined,
-    deviceId,
-  )
+): Promise<{
+  projects: BridgeProjectSummary[]
+  total: number
+  /** 未归属（'default'）运行中会话数（缺省 = 旧版桌面端不透出） */
+  unassignedRunningSessionCount?: number
+}> {
+  return request<{
+    projects: BridgeProjectSummary[]
+    total: number
+    unassignedRunningSessionCount?: number
+  }>(`/v1/projects?limit=${limit}`, 'GET', undefined, deviceId)
 }
 
 export function listProjectSessions(

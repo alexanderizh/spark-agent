@@ -1,6 +1,6 @@
 <!-- 远程对话页：自定义导航 + 居中时间分界 + 用户气泡/AI 文档排版 + 胶囊输入 -->
 
-<view class="chat-page">
+<view class="chat-page theme-root {{themeClass}}">
   <safe-nav-bar title="{{title}}" show-more="{{true}}" bind:more="onMore" />
 
   <!-- 所选电脑离线：仍可看历史，发送与跟流不可用 -->
@@ -400,6 +400,7 @@
       bind:send="onSend"
       bind:stop="onCancel"
       bind:chip="onChipTap"
+      bind:modeltap="onModelTap"
       bind:addattach="onAddAttachment"
       bind:removeattach="onRemoveAttachment"
       bind:voicestart="onVoiceStart"
@@ -421,8 +422,32 @@
     emptyText="{{panelEmpty}}"
     sliderOptions="{{panelSliderOptions}}"
     sliderIndex="{{panelSliderIndex}}"
+    accentColor="{{themeTextColor}}"
+    trackColor="{{themeTrackColor}}"
+    blockColor="{{themeBlockColor}}"
     bind:close="closePanel"
     bind:select="onPanelSelect"
     bind:sliderchange="onPanelSliderChange"
+  />
+
+  <!-- 附件菜单（照片 / 文件 / 技能 / 命令） -->
+  <attach-sheet
+    show="{{attachShow}}"
+    items="{{attachItems}}"
+    bind:close="onAttachClose"
+    bind:pick="onAttachPick"
+  />
+
+  <!-- 模型配置（模型列表 / 推理强度 / 权限） -->
+  <config-sheet
+    show="{{configShow}}"
+    models="{{configModels}}"
+    efforts="{{configEfforts}}"
+    effortIndex="{{configEffortIndex}}"
+    permissionLabel="{{configPermissionLabel}}"
+    bind:close="onConfigClose"
+    bind:pickmodel="onConfigModel"
+    bind:pickeffort="onConfigEffort"
+    bind:openpermission="onConfigPermission"
   />
 </view>

@@ -12,6 +12,7 @@
  */
 
 import { getItem, StorageKeys } from '../../utils/storage'
+import { syncPageTheme } from '../../utils/theme'
 
 const REDIRECT_TIMEOUT_MS = 3000
 
@@ -22,6 +23,7 @@ Page({
   },
 
   onLoad() {
+    syncPageTheme(this)
     this.go()
   },
 

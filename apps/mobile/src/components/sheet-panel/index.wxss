@@ -1,8 +1,4 @@
-/* 半屏选择面板 */
-
-.icon-close {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6L6 18M6 6l12 12'/%3E%3C/svg%3E");
-}
+/* 半屏选择面板（视觉对齐设计稿：抓手 + 居中标题 + 完成 + 分组卡片） */
 
 .icon-check {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
@@ -23,44 +19,67 @@
   min-width: 0;
   box-sizing: border-box;
   overflow-x: hidden;
-  max-height: 68vh;
-  background: #ffffff;
-  border-radius: 28rpx 28rpx 0 0;
-  padding: 20rpx 24rpx calc(env(safe-area-inset-bottom) + 28rpx);
+  max-height: 76vh;
+  background: #f2f0ed;
+  border-radius: 36rpx 36rpx 0 0;
+  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 -12rpx 40rpx rgba(15, 14, 12, 0.12);
+  animation: sheet-rise 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes sheet-rise {
+  from {
+    transform: translateY(40rpx);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
+.sheet-grabber {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 4rpx;
+  background: #c9c6c0;
+  margin: 0 auto 12rpx;
+  flex: none;
+}
+
+/* 头部：标题居中，完成靠右（绝对定位，避免标题被右侧文案带偏） */
 .sheet-head {
-  box-sizing: border-box;
-  min-width: 0;
-  justify-content: space-between;
+  position: relative;
+  height: 76rpx;
+  display: flex;
   align-items: center;
-  padding: 8rpx 8rpx 20rpx;
+  justify-content: center;
+  flex: none;
 }
 
 .sheet-title {
-  flex: 1;
-  min-width: 0;
+  max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 32rpx;
+  font-size: 34rpx;
   font-weight: 600;
   color: #1a1a1a;
 }
 
-.sheet-close {
-  flex: none;
-  margin-left: 16rpx;
-  width: 52rpx;
-  height: 52rpx;
-  border-radius: 50%;
-  background: #f2f0ed;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.sheet-done {
+  position: absolute;
+  right: 4rpx;
+  top: 0;
+  height: 76rpx;
+  line-height: 76rpx;
+  padding: 0 8rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+.sheet-done--hover {
+  opacity: 0.6;
 }
 
 .sheet-loading {
@@ -75,7 +94,7 @@
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  max-height: 52vh;
+  max-height: 60vh;
 }
 
 .sheet-empty {
@@ -83,18 +102,27 @@
   text-align: center;
 }
 
+/* 分组卡片：整块圆角，行间发丝线 */
+.sheet-card {
+  background: #fff;
+  border-radius: 28rpx;
+  overflow: hidden;
+}
+
 .sheet-option {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
   align-items: center;
-  padding: 24rpx 16rpx;
-  border-radius: 20rpx;
-  gap: 12rpx;
+  gap: 16rpx;
+  padding: 24rpx 28rpx;
+  border-bottom: 1rpx solid #efede8;
 }
-
-.sheet-option--checked {
-  background: #f5f4f1;
+.sheet-option:last-child {
+  border-bottom: none;
+}
+.sheet-option--hover {
+  background: #f7f6f4;
 }
 
 .sheet-option--disabled {
@@ -117,33 +145,33 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   word-break: break-all;
-  font-size: 29rpx;
+  font-size: 32rpx;
+  line-height: 1.35;
   color: #1a1a1a;
-  font-weight: 500;
-}
-
-.sheet-option--checked .sheet-option-label {
-  font-weight: 600;
 }
 
 .sheet-option-sub {
   display: block;
   max-width: 100%;
-  font-size: 23rpx;
-  color: #8f8b85;
+  font-size: 25rpx;
+  line-height: 1.35;
+  color: #8e8e8e;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sheet-option .icon-check {
+.sheet-check {
+  width: 34rpx;
+  height: 34rpx;
+  background-size: 34rpx 34rpx;
   flex: none;
 }
 
 /* 滑块模式 */
 
 .sheet-slider {
-  padding: 16rpx 16rpx 8rpx;
+  padding: 8rpx 16rpx 16rpx;
 }
 
 .sheet-slider-value {

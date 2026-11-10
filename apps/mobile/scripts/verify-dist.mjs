@@ -45,6 +45,11 @@ walk(dist, (file) => {
 // 2-3. 页面四件套 + tabBar 图标
 const appJson = JSON.parse(readFileSync(join(dist, 'app.json'), 'utf8'))
 const registeredPages = new Set(appJson.pages)
+if (appJson.darkmode === true) {
+  if (typeof appJson.themeLocation !== 'string' || !existsSync(join(dist, appJson.themeLocation))) {
+    errors.push(`深色主题配置缺失: ${appJson.themeLocation || 'themeLocation 未声明'}`)
+  }
+}
 for (const page of appJson.pages) {
   for (const ext of ['.js', '.json', '.wxml', '.wxss']) {
     if (!existsSync(join(dist, page + ext))) {

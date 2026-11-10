@@ -77,7 +77,16 @@ import {
   type QuestionDraft,
 } from '../../utils/interaction-view'
 import { PERMISSION_LABELS, REASONING_LABELS } from '../../utils/session-config'
+import {
+  MAX_ATTACHMENTS,
+  pickImages,
+  pickMessageFiles,
+  uploadAttachment,
+  type AttachMenuItem,
+  type LocalAttachment,
+} from '../../utils/attachment-flow'
 import { getItem, setItem, StorageKeys } from '../../utils/storage'
+import { getThemeTextColor, syncPageTheme } from '../../utils/theme'
 
 interface ComposerAttachmentView {
   type: 'image' | 'file'
@@ -170,6 +179,15 @@ interface ChatPageData {
   panelEmpty: string
   // ── 输入扩展 ──
   attachments: ComposerAttachmentView[]
+  /** 附件菜单弹层（照片/文件/技能/命令） */
+  attachShow: boolean
+  attachItems: AttachMenuItem[]
+  /** 模型配置弹层（模型列表 / 推理强度 / 权限） */
+  configShow: boolean
+  configModels: { id: string; label: string; sub?: string; checked?: boolean }[]
+  configEfforts: { id: string; label: string }[]
+  configEffortIndex: number
+  configPermissionLabel: string
   commands: bridge.BridgeCommandItem[]
   /** 斜杠命令补全面板显隐（输入以 / 开头且尚未带参数时显示） */
   showCommands: boolean
@@ -183,8 +201,6 @@ interface ChatPageData {
 }
 
 const FLUSH_INTERVAL_MS = 100
-/** 附件单回合上限（与桌面端 normalizeTurnAttachments 一致） */
-const MAX_ATTACHMENTS = 20
 /** 挂起交互轮询间隔：回合进行中或有卡片挂起时 3s，空闲 15s 兜底（桌面端无下行推送） */
 const INTERACTION_POLL_ACTIVE_MS = 3_000
 const INTERACTION_POLL_IDLE_MS = 15_000
@@ -194,8 +210,6 @@ const BOTTOM_STICKY_THRESHOLD_PX = 100
 const SCROLL_MOMENTUM_WINDOW_MS = 800
 /** scroll-top 回底值：交替 ±1 保证每次需要回底时值都会变化 */
 const BOTTOM_SCROLL_VALUE = 99_999_999
-/** 附件 base64 上限（桌面端 12MiB body ≈ 8MB 原始文件），前端先拦一道避免误导性 500 */
-const MAX_ATTACHMENT_BASE64_CHARS = 11 * 1024 * 1024
 
 /** 单张图片保存到系统相册（回调 → Promise；拒绝授权时 errMsg 带 auth deny） */
 function saveImageToPhotosAlbum(filePath: string): Promise<void> {
@@ -241,6 +255,15 @@ Page({
     panelLoading: false,
     panelEmpty: '',
     attachments: [] as ComposerAttachmentView[],
+    /** 附件菜单弹层（照片/文件/技能/命令） */
+    attachShow: false,
+    attachItems: [] as AttachMenuItem[],
+    /** 模型配置弹层（模型列表 / 推理强度 / 权限） */
+    configShow: false,
+    configModels: [] as { id: string; label: string; sub?: string; checked?: boolean }[],
+    configEfforts: [] as { id: string; label: string }[],
+    configEffortIndex: 0,
+    configPermissionLabel: '',
     commands: [] as bridge.BridgeCommandItem[],
     showCommands: false,
     skillsAvailable: false,
@@ -339,6 +362,10 @@ Page({
   serverRunning: false as boolean,
   /** 已接收事件流的最大 seq，用于检测跨批次缺口 */
   lastStreamSeq: 0 as number,
+  /** 对账请求 in-flight 标记：流式缺帧可能连续触发，避免并发重拉 */
+  reconcileInFlight: false as boolean,
+  /** 最近一次顶部加载时间戳：scrolltoupper 因整表重渲染被程序化重触发时冷却拦截 */
+  lastTopLoadAt: 0 as number,
   /** 待发队列串行 drain 中的标记 */
   drainInFlight: false as boolean,
   /** 快照写入节流定时器 */
@@ -436,6 +463,7 @@ Page({
   },
 
   onShow() {
+    syncPageTheme(this)
     this.refreshDeviceOnline()
     // 只有首次进入才全量重建；从分支页/任务页返回时只做一次轻量对账，
     // 视图、滚动位置、已加载的历史分页和图片预览全部保留。
@@ -488,8 +516,9 @@ Page({
     const generation = ++this.historyGeneration
     this.closeStream?.()
     this.closeStream = null
-    // 从快照恢复时已有视图可看，不再闪「加载历史…」把整页清空
-    const hasView = this.restoredFromSnapshot && this.latestTimeline != null
+    // 已有可渲染视图就保留（WXML 里 loading 与消息区互斥，置 loading 会把整页清空）：
+    // 快照恢复、对账后重拉都算「有视图」；只有真正冷启动才闪「加载历史…」。
+    const hasView = this.latestTimeline != null && this.data.items.length > 0
     this.setData({
       loading: !hasView,
       historyError: '',
@@ -589,6 +618,9 @@ Page({
    */
   mergeIncomingEvents(incoming: bridge.BridgeEvent[], serverRunning?: boolean): MergeEventsResult {
     const merged = mergeEvents(this.allEvents, incoming)
+    // 被丢弃的回放 delta 也算「已见」：它们每个 poll tick 都会再送一遍，
+    // 不记 id 的话 filterUnseenEvents 会永远把它们当新事件重复处理。
+    for (const event of merged.dropped) this.seenEventIds.add(event.id)
     if (merged.added.length > 0) {
       this.allEvents = merged.events
       for (const event of merged.added) this.seenEventIds.add(event.id)
@@ -621,6 +653,8 @@ Page({
   async reconcileFromServer() {
     const { sessionId } = this.data
     if (!sessionId) return
+    if (this.reconcileInFlight) return
+    this.reconcileInFlight = true
     const generation = this.historyGeneration
     try {
       const history = await bridge.getMessages(sessionId, {
@@ -642,6 +676,8 @@ Page({
       this.scheduleSnapshot()
     } catch {
       // 对账失败保留当前视图，watchdog 下一轮再试；不弹错误打断阅读
+    } finally {
+      this.reconcileInFlight = false
     }
   },
 
@@ -684,6 +720,11 @@ Page({
    */
   async loadEarlier() {
     if (this.data.loading || this.data.loadingEarlier || !this.data.hasMoreHistory) return
+    // 冷却：整表 setData 会重排版面，scroll-view 可能因此在阈值内再次抛
+    // scrolltoupper（程序化重触发而非用户手势）。不冷却就会「加载→重渲染→
+    // 又触发加载」循环刷屏，输出期间尤为明显。
+    if (Date.now() - this.lastTopLoadAt < 800) return
+    this.lastTopLoadAt = Date.now()
     const initialCursor = this.historyCursor ?? this.allEvents[0]?.seq
     if (initialCursor == null) return
     this.setData({ loadingEarlier: true })
@@ -753,19 +794,23 @@ Page({
           const unseenEvents = filterUnseenEvents(this.seenEventIds, events)
           if (unseenEvents.length === 0) return
           // 事件帧无游标、无 ack、零留存：先按 seq 归一化合并（含乱序补写），
-          // 再由合并结果判断整批事件是否越过已应用区间留下空洞 —— 断线窗口丢了一批
-          // 就全量重建补齐（否则终态事件丢失会让 running 永久卡住）。
+          // 再由合并结果判断整批事件是否越过已应用区间留下空洞。
+          // 注意：缺帧走非破坏性对账而不是 init() —— init 重拉的历史排除流式
+          // delta，重放后 allEvents 的最大 seq 会回退，后续每条 delta 都再次
+          // 满足 hasGap，形成「init → 清空 → 下一批 → 又 init」的刷屏死循环；
+          // 缺失的 delta 本就不可恢复（由该回合 final/complete 权威覆盖），
+          // 非.delta 事件与 running 状态交给 reconcile 从历史补齐。
           const merged = this.mergeIncomingEvents(unseenEvents)
-          if (merged.hasGap) {
-            void this.init()
-            return
-          }
           // 真实用户消息回来后撤掉本地「已送达待回显」占位，防双气泡
           this.dropConfirmedForEvents(unseenEvents)
           // 本地归约与权威状态同步，避免下一次对账把刚到达的终态又改回 running
           this.serverRunning = this.latestTimeline?.running ?? false
           this.lastEventAt = Date.now()
           this.flushTimeline()
+          if (merged.hasGap) {
+            void this.reconcileFromServer()
+            return
+          }
           this.scheduleSnapshot()
           // 桌面端弹审批/问答会先落 waiting 状态事件：立刻对一次账，卡片不用等下一轮轮询
           if (
@@ -1752,13 +1797,88 @@ Page({
     })
   },
 
-  openModelPanel() {
-    const catalog = this.catalog
-    if (catalog == null || catalog.providers.length === 0) {
-      wx.showToast({ title: '渠道目录为空', icon: 'none' })
+  // ─── 模型配置弹层（模型 / 推理强度 / 权限，对齐设计稿） ──────────────────────
+
+  onModelTap() {
+    if (this.catalog == null) {
+      wx.showToast({ title: '模型目录未就绪', icon: 'none' })
       return
     }
-    const options: PanelOptionView[] = []
+    this.applyConfigSheet()
+    this.setData({ configShow: true })
+  },
+
+  /** 用当前 runtime 回显弹层（选完就地刷新，不关面板） */
+  applyConfigSheet() {
+    const catalog = this.catalog
+    if (catalog == null) return
+    const efforts = (catalog.reasoningEfforts ?? []).map((id) => ({
+      id,
+      label: REASONING_LABELS[id] ?? id,
+    }))
+    const current = this.runtime?.reasoningEffort ?? 'medium'
+    const permissionMode = this.runtime?.permissionMode ?? ''
+    this.setData({
+      configModels: this.modelSheetOptions(),
+      configEfforts: efforts,
+      configEffortIndex: Math.max(
+        efforts.findIndex((item) => item.id === current),
+        0,
+      ),
+      configPermissionLabel: PERMISSION_LABELS[permissionMode] ?? (permissionMode || '电脑默认'),
+    })
+  },
+
+  onConfigClose() {
+    this.setData({ configShow: false })
+  },
+
+  async onConfigModel(e: WechatMiniprogram.CustomEvent<{ id: string }>) {
+    const id = e.detail.id
+    const sep = id.indexOf('::')
+    if (sep < 0) return
+    const modelId = id.slice(sep + 2)
+    try {
+      await bridge.updateSession(
+        this.data.sessionId,
+        { providerProfileId: id.slice(0, sep), modelId: modelId !== '' ? modelId : null },
+        this.targetDeviceId(),
+      )
+      await this.refreshRuntime()
+      this.applyConfigSheet()
+      wx.showToast({ title: '已切换模型', icon: 'success' })
+    } catch (error) {
+      wx.showToast({ title: (error as Error).message || '切换失败', icon: 'none' })
+    }
+  },
+
+  async onConfigEffort(e: WechatMiniprogram.CustomEvent<{ index: number }>) {
+    const effort = this.data.configEfforts[e.detail.index]?.id
+    if (effort == null) return
+    try {
+      await bridge.updateSession(
+        this.data.sessionId,
+        { reasoningEffort: effort },
+        this.targetDeviceId(),
+      )
+      await this.refreshRuntime()
+      this.applyConfigSheet()
+    } catch (error) {
+      wx.showToast({ title: (error as Error).message || '切换失败', icon: 'none' })
+    }
+  },
+
+  /** 权限项较多，收起模型弹层后单独一屏更稳 */
+  onConfigPermission() {
+    this.setData({ configShow: false })
+    this.openPermissionPanel()
+  },
+
+  /** 模型弹层选项（弹层与旧面板同口径，抽取避免两处漂移） */
+  modelSheetOptions(): { id: string; label: string; sub?: string; checked?: boolean }[] {
+    const catalog = this.catalog
+    if (catalog == null) return []
+    const options: { id: string; label: string; sub?: string; checked?: boolean }[] = []
     for (const provider of catalog.providers) {
       if (provider.isAutoRouter) {
         options.push({
@@ -1779,7 +1899,21 @@ Page({
         })
       }
     }
-    this.openPanel({ kind: 'model', title: '切换模型', options, empty: '没有可用模型' })
+    return options
+  },
+
+  openModelPanel() {
+    const catalog = this.catalog
+    if (catalog == null || catalog.providers.length === 0) {
+      wx.showToast({ title: '渠道目录为空', icon: 'none' })
+      return
+    }
+    this.openPanel({
+      kind: 'model',
+      title: '切换模型',
+      options: this.modelSheetOptions(),
+      empty: '没有可用模型',
+    })
   },
 
   openPermissionPanel() {
@@ -1949,87 +2083,60 @@ Page({
   // ─── 附件 ───────────────────────────────────────────────────────────────────
 
   onAddAttachment() {
+    if (MAX_ATTACHMENTS - this.data.attachments.length <= 0) {
+      wx.showToast({ title: `最多 ${MAX_ATTACHMENTS} 个附件`, icon: 'none' })
+      return
+    }
+    // 菜单动态构建：旧版桌面端无 /v1/skills → 隐藏「技能」；命令目录为空 → 隐藏「命令」
+    const items: AttachMenuItem[] = [
+      { key: 'image', label: '照片', icon: 'icon-photo' },
+      { key: 'file', label: '文件', sub: 'PDF、文本、代码…', icon: 'icon-paperclip' },
+    ]
+    if (this.data.skillsAvailable) {
+      items.push({ key: 'skill', label: '技能', icon: 'icon-box' })
+    }
+    if (this.commandCatalog.length > 0) {
+      items.push({ key: 'command', label: '命令', icon: 'icon-terminal' })
+    }
+    this.setData({ attachShow: true, attachItems: items })
+  },
+
+  onAttachClose() {
+    this.setData({ attachShow: false })
+  },
+
+  async onAttachPick(e: WechatMiniprogram.CustomEvent<{ key: string }>) {
+    const key = e.detail.key
+    this.setData({ attachShow: false })
+    if (key === 'skill') {
+      this.openSkillPanel()
+      return
+    }
+    if (key === 'command') {
+      this.openCommandPanel()
+      return
+    }
     const remaining = MAX_ATTACHMENTS - this.data.attachments.length
     if (remaining <= 0) {
       wx.showToast({ title: `最多 ${MAX_ATTACHMENTS} 个附件`, icon: 'none' })
       return
     }
-    // 菜单动态构建：旧版桌面端无 /v1/skills → 隐藏「技能」；命令目录为空 → 隐藏「命令」
-    const entries: ('image' | 'camera' | 'file' | 'skill' | 'command')[] = [
-      'image',
-      'camera',
-      'file',
-    ]
-    if (this.data.skillsAvailable) entries.push('skill')
-    if (this.commandCatalog.length > 0) entries.push('command')
-    const labels: Record<(typeof entries)[number], string> = {
-      image: '图片',
-      camera: '拍照',
-      file: '文件',
-      skill: '技能',
-      command: '命令',
-    }
-    wx.showActionSheet({
-      itemList: entries.map((entry) => labels[entry]),
-      itemColor: '#1a1a1a',
-      success: (res) => {
-        const picked = entries[res.tapIndex]
-        if (picked === 'image') void this.chooseImage(remaining)
-        else if (picked === 'camera') void this.chooseImage(remaining, ['camera'])
-        else if (picked === 'file') void this.chooseFile(remaining)
-        else if (picked === 'skill') this.openSkillPanel()
-        else if (picked === 'command') this.openCommandPanel()
-      },
-      fail: () => {
-        /* 用户取消 */
-      },
-    })
-  },
-
-  async chooseImage(count: number, sourceType: ('album' | 'camera')[] = ['album']) {
     try {
-      const result = await wx.chooseMedia({
-        count,
-        mediaType: ['image'],
-        sizeType: ['compressed'],
-        sourceType,
-      })
-      for (const file of result.tempFiles) {
-        await this.uploadOneAttachment({
-          type: 'image',
-          localPath: file.tempFilePath,
-          name: `image-${Date.now()}.png`,
-          mimeType: 'image/png',
-        })
+      // 照片：相册 + 拍照都由系统选择器承载（设计稿只有一个「照片」入口）
+      const locals =
+        key === 'file'
+          ? await pickMessageFiles(remaining)
+          : await pickImages(remaining, ['album', 'camera'])
+      for (const local of locals) {
+        await this.uploadOneAttachment(local)
       }
     } catch {
-      /* 用户取消 */
+      /* 用户取消选择 */
     }
   },
 
-  async chooseFile(count: number) {
-    try {
-      const result = await wx.chooseMessageFile({ count, type: 'file' })
-      for (const file of result.tempFiles) {
-        await this.uploadOneAttachment({
-          type: 'file',
-          localPath: file.path,
-          name: file.name,
-          mimeType: '',
-        })
-      }
-    } catch {
-      /* 用户取消 */
-    }
-  },
-
-  /** 读取本地文件 → base64 上传 → 桌面端落盘 → 拿白名单路径 */
-  async uploadOneAttachment(input: {
-    type: 'image' | 'file'
-    localPath: string
-    name: string
-    mimeType: string
-  }) {
+  /** 上传单个附件：先插占位（图片可即时预览），桌面端落盘成功后回写白名单路径 */
+  async uploadOneAttachment(input: LocalAttachment) {
     const placeholder: ComposerAttachmentView = {
       type: input.type,
       path: '',
@@ -2041,44 +2148,11 @@ Page({
     this.setData({ attachments })
     const index = attachments.length - 1
     try {
-      const dataBase64 = await new Promise<string>((resolve, reject) => {
-        wx.getFileSystemManager().readFile({
-          filePath: input.localPath,
-          encoding: 'base64',
-          success: (res) => resolve(String(res.data)),
-          fail: (err) => reject(new Error(err.errMsg || '读取文件失败')),
-        })
-      })
-      // 桌面端请求体上限 12MiB（base64 后 ≈ 原始 8MB）。前端先拦一道，
-      // 否则超限会被包成无信息量的 500，用户只看到「附件上传失败」。
-      if (dataBase64.length > MAX_ATTACHMENT_BASE64_CHARS) {
-        throw new Error('附件超过 8MB，请压缩后重试')
-      }
-      let uploaded: Awaited<ReturnType<typeof bridge.uploadAttachments>>['attachments'] | null =
-        null
-      let lastError: unknown = null
-      // 中继偶发抖动直接丢帧：本地重试一次，避免「图片发不出去」
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        try {
-          const result = await bridge.uploadAttachments(
-            this.data.sessionId,
-            [{ name: input.name, mimeType: input.mimeType || undefined, dataBase64 }],
-            this.targetDeviceId(),
-          )
-          uploaded = result.attachments
-          break
-        } catch (error) {
-          lastError = error
-        }
-      }
-      if (uploaded == null) throw lastError ?? new Error('附件上传失败')
-      const first = uploaded[0]
-      if (first == null) throw new Error('附件上传失败')
+      // 体积拦截 + 中继抖动重试都在 attachment-flow 内统一处理
+      const uploaded = await uploadAttachment(this.data.sessionId, input, this.targetDeviceId())
       this.setData({
         [`attachments[${index}]`]: {
-          type: first.type,
-          path: first.path,
-          name: first.name ?? input.name,
+          ...uploaded,
           localPath: input.localPath,
           uploaded: true,
         },
@@ -2284,7 +2358,7 @@ Page({
     const itemList = ['复制消息', ...(hasTurn ? ['从此处分支'] : [])]
     wx.showActionSheet({
       itemList,
-      itemColor: '#1a1a1a',
+      itemColor: getThemeTextColor(),
       success: (res) => {
         if (res.tapIndex === 0) this.copyText(displayTextOf(text))
         else if (res.tapIndex === 1 && hasTurn) void this.forkFromTurn(turnId as string)
@@ -2303,7 +2377,7 @@ Page({
     if (typeof text !== 'string' || !text) return
     wx.showActionSheet({
       itemList: ['复制为纯文本', '复制 Markdown 原文'],
-      itemColor: '#1a1a1a',
+      itemColor: getThemeTextColor(),
       success: (res) => {
         if (res.tapIndex === 0) this.copyText(markdownPlainText(text))
         else if (res.tapIndex === 1) this.copyText(text)
@@ -2395,7 +2469,7 @@ Page({
         this.data.hideExecutionDetails ? '显示工具与思考记录' : '工具记录收成分块横线',
         '删除会话',
       ],
-      itemColor: '#1a1a1a',
+      itemColor: getThemeTextColor(),
       success: (res) => {
         if (res.tapIndex === 0) void this.onRename()
         if (res.tapIndex === 1) this.openSessionTasksPage()

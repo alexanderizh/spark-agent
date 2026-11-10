@@ -29,47 +29,69 @@
   width: 100%;
 }
 
+/* 输入壳：设计稿两段式（上输入区 / 下工具条），整壳一个圆角容器 */
 .composer-shell {
-  background: #eeebe6;
-  border: 1rpx solid transparent;
-  border-radius: 28rpx;
-  padding: 10rpx 10rpx 10rpx 16rpx;
-  /* 原生 textarea 不遵守撑大的 line-height，文字对齐靠外层居中而非盒内定位 */
-  align-items: center;
+  background: #fff;
+  border: 1rpx solid #e5e3df;
+  border-radius: 40rpx;
+  padding: 22rpx 18rpx 14rpx 22rpx;
+  box-shadow: 0 5rpx 18rpx rgba(26, 26, 26, 0.045);
   transition: background 0.15s ease, border-color 0.15s ease;
 }
+/* 聚焦仅描边略加深，白底与投影保留 */
 .composer--focus .composer-shell {
-  background: #fff;
-  border-color: #e0ddd8;
-}
-
-/* float 模式输入壳对齐首页 compose-shell：常态白底 + 发丝描边 + 轻投影 */
-.composer--float .composer-shell {
-  background: #fff;
-  border-color: #e5e3df;
-  box-shadow: 0 5rpx 18rpx rgba(26, 26, 26, 0.045);
-}
-/* 复合特异度高于上面两条单类规则：聚焦仅描边略加深，白底与投影保留 */
-.composer--float.composer--focus .composer-shell {
   border-color: #d5d2cb;
 }
 
-/* 左侧功能钮：语音 / 加号 */
-.composer-side {
-  width: 60rpx;
-  height: 60rpx;
+/* 工具条：+ 附件 / 模型胶囊 / 麦克风 / 发送 */
+.composer-tools {
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 16rpx;
+}
+.composer-btn {
+  width: 72rpx;
+  height: 72rpx;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  margin-right: 6rpx;
 }
-.composer-side--rec {
+.composer-btn--plus {
+  background: #f2f0ed;
+}
+.composer-btn--rec {
   background: #fdecec;
 }
-.composer-side--rec .icon-mic {
-  filter: hue-rotate(0deg);
+
+/* 模型胶囊：盾牌 + 模型名 + 推理强度后缀 */
+.composer-model {
+  align-items: center;
+  gap: 8rpx;
+  height: 72rpx;
+  padding: 0 22rpx;
+  border-radius: 36rpx;
+  background: #f2f0ed;
+  min-width: 0;
+  max-width: 420rpx;
+}
+.composer-model-shield {
+  width: 30rpx;
+  height: 30rpx;
+  background-size: 30rpx 30rpx;
+  flex: none;
+}
+.composer-model-name {
+  font-size: 29rpx;
+  color: #1a1a1a;
+  font-weight: 500;
+  max-width: 250rpx;
+}
+.composer-model-effort {
+  font-size: 26rpx;
+  color: #8e8e8e;
+  flex: none;
 }
 
 /* 语音录入 / 转写覆盖层 */
@@ -175,35 +197,6 @@
   background-position: center;
 }
 
-/* 快捷行：输入框上方两个常用选择器（模型/权限），左右分布扁平文字钮 */
-.quick-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-  padding: 0 6rpx 12rpx;
-}
-.quick-chip {
-  align-items: center;
-  gap: 6rpx;
-  min-width: 0;
-  flex: 1;
-  justify-content: flex-start;
-  padding: 6rpx 4rpx;
-}
-.quick-chip-value {
-  font-size: 26rpx;
-  color: #1a1a1a;
-  font-weight: 600;
-  max-width: 320rpx;
-}
-.quick-chip-chevron {
-  width: 24rpx;
-  height: 24rpx;
-  flex: none;
-  opacity: 0.4;
-}
-
 /* 配置条 chips（扁平态：无边框无底色，纯文字 + 下箭头） */
 .chip-bar {
   margin-top: 10rpx;
@@ -267,31 +260,34 @@
 }
 
 .composer-input {
-  flex: 1;
-  /* 盒高贴自然内容（单行≈40rpx），垂直居中交给外层 flex；auto-height 多行时自然长高 */
-  max-height: 320rpx;
-  font-size: 30rpx;
-  line-height: 40rpx;
-  padding: 0;
-  color: #1a1a1a;
+  /* 单行≈44rpx，auto-height 多行时自然长高 */
   width: 100%;
+  min-height: 44rpx;
+  max-height: 320rpx;
+  font-size: 31rpx;
+  line-height: 44rpx;
+  padding: 0 8rpx;
+  box-sizing: border-box;
+  color: #1a1a1a;
 }
 
-.composer-action {
-  width: 68rpx;
-  height: 68rpx;
-  border-radius: 50%;
-  background: #ddd9d2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  margin-left: 16rpx;
+/* 发送：常态浅底灰箭头，可用（或运行中停止）时反色圆底 + 白箭头 */
+.composer-send {
+  background: #f2f0ed;
   transition: background 0.15s ease;
 }
-.composer-action--dark {
+.composer-send--active {
   background: #1a1a1a;
 }
-.composer-action--hover {
+.composer-send--hover {
   opacity: 0.8;
+}
+
+/* 占位符：自定义组件内的 placeholder-class 不保证命中页面样式，这里自带一份；
+   深色变体也写在组件内，避免依赖全局作用域穿透。 */
+.themed-placeholder {
+  color: #b3b0ab;
+}
+.theme-dark .themed-placeholder {
+  color: #79766f;
 }
