@@ -105,6 +105,8 @@ export type SubAppBridgeChannelRequest<C extends SubAppBridgeChannel> = C extend
     : never
 
 export interface SubAppBridgeHostOptions {
+  /** 当前子应用运行文档的精确 origin；消息源与宿主回包均绑定到此 origin。 */
+  frameOrigin: string
   /** 宿主裁决后的运行时信息；appId/versionId/instanceId 以此为准，不接受应用自报。 */
   runtimeInfo: {
     appId: string
@@ -227,7 +229,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  * 单个沙箱 iframe 实例的 Spark App Bridge 宿主。
  *
  * 安全顺序（不可调换）：
- *   1. event.source 必须是本实例的 iframe contentWindow；
+ *   1. event.source 与 event.origin 必须同时匹配本实例的 iframe 和运行 origin；
  *   2. zod envelope 校验（instanceId/appId/versionId/protocolVersion 必须与宿主裁决一致）；
  *   3. 能力权限检查（runtime/theme 只读默认放行；其余能力需 manifest 声明）；
  *   4. 并发限流（RATE_LIMITED，可重试）；
@@ -279,7 +281,7 @@ export class SubAppBridgeHost {
       instanceId: this.options.runtimeInfo.instanceId,
       theme: this.options.getThemeState(),
     }
-    frameWindow.postMessage(message, '*')
+    frameWindow.postMessage(message, this.options.frameOrigin)
   }
 
   /** 最近 200 条审计记录（观测用，宿主 UI 可读取展示）。 */
@@ -290,7 +292,13 @@ export class SubAppBridgeHost {
   private readonly handleMessage = (event: MessageEvent): void => {
     if (this.detached) return
     const frameWindow = this.options.getFrameWindow()
-    if (frameWindow == null || event.source !== frameWindow) return
+    if (
+      frameWindow == null ||
+      event.source !== frameWindow ||
+      event.origin !== this.options.frameOrigin
+    ) {
+      return
+    }
 
     const parsed = SPARK_APP_BRIDGE_INBOUND_SCHEMA.safeParse(event.data)
     if (!parsed.success) return // 非法消息直接丢弃，不回发（避免被用于探测宿主）
@@ -758,7 +766,7 @@ export class SubAppBridgeHost {
     const frameWindow = this.options.getFrameWindow()
     if (frameWindow == null) return
     const message: SparkAppBridgeOutboundMessage = { type: 'host/response', instanceId, response }
-    frameWindow.postMessage(message, '*')
+    frameWindow.postMessage(message, this.options.frameOrigin)
   }
 
   private pushEvent(subscriptionId: string, channel: string, payload: unknown): void {
@@ -772,7 +780,7 @@ export class SubAppBridgeHost {
       channel,
       payload,
     }
-    frameWindow.postMessage(message, '*')
+    frameWindow.postMessage(message, this.options.frameOrigin)
   }
 
   private failure(requestId: string, error: BridgeError): SparkAppBridgeResponse {

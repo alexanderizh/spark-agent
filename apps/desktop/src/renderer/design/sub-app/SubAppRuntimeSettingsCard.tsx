@@ -67,7 +67,7 @@ export function SubAppRuntimeSettingsCard(): React.ReactElement {
       <div className="settings-card">
         <SettingsRow
           title="允许子应用访问外部网络"
-          desc="开启后子应用可直接 fetch/XHR 任意外部地址（如调用第三方 API）。注意：应用也可能借此把本地数据发送到任意外部服务器，请只运行可信应用。关闭后应用只能通过 sparkApp 数据桥与外界交换数据。"
+          desc="开启后子应用可直接 fetch/XHR 任意外部地址并嵌入 HTTP(S) 页面。应用也可能借此把本地数据发送到外部服务器，请只运行可信应用。关闭后 CSP 会阻止 fetch/XHR 和 HTTP(S) iframe。"
           right={
             <Switch
               size="middle"

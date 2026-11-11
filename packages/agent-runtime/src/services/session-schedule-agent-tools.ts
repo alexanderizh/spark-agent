@@ -186,7 +186,7 @@ function requireCurrentSessionId(sessionId: string): string {
 
 export const SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT = [
   '## Session Scheduled Tasks',
-  'You can manage durable scheduled wake-ups for the current session only with the `mcp__spark_platform__session_schedule_*` tools.',
+  'You can manage durable scheduled wake-ups for the current session by searching for `session_schedule_*` methods and invoking them through the platform management gateway.',
   'Use them when useful work must resume later, such as polling a long-running third-party job. Do not use them merely to continue work you can finish in the current turn.',
   'Scheduling fields: `interval` requires `intervalSeconds` of at least 10 (prefer 60 or more for polling); `cron` requires a valid five-field `cronExpression` and may include `timezone`; `once` requires a future ISO-8601 `runAt`.',
   'Session safety fields default to enabled: `skipIfSessionRunning` skips a trigger while this session has a running or queued turn; `continueOnError` keeps future triggers active after the session reports an error. Disable the latter to pause the task after an error.',

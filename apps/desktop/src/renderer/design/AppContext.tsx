@@ -59,6 +59,7 @@ export type ViewId =
   | 'lobe-preview'
   | 'account-center'
   | 'onboarding'
+  | 'remote-control'
 /**
  * 会话模式。workspace 仅为历史状态保留，已废弃；新入口必须使用 vibe。
  * @deprecated workspace 不再是当前工作台页面，不要用于新的导航或交互。

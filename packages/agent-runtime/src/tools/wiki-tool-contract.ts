@@ -18,7 +18,7 @@
  * 开启时低频工具收进 wiki_admin 二级入口（§8.3），常驻 schema 只留核心六件套。
  */
 
-import { estimateTokens } from '@spark/shared'
+import { estimateTokensExact } from '@spark/shared'
 
 /** MCP server 名称（stdio 形态进程名 / SDK 形态 server key） */
 export const SPARK_WIKI_MCP_SERVER_NAME = 'spark_wiki'
@@ -363,12 +363,12 @@ export function measureWikiResidentTokens(toolNames: readonly string[]): {
   l0Prime: number
   total: number
 } {
-  const l0Prompt = estimateTokens(WIKI_L0_PROMPT)
+  const l0Prompt = estimateTokensExact(WIKI_L0_PROMPT)
   const definitions = WIKI_TOOL_DEFINITIONS.filter((d) => toolNames.includes(d.name))
   const l0Prime = definitions.reduce(
     (sum, d) =>
       sum +
-      estimateTokens(
+      estimateTokensExact(
         JSON.stringify({ name: d.name, description: d.description, inputSchema: d.inputSchema }),
       ),
     0,

@@ -435,7 +435,7 @@ body.sidebar-resizing {
 }
 .chat-list-section-h {
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -838,7 +838,7 @@ body.sidebar-resizing {
 }
 .chat-tabbar .chat-title {
   font-size: var(--font-base);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-strong);
   max-width: 40%;
   min-width: 0;
@@ -863,7 +863,7 @@ body.sidebar-resizing {
 .chat-tabbar .chat-title-input {
   font-family: inherit;
   font-size: var(--font-base);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.4;
   color: var(--text-strong);
   background: var(--panel);
@@ -3118,7 +3118,7 @@ body.sidebar-resizing {
   font-size: var(--font-2xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  font-weight: 600;
+  font-weight: 500;
 }
 .sidebar-btn-sm {
   width: 22px;
@@ -5596,8 +5596,10 @@ body.sidebar-resizing {
   flex: 1 1 auto;
   height: calc(100vh - 45px);
   width: 100%;
-  border-left: 1px solid var(--border);
-  background: var(--bg-soft);
+  /* 右轨道面：浅色随 --bg-rail 走冷灰 + 透明接缝（色差分区）；
+     暗色 --rail-edge/--bg-rail 回落原值，观感零变化 */
+  border-left: 1px solid var(--rail-edge, var(--border));
+  background: var(--bg-rail, var(--bg-soft));
   display: flex;
   flex-direction: column;
   overflow: auto;

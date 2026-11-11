@@ -202,7 +202,8 @@ describe('SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT', () => {
     expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('end the current turn')
     expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('Scheduled Task Context')
     expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('session_schedule_delete')
-    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('current session only')
+    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('current session')
+    expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('platform management gateway')
     expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain('`interval` requires `intervalSeconds`')
     expect(SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT).toContain(
       '`cron` requires a valid five-field `cronExpression`',

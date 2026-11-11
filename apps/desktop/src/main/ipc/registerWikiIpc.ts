@@ -30,7 +30,7 @@ import {
   resolveSessionTitleTarget,
   type WikiRepoEnrichService,
 } from '@spark/agent-runtime'
-import { estimateTokens } from '@spark/shared'
+import { estimateTokensExact } from '@spark/shared'
 import type {
   WikiPageMeta,
   WikiSpaceSummary,
@@ -260,7 +260,7 @@ export function registerWikiIpc(): void {
         nextOffset: null,
         // 与 WikiPageService.estimatePageTokens 同一把尺子（真实 tokenizer）：
         // 中文正文约 1~2 字一 token，字符数/3 会低估 2~3 倍，预算展示会失真。
-        tokens: Math.max(1, estimateTokens(r.body)),
+        tokens: Math.max(1, estimateTokensExact(r.body)),
       },
     }
   })

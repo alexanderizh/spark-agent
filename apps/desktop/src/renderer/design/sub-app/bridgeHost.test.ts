@@ -8,6 +8,7 @@ import type { SparkAppThemeState } from '@spark/protocol'
 const appId = '0b6f6c46-63f5-4a1e-8f74-9a92d68e6a11'
 const versionId = 'draft-0b6f6c46'
 const instanceId = 'inst-0001'
+const frameOrigin = `capability-asset://subapp-runtime-${appId}-v1`
 
 const themeState: SparkAppThemeState = {
   theme: 'dark',
@@ -21,7 +22,7 @@ interface Harness {
   host: SubAppBridgeHost
   frame: { postMessage: Mock }
   invoke: Mock
-  send: (data: unknown, source?: unknown) => void
+  send: (data: unknown, source?: unknown, origin?: string) => void
   flush: () => Promise<void>
 }
 
@@ -33,6 +34,7 @@ function createHarness(
   const frame = { postMessage: vi.fn() }
   const invoke = vi.fn()
   const host = new SubAppBridgeHost({
+    frameOrigin,
     runtimeInfo: {
       appId,
       name: '测试应用',
@@ -51,9 +53,13 @@ function createHarness(
     ...extra,
   })
   host.attach(window)
-  const send = (data: unknown, source: unknown = frame): void => {
+  const send = (data: unknown, source: unknown = frame, origin = frameOrigin): void => {
     window.dispatchEvent(
-      new MessageEvent('message', { data: data as object, source: source as Window }),
+      new MessageEvent('message', {
+        data: data as object,
+        source: source as Window,
+        origin,
+      }),
     )
   }
   const flush = async (): Promise<void> => {
@@ -115,6 +121,19 @@ describe('SubAppBridgeHost 消息安全', () => {
     await harness.flush()
     expect(harness.frame.postMessage).not.toHaveBeenCalled()
     expect(harness.invoke).not.toHaveBeenCalled()
+  })
+
+  it('本 iframe 导航到其他 origin 后的消息直接丢弃', async () => {
+    harness.send(requestMessage(), harness.frame, 'https://attacker.example')
+    await harness.flush()
+    expect(harness.frame.postMessage).not.toHaveBeenCalled()
+    expect(harness.invoke).not.toHaveBeenCalled()
+  })
+
+  it('宿主回包使用精确运行 origin', async () => {
+    harness.send(requestMessage())
+    await harness.flush()
+    expect(harness.frame.postMessage.mock.calls[0]?.[1]).toBe(frameOrigin)
   })
 
   it('不符合 schema 的消息丢弃且不回发', async () => {

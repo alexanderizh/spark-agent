@@ -261,7 +261,9 @@ summary:focus {
   background: var(--bg-soft);
   color: var(--text);
   overflow: hidden;
-  font-weight: 500;
+  /* 基础字重 400（2026-11 由 500 调细）：正文/次级说明回归 regular，
+     主标签/按钮由各自规则显式 500 提层级，对齐「正文 400 + 导航 500」的竞品观感 */
+  font-weight: 400;
 
   /* border-radius: var(--r-xl); */
   /* window-shadow 在全屏 .window 外缘会渲染成暗色边框环(尤其 dark 主题 32px/0.44 黑色),
@@ -358,12 +360,12 @@ html[data-theme='dark'][data-backdrop-blur='1']
   border-radius: 0;
   box-shadow: none;
 }
-/* Flat + light theme: bright off-white panel（rgb(245,245,243)，2026-10
-   由 rgb(242,242,242) 提亮减灰；248 嫌过淡、245 嫌过深后定在 246；与内容区保留细微色调差作分隔）.
+/* Flat + light theme: 左轨道面用冷调浅灰（--bg-rail #f5f6f7，2026-11 引入
+   「左右灰、中间白」的明暗分区，替代贴边分割线；此前一度提亮到纯白导致三栏无分区）.
    Floating keeps its token-based translucent background; flat dark
    theme keeps the elevated panel token. */
 .sidebar-style-flat.theme-light .floating-sidebar {
-  background: var(--white);
+  background: var(--bg-rail);
 }
 html[data-backdrop-blur='1'] .sidebar-style-flat .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 84%, transparent);
@@ -371,7 +373,7 @@ html[data-backdrop-blur='1'] .sidebar-style-flat .floating-sidebar {
   -webkit-backdrop-filter: var(--backdrop-blur);
 }
 html[data-theme='light'][data-backdrop-blur='1'] .sidebar-style-flat.theme-light .floating-sidebar {
-  background: color-mix(in srgb, #f9f9f7 84%, transparent);
+  background: color-mix(in srgb, var(--bg-rail) 84%, transparent);
 }
 
 @media (prefers-reduced-transparency: reduce) {

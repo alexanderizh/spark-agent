@@ -1,4 +1,5 @@
 import { protocol, type CustomScheme } from 'electron'
+import { SUB_APP_RUNTIME_HOST_PREFIX } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
 import { lstat, realpath } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
@@ -9,7 +10,7 @@ import {
   resolveHtmlRenderAsset,
   takeHtmlRenderRuntimeDoc,
 } from './HtmlRenderRuntimeDocs.js'
-import { SUB_APP_RUNTIME_HOST, takeSubAppRuntimeDoc } from './SubAppRuntimeDocs.js'
+import { takeSubAppRuntimeDoc } from './SubAppRuntimeDocs.js'
 import {
   SUB_APP_PACKAGE_RUNTIME_HOST,
   resolveSubAppRuntimePackagePath,
@@ -31,10 +32,8 @@ export const CAPABILITY_ASSET_PRIVILEGED_SCHEME: CustomScheme = {
 
 type ResolveAssetRoot = (capabilityId: 'office-viewer') => Promise<string | null>
 
-/** 沙箱文档域：host → 按命中的 token 取文档（见各 RuntimeDocs 服务）。 */
-const RUNTIME_DOC_HOSTS: Record<string, (token: string) => string | null> = {
-  [SUB_APP_RUNTIME_HOST]: takeSubAppRuntimeDoc,
-}
+const SUB_APP_RUNTIME_HOST_PATTERN =
+  /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-(v1|v2)$/i
 
 export async function resolveCapabilityAssetPath(
   requestUrl: string,
@@ -103,11 +102,23 @@ export function registerCapabilityAssetProtocol(): void {
           },
         })
       }
-      // 沙箱文档：内存登记、按 token 提供（SubAppRuntimeDocs）。
-      const takeRuntimeDoc = RUNTIME_DOC_HOSTS[url.hostname]
-      if (takeRuntimeDoc != null) {
-        const token = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
-        const html = takeRuntimeDoc(token)
+      // 子应用文档 host 按 appId 隔离 origin；token 只返回绑定到该 appId 的文档。
+      if (url.hostname.startsWith(SUB_APP_RUNTIME_HOST_PREFIX)) {
+        const hostMatch = SUB_APP_RUNTIME_HOST_PATTERN.exec(
+          url.hostname.slice(SUB_APP_RUNTIME_HOST_PREFIX.length),
+        )
+        const segments = rawPathSegments(request.url).map((segment) => decodeURIComponent(segment))
+        const token = segments.length === 1 ? segments[0] : undefined
+        const appId = hostMatch?.[1]
+        const format = hostMatch?.[2]
+        if (
+          appId == null ||
+          (format !== 'v1' && format !== 'v2') ||
+          token == null
+        ) {
+          return new Response('Not Found', { status: 404 })
+        }
+        const html = takeSubAppRuntimeDoc(appId, format, token)
         if (html == null) return new Response('Not Found', { status: 404 })
         return new Response(html, {
           status: 200,

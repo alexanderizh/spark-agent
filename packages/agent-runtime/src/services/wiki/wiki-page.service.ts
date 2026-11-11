@@ -11,7 +11,7 @@
  */
 
 import { createLogger } from '@spark/shared'
-import { estimateTokens } from '@spark/shared'
+import { estimateTokensExact } from '@spark/shared'
 import type { WikiPageRow } from '@spark/storage'
 import { WikiPageRepository, WikiRevisionRepository, hashWikiBody } from '@spark/storage'
 import { WikiStoreService } from './wiki-store.service.js'
@@ -278,6 +278,6 @@ export class WikiPageService {
 
   /** 摘要 token 估计（会话检查器"wiki 份额"指标用）。 */
   static estimatePageTokens(text: string): number {
-    return estimateTokens(text)
+    return estimateTokensExact(text)
   }
 }

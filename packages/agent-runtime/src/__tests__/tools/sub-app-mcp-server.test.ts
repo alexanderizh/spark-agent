@@ -250,15 +250,17 @@ describe('spark_app MCP server', () => {
     }
     expect(validation.valid).toBe(false)
     expect(validation.readyToPublish).toBe(false)
-    expect(validation.summary.errors).toBeGreaterThanOrEqual(2)
+    expect(validation.summary.errors).toBeGreaterThanOrEqual(1)
     expect(validation.summary.warnings).toBeGreaterThanOrEqual(2)
     expect(validation.diagnostics).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ severity: 'error', code: 'CSP_UNSUPPORTED_ELEMENT' }),
         expect.objectContaining({ severity: 'error', code: 'UNKNOWN_SDK_CAPABILITY' }),
         expect.objectContaining({ severity: 'warning', code: 'LEGACY_RAW_IPC' }),
         expect.objectContaining({ severity: 'warning', code: 'LEGACY_PROVIDER_SECRET_ACCESS' }),
       ]),
+    )
+    expect(validation.diagnostics).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'CSP_UNSUPPORTED_ELEMENT' })]),
     )
   })
 

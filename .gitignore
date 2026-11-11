@@ -153,3 +153,6 @@ docs/marketing/
 plan/
 articles/
 apps/else-project.md
+
+# WorkBuddy 应用卡发布产物（本机生成、含本地路径，不入库）
+.wbapp_*.genie

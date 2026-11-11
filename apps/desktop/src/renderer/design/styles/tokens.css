@@ -124,6 +124,11 @@ html[data-theme='light'],
   --bg: rgb(250, 250, 250);
   --bg-soft: #fff;
   --bg-sunken: #f2f2f2;
+  /* 左右轨道面（flat 侧栏 / 右侧检查器）：冷调浅灰，与纯白内容区做明暗分区，
+     替代分割线（「侧栏凹、内容凸」）。floating 浮岛卡片与各主题下不引用。 */
+  --bg-rail: #f5f6f7;
+  /* 轨道面与内容区的接缝：浅色靠色差分区不画线；暗色保留原有分割线。 */
+  --rail-edge: transparent;
   --composer-toolbar-bg: #f8f7f5;
   --panel: #fff;
   --panel-elev: rgb(250, 250, 250);
@@ -196,6 +201,9 @@ html[data-theme='dark'],
   --bg: #262626;
   --bg-soft: #2c2c2c;
   --bg-sunken: #1a1a1a;
+  /* 暗色轨道面与接缝维持既有观感（检查器原 --bg-soft + border-left），零视觉变化 */
+  --bg-rail: var(--bg-soft);
+  --rail-edge: var(--border);
   --composer-toolbar-bg: #3d3d3d;
   --panel: #303030;
   --panel-elev: #383838;

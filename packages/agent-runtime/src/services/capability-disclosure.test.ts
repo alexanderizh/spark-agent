@@ -21,7 +21,7 @@ describe('buildCapabilityCatalogPrompt', () => {
       'image-generation',
     ])
     expect(prompt).toContain('[Capability Catalog]')
-    expect(prompt).toContain('mcp__spark_platform__capability_load')
+    expect(prompt).toContain('search for `capability_load` and invoke it')
     for (const id of CAPABILITY_IDS) {
       expect(prompt).toContain(`- ${id} — `)
     }

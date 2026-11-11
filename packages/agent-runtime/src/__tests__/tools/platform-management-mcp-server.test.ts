@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -27,96 +27,122 @@ describe('spark_platform MCP server', () => {
     })
   }
 
-  it('keeps MCP tool definitions in sync with the SDK allow-list', async () => {
+  it('exposes the compact gateway in sync with the SDK allow-list', async () => {
     child = start()
     const res = await callMcp(child, { jsonrpc: '2.0', id: 1, method: 'tools/list' })
     const toolNames = (res.result.tools as Array<{ name: string }>).map((t) => t.name)
     const allowedNames = readPlatformAllowedToolNames()
 
-    expect(toolNames).toHaveLength(allowedNames.length)
-    expect(allowedNames.length).toBeGreaterThan(0)
+    expect(toolNames).toEqual(['platform_methods_search', 'platform_invoke'])
+    expect(allowedNames).toHaveLength(2)
     expect([...allowedNames].sort()).toEqual(
       toolNames.map((name) => `mcp__spark_platform__${name}`).sort(),
     )
-    expect(toolNames).toEqual(
-      expect.arrayContaining([
-        'skills_load',
-        'skills_search_github',
-        'skills_install_github',
-        'artifacts_list',
-        'artifacts_resolve',
-        'codex_runtime_diagnostics',
-        'codex_runtime_restart_idle',
-        'teams_list',
-        'teams_get',
-        'teams_create',
-        'teams_update',
-        'teams_delete',
-        'providers_media_guide',
-        'providers_media_validate',
-        'providers_media_configure',
-        'providers_media_discover_models',
-        'providers_media_diagnose',
-        'custom_tools_guide',
-        'custom_tools_list',
-        'custom_tools_get',
-        'custom_tools_validate',
-        'custom_tools_create_draft',
-        'custom_tools_save_draft',
-        'custom_tools_test',
-        'custom_tools_publish',
-        'custom_tools_set_enabled',
-        'custom_tools_rollback',
-        'custom_tools_delete',
-        'tool_packages_guide',
-        'tool_packages_list',
-        'tool_packages_get',
-        'tool_packages_inspect',
-        'tool_packages_create_project',
-        'tool_packages_list_project_files',
-        'tool_packages_read_project_file',
-        'tool_packages_write_project_file',
-        'tool_packages_install_directory',
-        'tool_packages_environment_status',
-        'tool_packages_configure_environment',
-        'tool_packages_request_secret',
-        'tool_packages_set_permission',
-        'tool_packages_set_enabled',
-        'tool_packages_test',
-      ]),
-    )
-    expect(toolNames).toEqual(
-      expect.arrayContaining([
-        'session_schedule_list',
-        'session_schedule_get',
-        'session_schedule_create',
-        'session_schedule_update',
-        'session_schedule_delete',
-        'session_history_list',
-        'session_history_read',
-        'session_history_search',
-      ]),
-    )
-    const tools = res.result.tools as Array<{
-      name: string
-      description: string
-      inputSchema: { properties?: Record<string, unknown> }
-    }>
-    const validateTool = tools.find((tool) => tool.name === 'providers_media_validate')
-    const configureTool = tools.find((tool) => tool.name === 'providers_media_configure')
-    const customToolList = tools.find((tool) => tool.name === 'custom_tools_list')
-    expect(validateTool?.inputSchema.properties).not.toHaveProperty('apiKey')
-    expect(configureTool?.inputSchema.properties).toHaveProperty('apiKey')
-    expect(validateTool?.description).toContain('resolvedModels')
-    expect(configureTool?.description).toContain('自动生成、修复或保留渠道唯一 Manifest ID')
-    expect(customToolList?.inputSchema.properties).toHaveProperty('limit')
-    // input 必须显式声明 type: 'object'：无类型属性会让模型侧把嵌套对象
-    // 序列化成字符串，平台校验层报 "expected object, received string"。
-    const testTool = tools.find((tool) => tool.name === 'tool_packages_test')
-    expect(testTool?.inputSchema.properties?.input).toMatchObject({
-      type: 'object',
-      additionalProperties: true,
+  })
+
+  it('keeps every discoverable method inside the fixed handler allow-list', () => {
+    const source = readFileSync(SERVER, 'utf8')
+    const definitions = source.match(/function platformMethodDefinitions\(\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+    const methodMap = source.match(/const methodMap = \{([\s\S]*?)\n {2}\}/)?.[1] ?? ''
+    const definitionNames = [...definitions.matchAll(/name: '([a-z][a-z0-9_]+)'/g)]
+      .map((match) => match[1])
+      .filter((name): name is string => typeof name === 'string')
+    const mappedNames = new Set([...methodMap.matchAll(/^\s+([a-z][a-z0-9_]+): '/gm)].map((match) => match[1]))
+
+    expect(definitionNames.length).toBeGreaterThan(100)
+    expect(definitionNames.filter((name) => !mappedNames.has(name))).toEqual([])
+  })
+
+  it('returns a matching full method schema only when searched', async () => {
+    child = start()
+    const res = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'platform_methods_search', arguments: { query: 'providers_media_configure', limit: 1 } },
     })
+    const payload = JSON.parse(res.result.content[0].text)
+    expect(payload.methods).toHaveLength(1)
+    expect(payload.methods[0]).toMatchObject({
+      name: 'providers_media_configure',
+      inputSchema: { required: expect.arrayContaining(['apiEndpoint', 'defaultModel', 'models']) },
+    })
+    expect(payload.methods[0].inputSchema.properties).toHaveProperty('apiKey')
+  })
+
+  it('discovers provider configuration methods from a Chinese management request', async () => {
+    child = start()
+    const res = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 21,
+      method: 'tools/call',
+      params: {
+        name: 'platform_methods_search',
+        arguments: { query: '配置渠道模型' },
+      },
+    })
+    const payload = JSON.parse(res.result.content[0].text)
+    const methodNames = payload.methods.map((method: { name: string }) => method.name)
+
+    expect(payload.returned).toBeGreaterThan(0)
+    expect(methodNames).toContain('providers_media_configure')
+    expect(methodNames).toContain('providers_create')
+    expect(methodNames).toContain('providers_update')
+  })
+
+  it('rejects unknown methods and invalid required arguments before bridge dispatch', async () => {
+    child = start()
+    const unknown = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'platform_invoke', arguments: { method: 'arbitrary.rpc', arguments: {} } },
+    })
+    const invalid = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: { name: 'platform_invoke', arguments: { method: 'providers_get', arguments: {} } },
+    })
+
+    expect(unknown.result.isError).toBe(true)
+    expect(unknown.result.content[0].text).toContain('Unknown platform method')
+    expect(invalid.result.isError).toBe(true)
+    expect(invalid.result.content[0].text).toContain('arguments.id is required')
+  })
+
+  it('validates nullable union schemas before bridge dispatch', async () => {
+    child = start()
+    const invalid = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 22,
+      method: 'tools/call',
+      params: {
+        name: 'platform_invoke',
+        arguments: {
+          method: 'providers_update',
+          arguments: { id: 'provider-1', apiEndpoint: { url: 'https://invalid.example' } },
+        },
+      },
+    })
+    const validNull = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 23,
+      method: 'tools/call',
+      params: {
+        name: 'platform_invoke',
+        arguments: {
+          method: 'providers_update',
+          arguments: { id: 'provider-1', apiEndpoint: null },
+        },
+      },
+    })
+
+    expect(invalid.result.isError).toBe(true)
+    expect(invalid.result.content[0].text).toContain(
+      'arguments.apiEndpoint must match one of the allowed schemas',
+    )
+    expect(validNull.result.content[0].text).not.toContain('Invalid arguments')
   })
 
   it('responds to optional MCP resource and prompt list methods without hanging', async () => {
@@ -194,11 +220,14 @@ describe('spark_platform MCP server', () => {
       id: 2,
       method: 'tools/call',
       params: {
-        name: 'teams_create',
+        name: 'platform_invoke',
         arguments: {
-          name: '研发协作团队',
-          hostAgentId: 'platform-manager-agent',
-          memberAgentIds: ['fullstack-coding-agent'],
+          method: 'teams_create',
+          arguments: {
+            name: '研发协作团队',
+            hostAgentId: 'platform-manager-agent',
+            memberAgentIds: ['fullstack-coding-agent'],
+          },
         },
       },
     })
@@ -261,8 +290,8 @@ describe('spark_platform MCP server', () => {
       id: 20,
       method: 'tools/call',
       params: {
-        name: 'custom_tools_create_draft',
-        arguments: { spec },
+        name: 'platform_invoke',
+        arguments: { method: 'custom_tools_create_draft', arguments: { spec } },
       },
     })
 
@@ -306,9 +335,10 @@ describe('spark_platform MCP server', () => {
       id: 3,
       method: 'tools/call',
       params: {
-        name: 'artifacts_resolve',
+        name: 'platform_invoke',
         arguments: {
-          artifactId: 'runtime.python-3.11.9.win32-x64',
+          method: 'artifacts_resolve',
+          arguments: { artifactId: 'runtime.python-3.11.9.win32-x64' },
         },
       },
     })
@@ -352,13 +382,16 @@ describe('spark_platform MCP server', () => {
       id: 30,
       method: 'tools/call',
       params: {
-        name: 'providers_media_configure',
+        name: 'platform_invoke',
         arguments: {
+          method: 'providers_media_configure',
+          arguments: {
           name: '自定义图片渠道',
           apiEndpoint: 'https://media.example/v1',
           defaultModel: 'image-model',
           models: [{ modelId: 'image-model', manifest: { id: 'manifest-placeholder' } }],
-          apiKey: 'secret-forwarded-only-to-bridge',
+            apiKey: 'secret-forwarded-only-to-bridge',
+          },
         },
       },
     })
@@ -404,13 +437,16 @@ describe('spark_platform MCP server', () => {
       id: 4,
       method: 'tools/call',
       params: {
-        name: 'session_schedule_create',
+        name: 'platform_invoke',
         arguments: {
+          method: 'session_schedule_create',
+          arguments: {
           sessionId: 'model-supplied-session',
           name: 'Check third-party job',
           triggerType: 'interval',
           intervalSeconds: 60,
-          promptTemplate: 'Check the job and delete this schedule when complete.',
+            promptTemplate: 'Check the job and delete this schedule when complete.',
+          },
         },
       },
     })
@@ -458,11 +494,14 @@ describe('spark_platform MCP server', () => {
       id: 5,
       method: 'tools/call',
       params: {
-        name: 'session_history_search',
+        name: 'platform_invoke',
         arguments: {
+          method: 'session_history_search',
+          arguments: {
           sessionId: 'model-supplied-session',
           query: 'Router.tsx',
-          limit: 10,
+            limit: 10,
+          },
         },
       },
     })
@@ -471,12 +510,15 @@ describe('spark_platform MCP server', () => {
       id: 6,
       method: 'tools/call',
       params: {
-        name: 'session_history_read',
+        name: 'platform_invoke',
         arguments: {
+          method: 'session_history_read',
+          arguments: {
           sessionId: 'model-supplied-session',
           mode: 'event',
           turnId: 'turn-1',
-          seq: 3,
+            seq: 3,
+          },
         },
       },
     })

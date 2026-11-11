@@ -211,7 +211,7 @@ const CUSTOM_MEDIA_PROVIDER_DRAFT_PROPERTIES = {
 
 // ─── Tool Definitions ────────────────────────────────────────────────
 
-function toolDefinitions() {
+function platformMethodDefinitions() {
   return [
     // ── Skills ──
     {
@@ -2440,6 +2440,207 @@ function toolDefinitions() {
   ]
 }
 
+const PLATFORM_METHODS = platformMethodDefinitions()
+const PLATFORM_METHOD_BY_NAME = new Map(PLATFORM_METHODS.map((tool) => [tool.name, tool]))
+const PLATFORM_METHOD_SEARCH_INDEX = PLATFORM_METHODS.map((tool) => ({
+  tool,
+  name: tool.name.toLowerCase(),
+  searchableText: `${tool.name} ${tool.description} ${JSON.stringify(tool.inputSchema)}`.toLowerCase(),
+}))
+
+const PLATFORM_METHOD_SEARCH_DOMAINS = [
+  { pattern: /技能|skill/i, prefix: 'skills_' },
+  { pattern: /mcp|连接器|服务器/i, prefix: 'mcp_' },
+  { pattern: /渠道|供应商|模型渠道|模型提供商|provider/i, prefix: 'providers_' },
+  { pattern: /自定义工具|custom tool/i, prefix: 'custom_tools_' },
+  { pattern: /工具包|tool package/i, prefix: 'tool_packages_' },
+  { pattern: /工作流|workflow/i, prefix: 'workflows_' },
+  { pattern: /代理|智能体|agent/i, prefix: 'agents_' },
+  { pattern: /团队|team/i, prefix: 'teams_' },
+  { pattern: /设置|偏好|setting/i, prefix: 'settings_' },
+  { pattern: /看板|任务|board/i, prefix: 'board_' },
+  { pattern: /定时任务|计划任务|schedule/i, prefix: 'session_schedule_' },
+  { pattern: /会话历史|会话记录|session history/i, prefix: 'session_history_' },
+  { pattern: /github|代码仓库|仓库协作/i, prefix: 'github_' },
+  { pattern: /安装包|运行时|制品|artifact/i, prefix: 'artifacts_' },
+]
+
+const PLATFORM_METHOD_SEARCH_OPERATIONS = [
+  {
+    pattern: /配置|创建|新增|添加|安装|configure|config|create|install/i,
+    methodPattern: /_(configure|create|update|install|add|set_[a-z0-9_]+)$/,
+  },
+  { pattern: /修改|更新|编辑|更换|update|edit|change/i, methodPattern: /_(update|save|set_[a-z0-9_]+)$/ },
+  { pattern: /删除|移除|卸载|delete|remove|uninstall/i, methodPattern: /_(delete|remove|uninstall)$/ },
+  {
+    pattern: /查询|查看|获取|列表|搜索|检查|诊断|list|get|search|inspect|status|diagnos/i,
+    methodPattern: /_(list|get|search|inspect|status|diagnose|health_check|discover_models|resolve)$/,
+  },
+]
+
+function toolDefinitions() {
+  return [
+    {
+      name: 'platform_methods_search',
+      description:
+        '按管理任务搜索 SparkWork 平台管理方法。返回匹配方法名、用途和完整参数 Schema；执行前必须先搜索。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['query'],
+        properties: {
+          query: { type: 'string', minLength: 1, maxLength: 300, description: '管理目标或关键词' },
+          limit: { type: 'integer', minimum: 1, maximum: 20, description: '最多返回多少项，默认 5' },
+        },
+      },
+    },
+    {
+      name: 'platform_invoke',
+      description:
+        '执行 platform_methods_search 返回的平台管理方法。method 必须是搜索结果中的精确方法名；arguments 按返回的参数 Schema 提供。删除、安装、发布、真实测试、启用及其他高风险操作仍须遵循该方法的确认要求。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['method', 'arguments'],
+        properties: {
+          method: { type: 'string', minLength: 1, maxLength: 100, description: '搜索结果中的精确方法名' },
+          arguments: { type: 'object', additionalProperties: true, description: '该方法的参数对象' },
+        },
+      },
+    },
+  ]
+}
+
+function validateArguments(schema, value, path = 'arguments') {
+  if (Array.isArray(schema.anyOf)) {
+    return schema.anyOf.some((branch) => validateArguments(branch, value, path) == null)
+      ? null
+      : `${path} must match one of the allowed schemas`
+  }
+  if (Array.isArray(schema.oneOf)) {
+    const matchingBranches = schema.oneOf.filter((branch) => validateArguments(branch, value, path) == null)
+    return matchingBranches.length === 1 ? null : `${path} must match exactly one allowed schema`
+  }
+  if (Array.isArray(schema.allOf)) {
+    for (const branch of schema.allOf) {
+      const issue = validateArguments(branch, value, path)
+      if (issue) return issue
+    }
+  }
+
+  const types = Array.isArray(schema.type) ? schema.type : schema.type ? [schema.type] : []
+  const matchesType = (type) => {
+    if (type === 'object') return value != null && typeof value === 'object' && !Array.isArray(value)
+    if (type === 'array') return Array.isArray(value)
+    if (type === 'string') return typeof value === 'string'
+    if (type === 'boolean') return typeof value === 'boolean'
+    if (type === 'integer') return Number.isInteger(value)
+    if (type === 'number') return typeof value === 'number' && Number.isFinite(value)
+    if (type === 'null') return value === null
+    return true
+  }
+  if (types.length > 0 && !types.some(matchesType)) {
+    return `${path} must be ${types.join(' or ')}`
+  }
+
+  if ((types.includes('object') || schema.properties || schema.required) && value !== null) {
+    if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+      return `${path} must be an object`
+    }
+    for (const key of schema.required || []) {
+      if (!(key in value)) return `${path}.${key} is required`
+    }
+    if (schema.additionalProperties === false) {
+      const allowed = new Set(Object.keys(schema.properties || {}))
+      const unexpected = Object.keys(value).find((key) => !allowed.has(key))
+      if (unexpected) return `${path}.${unexpected} is not allowed`
+    }
+    if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+      const allowed = new Set(Object.keys(schema.properties || {}))
+      for (const [key, childValue] of Object.entries(value)) {
+        if (!allowed.has(key)) {
+          const issue = validateArguments(schema.additionalProperties, childValue, `${path}.${key}`)
+          if (issue) return issue
+        }
+      }
+    }
+    for (const [key, child] of Object.entries(schema.properties || {})) {
+      if (key in value) {
+        const issue = validateArguments(child, value[key], `${path}.${key}`)
+        if (issue) return issue
+      }
+    }
+    return null
+  }
+  if (types.includes('array') && value !== null) {
+    if (!Array.isArray(value)) return `${path} must be an array`
+    if (schema.minItems != null && value.length < schema.minItems) {
+      return `${path} must contain at least ${schema.minItems} items`
+    }
+    if (schema.maxItems != null && value.length > schema.maxItems) {
+      return `${path} must contain at most ${schema.maxItems} items`
+    }
+    if (schema.items) {
+      for (let index = 0; index < value.length; index += 1) {
+        const issue = validateArguments(schema.items, value[index], `${path}[${index}]`)
+        if (issue) return issue
+      }
+    }
+    return null
+  }
+  if (schema.enum && !schema.enum.includes(value)) return `${path} must be one of: ${schema.enum.join(', ')}`
+  if (typeof value === 'string' && schema.minLength != null && value.length < schema.minLength) {
+    return `${path} must contain at least ${schema.minLength} characters`
+  }
+  if (typeof value === 'string' && schema.maxLength != null && value.length > schema.maxLength) {
+    return `${path} must contain at most ${schema.maxLength} characters`
+  }
+  if (typeof value === 'number' && schema.minimum != null && value < schema.minimum) {
+    return `${path} must be at least ${schema.minimum}`
+  }
+  if (typeof value === 'number' && schema.maximum != null && value > schema.maximum) {
+    return `${path} must be at most ${schema.maximum}`
+  }
+  return null
+}
+
+function searchTerms(query) {
+  const latinTerms = query.toLowerCase().match(/[a-z0-9_]+/g) || []
+  const hanRuns = query.match(/\p{Script=Han}+/gu) || []
+  const hanTerms = hanRuns.flatMap((run) => {
+    if (run.length < 2) return [run]
+    const terms = []
+    for (let width = 2; width <= Math.min(3, run.length); width += 1) {
+      for (let index = 0; index <= run.length - width; index += 1) {
+        terms.push(run.slice(index, index + width))
+      }
+    }
+    return terms
+  })
+  return [...new Set([...latinTerms, ...hanTerms])]
+}
+
+function searchPlatformMethods(query, limit = 5) {
+  const terms = searchTerms(query)
+  const matchingDomains = PLATFORM_METHOD_SEARCH_DOMAINS.filter(({ pattern }) => pattern.test(query))
+  const matchingOperations = PLATFORM_METHOD_SEARCH_OPERATIONS.filter(({ pattern }) => pattern.test(query))
+  const scored = PLATFORM_METHOD_SEARCH_INDEX.map(({ tool, name, searchableText }) => {
+    let score = terms.reduce((total, term) => {
+      if (name.includes(term)) return total + 5
+      if (searchableText.includes(term)) return total + (term.length === 1 ? 0.25 : 1)
+      return total
+    }, 0)
+    if (matchingDomains.some(({ prefix }) => name.startsWith(prefix))) score += 8
+    if (matchingOperations.some(({ methodPattern }) => methodPattern.test(name))) score += 6
+    return { tool, score }
+  })
+  return scored
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || a.tool.name.localeCompare(b.tool.name))
+    .slice(0, limit)
+    .map(({ tool }) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }))
+}
+
 // ─── Tool Call Handler ───────────────────────────────────────────────
 
 async function handleToolCall(name, args) {
@@ -2619,6 +2820,33 @@ async function handleToolCall(name, args) {
   }
 }
 
+async function handleGatewayCall(name, args) {
+  if (name === 'platform_methods_search') {
+    const issue = validateArguments(toolDefinitions()[0].inputSchema, args)
+    if (issue) return { content: [{ type: 'text', text: `Invalid arguments: ${issue}` }], isError: true }
+    const methods = searchPlatformMethods(args.query, args.limit ?? 5)
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ methods, returned: methods.length }, null, 2) }],
+    }
+  }
+
+  if (name === 'platform_invoke') {
+    const issue = validateArguments(toolDefinitions()[1].inputSchema, args)
+    if (issue) return { content: [{ type: 'text', text: `Invalid arguments: ${issue}` }], isError: true }
+    const target = PLATFORM_METHOD_BY_NAME.get(args.method)
+    if (!target) {
+      return { content: [{ type: 'text', text: `Unknown platform method: ${args.method}` }], isError: true }
+    }
+    const argumentIssue = validateArguments(target.inputSchema, args.arguments)
+    if (argumentIssue) {
+      return { content: [{ type: 'text', text: `Invalid arguments: ${argumentIssue}` }], isError: true }
+    }
+    return handleToolCall(args.method, args.arguments)
+  }
+
+  return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
+}
+
 // ─── Main loop ───────────────────────────────────────────────────────
 
 function main() {
@@ -2669,7 +2897,7 @@ function main() {
     if (msg.method === 'tools/call') {
       const toolName = msg.params?.name
       const toolArgs = msg.params?.arguments ?? {}
-      handleToolCall(toolName, toolArgs)
+      handleGatewayCall(toolName, toolArgs)
         .then((toolResult) => result(msg.id, toolResult))
         .catch((e) => error(msg.id, -32603, e.message))
       return

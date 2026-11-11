@@ -3,7 +3,7 @@ import { resolveCodexHome, withCodexHome } from '../codex-home.js'
 import type { AgentEvent, TurnRuntimeMetrics } from '@spark/protocol'
 import {
   createLogger,
-  estimateTokens,
+  estimateTokensBounded,
   resolveModelContextWindow,
   resolveSoftContextLimit,
   resolveSoftContextLimitForWindow,
@@ -424,7 +424,7 @@ export class CodexAppServerExecutor
     this.emit({
       ...makeBase(),
       type: 'context_usage',
-      estimatedTokens: estimateTokens(prompt),
+      estimatedTokens: estimateTokensBounded(prompt),
       softLimitTokens:
         effectiveConfig.contextWindowTokens != null && effectiveConfig.contextWindowTokens > 0
           ? resolveSoftContextLimitForWindow(effectiveConfig.contextWindowTokens)

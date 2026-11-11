@@ -227,9 +227,9 @@
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
-// light 下侧栏底色已提亮后回深一档（flat rgb(245,245,243) / floating #fbfbf9），
-// --bg-sunken(#f2f2f2) 反而比侧栏更深、显灰显沉；浅色改用比侧栏稍沉一档的
-// 中性色，切换器盒子可辨识又不发暗；dark 对比充足不覆盖。
+// light 下侧栏底色为 --bg-rail(#f5f6f7) 冷灰轨道面，
+// --bg-sunken(#f2f2f2) 与其过近且偏暖；浅色用恒值中性色回深一档（Δ~5），
+// 切换器盒子可辨识又不发暗；dark 对比充足不覆盖。
 html[data-theme='light'] .sidebar-mode-switcher,
 .app.theme-light .sidebar-mode-switcher {
   /* 原 #efefef：94% white + 6% black = #f0f0f0，Δ1 不可感知，保持恒值中性 */

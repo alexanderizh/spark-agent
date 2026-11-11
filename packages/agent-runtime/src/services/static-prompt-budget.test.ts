@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimateTokens } from '@spark/shared'
+import { estimateTokensExact } from '@spark/shared'
 import {
   PLATFORM_MANAGEMENT_SYSTEM_PROMPT,
   PRESENT_FILES_SYSTEM_PROMPT,
@@ -13,7 +13,7 @@ describe('bounded static prompt optimization', () => {
       QUICK_REPLIES_SYSTEM_PROMPT,
       PLATFORM_MANAGEMENT_SYSTEM_PROMPT,
     ]
-    expect(prompts.reduce((total, prompt) => total + estimateTokens(prompt), 0)).toBeLessThan(800)
+    expect(prompts.reduce((total, prompt) => total + estimateTokensExact(prompt), 0)).toBeLessThan(800)
   })
 
   it('retains file journal ownership, delivery, empty-turn and final-response contracts', () => {

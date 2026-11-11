@@ -22,7 +22,7 @@
 
 import { BaseRepository } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
-import { clipTextHeadTail, estimateTokens } from '@spark/shared'
+import { clipTextHeadTail, estimateTokensExact } from '@spark/shared'
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────
 
@@ -412,7 +412,7 @@ export class TeamDiscussionRepository extends BaseRepository {
     // 先把所有 summary 渲染（轮次小结是低成本的"知道别人聊到哪了"锚点）
     for (const s of summaries) {
       const line = `# Round ${s.round_index} summary: ${truncateForPreview(s.content)}`
-      const lineTokens = estimateTokens(line)
+      const lineTokens = estimateTokensExact(line)
       if (usedTokens + lineTokens > normalizedTokenBudget) {
         // summary 自己就超预算的情况：尽量保留截断版
         if (rendered.length === 0) {
@@ -433,7 +433,7 @@ export class TeamDiscussionRepository extends BaseRepository {
     for (let i = nonSummaries.length - 1; i >= 0; i--) {
       const m = nonSummaries[i]!
       const line = formatThreadMessageLine(m)
-      const lineTokens = estimateTokens(line)
+      const lineTokens = estimateTokensExact(line)
       if (usedTokens + lineTokens > normalizedTokenBudget) {
         // 预算不足以再放整条：若目前一条正文都还没放进去，至少塞一个硬截断版，
         // 确保成员总能看到「最新消息」的开头，而不是只剩截断提示。

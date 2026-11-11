@@ -6,6 +6,7 @@ import {
   extractWebEntry,
   hostOfUrl,
   isJourneyArtifactPath,
+  isSkillToolInvocation,
   isSkillToolName,
   isWebToolName,
   shortToolLabel,
@@ -55,6 +56,24 @@ describe('session-journey-helpers', () => {
     expect(extractSkillName(null, 'mcp__spark_platform__skills_load')).toBe(
       'mcp__spark_platform__skills_load',
     )
+  })
+
+  it('recognizes only gateway-wrapped skills_load calls as skills', () => {
+    const payload = {
+      method: 'skills_load',
+      arguments: { id: 'builtin:platform-manager' },
+    }
+
+    expect(isSkillToolInvocation('mcp__spark_platform__platform_invoke', payload)).toBe(true)
+    expect(extractSkillName(payload, 'mcp__spark_platform__platform_invoke')).toBe(
+      'builtin:platform-manager',
+    )
+    expect(
+      isSkillToolInvocation('mcp__spark_platform__platform_invoke', {
+        method: 'mcp_list',
+        arguments: {},
+      }),
+    ).toBe(false)
   })
 
   it('extractWebEntry classifies url payloads as page and query payloads as search', () => {

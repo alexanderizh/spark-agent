@@ -151,6 +151,41 @@ export async function checkCodexRuntimeIntegrity(
   return result
 }
 
+/**
+ * Codex native runtime 是全项目体积最大的按需下载物：macOS arm64 0.167.0 为
+ * 143,592,968 B（136.9 MiB），Windows x64 为 175,118,475 B（167.0 MiB）。共享
+ * 下载器 `downloadFile` 的兜底超时是 120s 硬墙，且覆盖「建连 + 全量 body 流式
+ * 落盘」全程；按本机实测 ~1.4 MB/s 计算 136.9 MiB 需 ~100s，仅剩 17% 余量。
+ * 主进程一旦被占用（git-status 轮询、UI 渲染、外部索引器抢 IO），下载就会越过
+ * 阈值，用户看到的报错就是 `The operation was aborted due to timeout`。
+ *
+ * 因此按 manifest 给出的体积自适应计算超时，而不是继续沿用 2 分钟默认值：
+ * `timeout = BASE + size / FLOOR_BPS`，并夹在 [MIN, MAX] 内。
+ * - FLOOR_BPS 取 256 KB/s，约为实测带宽的 1/5.4，刻意悲观以容纳手机热点、
+ *   拥堵 VPN 等弱网场景；
+ * - MAX 取 30 分钟，与 {@link VoiceIntegrityService} 的大归档策略保持一致；
+ * - 下载期间用户仍可通过「取消」中断（取消信号与超时信号任一先触发即生效），
+ *   所以放宽超时不会把用户困在无法退出的等待里。
+ */
+const CODEX_ARCHIVE_DOWNLOAD_TIMEOUT_BASE_MS = 60_000
+const CODEX_ARCHIVE_DOWNLOAD_TIMEOUT_FLOOR_BPS = 256 * 1024
+const CODEX_ARCHIVE_DOWNLOAD_TIMEOUT_MIN_MS = 5 * 60 * 1000
+const CODEX_ARCHIVE_DOWNLOAD_TIMEOUT_MAX_MS = 30 * 60 * 1000
+
+/** 按归档体积推导下载超时；体积缺失或非法时退到下限，保证不窄于原默认值。 */
+export function codexArchiveDownloadTimeoutMs(sizeBytes: number | undefined): number {
+  const safeSize =
+    typeof sizeBytes === 'number' && Number.isFinite(sizeBytes) && sizeBytes > 0 ? sizeBytes : 0
+  const transferBudgetMs = Math.ceil(safeSize / CODEX_ARCHIVE_DOWNLOAD_TIMEOUT_FLOOR_BPS) * 1000
+  return Math.min(
+    CODEX_ARCHIVE_DOWNLOAD_TIMEOUT_MAX_MS,
+    Math.max(
+      CODEX_ARCHIVE_DOWNLOAD_TIMEOUT_MIN_MS,
+      CODEX_ARCHIVE_DOWNLOAD_TIMEOUT_BASE_MS + transferBudgetMs,
+    ),
+  )
+}
+
 export async function installCodexRuntime(
   sdkVersion: string | null = null,
   onProgress?: CodexRuntimeProgressListener,
@@ -216,6 +251,12 @@ export async function installCodexRuntime(
     const fallbackUrls = artifact.fallbackUrls?.map((url) =>
       resolveArtifactUrlString(manifest, url),
     )
+    // 大体积归档必须显式放宽下载超时，否则沿用下载器 2 分钟默认值会稳定超时失败。
+    const downloadTimeoutMs = codexArchiveDownloadTimeoutMs(artifact.size)
+    log.info(
+      `Codex runtime 下载开始：version=${artifact.version} triple=${targetTriple} ` +
+        `size=${manifestTotal}B timeout=${downloadTimeoutMs}ms url=${resolvedUrl}`,
+    )
     report({
       ...progressBase,
       state: 'downloading',
@@ -228,6 +269,7 @@ export async function installCodexRuntime(
       url: resolvedUrl,
       ...(fallbackUrls?.length ? { fallbackUrls } : {}),
       ...(artifact.sha256 ? { sha256: artifact.sha256 } : {}),
+      downloadTimeoutMs,
       ...(artifact.archive?.format ? { format: artifact.archive.format } : {}),
       ...(artifact.archive?.contentRoot ? { contentRoot: artifact.archive.contentRoot } : {}),
       destDir: versionDir,

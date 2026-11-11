@@ -529,10 +529,16 @@ export interface SubAppDataDeleteResponse {
  *
  * srcdoc 文档会继承 renderer CSP（script-src 'self' capability-asset:）导致
  * 子应用内联脚本被拦；改为 renderer 把合成文档登记到主进程，再以
- * `capability-asset://subapp-runtime/<token>` 导航加载（自定义 scheme 文档
- * 不继承父策略容器）。put 在挂载/重载时调用，release 在卸载时调用。
+ * `capability-asset://subapp-runtime-<appId>-<format>/<token>` 导航加载。每个
+ * appId / format 使用独立 origin，使运行页可启用 same-origin 而不与其他子应用
+ * 或 V1/V2 安全域共享源。
+ * put 在挂载/重载时调用，release 在卸载时调用。
  */
+export const SUB_APP_RUNTIME_HOST_PREFIX = 'subapp-runtime-'
+
 export interface SubAppRuntimeDocPutRequest {
+  appId: string
+  format: 'v1' | 'v2'
   token: string
   document: string
 }
@@ -863,6 +869,8 @@ export const SubAppIpcSchemaRegistry = {
   'sub-app:file:delete': z.object({ appId, path: filePath }).strict(),
   'sub-app:runtime:put-doc': z
     .object({
+      appId,
+      format: z.enum(['v1', 'v2']),
       token: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{7,79}$/),
       // 合成文档 = 源码（≤200KB）+ bootstrap/CSP 头部，留足余量。
       document: z.string().min(1).max(260_000),

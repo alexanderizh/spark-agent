@@ -317,7 +317,7 @@ function maskJavaScriptNonCode(code) {
 }
 
 function scanForbiddenMarkup(source, file, diagnostics) {
-  const tags = ['iframe', 'frame', 'object', 'embed', 'base']
+  const tags = ['object', 'embed', 'base']
   for (const tag of tags) {
     const pattern = new RegExp(`<\\s*${tag}\\b`, 'iu')
     const match = pattern.exec(source)

@@ -20,7 +20,7 @@ export const BOARD_VIEW_RESOURCE = {
     'boardView.t12Desc': '\\n请严格按照上述任务要求完成开发工作。完成后请审查代码并确保测试通过。',
     'boardView.t13Desc': '\\n### 任务状态回写（必须）',
     'boardView.t14LongDesc':
-      '完成后必须调用平台工具 `mcp__spark_platform__board_update` 写回任务状态：',
+      '完成后必须通过平台管理网关搜索并调用 `board_update` 写回任务状态：',
     'boardView.t15Desc': '- 全部完成且验收通过：`{ id: "',
     'boardView.t16Desc': '- 出现无法解决的问题或失败：`{ id: "',
     'boardView.t17Desc': '不要遗漏此步骤，状态回写后任务才算闭环。',
@@ -171,7 +171,7 @@ export const BOARD_VIEW_RESOURCE = {
       '\\nComplete the development work per the task above and ensure tests pass.',
     'boardView.t13Desc': '\\n### Task status write-back (required)',
     'boardView.t14LongDesc':
-      'Call the platform tool `mcp__spark_platform__board_update` to write the task status back:',
+    'Search for and invoke `board_update` through the platform management gateway to write the task status back:',
     'boardView.t15Desc': '- All done and accepted: `{ id: "',
     'boardView.t16Desc': '- Blocked or failed: `{ id: "',
     'boardView.t17Desc': 'Do not skip this step; the task closes only after the write-back.',

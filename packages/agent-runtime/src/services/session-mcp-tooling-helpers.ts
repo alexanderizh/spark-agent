@@ -99,7 +99,7 @@ export interface ImageGenerationPromptInput {
 /**
  * 常驻状态段（Tier A）：配置摘要 + 首次调用前先 load 手册的核心规则。
  * 静态使用规则手册见 IMAGE_GENERATION_GUIDE_PROMPT（Tier B），由
- * `mcp__spark_platform__capability_load`（id: image-generation）按需加载。
+ * 通过平台管理方法网关的 capability_load（id: image-generation）按需加载。
  */
 export function buildImageGenerationStatusPrompt(
   input: ImageGenerationPromptInput,
@@ -120,7 +120,7 @@ export function buildImageGenerationStatusPrompt(
     // load 指引，完整手册由组装点回退为全文常驻注入。
     options?.capabilityLoadAvailable === false
       ? 'The full usage guide for `mcp__spark_image__generate_image` is included below.'
-      : 'Before the first `mcp__spark_image__generate_image` call in this conversation, load the full usage guide via `mcp__spark_platform__capability_load` with id `image-generation`.',
+      : 'Before the first `mcp__spark_image__generate_image` call in this conversation, search for capability_load and invoke it with id `image-generation` to load the full usage guide.',
   ].join('\n')
 }
 
@@ -373,158 +373,10 @@ export function tryResolveMcpNodeRuntimeExecutable(): string | null {
   }
 }
 
-/**
- * All platform management tool names (SDK namespace: mcp__spark_platform__).
- *
- * The Platform Management MCP server (`packages/agent-runtime/src/tools/platform-management-mcp-server.mjs`)
- * exposes this set; if you add a new tool to `toolDefinitions()` in that file,
- * also append its SDK-namespaced name here, otherwise Claude SDK will refuse
- * to dispatch the tool call (it filters by the `allowedTools` allow-list).
- */
+/** Stable low-token tool surface for platform method discovery and invocation. */
 export const PLATFORM_TOOL_NAMES: string[] = [
-  // Skills
-  'mcp__spark_platform__skills_list',
-  'mcp__spark_platform__skills_load',
-  // Capability guides (progressive disclosure, same host as skills_load)
-  'mcp__spark_platform__capability_load',
-  'mcp__spark_platform__skills_search',
-  'mcp__spark_platform__skills_search_github',
-  'mcp__spark_platform__skills_install',
-  'mcp__spark_platform__skills_install_github',
-  'mcp__spark_platform__skills_uninstall',
-  'mcp__spark_platform__skills_toggle',
-  // MCP Servers
-  'mcp__spark_platform__mcp_list',
-  'mcp__spark_platform__mcp_create',
-  'mcp__spark_platform__mcp_update',
-  'mcp__spark_platform__mcp_delete',
-  'mcp__spark_platform__mcp_status',
-  // Custom Tools authoring
-  'mcp__spark_platform__custom_tools_guide',
-  'mcp__spark_platform__custom_tools_list',
-  'mcp__spark_platform__custom_tools_get',
-  'mcp__spark_platform__custom_tools_validate',
-  'mcp__spark_platform__custom_tools_create_draft',
-  'mcp__spark_platform__custom_tools_save_draft',
-  'mcp__spark_platform__custom_tools_test',
-  'mcp__spark_platform__custom_tools_publish',
-  'mcp__spark_platform__custom_tools_set_enabled',
-  'mcp__spark_platform__custom_tools_rollback',
-  'mcp__spark_platform__custom_tools_delete',
-  // Generic Tool Packages
-  'mcp__spark_platform__tool_packages_guide',
-  'mcp__spark_platform__tool_packages_list',
-  'mcp__spark_platform__tool_packages_get',
-  'mcp__spark_platform__tool_packages_inspect',
-  'mcp__spark_platform__tool_packages_create_project',
-  'mcp__spark_platform__tool_packages_list_project_files',
-  'mcp__spark_platform__tool_packages_read_project_file',
-  'mcp__spark_platform__tool_packages_write_project_file',
-  'mcp__spark_platform__tool_packages_run_project_step',
-  'mcp__spark_platform__tool_packages_install_directory',
-  'mcp__spark_platform__tool_packages_install_archive',
-  'mcp__spark_platform__tool_packages_install_git',
-  'mcp__spark_platform__tool_packages_install_remote',
-  'mcp__spark_platform__tool_packages_install_mcp_import',
-  'mcp__spark_platform__tool_packages_environment_status',
-  'mcp__spark_platform__tool_packages_configure_environment',
-  'mcp__spark_platform__tool_packages_request_secret',
-  'mcp__spark_platform__tool_packages_set_permission',
-  'mcp__spark_platform__tool_packages_set_enabled',
-  'mcp__spark_platform__tool_packages_uninstall',
-  'mcp__spark_platform__tool_packages_delete_version',
-  'mcp__spark_platform__tool_packages_test',
-  // Providers
-  'mcp__spark_platform__providers_list',
-  'mcp__spark_platform__providers_get',
-  'mcp__spark_platform__providers_create',
-  'mcp__spark_platform__providers_update',
-  'mcp__spark_platform__providers_delete',
-  'mcp__spark_platform__providers_health_check',
-  'mcp__spark_platform__providers_set_default',
-  'mcp__spark_platform__providers_set_default_model',
-  'mcp__spark_platform__providers_media_guide',
-  'mcp__spark_platform__providers_media_validate',
-  'mcp__spark_platform__providers_media_configure',
-  'mcp__spark_platform__providers_media_discover_models',
-  'mcp__spark_platform__providers_media_diagnose',
-  // Workflows
-  'mcp__spark_platform__workflows_list',
-  'mcp__spark_platform__workflows_get',
-  'mcp__spark_platform__workflows_create',
-  'mcp__spark_platform__workflows_update',
-  'mcp__spark_platform__workflows_delete',
-  // Agents
-  'mcp__spark_platform__agents_list',
-  'mcp__spark_platform__agents_get',
-  'mcp__spark_platform__agents_create',
-  'mcp__spark_platform__agents_update',
-  'mcp__spark_platform__agents_delete',
-  // Teams
-  'mcp__spark_platform__teams_list',
-  'mcp__spark_platform__teams_get',
-  'mcp__spark_platform__teams_create',
-  'mcp__spark_platform__teams_update',
-  'mcp__spark_platform__teams_delete',
-  // Spark install artifacts
-  'mcp__spark_platform__artifacts_list',
-  'mcp__spark_platform__artifacts_resolve',
-  // Codex Runtime diagnostics
-  'mcp__spark_platform__codex_runtime_diagnostics',
-  'mcp__spark_platform__codex_runtime_restart_idle',
-  // Settings
-  'mcp__spark_platform__settings_get',
-  'mcp__spark_platform__settings_set',
-  'mcp__spark_platform__settings_get_category',
-  'mcp__spark_platform__settings_get_all',
-  // GitHub Connector
-  'mcp__spark_platform__github_status',
-  'mcp__spark_platform__github_list_repositories',
-  'mcp__spark_platform__github_get_repository',
-  'mcp__spark_platform__github_read_repository_file',
-  'mcp__spark_platform__github_create_branch',
-  'mcp__spark_platform__github_upsert_repository_file',
-  'mcp__spark_platform__github_list_issues',
-  'mcp__spark_platform__github_get_issue',
-  'mcp__spark_platform__github_create_issue',
-  'mcp__spark_platform__github_update_issue',
-  'mcp__spark_platform__github_comment_issue',
-  'mcp__spark_platform__github_list_pull_requests',
-  'mcp__spark_platform__github_get_pull_request',
-  'mcp__spark_platform__github_create_pull_request',
-  'mcp__spark_platform__github_comment_pull_request',
-  // Sessions (self-management)
-  'mcp__spark_platform__sessions_get',
-  'mcp__spark_platform__sessions_switch_model',
-  'mcp__spark_platform__sessions_switch_provider',
-  'mcp__spark_platform__sessions_switch_mode',
-  'mcp__spark_platform__sessions_switch_permission',
-  'mcp__spark_platform__sessions_switch_reasoning_effort',
-  // Read-only references explicitly authorized by the current session.
-  'mcp__spark_platform__referenced_sessions_list',
-  'mcp__spark_platform__referenced_session_read',
-  'mcp__spark_platform__referenced_session_search',
-  // Session Scheduled Tasks (current session only)
-  'mcp__spark_platform__session_schedule_list',
-  'mcp__spark_platform__session_schedule_get',
-  'mcp__spark_platform__session_schedule_create',
-  'mcp__spark_platform__session_schedule_update',
-  'mcp__spark_platform__session_schedule_delete',
-  // Current-session full history retrieval (read-only, append-only archive)
-  'mcp__spark_platform__session_history_list',
-  'mcp__spark_platform__session_history_read',
-  'mcp__spark_platform__session_history_search',
-  // Board Tasks
-  'mcp__spark_platform__board_list',
-  'mcp__spark_platform__board_get',
-  'mcp__spark_platform__board_create',
-  'mcp__spark_platform__board_update',
-  'mcp__spark_platform__board_delete',
-  'mcp__spark_platform__board_batch_create',
-  'mcp__spark_platform__board_batch_update',
-  'mcp__spark_platform__board_batch_delete',
-  'mcp__spark_platform__board_restore',
-  'mcp__spark_platform__board_permanent_delete',
+  'mcp__spark_platform__platform_methods_search',
+  'mcp__spark_platform__platform_invoke',
 ]
 
 export function resolvePlatformManagementMcpServerPath(): string | null {
@@ -744,9 +596,9 @@ export const TOOL_RESULT_SYSTEM_PROMPT = [
 export const SESSION_HISTORY_SYSTEM_PROMPT = [
   '## Session History Retrieval (current session, full-fidelity archive)',
   'When context compaction has dropped details you still need — file paths, command output, earlier tool call inputs/outputs, past decisions — retrieve them from the append-only session archive instead of guessing or asking the user to repeat themselves:',
-  '- `mcp__spark_platform__session_history_search` locates turns by keyword across messages, tool inputs/outputs, file paths, and compaction summaries.',
-  '- `mcp__spark_platform__session_history_read` returns the full-fidelity content page by page (`mode:"event"` with turnId+seq reads one event in full).',
-  '- `mcp__spark_platform__session_history_list` gives a per-turn overview for orientation.',
+  '- Search for `session_history_search` to locate turns by keyword across messages, tool inputs/outputs, file paths, and compaction summaries.',
+  '- Search for `session_history_read` to return full-fidelity content page by page (`mode:"event"` with turnId+seq reads one event in full).',
+  '- Search for `session_history_list` to get a per-turn overview for orientation.',
   'The archive is the pre-compaction record and is unaffected by compaction. Use these tools on demand only; ordinary turns that miss no context should not call them.',
 ].join('\n')
 
@@ -827,7 +679,7 @@ export const SPARK_WEB_TOOL_SYSTEM_PROMPT = [
   'The skill runs a clarify → outline → produce workflow and emits high-quality artifacts.',
   'Load its full instructions on demand:',
   '  - via the native `Skill` tool with name `builtin:spark-web-tool`, OR',
-  '  - via `mcp__spark_platform__skills_load` with id `builtin:spark-web-tool`.',
+  '  - search for `skills_load` and invoke it with id `builtin:spark-web-tool`.',
   "After loading, follow the skill's guidance instead of improvising the artifact by hand.",
 ].join('\n')
 
@@ -875,7 +727,7 @@ export const DEBUG_MODE_SYSTEM_PROMPT = [
  */
 export const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   '## Platform Management Capability',
-  'Use `mcp__spark_platform__*` for skills, MCP, custom tools/packages, providers (including multimedia), workflows, agents, teams, settings, board tasks, schedules, and artifacts. Follow tool descriptions; load `builtin:platform-manager` via skills_load for full workflows.',
+  'For platform administration (skills, MCP, custom tools/packages, providers, workflows, agents, teams, settings, board tasks, schedules, artifacts), load `builtin:platform-manager`, then discover methods with `platform_methods_search` and execute them with `platform_invoke`.',
   '',
   'Behavior red lines (always apply):',
   '- Referenced sessions: access only references attached to this session; never ask for or invent a session ID.',

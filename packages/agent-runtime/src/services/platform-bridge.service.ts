@@ -715,6 +715,7 @@ export class PlatformBridgeService {
     }
 
     try {
+      log.info(`RPC request [${rpc.method}]`)
       const data = await this.dispatch(rpc.method, rpc.params)
       this.sendJson(res, 200, { ok: true, data })
     } catch (err) {

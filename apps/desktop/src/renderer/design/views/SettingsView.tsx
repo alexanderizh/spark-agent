@@ -43,7 +43,7 @@ import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
-import { estimateTokens, ModelCapabilityRegistry } from '@spark/shared'
+import { estimateTokensExact, ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { FfmpegStatusCard } from './FfmpegStatusCard'
 import { UsageRankingCard } from './UsageRankingCard'
@@ -2631,7 +2631,7 @@ function SystemPromptSection() {
   }
 
   const charCount = systemPrompt.length
-  const estimatedTokenCount = estimateTokens(systemPrompt)
+  const estimatedTokenCount = estimateTokensExact(systemPrompt)
 
   return (
     <div className="settings-section">

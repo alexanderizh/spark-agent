@@ -9,6 +9,7 @@
       <text class="cs-done" hover-class="cs-done--hover" bindtap="onClose">完成</text>
     </view>
 
+    <!-- 只有模型列表参与滚动 -->
     <scroll-view class="cs-body" scroll-y>
       <text wx:if="{{models.length > 0}}" class="cs-section">模型</text>
       <view wx:if="{{models.length > 0}}" class="cs-card">
@@ -27,7 +28,10 @@
           <view wx:if="{{item.checked}}" class="icon icon-check cs-check"></view>
         </view>
       </view>
+    </scroll-view>
 
+    <!-- 固定底部：推理强度 + 权限不随模型列表滚动 -->
+    <view wx:if="{{efforts.length > 0 || permissionLabel}}" class="cs-footer">
       <text wx:if="{{efforts.length > 0}}" class="cs-section">推理强度</text>
       <view wx:if="{{efforts.length > 0}}" class="cs-segment row">
         <view
@@ -49,6 +53,6 @@
           <view class="icon icon-chevron cs-chevron"></view>
         </view>
       </view>
-    </scroll-view>
+    </view>
   </view>
 </view>

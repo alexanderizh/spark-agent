@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimateTokens } from '@spark/shared'
+import { estimateTokensExact } from '@spark/shared'
 import type { AgentEvent } from '@spark/protocol'
 import {
   buildDialogueEntries,
@@ -88,7 +88,7 @@ describe('session-history-helpers', () => {
 
     expect(transcript).toContain('START-')
     expect(transcript).toContain('-END')
-    expect(estimateTokens(transcript)).toBeLessThanOrEqual(1_000)
+    expect(estimateTokensExact(transcript)).toBeLessThanOrEqual(1_000)
   }, 15_000)
 
   it('keeps a contiguous latest window inside the strict total budget', () => {
@@ -103,7 +103,7 @@ describe('session-history-helpers', () => {
 
     expect(transcript).toContain('entry-19')
     expect(transcript).not.toContain('entry-0')
-    expect(estimateTokens(transcript)).toBeLessThanOrEqual(300)
+    expect(estimateTokensExact(transcript)).toBeLessThanOrEqual(300)
   })
 
   // ── 整轮块裁剪 + 滞回批量驱逐（缓存命中优化 P1-3）──────────────────
@@ -129,7 +129,7 @@ describe('session-history-helpers', () => {
     }
     // 头部必须落在整轮块的 User 行上。
     expect(transcript.startsWith('User: turn')).toBe(true)
-    expect(estimateTokens(transcript)).toBeLessThanOrEqual(800)
+    expect(estimateTokensExact(transcript)).toBeLessThanOrEqual(800)
   })
 
   it('anchors the trim head at a prefix-watermark quantum so appends hold it for multiple turns', () => {
@@ -141,7 +141,7 @@ describe('session-history-helpers', () => {
         allTurns.slice(0, turnCount).flat(),
         options,
       )
-      expect(estimateTokens(transcript)).toBeLessThanOrEqual(budget)
+      expect(estimateTokensExact(transcript)).toBeLessThanOrEqual(budget)
       const firstLine = transcript.split('\n\n')[0] ?? ''
       const match = /^User: t(\d+)-u /.exec(firstLine)
       expect(match).not.toBeNull()
@@ -199,7 +199,7 @@ describe('session-history-helpers', () => {
     }))
     for (let count = 1; count <= entries.length; count += 1) {
       const transcript = formatDialogueEntriesWithinTokenBudget(entries.slice(0, count), options)
-      expect(estimateTokens(transcript)).toBeLessThanOrEqual(800)
+      expect(estimateTokensExact(transcript)).toBeLessThanOrEqual(800)
     }
   })
 

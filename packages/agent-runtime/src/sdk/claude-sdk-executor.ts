@@ -39,7 +39,7 @@ import {
   ANTHROPIC_AUTH_ENV_KEYS,
   buildAnthropicAuthEnv,
   createLogger,
-  estimateTokens,
+  estimateTokensBounded,
   resolveAnthropicAuthMode,
   resolveAnthropicBaseUrl,
   resolveModelContextWindow,
@@ -1994,9 +1994,30 @@ export function isImageFileInput(input: Record<string, unknown>): boolean {
   return IMAGE_FILE_EXTENSIONS.has(filePath.slice(dot + 1).toLowerCase())
 }
 
+/**
+ * 静态部分（systemPrompt / skillSystemPrompt）的 token 数缓存：同一会话连续轮次
+ * 间两者不变，逐轮重复对数十 KB 提示词做 BPE 编码是纯浪费（2026-11-11 主进程
+ * 阻塞事故热点之一）。按组件分别缓存（避免每次调用拼接大字符串再比较），
+ * 多会话交替时退化为逐次计算。
+ */
+let cachedSystemPromptTokens: { text: string; tokens: number } | null = null
+let cachedSkillPromptTokens: { text: string; tokens: number } | null = null
+
+function cachedStaticTokens(
+  cache: { text: string; tokens: number } | null,
+  text: string,
+): { text: string; tokens: number } {
+  if (cache?.text === text) return cache
+  return { text, tokens: estimateTokensBounded(text) }
+}
+
 function estimateSDKPromptTokens(userMessage: string, config: SDKExecutorConfig): number {
-  return estimateTokens(
-    [userMessage, config.systemPrompt ?? '', config.skillSystemPrompt ?? ''].join('\n'),
+  cachedSystemPromptTokens = cachedStaticTokens(cachedSystemPromptTokens, config.systemPrompt ?? '')
+  cachedSkillPromptTokens = cachedStaticTokens(cachedSkillPromptTokens, config.skillSystemPrompt ?? '')
+  return (
+    cachedSystemPromptTokens.tokens +
+    cachedSkillPromptTokens.tokens +
+    estimateTokensBounded(userMessage)
   )
 }
 

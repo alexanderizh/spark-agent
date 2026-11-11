@@ -15,6 +15,14 @@ export function isSkillToolName(toolName: string): boolean {
   )
 }
 
+/** 平台网关只有包装 skills_load 的调用才属于技能事件。 */
+export function isSkillToolInvocation(toolName: string, payload: unknown): boolean {
+  if (isSkillToolName(toolName)) return true
+  if (toolName !== 'mcp__spark_platform__platform_invoke') return false
+  if (payload == null || typeof payload !== 'object' || Array.isArray(payload)) return false
+  return (payload as Record<string, unknown>).method === 'skills_load'
+}
+
 /** 联网检索 / 网页查阅类工具（内置 WebSearch/WebFetch 与 spark_search 等家族）。 */
 export function isWebToolName(toolName: string): boolean {
   if (toolName === 'WebSearch' || toolName === 'WebFetch') return true
@@ -40,7 +48,20 @@ export function extractStringField(payload: unknown, fields: string[]): string |
 
 /** 技能展示名：优先载荷 id/name/skillId/command，兜底工具名。 */
 export function extractSkillName(payload: unknown, toolName: string): string {
-  return extractStringField(payload, ['id', 'name', 'skillId', 'command']) ?? toolName
+  const directName = extractStringField(payload, ['id', 'name', 'skillId', 'command'])
+  if (directName != null) return directName
+  if (
+    toolName === 'mcp__spark_platform__platform_invoke' &&
+    payload != null &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload)
+  ) {
+    const record = payload as Record<string, unknown>
+    if (record.method === 'skills_load') {
+      return extractStringField(record.arguments, ['id', 'name', 'skillId', 'command']) ?? toolName
+    }
+  }
+  return toolName
 }
 
 /** 网页条目：URL 字段命中为 page，检索词字段命中为 search，都没有则 null。 */

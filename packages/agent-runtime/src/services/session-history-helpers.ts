@@ -10,7 +10,7 @@
  *
  * 依赖：
  * - @spark/protocol 的 AgentEvent
- * - @spark/shared 的 estimateTokens / clipTextHeadTail / resolveProviderContextWindow
+ * - @spark/shared 的 estimateTokensExact / clipTextHeadTail / resolveProviderContextWindow
  *
  * session.service.ts 顶部 re-export `buildConversationHistoryPromptFromEvents`，
  * 保持测试与外部调用方的向后兼容。
@@ -19,7 +19,7 @@
 import type { AgentEvent } from '@spark/protocol'
 import {
   clipTextHeadTail,
-  estimateTokens,
+  estimateTokensExact,
   resolveModelContextWindowForProvider,
   resolveProviderContextWindow,
 } from '@spark/shared'
@@ -270,7 +270,7 @@ export function formatDialogueEntriesWithinTokenBudget(
   }
   const blockCount = blocks.length
 
-  const blockTokens = blocks.map((block) => estimateTokens(block.texts.join('\n\n')))
+  const blockTokens = blocks.map((block) => estimateTokensExact(block.texts.join('\n\n')))
   // 后缀和（近似口径：未计块间 '\n\n' 分隔符，最终以真实拼接串的精确测量复核）。
   const suffixTokens = new Array<number>(blockCount + 1).fill(0)
   const suffixEntries = new Array<number>(blockCount + 1).fill(0)
@@ -324,12 +324,12 @@ export function formatDialogueEntriesWithinTokenBudget(
       .map((block) => block.texts.join('\n\n'))
       .join('\n\n')
   let result = joinFrom(head)
-  while (estimateTokens(result) > historyTokenBudget && head < blockCount - 1) {
+  while (estimateTokensExact(result) > historyTokenBudget && head < blockCount - 1) {
     head += 1
     result = joinFrom(head)
   }
   // 兜底一：仅剩最新块仍超预算 → 硬裁剪（对齐旧行为，至少保留最新内容）。
-  if (estimateTokens(result) > historyTokenBudget) {
+  if (estimateTokensExact(result) > historyTokenBudget) {
     return clipTextHeadTail(result, historyTokenBudget)
   }
   // 兜底二：最新块自身条目数超限（head 无法再前进）→ 保留最新 entryLimit 条。
@@ -403,7 +403,7 @@ export function limitHistoryContextEntries(entries: DialogueEntry[]): DialogueEn
   }))
   while (selected.length > 1) {
     const transcript = selected.map((entry) => `${entry.role}: ${entry.content}`).join('\n\n')
-    if (estimateTokens(transcript) <= HISTORY_CONTEXT_MAX_TOKENS) break
+    if (estimateTokensExact(transcript) <= HISTORY_CONTEXT_MAX_TOKENS) break
     selected.shift()
   }
   return selected

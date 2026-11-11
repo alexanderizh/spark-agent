@@ -64,6 +64,7 @@ import type {
 import { getDatabase } from '../db.js'
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { SidebarOrderController } from './registerSidebarOrderIpc.js'
+import { readSessionPreviews } from './mobile-bridge-session-preview.js'
 import {
   AgentRepository,
   SessionRepository,
@@ -716,29 +717,15 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
         })
         .slice(0, limit)
       const total = queryResults.reduce((count, result) => count + result.total, 0)
-      const previewStmt = db.raw.prepare(
-        `SELECT event_json FROM agent_events
-         WHERE session_id = ? AND event_type = 'user_message'
-         ORDER BY created_at DESC, rowid DESC LIMIT 1`,
-      )
+      const previewBySession = readSessionPreviews(db.raw, sessions.map((row) => row.id))
       const rows: MobileBridgeSessionSummary[] = sessions.map((row) => {
-        let preview = ''
-        try {
-          const found = previewStmt.get(row.id) as { event_json?: string } | undefined
-          if (found?.event_json != null) {
-            const parsed = JSON.parse(found.event_json) as { content?: string }
-            preview = (parsed.content ?? '').replace(/\s+/g, ' ').trim().slice(0, 60)
-          }
-        } catch {
-          /* 预览缺失不阻塞列表 */
-        }
         const labelMeta = metaBySession.get(row.id)
         return {
           id: row.id,
           title: row.title,
           status: row.status,
           updatedAt: row.updated_at,
-          preview,
+          preview: previewBySession.get(row.id) ?? '',
           projectId: row.project_id,
           pinnedAt: row.pinned_at,
           sessionLabel: labelMeta?.sessionLabel ?? null,

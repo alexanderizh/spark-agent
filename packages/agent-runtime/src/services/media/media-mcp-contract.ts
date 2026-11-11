@@ -34,7 +34,7 @@ export interface MediaGenerationPromptInput {
 /**
  * 常驻状态段（Tier A）：配置摘要 + 路由有界摘要 + 首次调用前先 load 手册的
  * 核心规则。静态使用规则手册见 MEDIA_GENERATION_GUIDE_PROMPT（Tier B），
- * 由 `mcp__spark_platform__capability_load`（id: media-generation）按需加载。
+ * 由平台管理网关的 `capability_load` 方法（id: media-generation）按需加载。
  */
 export function buildMediaGenerationStatusPrompt(
   input: MediaGenerationPromptInput,
@@ -77,7 +77,7 @@ export function buildMediaGenerationStatusPrompt(
     // load 指引（避免指向不存在的工具），完整手册由组装点回退为全文常驻注入。
     options?.capabilityLoadAvailable === false
       ? 'Before the first `generate_video`, `generate_image`, or `edit_image` call in this conversation, call `mcp__spark_media__describe_model` for the selected model/capability unless you already inspected it in this turn.'
-      : 'Before the first `generate_video`, `generate_image`, or `edit_image` call in this conversation, load the full usage guide via `mcp__spark_platform__capability_load` with id `media-generation`, and call `mcp__spark_media__describe_model` for the selected model/capability unless you already inspected it in this turn.',
+      : 'Before the first `generate_video`, `generate_image`, or `edit_image` call in this conversation, search for `capability_load` and invoke it with id `media-generation`, and call `mcp__spark_media__describe_model` for the selected model/capability unless you already inspected it in this turn.',
   ].join('\n')
 }
 

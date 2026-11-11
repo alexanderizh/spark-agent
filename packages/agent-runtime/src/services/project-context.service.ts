@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path'
-import { clipTextHeadTail, createLogger, estimateTokens } from '@spark/shared'
+import { clipTextHeadTail, createLogger, estimateTokensExact } from '@spark/shared'
 import { parseSkillDocument, type SkillDocumentIssueCode } from '../skills/skill-document.js'
 
 export interface ProjectContextSource {
@@ -261,7 +261,7 @@ function discoverRuleDocs(
         body: raw.trim(),
         content: `[${relativePath}]\n${raw.trim()}`,
         relativePath,
-        estimatedTokens: estimateTokens(raw),
+        estimatedTokens: estimateTokensExact(raw),
         truncated: raw.includes(FILE_TRUNCATION_MARKER),
       }
     })
@@ -326,7 +326,7 @@ function toProjectDoc(
   return {
     ...parsed,
     relativePath: toPosix(relative(root, filePath)),
-    estimatedTokens: estimateTokens(parsed.body),
+    estimatedTokens: estimateTokensExact(parsed.body),
     truncated: raw.includes(FILE_TRUNCATION_MARKER),
   }
 }
@@ -360,7 +360,7 @@ function readProjectSkillDoc(
       description: parsed.description,
       body: parsed.body,
       relativePath,
-      estimatedTokens: estimateTokens(summary),
+      estimatedTokens: estimateTokensExact(summary),
       truncated: raw.includes(FILE_TRUNCATION_MARKER),
     },
     issue: null,
@@ -374,7 +374,7 @@ function parseMarkdownDoc(raw: string, fallbackName: string): MarkdownDoc {
     name: stringField(frontmatter, 'name') || fallbackName,
     description: stringField(frontmatter, 'description') || firstBodyLine(trimmedBody),
     body: trimmedBody,
-    estimatedTokens: estimateTokens(trimmedBody),
+    estimatedTokens: estimateTokensExact(trimmedBody),
     truncated: false,
   }
 }
@@ -521,7 +521,7 @@ function truncateDocToTokens<T extends ProjectDoc>(doc: T, tokens: number): T {
   const next = {
     ...doc,
     body,
-    estimatedTokens: estimateTokens(body),
+    estimatedTokens: estimateTokensExact(body),
     truncated: true,
   }
   if ('content' in next) {

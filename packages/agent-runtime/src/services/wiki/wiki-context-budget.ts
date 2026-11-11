@@ -18,7 +18,7 @@
  * HARD_* 常量为服务端兜底，任何来源的配置都不可超越。
  */
 
-import { estimateTokens } from '@spark/shared'
+import { estimateTokensExact } from '@spark/shared'
 import { WIKI_SETTING_BY_KEY } from '@spark/protocol'
 
 /** 读取 protocol 定义的默认值（缺失时用兜底） */
@@ -160,7 +160,7 @@ export const WIKI_ITEM_TOKEN_TARGETS = {
  */
 export function measureItemTokens(payload: object): number {
   const { tokens: _instrumentation, ...rest } = payload as Record<string, unknown>
-  return estimateTokens(JSON.stringify(rest))
+  return estimateTokensExact(JSON.stringify(rest))
 }
 
 /**
@@ -186,7 +186,7 @@ export function fitTitleToItemBudget<T extends { title: string }>(
   // 实际可用上限 = max(目标, 地板 + 1 个字符的余量)：保证至少能放下一个字符
   // 加省略号，避免出现"裁到空"这种比不裁更差的结果。
   const floorTokens = measureItemTokens({ ...payload, title: '' } as T)
-  const budget = Math.max(maxTokens, floorTokens + estimateTokens(title.charAt(0) || 'x'))
+  const budget = Math.max(maxTokens, floorTokens + estimateTokensExact(title.charAt(0) || 'x'))
 
   let lo = 0
   let hi = title.length
@@ -237,14 +237,15 @@ function safeCharBoundary(body: string, cut: number): number {
 
 /**
  * 二分逼近：token 计数不超过 budget 的最大字符前缀长度。
- * estimateTokens 对字符前缀单调不减（前缀属性），二分收敛安全。
+ * estimateTokensExact 对字符前缀单调不减（前缀属性），二分收敛安全。
+ * 必须用 Exact：有界版在 6000 字符边界处从精确计数跳回字符数，单调性被破坏。
  */
 function maxPrefixWithinTokens(body: string, budget: number): number {
   let lo = 0
   let hi = body.length
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2)
-    if (estimateTokens(body.slice(0, mid)) <= budget) lo = mid
+    if (estimateTokensExact(body.slice(0, mid)) <= budget) lo = mid
     else hi = mid - 1
   }
   return safeCharBoundary(body, lo)
@@ -257,7 +258,7 @@ function maxPrefixWithinTokens(body: string, budget: number): number {
  * 行边界偏好：断点回看最多 200 字符内的最后一个换行，避免返回半行。
  */
 export function clipBody(body: string, maxTokens: number, offsetTokens = 0): ClippedBody {
-  const total = estimateTokens(body)
+  const total = estimateTokensExact(body)
   if (offsetTokens >= total) {
     return { body: '', truncated: false, nextOffset: null, tokens: 0 }
   }
@@ -276,7 +277,7 @@ export function clipBody(body: string, maxTokens: number, offsetTokens = 0): Cli
   const lastNewline = rest.lastIndexOf('\n', cut)
   if (lastNewline > 0) pageEnd = lastNewline + 1
   const page = rest.slice(0, pageEnd)
-  const pageTokens = estimateTokens(page)
+  const pageTokens = estimateTokensExact(page)
   return {
     body: page,
     truncated: start + pageEnd < body.length,

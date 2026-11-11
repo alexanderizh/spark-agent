@@ -1,5 +1,6 @@
 import React from 'react'
 import { message as antdMessage } from 'antd'
+import { SUB_APP_RUNTIME_HOST_PREFIX } from '@spark/protocol'
 import type {
   IpcChannel,
   IpcStreamChannel,
@@ -34,11 +35,20 @@ const SUB_APP_NAVIGABLE_VIEWS: readonly ViewId[] = [
 /**
  * 子应用沙箱文档的加载地址协议：
  * 文档由 renderer 合成后登记到主进程（`sub-app:runtime:put-doc`），再以
- * capability-asset://subapp-runtime/<token> 导航。srcdoc 会继承 renderer
- * CSP（禁内联脚本），自定义 scheme 文档不继承——这是子应用能运行的前提。
+ * capability-asset://subapp-runtime-<appId>-<format>/<token> 导航。origin 按
+ * appId 和 V1/V2 格式隔离，子应用可使用正常的网站存储语义。
  */
-export function subAppRuntimeDocUrl(token: string, version: number): string {
-  return `capability-asset://subapp-runtime/${token}?v=${version}`
+export function subAppRuntimeOrigin(appId: string, format: 'v1' | 'v2'): string {
+  return `capability-asset://${SUB_APP_RUNTIME_HOST_PREFIX}${appId.toLowerCase()}-${format}`
+}
+
+export function subAppRuntimeDocUrl(
+  appId: string,
+  format: 'v1' | 'v2',
+  token: string,
+  version: number,
+): string {
+  return `${subAppRuntimeOrigin(appId, format)}/${token}?v=${version}`
 }
 
 /** SessionSidebarContext 持久化最近活跃会话的 localStorage key。 */
@@ -101,7 +111,8 @@ export interface SubAppRunnerState {
 /**
  * 功能型子应用运行时核心（P1：content surface）。
  *
- * - iframe `sandbox="allow-scripts"`（opaque origin），源码经
+ * - iframe 按 appId / V1-V2 使用独立 origin；sandbox 仅开放脚本、same-origin、
+ *   表单和受限弹窗，源码经
  *   buildAppRuntimeDocument 注入 CSP 与 bootstrap SDK；
  * - Bridge 宿主按消息校验 → 权限 → 路由顺序处理，appId 强制取宿主裁决；
  * - 主题热切换通过 postMessage 推送 token，不重载 iframe（文档内
@@ -273,9 +284,9 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
     docVersionRef.current += 1
     const version = docVersionRef.current
     void subAppClient
-      .putRuntimeDoc({ token, document: sandboxDocument })
+      .putRuntimeDoc({ appId, format: packageFormat, token, document: sandboxDocument })
       .then(() => {
-        if (!cancelled) setFrameSrc(subAppRuntimeDocUrl(token, version))
+        if (!cancelled) setFrameSrc(subAppRuntimeDocUrl(appId, packageFormat, token, version))
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -306,6 +317,7 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
       })
       .catch(() => {})
     const host = new SubAppBridgeHost({
+      frameOrigin: subAppRuntimeOrigin(appId, packageFormat),
       runtimeInfo: {
         appId,
         name: manifest.name,

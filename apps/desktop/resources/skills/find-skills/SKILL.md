@@ -20,7 +20,7 @@ tags: [skills, discover, recommend, search, 技能发现, 推荐]
 - 需要什么特殊工具？（浏览器、搜索引擎、图表等）
 
 ### 2. 技能搜索
-使用 `mcp__spark_platform__skills_search` 搜索远程技能库，或从已安装的技能中查找匹配项。
+通过平台管理 Skill 搜索并调用 `skills_search` 查找远程技能，或搜索并调用 `skills_list` 查看已安装技能。
 
 ### 3. 技能推荐
 根据任务分析结果，推荐最匹配的技能，说明：

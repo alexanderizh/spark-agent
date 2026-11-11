@@ -4,8 +4,8 @@
  * 与技能目录（buildAvailableSkillsPrompt + skills_load）同构：
  * - 常驻注入的只有 `[Capability Catalog]` 目录段（id + 一句话触发描述）与
  *   各能力的动态状态行（computer-use 可用性、媒体路由摘要等，见各 status builder）；
- * - 完整使用手册由 `mcp__spark_platform__capability_load`（bridge method
- *   `capabilities.load`）按需加载，加载正文与本文件注册表共享同一事实源。
+ * - 完整使用手册由平台管理网关按需搜索并调用 `capability_load`（bridge
+ *   method `capabilities.load`）加载，正文与本文件注册表共享同一事实源。
  *
  * 分层原则（详见 todo/能力引导渐进式披露方案.md）：
  * - Tier A 行为契约（作用于每一轮、模型无法自主判断加载时机）保持常驻注入，不在此处；
@@ -113,7 +113,7 @@ export function buildCapabilityCatalogPrompt(ids: readonly CapabilityId[]): stri
     '[Capability Catalog]',
     '',
     'Metadata only. Each entry describes a mounted capability; full usage guides are NOT loaded here (progressive disclosure).',
-    "Before the first use of a capability's tools in this conversation, call `mcp__spark_platform__capability_load` with the capability `id`, then follow the returned guide. The loaded guide stays in the conversation context; after context compaction you may load it again.",
+    "Before the first use of a capability's tools in this conversation, search for `capability_load` and invoke it with the capability `id`, then follow the returned guide. The loaded guide stays in the conversation context; after context compaction you may load it again.",
     '',
     ...lines,
   ].join('\n')

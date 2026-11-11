@@ -104,6 +104,8 @@ describe('SubApp IPC schemas', () => {
   it('runtime doc registration uses capped tokens and bounded documents', () => {
     expect(
       SubAppIpcSchemaRegistry['sub-app:runtime:put-doc'].parse({
+        appId,
+        format: 'v1',
         token: '0123456789abcdef',
         document: '<!doctype html><html></html>',
       }),
@@ -111,12 +113,16 @@ describe('SubApp IPC schemas', () => {
     // token 格式（长度、字符集）非法必须拒绝
     expect(() =>
       SubAppIpcSchemaRegistry['sub-app:runtime:put-doc'].parse({
+        appId,
+        format: 'v1',
         token: 'short',
         document: '<html></html>',
       }),
     ).toThrow()
     expect(() =>
       SubAppIpcSchemaRegistry['sub-app:runtime:put-doc'].parse({
+        appId,
+        format: 'v1',
         token: '0123456789abcdef',
         document: 'x'.repeat(260_001),
       }),

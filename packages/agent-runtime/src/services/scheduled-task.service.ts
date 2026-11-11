@@ -1061,7 +1061,7 @@ export class ScheduledTaskService {
       ...(task.scope === 'session'
         ? [
             `Task id: ${task.id}`,
-            'This task is bound to the current session. If its objective is complete, canceled, permanently blocked, or no longer useful, call `mcp__spark_platform__session_schedule_delete` with this task id before finishing. If the awaited result is still pending, keep the task and end this turn after recording the current status.',
+            'This task is bound to the current session. If its objective is complete, canceled, permanently blocked, or no longer useful, search for `session_schedule_delete` and invoke it with this task id before finishing. If the awaited result is still pending, keep the task and end this turn after recording the current status.',
           ]
         : []),
       `Execution trigger: ${triggerType}`,

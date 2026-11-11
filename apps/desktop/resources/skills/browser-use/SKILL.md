@@ -52,7 +52,7 @@ tags: [browser, automation, playwright, web, scraping, 浏览器, 自动化]
 
 如果当前会话**没有 `mcp__playwright__browser_*` 工具**（工具列表里搜不到），按以下顺序恢复：
 
-1. **优先复用应用自带的 playwright**：调用 `mcp__spark_platform__mcp_status` 检查 `playwright` MCP 是否已注册且 enabled。如果只是 disabled，提示用户到设置 → MCP 服务中启用，**不要自己重启进程**。
+1. **优先复用应用自带的 playwright**：通过平台管理 Skill 搜索并调用 `mcp_status` 检查 `playwright` MCP 是否已注册且 enabled。如果只是 disabled，提示用户到设置 → MCP 服务中启用，**不要自己重启进程**。
 2. **应用未自带时，自行安装内置**：
    - 包：`@playwright/mcp`（运行依赖）+ `playwright`（驱动）
    - 安装位置：当前项目 `node_modules`，作为 devDependency 持久化（不要全局，避免污染系统 PATH）

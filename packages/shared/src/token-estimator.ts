@@ -12,26 +12,46 @@
 
 import { encode, decode } from 'gpt-tokenizer'
 
+/**
+ * BPE 精确编码的字符上限：实测 o200k 对「同字符长串」（分隔线墙/重复字符墙，
+ * BPE 最坏情况）呈超线性膨胀——5k 字符 85ms、12k 字符 575ms、35k 字符 >120s，
+ * 会同步冻结事件循环；混合真实文本则极快（5.4k 字符 ~1ms）。超过该上限的
+ * 输入不再走精确编码。
+ *
+ * 2026-11-11 卡死事故：executor 每轮 turn 用 estimateTokens 对完整 prompt
+ * （含全部会话历史，长会话可达数十万字符）精确编码，主进程被连续冻住
+ * 1~4 秒（main-block-profiles 实录 3811ms），压力升到 critical 后渲染进程
+ * 被 SIGTRAP 终止、窗口假死。故 executor 等长 prompt 热路径必须显式使用有界估算。
+ */
+const EXACT_ENCODE_MAX_CHARS = 6_000
+
+/**
+ * 精确无界编码：保留既有 API 语义；预算裁剪、分页偏移、二分拟合等明确需要
+ * **真实 token 数**的场景（如 session-history-helpers 的历史预算、wiki-context-budget
+ * 的分页二分）也可用显式别名 estimateTokensExact 标明计量要求。
+ *
+ * 注意：病态长文本（同字符长串/分隔线墙）会超线性膨胀（35k 字符可 >120s）；
+ * 对长度不可控的热路径，不要直接调用此函数，应显式改用 estimateTokensBounded。
+ */
 export function estimateTokens(text: string | null | undefined): number {
   if (text == null || text.length === 0) return 0
   return encode(text).length
 }
 
 /**
- * BPE 精确编码的字符上限：实测 o200k 对「同字符长串」（分隔线墙/重复字符墙，
- * BPE 最坏情况）呈超线性膨胀——5k 字符 85ms、12k 字符 575ms、35k 字符 >120s，
- * 会同步冻结事件循环；混合真实文本则极快（5.4k 字符 ~1ms）。超过该上限的
- * 输入不再走精确编码。
+ * 保留显式精确 API，便于预算/分页调用点标明其真实 token 计量要求。
  */
-const EXACT_ENCODE_MAX_CHARS = 6_000
+export function estimateTokensExact(text: string | null | undefined): number {
+  return estimateTokens(text)
+}
 
 /**
- * 有界 token 估算：输入不超过 exactMaxChars 时与 estimateTokens 完全一致；
- * 超过时退化为保守字符数（不编码，O(1)）。
+ * 有界 token 估算：
+ * 输入不超过 exactMaxChars 时精确编码；超过时退化为保守字符数（不编码，O(1)）。
  *
- * 适用场景：输入长度无上界、且消费方只做「阈值量级判断」（如 >30k 判高强度）
- * 的热路径——超长输入按字符数计在阈值判断上只会偏保守（大文本 → 强模型），
- * 语义安全。需要精确计数的预算裁剪（clipTextHeadTail 等）不要用本函数。
+ * 需要保护主线程的长输入调用点必须显式选用本函数；默认 estimateTokens 保持
+ * 原精确语义，避免统计、预算和外部调用因全局默认行为变化而产生回归。
+ * clipTextHeadTail 走自己的 encode 路径，不受此函数影响。
  */
 export function estimateTokensBounded(
   text: string | null | undefined,

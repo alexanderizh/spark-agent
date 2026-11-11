@@ -604,8 +604,8 @@ import {
 } from './session-event-sequencer.js'
 import {
   createLogger,
-  estimateTokens,
   estimateTokensBounded,
+  estimateTokensExact,
   resolveModelContextWindowForProvider,
   resolveSoftContextLimitForWindow,
 } from '@spark/shared'
@@ -2218,7 +2218,7 @@ export class SessionService {
       // 导读同样计入单轮总闸；装不下时降级为零痕迹——正文已成功，增益不毁主读
       const charge = chargeTurnWikiTokens(
         params.sessionId,
-        estimateTokens(repoEnrich.section),
+        estimateTokensExact(repoEnrich.section),
         wiki.budget.turnTotal,
       )
       if (charge.allowed) return { ...r.page, repoEnrich }
@@ -2249,7 +2249,7 @@ export class SessionService {
       if (space == null || space.space_type !== 'repo' || space.repo_rev == null) return null
       const row = wiki.repoEnrichRepo.get(page.space_id, page.slug, space.repo_rev)
       if (row == null || row.status !== 'ready' || row.section.length === 0) return null
-      if (estimateTokens(row.section) > WIKI_READ_ENRICH_MAX_TOKENS) return null
+      if (estimateTokensExact(row.section) > WIKI_READ_ENRICH_MAX_TOKENS) return null
       return { section: row.section, repoRev: row.repo_rev }
     } catch (error) {
       log.warn('wiki read 导读附加查询失败，静默降级为零痕迹', {
@@ -5190,7 +5190,7 @@ export class SessionService {
           label: 'Skill Prompt',
           content: composedSkillSystemPrompt,
           charCount: composedSkillSystemPrompt.length,
-          estimatedTokens: estimateTokens(composedSkillSystemPrompt),
+          estimatedTokens: estimateTokensBounded(composedSkillSystemPrompt),
         })
       }
       if (composedSystemPrompt && composedSystemPrompt.trim().length > 0) {
@@ -5198,7 +5198,7 @@ export class SessionService {
           label: 'System Prompt',
           content: composedSystemPrompt,
           charCount: composedSystemPrompt.length,
-          estimatedTokens: estimateTokens(composedSystemPrompt),
+          estimatedTokens: estimateTokensBounded(composedSystemPrompt),
         })
       }
       // 只统计本轮由 Spark 实际注入的 System / Skill 提示词，不估算 SDK 内置预设。

@@ -8,7 +8,7 @@
 
 import type { EventRepository } from '@spark/storage'
 import type { AgentEvent } from '@spark/protocol'
-import { clipTextHeadTail, estimateTokens } from '@spark/shared'
+import { clipTextHeadTail, estimateTokensExact } from '@spark/shared'
 import {
   buildDialogueEntries,
   formatDialogueEntriesWithinTokenBudget,
@@ -102,7 +102,7 @@ export function buildConversationHistory(
   const capsuleBudget = Math.min(4_000, Math.max(1_000, Math.floor(historyTokenBudget * 0.15)))
   const boundedCapsule =
     capsuleText == null ? undefined : clipTextHeadTail(capsuleText, capsuleBudget)
-  const capsuleTokens = estimateTokens(boundedCapsule)
+  const capsuleTokens = estimateTokensExact(boundedCapsule)
   const exactHistoryBudget = Math.max(1, historyTokenBudget - capsuleTokens)
   const transcript = formatDialogueEntriesWithinTokenBudget(entries, {
     historyTokenBudget: isLegacyResumeFallback
@@ -187,7 +187,7 @@ export function buildMemoryExtractionRecentContext(
     Math.floor(options?.maxTokens ?? MEMORY_EXTRACTION_CONTEXT_MAX_TOKENS),
   )
   if (maxTokens === 0) return ''
-  const contentBudget = Math.max(0, maxTokens - estimateTokens(header))
+  const contentBudget = Math.max(0, maxTokens - estimateTokensExact(header))
   const content = clipTextHeadTail(prompt, contentBudget, { headRatio: 0.2 })
   return clipTextHeadTail(`${header}${content}`, maxTokens, { headRatio: 0.2 })
 }

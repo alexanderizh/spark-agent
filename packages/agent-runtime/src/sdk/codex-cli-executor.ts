@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { resolveCodexHome, withCodexHome } from './codex-home.js'
 import type { AgentEvent } from '@spark/protocol'
 import {
-  estimateTokens,
+  estimateTokensBounded,
   resolveModelContextWindow,
   resolveSoftContextLimit,
   resolveSoftContextLimitForWindow,
@@ -154,7 +154,7 @@ export class CodexCliExecutor implements EngineExecutor {
     this.emit({
       ...makeBase(),
       type: 'context_usage',
-      estimatedTokens: estimateTokens(prompt),
+      estimatedTokens: estimateTokensBounded(prompt),
       softLimitTokens:
         effectiveConfig.contextWindowTokens != null && effectiveConfig.contextWindowTokens > 0
           ? resolveSoftContextLimitForWindow(effectiveConfig.contextWindowTokens)

@@ -1,5 +1,5 @@
 import type { AgentEvent, ToolSchemaTokenObservation, TurnRuntimeMetrics } from '@spark/protocol'
-import { estimateTokens } from '@spark/shared'
+import { estimateTokensBounded } from '@spark/shared'
 import type { McpToolDefinition } from '../mcp/index.js'
 
 export interface ConnectedMcpToolCatalog {
@@ -222,7 +222,7 @@ export class TurnRuntimeMetricsTracker {
     }
     if (this.lastEstimateEmitAt != null && eventTime - this.lastEstimateEmitAt < 1_000) return
     this.lastEstimateEmitAt = eventTime
-    const estimatedOutputTokens = estimateTokens(
+    const estimatedOutputTokens = estimateTokensBounded(
       [...this.observedStreamSegments.values()].join(''),
     )
     if (estimatedOutputTokens <= 0) return
@@ -338,7 +338,7 @@ export function measureDeclaredToolSchemas(
     serverCount,
     measuredServerCount,
     toolCount: tools.length,
-    estimatedTokens: estimateTokens(JSON.stringify(schemaPayload)),
+    estimatedTokens: estimateTokensBounded(JSON.stringify(schemaPayload)),
     coverage: measuredServerCount === serverCount ? 'complete' : 'partial',
   }
 }

@@ -143,6 +143,9 @@ const SettingsView = lazyView(async () => ({
 const AccountCenterView = lazyView(async () => ({
   default: (await import('./design/views/AccountCenterView')).AccountCenterView,
 }))
+const RemoteControlView = lazyView(async () => ({
+  default: (await import('./design/views/remote-control/RemoteControlView')).RemoteControlView,
+}))
 const ProvidersView = lazyView(() => import('./design/views/ProvidersView'))
 const WikiView = lazyView(async () => ({
   default: (await import('./design/views/wiki/WikiView')).WikiView,
@@ -1057,6 +1060,19 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               aria-label={tr('app.sidebar.search')}
             >
               <Icons.Search size={15} />
+            </button>
+          </Tooltip>
+          {/*
+            远程：直接在桌面端操作另一台已登录同账号的电脑。
+            设备列表由主进程按 deviceId 过滤本机，无需端上再判。
+          */}
+          <Tooltip title={tr('app.sidebar.remoteControlHint')} mouseEnterDelay={0.05}>
+            <button
+              className={`icon-btn sidebar-remote-btn${t.view === 'remote-control' ? ' active' : ''}`}
+              onClick={() => setTweak('view', 'remote-control')}
+              aria-label={tr('app.sidebar.remoteControl')}
+            >
+              <Icons.RemoteMonitor size={15} />
             </button>
           </Tooltip>
           <Tooltip title={tr('app.sidebar.hide')} mouseEnterDelay={0.05}>
@@ -2041,6 +2057,8 @@ function Shell() {
         return <SettingsView />
       case 'account-center':
         return <AccountCenterView />
+      case 'remote-control':
+        return <RemoteControlView />
       case 'lobe-preview':
         return <LobePreviewView />
       case 'onboarding':
@@ -2078,6 +2096,13 @@ function Shell() {
     t.view === 'canvas-prompts' ||
     t.view === 'quick-create' ||
     t.view === 'canvas-video-tasks'
+  /**
+   * 远程视图的 `.rc-head` 也自带标题栏职责：它自己画 macOS 红绿灯留白与拖拽区，
+   * 并且内置侧栏展开按钮。否则侧栏折叠时上面会多出一条 52px 的空 shell-titlebar，
+   * 把视图顶下去一大截（用户反馈「离顶部 header 太远」就是这条）。
+   */
+  const remoteOwnHeader = t.view === 'remote-control'
+  const viewOwnsTitlebar = canvasOwnHeader || remoteOwnHeader
   // Keep the shared drag strip, but allow full-bleed views to extend their
   // surface into it. This preserves the native-window hit area while avoiding
   // a disconnected default-colour band above settings and the auth gate.
@@ -2146,7 +2171,7 @@ function Shell() {
               {!useIntegratedTitlebar &&
                 !isPlatformWin32 &&
                 sidebarHidden &&
-                !canvasOwnHeader &&
+                !viewOwnsTitlebar &&
                 !(t.view === 'canvas' && canvasWorkspaceActive) && (
                   <div
                     className={`shell-titlebar${isPlatformDarwin ? ' shell-titlebar-darwin' : ''}`}
@@ -2165,9 +2190,11 @@ function Shell() {
                   此处不再渲染 expand 按钮以免出现两个展开菜单按钮（仅 Windows 旧逻辑漏判）。 */}
                 {!useIntegratedTitlebar && isPlatformWin32 && (
                   <div className="win-titlebar">
-                    {t.sidebarHidden && !(t.view === 'canvas' && canvasWorkspaceActive) && (
-                      <SidebarExpandButton onExpand={handleExpandSidebar} />
-                    )}
+                    {t.sidebarHidden &&
+                      !remoteOwnHeader &&
+                      !(t.view === 'canvas' && canvasWorkspaceActive) && (
+                        <SidebarExpandButton onExpand={handleExpandSidebar} />
+                      )}
                     <div className="win-titlebar-controls">
                       <WindowControls />
                     </div>
@@ -2184,7 +2211,7 @@ function Shell() {
                 {!useIntegratedTitlebar &&
                   isPlatformDarwin &&
                   !sidebarHidden &&
-                  !canvasOwnHeader &&
+                  !viewOwnsTitlebar &&
                   t.view !== 'sub-apps' &&
                   t.view !== 'sub-app' &&
                   !(t.view === 'canvas' && canvasWorkspaceActive) && <MacWindowDragHeader />}

@@ -6,7 +6,9 @@
     padding: var(--pad-md);
     gap: var(--pad-md);
     border-left: 0;
-    background: var(--bg-soft);
+    /* 右轨道面统一冷灰（浅色），与其它右栏形态共用 .inspector 的 --bg-rail；
+       暗色 --bg-rail 回落 --bg-soft，观感零变化 */
+    background: var(--bg-rail, var(--bg-soft));
   }
 
   .session-panel-heading {

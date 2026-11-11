@@ -71,6 +71,15 @@ export const Icons = {
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </IconBase>
   ),
+  /** 远程操作 — 主机屏幕 + 远端设备，用于顶栏远程入口 */
+  RemoteMonitor: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="2" y="4" width="12" height="9" rx="1.5" />
+      <path d="M5 17h6M8 13v4" />
+      <rect x="16" y="10" width="6" height="10" rx="1.5" />
+      <path d="M18.5 17.5h1" />
+    </IconBase>
+  ),
   Folder: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />

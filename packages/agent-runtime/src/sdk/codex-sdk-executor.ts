@@ -15,7 +15,7 @@ import type {
 import type { AgentEvent } from '@spark/protocol'
 import {
   createLogger,
-  estimateTokens,
+  estimateTokensBounded,
   resolveModelContextWindow,
   resolveSoftContextLimit,
   resolveSoftContextLimitForWindow,
@@ -187,7 +187,7 @@ export class CodexSdkExecutor implements EngineExecutor {
     this.emit({
       ...makeBase(),
       type: 'context_usage',
-      estimatedTokens: estimateTokens(prompt),
+      estimatedTokens: estimateTokensBounded(prompt),
       softLimitTokens:
         effectiveConfig.contextWindowTokens != null && effectiveConfig.contextWindowTokens > 0
           ? resolveSoftContextLimitForWindow(effectiveConfig.contextWindowTokens)

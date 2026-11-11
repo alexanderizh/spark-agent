@@ -12,8 +12,8 @@ export { SUB_APP_SOURCE_HARD_LIMIT }
  * 子应用运行时安全选项（来源：设置「子应用」分类，默认全部放行）。
  *
  * 本地优先 + 用户自担风险模型下默认不设防；每项都可由用户在设置里收紧：
- *   - allowNetworkAccess：false 时 connect-src 'none'，应用只能经 Spark App
- *     Bridge 与外界交换数据（含防外发约束：应用数据无法直接提交到任意外部地址）；
+ *   - allowNetworkAccess：false 时 connect-src / frame-src 均为 'none'，阻止
+ *     fetch/XHR 与外部 HTTP(S) iframe；
  *   - allowUnsafeEval：false 时 CSP 不带 'unsafe-eval'，babel-standalone 等
  *     运行时编译器会失效；
  *   - sourceLengthLimit：> 0 时运行文档拒绝超限源码（0 = 不限制）。
@@ -34,8 +34,8 @@ export const DEFAULT_SUB_APP_RUNTIME_SECURITY: Required<SubAppRuntimeSecurityOpt
 /**
  * 功能型子应用运行文档 CSP。
  *
- * frame-src / object-src / base-uri / form-action 固定 'none'（无场景需要）；
- * script / connect 按安全选项拼接，其余指令保持放行外部 HTTPS/HTTP 资源。
+ * frame-src 随外部网络开关允许 HTTP(S) 页面；object-src / base-uri /
+ * form-action 保持收紧。script / connect 按安全选项拼接。
  */
 function buildSubAppRuntimeCsp(
   security: Required<SubAppRuntimeSecurityOptions>,
@@ -50,6 +50,7 @@ function buildSubAppRuntimeCsp(
     'http:',
   ].join(' ')
   const connectSrc = security.allowNetworkAccess ? 'https: http:' : "'none'"
+  const frameSrc = security.allowNetworkAccess ? 'https: http:' : "'none'"
   return [
     "default-src 'none'",
     `script-src ${scriptSrc}`,
@@ -59,7 +60,7 @@ function buildSubAppRuntimeCsp(
     `font-src data: https: http: ${packageSource.join(' ')}`,
     `connect-src ${connectSrc}`,
     'worker-src blob:',
-    "frame-src 'none'",
+    `frame-src ${frameSrc}`,
     "object-src 'none'",
     allowPackageAssets ? 'base-uri capability-asset:' : "base-uri 'none'",
     "form-action 'none'",
@@ -124,7 +125,8 @@ function appendBeforeBodyEnd(doc: string, snippet: string): string {
  * 构建功能型子应用的沙箱运行文档。
  *
  * 安全边界：
- *   - 宿主组件必须把返回值放进 `sandbox="allow-scripts"` 的 iframe（opaque origin）；
+ *   - 宿主组件必须使用按 appId 隔离 origin 的 sandbox iframe，并仅开放脚本、
+ *     same-origin、表单和受限弹窗能力；
  *   - bootstrap SDK 在用户源码之前注入，应用脚本执行时 `window.sparkApp` 已可用；
  *   - 注入的配置通过 JSON 转义防止 `</script>` 逃逸。
  */

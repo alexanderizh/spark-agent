@@ -1,5 +1,5 @@
 import type { ContextLedgerEntry } from '@spark/protocol'
-import { estimateTokens } from '@spark/shared'
+import { estimateTokensBounded } from '@spark/shared'
 
 export interface BuildContextLedgerInput {
   skillPrompt?: string | undefined
@@ -41,7 +41,7 @@ export function buildContextLedger(input: BuildContextLedgerInput): ContextLedge
     const normalized = content?.trim() ?? ''
     return {
       label,
-      estimatedTokens: options.estimatedTokens ?? estimateTokens(normalized),
+      estimatedTokens: options.estimatedTokens ?? estimateTokensBounded(normalized),
       charCount: normalized.length,
       truncated: options.truncated ?? false,
     }

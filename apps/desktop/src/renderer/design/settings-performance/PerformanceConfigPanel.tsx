@@ -10,7 +10,7 @@
  * 不做判定逻辑——判定与钳制以主进程归一化为准。
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Switch } from 'antd'
 import { Minus, Plus } from 'lucide-react'
 import type {
@@ -127,6 +127,19 @@ export function PerformanceConfigPanel({
   const { t } = useI18n()
   // 编辑态仅初始化一次；父层在刷新 / 恢复默认后以 key={echoVersion} 重挂载取新回显。
   const [state, setState] = useState<PanelState>(() => readPanelState(full, diagnostics))
+  // Hydration：本组件挂载早于 full/diagnostics 快照返回（异步 IPC），useState 会以
+  // 字面量兜底默认值初始化；数据到达后若不同步，已持久化的用户配置会被显示成
+  // 默认值（用户误以为未保存），且此后基于错误显示的步进写入会覆盖正确值。
+  // 数据源各自 settle 后（diagnostics 失败也置为非 null 的降级对象）同步一次，
+  // 仅此一次；之后的编辑态与手动刷新重挂载（echoVersion）机制互不干扰。
+  const hydratedRef = useRef(false)
+  useEffect(() => {
+    if (hydratedRef.current) return
+    if (full == null || diagnostics == null) return
+    hydratedRef.current = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- IPC 快照完成同步远端配置（项目既有先例 ToolPackageSecretRequestHost）
+    setState(readPanelState(full, diagnostics))
+  }, [full, diagnostics])
 
   const levels = useMemo(() => getPressureLevelMeta(t), [t])
   const baselineTotalBytes = full?.baseline?.totalBytes ?? null

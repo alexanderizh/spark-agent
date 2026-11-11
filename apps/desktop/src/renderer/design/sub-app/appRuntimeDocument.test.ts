@@ -22,6 +22,7 @@ describe('buildAppRuntimeDocument', () => {
     expect(doc).toContain('http-equiv="Content-Security-Policy"')
     // 默认（设置全放行）：connect-src 允许外部 https/http，script-src 带 unsafe-eval
     expect(doc).toContain('connect-src https: http:')
+    expect(doc).toContain('frame-src https: http:')
     expect(doc).toContain("script-src 'unsafe-inline' 'unsafe-eval' https: http:")
     // bootstrap 先于用户源码注入
     expect(doc.indexOf('window.sparkApp')).toBeLessThan(doc.indexOf('id="app"'))
@@ -134,6 +135,7 @@ describe('buildAppRuntimeDocument', () => {
     })
     // 关闭网络：数据只能走 bridge
     expect(doc).toContain("connect-src 'none'")
+    expect(doc).toContain("frame-src 'none'")
     // 关闭 unsafe-eval：script-src 不含 eval 指令
     expect(doc).toContain("script-src 'unsafe-inline' https: http:")
     expect(doc).not.toContain("'unsafe-eval'")

@@ -197,8 +197,11 @@ import {
   shouldEnableSingleInstanceLock,
   shouldRegisterDefaultProtocolClient,
 } from './startup-isolation.js'
+import { RendererCrashRecovery } from './services/renderer-crash-recovery.js'
 
 const log = createLogger('main')
+let isQuitting = false
+const rendererCrashRecovery = new RendererCrashRecovery(() => isQuitting, log)
 
 // ─── Uncaught error guard ────────────────────────────────────────────────────
 // 此前主进程没有任何 uncaughtException / unhandledRejection 兜底：任何未捕获异常
@@ -225,6 +228,7 @@ app.on('render-process-gone', (_event, webContents, details) => {
   log.error(
     `[process-gone-forensics] render-process-gone: url=${webContents.getURL()} details=${JSON.stringify(details)}`,
   )
+  rendererCrashRecovery.handleGone(webContents, details.reason)
 })
 app.on('child-process-gone', (_event, details) => {
   log.error(`[process-gone-forensics] child-process-gone: ${JSON.stringify(details)}`)
@@ -247,7 +251,6 @@ let tray: Tray | null = null
 let computerControlTray: ComputerControlTrayService | null = null
 let unsubscribeComputerControlStatus: (() => void) | null = null
 let computerControlTrayRefreshTimer: ReturnType<typeof setTimeout> | null = null
-let isQuitting = false
 let requestedQuitReason: string | null = null
 let downloadedPromptVersion: string | null = null
 let startupGuidanceWindow: BrowserWindow | null = null

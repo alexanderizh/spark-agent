@@ -451,7 +451,13 @@ export const SUB_APP_GUIDE_TOPICS = {
   media: { summary: '创建和查询文本生成媒体任务。' },
   canvas: { summary: '列出画布项目并追加文本。' },
   browser: { summary: '内置浏览器、媒体发现与下载。' },
-  security: { summary: 'iframe CSP、legacy raw IPC、凭据和源码边界。' },
+  security: {
+    summary: 'iframe CSP、legacy raw IPC、凭据和源码边界。',
+    guidance: [
+      '子应用可嵌入 HTTPS/HTTP 页面，外部网络关闭时 iframe 也被 CSP 禁止。每个子应用使用独立 origin，外层沙箱允许脚本、same-origin、表单和受限弹窗，但不允许顶层导航或下载。目标网站仍须允许被嵌入。',
+      'object、embed、base 仍被 CSP 禁止；表单可用于本地交互，但原生表单提交会被 CSP 阻止。',
+    ],
+  },
   lifecycle: {
     summary: 'iframe、发布版本以及设计中 service/job 的生命周期。',
     keywords: ['页面关闭后继续', '关闭页面', '常驻后台', '重启恢复'],

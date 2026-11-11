@@ -13,6 +13,9 @@
   width: 100%;
   max-height: 82vh;
   box-sizing: border-box;
+  /* 纵向三段：固定头 / 可滚动列表 / 固定底。内容不超高时整张 sheet 仍按内容自适应高度 */
+  display: flex;
+  flex-direction: column;
   background: #f2f0ed;
   border-radius: 36rpx 36rpx 0 0;
   padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
@@ -30,6 +33,7 @@
 }
 
 .cs-grabber {
+  flex: none;
   width: 72rpx;
   height: 8rpx;
   border-radius: 4rpx;
@@ -39,6 +43,7 @@
 
 /* 头部：标题居中，完成靠右（绝对定位避免标题被右侧文案带偏） */
 .cs-head {
+  flex: none;
   position: relative;
   height: 76rpx;
   display: flex;
@@ -65,8 +70,16 @@
   opacity: 0.6;
 }
 
+/* 可滚动区：撑满头尾之间的剩余空间；min-height:0 让它能被 max-height 压缩，滚动交给 scroll-view */
 .cs-body {
-  max-height: 64vh;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 固定底栏：推理强度 + 权限永远贴在弹窗底部，不参与列表滚动 */
+.cs-footer {
+  flex: none;
+  padding-top: 8rpx;
 }
 
 /* 分组标题：小号灰字，与卡片拉开呼吸 */

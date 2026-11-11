@@ -8,7 +8,7 @@ export interface ComputerUsePromptCapabilities {
 /**
  * 常驻状态段（Tier A）：Governed 声明 + 平台/观测/执行可用性。
  * 能力手册（Working style 等静态操作指南）不再常驻，改由
- * `mcp__spark_platform__capability_load`（id: computer-use）按需加载，
+ * 通过平台管理网关搜索并调用 `capability_load`（id: computer-use）按需加载，
  * 见 services/capability-disclosure.ts。
  */
 export function buildComputerUseStatusPrompt(capabilities: ComputerUsePromptCapabilities): string {

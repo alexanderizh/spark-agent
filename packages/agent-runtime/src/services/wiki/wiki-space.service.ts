@@ -7,7 +7,7 @@
  * agent），服务端裁剪可见范围，不信任工具入参声明的 scope。
  */
 
-import { estimateTokens } from '@spark/shared'
+import { estimateTokensExact } from '@spark/shared'
 import type { WikiScope, WikiSpaceRow, WikiSpaceType } from '@spark/storage'
 import { WikiSpaceRepository } from '@spark/storage'
 
@@ -61,7 +61,7 @@ export class WikiSpaceService {
       tokens: 0,
     }))
     // 每行 token 估计（会话检查器计量与预算守卫共用）
-    for (const item of items) item.tokens = estimateTokens(JSON.stringify(item))
+    for (const item of items) item.tokens = estimateTokensExact(JSON.stringify(item))
     return {
       items,
       truncated: rows.length > sliced.length,

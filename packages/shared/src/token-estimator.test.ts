@@ -64,12 +64,11 @@ function fibonacci(n: number): number {
       expect(tokens).toBeLessThan(50)
     })
 
-    it('handles very long documents without crashing', () => {
+    it('keeps exact counts for long normal documents', () => {
       const longText = 'The quick brown fox jumps over the lazy dog. '.repeat(1000)
       const tokens = estimateTokens(longText)
-      // 44 chars * 1000 = 44000 chars, ~11000 tokens for English
-      expect(tokens).toBeGreaterThan(8000)
-      expect(tokens).toBeLessThan(15000)
+      expect(tokens).toBeGreaterThan(8_000)
+      expect(tokens).toBeLessThan(15_000)
     })
 
     it('is significantly more accurate than chars/3 for Chinese', () => {

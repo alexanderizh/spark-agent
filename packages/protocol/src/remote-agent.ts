@@ -247,6 +247,92 @@ export interface RemoteAgentArtifactFile {
   sizeBytes: number
 }
 
+/**
+ * 远程操控（Remote Control）：把一条 HTTP 语义请求原样转发给目标设备。
+ *
+ * 目标设备收到后走 MobileBridgeService.handleHttpRequest，因此小程序端已有的
+ * /v1/projects、/v1/sessions、/v1/messages、/v1/turns、/v1/interactions 等路由
+ * 天然可用，无需为桌面端另开一套协议。
+ */
+export interface RemoteAgentTargetRequest {
+  deviceId: string
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  /** 目标设备上的绝对路径，必须以 / 开头，例如 /v1/sessions?limit=50 */
+  path: string
+  body?: unknown
+  /** 缺省 60s，上限 180s（对齐 RemoteAgentRelayClient 的 DEFAULT/MAX_REQUEST_TIMEOUT_MS） */
+  timeoutMs?: number
+}
+
+export interface RemoteAgentTargetResponse {
+  status: number
+  /** 目标设备的原始响应体；调用方按具体接口自行收窄 */
+  body: unknown
+}
+
+/** 远程会话事件流订阅：一台设备上的一个会话对应一条订阅。 */
+export interface RemoteAgentStreamSubscribeRequest {
+  deviceId: string
+  sessionId: string
+}
+
+export interface RemoteAgentStreamSubscribeResponse {
+  subscribed: boolean
+}
+
+/**
+ * 流事件批次。带 deviceId/sessionId 是因为同一渲染进程可能同时订阅多个会话，
+ * 事件本身不带设备信息，不带标识会串台。
+ */
+export interface RemoteAgentSessionEventsMessage {
+  deviceId: string
+  sessionId: string
+  events: MobileBridgeEvent[]
+}
+
+/**
+ * 附件搬运。
+ *
+ * 上传：渲染端只传本机路径，主进程读文件 → base64 → POST 目标设备
+ * /v1/sessions/:id/attachments（该接口收 JSON+base64，单次上限 12MiB）。
+ * 回显：目标设备上的图片本机无法直接读，取回后落到 userData 缓存，
+ * 交给 safe-file:// 加载（userData 在 safe-file 白名单内）。
+ */
+export interface RemoteAgentAttachmentUploadRequest {
+  deviceId: string
+  sessionId: string
+  /** 本机绝对路径，由渲染端通过 dialog:open-file 选择 */
+  paths: string[]
+}
+
+export interface RemoteAgentAttachmentSummary {
+  type: 'image' | 'file'
+  /** 目标设备上的绝对路径，提交 turn 时原样回传 */
+  path: string
+  name?: string
+}
+
+export interface RemoteAgentAttachmentUploadResponse {
+  attachments: RemoteAgentAttachmentSummary[]
+}
+
+export interface RemoteAgentAttachmentFetchRequest {
+  deviceId: string
+  /** 目标设备上的附件路径 */
+  path: string
+}
+
+export interface RemoteAgentAttachmentFetchResponse {
+  /** 已落盘的本地缓存路径，可直接交给 safe-file:// 加载 */
+  localPath: string
+  mimeType: string
+  /**
+   * 文本类内容（html / md / txt / json / svg 等）原文，供渲染端直接内联预览
+   * （如 HTML 产物的沙箱 iframe）。非文本或超过上限时缺省。
+   */
+  text?: string
+}
+
 export interface RemoteAgentIpcChannelMap {
   'remote-agent:relay:get-status': [{}, RemoteAgentRelayStatus]
   'remote-agent:relay:connect': [{}, RemoteAgentRelayStatus]
@@ -272,6 +358,23 @@ export interface RemoteAgentIpcChannelMap {
     RemoteAgentArtifactListResponse,
   ]
   'remote-agent:task:fetch-artifact': [RemoteAgentArtifactFetchRequest, RemoteAgentArtifactFile]
+  'remote-agent:target:request': [RemoteAgentTargetRequest, RemoteAgentTargetResponse]
+  'remote-agent:stream:subscribe': [
+    RemoteAgentStreamSubscribeRequest,
+    RemoteAgentStreamSubscribeResponse,
+  ]
+  'remote-agent:stream:unsubscribe': [
+    RemoteAgentStreamSubscribeRequest,
+    RemoteAgentStreamSubscribeResponse,
+  ]
+  'remote-agent:attachment:upload': [
+    RemoteAgentAttachmentUploadRequest,
+    RemoteAgentAttachmentUploadResponse,
+  ]
+  'remote-agent:attachment:fetch': [
+    RemoteAgentAttachmentFetchRequest,
+    RemoteAgentAttachmentFetchResponse,
+  ]
 }
 
 export interface RemoteAgentIpcStreamChannelMap {
@@ -279,4 +382,5 @@ export interface RemoteAgentIpcStreamChannelMap {
   'stream:remote-agent:devices': RemoteAgentDeviceListResponse
   'stream:remote-agent:task-updated': RemoteAgentTask
   'stream:remote-agent:task-events': RemoteAgentTaskEvent[]
+  'stream:remote-agent:session-events': RemoteAgentSessionEventsMessage
 }

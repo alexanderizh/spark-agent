@@ -13,8 +13,9 @@ describe('PLATFORM_MANAGEMENT_SYSTEM_PROMPT 行为契约', () => {
   const prompt = PLATFORM_MANAGEMENT_SYSTEM_PROMPT
 
   it('能力入口与渐进披露指引保留', () => {
-    // 能力域一句话 + 工具族入口
-    expect(prompt).toContain('mcp__spark_platform__*')
+    // 能力域一句话 + 轻量发现/调用入口
+    expect(prompt).toContain('platform_methods_search')
+    expect(prompt).toContain('platform_invoke')
     // 完整工作流的渐进披露兜底：指向 platform-manager skill
     expect(prompt).toContain('platform-manager')
   })

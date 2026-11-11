@@ -41,6 +41,7 @@ import {
   extractWebEntry,
   hostOfUrl,
   isJourneyArtifactPath,
+  isSkillToolInvocation,
   isSkillToolName,
   isWebToolName,
 } from './session-journey-helpers.js'
@@ -49,6 +50,7 @@ const log = createLogger('ipc.session-journey')
 
 // ── 扫描预算（触顶置 truncated，前端明示「仅统计最近记录」） ──
 const SKILL_ROWS_LIMIT = 120
+const SKILL_CANDIDATE_SCAN_LIMIT = 1000
 const WEB_ROWS_LIMIT = 240
 const FILE_CHANGE_EVENT_LIMIT = 400
 const PRESENTED_FILES_EVENT_LIMIT = 200
@@ -135,17 +137,33 @@ export function registerSessionJourneyIpc(): void {
 
     // ── 技能 ──
     const stats = ledgerRepo.statsBySession(sessionId)
-    const skillToolNames = stats.byTool.map(({ toolName }) => toolName).filter(isSkillToolName)
+    const skillToolStats = stats.byTool.filter(
+      ({ toolName }) =>
+        isSkillToolName(toolName) || toolName === 'mcp__spark_platform__platform_invoke',
+    )
+    const skillToolNames = skillToolStats.map(({ toolName }) => toolName)
+    const skillCandidateCount = skillToolStats.reduce((total, { count }) => total + count, 0)
     const webToolNames = stats.byTool.map(({ toolName }) => toolName).filter(isWebToolName)
 
-    const skillRows = ledgerRepo.listRecentByToolNames(sessionId, skillToolNames, SKILL_ROWS_LIMIT)
-    if (skillRows.length >= SKILL_ROWS_LIMIT) truncated = true
+    const skillRows = ledgerRepo.listRecentByToolNames(
+      sessionId,
+      skillToolNames,
+      Math.min(skillCandidateCount, SKILL_CANDIDATE_SCAN_LIMIT),
+    )
+    if (skillCandidateCount > SKILL_CANDIDATE_SCAN_LIMIT) truncated = true
     const skillByName = new Map<string, { skill: SessionJourneySkill; lastSeq: number }>()
+    let matchedSkillRows = 0
     for (const row of skillRows) {
       const payload =
         row.input_artifact_id != null
           ? readAuditedPayloadInline(row.input_artifact_id, workspaceRoots)
           : null
+      if (!isSkillToolInvocation(row.tool_name, payload)) continue
+      matchedSkillRows += 1
+      if (matchedSkillRows > SKILL_ROWS_LIMIT) {
+        truncated = true
+        break
+      }
       const name = extractSkillName(payload, row.tool_name)
       const existing = skillByName.get(name)
       if (existing == null) {

@@ -9,6 +9,7 @@ import {
   buildAnthropicAuthHeaders,
   createLogger,
   fetchJson,
+  fetchText,
   HttpError,
   resolveAnthropicMessagesUrl,
 } from '@spark/shared'
@@ -131,6 +132,22 @@ async function callAnthropic(params: GenerateTitleParams, prompt: string): Promi
   }
 }
 
+/**
+ * OpenAI 兼容渠道的 token 上限字段。官方对 reasoning 模型（gpt-5 系与 o 系）强制
+ * `max_completion_tokens`，传 `max_tokens` 直接 400；中转渠道多数只认 `max_tokens`。
+ */
+type TitleTokenField = 'max_tokens' | 'max_completion_tokens'
+
+interface TitleRequestContext {
+  url: string
+  headers: Record<string, string>
+  baseBody: {
+    model: string
+    temperature: number
+    messages: Array<{ role: 'user'; content: string }>
+  }
+}
+
 async function callOpenAICompatible(
   params: GenerateTitleParams,
   prompt: string,
@@ -138,50 +155,57 @@ async function callOpenAICompatible(
   const endpoint = normalizeEndpoint(params.apiEndpoint, OPENAI_DEFAULT_ENDPOINT)
   // 渠道声明「完整 URL」时原样请求（用户填的已是最终 chat 地址），否则拼接后缀。
   const url = params.apiEndpointFullUrl === true ? endpoint : `${endpoint}/chat/completions`
-  const baseBody = {
-    model: params.model,
-    temperature: 0.3,
-    messages: [{ role: 'user', content: prompt }],
+  const context: TitleRequestContext = {
+    url,
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${params.apiKey}`,
+    },
+    baseBody: {
+      model: params.model,
+      temperature: 0.3,
+      messages: [{ role: 'user', content: prompt }],
+    },
   }
-  // 大多数 OpenAI 兼容网关只认 max_tokens；但 OpenAI 官方对 reasoning 模型
-  // （gpt-5*/o 系）强制要求 max_completion_tokens，传 max_tokens 直接 400。
-  // 先按兼容面最广的 max_tokens 发，仅在 400 且服务端明确提示时换参重发一次。
-  const request = async (tokenField: 'max_tokens' | 'max_completion_tokens') =>
-    fetchJson<{ choices?: Array<{ message?: { content?: string } }> }>(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${params.apiKey}`,
-      },
-      body: JSON.stringify({ ...baseBody, [tokenField]: TITLE_MAX_OUTPUT_TOKENS }),
-      timeoutMs: REQUEST_TIMEOUT_MS,
-      maxRetries: 1,
-    })
+
+  /**
+   * 请求降级阶梯（最多三次，每一步都由服务端 400 的明确提示驱动，不做无依据猜测；
+   * 其余 400 —— 模型不存在、鉴权失败等 —— 不重试，直接上交由调用方记 warn）：
+   *   ① `max_tokens` + 非流式：兼容面最广的默认组合；
+   *   ② `max_completion_tokens`：① 被拒且服务端原文点名该字段时换字段重发；
+   *   ③ `stream: true`：中转渠道风控拒绝非流式请求时改 SSE 流式并拼接增量正文
+   *      （实测 2026-11-12，api3.codexcn.com：「出于OpenAI风控，非流式请求不再被支持，
+   *      请设置 stream: true」）。主对话链路本就恒流式（codex-openai-executor 里
+   *      stream:true），只有标题这条非流式旁路会被这类渠道拦死，自动精炼与手动
+   *      「提取标题」同时静默失败——两者共用本函数，故一并修复。
+   */
+  let tokenField: TitleTokenField = 'max_tokens'
+  let streaming = false
   try {
-    let data: { choices?: Array<{ message?: { content?: string } }> }
-    try {
-      data = await request('max_tokens')
-    } catch (err) {
-      if (
-        err instanceof HttpError &&
-        err.statusCode === 400 &&
-        /max_completion_tokens/i.test(err.message)
-      ) {
-        log.warn(`Title request retrying with max_completion_tokens: ${describeTarget(url)}`)
-        data = await request('max_completion_tokens')
-      } else {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await sendTitleRequest(context, tokenField, streaming)
+      } catch (err) {
+        if (!(err instanceof HttpError) || err.statusCode !== 400) throw err
+        if (!streaming && requiresStreamingResponse(err.message)) {
+          streaming = true
+          log.warn(
+            `Title request retrying with stream:true (channel rejects non-streaming requests): ${describeTarget(url)}`,
+          )
+          continue
+        }
+        if (tokenField === 'max_tokens' && /max_completion_tokens/i.test(err.message)) {
+          tokenField = 'max_completion_tokens'
+          log.warn(`Title request retrying with max_completion_tokens: ${describeTarget(url)}`)
+          continue
+        }
         throw err
       }
     }
-    const text = data.choices?.[0]?.message?.content
-    if (typeof text !== 'string' || text.length === 0) {
-      log.warn(
-        `Title response had no usable content (model may have spent the token budget on reasoning): ${describeTarget(url)}`,
-      )
-      return null
-    }
-    return text
+    return null
   } catch (err) {
+    // 观测口径不可退：HTTP 状态码 + host + 响应体摘要（2026-09 与 2026-11 两次标题
+    // 静默失败都靠这一行定位到根因），降级阶梯只是重试策略，不替代终态 warn。
     if (err instanceof HttpError) {
       log.warn(
         `OpenAI-compatible title request failed: HTTP ${err.statusCode} ${describeTarget(url)} ${summarizeErrorDetail(err)}`,
@@ -193,6 +217,123 @@ async function callOpenAICompatible(
     }
     return null
   }
+}
+
+/**
+ * 发送一次标题补全请求。非流式走 `fetchJson` 直接取 JSON；流式走 `fetchText` 读完整
+ * SSE 正文（复用同一套 timeout / 重试 / 错误归一：非 2xx 仍抛 HttpError，且消息体
+ * 保留渠道原文，供上层判定降级维度与 warn 排查）。
+ */
+async function sendTitleRequest(
+  context: TitleRequestContext,
+  tokenField: TitleTokenField,
+  streaming: boolean,
+): Promise<string | null> {
+  const body = JSON.stringify({
+    ...context.baseBody,
+    [tokenField]: TITLE_MAX_OUTPUT_TOKENS,
+    ...(streaming ? { stream: true } : {}),
+  })
+
+  if (!streaming) {
+    const data = await fetchJson<{ choices?: Array<{ message?: { content?: string } }> }>(
+      context.url,
+      {
+        method: 'POST',
+        headers: context.headers,
+        body,
+        timeoutMs: REQUEST_TIMEOUT_MS,
+        maxRetries: 1,
+      },
+    )
+    const text = data.choices?.[0]?.message?.content
+    if (typeof text !== 'string' || text.length === 0) {
+      logMissingContent(context.url)
+      return null
+    }
+    return text
+  }
+
+  const raw = await fetchText(context.url, {
+    method: 'POST',
+    headers: { ...context.headers, accept: 'text/event-stream' },
+    body,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    maxRetries: 1,
+  })
+  const text = extractStreamedCompletionContent(raw)
+  if (text == null || text.length === 0) {
+    log.warn(
+      `Streamed title response had no usable content (model may have spent the token budget on reasoning): ${describeTarget(context.url)}`,
+    )
+    return null
+  }
+  return text
+}
+
+function logMissingContent(url: string): void {
+  // 与流式分支对称：空正文（思考耗尽预算 / 渠道异常响应）必须留 WARN，
+  // 否则失败被静默吞掉、无任何日志可查（2026-09 标题失败排查的观测缺口）。
+  log.warn(
+    `Title response had no usable content (model may have spent the token budget on reasoning): ${describeTarget(url)}`,
+  )
+}
+
+/**
+ * 渠道 400 明确要求流式时才升级为 SSE 请求。实测文案（2026-11-12，api3.codexcn.com）：
+ * 「出于OpenAI风控，非流式请求不再被支持，请设置 stream: true」。中英文双写，
+ * 避免依赖单一渠道的措辞。
+ */
+function requiresStreamingResponse(errorMessage: string): boolean {
+  return /stream\s*:\s*true/i.test(errorMessage) || /非流式|流式请求/.test(errorMessage)
+}
+
+/**
+ * 从 OpenAI 兼容 SSE 响应中拼接正文增量（标准为 `choices[0].delta.content`）。
+ *
+ * 容错分支：
+ * - 个别网关忽略 `stream` 标志仍回完整 JSON → 先按 JSON 解析，避免误判为空；
+ * - 单事件内含完整 `message.content`（网关「伪流式」形态）→ 与 delta 同口径采集；
+ * - usage-only 尾包（`choices` 为空数组）与心跳 / 注释行 → 跳过；
+ * - 单事件含多行 `data:` 时按 SSE 规范拼接后再 JSON.parse；
+ * - `[DONE]` 之后的内容不再采集。
+ */
+function extractStreamedCompletionContent(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (trimmed.startsWith('{')) {
+    try {
+      const data = JSON.parse(trimmed) as { choices?: Array<{ message?: { content?: string } }> }
+      return data.choices?.[0]?.message?.content ?? null
+    } catch {
+      // 不是合法 JSON：继续按 SSE 逐事件解析
+    }
+  }
+
+  let content = ''
+  for (const event of raw.split(/\r?\n\r?\n/)) {
+    const payload = event
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim())
+      .join('\n')
+    if (payload.length === 0 || payload === '[DONE]') continue
+    try {
+      const chunk = JSON.parse(payload) as {
+        choices?: Array<{
+          delta?: { content?: string | null }
+          message?: { content?: string | null }
+        }>
+      }
+      // 标准流式是 delta.content；个别网关「伪流式」把完整 completion 塞进单个事件的
+      // message.content（非流式分支本就兼容该形态），这里一并认，否则取空后标题精炼
+      // 失败且只剩一句无正文的 warn。
+      const choice = chunk.choices?.[0]
+      content += choice?.delta?.content ?? choice?.message?.content ?? ''
+    } catch {
+      // 心跳 / 注释等非 JSON 行：跳过
+    }
+  }
+  return content.length > 0 ? content : null
 }
 
 /**

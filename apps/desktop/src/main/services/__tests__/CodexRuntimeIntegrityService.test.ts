@@ -317,6 +317,63 @@ describe('CodexRuntimeIntegrityService', () => {
     expect(mocks.installBinaryArchive).not.toHaveBeenCalled()
   })
 
+  // 回归：Codex native runtime 是全项目最大的按需下载物（macOS arm64 136.9 MiB、
+  // Windows x64 167.0 MiB）。共享下载器的兜底超时是覆盖「建连 + 全量 body 落盘」的
+  // 120s 硬墙，按实测 ~1.4 MB/s 算只剩 17% 余量，主进程稍被占用就稳定失败，
+  // 用户看到 `The operation was aborted due to timeout`。安装链路必须按 manifest
+  // 体积显式放宽超时。
+  describe('download timeout scales with the archive size', () => {
+    const DARWIN_ARM64_0_167_0_BYTES = 143_592_968
+    const WIN32_X64_0_167_0_BYTES = 175_118_475
+    const SHARED_DOWNLOADER_DEFAULT_TIMEOUT_MS = 120_000
+
+    async function installedTimeoutFor(sizeBytes: number | undefined): Promise<number> {
+      const base = artifact(CODEX_SDK_VERSION)
+      // exactOptionalPropertyTypes：size 缺省时不能显式写 undefined，必须整条省略。
+      mocks.artifacts = [sizeBytes === undefined ? base : { ...base, size: sizeBytes }]
+      const { installCodexRuntime } = await import('../CodexRuntimeIntegrityService.js')
+
+      const result = await installCodexRuntime(CODEX_SDK_VERSION)
+
+      expect(result.success).toBe(true)
+      const params = mocks.installBinaryArchive.mock.calls.at(-1)?.[0] as
+        | { downloadTimeoutMs?: number }
+        | undefined
+      expect(params?.downloadTimeoutMs).toBeTypeOf('number')
+      return params?.downloadTimeoutMs as number
+    }
+
+    it('gives the real macOS arm64 archive far more than the shared default', async () => {
+      const timeoutMs = await installedTimeoutFor(DARWIN_ARM64_0_167_0_BYTES)
+
+      expect(timeoutMs).toBeGreaterThan(SHARED_DOWNLOADER_DEFAULT_TIMEOUT_MS * 2)
+      // 按 256 KB/s 悲观底速推导：60s 建连余量 + 136.9MB 传输预算。
+      expect(timeoutMs).toBe(60_000 + Math.ceil(DARWIN_ARM64_0_167_0_BYTES / (256 * 1024)) * 1000)
+    })
+
+    it('scales with size so the largest Windows archive is not starved either', async () => {
+      const arm64 = await installedTimeoutFor(DARWIN_ARM64_0_167_0_BYTES)
+      const winX64 = await installedTimeoutFor(WIN32_X64_0_167_0_BYTES)
+
+      expect(winX64).toBeGreaterThan(arm64)
+    })
+
+    it('still clears the shared default when the manifest omits the size', async () => {
+      expect(await installedTimeoutFor(undefined)).toBeGreaterThan(
+        SHARED_DOWNLOADER_DEFAULT_TIMEOUT_MS,
+      )
+      expect(await installedTimeoutFor(0)).toBeGreaterThan(SHARED_DOWNLOADER_DEFAULT_TIMEOUT_MS)
+    })
+
+    it('caps the ceiling so a stalled connection cannot hang the install forever', async () => {
+      const { codexArchiveDownloadTimeoutMs } = await import('../CodexRuntimeIntegrityService.js')
+
+      expect(codexArchiveDownloadTimeoutMs(10 * 1024 * 1024 * 1024)).toBe(30 * 60 * 1000)
+      expect(codexArchiveDownloadTimeoutMs(Number.NaN)).toBe(5 * 60 * 1000)
+      expect(codexArchiveDownloadTimeoutMs(-1)).toBe(5 * 60 * 1000)
+    })
+  })
+
   it('reports byte progress through verification and activation', async () => {
     const { installCodexRuntime } = await import('../CodexRuntimeIntegrityService.js')
     const progress: Array<{

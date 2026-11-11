@@ -43,10 +43,12 @@ describe('window chrome layout contract', () => {
 
   it('keeps the settings titlebar surface aligned with the settings navigation', () => {
     const styles = readSource('./styles/styles.css')
+    const tokens = readSource('./styles/tokens.css')
     const viewStyles = readSource('./styles/views.css')
     const settingsStyles = readSource('./views/SettingsView.less')
 
-    expect(styles).toContain('--settings-nav-width: 240px')
+    // token 定义已于 2026-10 平移至 tokens.css（styles.css 仅保留引用）
+    expect(tokens).toContain('--settings-nav-width: 240px')
     expect(styles).toMatch(
       /\.app\.titlebar-surface-settings \.shell-titlebar,[\s\S]*?var\(--settings-nav-width\)[\s\S]*?\}/,
     )
