@@ -2,6 +2,7 @@
 export type TurnSource =
   | 'user'
   | 'remote_user'
+  | 'remote_agent'
   | 'scheduled_task'
   | 'goal_contract_draft'
   | 'goal_iteration'

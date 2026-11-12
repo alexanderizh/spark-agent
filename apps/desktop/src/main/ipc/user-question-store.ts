@@ -119,6 +119,10 @@ export class PendingUserQuestionStore {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
+  getSourceTurnId(sessionId: string, questionId: string): string | null {
+    return this.pending.get(questionKey(sessionId, questionId))?.sourceTurnId ?? null
+  }
+
   async resolve(
     sessionId: string,
     questionId: string,

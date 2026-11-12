@@ -89,6 +89,16 @@ export type {
   RemoteAgentExecutionAttachment,
   ReserveRemoteAgentExecutionParams,
 } from './remote-agent-execution.repository.js'
+export {
+  RemoteAgentCollaborationRepository,
+  RemoteAgentCollaborationConflictError,
+} from './remote-agent-collaboration.repository.js'
+export type {
+  RemoteAgentCollaborationArtifactRow,
+  RemoteAgentCollaborationLinkRow,
+  RemoteAgentCollaborationOperationRow,
+  CreateRemoteAgentCollaborationLinkParams,
+} from './remote-agent-collaboration.repository.js'
 export type {
   ApplicationSnapshotRow,
   SnapshotBlobRow,

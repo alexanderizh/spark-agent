@@ -44,6 +44,18 @@ export class TurnRequestRepository extends BaseRepository {
     return this.findById<TurnRequestRow>(id)
   }
 
+  findByClientMessageId(sessionId: string, clientMessageId: string): TurnRequestRow | null {
+    const row = this.raw
+      .prepare(
+        `SELECT * FROM turn_requests
+         WHERE session_id = ? AND json_valid(payload_json)
+           AND json_extract(payload_json, '$.clientMessageId') = ?
+         ORDER BY created_at DESC, id DESC LIMIT 1`,
+      )
+      .get(sessionId, clientMessageId) as TurnRequestRow | undefined
+    return row ?? null
+  }
+
   listRecoverable(): TurnRequestRow[] {
     return this.raw
       .prepare(

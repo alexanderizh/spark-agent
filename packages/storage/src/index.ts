@@ -217,6 +217,8 @@ export {
   RemoteAgentTaskTransitionError,
   RemoteAgentExecutionRepository,
   RemoteAgentExecutionConflictError,
+  RemoteAgentCollaborationRepository,
+  RemoteAgentCollaborationConflictError,
   SubAppRepository,
   SubAppConflictError,
   SubAppDataConflictError,
@@ -244,6 +246,10 @@ export type {
   RemoteAgentDispatchStatus,
   RemoteAgentExecutionAttachment,
   ReserveRemoteAgentExecutionParams,
+  RemoteAgentCollaborationArtifactRow,
+  RemoteAgentCollaborationLinkRow,
+  RemoteAgentCollaborationOperationRow,
+  CreateRemoteAgentCollaborationLinkParams,
 } from './repositories/index.js'
 
 export type {

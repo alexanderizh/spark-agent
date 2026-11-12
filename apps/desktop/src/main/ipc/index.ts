@@ -5511,6 +5511,9 @@ export function registerAllIpcHandlers(): void {
     getClientLabel: () => `${app.getName()} Remote Agent`,
     getLocalDeviceId: () => getMobileBridgeDeviceId(getSettingsService()),
     getSettingsService,
+    getSessionService,
+    getLocalAttachmentRoot: () =>
+      path.join(app.getPath('userData'), 'attachments', 'pasted-images'),
     getVersion: () => app.getVersion(),
     getCurrentUserId: () => {
       try {

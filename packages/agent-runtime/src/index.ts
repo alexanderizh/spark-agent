@@ -263,6 +263,11 @@ export {
   persistentCodexRuntimePolicy,
 } from './sdk/codex-app-server/codex-app-server-runtime.js'
 export { PlatformBridgeService } from './services/platform-bridge.service.js'
+export {
+  dispatchPlatformBridgeExternalRpc,
+  registerPlatformBridgeRpcHandler,
+} from './services/platform-bridge-external-rpc.js'
+export type { PlatformBridgeRpcHandler } from './services/platform-bridge-external-rpc.js'
 export { GitHubConnectorService } from './services/github-connector.service.js'
 export { RuntimeBroker } from './services/plugin-runtime/runtime-broker.js'
 export { RuntimeRegistry } from './services/plugin-runtime/runtime-registry.js'

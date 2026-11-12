@@ -26,11 +26,16 @@ import type {
   RemoteAgentTargetRequest,
   RemoteAgentTargetResponse,
 } from '@spark/protocol'
-import type { SettingsService } from '@spark/agent-runtime'
+import {
+  registerPlatformBridgeRpcHandler,
+  type SessionService,
+  type SettingsService,
+} from '@spark/agent-runtime'
 import { createLogger } from '@spark/shared'
 import { RemoteAgentRelayClient } from '../services/RemoteAgentRelayClient.js'
 import { RemoteAgentCoordinator } from '../services/RemoteAgentCoordinator.js'
 import { getDatabase } from '../db.js'
+import { RemoteAgentCollaborationService } from '../services/RemoteAgentCollaborationService.js'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
 import {
   applyDeviceAliases,
@@ -48,12 +53,26 @@ export interface RemoteAgentIpcDeps {
   getVersion(): string
   getCurrentUserId(): string | null
   getSettingsService(): SettingsService
+  getSessionService(): SessionService
+  getLocalAttachmentRoot(): string
   addLogoutHook(hook: () => Promise<void>): () => void
 }
 
 let relayClient: RemoteAgentRelayClient | null = null
 let coordinator: RemoteAgentCoordinator | null = null
+let collaborationService: RemoteAgentCollaborationService | null = null
 let beforeQuitHookRegistered = false
+
+const REMOTE_AGENT_TOOL_METHODS = [
+  'devices_list',
+  'device_inspect',
+  'sessions_list',
+  'session_open',
+  'message_send',
+  'events_read',
+  'operation_cancel',
+  'artifact_transfer',
+] as const
 
 /** 设备列表的统一出口：过滤本机 + 合并本机备注名 */
 function listDevicesWithAliases(deps: RemoteAgentIpcDeps): RemoteAgentDeviceListResponse {
@@ -92,6 +111,7 @@ function getRelayClient(deps: RemoteAgentIpcDeps): RemoteAgentRelayClient {
       // 客户端 stop/断线会清空自身订阅，重连后按引用计数重建远程会话流
       if (status.connected) restoreStreamSubscriptions(deps)
       coordinator?.handleRelayStatus(status)
+      collaborationService?.handleRelayStatus(status)
     },
     onDevicesChange: (devices) => {
       pushStreamEvent('stream:remote-agent:devices', listDevicesWithAliases(deps))
@@ -106,6 +126,15 @@ function getRelayClient(deps: RemoteAgentIpcDeps): RemoteAgentRelayClient {
     getArtifactRoot: () => path.join(app.getPath('userData'), 'remote-agent-results'),
     onTaskUpdated: (task) => pushStreamEvent('stream:remote-agent:task-updated', task),
     onTaskEvents: (events) => pushStreamEvent('stream:remote-agent:task-events', events),
+  })
+  collaborationService = new RemoteAgentCollaborationService({
+    getDatabase,
+    getCurrentUserId: deps.getCurrentUserId,
+    getLocalDeviceId: deps.getLocalDeviceId,
+    getSessionService: deps.getSessionService,
+    getLocalAttachmentRoot: deps.getLocalAttachmentRoot,
+    getRelayClient: () => client,
+    getArtifactRoot: () => path.join(app.getPath('userData'), 'remote-agent-results'),
   })
   deps.addLogoutHook(async () => {
     relayClient?.stop()
@@ -318,6 +347,21 @@ function extensionForAttachment(mimeType: string, remotePath: string): string {
 }
 
 export function registerRemoteAgentIpc(deps: RemoteAgentIpcDeps): void {
+  const platformBridge = deps.getSessionService().getPlatformBridge()
+  for (const method of REMOTE_AGENT_TOOL_METHODS) {
+    registerPlatformBridgeRpcHandler(platformBridge, `remote.${method}`, (params) =>
+      getCollaborationService(deps).invoke(method, params),
+    )
+  }
+  void getCollaborationService(deps)
+    .resumePendingDeliveries()
+    .catch((error) => {
+      log.warn('remote collaboration recovery startup failed', {
+        phase: 'resume',
+        errorCode: error instanceof Error ? error.name : 'UNKNOWN',
+      })
+    })
+
   typedIpcHandle(
     'remote-agent:relay:get-status',
     async () => relayClient?.getStatus() ?? stoppedStatus(),
@@ -581,4 +625,10 @@ function getCoordinator(deps: RemoteAgentIpcDeps): RemoteAgentCoordinator {
   getRelayClient(deps)
   if (coordinator == null) throw new Error('远程 Agent 编排器尚未初始化')
   return coordinator
+}
+
+function getCollaborationService(deps: RemoteAgentIpcDeps): RemoteAgentCollaborationService {
+  getRelayClient(deps)
+  if (collaborationService == null) throw new Error('远程协作服务尚未初始化')
+  return collaborationService
 }

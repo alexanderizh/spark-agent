@@ -40,6 +40,7 @@ import {
   TOOL_RESULT_TOOL_NAMES,
   VALIDATION_SUGGESTION_TOOL_NAMES,
   VOICE_CONTROL_TOOL_NAMES,
+  REMOTE_AGENT_TOOL_NAMES,
 } from '../session-mcp-tooling-helpers.js'
 import type { UnifiedToolCatalogEntry } from '../unified-tools/unified-tool-catalog.js'
 
@@ -204,6 +205,12 @@ const PLATFORM_SERVERS: readonly PlatformServerSpec[] = [
     title: '语音控制（spark_voice）',
     toolNames: VOICE_CONTROL_TOOL_NAMES,
     mountNote: '仅语音路由绑定的会话挂载；绑定关系随语音切换实时迁移。',
+  },
+  {
+    server: 'spark_remote',
+    title: '远程 Agent 协作（spark_remote）',
+    toolNames: REMOTE_AGENT_TOOL_NAMES,
+    mountNote: '本地普通会话可调用；远端协作会话与工作流子 Agent 不挂载。',
   },
   {
     server: 'spark_tool_results',

@@ -403,6 +403,10 @@ export function resolveVoiceControlMcpServerPath(): string | null {
   return resolveRuntimeToolPath('voice-control-mcp-server.mjs')
 }
 
+export function resolveRemoteAgentMcpServerPath(): string | null {
+  return resolveRuntimeToolPath('remote-agent-mcp-server.mjs')
+}
+
 export function resolveSubAppMcpServerPath(): string | null {
   return resolveRuntimeToolPath('sub-app-mcp-server.mjs')
 }
@@ -553,6 +557,17 @@ export const VOICE_CONTROL_TOOL_NAMES = [
   'mcp__spark_voice__list_models',
   'mcp__spark_voice__switch_model',
 ]
+
+export const REMOTE_AGENT_TOOL_NAMES = [
+  'mcp__spark_remote__devices_list',
+  'mcp__spark_remote__device_inspect',
+  'mcp__spark_remote__sessions_list',
+  'mcp__spark_remote__session_open',
+  'mcp__spark_remote__message_send',
+  'mcp__spark_remote__events_read',
+  'mcp__spark_remote__operation_cancel',
+  'mcp__spark_remote__artifact_transfer',
+] as const
 
 export const VOICE_CONTROL_SYSTEM_PROMPT = [
   '## 语音会话应用控制',

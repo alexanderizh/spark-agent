@@ -33,6 +33,7 @@ const REQUIRED_BUILTIN_MCP_NAMES: readonly string[] = [
   'spark_tool_results',
   'spark_memory',
   'spark_session',
+  'spark_remote',
 ]
 
 const OPTIONAL_HEAVY_BUILTIN_MCP_NAMES: readonly string[] = [

@@ -5676,6 +5676,7 @@ export class SessionService {
       }
       const sparkCustomMcpServers = await this.getMcpTooling().buildMcpServersForSDK(
         agentMcpSelection.userServerIds,
+        sessionId,
       )
       const sparkMemoryMcpServer = await this.getMcpTooling().resolveSparkMemoryMcpServer(
         sessionId,
@@ -6563,7 +6564,10 @@ export class SessionService {
 
     // Build MCP server config from our McpService for the SDK
     options.runtimeMetrics?.markMcpConfigurationStarted()
-    let mcpServers = await this.getMcpTooling().buildMcpServersForSDK(config.agentMcpAllowList)
+    let mcpServers = await this.getMcpTooling().buildMcpServersForSDK(
+      config.agentMcpAllowList,
+      sessionId,
+    )
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
@@ -7245,7 +7249,10 @@ export class SessionService {
     }
 
     options.runtimeMetrics?.markMcpConfigurationStarted()
-    let mcpServers = await this.getMcpTooling().buildMcpServersForSDK(config.agentMcpAllowList)
+    let mcpServers = await this.getMcpTooling().buildMcpServersForSDK(
+      config.agentMcpAllowList,
+      sessionId,
+    )
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
@@ -14083,7 +14090,21 @@ export class SessionService {
     this.iterationOverrides.set(sessionId, Math.floor(max))
   }
 
-  async cancelTurn(sessionId: string): Promise<{ cancelled: boolean; turnId?: string }> {
+  async cancelTurn(
+    sessionId: string,
+    expectedTurnId?: string,
+  ): Promise<{ cancelled: boolean; turnId?: string }> {
+    if (expectedTurnId != null) {
+      const loop = this.turnRegistry.executorFor(sessionId)
+      const startingTurnId = this.turnRegistry.getStartingTurnId(sessionId)
+      const eventRepo = new EventRepository(this.db)
+      const activeTurnId =
+        loop != null
+          ? (this.turnRegistry.runningTurnId(sessionId) ??
+            getLatestTurnIdFromEvents(eventRepo, sessionId))
+          : startingTurnId
+      if (activeTurnId !== expectedTurnId) return { cancelled: false }
+    }
     this.resetTeamDispatchAutoContinuation(sessionId)
     const removedQueuedContinuation = this.removeQueuedTeamDispatchAutoContinuations(sessionId)
     const loop = this.turnRegistry.executorFor(sessionId)

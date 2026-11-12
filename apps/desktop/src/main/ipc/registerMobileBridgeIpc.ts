@@ -133,6 +133,7 @@ export interface MobileBridgeIpcDeps {
   /** 挂起用户问答注册表（AskUserQuestion；与桌面弹卡/远程问答桥共用同一实例） */
   getPendingUserQuestions(): {
     list(sessionId?: string): UserQuestionRequest[]
+    getSourceTurnId?(sessionId: string, questionId: string): string | null
     resolve(
       sessionId: string,
       questionId: string,
@@ -240,6 +241,11 @@ function getService(deps: MobileBridgeIpcDeps): MobileBridgeService {
     },
     getDeviceId: () => readRelayStore(deps.getSettingsService()).deviceId,
     saveAttachments: bridgeDeps.saveAttachments,
+    getEventsAfterSeq: bridgeDeps.getStreamEvents,
+    getPendingInteractions: bridgeDeps.listPendingInteractions,
+    answerQuestion: bridgeDeps.answerQuestion,
+    getQuestionSourceTurnId: (sessionId, questionId) =>
+      deps.getPendingUserQuestions().getSourceTurnId?.(sessionId, questionId) ?? null,
   })
   service.setRemoteAgentRelayHandler((method, urlPath, body) =>
     remoteAgentExecution.handleRelayRequest(method, urlPath, body),
@@ -600,9 +606,7 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
         if (baseId != null) worktreeBase.set(workspace.id, baseId)
       }
       // worktree 的计数并入 base workspace 后从顶层剔除（会话数与运行中数同口径）
-      const mergeWorktreeCounts = (
-        counts: Map<string, number>,
-      ): Map<string, number> => {
+      const mergeWorktreeCounts = (counts: Map<string, number>): Map<string, number> => {
         const merged = new Map(counts)
         for (const [worktreeId, baseId] of worktreeBase) {
           const count = merged.get(worktreeId) ?? 0
@@ -717,7 +721,10 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
         })
         .slice(0, limit)
       const total = queryResults.reduce((count, result) => count + result.total, 0)
-      const previewBySession = readSessionPreviews(db.raw, sessions.map((row) => row.id))
+      const previewBySession = readSessionPreviews(
+        db.raw,
+        sessions.map((row) => row.id),
+      )
       const rows: MobileBridgeSessionSummary[] = sessions.map((row) => {
         const labelMeta = metaBySession.get(row.id)
         return {

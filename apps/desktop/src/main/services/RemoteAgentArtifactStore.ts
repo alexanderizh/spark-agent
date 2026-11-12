@@ -23,18 +23,18 @@ export class RemoteAgentArtifactStore {
 
   constructor(private readonly getArtifactRoot: () => string) {}
 
-  indexEvent(taskId: string, event: MobileBridgeEvent): void {
+  indexEvent(taskId: string, event: MobileBridgeEvent, referenceScope?: string): void {
     if (event.type === 'presented_files') {
       for (const file of event.files ?? []) {
         if (typeof file.path === 'string' && file.path.trim()) {
-          this.addReference(taskId, file.path, 'presented', file.title)
+          this.addReference(taskId, file.path, 'presented', file.title, referenceScope)
         }
       }
     }
     if (event.type === 'user_message') {
       for (const attachment of event.attachments ?? []) {
         if (typeof attachment.path === 'string' && attachment.path.trim()) {
-          this.addReference(taskId, attachment.path, 'attachment', attachment.name)
+          this.addReference(taskId, attachment.path, 'attachment', attachment.name, referenceScope)
         }
       }
     }
@@ -62,7 +62,11 @@ export class RemoteAgentArtifactStore {
     return this.referencesByTask.get(taskId)?.get(artifactId)?.remotePath ?? null
   }
 
-  toSafeEvent(taskId: string, event: MobileBridgeEvent): RemoteAgentTaskEvent {
+  toSafeEvent(
+    taskId: string,
+    event: MobileBridgeEvent,
+    referenceScope?: string,
+  ): RemoteAgentTaskEvent {
     const safeEvent: Omit<MobileBridgeEvent, 'files' | 'attachments'> = {
       id: event.id,
       seq: event.seq,
@@ -85,7 +89,7 @@ export class RemoteAgentArtifactStore {
       ...(event.files != null
         ? {
             files: event.files.flatMap((file) => {
-              const artifactId = this.artifactIdFor(taskId, file.path, 'presented')
+              const artifactId = this.artifactIdFor(taskId, file.path, 'presented', referenceScope)
               return artifactId == null
                 ? []
                 : [
@@ -100,7 +104,12 @@ export class RemoteAgentArtifactStore {
       ...(event.attachments != null
         ? {
             attachments: event.attachments.flatMap((attachment) => {
-              const artifactId = this.artifactIdFor(taskId, attachment.path, 'attachment')
+              const artifactId = this.artifactIdFor(
+                taskId,
+                attachment.path,
+                'attachment',
+                referenceScope,
+              )
               return artifactId == null
                 ? []
                 : [
@@ -184,8 +193,9 @@ export class RemoteAgentArtifactStore {
     remotePath: string,
     kind: 'attachment' | 'presented',
     title?: string,
+    referenceScope?: string,
   ): void {
-    const artifactId = makeArtifactId(taskId, remotePath, kind)
+    const artifactId = makeArtifactId(taskId, remotePath, kind, referenceScope)
     let references = this.referencesByTask.get(taskId)
     if (references == null) {
       references = new Map()
@@ -206,8 +216,9 @@ export class RemoteAgentArtifactStore {
     taskId: string,
     remotePath: string,
     kind: 'attachment' | 'presented',
+    referenceScope?: string,
   ): string | null {
-    const artifactId = makeArtifactId(taskId, remotePath, kind)
+    const artifactId = makeArtifactId(taskId, remotePath, kind, referenceScope)
     return this.referencesByTask.get(taskId)?.has(artifactId) ? artifactId : null
   }
 
@@ -226,11 +237,13 @@ function makeArtifactId(
   taskId: string,
   remotePath: string,
   kind: 'attachment' | 'presented',
+  referenceScope?: string,
 ): string {
-  return createHash('sha256')
-    .update(`${taskId}\u0000${kind}\u0000${remotePath}`)
-    .digest('hex')
-    .slice(0, 32)
+  const identity =
+    referenceScope == null
+      ? `${taskId}\u0000${kind}\u0000${remotePath}`
+      : `${taskId}\u0000${kind}\u0000${referenceScope}\u0000${remotePath}`
+  return createHash('sha256').update(identity).digest('hex').slice(0, 32)
 }
 
 function decodeBase64(value: string): Buffer {

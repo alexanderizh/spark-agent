@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { createLogger } from '@spark/shared'
+import { dispatchPlatformBridgeExternalRpc } from './platform-bridge-external-rpc.js'
 import { resolveCapabilityGuide } from './capability-disclosure.js'
 import type { SkillService } from './skill.service.js'
 import type { SkillLoader } from '../skills/skill-loader.js'
@@ -743,6 +744,8 @@ export class PlatformBridgeService {
 
   private async dispatch(method: string, params: Record<string, unknown>): Promise<unknown> {
     const d = this.deps!
+    const externalRpc = await dispatchPlatformBridgeExternalRpc(this, method, params)
+    if (externalRpc.handled) return externalRpc.value
     const subAppV2 = await handleSubAppV2BridgeMethod(method, d, params)
     if (subAppV2.handled) return subAppV2.value
     switch (method) {

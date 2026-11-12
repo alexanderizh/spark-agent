@@ -14,6 +14,7 @@ import {
   ConnectorConnectionRepository,
   McpServerRepository,
   ProviderProfileRepository,
+  SessionRepository,
   SubAppRepository,
   SubAppPackageService,
   SubAppPlatformRepository,
@@ -62,6 +63,7 @@ import {
   resolveMediaGenerationMcpServerPath,
   resolveMcpNodeRuntimeExecutable,
   resolvePlatformManagementMcpServerPath,
+  resolveRemoteAgentMcpServerPath,
   resolveSparkCanvasMcpServerPath,
   resolveSparkMemoryMcpServerPath,
   resolveSparkWikiMcpServerPath,
@@ -71,6 +73,20 @@ import {
 } from '../session-mcp-tooling-helpers.js'
 
 const log = createLogger('session.mcp-tooling')
+
+function hasRemoteAgentOrigin(metadataJson: string | null): boolean {
+  if (metadataJson == null) return false
+  try {
+    const metadata: unknown = JSON.parse(metadataJson)
+    if (metadata == null || typeof metadata !== 'object') return false
+    const record = metadata as { remoteAgentLinkId?: unknown; remoteAgentTaskId?: unknown }
+    return (
+      typeof record.remoteAgentLinkId === 'string' || typeof record.remoteAgentTaskId === 'string'
+    )
+  } catch {
+    return false
+  }
+}
 
 export type ImageGenerationRuntimeContext = {
   mcpServer: SDKMcpServerConfig
@@ -108,6 +124,7 @@ export class SessionMcpTooling {
 
   async buildMcpServersForSDK(
     allowedServerIds?: ReadonlySet<string>,
+    sessionId?: string,
   ): Promise<Record<string, SDKMcpServerConfig>> {
     const result: Record<string, SDKMcpServerConfig> = {}
     const servers = this.host.getMcpService().listServers()
@@ -153,7 +170,38 @@ export class SessionMcpTooling {
         // Skip servers with invalid config
       }
     }
+    if (sessionId != null) {
+      const remoteAgentServer = await this.resolveRemoteAgentMcpServer(sessionId)
+      if (remoteAgentServer != null) result.spark_remote = remoteAgentServer
+    }
     return result
+  }
+
+  async resolveRemoteAgentMcpServer(sessionId: string): Promise<SDKMcpServerConfig | null> {
+    const session = new SessionRepository(this.db).get(sessionId)
+    if (session == null || hasRemoteAgentOrigin(session.metadata_json)) return null
+    const serverPath = resolveRemoteAgentMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Spark remote-agent MCP server script not found')
+      return null
+    }
+    try {
+      const port = await this.ensurePlatformBridge()
+      return {
+        type: 'stdio',
+        command: resolveMcpNodeRuntimeExecutable(),
+        args: [serverPath],
+        env: {
+          SPARK_PLATFORM_BRIDGE_PORT: String(port),
+          SPARK_REMOTE_SID: sessionId,
+        },
+      }
+    } catch (error) {
+      log.warn('Failed to configure spark_remote MCP server', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return null
+    }
   }
 
   /**
