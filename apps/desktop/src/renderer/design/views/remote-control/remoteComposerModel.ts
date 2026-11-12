@@ -15,6 +15,7 @@ import type {
   MobileBridgeSessionRuntime,
   SessionAgentAdapter,
 } from '@spark/protocol'
+import { REASONING_EFFORT_OPTIONS } from '../chat/reasoning-effort-options'
 import { getPermissionModeOptions } from '../../utils/permission-options'
 
 export type RemoteOptionTone = 'default' | 'auto' | 'danger'
@@ -42,6 +43,8 @@ export const REMOTE_DEFAULT_AGENT_LABEL = '默认助手'
 /** runtime 缺字段时的兜底文案 */
 export const REMOTE_DEFAULT_MODEL_LABEL = '电脑默认模型'
 export const REMOTE_DEFAULT_PERMISSION_LABEL = '电脑默认'
+/** 会话没显式设推理强度 = 跟随电脑端默认（与权限同义，但 chip 上避免两处都写「电脑默认」） */
+export const REMOTE_DEFAULT_REASONING_LABEL = '默认'
 
 /** 当前会话实际生效的 adapter（助手目录 → 运行时 → 兜底 claude） */
 export function resolveAdapter(
@@ -132,6 +135,29 @@ export function buildPermissionOptions(
   })
 }
 
+/**
+ * 推理强度选项：档位以目标端 catalog.reasoningEfforts 为准，中文标签复用桌面端
+ * REASONING_EFFORT_OPTIONS，避免同一档位两套文案。
+ * 目录缺失或目标端没给枚举（旧版）时返回空数组，调用方据此隐藏 chip。
+ */
+export function buildReasoningOptions(
+  catalog: MobileBridgeCatalog | null,
+  runtime: MobileBridgeSessionRuntime | null,
+): RemoteSelectOption[] {
+  const efforts = catalog?.reasoningEfforts ?? []
+  if (efforts.length === 0) return []
+  const current = runtime?.reasoningEffort ?? null
+  return efforts.map((effort) => {
+    const meta = REASONING_EFFORT_OPTIONS.find((option) => option.value === effort)
+    return {
+      id: effort,
+      label: meta?.label ?? effort,
+      ...(meta?.description ? { description: meta.description } : {}),
+      selected: effort === current,
+    }
+  })
+}
+
 /** 助手 chip 文案 */
 export function agentLabel(
   catalog: MobileBridgeCatalog | null,
@@ -177,6 +203,18 @@ export function permissionLabel(
     return { label: current, danger: false }
   }
   return { label: option.label, danger: option.tone === 'danger' }
+}
+
+/**
+ * 推理强度 chip 文案。
+ * 目标端可能比桌面端新（多出未收录的档位）：认不出就按裸值显示，不吞掉；
+ * runtime 没给值说明会话走电脑端默认，按兜底文案展示。
+ */
+export function reasoningLabel(runtime: MobileBridgeSessionRuntime | null): string {
+  const current = runtime?.reasoningEffort ?? null
+  if (current == null) return REMOTE_DEFAULT_REASONING_LABEL
+  const known = REASONING_EFFORT_OPTIONS.find((option) => option.value === current)
+  return known?.label ?? current
 }
 
 export interface SlashTrigger {

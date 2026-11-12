@@ -60,4 +60,25 @@ describe('remote composer prefs', () => {
       modelId: null,
     })
   })
+
+  it('记忆里的推理强度只在目录枚举内才套用', () => {
+    const withEfforts: MobileBridgeCatalog = { ...catalog, reasoningEfforts: ['low', 'high'] }
+
+    expect(resolveComposerPrefsPatch({ reasoningEffort: 'high' }, withEfforts)).toEqual({
+      reasoningEffort: 'high',
+    })
+    // 桌面端目录已换档（或换过引擎）时，旧值不能直接 PATCH 过去
+    expect(resolveComposerPrefsPatch({ reasoningEffort: 'max' }, withEfforts)).toEqual({})
+    // 旧版目标端没给枚举：一律不套用，不猜
+    expect(resolveComposerPrefsPatch({ reasoningEffort: 'high' }, catalog)).toEqual({})
+  })
+
+  it('推理强度随偏好一起持久化并读回', () => {
+    const target = storage()
+
+    rememberComposerPrefs('device-1', { reasoningEffort: 'xhigh' }, target)
+
+    expect(readComposerPrefs('device-1', target)).toEqual({ reasoningEffort: 'xhigh' })
+    expect(prefsFromRuntime({ reasoningEffort: 'xhigh' })).toEqual({ reasoningEffort: 'xhigh' })
+  })
 })

@@ -1,10 +1,10 @@
 /**
- * 远程会话的运行时配置（助手 / 模型 / 权限）。
+ * 远程会话的运行时配置（助手 / 模型 / 权限 / 推理强度）。
  *
  * 数据来自目标端：
- *   GET  /v1/catalog                    目录（助手、渠道+模型、各 adapter 合法权限档）
+ *   GET  /v1/catalog                    目录（助手、渠道+模型、各 adapter 合法权限档、推理强度枚举）
  *   GET  /v1/sessions/:id/runtime       当前会话生效配置
- *   PATCH /v1/sessions/:id              写回 agentId / providerProfileId+modelId / permissionMode
+ *   PATCH /v1/sessions/:id              写回 agentId / providerProfileId+modelId / permissionMode / reasoningEffort
  *
  * 目录按设备缓存 5 分钟（目录变化很慢，而每切一次会话都拉一遍纯属浪费中继流量）；
  * 运行时按会话拉一次，写回后就地合并，不重拉。
@@ -43,6 +43,8 @@ export interface RemoteComposerConfigState {
   setAgent: (agentId: string) => Promise<void>
   setModel: (option: RemoteModelOption) => Promise<void>
   setPermission: (mode: string) => Promise<void>
+  /** 推理强度（minimal…max，档位以目录为准） */
+  setReasoning: (effort: string) => Promise<void>
   /** 手动重试（目录或运行时拉取失败后） */
   reload: () => Promise<void>
   /** 外部写入（例如新建会话后由宿主注入） */
@@ -165,6 +167,16 @@ export function useRemoteComposerConfig(
     [deviceId, patchSession],
   )
 
+  const setReasoning = useCallback(
+    async (effort: string) => {
+      // 档位合法性由目标端校验（不在目录里会 400），这里不做二次猜测
+      if (await patchSession({ reasoningEffort: effort })) {
+        rememberComposerPrefs(deviceId, { reasoningEffort: effort })
+      }
+    },
+    [deviceId, patchSession],
+  )
+
   const reload = useCallback(async () => {
     setReloadToken((value) => value + 1)
   }, [])
@@ -183,6 +195,7 @@ export function useRemoteComposerConfig(
     setAgent,
     setModel,
     setPermission,
+    setReasoning,
     reload,
     patchLocal,
   }

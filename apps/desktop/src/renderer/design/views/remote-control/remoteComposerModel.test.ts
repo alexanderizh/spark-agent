@@ -4,14 +4,17 @@ import {
   REMOTE_DEFAULT_AGENT_LABEL,
   REMOTE_DEFAULT_MODEL_LABEL,
   REMOTE_DEFAULT_PERMISSION_LABEL,
+  REMOTE_DEFAULT_REASONING_LABEL,
   agentLabel,
   applyCommandPick,
   buildAgentOptions,
   buildModelOptions,
   buildPermissionOptions,
+  buildReasoningOptions,
   filterRemoteCommands,
   modelLabel,
   permissionLabel,
+  reasoningLabel,
   resolveAdapter,
   slashTriggerAt,
 } from './remoteComposerModel'
@@ -123,6 +126,45 @@ describe('buildPermissionOptions', () => {
 
   it('目录里没有该 adapter 的档位时返回空（隐藏权限 chip）', () => {
     expect(buildPermissionOptions(catalog, 'spark', 'spark-default')).toEqual([])
+  })
+})
+
+describe('buildReasoningOptions', () => {
+  it('按目标端枚举生成选项，中文标签复用桌面端文案并标记当前档', () => {
+    const options = buildReasoningOptions(catalog, { reasoningEffort: 'high' })
+
+    expect(options.map((item) => item.id)).toEqual(['low', 'medium', 'high'])
+    expect(options.map((item) => item.label)).toEqual(['低', '平衡', '高'])
+    expect(options[0]?.description).toBe('减少推理开销，适合明确而简单的任务')
+    expect(options[2]?.selected).toBe(true)
+    expect(options[0]?.selected).toBe(false)
+  })
+
+  it('目录缺失或枚举为空时没有选项（调用方据此隐藏 chip）', () => {
+    expect(buildReasoningOptions(null, {})).toEqual([])
+    expect(buildReasoningOptions({ ...catalog, reasoningEfforts: [] }, {})).toEqual([])
+  })
+
+  it('目标端比桌面端新（未收录的档位）时按裸值显示，不吞掉', () => {
+    const options = buildReasoningOptions({ ...catalog, reasoningEfforts: ['ultra'] }, {})
+
+    expect(options).toHaveLength(1)
+    expect(options[0]).toMatchObject({ id: 'ultra', label: 'ultra' })
+  })
+})
+
+describe('reasoningLabel', () => {
+  it('已知档位走中文文案', () => {
+    expect(reasoningLabel({ reasoningEffort: 'xhigh' })).toBe('超高')
+  })
+
+  it('runtime 没给值 = 跟随电脑端默认', () => {
+    expect(reasoningLabel({})).toBe(REMOTE_DEFAULT_REASONING_LABEL)
+    expect(reasoningLabel(null)).toBe(REMOTE_DEFAULT_REASONING_LABEL)
+  })
+
+  it('未知档位按裸值显示', () => {
+    expect(reasoningLabel({ reasoningEffort: 'ultra' })).toBe('ultra')
   })
 })
 

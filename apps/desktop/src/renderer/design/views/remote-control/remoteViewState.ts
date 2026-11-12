@@ -22,13 +22,14 @@ export interface RemoteSessionRef {
   projectId: string | null
 }
 
-/** 输入区三件套的上次选择；新建会话时按目录校验后套用 */
+/** 输入区几件套的上次选择；新建会话时按目录校验后套用 */
 export interface RemoteComposerPrefs {
   agentId?: string
   providerProfileId?: string
   /** null 表示自动路由或渠道默认模型，必须和 providerProfileId 一起持久化 */
   modelId?: string | null
   permissionMode?: string
+  reasoningEffort?: string
 }
 
 export interface RemoteViewState {
@@ -105,6 +106,8 @@ function parseComposerPrefs(value: unknown): RemoteComposerPrefs | null {
   }
   const permissionMode = cleanString(raw.permissionMode)
   if (permissionMode != null) prefs.permissionMode = permissionMode
+  const reasoningEffort = cleanString(raw.reasoningEffort)
+  if (reasoningEffort != null) prefs.reasoningEffort = reasoningEffort
   return Object.keys(prefs).length > 0 ? prefs : null
 }
 

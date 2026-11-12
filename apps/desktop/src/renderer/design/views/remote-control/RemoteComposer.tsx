@@ -3,7 +3,7 @@
  *
  *   附件条
  *   textarea（@ 添加上下文 · / 调用技能与指令）
- *   工具条  + | 助手 | 权限 …………… 模型 | 语音 | 发送/停止
+ *   工具条  + | 助手 | 权限 | 推理 …………… 模型 | 语音 | 发送/停止
  *
  * 编排仍在 RemoteChatPane：本组件只负责输入交互、配置下拉与命令补全，
  * 所有写操作通过 props 回调出去（配置写回见 useRemoteComposerConfig）。
@@ -25,9 +25,11 @@ import {
   buildAgentOptions,
   buildModelOptions,
   buildPermissionOptions,
+  buildReasoningOptions,
   filterRemoteCommands,
   modelLabel,
   permissionLabel,
+  reasoningLabel,
   resolveAdapter,
   slashTriggerAt,
   type RemoteModelOption,
@@ -35,7 +37,7 @@ import {
 } from './remoteComposerModel'
 import type { RemoteComposerConfigState } from './useRemoteComposerConfig'
 
-type OpenMenu = 'agent' | 'model' | 'permission' | null
+type OpenMenu = 'agent' | 'model' | 'permission' | 'reasoning' | null
 
 export interface RemoteComposerProps {
   deviceId: string
@@ -115,10 +117,15 @@ export function RemoteComposer({
     () => buildPermissionOptions(catalog, adapter, config.runtime?.permissionMode),
     [adapter, catalog, config.runtime?.permissionMode],
   )
+  const reasoningOptions = useMemo(
+    () => buildReasoningOptions(catalog, config.runtime),
+    [catalog, config.runtime],
+  )
 
   const agentText = agentLabel(catalog, config.runtime)
   const modelText = modelLabel(catalog, config.runtime)
   const permission = permissionLabel(catalog, config.runtime)
+  const reasoningText = reasoningLabel(config.runtime)
 
   // 模型按渠道分组，避免几十个模型摊平成一坨
   const modelSections = useMemo<RemoteMenuSection[]>(() => {
@@ -259,6 +266,14 @@ export function RemoteComposer({
     [config],
   )
 
+  const pickReasoning = useCallback(
+    (option: RemoteSelectOption) => {
+      setOpenMenu(null)
+      void config.setReasoning(option.id)
+    },
+    [config],
+  )
+
   const configDisabled = config.saving || !config.catalogSupported
   return (
     <div className={`rc-composer${voiceInputActive ? ' is-voice' : ''}`}>
@@ -378,6 +393,33 @@ export function RemoteComposer({
                   sections={[{ options: permissionOptions }]}
                   busy={config.saving}
                   onPick={pickPermission}
+                  onClose={() => setOpenMenu(null)}
+                />
+              )}
+            </div>
+          )}
+
+          {reasoningOptions.length > 0 && (
+            <div className="rc-chip-wrap">
+              <button
+                type="button"
+                className="rc-chip"
+                onClick={() => setOpenMenu(openMenu === 'reasoning' ? null : 'reasoning')}
+                aria-haspopup="menu"
+                aria-expanded={openMenu === 'reasoning'}
+                disabled={configDisabled}
+                title={`推理强度：${reasoningText}`}
+              >
+                <Icons.Brain size={13} />
+                <span className="rc-chip-text">{reasoningText}</span>
+                <Icons.ChevronDown size={11} />
+              </button>
+              {openMenu === 'reasoning' && (
+                <RemoteComposerMenu
+                  ariaLabel="选择推理强度"
+                  sections={[{ options: reasoningOptions }]}
+                  busy={config.saving}
+                  onPick={pickReasoning}
                   onClose={() => setOpenMenu(null)}
                 />
               )}
