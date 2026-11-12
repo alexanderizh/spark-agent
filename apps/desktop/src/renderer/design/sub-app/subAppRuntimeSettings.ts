@@ -9,8 +9,6 @@
 import { DEFAULT_SUB_APP_RUNTIME_SECURITY } from './appRuntimeDocument'
 
 export interface SubAppRuntimeSettings {
-  allowNetworkAccess: boolean
-  allowUnsafeEval: boolean
   /** 单条源码长度上限；0 = 不限制。 */
   sourceLengthLimit: number
 }
@@ -19,8 +17,6 @@ export const SUB_APP_SETTINGS_STORAGE_KEY = 'spark-settings-sub-app'
 export const SUB_APP_SETTINGS_CATEGORY = 'sub-app'
 
 export const DEFAULT_SUB_APP_RUNTIME_SETTINGS: SubAppRuntimeSettings = {
-  allowNetworkAccess: DEFAULT_SUB_APP_RUNTIME_SECURITY.allowNetworkAccess,
-  allowUnsafeEval: DEFAULT_SUB_APP_RUNTIME_SECURITY.allowUnsafeEval,
   sourceLengthLimit: DEFAULT_SUB_APP_RUNTIME_SECURITY.sourceLengthLimit,
 }
 
@@ -32,14 +28,6 @@ export function normalizeSubAppRuntimeSettings(value: unknown): SubAppRuntimeSet
       ? Math.max(0, Math.floor(raw.sourceLengthLimit))
       : DEFAULT_SUB_APP_RUNTIME_SETTINGS.sourceLengthLimit
   return {
-    allowNetworkAccess:
-      typeof raw.allowNetworkAccess === 'boolean'
-        ? raw.allowNetworkAccess
-        : DEFAULT_SUB_APP_RUNTIME_SETTINGS.allowNetworkAccess,
-    allowUnsafeEval:
-      typeof raw.allowUnsafeEval === 'boolean'
-        ? raw.allowUnsafeEval
-        : DEFAULT_SUB_APP_RUNTIME_SETTINGS.allowUnsafeEval,
     sourceLengthLimit: limit,
   }
 }

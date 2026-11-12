@@ -3,7 +3,7 @@
  *
  * 目标端推过来的是纯文本事件，没有桌面端那套 UIBlock（html_block / 图片块），
  * 所以两件事要在渲染端自己判：
- *   1. 一条回答整体就是一个 HTML 文档（agent 直接把页面写进对话）→ 走沙箱预览；
+ *   1. 一条回答整体就是一个 HTML 文档（agent 直接把页面写进对话）→ 走隔离页面预览；
  *   2. 产物文件的扩展名 → 决定卡片图标与「能否内联预览」。
  */
 
@@ -33,11 +33,44 @@ export function extractHtmlDocument(text: string): string | null {
   return trimmed.length <= MAX_INLINE_HTML_CHARS ? trimmed : null
 }
 
-export type RemoteFileKind = 'html' | 'image' | 'markdown' | 'text' | 'code' | 'other'
+export type RemoteFileKind =
+  | 'html'
+  | 'image'
+  | 'markdown'
+  | 'text'
+  | 'code'
+  /** 二进制文档（Office / PDF）：取回本机后交给桌面端文档预览器渲染 */
+  | 'document'
+  | 'other'
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'])
 const MARKDOWN_EXTENSIONS = new Set(['.md', '.markdown'])
 const TEXT_EXTENSIONS = new Set(['.txt', '.log', '.csv', '.json', '.yml', '.yaml'])
+/**
+ * 与桌面端 FilePreviewPanel 的 FLYFISH_VIEWER_EXTENSIONS 对齐：
+ * 只有这些后缀才值得开抽屉（不在表里的话预览器只会显示「不支持」）。
+ */
+const DOCUMENT_EXTENSIONS = new Set([
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.docm',
+  '.dotx',
+  '.rtf',
+  '.odt',
+  '.odp',
+  '.ofd',
+  '.xls',
+  '.xlsx',
+  '.xlsm',
+  '.xlsb',
+  '.ods',
+  '.numbers',
+  '.ppt',
+  '.pptx',
+  '.pptm',
+  '.ppsx',
+])
 const CODE_EXTENSIONS = new Set([
   '.ts',
   '.tsx',
@@ -73,15 +106,27 @@ export function classifyRemoteFile(filePath: string): RemoteFileKind {
   if (MARKDOWN_EXTENSIONS.has(ext)) return 'markdown'
   if (TEXT_EXTENSIONS.has(ext)) return 'text'
   if (CODE_EXTENSIONS.has(ext)) return 'code'
+  if (DOCUMENT_EXTENSIONS.has(ext)) return 'document'
   return 'other'
 }
 
-/** 能否在对话里就地预览（图片走 img，其余走文本预览） */
-export function canPreviewRemoteFile(filePath: string): boolean {
+/** 能在对话里就地展开（图片 img、其余文本预览） */
+export function canInlinePreviewRemoteFile(filePath: string): boolean {
   const kind = classifyRemoteFile(filePath)
   return (
     kind === 'html' || kind === 'image' || kind === 'markdown' || kind === 'text' || kind === 'code'
   )
+}
+
+/** 要不要开右侧文档抽屉（Office / PDF 这类二进制文档） */
+export function usesDocumentPreview(filePath: string): boolean {
+  return classifyRemoteFile(filePath) === 'document'
+}
+
+/** 任何形式的预览入口（就地或抽屉）；'other' 只能「打开」 */
+export function canPreviewRemoteFile(filePath: string): boolean {
+  const kind = classifyRemoteFile(filePath)
+  return kind !== 'other'
 }
 
 /** 卡片标题已写「产物」，这里只补数量，避免「产物 · 3 个产物」 */

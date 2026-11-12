@@ -13,11 +13,24 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { MobileBridgeCatalog, MobileBridgeSessionRuntime } from '@spark/protocol'
 import type { RemoteModelOption } from './remoteComposerModel'
+import { rememberComposerPrefs } from './remoteViewState'
 import { useRemoteCall, type RemoteCallError } from './useRemoteBridge'
 
 const CATALOG_TTL_MS = 5 * 60_000
 
 const catalogCache = new Map<string, { at: number; catalog: MobileBridgeCatalog }>()
+
+/**
+ * 同步取「这台设备最近一次拉到的目录」（未过期才算）。
+ *
+ * 新建会话要在创建后立刻 PATCH 上次记下的助手/模型/权限，那时手上没有目录：
+ * 这里复用同一份缓存，避免为一个下拉框再拉一遍 /v1/catalog。
+ */
+export function readCachedCatalog(deviceId: string): MobileBridgeCatalog | null {
+  const cached = catalogCache.get(deviceId)
+  if (cached == null) return null
+  return Date.now() - cached.at < CATALOG_TTL_MS ? cached.catalog : null
+}
 
 export interface RemoteComposerConfigState {
   catalog: MobileBridgeCatalog | null
@@ -109,15 +122,17 @@ export function useRemoteComposerConfig(
   }, [call, deviceId, reloadToken, sessionId])
 
   const patchSession = useCallback(
-    async (patch: Record<string, unknown>) => {
-      if (!sessionId) return
+    async (patch: Record<string, unknown>): Promise<boolean> => {
+      if (!sessionId) return false
       setSaving(true)
       try {
         await call(deviceId, 'PATCH', `/v1/sessions/${encodeURIComponent(sessionId)}`, patch)
         setRuntime((previous) => ({ ...(previous ?? {}), ...patch }))
         setError(null)
+        return true
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause))
+        return false
       } finally {
         setSaving(false)
       }
@@ -128,23 +143,26 @@ export function useRemoteComposerConfig(
   const setAgent = useCallback(
     async (agentId: string) => {
       // 只写 agentId：adapter 与权限默认值由目标端按助手自身配置回退
-      await patchSession({ agentId })
+      if (await patchSession({ agentId })) rememberComposerPrefs(deviceId, { agentId })
     },
-    [patchSession],
+    [deviceId, patchSession],
   )
 
   const setModel = useCallback(
     async (option: RemoteModelOption) => {
-      await patchSession({ providerProfileId: option.providerProfileId, modelId: option.modelId })
+      const patch = { providerProfileId: option.providerProfileId, modelId: option.modelId }
+      if (await patchSession(patch)) rememberComposerPrefs(deviceId, patch)
     },
-    [patchSession],
+    [deviceId, patchSession],
   )
 
   const setPermission = useCallback(
     async (mode: string) => {
-      await patchSession({ permissionMode: mode })
+      if (await patchSession({ permissionMode: mode })) {
+        rememberComposerPrefs(deviceId, { permissionMode: mode })
+      }
     },
-    [patchSession],
+    [deviceId, patchSession],
   )
 
   const reload = useCallback(async () => {

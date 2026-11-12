@@ -29,7 +29,10 @@ import {
   UNASSIGNED_PROJECT_ID,
   type RemoteProjectRow,
 } from './remoteSessionStore'
-import { useRemoteCall } from './useRemoteBridge'
+import { useRemoteCall, type RemoteCall } from './useRemoteBridge'
+import { resolveComposerPrefsPatch } from './remoteComposerPrefs'
+import { readCachedCatalog } from './useRemoteComposerConfig'
+import { forgetLastSession, forgetProjectSessions, readComposerPrefs } from './remoteViewState'
 
 /** 会话标记（顺序与桌面端侧栏右键菜单一致） */
 export const REMOTE_SESSION_LABELS: ReadonlyArray<{ key: SessionLabelKey; label: string }> = [
@@ -55,6 +58,27 @@ interface UpdateProjectResponse {
 
 interface CreateSessionResponse {
   session?: { id: string }
+}
+
+/**
+ * 新建会话后套用「上次用的助手 / 模型 / 权限」。
+ *
+ * 目标端 POST /v1/sessions 只接受 title / projectId，所以分两步：先建、再 PATCH。
+ * 记忆里的旧值可能已经失效（渠道被删、换了 adapter），先按目录收敛；
+ * 失败一律静默——新会话已经建好，不该因为套用偏好把用户拦在报错里。
+ */
+async function applyRememberedPrefs(
+  deviceId: string,
+  call: RemoteCall,
+  sessionId: string,
+): Promise<void> {
+  const patch = resolveComposerPrefsPatch(readComposerPrefs(deviceId), readCachedCatalog(deviceId))
+  if (Object.keys(patch).length === 0) return
+  try {
+    await call(deviceId, 'PATCH', `/v1/sessions/${encodeURIComponent(sessionId)}`, patch)
+  } catch {
+    /* 目标端拒绝：退回它的默认配置，下一次在输入区重选会重新记忆 */
+  }
 }
 
 export interface RemoteSessionActions {
@@ -224,6 +248,8 @@ export function useRemoteSessionActions(deviceId: string): RemoteSessionActions 
       try {
         await call(deviceId, 'DELETE', `/v1/sessions/${encodeURIComponent(session.id)}`)
         removeSessionFromStore(deviceId, session)
+        // 记住的「上次会话」如果正是它，下次进来就会 404，一起清掉
+        forgetLastSession(deviceId, session.id)
         toast?.success('已删除')
         return true
       } catch (cause) {
@@ -259,6 +285,7 @@ export function useRemoteSessionActions(deviceId: string): RemoteSessionActions 
           sessionLabel: null,
           labeledAt: null,
         })
+        await applyRememberedPrefs(deviceId, call, created.id)
         toast?.success('已新建会话')
         return created.id
       } catch (cause) {
@@ -336,6 +363,7 @@ export function useRemoteSessionActions(deviceId: string): RemoteSessionActions 
       try {
         await call(deviceId, 'DELETE', `/v1/projects/${encodeURIComponent(row.id)}`)
         removeProjectFromStore(deviceId, row.id)
+        forgetProjectSessions(deviceId, row.id)
         toast?.success('已删除项目')
         return true
       } catch (cause) {

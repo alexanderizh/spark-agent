@@ -4,7 +4,6 @@ import React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { HTML_FRAME_SANDBOX } from '@spark/shared'
 import { FilePreviewPanel } from '../design/components/FilePreviewPanel'
 import { getPreviewFileType } from '../design/components/FileDisplay'
 import { ToastProvider } from '../design/components/Toast'
@@ -81,7 +80,7 @@ describe('FilePreviewPanel', () => {
     expect(markdownBody?.getAttribute('data-image-base-path')).toBe('/tmp')
   })
 
-  it('previews html files in a sandboxed iframe', async () => {
+  it('previews html files in an isolated browser-capability iframe', async () => {
     invoke = vi.fn(async (channel: string) => {
       if (channel === 'file:read') return { content: '<h1>hello</h1>' }
       if (channel === 'file:open') return { opened: true }
@@ -105,16 +104,15 @@ describe('FilePreviewPanel', () => {
     await vi.waitFor(() => {
       const iframe = container.querySelector('iframe.file-preview-html')
       expect(iframe).not.toBeNull()
-      // 与聊天 HTML 渲染块同一沙箱令牌：allow-scripts 等全开，
-      // 隔离边界由 capability-asset 跨源 origin 提供（无 allow-top-navigation）。
-      expect(iframe?.getAttribute('sandbox')).toBe(HTML_FRAME_SANDBOX)
+      // 与聊天 HTML 渲染块共用独立 capability-asset origin，不施加 iframe sandbox。
+      expect(iframe?.hasAttribute('sandbox')).toBe(false)
       // 文档经主进程登记的 capability-asset 独立容器加载（可跑脚本、无 CSP 继承），
       // 不再使用被 renderer CSP 拦截内联内容的 srcdoc。
-      expect(iframe?.getAttribute('src') ?? '').toContain('capability-asset://html-render/')
+      expect(iframe?.getAttribute('src') ?? '').toContain('capability-asset://hr-')
       // token 以目录段形式加载：文档内相对引用解析到 <token>/<相对路径>，
       // 由主进程按登记的 assetRoot（文件所在目录）从磁盘解析（多文件 HTML 项目）。
       expect(iframe?.getAttribute('src') ?? '').toMatch(
-        /^capability-asset:\/\/html-render\/[^/]+\/\?v=/,
+        /^capability-asset:\/\/hr-[a-f0-9]+(?:\.[a-f0-9]+)*\.html-render\/[^/]+\/\?v=/,
       )
       expect(iframe?.getAttribute('srcdoc')).toBeNull()
     })

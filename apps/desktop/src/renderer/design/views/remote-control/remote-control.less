@@ -424,6 +424,70 @@
   }
 }
 
+/* 备注名入口：卡片本身是 button，铅笔按钮只能放在外层，hover/focus 才出现 */
+.rc-device-card-wrap {
+  position: relative;
+
+  .rc-device-card {
+    box-sizing: border-box;
+    width: 100%;
+    /* 给右上角铅笔留位，名称不会被盖住 */
+    padding-right: 34px;
+  }
+
+  &:hover .rc-device-rename,
+  &:focus-within .rc-device-rename {
+    opacity: 1;
+  }
+}
+
+.rc-device-rename {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs, 4px);
+  background: transparent;
+  color: var(--text-muted, #8d8a86);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &:hover:not(:disabled) {
+    color: var(--text, #23231f);
+    background: var(--bg-sunken, #f2f2f2);
+  }
+
+  &:focus-visible {
+    opacity: 1;
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+/* 有备注名时把设备自报名降级成副标题，避免「改完忘了改的是哪台」 */
+.rc-device-real {
+  font-size: 11px;
+  color: var(--text-faint, #9b9489);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-device-menu-real {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-faint, #9b9489);
+}
+
 /* ─── 两栏工作区 ───────────────────────────────────────────────────────── */
 
 .rc-workspace {
@@ -473,6 +537,48 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rc-pane-device-real {
+  flex: 0 1 auto;
+  max-width: 40%;
+  font-size: 11px;
+  color: var(--text-faint, #9b9489);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 会话区设备行的改名入口：hover 才露出，平时不抢注意力 */
+.rc-pane-device-rename {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs, 4px);
+  background: transparent;
+  color: var(--text-faint, #9b9489);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  .rc-pane-device:hover &,
+  &:focus-visible {
+    opacity: 1;
+  }
+
+  &:hover:not(:disabled) {
+    color: var(--text, #23231f);
+    background: var(--bg-sunken, #f2f2f2);
+  }
+
+  &:disabled {
+    cursor: default;
+  }
 }
 
 .rc-pane-head-actions {
@@ -618,7 +724,8 @@
   display: inline-flex;
   flex: none;
   color: var(--text-faint, #9b9489);
-}.rc-project-icon {
+}
+.rc-project-icon {
   display: inline-flex;
   flex: none;
   color: var(--text-muted, #8d8a86);
@@ -1128,6 +1235,11 @@
   &.state-error {
     color: var(--danger, #ef4444);
   }
+
+  /* 会话已结束但目标端没记到结果：灰掉，不假装还在跑 */
+  &.is-stale {
+    color: var(--text-faint, #9b9489);
+  }
 }
 
 .rc-step-chevron {
@@ -1236,6 +1348,22 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* 缩略图本身就是「查看大图」的按钮：去掉默认外观，只留可点的手型 */
+.rc-attach-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary, #3b82f6);
+    outline-offset: -2px;
+  }
 }
 
 .rc-attach-image-placeholder {
@@ -1908,4 +2036,148 @@
   cursor: default;
 }
 
+/* ─── 远程文档预览抽屉（Office / PDF） ────────────────────────────────
+ * 目标电脑上的文档取回本机后，用桌面端同一套 FilePreviewPanel 渲染。
+ * 抽屉挂在 body 上（RemoteDocPreview 走 createPortal），否则会被消息滚动区裁掉。
+ */
 
+.rc-doc-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  justify-content: flex-end;
+  -webkit-app-region: no-drag;
+}
+
+.rc-doc-scrim {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  /* 遮罩用固定墨色而不是 --text-strong：后者在深色主题是浅色，
+     混出来会变成"提亮"而不是压暗 */
+  background: rgba(var(--scrim-rgb, 17, 16, 14), 0.32);
+  cursor: default;
+}
+
+.rc-doc-drawer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(880px, 68vw);
+  min-width: 420px;
+  height: 100%;
+  border-left: 1px solid var(--border-strong, #d7d2c9);
+  background: var(--panel, #fff);
+  box-shadow: var(--shadow-lg, 0 12px 30px rgba(17, 16, 14, 0.16));
+  animation: rc-doc-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes rc-doc-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-doc-drawer {
+    animation: none;
+  }
+}
+
+.rc-doc-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--divider, #efede8);
+  color: var(--text-muted, #8d8a86);
+}
+
+.rc-doc-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--font-base, 13px);
+  color: var(--text, #23231f);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-doc-error {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--font-2xs, 11px);
+  color: var(--danger, #ef4444);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-doc-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.rc-doc-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  color: var(--text-muted, #8d8a86);
+  cursor: pointer;
+  transition:
+    background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &:hover {
+    color: var(--text, #23231f);
+    background: var(--bg-sunken, #f2f2f2);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.rc-doc-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg, #fafafa);
+
+  /* 内嵌的 FilePreviewPanel 自己撑满，抽屉只当容器 */
+  > * {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+.rc-doc-hint {
+  padding: 20px 16px;
+  font-size: var(--font-xs, 12px);
+  color: var(--text-muted, #8d8a86);
+  text-align: center;
+
+  &.is-error {
+    color: var(--danger, #ef4444);
+  }
+}

@@ -33,7 +33,7 @@ const SUB_APP_NAVIGABLE_VIEWS: readonly ViewId[] = [
 ]
 
 /**
- * 子应用沙箱文档的加载地址协议：
+ * 子应用隔离运行文档的加载地址协议：
  * 文档由 renderer 合成后登记到主进程（`sub-app:runtime:put-doc`），再以
  * capability-asset://subapp-runtime-<appId>-<format>/<token> 导航。origin 按
  * appId 和 V1/V2 格式隔离，子应用可使用正常的网站存储语义。
@@ -77,11 +77,7 @@ const SUB_APP_READY_TIMEOUT_MS = 15_000
 const SUB_APP_SETTINGS_UPDATED_KEY = 'sub-app'
 
 function sameRuntimeSettings(a: SubAppRuntimeSettings, b: SubAppRuntimeSettings): boolean {
-  return (
-    a.allowNetworkAccess === b.allowNetworkAccess &&
-    a.allowUnsafeEval === b.allowUnsafeEval &&
-    a.sourceLengthLimit === b.sourceLengthLimit
-  )
+  return a.sourceLengthLimit === b.sourceLengthLimit
 }
 
 export interface SubAppRunnerProps {
@@ -102,7 +98,7 @@ export interface SubAppRunnerState {
   status: SubAppRunnerStatus
   errorMessage: string | null
   reload: () => void
-  /** 沙箱 iframe 导航地址；文档登记完成后置位（见 subAppRuntimeDocUrl）。 */
+  /** 运行 iframe 导航地址；文档登记完成后置位（见 subAppRuntimeDocUrl）。 */
   frameSrc: string | null
   instanceId: string
   frameRef: React.RefObject<HTMLIFrameElement | null>
@@ -111,9 +107,8 @@ export interface SubAppRunnerState {
 /**
  * 功能型子应用运行时核心（P1：content surface）。
  *
- * - iframe 按 appId / V1-V2 使用独立 origin；sandbox 仅开放脚本、same-origin、
- *   表单和受限弹窗，源码经
- *   buildAppRuntimeDocument 注入 CSP 与 bootstrap SDK；
+ * - iframe 按 appId / V1-V2 使用独立 origin，不附加 sandbox 或 CSP；运行文档由
+ *   buildAppRuntimeDocument 注入 bootstrap SDK；
  * - Bridge 宿主按消息校验 → 权限 → 路由顺序处理，appId 强制取宿主裁决；
  * - 主题热切换通过 postMessage 推送 token，不重载 iframe（文档内
  *   color-scheme 保持初次加载值，视觉一致性由 token 驱动）；
@@ -237,7 +232,7 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
     }
   }, [])
 
-  const sandboxDocument = React.useMemo(
+  const runtimeDocument = React.useMemo(
     () =>
       buildAppRuntimeDocument({
         source: isV2 ? (packageRuntime?.entrySource ?? '') : source,
@@ -284,7 +279,7 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
     docVersionRef.current += 1
     const version = docVersionRef.current
     void subAppClient
-      .putRuntimeDoc({ appId, format: packageFormat, token, document: sandboxDocument })
+      .putRuntimeDoc({ appId, format: packageFormat, token, document: runtimeDocument })
       .then(() => {
         if (!cancelled) setFrameSrc(subAppRuntimeDocUrl(appId, packageFormat, token, version))
       })
@@ -299,7 +294,7 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
       cancelled = true
       void subAppClient.releaseRuntimeDoc({ token }).catch(() => {})
     }
-  }, [sandboxDocument, instanceId, isV2, packageRuntime])
+  }, [runtimeDocument, instanceId, isV2, packageRuntime])
 
   React.useEffect(() => {
     setStatus('loading')

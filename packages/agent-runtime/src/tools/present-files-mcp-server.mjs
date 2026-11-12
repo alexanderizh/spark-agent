@@ -118,7 +118,7 @@ async function validateChanges(input) {
 const presentFilesTool = {
   name: 'present_files',
   description:
-    'Select the user-facing files that should appear as file cards for this turn. Call immediately before the final response only when there are deliverable files.',
+    'Select the user-facing files that should appear as file cards for this turn. Supports all file types, including configuration files and archives. Call immediately before the final response only when there are deliverable files. Check files, rejected, and truncated in the result before claiming delivery; rejected or truncated files were not delivered.',
   inputSchema: {
     type: 'object',
     properties: {

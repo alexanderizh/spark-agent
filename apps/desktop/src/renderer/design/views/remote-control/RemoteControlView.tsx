@@ -10,9 +10,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RemoteAgentDeviceSummary } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useApp } from '../../AppContext'
+import { useToast } from '../../components/Toast'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import { RemoteChatPane } from './RemoteChatPane'
 import { RemoteSessionPane } from './RemoteSessionPane'
+import { deviceLabel, deviceRealName, deviceTooltip } from './remoteDevices'
+import { findSessionProjectId } from './remoteSessionStore'
+import {
+  readLastSession,
+  readRemoteViewState,
+  rememberLastDevice,
+  rememberLastSession,
+} from './remoteViewState'
 import { useRemoteRelay } from './useRemoteBridge'
 import { useRemoteSessionTitle } from './useRemoteSessionTree'
 import './remote-control.less'
@@ -31,41 +40,79 @@ function formatSeenAt(value: string | null): string {
 function DeviceCard({
   device,
   onSelect,
+  onRename,
+  renaming,
 }: {
   device: RemoteAgentDeviceSummary
   onSelect: (deviceId: string) => void
+  onRename: (device: RemoteAgentDeviceSummary) => void
+  renaming: boolean
 }) {
+  const label = deviceLabel(device)
+  const realName = deviceRealName(device)
   return (
-    <button
-      type="button"
-      className={`rc-device-card${device.online ? '' : ' is-offline'}`}
-      onClick={() => device.online && onSelect(device.deviceId)}
-      disabled={!device.online}
-    >
-      <span className="rc-device-icon">
-        <Icons.RemoteMonitor size={18} />
-      </span>
-      <span className="rc-device-body">
-        <span className="rc-device-name">{device.name || '未命名设备'}</span>
-        <span className="rc-device-meta">
-          {device.online
-            ? `在线 · ${device.version ?? '版本未知'}`
-            : `离线 · ${formatSeenAt(device.lastSeenAt)}`}
+    <div className={`rc-device-card-wrap${device.online ? '' : ' is-offline'}`}>
+      <button
+        type="button"
+        className={`rc-device-card${device.online ? '' : ' is-offline'}`}
+        onClick={() => device.online && onSelect(device.deviceId)}
+        disabled={!device.online}
+      >
+        <span className="rc-device-icon">
+          <Icons.RemoteMonitor size={18} />
         </span>
-      </span>
-      <span className={`rc-device-status${device.online ? ' online' : ''}`} />
-    </button>
+        <span className="rc-device-body">
+          <span className="rc-device-name" title={deviceTooltip(device)}>
+            {label}
+          </span>
+          {realName != null && (
+            <span className="rc-device-real" title={`设备自报名：${realName}`}>
+              原名 {realName}
+            </span>
+          )}
+          <span className="rc-device-meta">
+            {device.online
+              ? `在线 · ${device.version ?? '版本未知'}`
+              : `离线 · ${formatSeenAt(device.lastSeenAt)}`}
+          </span>
+        </span>
+        <span className={`rc-device-status${device.online ? ' online' : ''}`} />
+      </button>
+      <button
+        type="button"
+        className="rc-device-rename"
+        onClick={() => onRename(device)}
+        disabled={renaming}
+        title="修改备注名"
+        aria-label={`修改「${label}」的备注名`}
+      >
+        {renaming ? <Icons.Spinner size={11} className="spin" /> : <Icons.Pencil size={11} />}
+      </button>
+    </div>
   )
 }
 
 export function RemoteControlView() {
-  const { t } = useApp()
+  const { t, requestPrompt } = useApp()
+  const { toast } = useToast()
   const relay = useRemoteRelay()
-  const [pickedDeviceId, setPickedDeviceId] = useState<string | null>(null)
+  /**
+   * 上次停留的设备与会话从本地状态恢复：远程视图是 lazy 挂载的，切走再回来组件
+   * 就是新的，只靠模块级缓存能救列表、救不了「选中的是哪台机器哪个会话」。
+   * 首次渲染就带出来，避免「先闪一下设备列表再跳进会话」。
+   */
+  const [restored] = useState(() => readRemoteViewState())
+  const [pickedDeviceId, setPickedDeviceId] = useState<string | null>(restored.lastDeviceId)
   /** 会话选择与设备绑定存储：设备切换后旧会话不再生效，避免串到别的电脑上 */
-  const [selection, setSelection] = useState<{ deviceId: string; sessionId: string } | null>(null)
+  const [selection, setSelection] = useState<{ deviceId: string; sessionId: string } | null>(() => {
+    const deviceId = restored.lastDeviceId
+    const ref = deviceId != null ? restored.lastSessionByDevice[deviceId] : null
+    return deviceId != null && ref != null ? { deviceId, sessionId: ref.sessionId } : null
+  })
   /** 顶部设备名下拉：只有多台设备时才当切换入口用 */
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false)
+  /** 正在保存备注名的设备：按钮显示 spinner，避免连点写出多条 */
+  const [aliasPendingId, setAliasPendingId] = useState<string | null>(null)
   const deviceMenuRef = useRef<HTMLDivElement | null>(null)
 
   const onlineDevices = useMemo(
@@ -97,7 +144,10 @@ export function RemoteControlView() {
 
   const handleSelectDevice = useCallback((next: string) => {
     setPickedDeviceId(next)
-    setSelection(null)
+    rememberLastDevice(next)
+    // 切到这台机器时把它上次的会话一起带回来，不用重新在项目树里找一遍
+    const remembered = readLastSession(next)
+    setSelection(remembered != null ? { deviceId: next, sessionId: remembered.sessionId } : null)
   }, [])
 
   const handleSwitchDevice = useCallback(() => {
@@ -109,11 +159,59 @@ export function RemoteControlView() {
     (next: string) => {
       if (activeDeviceId == null) return
       setSelection({ deviceId: activeDeviceId, sessionId: next })
+      // 单设备场景的 activeDeviceId 是派生值，没有经过设备卡片点击；选会话时也要落盘设备。
+      rememberLastDevice(activeDeviceId)
+      rememberLastSession(activeDeviceId, {
+        sessionId: next,
+        projectId: findSessionProjectId(activeDeviceId, next),
+      })
     },
     [activeDeviceId],
   )
 
-  const handleClearSession = useCallback(() => setSelection(null), [])
+  const handleClearSession = useCallback(() => {
+    setSelection(null)
+    if (activeDeviceId != null) rememberLastSession(activeDeviceId, null)
+  }, [activeDeviceId])
+
+  /** 记住的会话已经被删 / 换机器打了不开了：回落列表，别让用户对着报错干等 */
+  const handleSessionInvalid = useCallback(() => {
+    setSelection(null)
+    if (activeDeviceId != null) {
+      rememberLastSession(activeDeviceId, null)
+      toast.info('这个会话已经不存在了，已回到会话列表')
+    }
+  }, [activeDeviceId, toast])
+
+  /**
+   * 改备注名：只写本机设置（不上报目标机）。
+   * 留空 = 清除备注，回落设备自报名；这样两台同名机器可以随时换回原样。
+   */
+  const handleRenameDevice = useCallback(
+    async (device: RemoteAgentDeviceSummary) => {
+      if (aliasPendingId != null) return
+      const realName = device.name?.trim() || '未命名设备'
+      const next = await requestPrompt({
+        title: '修改设备备注名',
+        description: `这台电脑的自报名是「${realName}」。备注名只保存在本机，不会改到对方电脑上；留空即恢复原名。`,
+        value: device.alias ?? '',
+        placeholder: '例如：公司台式机、家里的 iMac、渲染机',
+        confirmText: '保存',
+      })
+      if (next == null) return
+      const alias = next.trim()
+      setAliasPendingId(device.deviceId)
+      try {
+        await relay.setDeviceAlias(device.deviceId, alias.length > 0 ? alias : null)
+        toast.success(alias.length > 0 ? `备注名已保存：${alias}` : '已恢复设备原名')
+      } catch (cause) {
+        toast.error(cause instanceof Error ? cause.message : '备注名保存失败')
+      } finally {
+        setAliasPendingId(null)
+      }
+    },
+    [aliasPendingId, relay, requestPrompt, toast],
+  )
 
   /** 至少两台「在线」设备才给切换入口：只多一台离线机器时没什么可切的 */
   const canSwitchDevice = onlineDevices.length > 1
@@ -188,7 +286,13 @@ export function RemoteControlView() {
           <div className="rc-section-title">选择一台电脑</div>
           <div className="rc-device-grid">
             {relay.devices.map((device) => (
-              <DeviceCard key={device.deviceId} device={device} onSelect={handleSelectDevice} />
+              <DeviceCard
+                key={device.deviceId}
+                device={device}
+                onSelect={handleSelectDevice}
+                onRename={(target) => void handleRenameDevice(target)}
+                renaming={aliasPendingId === device.deviceId}
+              />
             ))}
           </div>
         </div>
@@ -199,18 +303,22 @@ export function RemoteControlView() {
       <div className="rc-workspace">
         <RemoteSessionPane
           deviceId={activeDeviceId}
-          deviceName={activeDevice.name || '远程电脑'}
+          deviceName={deviceLabel(activeDevice)}
+          deviceRealName={deviceRealName(activeDevice)}
           selectedSessionId={activeSessionId}
           onSelectSession={handleSelectSession}
           onSwitchDevice={handleSwitchDevice}
           canSwitchDevice={onlineDevices.length > 1}
           onClearSession={handleClearSession}
+          onRenameDevice={() => void handleRenameDevice(activeDevice)}
+          renamingDevice={aliasPendingId === activeDevice.deviceId}
         />
         <RemoteChatPane
           deviceId={activeDeviceId}
           sessionId={activeSessionId}
           sessionTitle={sessionTitle}
-          deviceName={activeDevice.name || '远程电脑'}
+          deviceName={deviceLabel(activeDevice)}
+          onSessionInvalid={handleSessionInvalid}
         />
       </div>
     )
@@ -237,14 +345,14 @@ export function RemoteControlView() {
                   onClick={() => setDeviceMenuOpen((open) => !open)}
                   aria-haspopup="menu"
                   aria-expanded={deviceMenuOpen}
-                  title="切换电脑"
+                  title={`切换电脑（当前：${deviceTooltip(activeDevice)}）`}
                 >
-                  <span className="rc-head-device-name">{activeDevice.name}</span>
+                  <span className="rc-head-device-name">{deviceLabel(activeDevice)}</span>
                   <Icons.ChevronDown size={11} />
                 </button>
               ) : (
-                <span className="rc-head-device" title={activeDevice.name}>
-                  {activeDevice.name}
+                <span className="rc-head-device" title={deviceTooltip(activeDevice)}>
+                  {deviceLabel(activeDevice)}
                 </span>
               )}
               {deviceMenuOpen && (
@@ -268,7 +376,12 @@ export function RemoteControlView() {
                         }}
                       >
                         <span className={`rc-device-menu-dot${device.online ? ' online' : ''}`} />
-                        <span className="rc-device-menu-name">{device.name || '未命名设备'}</span>
+                        <span className="rc-device-menu-name" title={deviceTooltip(device)}>
+                          {deviceLabel(device)}
+                          {deviceRealName(device) != null && (
+                            <span className="rc-device-menu-real">{deviceRealName(device)}</span>
+                          )}
+                        </span>
                         {device.online ? (
                           current && <Icons.Check size={12} />
                         ) : (

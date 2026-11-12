@@ -20,6 +20,7 @@ import {
   subscribeRemoteSessionStore,
   updateRemoteSessionStore,
 } from './remoteSessionStore'
+import { readExpandedProjects, rememberExpandedProjects } from './remoteViewState'
 
 const SESSION_PAGE_LIMIT = 60
 const SEARCH_PAGE_LIMIT = 200
@@ -142,6 +143,16 @@ export function useRemoteSessionTree(deviceId: string) {
     let cancelled = false
     const run = async () => {
       try {
+        const initial = getRemoteSessionStore(deviceId)
+        // 进程内缓存是空的（刚启动）→ 用上次的展开状态铺一遍，用户回来看到的树还是原样
+        if (!initial.projectsLoaded && Object.keys(initial.expanded).length === 0) {
+          const remembered = readExpandedProjects(deviceId)
+          if (remembered.length > 0) {
+            updateRemoteSessionStore(deviceId, (next) => {
+              for (const projectId of remembered) next.expanded[projectId] = true
+            })
+          }
+        }
         await loadProjects()
         const snapshot = getRemoteSessionStore(deviceId)
         // 没有项目但有会话（全新安装/只用未归属）时，兜底把未归属拉出来
@@ -206,6 +217,7 @@ export function useRemoteSessionTree(deviceId: string) {
       updateRemoteSessionStore(deviceId, (next) => {
         next.expanded[projectId] = open
       })
+      rememberExpandedProjects(deviceId, getRemoteSessionStore(deviceId).expanded)
       if (open) {
         loadSessions(projectId).catch((cause: unknown) => setError(toMessage(cause)))
       }
@@ -220,6 +232,7 @@ export function useRemoteSessionTree(deviceId: string) {
       updateRemoteSessionStore(deviceId, (next) => {
         next.expanded[projectId] = true
       })
+      rememberExpandedProjects(deviceId, getRemoteSessionStore(deviceId).expanded)
       loadSessions(projectId).catch((cause: unknown) => setError(toMessage(cause)))
     },
     [deviceId, loadSessions],

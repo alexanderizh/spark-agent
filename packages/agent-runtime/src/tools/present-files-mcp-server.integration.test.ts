@@ -101,6 +101,37 @@ describe('present-files MCP server', () => {
     expect(payload.rejected).toHaveLength(requestedFiles.length - 2)
   })
 
+  it('accepts config files and archives while reporting rejected and truncated deliveries', async () => {
+    const names = ['clash.yaml', 'clash.yml', 'settings.json', 'bundle.zip', 'LICENSE']
+    for (const name of names) await writeFile(path.join(workspace, 'output', name), 'fixture')
+    const response = await rpc.call('tools/call', {
+      name: 'present_files',
+      arguments: {
+        files: [
+          ...names.map((name) => ({ path: `output/${name}`, title: name })),
+          { path: 'output/missing.yaml' },
+        ],
+      },
+    })
+    const payload = JSON.parse(response.content[0].text)
+    expect(payload.files).toEqual(
+      await Promise.all(
+        names.map(async (name) => ({
+          path: await realpath(path.join(workspace, 'output', name)),
+          title: name,
+        })),
+      ),
+    )
+    expect(payload.rejected).toEqual([expect.objectContaining({ path: 'output/missing.yaml' })])
+    expect(payload.truncated).toBe(false)
+
+    const batch = await rpc.call('tools/call', {
+      name: 'present_files',
+      arguments: { files: Array.from({ length: 21 }, () => ({ path: 'output/clash.yaml' })) },
+    })
+    expect(JSON.parse(batch.content[0].text)).toMatchObject({ truncated: true })
+  })
+
   it('reports only turn-owned workspace changes and accepts deleted paths', async () => {
     const response = await rpc.call('tools/call', {
       name: 'report_file_changes',

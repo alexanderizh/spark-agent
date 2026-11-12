@@ -5812,11 +5812,11 @@ export interface HtmlViewerOpenResponse {
 }
 
 /**
- * 内容区 HTML 渲染块的沙箱文档内存登记协议。
+ * HTML 内容的隔离运行文档内存登记协议。
  *
  * srcdoc 文档会继承 renderer CSP（script-src 'self' capability-asset:）
  * 导致渲染块的内联脚本被拦；改为 renderer 把合成文档登记到主进程，再以
- * `capability-asset://html-render/<token>` 导航加载（自定义 scheme 文档
+ * `capability-asset://<token-specific-host>/<token>` 导航加载（自定义 scheme 文档
  * 不继承父策略容器）。put 在挂载/重建时调用，release 在卸载时调用。
  */
 export interface HtmlRuntimeDocPutRequest {

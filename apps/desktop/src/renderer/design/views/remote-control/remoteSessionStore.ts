@@ -302,3 +302,12 @@ export function removeProjectFromStore(deviceId: string, projectId: string): voi
     delete store.expanded[projectId]
   })
 }
+
+/** 会话属于哪个项目（缓存的会话页是按项目存的，键就是 projectId） */
+export function findSessionProjectId(deviceId: string, sessionId: string): string | null {
+  const store = getRemoteSessionStore(deviceId)
+  for (const [projectId, bucket] of Object.entries(store.sessions)) {
+    if (bucket.rows.some((row) => row.id === sessionId)) return projectId
+  }
+  return null
+}

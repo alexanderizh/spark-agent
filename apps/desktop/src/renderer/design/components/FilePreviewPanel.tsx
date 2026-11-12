@@ -16,7 +16,6 @@ import type {
   ReactNode,
 } from 'react'
 import './FilePreviewPanel.less'
-import { HTML_FRAME_SANDBOX } from '@spark/shared'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
@@ -188,7 +187,7 @@ function readPreviewPanelWidth(): number {
 
 /**
  * HTML 预览不合成、不注入任何样式：文件内容经主进程登记为
- * `capability-asset://html-render/<token>/` 独立文档后由 iframe 原样加载
+ * `capability-asset://<token-specific-host>/<token>/` 独立文档后由 iframe 原样加载
  * （机制同 RenderHtmlBlock，见 services/render-html.ts）。token 以目录段
  * 形式加载并登记文件所在目录为 assetRoot，文档内相对引用（style.css、
  * js/*.js 等）解析为 `<token>/<相对路径>` 由主进程按目录从磁盘解析，
@@ -289,7 +288,7 @@ export function FilePreviewPanel({
     }
   }, [fileType, readFile, resolvedFilePath, contentOverride, refreshToken])
 
-  // HTML 预览：文件内容登记为主进程沙箱文档（capability-asset://html-render），
+  // HTML 预览：文件内容登记为主进程隔离文档（每文档独立 capability-asset origin），
   // iframe 用协议地址加载而非 srcdoc —— srcdoc 会继承 renderer CSP，内联脚本、
   // 外链资源全被拦，且 sandbox 不给 allow-scripts 时 JS 完全不执行。token 由
   // 文件路径派生（稳定，重开同一文件 put 幂等覆盖），version 递增强制 iframe
@@ -607,12 +606,7 @@ export function FilePreviewPanel({
           fileType === 'html' &&
           htmlFrameError == null &&
           htmlFrame !== null && (
-            <iframe
-              className="file-preview-html"
-              src={htmlFrame.src}
-              sandbox={HTML_FRAME_SANDBOX}
-              title={`${fileName} 预览`}
-            />
+            <iframe className="file-preview-html" src={htmlFrame.src} title={`${fileName} 预览`} />
           )}
         {!previewLoading && !previewError && fileType === 'markdown' && content !== null && (
           <div className="file-preview-markdown">

@@ -8,6 +8,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test'
+import { buildHtmlRenderOriginHost } from '@spark/shared'
 
 const DESKTOP_ROOT = resolve(__dirname, '..')
 const MAIN_ENTRY = join(DESKTOP_ROOT, 'out/main/index.js')
@@ -242,7 +243,171 @@ async function createApp(
   return created
 }
 
-test.describe.serial('SparkWork sub-app acceptance', () => {
+test.describe.serial('SparkWork HTML runtime and sub-app acceptance', () => {
+  test('会话与文件 HTML 通过独立协议 origin 保留浏览器能力', async () => {
+    test.setTimeout(120_000)
+    const { electronApp, page, userDataPath } = await launchApp()
+    const token = 'e2e-html-runtime-0001'
+    const isolatedToken = 'e2e-html-runtime-0002'
+    try {
+      await dismissOnboarding(page)
+      await expect(page.locator('.spark-toast-message')).toHaveCount(0, { timeout: 10_000 })
+      const document = `<!doctype html>
+<html><head><base target="_self"></head><body>
+<div id="capability-state"></div>
+<form action="" method="get">
+  <input type="hidden" name="submitted" value="browser">
+  <button type="submit">提交表单</button>
+</form>
+<iframe id="nested" src="data:text/html,%3Ctitle%3Enested%3C/title%3E"></iframe>
+<object id="object" data="data:text/html,object"></object>
+<embed id="embed" src="data:text/html,embed">
+<script>
+  var state = document.getElementById('capability-state')
+  state.dataset.eval = String(eval('20 + 22'))
+  localStorage.setItem('spark-html-e2e', 'available')
+  state.dataset.storage = localStorage.getItem('spark-html-e2e') || 'missing'
+  state.dataset.submitted = new URLSearchParams(location.search).get('submitted') || ''
+  document.getElementById('nested').addEventListener('load', function () {
+    state.dataset.nested = 'loaded'
+  })
+</script>
+</body></html>`
+      await sparkOf(page)('html:put-runtime-doc', { token, document })
+      const isolatedDocument = `<!doctype html><html><body>
+<div id="storage-state"></div>
+<script>
+  document.getElementById('storage-state').textContent =
+    localStorage.getItem('spark-html-e2e') || 'missing'
+</script>
+</body></html>`
+      await sparkOf(page)('html:put-runtime-doc', {
+        token: isolatedToken,
+        document: isolatedDocument,
+      })
+      await page.evaluate(
+        ({ docToken, host }) => {
+          const frame = document.createElement('iframe')
+          frame.title = 'E2E HTML runtime'
+          frame.style.cssText =
+            'position:fixed;top:80px;left:80px;width:800px;height:600px;z-index:2147483647;background:white'
+          frame.src = `capability-asset://${host}/${docToken}?v=1`
+          document.body.appendChild(frame)
+        },
+        { docToken: token, host: buildHtmlRenderOriginHost(token) },
+      )
+
+      const content = page.frameLocator('iframe[title="E2E HTML runtime"]')
+      expect(
+        await page.locator('iframe[title="E2E HTML runtime"]').getAttribute('sandbox'),
+      ).toBeNull()
+      await expect(content.locator('#capability-state')).toHaveAttribute('data-eval', '42')
+      await expect(content.locator('#capability-state')).toHaveAttribute(
+        'data-storage',
+        'available',
+      )
+      await expect(content.locator('#capability-state')).toHaveAttribute('data-nested', 'loaded')
+      await expect(content.locator('#object')).toHaveCount(1)
+      await expect(content.locator('#embed')).toHaveCount(1)
+
+      await page.evaluate(
+        ({ docToken, host }) => {
+          const frame = document.createElement('iframe')
+          frame.title = 'E2E isolated HTML runtime'
+          frame.style.cssText =
+            'position:fixed;top:80px;left:900px;width:400px;height:300px;z-index:2147483647;background:white'
+          frame.src = `capability-asset://${host}/${docToken}?v=1`
+          document.body.appendChild(frame)
+        },
+        { docToken: isolatedToken, host: buildHtmlRenderOriginHost(isolatedToken) },
+      )
+      const isolated = page.frameLocator('iframe[title="E2E isolated HTML runtime"]')
+      await expect(isolated.locator('#storage-state')).toHaveText('missing')
+      const hosts = await page
+        .locator('iframe[title="E2E HTML runtime"], iframe[title="E2E isolated HTML runtime"]')
+        .evaluateAll((frames) =>
+          frames.map((frame) => new URL((frame as HTMLIFrameElement).src).host),
+        )
+      expect(new Set(hosts).size).toBe(2)
+
+      await content.getByRole('button', { name: '提交表单' }).click()
+      await expect(content.locator('#capability-state')).toHaveAttribute(
+        'data-submitted',
+        'browser',
+      )
+    } finally {
+      await page
+        .evaluate(() => {
+          document.querySelector('iframe[title="E2E HTML runtime"]')?.remove()
+          document.querySelector('iframe[title="E2E isolated HTML runtime"]')?.remove()
+        })
+        .catch(() => {})
+      await sparkOf(page)('html:release-runtime-doc', { token }).catch(() => {})
+      await sparkOf(page)('html:release-runtime-doc', { token: isolatedToken }).catch(() => {})
+      await electronApp.close().catch(() => {})
+      await rm(userDataPath, { recursive: true, force: true })
+    }
+  })
+
+  test('子应用保留浏览器 HTML 能力：eval、存储、嵌套 iframe 与原生表单', async () => {
+    test.setTimeout(180_000)
+    const { electronApp, page, userDataPath } = await launchApp()
+    try {
+      await openSubAppsView(page)
+      const source = `<!doctype html>
+<html><head><base target="_self"></head><body>
+<div id="capability-state"></div>
+<form action="" method="get">
+  <input type="hidden" name="submitted" value="browser">
+  <button type="submit">提交表单</button>
+</form>
+<iframe id="nested" src="data:text/html,%3Ctitle%3Enested%3C/title%3E"></iframe>
+<object id="object" data="data:text/html,object"></object>
+<embed id="embed" src="data:text/html,embed">
+<script>
+  var state = document.getElementById('capability-state')
+  state.dataset.eval = String(eval('20 + 22'))
+  localStorage.setItem('spark-html-e2e', 'available')
+  state.dataset.storage = localStorage.getItem('spark-html-e2e') || 'missing'
+  state.dataset.submitted = new URLSearchParams(location.search).get('submitted') || ''
+  document.getElementById('nested').addEventListener('load', function () {
+    state.dataset.nested = 'loaded'
+  })
+</script>
+</body></html>`
+      await createApp(page, { name: 'E2E 浏览器能力 HTML', source })
+      await dismissOnboarding(page)
+      await expect(page.locator('.spark-toast-message')).toHaveCount(0, { timeout: 10_000 })
+      await page.locator('.sa-header').getByRole('button', { name: '刷新', exact: true }).click()
+      await page
+        .getByTestId('sub-app-card')
+        .getByRole('button', { name: /打\s*开/ })
+        .click()
+
+      const appFrame = page.frameLocator('iframe[title="E2E 浏览器能力 HTML"]')
+      const frameElement = page.locator('iframe[title="E2E 浏览器能力 HTML"]')
+      expect(await frameElement.getAttribute('sandbox')).toBeNull()
+      await expect(appFrame.locator('#capability-state')).toHaveAttribute('data-eval', '42')
+      await expect(appFrame.locator('#capability-state')).toHaveAttribute(
+        'data-storage',
+        'available',
+      )
+      await expect(appFrame.locator('#capability-state')).toHaveAttribute('data-nested', 'loaded')
+      await expect(appFrame.locator('#object')).toHaveCount(1)
+      await expect(appFrame.locator('#embed')).toHaveCount(1)
+
+      await dismissOnboarding(page)
+      await appFrame.getByRole('button', { name: '提交表单' }).click()
+      await expect(appFrame.locator('#capability-state')).toHaveAttribute(
+        'data-submitted',
+        'browser',
+      )
+    } finally {
+      await electronApp.close().catch(() => {})
+      await rm(userDataPath, { recursive: true, force: true })
+    }
+  })
+
   test('sub-app 运行、bridge 读写与重启持久化', async ({ browserName: _browserName }, testInfo) => {
     test.setTimeout(180_000)
     const { electronApp, page, userDataPath, authService } = await launchApp()
@@ -255,7 +420,7 @@ test.describe.serial('SparkWork sub-app acceptance', () => {
       await expect(page.getByTestId('sub-app-card')).toHaveCount(1)
       await expect(page.locator('.sa-card-name', { hasText: 'E2E 记账工具' })).toBeVisible()
 
-      // 打开 → iframe 沙箱运行 → 应用经 bridge 写数据落库
+      // 打开 → 独立 origin 页面运行 → 应用经 bridge 写数据落库
       await page
         .getByTestId('sub-app-card')
         .getByRole('button', { name: /打\s*开/ })

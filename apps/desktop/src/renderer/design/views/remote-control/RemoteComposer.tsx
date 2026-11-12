@@ -18,6 +18,7 @@ import { Icons } from '../../Icons'
 import { useComposerVoice } from '../../voice/useComposerVoice'
 import { RemoteAttachmentStrip, type RemoteAttachmentRef } from './RemoteAttachmentStrip'
 import { RemoteComposerMenu, type RemoteMenuSection } from './RemoteComposerMenu'
+import { pickImageFiles } from './remotePaste'
 import {
   agentLabel,
   applyCommandPick,
@@ -44,6 +45,8 @@ export interface RemoteComposerProps {
   attachments: RemoteAttachmentRef[]
   onRemoveAttachment: (path: string) => void
   onPickFiles: () => void
+  /** 粘贴图片：剪贴板里的图片项（本机落盘 + 传目标端由宿主完成） */
+  onPasteImages: (files: File[]) => void
   running: boolean
   sending: boolean
   uploading: boolean
@@ -62,6 +65,7 @@ export function RemoteComposer({
   attachments,
   onRemoveAttachment,
   onPickFiles,
+  onPasteImages,
   running,
   sending,
   uploading,
@@ -274,6 +278,13 @@ export function RemoteComposer({
             setCaret(event.target.selectionStart)
           }}
           onKeyDown={handleKeyDown}
+          onPaste={(event) => {
+            // 只有剪贴板里真有图片才接管；纯文本粘贴留给浏览器原生行为
+            const images = pickImageFiles(event.clipboardData?.items)
+            if (images.length === 0) return
+            event.preventDefault()
+            onPasteImages(images)
+          }}
           onKeyUp={(event) => setCaret(event.currentTarget.selectionStart)}
           onClick={(event) => setCaret(event.currentTarget.selectionStart)}
           placeholder="今天帮你做些什么？ @ 添加上下文，/调用技能与指令"

@@ -1,6 +1,5 @@
 import type { UIBlock } from '../../services/event-mapper'
-import { filterDocumentOutputFiles } from './ChatDocumentOutput'
-import { filterMediaPresentedFiles } from './PresentedMedia'
+import { hasPresentedFiles } from './presented-files'
 import { shouldReplaceSessionTaskBlock, type SessionTaskTimelineEntry } from './SessionTaskTimeline'
 import { classifyToolLog, TOOL_LOG_GROUP_KINDS, type ToolLogGroupKind } from './tool-log-metadata'
 
@@ -88,9 +87,7 @@ export function splitChatActivitySegments(
     if (
       block.kind === 'context_ledger' ||
       (block.kind === 'file_change' && (block.diff == null || block.diff.trim().length === 0)) ||
-      (block.kind === 'presented_files' &&
-        filterDocumentOutputFiles(block.files).length === 0 &&
-        filterMediaPresentedFiles(block.files).length === 0)
+      (block.kind === 'presented_files' && !hasPresentedFiles(block.files))
     ) {
       return
     }

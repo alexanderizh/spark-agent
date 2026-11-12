@@ -31,6 +31,12 @@ import { useRemoteSessionTree } from './useRemoteSessionTree'
 export interface RemoteSessionPaneProps {
   deviceId: string
   deviceName: string
+  /** 有备注名时的设备自报名（副标题展示，避免忘记改的是哪台） */
+  deviceRealName?: string | null
+  /** 改备注名入口（桌面端在设备行右侧给一个铅笔按钮） */
+  onRenameDevice?: () => void
+  /** 备注名保存中：按钮转 spinner */
+  renamingDevice?: boolean
   selectedSessionId: string | null
   onSelectSession: (sessionId: string) => void
   onSwitchDevice: () => void
@@ -155,6 +161,9 @@ function ProjectSessions({
 export function RemoteSessionPane({
   deviceId,
   deviceName,
+  deviceRealName,
+  onRenameDevice,
+  renamingDevice,
   selectedSessionId,
   onSelectSession,
   onSwitchDevice,
@@ -339,9 +348,31 @@ export function RemoteSessionPane({
       <div className="rc-pane-head">
         <div className="rc-pane-device">
           <span className={`rc-pane-dot${canSwitchDevice ? '' : ' single'}`} />
-          <span className="rc-pane-device-name" title={deviceName}>
+          <span
+            className="rc-pane-device-name"
+            title={
+              deviceRealName != null ? `${deviceName}（原设备名：${deviceRealName}）` : deviceName
+            }
+          >
             {deviceName}
           </span>
+          {deviceRealName != null && <span className="rc-pane-device-real">{deviceRealName}</span>}
+          {onRenameDevice != null && (
+            <button
+              type="button"
+              className="rc-pane-device-rename"
+              onClick={onRenameDevice}
+              disabled={renamingDevice}
+              title="修改设备备注名"
+              aria-label="修改设备备注名"
+            >
+              {renamingDevice ? (
+                <Icons.Spinner size={10} className="spin" />
+              ) : (
+                <Icons.Pencil size={10} />
+              )}
+            </button>
+          )}
         </div>
         <div className="rc-pane-head-actions">
           <button

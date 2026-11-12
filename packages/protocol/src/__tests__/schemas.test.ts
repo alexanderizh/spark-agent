@@ -394,9 +394,9 @@ describe('IPC schemas', () => {
         configJson: JSON.stringify({ kind: 'router', adapter: 'codex' }),
       }).success,
     ).toBe(false)
-    expect(IpcSchemaRegistry['model:list'].safeParse({ providerId: 'claude-auto-router' }).success).toBe(
-      false,
-    )
+    expect(
+      IpcSchemaRegistry['model:list'].safeParse({ providerId: 'claude-auto-router' }).success,
+    ).toBe(false)
     // 普通 uuid 渠道 id 不受影响
     expect(
       IpcSchemaRegistry['model:list'].safeParse({
@@ -1028,13 +1028,19 @@ describe('IPC schemas', () => {
         document: '<!doctype html><html></html>',
       }),
     ).toEqual({ token: 'hr-html-1-abc123de', document: '<!doctype html><html></html>' })
+    expect(
+      IpcSchemaRegistry['html:put-runtime-doc'].parse({
+        token: 'hr-html-1-abc123de',
+        document: 'x'.repeat(400_000),
+      }).document,
+    ).toHaveLength(400_000)
     expect(() =>
       IpcSchemaRegistry['html:put-runtime-doc'].parse({ token: 'bad token!', document: 'x' }),
     ).toThrow()
     expect(() =>
       IpcSchemaRegistry['html:put-runtime-doc'].parse({
         token: 'hr-html-1-abc123de',
-        document: 'x'.repeat(220_001),
+        document: 'x'.repeat(420_001),
       }),
     ).toThrow()
     expect(() => IpcSchemaRegistry['html:release-runtime-doc'].parse({ token: '' })).toThrow()

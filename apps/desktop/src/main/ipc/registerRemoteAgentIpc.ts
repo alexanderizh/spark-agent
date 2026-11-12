@@ -10,6 +10,7 @@ import type {
   RemoteAgentAttachmentSummary,
   RemoteAgentAttachmentUploadRequest,
   RemoteAgentAttachmentUploadResponse,
+  RemoteAgentDeviceAliasRequest,
   RemoteAgentDeviceListResponse,
   RemoteAgentRelayStatus,
   RemoteAgentRemoteAgentListResponse,
@@ -25,11 +26,17 @@ import type {
   RemoteAgentTargetRequest,
   RemoteAgentTargetResponse,
 } from '@spark/protocol'
+import type { SettingsService } from '@spark/agent-runtime'
 import { createLogger } from '@spark/shared'
 import { RemoteAgentRelayClient } from '../services/RemoteAgentRelayClient.js'
 import { RemoteAgentCoordinator } from '../services/RemoteAgentCoordinator.js'
 import { getDatabase } from '../db.js'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
+import {
+  applyDeviceAliases,
+  readDeviceAliases,
+  writeDeviceAlias,
+} from './remote-agent-device-aliases.js'
 
 const log = createLogger('remote-agent:ipc')
 
@@ -40,12 +47,26 @@ export interface RemoteAgentIpcDeps {
   getLocalDeviceId(): string
   getVersion(): string
   getCurrentUserId(): string | null
+  getSettingsService(): SettingsService
   addLogoutHook(hook: () => Promise<void>): () => void
 }
 
 let relayClient: RemoteAgentRelayClient | null = null
 let coordinator: RemoteAgentCoordinator | null = null
 let beforeQuitHookRegistered = false
+
+/** 设备列表的统一出口：过滤本机 + 合并本机备注名 */
+function listDevicesWithAliases(deps: RemoteAgentIpcDeps): RemoteAgentDeviceListResponse {
+  const response = relayClient?.listDevices() ?? { devices: [] }
+  const visible = excludeLocalDevice(response.devices, deps.getLocalDeviceId)
+  let aliases = {}
+  try {
+    aliases = readDeviceAliases(deps.getSettingsService())
+  } catch (error) {
+    log.warn(`读取设备备注名失败：${error instanceof Error ? error.message : String(error)}`)
+  }
+  return { devices: applyDeviceAliases(visible, aliases) }
+}
 
 function excludeLocalDevice(
   devices: RemoteAgentDeviceListResponse['devices'],
@@ -73,9 +94,7 @@ function getRelayClient(deps: RemoteAgentIpcDeps): RemoteAgentRelayClient {
       coordinator?.handleRelayStatus(status)
     },
     onDevicesChange: (devices) => {
-      pushStreamEvent('stream:remote-agent:devices', {
-        devices: excludeLocalDevice(devices.devices, deps.getLocalDeviceId),
-      })
+      pushStreamEvent('stream:remote-agent:devices', listDevicesWithAliases(deps))
       coordinator?.handleDevicesChange(devices)
     },
   })
@@ -181,11 +200,7 @@ function streamKey(deviceId: string, sessionId: string): string {
   return `${deviceId}${STREAM_KEY_SEPARATOR}${sessionId}`
 }
 
-function relaySessionEvents(
-  deviceId: string,
-  sessionId: string,
-  events: unknown[],
-): void {
+function relaySessionEvents(deviceId: string, sessionId: string, events: unknown[]): void {
   if (events.length === 0) return
   pushStreamEvent('stream:remote-agent:session-events', { deviceId, sessionId, events })
 }
@@ -320,12 +335,17 @@ export function registerRemoteAgentIpc(deps: RemoteAgentIpcDeps): void {
     return relayClient?.getStatus() ?? stoppedStatus()
   })
 
-  typedIpcHandle('remote-agent:relay:list-devices', async () => {
-    const response = relayClient?.listDevices() ?? { devices: [] }
-    return {
-      devices: excludeLocalDevice(response.devices, deps.getLocalDeviceId),
-    }
-  })
+  typedIpcHandle('remote-agent:relay:list-devices', async () => listDevicesWithAliases(deps))
+
+  typedIpcHandle(
+    'remote-agent:device:set-alias',
+    async (request: RemoteAgentDeviceAliasRequest): Promise<RemoteAgentDeviceListResponse> => {
+      const deviceId = typeof request?.deviceId === 'string' ? request.deviceId.trim() : ''
+      if (!deviceId) throw new Error('deviceId 不能为空')
+      writeDeviceAlias(deps.getSettingsService(), deviceId, request?.alias ?? null)
+      return listDevicesWithAliases(deps)
+    },
+  )
 
   typedIpcHandle(
     'remote-agent:target:list-projects',
@@ -468,7 +488,9 @@ export function registerRemoteAgentIpc(deps: RemoteAgentIpcDeps): void {
       const sessionId = typeof request?.sessionId === 'string' ? request.sessionId.trim() : ''
       if (!deviceId || !sessionId) throw new Error('deviceId 与 sessionId 不能为空')
       const paths = Array.isArray(request?.paths)
-        ? request.paths.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+        ? request.paths.filter(
+            (item): item is string => typeof item === 'string' && item.trim() !== '',
+          )
         : []
       if (paths.length === 0) throw new Error('没有选择附件')
       if (paths.length > MAX_ATTACHMENTS_PER_BATCH) {

@@ -3,9 +3,9 @@ import { isAbsolute, resolve, sep } from 'node:path'
 import { createRuntimeDocRegistry } from './RuntimeDocRegistry.js'
 
 /**
- * 内容区 HTML 渲染块（mcp__spark_ui__render_html）的沙箱文档注册表。
+ * HTML 内容（会话块、文件和远程会话预览）的隔离运行文档注册表。
  *
- * 与子应用共用 capability-asset 沙箱文档机制（见 RuntimeDocRegistry.ts），
+ * 与子应用共用 capability-asset 隔离文档机制（见 RuntimeDocRegistry.ts），
  * 但独立存储：会话内容区可能同时展示大量 HTML 块，不能挤占子应用的
  * 容量。token 由 renderer 从 block 派生（见 renderer 的 render-html.ts），
  * inline / 侧面板 / 全屏多个展示入口共用同一 token，put 幂等覆盖。
@@ -17,7 +17,7 @@ import { createRuntimeDocRegistry } from './RuntimeDocRegistry.js'
  * resolve 前缀 + realpath 符号链接双重防逃逸，仅普通文件）。
  */
 
-export const HTML_RENDER_RUNTIME_HOST = 'html-render'
+export const HTML_RENDER_RUNTIME_HOST_SUFFIX = '.html-render'
 
 export interface HtmlRuntimeDocPutRequest {
   token: string

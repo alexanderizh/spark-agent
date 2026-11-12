@@ -8,10 +8,10 @@ import {
 import { typedIpcHandle } from './typed-ipc.js'
 
 /**
- * 内容区 HTML 渲染块的沙箱文档登记 IPC。
+ * HTML 内容的独立 origin 文档登记 IPC。
  *
  * renderer（RenderHtmlBlock）在文档挂载/重建时 put、卸载时 release，文档经
- * `capability-asset://html-render/<token>` 加载（机制见
+ * `capability-asset://<token-specific-host>/<token>` 加载（机制见
  * services/RuntimeDocRegistry.ts）。信任边界与 registerSubAppIpc 一致：
  * 仅允许主应用窗口调用。
  */

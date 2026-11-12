@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
+  buildHtmlRenderOriginHost,
   buildHtmlViewerDocument,
   buildSandboxedHtml,
   validateHtmlViewerPayload,
@@ -20,7 +21,7 @@ function normalizePayload(input: unknown): HtmlViewerPayload {
 }
 
 /**
- * 独立窗口与内容区渲染块共用 capability-asset://html-render 文档注册表：
+ * 独立窗口与内容区渲染块共用 capability-asset HTML 文档注册表：
  * 合成文档由协议按 URL 提供（独立空策略容器，不继承壳文档 CSP，存储可用）。
  * token 仅主进程生成，符合注册表 ^[A-Za-z0-9][A-Za-z0-9_-]{7,79}$ 约束。
  */
@@ -29,7 +30,7 @@ function createHtmlViewerToken(): string {
 }
 
 function htmlRenderDocUrl(token: string): string {
-  return `capability-asset://html-render/${token}?v=1`
+  return `capability-asset://${buildHtmlRenderOriginHost(token)}/${token}?v=1`
 }
 
 function createHtmlViewerWindow(): BrowserWindow {
@@ -60,7 +61,13 @@ function createHtmlViewerWindow(): BrowserWindow {
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('data:text/html')) event.preventDefault()
+    if (
+      !url.startsWith('data:text/html') &&
+      !url.startsWith('https://') &&
+      !url.startsWith('http://')
+    ) {
+      event.preventDefault()
+    }
   })
   win.once('closed', () => {
     if (htmlViewerWindow === win) htmlViewerWindow = null

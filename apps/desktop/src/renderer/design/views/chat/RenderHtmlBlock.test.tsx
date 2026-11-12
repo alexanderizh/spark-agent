@@ -62,7 +62,7 @@ describe('RenderHtmlBlock', () => {
     vi.clearAllMocks()
   })
 
-  it('loads the sandbox doc via capability-asset in a full-capability iframe', async () => {
+  it('loads an isolated browser-capability document without iframe sandboxing', async () => {
     root = createRoot(container)
     await act(async () => {
       root?.render(<RenderHtmlBlock block={block} />)
@@ -72,14 +72,10 @@ describe('RenderHtmlBlock', () => {
 
     const iframe = container.querySelector('iframe')
     expect(iframe).not.toBeNull()
-    const sandbox = iframe?.getAttribute('sandbox') ?? ''
-    expect(sandbox).toContain('allow-scripts')
-    expect(sandbox).toContain('allow-same-origin')
-    expect(sandbox).toContain('allow-forms')
-    expect(sandbox).toContain('allow-modals')
-    expect(sandbox).toContain('allow-popups')
-    expect(sandbox).not.toContain('allow-top-navigation')
-    expect(iframe?.src).toMatch(/^capability-asset:\/\/html-render\/hr-[A-Za-z0-9_-]+\?v=1$/)
+    expect(iframe?.hasAttribute('sandbox')).toBe(false)
+    expect(iframe?.src).toMatch(
+      /^capability-asset:\/\/hr-[a-f0-9]+(?:\.[a-f0-9]+)*\.html-render\/hr-[A-Za-z0-9_-]+\?v=1$/,
+    )
 
     const putCall = invoke.mock.calls.find(([channel]) => channel === 'html:put-runtime-doc')
     expect(putCall).toBeDefined()
@@ -105,7 +101,7 @@ describe('RenderHtmlBlock', () => {
     )
   })
 
-  it('re-registers with a new version when the sandbox doc rebuilds', async () => {
+  it('re-registers with a new version when the runtime doc rebuilds', async () => {
     root = createRoot(container)
     await act(async () => {
       root?.render(<RenderHtmlBlock block={block} />)
@@ -138,7 +134,9 @@ describe('RenderHtmlBlock', () => {
     // 不再有「允许渲染」门控：外链脚本块直接挂载 iframe。
     expect(container.querySelector('iframe')).not.toBeNull()
     expect(container.textContent).not.toContain('允许渲染')
-    expect(container.querySelector('iframe')?.src).toMatch(/^capability-asset:\/\/html-render\/hr-/)
+    expect(container.querySelector('iframe')?.src).toMatch(
+      /^capability-asset:\/\/hr-[a-f0-9]+(?:\.[a-f0-9]+)*\.html-render\/hr-/,
+    )
   })
 
   it('keeps rendering external-resource blocks across remounts', async () => {
@@ -165,7 +163,7 @@ describe('RenderHtmlBlock', () => {
 
     expect(markup).toContain('HTML 渲染失败')
     expect(markup).toContain('非法标签')
-    expect(markup).toContain('安全沙箱')
+    expect(markup).toContain('内置 HTML 文档未能加载')
     expect(markup).toContain('用外部浏览器打开')
     expect(markup).not.toContain('<iframe')
   })

@@ -79,12 +79,7 @@ import { RemoteAgentSessionEntry } from './chat/remote-agent/RemoteAgentChatEntr
 import { ContextCompactionCard } from './chat/ContextCompactionCard'
 import { EmptySessionTopbar } from './chat/EmptySessionTopbar'
 import { SessionSchedulePanel } from './chat/SessionSchedulePanel'
-import {
-  DocumentOutputCard,
-  filterDocumentOutputFiles,
-  getDocumentOutputKey,
-} from './chat/ChatDocumentOutput'
-import { PresentedMediaList, filterMediaPresentedFiles } from './chat/PresentedMedia'
+import { PresentedFilesList } from './chat/PresentedFiles'
 import { MarkdownText } from './chat/ChatMarkdown'
 import { PlanSidePanel } from './chat/PlanSidePanel'
 import { PlanSummary } from './chat/PlanSummary'
@@ -6097,30 +6092,14 @@ function renderBlocks(
           </div>
         )
       }
-      case 'presented_files': {
-        const documentFiles = filterDocumentOutputFiles(block.files)
-        const mediaFiles = filterMediaPresentedFiles(block.files)
-        if (documentFiles.length === 0 && mediaFiles.length === 0) return null
+      case 'presented_files':
         return (
-          <div key={i} style={{ marginTop: 8, marginBottom: 8 }}>
-            {documentFiles.length > 0 && (
-              <div className="document-output-card-list">
-                {documentFiles.map((file) => (
-                  <DocumentOutputCard
-                    key={getDocumentOutputKey(file.path)}
-                    filePath={file.path}
-                    {...(file.title != null ? { label: file.title } : {})}
-                    {...(options.onFilePreview != null
-                      ? { onFilePreview: options.onFilePreview }
-                      : {})}
-                  />
-                ))}
-              </div>
-            )}
-            {mediaFiles.length > 0 && <PresentedMediaList files={mediaFiles} />}
-          </div>
+          <PresentedFilesList
+            key={i}
+            files={block.files}
+            {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+          />
         )
-      }
       case 'application_snapshot': {
         return (
           <div key={i} style={{ marginTop: 8, marginBottom: 8, maxWidth: 920 }}>

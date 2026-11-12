@@ -11,19 +11,21 @@ const baseConfig = {
 }
 
 describe('buildAppRuntimeDocument', () => {
-  it('片段源码被包装成完整文档，注入 CSP、color-scheme 与 bootstrap SDK', () => {
+  it('片段源码被包装成完整文档，不注入 CSP 且保留浏览器能力与 bootstrap SDK', () => {
     const doc = buildAppRuntimeDocument({
-      source: '<div id="app">hello</div>',
+      source:
+        '<!doctype html><html><head><base href="https://example.com/"></head><body><div id="app">hello<form action="https://example.com/submit"><iframe src="https://example.com/embed"></iframe><object data="https://example.com/file.pdf"></object><embed src="https://example.com/media"></form></div></body></html>',
       theme: 'dark',
       config: baseConfig,
     })
     expect(doc).toContain('<!doctype html>')
     expect(doc).toContain('data-spark-theme="dark"')
-    expect(doc).toContain('http-equiv="Content-Security-Policy"')
-    // 默认（设置全放行）：connect-src 允许外部 https/http，script-src 带 unsafe-eval
-    expect(doc).toContain('connect-src https: http:')
-    expect(doc).toContain('frame-src https: http:')
-    expect(doc).toContain("script-src 'unsafe-inline' 'unsafe-eval' https: http:")
+    expect(doc).not.toContain('Content-Security-Policy')
+    expect(doc).toContain('<iframe')
+    expect(doc).toContain('<form')
+    expect(doc).toContain('<object')
+    expect(doc).toContain('<embed')
+    expect(doc).toContain('<base')
     // bootstrap 先于用户源码注入
     expect(doc.indexOf('window.sparkApp')).toBeLessThan(doc.indexOf('id="app"'))
     // app/ready 心跳存在于 bootstrap
@@ -71,6 +73,31 @@ describe('buildAppRuntimeDocument', () => {
     expect(doc).toContain('"trusted":false')
   })
 
+  it('preserves an application-provided base href instead of overriding browser URL resolution', () => {
+    const doc = buildAppRuntimeDocument({
+      source: '<!doctype html><html><head><base href="https://example.com/app/"></head></html>',
+      theme: 'light',
+      config: { ...baseConfig, trusted: false },
+      assetBaseUrl: 'capability-asset://subapp-package/token-1/frontend/',
+    })
+
+    expect(doc.match(/<base\b/g)).toHaveLength(1)
+    expect(doc).toContain('<base href="https://example.com/app/">')
+    expect(doc).not.toContain('capability-asset://subapp-package/token-1/frontend/')
+  })
+
+  it('does not mistake a base example in comments or scripts for a document base', () => {
+    const doc = buildAppRuntimeDocument({
+      source:
+        '<!doctype html><html><head><!-- <base href="https://example.com/"> --><script>const example = "<base href=\'/demo/\'>"</script></head><body></body></html>',
+      theme: 'light',
+      config: { ...baseConfig, trusted: false },
+      assetBaseUrl: 'capability-asset://subapp-package/token-1/frontend/',
+    })
+
+    expect(doc).toContain('<base href="capability-asset://subapp-package/token-1/frontend/">')
+  })
+
   it('完整文档源码在 head 内注入，不破坏原有结构', () => {
     const source =
       '<!doctype html><html lang="zh"><head><script>console.log(1)</script></head><body><p>app</p></body></html>'
@@ -78,10 +105,8 @@ describe('buildAppRuntimeDocument', () => {
     // 属性顺序不敏感：lang 保留、主题属性存在即可
     expect(doc).toMatch(/<html[^>]*lang="zh"[^>]*>/)
     expect(doc).toMatch(/<html[^>]*data-spark-theme="light"[^>]*>/)
-    const cspIndex = doc.indexOf('Content-Security-Policy')
     const userScriptIndex = doc.indexOf('console.log(1)')
-    expect(cspIndex).toBeGreaterThan(-1)
-    expect(userScriptIndex).toBeGreaterThan(cspIndex)
+    expect(userScriptIndex).toBeGreaterThan(-1)
     expect(doc).toContain('<p>app</p>')
   })
 
@@ -126,19 +151,14 @@ describe('buildAppRuntimeDocument', () => {
     expect(SUB_APP_SOURCE_HARD_LIMIT).toBeGreaterThan(200_000)
   })
 
-  it('安全开关收紧时 CSP 相应收紧', () => {
+  it('源码长度设置不会注入 CSP 限制', () => {
     const doc = buildAppRuntimeDocument({
       source: '<div>x</div>',
       theme: 'light',
       config: baseConfig,
-      security: { allowNetworkAccess: false, allowUnsafeEval: false },
+      security: { sourceLengthLimit: 0 },
     })
-    // 关闭网络：数据只能走 bridge
-    expect(doc).toContain("connect-src 'none'")
-    expect(doc).toContain("frame-src 'none'")
-    // 关闭 unsafe-eval：script-src 不含 eval 指令
-    expect(doc).toContain("script-src 'unsafe-inline' https: http:")
-    expect(doc).not.toContain("'unsafe-eval'")
+    expect(doc).not.toContain('Content-Security-Policy')
   })
 
   it('小窗口 surface 注入铺满兜底样式，且位于应用源码之后', () => {

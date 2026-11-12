@@ -316,12 +316,27 @@ describe('projectAssistantTurnCollapse', () => {
     })
   })
 
+  it.each(['clash.yaml', 'clash.yml', 'settings.json', 'bundle.zip', 'LICENSE', 'main.ts'])(
+    'preserves an explicit %s attachment after collapse',
+    (name) => {
+      const attachment: UIBlock = {
+        kind: 'presented_files',
+        files: [{ path: `/workspace/output/${name}`, title: '交付附件' }],
+      }
+      const final = text('附件已准备好。', { final: true })
+      expect(
+        projectAssistantTurnCollapse('completed', [text('准备文件。'), attachment, final]),
+      ).toEqual({ canCollapse: true, collapsedBlocks: [final, attachment] })
+      expect(projectAssistantTurnCollapse('completed', [attachment, final]).canCollapse).toBe(false)
+    },
+  )
+
   it('drops presentation blocks with nothing visible to show after collapse', () => {
     const final = text('已完成。', { final: true })
     const blocks: UIBlock[] = [
       {
         kind: 'presented_files',
-        files: [{ path: '/workspace/src/main.ts' }],
+        files: [{ path: '   ' }],
       },
       {
         kind: 'html_block',

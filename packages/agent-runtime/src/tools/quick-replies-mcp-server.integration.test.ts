@@ -84,7 +84,7 @@ describe('quick-replies MCP server', () => {
     expect(payload.replies).toEqual(['确认无误', longReply.slice(0, 40), '需要调整', '先暂停'])
   })
 
-  it('exposes a sandboxed HTML fragment renderer with bounded input', async () => {
+  it('exposes a browser-capability HTML fragment renderer with bounded input', async () => {
     const response = await rpc.call('tools/list')
 
     expect(response.tools).toEqual(

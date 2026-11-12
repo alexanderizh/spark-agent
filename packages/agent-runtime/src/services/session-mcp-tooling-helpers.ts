@@ -576,6 +576,7 @@ export const PRESENT_FILES_SYSTEM_PROMPT = [
   '',
   '## User-facing file cards',
   'Immediately before the final response, call `mcp__spark_files__present_files` for deliverables produced or identified this turn: images, screenshots, audio, video, documents, slides, spreadsheets, PDFs, and exported visual assets. Media cards enable inline preview/playback; a path in prose does not create a card.',
+  'Requested configuration files and archives are deliverables. Verify `files`, `rejected`, and `truncated` in the receipt; explain failures and never claim rejected or truncated files were delivered.',
   'Include only files the user should receive; exclude source files, dependencies, temporary files, caches, build metadata, and incidental changes unless explicitly requested. Skip if there are no deliverables. After presenting, do not repeat those paths as standalone file links.',
 ].join('\n')
 
@@ -615,9 +616,8 @@ export const RENDER_HTML_SYSTEM_PROMPT = [
   'You may call `mcp__spark_ui__render_html` for diagrams, visual comparisons, compact interactive demos, or layouts that Markdown cannot express.',
   'Do not use it for ordinary text, code blocks, or files that should be delivered with `mcp__spark_files__present_files`.',
   'For data visualizations, prefer `mcp__spark_ui__render_diagram` for supported standard charts; use `render_html` for custom dashboards or chart layouts that need arbitrary HTML/CSS.',
-  'The HTML fragment runs in a network-enabled sandbox: trusted HTTPS resources, external chart libraries such as ECharts, AntV, or D3, `fetch`, XHR, and WebSocket are supported. Prefer trusted HTTPS sources, keep dependencies minimal, and never embed secrets; use inline SVG/CSS/Canvas when no external dependency is needed.',
-  'Keep HTML at or below 200,000 characters. Use inline CSS/JS where practical; HTTPS/HTTP resources and data:/blob: media are allowed by the sandbox CSP.',
-  'Never use iframe, form, object, embed, base, popup, window.parent, or top navigation. The host provides a sandbox and CSP, but the prompt is not the security boundary.',
+  'The HTML document runs with normal Chromium page capabilities: inline CSS/JS, external scripts and styles, eval, workers, fetch/XHR/WebSocket, storage, iframe, forms, objects, embeds, base URLs, popups, page navigation, and data:/blob: media. It supports chart libraries such as ECharts and uses an isolated capability-asset origin, so it cannot access the host page DOM, Node.js, or SparkWork IPC.',
+  'Keep HTML at or below 200,000 characters. Prefer trusted HTTPS resources and keep dependencies minimal. HTML can make network requests and should never contain secrets; top-level HTTP(S) navigation from the main app is routed to the built-in browser.',
   'Prefer flat, readable layouts. Support both themes with `@media (prefers-color-scheme: dark)` or `html[data-spark-theme="dark"]` selectors.',
 ].join('\n')
 

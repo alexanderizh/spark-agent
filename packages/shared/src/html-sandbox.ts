@@ -21,13 +21,6 @@ export type HtmlViewerPayload = {
   theme: HtmlRenderTheme
 }
 
-// 产物渲染沙箱的统一 iframe sandbox 令牌。与外部浏览器对齐：脚本（含
-// eval/worker）、表单、弹窗、下载、模态、存储全部可用；隔离边界由
-// capability-asset origin（与父页面跨源）+ 无 allow-top-navigation 提供，
-// 产物 JS 无法触碰父文档与宿主 IPC。
-export const HTML_FRAME_SANDBOX =
-  'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads allow-pointer-lock allow-presentation'
-
 export function validateHtmlViewerPayload(
   value: unknown,
 ): { ok: true; payload: HtmlViewerPayload } | { ok: false; reason: string } {
@@ -106,7 +99,7 @@ function escapeHtml(value: string): string {
 export function buildHtmlViewerDocument(payload: HtmlViewerPayload, frameSrc: string): string {
   const title = escapeHtml(payload.title)
   const frameSrcAttr = escapeHtml(frameSrc)
-  // 壳 CSP 仅约束壳自身：壳内没有脚本，script-src 'none'；iframe 目标协议
-  // 需在 frame-src 放行。内层文档是独立策略容器，不受此壳 CSP 影响。
-  return `<!doctype html><html data-spark-theme="${payload.theme}"><head><meta charset="utf-8"><meta name="color-scheme" content="${payload.theme}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; frame-src capability-asset: data: blob: https: http:; base-uri 'none'; form-action 'none'"><title>${title}</title><style>:root{color-scheme:${payload.theme};background:#fff;color:#20201d}*{box-sizing:border-box}html,body{height:100%;margin:0}body{display:flex;flex-direction:column;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:${payload.theme === 'dark' ? '#262626' : '#fdfdfc'};color:${payload.theme === 'dark' ? '#e4e4e7' : '#20201d'}}header{height:48px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid ${payload.theme === 'dark' ? '#3d3d3d' : '#e8e5df'};font-weight:600}iframe{display:block;flex:1;width:100%;min-height:0;border:0;background:transparent}</style></head><body><header>${title}</header><iframe id="spark-html-frame" title="${title}" sandbox="${HTML_FRAME_SANDBOX}" src="${frameSrcAttr}"></iframe></body></html>`
+  // The shell only renders a title bar. The content document has its own
+  // capability-asset origin and must keep normal browser navigation semantics.
+  return `<!doctype html><html data-spark-theme="${payload.theme}"><head><meta charset="utf-8"><meta name="color-scheme" content="${payload.theme}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; frame-src capability-asset: data: blob: https: http:; base-uri 'none'; form-action 'none'"><title>${title}</title><style>:root{color-scheme:${payload.theme};background:#fff;color:#20201d}*{box-sizing:border-box}html,body{height:100%;margin:0}body{display:flex;flex-direction:column;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:${payload.theme === 'dark' ? '#262626' : '#fdfdfc'};color:${payload.theme === 'dark' ? '#e4e4e7' : '#20201d'}}header{height:48px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid ${payload.theme === 'dark' ? '#3d3d3d' : '#e8e5df'};font-weight:600}iframe{display:block;flex:1;width:100%;min-height:0;border:0;background:transparent}</style></head><body><header>${title}</header><iframe id="spark-html-frame" title="${title}" src="${frameSrcAttr}"></iframe></body></html>`
 }

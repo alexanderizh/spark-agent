@@ -5510,6 +5510,7 @@ export function registerAllIpcHandlers(): void {
     },
     getClientLabel: () => `${app.getName()} Remote Agent`,
     getLocalDeviceId: () => getMobileBridgeDeviceId(getSettingsService()),
+    getSettingsService,
     getVersion: () => app.getVersion(),
     getCurrentUserId: () => {
       try {

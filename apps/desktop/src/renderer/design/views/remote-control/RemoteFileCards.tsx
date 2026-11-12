@@ -8,11 +8,14 @@ import { useState } from 'react'
 import type { RemoteAgentFileEntry } from './remoteEventMerge'
 import { Icons } from '../../Icons'
 import { useIpcInvoke } from '../../hooks/useIpc'
+import { RemoteDocPreview } from './RemoteDocPreview'
 import { RemoteHtmlPreview } from './RemoteHtmlPreview'
 import {
+  canPreviewRemoteFile,
   classifyRemoteFile,
   describeFileCount,
   fileNameOf,
+  usesDocumentPreview,
   type RemoteFileKind,
 } from './remoteRichContent'
 import { fetchRemoteAttachment, remoteFileUrl, useRemoteFile } from './remoteFileCache'
@@ -21,20 +24,22 @@ function FileKindIcon({ kind }: { kind: RemoteFileKind }) {
   if (kind === 'image') return <Icons.Image size={14} />
   if (kind === 'html') return <Icons.Globe size={14} />
   if (kind === 'markdown' || kind === 'text') return <Icons.FileText size={14} />
+  if (kind === 'document') return <Icons.Book size={14} />
   if (kind === 'code') return <Icons.Code size={14} />
   return <Icons.File size={14} />
 }
 
-const PREVIEWABLE: RemoteFileKind[] = ['html', 'image', 'markdown', 'text', 'code']
-
 function RemoteFileRow({ deviceId, file }: { deviceId: string; file: RemoteAgentFileEntry }) {
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [docOpen, setDocOpen] = useState(false)
   const [opening, setOpening] = useState(false)
   const [openError, setOpenError] = useState<string | null>(null)
   const remoteFile = useRemoteFile(deviceId, file.path, previewOpen)
   const kind = classifyRemoteFile(file.path)
   const name = file.title ?? fileNameOf(file.path)
-  const canPreview = PREVIEWABLE.includes(kind)
+  // 文档（Office/PDF）走右侧抽屉，其余能在气泡里就地展开
+  const canPreview = canPreviewRemoteFile(file.path)
+  const docPreview = usesDocumentPreview(file.path)
   const { invoke: openLocalFile } = useIpcInvoke('file:open')
 
   const handleOpen = async () => {
@@ -65,12 +70,15 @@ function RemoteFileRow({ deviceId, file }: { deviceId: string; file: RemoteAgent
           {canPreview && (
             <button
               type="button"
-              className={`rc-file-btn${previewOpen ? ' active' : ''}`}
-              onClick={() => setPreviewOpen((value) => !value)}
-              aria-expanded={previewOpen}
+              className={`rc-file-btn${previewOpen || docOpen ? ' active' : ''}`}
+              onClick={() => {
+                if (docPreview) setDocOpen(true)
+                else setPreviewOpen((value) => !value)
+              }}
+              aria-expanded={docPreview ? docOpen : previewOpen}
             >
               <Icons.Eye size={12} />
-              {previewOpen ? '收起' : '预览'}
+              {!docPreview && previewOpen ? '收起' : '预览'}
             </button>
           )}
           <button
@@ -112,6 +120,15 @@ function RemoteFileRow({ deviceId, file }: { deviceId: string; file: RemoteAgent
             </>
           )}
         </div>
+      )}
+
+      {docOpen && (
+        <RemoteDocPreview
+          deviceId={deviceId}
+          remotePath={file.path}
+          {...(file.title != null ? { name: file.title } : {})}
+          onClose={() => setDocOpen(false)}
+        />
       )}
     </div>
   )

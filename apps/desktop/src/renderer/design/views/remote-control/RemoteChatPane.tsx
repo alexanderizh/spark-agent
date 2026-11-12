@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   MobileBridgeCommandItem,
   MobileBridgeEvent,
+  RemoteAgentAttachmentSummary,
   UserQuestionPrompt,
 } from '@spark/protocol'
 import { Icons } from '../../Icons'
@@ -23,7 +24,11 @@ import { RemoteComposer } from './RemoteComposer'
 import { RemoteMessageList } from './RemoteMessageList'
 import type { RemoteAttachmentRef } from './RemoteAttachmentStrip'
 import { buildRemoteTimeline, mergeRemoteEvents } from './remoteEventMerge'
-import { useRemoteCall, useRemoteSessionStream } from './useRemoteBridge'
+import { remoteFileUrl } from './remoteFileCache'
+import { clearRemoteDraft, readRemoteDraft, writeRemoteDraft } from './remoteDrafts'
+import { toPastedImageSource } from './remotePaste'
+import { useSmoothRemoteItems } from './remoteSmoothReveal'
+import { useRemoteCall, useRemoteSessionStream, type RemoteCallError } from './useRemoteBridge'
 import { useRemoteComposerConfig } from './useRemoteComposerConfig'
 
 interface RemoteApproval {
@@ -57,6 +62,8 @@ export interface RemoteChatPaneProps {
   /** 侧栏缓存里的会话标题；改名后由 store 直接回流 */
   sessionTitle?: string | null
   deviceName: string
+  /** 记住的会话已经不存在（目标端 404）：宿主清掉选择并回到列表 */
+  onSessionInvalid?: () => void
 }
 
 export function RemoteChatPane({
@@ -64,10 +71,12 @@ export function RemoteChatPane({
   sessionId,
   sessionTitle,
   deviceName,
+  onSessionInvalid,
 }: RemoteChatPaneProps) {
   const call = useRemoteCall()
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: uploadAttachments } = useIpcInvoke('remote-agent:attachment:upload')
+  const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
 
   const [events, setEvents] = useState<MobileBridgeEvent[]>([])
   const [running, setRunning] = useState(false)
@@ -77,6 +86,33 @@ export function RemoteChatPane({
   const [sending, setSending] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [pendingAttachments, setPendingAttachments] = useState<RemoteAttachmentRef[]>([])
+  /**
+   * 草稿与待发附件按（设备, 会话）存档。
+   *
+   * 组件是长驻的：`sessionId` 变了只是换数据、不重建组件，草稿 state 不会自己重置，
+   * 于是在会话 A 打的字切到 B 还留着、切回 A 又没了，待发附件也会被带过去。
+   *
+   * 这里用「渲染期按 prop 调整 state」而不是 effect 来切换：effect 里改会和下面
+   * 清空待发附件的那段抢执行顺序（同一 commit 里后写的赢），渲染期处理则天然在前面。
+   * 初值给哨兵，首帧必然不相等 —— 远程视图是 lazy 挂载的，切到别的页面再回来组件
+   * 会重建，靠这一步把模块级缓存里的草稿取回来。
+   */
+  const [composeKey, setComposeKey] = useState<{ deviceId: string; sessionId: string | null }>({
+    deviceId: '',
+    sessionId: null,
+  })
+  if (composeKey.deviceId !== deviceId || composeKey.sessionId !== sessionId) {
+    if (composeKey.sessionId != null) {
+      writeRemoteDraft(composeKey.deviceId, composeKey.sessionId, {
+        text: draft,
+        attachments: pendingAttachments,
+      })
+    }
+    setComposeKey({ deviceId, sessionId })
+    const restored = sessionId != null ? readRemoteDraft(deviceId, sessionId) : null
+    setDraft(restored?.text ?? '')
+    setPendingAttachments(restored?.attachments ?? [])
+  }
   const [approvals, setApprovals] = useState<RemoteApproval[]>([])
   const [questions, setQuestions] = useState<RemoteQuestion[]>([])
   const [approvalBusy, setApprovalBusy] = useState(false)
@@ -93,7 +129,7 @@ export function RemoteChatPane({
       setEvents([])
       setRunning(false)
       setError(null)
-      setPendingAttachments([])
+      // 待发附件不在这里清：切会话时它由上面的草稿存档逻辑接管（切回还能接着发）
       setApprovals([])
       setQuestions([])
       return
@@ -102,7 +138,6 @@ export function RemoteChatPane({
     setLoading(true)
     setError(null)
     setEvents([])
-    setPendingAttachments([])
     setApprovals([])
     setQuestions([])
     stickToBottomRef.current = true
@@ -118,6 +153,11 @@ export function RemoteChatPane({
       })
       .catch((cause: unknown) => {
         if (cancelled) return
+        // 记住的会话在目标端已经不存在（换机/被删）：交给宿主回落，不弹红条
+        if ((cause as RemoteCallError | null)?.status === 404) {
+          onSessionInvalid?.()
+          return
+        }
         setError(cause instanceof Error ? cause.message : String(cause))
       })
       .finally(() => {
@@ -126,7 +166,7 @@ export function RemoteChatPane({
     return () => {
       cancelled = true
     }
-  }, [call, deviceId, sessionId])
+  }, [call, deviceId, onSessionInvalid, sessionId])
 
   const handleStreamEvents = useCallback((incoming: MobileBridgeEvent[]) => {
     setEvents((previous) => mergeRemoteEvents(previous, incoming))
@@ -206,12 +246,14 @@ export function RemoteChatPane({
   }, [call, deviceId, sessionId])
 
   const items = useMemo(() => buildRemoteTimeline(events), [events])
+  // 目标端 500ms 一批推上来，短回答会「一次刷出来」；这里按帧揭示恢复流式手感
+  const visibleItems = useSmoothRemoteItems(items)
 
   useEffect(() => {
     const node = scrollRef.current
     if (node == null || !stickToBottomRef.current) return
     node.scrollTop = node.scrollHeight
-  }, [items])
+  }, [visibleItems])
 
   const handleScroll = useCallback(() => {
     const node = scrollRef.current
@@ -258,6 +300,46 @@ export function RemoteChatPane({
     [call, deviceId, sessionId],
   )
 
+  /** 上传结果入待发条：同一路径不重复加；粘贴图片带上本机预览图，不用等远程回图 */
+  const appendUploaded = useCallback(
+    (uploaded: RemoteAgentAttachmentSummary[], previews?: Map<string, string>) => {
+      setPendingAttachments((previous) => {
+        const seen = new Set(previous.map((item) => item.path))
+        const added = uploaded
+          .filter((item) => !seen.has(item.path))
+          .map((item) => {
+            const previewUrl = previews?.get(item.path)
+            return {
+              type: item.type,
+              path: item.path,
+              ...(item.name != null ? { name: item.name } : {}),
+              ...(previewUrl != null ? { previewUrl } : {}),
+            }
+          })
+        return [...previous, ...added]
+      })
+    },
+    [],
+  )
+
+  /** 上传一批本机文件到目标端（选文件与粘贴图片共用） */
+  const uploadLocalPaths = useCallback(
+    async (paths: string[], previews?: Map<string, string>) => {
+      if (!sessionId || paths.length === 0) return
+      setUploading(true)
+      try {
+        const result = await uploadAttachments({ deviceId, sessionId, paths })
+        appendUploaded(result.attachments, previews)
+        setError(null)
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        setUploading(false)
+      }
+    },
+    [appendUploaded, deviceId, sessionId, uploadAttachments],
+  )
+
   const handlePickFiles = useCallback(async () => {
     if (!sessionId) return
     try {
@@ -288,29 +370,45 @@ export function RemoteChatPane({
       })
       const paths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
       if (selected.canceled || paths.length === 0) return
-      setUploading(true)
-      const result = await uploadAttachments({ deviceId, sessionId, paths })
-      setPendingAttachments((previous) => {
-        const seen = new Set(previous.map((item) => item.path))
-        return [
-          ...previous,
-          ...result.attachments
-            .filter((item) => !seen.has(item.path))
-            .map((item) => ({
-              type: item.type,
-              path: item.path,
-              ...(item.name != null ? { name: item.name } : {}),
-            })),
-        ]
-      })
-      setError(null)
+      await uploadLocalPaths(paths)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setUploading(false)
     }
-  }, [deviceId, openFileDialog, sessionId, uploadAttachments])
+  }, [openFileDialog, sessionId, uploadLocalPaths])
 
+  /**
+   * 粘贴图片：先在**本机**落盘（file:save-pasted-image，与主输入区同一个接口），
+   * 再传一份到目标端。这样粘贴框里能立刻显示缩略图，发送走的还是目标端路径。
+   */
+  const handlePasteImages = useCallback(
+    async (files: Blob[]) => {
+      if (!sessionId || uploading || files.length === 0) return
+      setUploading(true)
+      try {
+        const paths: string[] = []
+        const previews = new Map<string, string>()
+        for (const [index, file] of files.entries()) {
+          const source = await toPastedImageSource(file, index)
+          const saved = await savePastedImage({
+            dataUrl: source.dataUrl,
+            mimeType: source.mimeType,
+            suggestedBaseName: source.suggestedBaseName,
+          })
+          paths.push(saved.filePath)
+          previews.set(saved.filePath, remoteFileUrl(saved.filePath))
+        }
+        if (paths.length === 0) return
+        const result = await uploadAttachments({ deviceId, sessionId, paths })
+        appendUploaded(result.attachments, previews)
+        setError(null)
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        setUploading(false)
+      }
+    },
+    [appendUploaded, deviceId, savePastedImage, sessionId, uploadAttachments, uploading],
+  )
   const handleRemoveAttachment = useCallback((path: string) => {
     setPendingAttachments((previous) => previous.filter((item) => item.path !== path))
   }, [])
@@ -333,6 +431,7 @@ export function RemoteChatPane({
         )
         if (result.isCommand) {
           setDraft('')
+          clearRemoteDraft(deviceId, sessionId)
           if (result.forwardToAgent) setRunning(true)
           setError(null)
           return
@@ -348,6 +447,7 @@ export function RemoteChatPane({
       })
       setDraft('')
       setPendingAttachments([])
+      clearRemoteDraft(deviceId, sessionId)
       setRunning(true)
       setError(null)
     } catch (cause) {
@@ -398,7 +498,7 @@ export function RemoteChatPane({
       <div className="rc-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         {loading && <div className="rc-pane-hint">正在读取会话内容…</div>}
         {!loading && items.length === 0 && <div className="rc-pane-hint">这个会话还没有消息</div>}
-        <RemoteMessageList items={items} deviceId={deviceId} />
+        <RemoteMessageList items={visibleItems} deviceId={deviceId} running={running} />
       </div>
 
       {error != null && (
@@ -443,6 +543,7 @@ export function RemoteChatPane({
         attachments={pendingAttachments}
         onRemoveAttachment={handleRemoveAttachment}
         onPickFiles={() => void handlePickFiles()}
+        onPasteImages={(items) => void handlePasteImages(items)}
         running={running}
         sending={sending}
         uploading={uploading}

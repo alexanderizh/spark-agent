@@ -1,14 +1,13 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@lobehub/ui'
-import { HTML_FRAME_SANDBOX } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
 import { MarkdownCodeBlock } from '../../components/MarkdownCodeBlock'
 import { BlockTrafficHeader } from '../../components/BlockTrafficHeader'
 import {
   buildHtmlRenderToken,
-  buildRenderHtmlSrcDoc,
+  buildRenderHtmlDocument,
   htmlRenderDocUrl,
   putHtmlRuntimeDoc,
   releaseHtmlRuntimeDoc,
@@ -80,11 +79,14 @@ export function RenderHtmlBlock({
   const remoteOpenMode =
     activeRemotePresentation?.blockId === block.toolCallId ? activeRemotePresentation.mode : null
   const isOpenElsewhere = isOpenInSidePanel || remoteOpenMode != null
-  const srcDoc = useMemo(() => buildRenderHtmlSrcDoc(block, resolvedTheme), [block, resolvedTheme])
+  const runtimeDocument = useMemo(
+    () => buildRenderHtmlDocument(block, resolvedTheme),
+    [block, resolvedTheme],
+  )
   const docToken = useMemo(() => buildHtmlRenderToken(block.toolCallId), [block.toolCallId])
 
-  // 合成文档 → 主进程登记 → capability-asset 导航地址（机制同子应用，见
-  // main/services/RuntimeDocRegistry.ts）。srcDoc 变化时复用 token 覆盖登记，
+  // 合成文档 → 主进程登记 → capability-asset 导航地址（与子应用相同，见
+  // main/services/RuntimeDocRegistry.ts）。文档变化时复用 token 覆盖登记，
   // 递增 version 强制 iframe 重新加载。卸载时 release：同 token 的其他展示
   // 入口（侧面板/全屏）若仍挂载，已加载内容不受影响，其下次重建会重新 put。
   const docVersionRef = useRef(0)
@@ -92,20 +94,20 @@ export function RenderHtmlBlock({
     let cancelled = false
     docVersionRef.current += 1
     const version = docVersionRef.current
-    putHtmlRuntimeDoc(docToken, srcDoc)
+    putHtmlRuntimeDoc(docToken, runtimeDocument)
       .then(() => {
         if (cancelled) return
         setFrameError(null)
         setFrame({ src: htmlRenderDocUrl(docToken, version), version })
       })
       .catch(() => {
-        if (!cancelled) setFrameError('HTML 沙箱文档登记失败')
+        if (!cancelled) setFrameError('HTML 隔离文档登记失败')
       })
     return () => {
       cancelled = true
       releaseHtmlRuntimeDoc(docToken)
     }
-  }, [docToken, srcDoc])
+  }, [docToken, runtimeDocument])
 
   const frameLoaded = frame != null && loadedVersion === frame.version
 
@@ -237,7 +239,7 @@ export function RenderHtmlBlock({
           <div>{block.error ?? frameError ?? '无法渲染该 HTML 内容'}</div>
           <div className="render-html-error-hint">
             <Icons.Shield size={14} />
-            <span>内置渲染受安全沙箱限制，部分内容可能无法展示，可切换到外部浏览器试试</span>
+            <span>内置 HTML 文档未能加载，可切换到外部浏览器查看</span>
             <button type="button" onClick={() => void openMode('external')}>
               <Icons.ExternalLink size={12} /> 用外部浏览器打开
             </button>
@@ -254,7 +256,6 @@ export function RenderHtmlBlock({
             <iframe
               title={block.title}
               className="render-html-frame"
-              sandbox={HTML_FRAME_SANDBOX}
               src={frame.src}
               onLoad={() => {
                 setLoadedVersion(frame.version)
@@ -311,7 +312,6 @@ export function RenderHtmlBlock({
                 <iframe
                   title={`${block.title}（全屏）`}
                   className="render-html-frame"
-                  sandbox={HTML_FRAME_SANDBOX}
                   src={frame.src}
                 />
               ) : (

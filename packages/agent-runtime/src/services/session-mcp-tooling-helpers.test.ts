@@ -166,7 +166,9 @@ describe('QUICK_REPLIES_SYSTEM_PROMPT', () => {
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('确认按此方案开始吗？')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('strong default')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('main decision branches')
-    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('research, writing, design, planning, and development')
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain(
+      'research, writing, design, planning, and development',
+    )
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('1-4')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('at most 40 characters')
     expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('`用户补充：`')
@@ -178,19 +180,20 @@ describe('QUICK_REPLIES_SYSTEM_PROMPT', () => {
 })
 
 describe('RENDER_HTML_SYSTEM_PROMPT', () => {
-  it('teaches the agent when and how to render bounded sandboxed HTML', () => {
+  it('teaches the agent when and how to render bounded browser-capability HTML', () => {
     expect(RENDER_HTML_SYSTEM_PROMPT).toContain('mcp__spark_ui__render_html')
     expect(RENDER_HTML_SYSTEM_PROMPT).toContain('ordinary text')
     expect(RENDER_HTML_SYSTEM_PROMPT).toContain('200,000')
     expect(RENDER_HTML_SYSTEM_PROMPT).toContain('inline CSS/JS')
     expect(RENDER_HTML_SYSTEM_PROMPT).toContain('data:')
     expect(RENDER_HTML_SYSTEM_PROMPT).toContain('iframe')
+    expect(RENDER_HTML_SYSTEM_PROMPT).toContain('forms')
     expect(RENDER_HTML_SYSTEM_PROMPT).toContain('data visualizations')
     expect(RENDER_HTML_SYSTEM_PROMPT).toContain('ECharts')
-    expect(RENDER_HTML_SYSTEM_PROMPT).toContain('network-enabled sandbox')
+    expect(RENDER_HTML_SYSTEM_PROMPT).toContain('normal Chromium page capabilities')
     expect(RENDER_HTML_SYSTEM_PROMPT).toContain('trusted HTTPS')
-    expect(RENDER_HTML_SYSTEM_PROMPT).toContain('inline SVG/CSS/Canvas')
-    expect(RENDER_HTML_SYSTEM_PROMPT).not.toContain('networkless sandbox')
+    expect(RENDER_HTML_SYSTEM_PROMPT).toContain('isolated capability-asset origin')
+    expect(RENDER_HTML_SYSTEM_PROMPT).not.toContain('Never use iframe')
     expect(RENDER_HTML_SYSTEM_PROMPT.length).toBeLessThan(1800)
   })
 })
@@ -261,5 +264,11 @@ describe('turn-scoped file change journal', () => {
     expect(PRESENT_FILES_SYSTEM_PROMPT).toContain('report_file_changes')
     expect(PRESENT_FILES_SYSTEM_PROMPT).toContain('another session')
     expect(PRESENT_FILES_SYSTEM_PROMPT).toContain('nested agent worktrees')
+    expect(PRESENT_FILES_SYSTEM_PROMPT).toContain('configuration files and archives')
+    expect(PRESENT_FILES_SYSTEM_PROMPT).toContain('`rejected`')
+    expect(PRESENT_FILES_SYSTEM_PROMPT).toContain('`truncated`')
+    expect(PRESENT_FILES_SYSTEM_PROMPT).toContain(
+      'never claim rejected or truncated files were delivered',
+    )
   })
 })

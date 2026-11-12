@@ -2,7 +2,7 @@ import type { SubAppRuntimeDocPutRequest } from '@spark/protocol'
 import { createRuntimeDocRegistry } from './RuntimeDocRegistry.js'
 
 /**
- * 子应用沙箱文档内存注册表。
+ * 子应用隔离运行文档内存注册表。
  *
  * 机制背景见 RuntimeDocRegistry.ts：合成文档登记到主进程，用
  * `capability-asset://subapp-runtime-<appId>-<format>/<token>` 导航加载，避开

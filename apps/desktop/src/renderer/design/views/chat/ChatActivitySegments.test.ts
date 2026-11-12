@@ -210,14 +210,29 @@ describe('ChatActivitySegments', () => {
       },
       {
         kind: 'presented_files',
-        // 1e9476b0 起图片/音视频 presented_files 渲染为可见媒体并封口 activity；
-        // 非 document/非媒体路径（如 json）仍是不可见元数据，不应封口可见活动。
-        files: [{ path: 'output/result.json' }],
+        files: [{ path: '   ' }],
       },
     ])
 
     expect(items).toMatchObject([{ kind: 'activity', sealed: false }])
   })
+
+  it.each(['result.json', 'clash.yaml', 'clash.yml', 'bundle.zip', 'LICENSE'])(
+    'keeps explicit %s attachments visible and seals preceding activity',
+    (name) => {
+      const attachment: UIBlock = { kind: 'presented_files', files: [{ path: `output/${name}` }] }
+      const items = splitChatActivitySegments([
+        tool('read-1', 'Read', 'success'),
+        attachment,
+        tool('read-2', 'Read', 'success'),
+      ])
+      expect(items).toMatchObject([
+        { kind: 'activity', sealed: true },
+        { kind: 'content', block: attachment },
+        { kind: 'activity', sealed: false },
+      ])
+    },
+  )
 
   it('classifies tool groups with the existing read, command, write and generic semantics', () => {
     expect(getToolLogGroupKind(tool('read', 'Grep', 'success'), 'main')).toBe('read')

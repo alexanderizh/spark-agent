@@ -27,6 +27,8 @@ export interface RemoteRelayState {
   error: string | null
   connecting: boolean
   refresh: (connectIfNeeded?: boolean) => Promise<void>
+  /** 给设备起/改/清备注名（空串 = 清除），成功后设备列表就地更新 */
+  setDeviceAlias: (deviceId: string, alias: string | null) => Promise<void>
 }
 
 /** 中继连接状态 + 在线设备列表（列表已由主进程过滤掉本机）。 */
@@ -39,6 +41,7 @@ export function useRemoteRelay(): RemoteRelayState {
   const { invoke: getStatus } = useIpcInvoke('remote-agent:relay:get-status')
   const { invoke: connectRelay } = useIpcInvoke('remote-agent:relay:connect')
   const { invoke: listDevices } = useIpcInvoke('remote-agent:relay:list-devices')
+  const { invoke: setAlias } = useIpcInvoke('remote-agent:device:set-alias')
 
   useIpcStream('stream:remote-agent:relay-status', (payload) => {
     setStatus(payload)
@@ -72,7 +75,22 @@ export function useRemoteRelay(): RemoteRelayState {
     void refresh(true)
   }, [refresh])
 
-  return { status, devices, error, connecting, refresh }
+  const setDeviceAlias = useCallback(
+    async (deviceId: string, alias: string | null) => {
+      try {
+        const next = await setAlias({ deviceId, alias })
+        setDevices(next.devices)
+        setError(null)
+      } catch (cause) {
+        // 同时置错误横幅与抛回调用方：视图层要 toast，断连态横幅也要能显示原因
+        setError(cause instanceof Error ? cause.message : String(cause))
+        throw cause instanceof Error ? cause : new Error(String(cause))
+      }
+    },
+    [setAlias],
+  )
+
+  return { status, devices, error, connecting, refresh, setDeviceAlias }
 }
 
 export type RemoteCall = <T>(

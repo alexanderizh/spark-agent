@@ -452,10 +452,10 @@ export const SUB_APP_GUIDE_TOPICS = {
   canvas: { summary: '列出画布项目并追加文本。' },
   browser: { summary: '内置浏览器、媒体发现与下载。' },
   security: {
-    summary: 'iframe CSP、legacy raw IPC、凭据和源码边界。',
+    summary: '浏览器能力、origin 隔离、legacy raw IPC、凭据和源码边界。',
     guidance: [
-      '子应用可嵌入 HTTPS/HTTP 页面，外部网络关闭时 iframe 也被 CSP 禁止。每个子应用使用独立 origin，外层沙箱允许脚本、same-origin、表单和受限弹窗，但不允许顶层导航或下载。目标网站仍须允许被嵌入。',
-      'object、embed、base 仍被 CSP 禁止；表单可用于本地交互，但原生表单提交会被 CSP 阻止。',
+      '子应用文档按 appId 与 V1/V2 使用独立 origin，不注入 CSP 或 iframe sandbox，遵循 Chromium 页面能力，包括脚本、网络、表单、iframe、弹窗、下载与导航。主窗口 HTTP(S) 顶层导航会转入内置浏览器；页面不能访问主窗口 DOM 或 Node.js，只有宿主显式提供的应用桥接接口可调用宿主能力。',
+      '目标网站仍可通过自身响应头禁止嵌入；浏览器 Cookie、混合内容和协议规则仍然适用。',
     ],
   },
   lifecycle: {

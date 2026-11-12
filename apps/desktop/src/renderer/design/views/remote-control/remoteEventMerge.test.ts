@@ -98,6 +98,92 @@ describe('mergeRemoteEvents', () => {
     expect(merged.map((event) => event.id)).toEqual(['c1', 'd2'])
   })
 
+  it('同批次先到 delta、后到 complete 时只保留带身份的完整版', () => {
+    const merged = mergeRemoteEvents(
+      [],
+      [
+        ev({
+          id: 'delta',
+          seq: 1,
+          type: 'assistant_message',
+          content: '片段',
+          mode: 'delta',
+          segmentId: 'seg-1',
+        }),
+        ev({
+          id: 'complete',
+          seq: 2,
+          type: 'assistant_message',
+          content: '完整片段',
+          mode: 'complete',
+          segmentId: 'seg-1',
+          isFinal: false,
+        }),
+      ],
+    )
+
+    expect(merged.map((event) => event.id)).toEqual(['complete'])
+  })
+
+  it('旧目标端不带 segmentId 的普通 complete 仍能抑制同段 delta', () => {
+    const merged = mergeRemoteEvents(
+      [],
+      [
+        ev({ id: 'delta', seq: 1, type: 'assistant_message', content: '片段', mode: 'delta' }),
+        ev({
+          id: 'complete',
+          seq: 2,
+          type: 'assistant_message',
+          content: '完整片段',
+          mode: 'complete',
+          isFinal: false,
+        }),
+      ],
+    )
+
+    expect(merged.map((event) => event.id)).toEqual(['complete'])
+  })
+
+  it('完整事件之后的同段重试 delta 不应被抑制', () => {
+    const merged = mergeRemoteEvents(
+      [
+        ev({
+          id: 'complete-before-retry',
+          seq: 2,
+          type: 'assistant_message',
+          content: '失败尝试正文',
+          mode: 'complete',
+          segmentId: 'seg-1',
+        }),
+      ],
+      [
+        ev({
+          id: 'reset',
+          seq: 5,
+          type: 'assistant_message',
+          content: '',
+          mode: 'complete',
+          segmentId: 'seg-1',
+          isFinal: false,
+        }),
+        ev({
+          id: 'retry-delta',
+          seq: 6,
+          type: 'assistant_message',
+          content: '重试正文',
+          mode: 'delta',
+          segmentId: 'seg-1',
+        }),
+      ],
+    )
+
+    expect(merged.map((event) => event.id)).toEqual([
+      'complete-before-retry',
+      'reset',
+      'retry-delta',
+    ])
+  })
+
   it('结果按 seq 升序（而非到达顺序）', () => {
     const merged = mergeRemoteEvents(
       [ev({ id: 'late', seq: 9, type: 'user_message', content: '后' })],
@@ -236,5 +322,347 @@ describe('buildRemoteTimeline — presented_files', () => {
   it('空 files 数组不产生空卡片', () => {
     const items = buildRemoteTimeline([ev({ id: '1', seq: 1, type: 'presented_files', files: [] })])
     expect(items).toEqual([])
+  })
+})
+
+/**
+ * 回合级收尾消息（isFinal 且无 segmentId）：
+ * 执行器在 result 之后补发一条全文，桌面端曾把它当新分段 → 同一段回答画两遍。
+ */
+describe('buildRemoteTimeline — 回合级收尾消息', () => {
+  const hello = 'Hi! I am your Spark assistant, ready to help.'
+  const helloRest = ' What would you like to work on today?'
+  const full = hello + helloRest
+
+  it('分段 + 收尾全文只渲染一条，且文本等于全文', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: '1', seq: 1, type: 'user_message', content: 'hi' }),
+      ev({
+        id: '2',
+        seq: 2,
+        type: 'assistant_message',
+        content: hello,
+        mode: 'delta',
+        segmentId: 'seg-1',
+      }),
+      ev({
+        id: '3',
+        seq: 3,
+        type: 'assistant_message',
+        content: helloRest,
+        mode: 'delta',
+        segmentId: 'seg-1',
+      }),
+      // 收尾消息：isFinal、无 segmentId
+      ev({
+        id: '4',
+        seq: 4,
+        type: 'assistant_message',
+        content: full,
+        mode: 'complete',
+        isFinal: true,
+      }),
+    ])
+
+    const assistants = items.filter((item) => item.kind === 'assistant')
+    expect(assistants).toHaveLength(1)
+    expect(assistants[0]?.kind === 'assistant' ? assistants[0].text : '').toBe(full)
+    expect(assistants[0]?.kind === 'assistant' ? assistants[0].streaming : true).toBe(false)
+  })
+
+  it('收尾全文是分段拼接的扩展时只补差量', () => {
+    const items = buildRemoteTimeline([
+      ev({
+        id: '1',
+        seq: 1,
+        type: 'assistant_message',
+        content: hello,
+        mode: 'delta',
+        segmentId: 'seg-1',
+      }),
+      ev({
+        id: '2',
+        seq: 2,
+        type: 'assistant_message',
+        content: `${hello} 补充一句`,
+        isFinal: true,
+      }),
+    ])
+
+    const assistants = items.filter((item) => item.kind === 'assistant')
+    expect(assistants).toHaveLength(1)
+    expect(assistants[0]?.kind === 'assistant' ? assistants[0].text : '').toBe(`${hello} 补充一句`)
+  })
+
+  it('多分段的收尾全文扩展只把新增差量追加到末段', () => {
+    const items = buildRemoteTimeline([
+      ev({
+        id: '1',
+        seq: 1,
+        type: 'assistant_message',
+        content: '第一段',
+        mode: 'complete',
+        segmentId: 'seg-1',
+      }),
+      ev({
+        id: '2',
+        seq: 2,
+        type: 'assistant_message',
+        content: '第二段',
+        mode: 'complete',
+        segmentId: 'seg-2',
+      }),
+      ev({
+        id: '3',
+        seq: 3,
+        type: 'assistant_message',
+        content: '第一段第二段补充',
+        mode: 'complete',
+        isFinal: true,
+      }),
+    ])
+
+    expect(items.filter((item) => item.kind === 'assistant').map((item) => item.text)).toEqual([
+      '第一段',
+      '第二段补充',
+    ])
+  })
+
+  it('收尾全文与分段对不上时收敛成一条（内容以全文为准）', () => {
+    const items = buildRemoteTimeline([
+      ev({
+        id: '1',
+        seq: 1,
+        type: 'assistant_message',
+        content: '草稿第一段',
+        mode: 'delta',
+        segmentId: 'seg-1',
+      }),
+      ev({
+        id: '2',
+        seq: 2,
+        type: 'assistant_message',
+        content: '另一段',
+        mode: 'delta',
+        segmentId: 'seg-2',
+      }),
+      ev({ id: '3', seq: 3, type: 'assistant_message', content: full, isFinal: true }),
+    ])
+
+    const assistants = items.filter((item) => item.kind === 'assistant')
+    expect(assistants).toHaveLength(1)
+    expect(assistants[0]?.kind === 'assistant' ? assistants[0].text : '').toBe(full)
+  })
+
+  it('只有收尾消息（历史被截断）时正文照样渲染', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: '1', seq: 1, type: 'assistant_message', content: full, isFinal: true }),
+    ])
+
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ kind: 'assistant', text: full })
+  })
+
+  it('不同回合的相同收尾正文都保留', () => {
+    const items = buildRemoteTimeline([
+      ev({
+        turnId: 'turn-previous',
+        id: 'previous-final',
+        seq: 1,
+        type: 'assistant_message',
+        content: full,
+        isFinal: true,
+      }),
+      ev({
+        turnId: 'turn-current',
+        id: 'current-final',
+        seq: 3,
+        type: 'assistant_message',
+        content: full,
+        isFinal: true,
+      }),
+    ])
+
+    expect(items.filter((item) => item.kind === 'assistant')).toHaveLength(2)
+    expect(items.map((item) => item.seq)).toEqual([1, 3])
+  })
+
+  it('缺少分段时把收尾消息按 seq 插入后续事件之前', () => {
+    const items = buildRemoteTimeline([
+      ev({
+        turnId: 'turn-current',
+        id: 'current-final',
+        seq: 2,
+        type: 'assistant_message',
+        content: full,
+        isFinal: true,
+      }),
+      ev({
+        turnId: 'turn-next',
+        id: 'next-user',
+        seq: 3,
+        type: 'user_message',
+        content: '下一轮',
+      }),
+    ])
+
+    expect(items.map((item) => `${item.kind}:${item.seq}`)).toEqual(['assistant:2', 'user:3'])
+  })
+
+  it('真实输出恰好由同一段文本重复组成时不截断', () => {
+    const repeated = `${'这是一段真实重复的正文。'}${'这是一段真实重复的正文。'}`
+    const items = buildRemoteTimeline([
+      ev({
+        id: 'repeated',
+        seq: 1,
+        type: 'assistant_message',
+        content: repeated,
+        mode: 'complete',
+        segmentId: 'seg-1',
+        isFinal: false,
+      }),
+    ])
+
+    expect(items[0]).toMatchObject({ kind: 'assistant', text: repeated })
+  })
+
+  it('同回合不同分段身份的相同 assistant 正文都保留', () => {
+    const items = buildRemoteTimeline([
+      ev({
+        id: '1',
+        seq: 1,
+        type: 'assistant_message',
+        content: full,
+        mode: 'complete',
+        segmentId: 'seg-1',
+      }),
+      ev({
+        id: '2',
+        seq: 2,
+        type: 'assistant_message',
+        content: full,
+        mode: 'complete',
+        segmentId: 'seg-9',
+      }),
+    ])
+
+    expect(items.filter((item) => item.kind === 'assistant').map((item) => item.id)).toEqual([
+      '1',
+      '2',
+    ])
+  })
+
+  it('空 complete 复位失败尝试后，重试 delta 从空文本开始累积', () => {
+    const items = buildRemoteTimeline([
+      ev({
+        id: 'failed-attempt',
+        seq: 1,
+        type: 'assistant_message',
+        content: '失败尝试半截',
+        mode: 'delta',
+        segmentId: 'seg-1',
+      }),
+      ev({
+        id: 'reset',
+        seq: 2,
+        type: 'assistant_message',
+        content: '',
+        mode: 'complete',
+        isFinal: false,
+        segmentId: 'seg-1',
+      }),
+      ev({
+        id: 'retry',
+        seq: 3,
+        type: 'assistant_message',
+        content: '重试后的正文',
+        mode: 'delta',
+        segmentId: 'seg-1',
+      }),
+    ])
+
+    expect(items.filter((item) => item.kind === 'assistant')).toMatchObject([
+      { text: '重试后的正文', streaming: true },
+    ])
+  })
+})
+
+describe('mergeRemoteEvents — 收尾消息不吞流式分片', () => {
+  it('base 里只有收尾消息时，无 segmentId 的 delta 仍被保留', () => {
+    const base = [
+      ev({
+        id: 'final',
+        seq: 9,
+        type: 'assistant_message',
+        content: '全文',
+        mode: 'complete',
+        isFinal: true,
+      }),
+    ]
+    const incoming = [
+      // 老版本目标端的 delta 不带 segmentId
+      ev({ id: 'd1', seq: 5, type: 'assistant_message', content: '流式', mode: 'delta' }),
+    ]
+
+    const merged = mergeRemoteEvents(base, incoming)
+
+    expect(merged.map((event) => event.id)).toEqual(['d1', 'final'])
+  })
+})
+
+describe('buildRemoteTimeline — 历史会话不该停在「进行中」', () => {
+  it('已结束的会话：思考分段全部收敛，只有最后一条正文可能还在流式', () => {
+    // 目标端历史里思考没有 isFinal、工具结果可能缺失，只靠 isFinal 判定会整屏「进行中」
+    const events = [
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: 'hi' }),
+      ev({
+        id: 'th1',
+        seq: 2,
+        type: 'agent_thinking',
+        content: '想一想',
+        mode: 'complete',
+        segmentId: 'think-1',
+      }),
+      ev({ id: 'tc1', seq: 3, type: 'tool_call', toolName: 'bash', toolCallId: 'c1' }),
+      ev({
+        id: 'tr1',
+        seq: 4,
+        type: 'tool_result',
+        toolName: 'bash',
+        toolCallId: 'c1',
+        toolStatus: 'success',
+      }),
+      ev({
+        id: 'a1',
+        seq: 5,
+        type: 'assistant_message',
+        content: '第一段',
+        mode: 'complete',
+        segmentId: 'seg-1',
+      }),
+      ev({
+        id: 'th2',
+        seq: 6,
+        type: 'agent_thinking',
+        content: '再想想',
+        mode: 'complete',
+        segmentId: 'think-2',
+      }),
+      ev({
+        id: 'a2',
+        seq: 7,
+        type: 'assistant_message',
+        content: '第二段',
+        mode: 'complete',
+        segmentId: 'seg-2',
+      }),
+      ev({ id: 's1', seq: 8, type: 'agent_status', status: 'completed' }),
+    ]
+
+    const items = buildRemoteTimeline(events)
+
+    // 收到终态后连最后一条正文也不再流式
+    expect(items.every((item) => !('streaming' in item) || item.streaming === false)).toBe(true)
+    expect(items.filter((item) => item.kind === 'thinking')).toHaveLength(2)
   })
 })

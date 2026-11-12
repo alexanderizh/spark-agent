@@ -82,7 +82,6 @@ export function validateSubAppSource(input) {
   }
 
   scanSparkAppSymbols(source, file, diagnostics, capabilities)
-  scanForbiddenMarkup(source, file, diagnostics)
   scanResourceUrls(source, file, diagnostics)
 
   matchOnce(source, /\b(?:localStorage|sessionStorage|indexedDB)\b/u, (match) => {
@@ -129,7 +128,7 @@ export function validateSubAppSource(input) {
       match.index,
       'warning',
       'UNSAFE_EVAL_DEPENDENCY',
-      '源码依赖 unsafe-eval；用户关闭该子应用安全选项后会失效。',
+      '源码使用 eval / Function 动态执行代码；当前浏览器模式支持该能力，请只运行可信来源的子应用。',
       'security',
     )
   })
@@ -141,7 +140,7 @@ export function validateSubAppSource(input) {
       match.index,
       'suggestion',
       'DIRECT_NETWORK_REQUEST',
-      '直接网络请求受目标 CORS 和子应用网络设置约束，且不会获得宿主凭据。公开无密钥接口可继续使用。',
+      '直接网络请求受目标服务与浏览器 CORS 规则约束，且不会获得宿主凭据。公开无密钥接口可继续使用。',
       'network',
     )
   })
@@ -316,39 +315,6 @@ function maskJavaScriptNonCode(code) {
   )
 }
 
-function scanForbiddenMarkup(source, file, diagnostics) {
-  const tags = ['object', 'embed', 'base']
-  for (const tag of tags) {
-    const pattern = new RegExp(`<\\s*${tag}\\b`, 'iu')
-    const match = pattern.exec(source)
-    if (match) {
-      add(
-        diagnostics,
-        source,
-        file,
-        match.index,
-        'error',
-        'CSP_UNSUPPORTED_ELEMENT',
-        `<${tag}> 被当前子应用 CSP 禁止，运行时不会正常工作。`,
-        'security',
-      )
-    }
-  }
-  const form = /<\s*form\b/iu.exec(source)
-  if (form) {
-    add(
-      diagnostics,
-      source,
-      file,
-      form.index,
-      'warning',
-      'CSP_FORM_SUBMISSION_BLOCKED',
-      '<form> 可以承载本地交互，但当前 CSP 会阻止原生表单提交；请在 submit 事件中 preventDefault 并通过允许的 API 处理数据。',
-      'security',
-    )
-  }
-}
-
 function scanResourceUrls(source, file, diagnostics) {
   const pattern = /\b(?:src|href)\s*=\s*(['"])([^'"]+)\1/giu
   for (const match of source.matchAll(pattern)) {
@@ -360,9 +326,9 @@ function scanResourceUrls(source, file, diagnostics) {
         source,
         file,
         match.index ?? 0,
-        'error',
+        'warning',
         'JAVASCRIPT_URL',
-        '资源或链接使用 javascript: URL，不符合子应用安全契约。',
+        'Chromium 会在子应用独立 origin 内执行 javascript: URL；请只运行可信内容。',
         'security',
       )
       continue
@@ -373,9 +339,9 @@ function scanResourceUrls(source, file, diagnostics) {
       source,
       file,
       match.index ?? 0,
-      'error',
+      'warning',
       'V1_RELATIVE_RESOURCE',
-      `V1 单 HTML 不能可靠加载本地相对资源：${value}`,
+      `V1 单 HTML 无法随包提供本地相对资源（${value}）；可用绝对 URL、<base href> 或 V2 多文件包。`,
       'publishing',
     )
   }

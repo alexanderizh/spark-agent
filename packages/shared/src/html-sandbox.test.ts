@@ -4,6 +4,7 @@ import {
   buildSandboxedHtml,
   validateHtmlViewerPayload,
 } from './html-sandbox'
+import { buildHtmlRenderOriginHost } from './html-render-origin'
 
 describe('HTML sandbox helpers', () => {
   it('wraps fragments with theme marker and no injected CSP', () => {
@@ -27,23 +28,22 @@ describe('HTML sandbox helpers', () => {
     expect(document).not.toContain('<html data-s<meta')
   })
 
-  it('keeps the standalone viewer as a capability-asset iframe document', () => {
+  it('keeps the standalone viewer as an unsandboxed capability-asset iframe document', () => {
+    const token = 'win-abc123'
+    const frameSrc = `capability-asset://${buildHtmlRenderOriginHost(token)}/${token}?v=1`
     const document = buildHtmlViewerDocument(
       {
         html: '<main>safe</main>',
         title: '预览',
         theme: 'light',
       },
-      'capability-asset://html-render/win-abc123?v=1',
+      frameSrc,
     )
 
-    // iframe 由协议 URL 提供（独立空策略容器，不继承壳 CSP），全能力沙箱
-    expect(document).toContain('src="capability-asset://html-render/win-abc123?v=1"')
-    expect(document).toContain('allow-same-origin')
-    expect(document).toContain('allow-scripts')
-    expect(document).toContain('allow-forms')
-    expect(document).toContain('allow-modals')
-    expect(document).toContain('allow-popups')
+    // iframe 由协议 URL 提供（独立 origin，不继承壳文档策略）
+    expect(document).toContain(`src="${frameSrc}"`)
+    expect(document).not.toContain('sandbox=')
+    // 仅保留不含用户内容的外壳 CSP；内容由独立 origin 文档承载。
     expect(document).toContain('frame-src capability-asset:')
     expect(document).not.toContain('srcdoc=')
   })

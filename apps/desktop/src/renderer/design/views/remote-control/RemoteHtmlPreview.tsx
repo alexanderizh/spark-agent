@@ -2,15 +2,26 @@
  * 远程 HTML 内容预览。
  *
  * 目标电脑上的 HTML 产物本机打不开：经 attachment:fetch 取回原文后，
- * 用 srcDoc 塞进沙箱 iframe 就地渲染。沙箱刻意**不给 allow-same-origin**：
- * srcDoc 会继承宿主文档的源，一旦放行 same-origin + scripts，远端 HTML 就能
- * 直接摸到渲染进程的 window.spark IPC。opaque origin 下脚本仍能跑，只是拿不到
- * 宿主（代价是 localStorage 之类不可用，对静态预览足够）。
+ * 原文登记为独立 capability-asset 文档后就地渲染，避免 srcDoc 继承 renderer
+ * CSP / origin；内容按浏览器能力运行，但无法访问主窗口 DOM 或 SparkWork IPC。
  */
-import { useState } from 'react'
+import { createLogger } from '@spark/shared'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Icons } from '../../Icons'
+import {
+  buildHtmlRenderToken,
+  htmlRenderDocUrl,
+  putHtmlRuntimeDoc,
+  releaseHtmlRuntimeDoc,
+} from '../../services/render-html'
 
-const REMOTE_HTML_SANDBOX = 'allow-scripts allow-forms allow-modals'
+const logger = createLogger('remote-html-preview')
+
+type RemoteHtmlFrameState = {
+  html: string
+  url?: string
+  error?: boolean
+}
 
 export function RemoteHtmlPreview({
   html,
@@ -22,6 +33,30 @@ export function RemoteHtmlPreview({
   height?: number
 }) {
   const [mode, setMode] = useState<'preview' | 'source'>('preview')
+  const [frameState, setFrameState] = useState<RemoteHtmlFrameState | null>(null)
+  const frameVersionRef = useRef(0)
+  const previewId = useId()
+  const token = buildHtmlRenderToken(`remote-preview:${previewId}`)
+
+  useEffect(() => {
+    let cancelled = false
+    const version = ++frameVersionRef.current
+    putHtmlRuntimeDoc(token, html)
+      .then(() => {
+        if (!cancelled) setFrameState({ html, url: htmlRenderDocUrl(token, version) })
+      })
+      .catch((error: unknown) => {
+        logger.warn('Failed to register remote HTML preview document', error)
+        if (!cancelled) setFrameState({ html, error: true })
+      })
+
+    return () => {
+      cancelled = true
+      releaseHtmlRuntimeDoc(token)
+    }
+  }, [html, token])
+
+  const activeFrame = frameState?.html === html ? frameState : null
 
   return (
     <div className="rc-html">
@@ -50,13 +85,26 @@ export function RemoteHtmlPreview({
         </div>
       </div>
       {mode === 'preview' ? (
-        <iframe
-          className="rc-html-frame"
-          title={title}
-          sandbox={REMOTE_HTML_SANDBOX}
-          srcDoc={html}
-          style={{ height }}
-        />
+        activeFrame?.error ? (
+          <div className="rc-html-source" role="alert">
+            HTML 预览加载失败，请查看源码或稍后重试。
+          </div>
+        ) : activeFrame?.url == null ? (
+          <div className="rc-html-source" role="status">
+            正在加载 HTML 预览…
+          </div>
+        ) : (
+          <iframe
+            className="rc-html-frame"
+            title={title}
+            src={activeFrame.url}
+            style={{ height }}
+            onError={() => {
+              logger.warn('Remote HTML preview frame failed to load')
+              setFrameState({ html, error: true })
+            }}
+          />
+        )
       ) : (
         <pre className="rc-html-source">{html}</pre>
       )}

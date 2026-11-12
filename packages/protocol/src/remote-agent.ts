@@ -40,9 +40,24 @@ export type RemoteAgentErrorCode =
 export interface RemoteAgentDeviceSummary {
   deviceId: string
   name: string
+  /**
+   * 本机给这台设备起的备注名（只在本机生效，不同步）。
+   * 两台机器自报名相同（例如都叫 Windows 工作站）时靠它区分；
+   * 缺省 = 没改过备注，界面回落 {@link name}。
+   */
+  alias?: string
   version: string | null
   online: boolean
   lastSeenAt: string | null
+}
+
+/** 备注名长度上限（按字符计，中文按 1 个字符） */
+export const REMOTE_AGENT_DEVICE_ALIAS_MAX_LENGTH = 40
+
+export interface RemoteAgentDeviceAliasRequest {
+  deviceId: string
+  /** 空串或 null = 清除备注名，回落设备自报名 */
+  alias: string | null
 }
 
 /** Minimal directory projections; B's local filesystem paths never cross IPC. */
@@ -338,6 +353,8 @@ export interface RemoteAgentIpcChannelMap {
   'remote-agent:relay:connect': [{}, RemoteAgentRelayStatus]
   'remote-agent:relay:disconnect': [{}, RemoteAgentRelayStatus]
   'remote-agent:relay:list-devices': [{}, RemoteAgentDeviceListResponse]
+  /** 给远程设备起/改/清备注名，返回写入后的完整设备列表 */
+  'remote-agent:device:set-alias': [RemoteAgentDeviceAliasRequest, RemoteAgentDeviceListResponse]
   'remote-agent:target:list-projects': [
     RemoteAgentTargetProjectListRequest,
     RemoteAgentRemoteProjectListResponse,

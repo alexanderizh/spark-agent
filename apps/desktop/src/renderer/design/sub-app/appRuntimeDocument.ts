@@ -9,62 +9,16 @@ import {
 export { SUB_APP_SOURCE_HARD_LIMIT }
 
 /**
- * 子应用运行时安全选项（来源：设置「子应用」分类，默认全部放行）。
- *
- * 本地优先 + 用户自担风险模型下默认不设防；每项都可由用户在设置里收紧：
- *   - allowNetworkAccess：false 时 connect-src / frame-src 均为 'none'，阻止
- *     fetch/XHR 与外部 HTTP(S) iframe；
- *   - allowUnsafeEval：false 时 CSP 不带 'unsafe-eval'，babel-standalone 等
- *     运行时编译器会失效；
- *   - sourceLengthLimit：> 0 时运行文档拒绝超限源码（0 = 不限制）。
+ * 子应用运行时的可配置资源限制。网页能力本身遵循 Chromium 默认行为；
+ * 仅保留可选的源码体积上限（0 = 不限制）。
  */
 export interface SubAppRuntimeSecurityOptions {
-  allowNetworkAccess?: boolean
-  allowUnsafeEval?: boolean
   sourceLengthLimit?: number
 }
 
-/** 与设置 UI 的默认值保持一致：本地应用默认放行全部能力。 */
+/** 与设置 UI 的默认值保持一致：源码大小默认不设额外上限。 */
 export const DEFAULT_SUB_APP_RUNTIME_SECURITY: Required<SubAppRuntimeSecurityOptions> = {
-  allowNetworkAccess: true,
-  allowUnsafeEval: true,
   sourceLengthLimit: 0,
-}
-
-/**
- * 功能型子应用运行文档 CSP。
- *
- * frame-src 随外部网络开关允许 HTTP(S) 页面；object-src / base-uri /
- * form-action 保持收紧。script / connect 按安全选项拼接。
- */
-function buildSubAppRuntimeCsp(
-  security: Required<SubAppRuntimeSecurityOptions>,
-  allowPackageAssets: boolean,
-): string {
-  const packageSource = allowPackageAssets ? ['capability-asset:'] : []
-  const scriptSrc = [
-    "'unsafe-inline'",
-    ...(security.allowUnsafeEval ? ["'unsafe-eval'"] : []),
-    ...packageSource,
-    'https:',
-    'http:',
-  ].join(' ')
-  const connectSrc = security.allowNetworkAccess ? 'https: http:' : "'none'"
-  const frameSrc = security.allowNetworkAccess ? 'https: http:' : "'none'"
-  return [
-    "default-src 'none'",
-    `script-src ${scriptSrc}`,
-    `style-src 'unsafe-inline' https: http: ${packageSource.join(' ')}`,
-    `img-src data: blob: https: http: safe-file: ${packageSource.join(' ')}`,
-    `media-src data: blob: https: http: safe-file: ${packageSource.join(' ')}`,
-    `font-src data: https: http: ${packageSource.join(' ')}`,
-    `connect-src ${connectSrc}`,
-    'worker-src blob:',
-    `frame-src ${frameSrc}`,
-    "object-src 'none'",
-    allowPackageAssets ? 'base-uri capability-asset:' : "base-uri 'none'",
-    "form-action 'none'",
-  ].join('; ')
 }
 
 export interface SubAppBootstrapConfig {
@@ -121,12 +75,21 @@ function appendBeforeBodyEnd(doc: string, snippet: string): string {
   return `${doc}${snippet}`
 }
 
+function sourceHasBaseHref(source: string): boolean {
+  if (!/<base\b/i.test(source)) return false
+  if (typeof DOMParser === 'undefined') return /<base\b[^>]*\shref(?:\s*=|\s|>)/i.test(source)
+  const parsed = new DOMParser().parseFromString(source, 'text/html')
+  return parsed.head.querySelector('base[href]') != null
+}
+
 /**
- * 构建功能型子应用的沙箱运行文档。
+ * 构建功能型子应用的隔离运行文档。
  *
- * 安全边界：
- *   - 宿主组件必须使用按 appId 隔离 origin 的 sandbox iframe，并仅开放脚本、
- *     same-origin、表单和受限弹窗能力；
+ * 运行边界：
+ *   - 宿主组件必须使用按 appId 与 V1/V2 隔离 origin 的 iframe；
+ *   - 页面遵循 Chromium 浏览器能力，不注入 CSP 或 iframe sandbox；主窗口的
+ *     HTTP(S) 顶层导航仍由主进程转入隔离浏览器面板；
+ *   - bootstrap SDK 仅通过 postMessage 提供受控 SparkWork bridge，不暴露 Node；
  *   - bootstrap SDK 在用户源码之前注入，应用脚本执行时 `window.sparkApp` 已可用；
  *   - 注入的配置通过 JSON 转义防止 `</script>` 逃逸。
  */
@@ -142,9 +105,9 @@ export function buildAppRuntimeDocument(input: BuildAppRuntimeDocumentInput): st
     )
   }
 
+  const hasSourceBaseHref = sourceHasBaseHref(source)
   const head = [
-    `<meta http-equiv="Content-Security-Policy" content="${buildSubAppRuntimeCsp(security, input.assetBaseUrl != null)}">`,
-    ...(input.assetBaseUrl != null
+    ...(input.assetBaseUrl != null && !hasSourceBaseHref
       ? [`<base href="${input.assetBaseUrl.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">`]
       : []),
     `<meta name="color-scheme" content="${theme}">`,
@@ -183,7 +146,7 @@ export function buildAppRuntimeDocument(input: BuildAppRuntimeDocumentInput): st
 }
 
 /**
- * 沙箱内 bootstrap SDK：提供 `window.sparkApp` 客户端。
+ * 隔离子应用文档内的 bootstrap SDK：提供 `window.sparkApp` 客户端。
  * 约束：
  *   - 只与 parent 通过 postMessage 通信，不访问任何 DOM 之外的宿主能力；
  *   - 请求带超时，避免应用端悬挂 Promise 累积；

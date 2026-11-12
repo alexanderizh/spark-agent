@@ -59,6 +59,7 @@ import { WikiIpcSchemaRegistry } from '../wiki.js'
 import { ToolAuditIpcSchemaRegistry } from '../tool-audit.js'
 import { SessionJourneyIpcSchemaRegistry } from '../session-journey.js'
 
+const HTML_RUNTIME_DOCUMENT_MAX_LENGTH = 420_000
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
 // ─── 基础 Schema ─────────────────────────────────────────────────────────────
@@ -2183,9 +2184,8 @@ export const IpcSchemaRegistry = {
   }),
   'html:put-runtime-doc': z.object({
     token: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{7,79}$/),
-    // 原始 html 上限 200_000（见 html:open-window），此处为经
-    // buildSandboxedHtml 包裹 CSP/主题样式后的合成文档，留包裹余量。
-    document: z.string().min(1).max(220_000),
+    // 兼容远程会话最多 400_000 字符的 HTML 预览，并为合成主题文档留余量。
+    document: z.string().min(1).max(HTML_RUNTIME_DOCUMENT_MAX_LENGTH),
     // 文件预览多文件支持：登记预览 HTML 所在目录为相对资源根（绝对路径），
     // 文档内相对引用经 capability-asset 协议从该目录解析。
     assetRoot: z.string().min(1).max(4000).optional(),

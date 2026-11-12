@@ -3,6 +3,7 @@ import {
   MAX_HTML_RENDER_HEIGHT,
   MAX_HTML_RENDER_TITLE_LENGTH,
   MIN_HTML_RENDER_HEIGHT,
+  buildHtmlRenderOriginHost,
   buildSandboxedHtml,
 } from '@spark/shared'
 import type { UIBlock } from './event-mapper'
@@ -99,21 +100,19 @@ export function parseRenderHtmlResult(output: unknown): RenderHtmlResult | null 
   return null
 }
 
-export function buildRenderHtmlSrcDoc(
+export function buildRenderHtmlDocument(
   block: Pick<Extract<UIBlock, { kind: 'html_block' }>, 'html'>,
   theme: 'light' | 'dark',
 ): string {
   return buildSandboxedHtml(block.html, theme)
 }
 
-// ─── 沙箱文档登记（capability-asset://html-render/<token>） ────────────────
-// srcdoc 文档会继承 renderer CSP（script-src 'self' capability-asset:）导致
-// 渲染块内联脚本被拦；合成文档改为登记到主进程再导航加载，机制与子应用
-// 一致（见 main/services/RuntimeDocRegistry.ts）。
+// ─── HTML 文档登记（每个 token 使用独立 capability-asset origin） ────────
+// 独立协议文档不会继承 renderer CSP；文件、会话和远程预览共用该登记机制。
 
-/** capability-asset://html-render/<token>?v=<n>；version 递增强制 iframe 重新加载。 */
+/** 每个文档 token 对应独立 origin；version 递增强制 iframe 重新加载。 */
 export function htmlRenderDocUrl(token: string, version: number): string {
-  return `capability-asset://html-render/${token}?v=${version}`
+  return `capability-asset://${buildHtmlRenderOriginHost(token)}/${token}?v=${version}`
 }
 
 /**
@@ -122,7 +121,7 @@ export function htmlRenderDocUrl(token: string, version: number): string {
  * 登记的 assetRoot 从磁盘解析。version 递增强制 iframe 重新加载。
  */
 export function htmlRenderDocBaseUrl(token: string, version: number): string {
-  return `capability-asset://html-render/${token}/?v=${version}`
+  return `capability-asset://${buildHtmlRenderOriginHost(token)}/${token}/?v=${version}`
 }
 
 /** FNV-1a 32 位哈希的 base36 表示，用于防 sanitize 后的 token 碰撞。 */

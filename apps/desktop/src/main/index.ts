@@ -128,6 +128,7 @@ import {
 } from './services/PlaywrightMcpRegistration.js'
 import { detectIntegrity as detectPlaywrightIntegrity } from './services/PlaywrightIntegrityService.js'
 import { getSubAppBrowserService } from './services/SubAppBrowserService.js'
+import { installSubAppTopNavigationRouter } from './services/SubAppTopNavigationRouter.js'
 import { getCanvasWindowService } from './services/CanvasWindowService.js'
 import { installWebviewPopupRouter } from './services/BrowserPanelWindowService.js'
 import { attachAppUnreadBadgeTray } from './services/AppUnreadBadgeService.js'
@@ -1030,6 +1031,10 @@ function createWindow(): BrowserWindow {
   mainWindow.on('page-title-updated', (event) => {
     event.preventDefault()
   })
+
+  // 子应用仅开放用户触发的顶层导航；外部 HTTP(S) 目标由宿主拦截并交给
+  // 隔离的浏览器面板，避免远程页面替换带 preload 的 SparkWork 主窗口。
+  installSubAppTopNavigationRouter(mainWindow.webContents)
 
   // 在系统默认浏览器中打开外部链接，不在 Electron 窗口内导航
   mainWindow.webContents.setWindowOpenHandler((details) => {

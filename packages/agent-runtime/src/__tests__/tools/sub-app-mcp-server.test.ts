@@ -318,13 +318,14 @@ describe('spark_app MCP server', () => {
     expect(validation.diagnostics.some((item) => item.code === 'LEGACY_RAW_IPC')).toBe(true)
   })
 
-  it('treats a JavaScript-managed form as a warning instead of a broken element', async () => {
+  it('accepts browser-native iframe, form, object, embed, and base elements without CSP diagnostics', async () => {
     const source = `<!doctype html><html><head><style>
       body { color: var(--spark-color-text); }
-    </style></head><body>
-      <form onsubmit="event.preventDefault(); sparkApp.ui.toast('saved')">
-        <button>Save</button>
-      </form>
+    </style><base href="https://example.com/"></head><body>
+      <iframe src="https://example.com/embedded"></iframe>
+      <form method="post" action="https://example.com/submit"><button>Save</button></form>
+      <object data="https://example.com/document.pdf"></object>
+      <embed src="https://example.com/media"></embed>
     </body></html>`
     const response = await callMcp(start(), {
       jsonrpc: '2.0',
@@ -337,9 +338,35 @@ describe('spark_app MCP server', () => {
       diagnostics: Array<{ severity: string; code: string }>
     }
     expect(validation.valid).toBe(true)
+    expect(validation.diagnostics).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'CSP_UNSUPPORTED_ELEMENT' }),
+        expect.objectContaining({ code: 'CSP_FORM_SUBMISSION_BLOCKED' }),
+      ]),
+    )
+  })
+
+  it('does not block browser-supported javascript URLs or V1-relative resources', async () => {
+    const source = `<!doctype html><html><body>
+      <a href="javascript:void(0)">Run</a>
+      <img src="./local-image.png">
+    </body></html>`
+    const response = await callMcp(start(), {
+      jsonrpc: '2.0',
+      id: 31,
+      method: 'tools/call',
+      params: { name: 'spark_app_validate', arguments: { draftHtml: source } },
+    })
+    const validation = JSON.parse(toolText(response)) as {
+      valid: boolean
+      diagnostics: Array<{ severity: string; code: string }>
+    }
+
+    expect(validation.valid).toBe(true)
     expect(validation.diagnostics).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ severity: 'warning', code: 'CSP_FORM_SUBMISSION_BLOCKED' }),
+        expect.objectContaining({ severity: 'warning', code: 'JAVASCRIPT_URL' }),
+        expect.objectContaining({ severity: 'warning', code: 'V1_RELATIVE_RESOURCE' }),
       ]),
     )
   })

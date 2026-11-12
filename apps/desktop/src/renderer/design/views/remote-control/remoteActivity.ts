@@ -97,6 +97,36 @@ export function isActivityRunning(steps: RemoteActivityStep[]): boolean {
   )
 }
 
+/**
+ * 这一段活动是否「真的还在跑」。
+ *
+ * 只靠 streaming / status 判断会误报：目标端的历史事件里不一定写全 终态，
+ * 丢了 tool_result 的工具会永远停在 running，思考分段也没有 isFinal。
+ * 已结束的会话因此整屏都是「进行中」。这里加两个硬条件：
+ *   - 会话本身还在运行（宿主从 agent_status 得出的 running）；
+ *   - 这是时间线上的**最后一段**（后面还有正文/产物，说明这段早就结束了）。
+ */
+export function isActivityLive(
+  steps: RemoteActivityStep[],
+  options: { live: boolean; isLast: boolean },
+): boolean {
+  return options.live && options.isLast && isActivityRunning(steps)
+}
+
+/**
+ * 会话不再运行时把「仍在进行」的痕迹抹掉：思考不再流式，没拿到结果的工具
+ * 由渲染层显示「未完成」而不是永久「执行中」。
+ */
+export function settleActivitySteps(
+  steps: RemoteActivityStep[],
+  live: boolean,
+): RemoteActivityStep[] {
+  if (live) return steps
+  return steps.map((step) =>
+    step.kind === 'thinking' && step.streaming ? { ...step, streaming: false } : step,
+  )
+}
+
 /** 活动段内失败的工具数 */
 export function countActivityErrors(steps: RemoteActivityStep[]): number {
   return steps.filter((step) => step.kind === 'tool' && step.status === 'error').length

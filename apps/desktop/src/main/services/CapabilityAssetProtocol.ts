@@ -1,12 +1,12 @@
 import { protocol, type CustomScheme } from 'electron'
 import { SUB_APP_RUNTIME_HOST_PREFIX } from '@spark/protocol'
-import { createLogger } from '@spark/shared'
+import { buildHtmlRenderOriginHost, createLogger } from '@spark/shared'
 import { lstat, realpath } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { getOptionalCapabilityManager } from '../ipc/registerOptionalCapabilityIpc.js'
 import { createSafeFileResponse } from './SafeFileProtocol.js'
 import {
-  HTML_RENDER_RUNTIME_HOST,
+  HTML_RENDER_RUNTIME_HOST_SUFFIX,
   resolveHtmlRenderAsset,
   takeHtmlRenderRuntimeDoc,
 } from './HtmlRenderRuntimeDocs.js'
@@ -81,12 +81,14 @@ export function registerCapabilityAssetProtocol(): void {
   protocol.handle(CAPABILITY_ASSET_SCHEME, async (request) => {
     try {
       const url = new URL(request.url)
-      // HTML 渲染域：纯 <token>（或 <token>/）按内存登记文档提供；带子路径的
-      // <token>/<相对路径> 按登记的 assetRoot 从磁盘解析（文件预览多文件支持）。
-      if (url.hostname === HTML_RENDER_RUNTIME_HOST) {
+      // HTML 文档按 token 使用独立 hostname；纯 <token>（或 <token>/）返回
+      // 内存登记文档，带子路径的 <token>/<相对路径> 从 assetRoot 解析。
+      if (url.hostname.endsWith(HTML_RENDER_RUNTIME_HOST_SUFFIX)) {
         const segments = rawPathSegments(request.url).map((segment) => decodeURIComponent(segment))
         const token = segments.shift()
-        if (token == null) return new Response('Not Found', { status: 404 })
+        if (token == null || url.hostname !== buildHtmlRenderOriginHost(token)) {
+          return new Response('Not Found', { status: 404 })
+        }
         if (segments.length > 0) {
           const assetPath = await resolveHtmlRenderAsset(token, segments)
           if (assetPath == null) return new Response('Not Found', { status: 404 })
@@ -111,11 +113,7 @@ export function registerCapabilityAssetProtocol(): void {
         const token = segments.length === 1 ? segments[0] : undefined
         const appId = hostMatch?.[1]
         const format = hostMatch?.[2]
-        if (
-          appId == null ||
-          (format !== 'v1' && format !== 'v2') ||
-          token == null
-        ) {
+        if (appId == null || (format !== 'v1' && format !== 'v2') || token == null) {
           return new Response('Not Found', { status: 404 })
         }
         const html = takeSubAppRuntimeDoc(appId, format, token)

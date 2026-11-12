@@ -50,7 +50,7 @@ describe('resolveCapabilityGuide', () => {
       'media-generation': ['describe_model', 'present_files', 'maxImages'],
       'image-generation': ['extraJson', 'materialize it in the configured output directory'],
       'session-schedule': ['session_schedule_create', 'Scheduled Task Context'],
-      'render-html': ['200,000', 'network-enabled sandbox'],
+      'render-html': ['200,000', 'normal Chromium page capabilities'],
       'render-diagram': ['markmap', 'flowchart TD'],
     }
     for (const id of CAPABILITY_IDS) {

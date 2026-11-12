@@ -1,7 +1,7 @@
 import { createLogger } from '@spark/shared'
 
 /**
- * 沙箱文档内存注册表工厂。
+ * 隔离运行文档内存注册表工厂。
  *
  * 为什么不用 iframe srcdoc：srcdoc 文档按 CSP 规范继承父文档（renderer）的
  * 策略容器，而 renderer 的 CSP 是 `script-src 'self' capability-asset:`，
@@ -10,7 +10,7 @@ import { createLogger } from '@spark/shared'
  * 独立（空）策略容器，只受文档自带 meta CSP 约束，且 renderer CSP 的
  * frame-src 已放行 capability-asset:。
  *
- * 该工厂被子应用（subapp-runtime）与内容区 HTML 渲染块（html-render）
+ * 该工厂被子应用（subapp-runtime）与 HTML 内容渲染块（html-render）
  * 两个域分别实例化：容量互不挤占，生命周期语义一致——renderer 在
  * 挂载/重载时 put，卸载时 release；兜底用容量上限 + TTL 防止渲染进程
  * 崩溃后的残留。
