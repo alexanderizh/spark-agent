@@ -75,15 +75,31 @@ const SIDEBAR_VISIBLE_SESSION_FIELDS: readonly (keyof MobileBridgeUpdateSessionR
   'projectId',
 ]
 
+/**
+ * 列表分页参数收敛：limit 1~200、offset 0~10000。
+ * 负数 / NaN / 小数一律收敛成合法整数，避免把脏参数直接送进 SQL。
+ */
+function readPageParams(url: URL, defaultLimit = 50): { limit: number; offset: number } {
+  const rawLimit = Number(url.searchParams.get('limit') ?? defaultLimit) || defaultLimit
+  const limit = Math.max(1, Math.min(rawLimit, 200))
+  const raw = Number(url.searchParams.get('offset') ?? '0')
+  const offset = Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), 0), 10_000) : 0
+  return { limit, offset }
+}
+
 export interface MobileBridgeDeps {
   /** 项目列表（workspace 投影，含项目下会话数） */
   listProjects(limit: number): Promise<MobileBridgeProjectListResponse>
-  /** 会话列表（最近 limit 条，含预览；projectId 过滤时仅返回该项目下的会话） */
+  /**
+   * 会话列表（最近 limit 条，含预览；projectId 过滤时仅返回该项目下的会话）。
+   * offset 用于「加载更多」翻页；旧调用方不传即首页。
+   */
   listSessions(
     limit: number,
     projectId?: string,
+    offset?: number,
   ): Promise<{ sessions: MobileBridgeSessionSummary[]; total: number }>
-  /** 新建会话（默认渠道/默认 Agent，标题缺省「移动端会话」；projectId 归属项目） */
+  /** 新建会话（默认渠道/默认 Agent；标题缺省「新会话 · 远程创建」，首轮由首条消息派生） */
   createSession(input: { title?: string; projectId?: string }): Promise<MobileBridgeSessionSummary>
   /** 重命名 / 置顶 / 归档 / 运行时配置 / 项目归属（仅透传需要修改的字段） */
   updateSession(
@@ -498,8 +514,8 @@ export class MobileBridgeService {
         return
       }
       const projectId = decodeURIComponent(rawId)
-      const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit') ?? '50') || 50, 200))
-      const result = await this.requireDeps().listSessions(limit, projectId)
+      const { limit, offset } = readPageParams(url)
+      const result = await this.requireDeps().listSessions(limit, projectId, offset)
       const body: MobileBridgeSessionListResponse = result
       this.sendJson(res, 200, body)
       return
@@ -508,11 +524,12 @@ export class MobileBridgeService {
     // ─── 会话 ─────────────────────────────────────────────────────────────────
 
     if (path === '/v1/sessions' && req.method === 'GET') {
-      const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit') ?? '50') || 50, 200))
+      const { limit, offset } = readPageParams(url)
       const projectIdParam = url.searchParams.get('projectId')
       const result = await this.requireDeps().listSessions(
         limit,
         projectIdParam ? decodeURIComponent(projectIdParam) : undefined,
+        offset,
       )
       const body: MobileBridgeSessionListResponse = result
       this.sendJson(res, 200, body)

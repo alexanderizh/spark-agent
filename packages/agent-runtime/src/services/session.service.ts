@@ -335,6 +335,9 @@ import {
   resolveAutoRouterWorkerBinding,
   resolveCodexMemberExecutionProfile,
   shouldDeriveSessionTitle,
+  shouldDeriveSessionTitleOrRemote,
+  stripRemoteCreatedTitle,
+  withRemoteCreatedTitleSuffix,
   shouldExposeDispatchTools,
   supportsOpenAIFastMode,
   toLastRunOutcome,
@@ -3801,13 +3804,15 @@ export class SessionService {
       }
     }
     // W1.1b：history 加载延后到 sdkResume 判定后，避免 SDK resume 路径下重复摘要写入。
+    // 远程创建的会话标题带「 · 远程创建」后缀，派生时一并保留（见 withRemoteCreatedTitleSuffix）。
     const shouldGenerateSessionTitle =
       existingEventCount === 0 &&
       userMessagePresentation?.userMessageVisibility !== 'hidden' &&
-      shouldDeriveSessionTitle(session.title)
+      shouldDeriveSessionTitleOrRemote(session.title)
     if (shouldGenerateSessionTitle) {
-      const derivedTitle = deriveSessionTitle(
-        resolveUserMessageDisplayText(userMessagePresentation, message),
+      const derivedTitle = withRemoteCreatedTitleSuffix(
+        session.title,
+        deriveSessionTitle(resolveUserMessageDisplayText(userMessagePresentation, message)),
       )
       sessionRepo.updateTitle(sessionId, derivedTitle)
       this.onSessionRenamed?.(sessionId, derivedTitle)
@@ -8185,11 +8190,13 @@ export class SessionService {
       const current = sessionRepo.get(sessionId)
       if (current == null) return false
       // Skip if user has manually renamed the session in the meantime
+      // 远程创建的标题带后缀，比较前先剥掉，否则必然判成「用户改过名」而放弃精炼
+      const currentBase = stripRemoteCreatedTitle(current.title)
       const derivedFromFirst = deriveSessionTitle(ctx.userMessage)
       if (
-        current.title !== derivedFromFirst &&
-        !isTitlePrefixOfMessage(current.title, ctx.userMessage) &&
-        !shouldDeriveSessionTitle(current.title)
+        currentBase !== derivedFromFirst &&
+        !isTitlePrefixOfMessage(currentBase, ctx.userMessage) &&
+        !shouldDeriveSessionTitle(currentBase)
       ) {
         return false
       }
@@ -8203,9 +8210,10 @@ export class SessionService {
         assistantMessage: ctx.assistantMessage,
       })
       if (refined == null || refined.length === 0) return true
-      if (refined === current.title) return false
-      sessionRepo.updateTitle(sessionId, refined)
-      this.onSessionRenamed?.(sessionId, refined)
+      const refinedTitle = withRemoteCreatedTitleSuffix(current.title, refined)
+      if (refinedTitle === current.title) return false
+      sessionRepo.updateTitle(sessionId, refinedTitle)
+      this.onSessionRenamed?.(sessionId, refinedTitle)
       return false
     } catch (err) {
       log.warn(

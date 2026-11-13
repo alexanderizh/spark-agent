@@ -226,6 +226,7 @@ import * as keystore from '@spark/shared/keystore'
 import { ScheduledTaskService, isValidCronExpression } from '@spark/agent-runtime'
 import { AutoRouterService, autoRouterHealthRegistry } from '@spark/agent-runtime'
 import { DEFAULT_DISPATCH_GOVERNANCE_CONFIG } from '@spark/agent-runtime'
+import { buildBridgeSessionTitle } from '../services/mobile-bridge-session-title.js'
 import type { TaskExecutorFn } from '@spark/agent-runtime'
 import { runSessionScheduledTaskTurn } from './scheduled-task-executor.js'
 import {
@@ -3652,7 +3653,9 @@ async function createMobileBridgeSession(
     agentAdapter,
     permissionMode: defaultRemotePermissionMode(agentAdapter),
     reasoningEffort: 'max',
-    title: title?.trim() || '移动端会话',
+    // 标题：没给就落「新会话」（属于可派生占位，首轮会用用户首条消息改写，
+    // 不再固定成「移动端会话」导致整屏同名）；末尾统一挂来源后缀，派生/精炼都会保留。
+    title: buildBridgeSessionTitle(title),
     // 归属项目（workspace）：project_id 即主 workspace id，缺省落 default
     ...(projectId != null && projectId !== '' ? { workspaceId: projectId } : {}),
   })

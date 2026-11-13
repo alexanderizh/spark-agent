@@ -979,6 +979,171 @@
   }
 }
 
+/* ─── 侧栏筛选（状态 / 标记 / 活动 / 项目 / 置顶） ──────────────────────
+ * 浮层锚在筛选按钮下方靠右（按钮在侧栏头部右侧，朝左开才不会越过窗口边）。
+ * 选项用 chip 换行排列：五个维度加起来十几项，铺成竖排会顶出屏幕。
+ */
+
+.rc-filter-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.rc-icon-btn.is-active {
+  background: var(--bg-sunken, #f2f2f2);
+  color: var(--text, #23231f);
+}
+
+.rc-filter-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 12px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: var(--r-sm, 6px);
+  background: var(--primary, #3b82f6);
+  color: var(--primary-fg, #fff);
+  font-size: var(--font-2xs, 10px);
+  line-height: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.rc-filter-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 232px;
+  max-height: min(60vh, 460px);
+  overflow: auto;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--border-strong, #d7d2c9);
+  border-radius: var(--r-md, 8px);
+  background: var(--panel, #fff);
+  box-shadow: var(--shadow-lg, 0 12px 30px rgba(17, 16, 14, 0.16));
+}
+
+.rc-filter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 6px;
+  font-size: var(--font-sm, 12px);
+  color: var(--text, #23231f);
+}
+
+.rc-filter-group + .rc-filter-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider, #efede8);
+}
+
+.rc-filter-group-title {
+  padding: 0 2px 4px;
+  font-size: var(--font-xs, 11px);
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rc-filter-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm, 6px);
+  background: var(--bg-sunken, #f2f2f2);
+  color: var(--text-muted, #8d8a86);
+  font-family: inherit;
+  font-size: var(--font-xs, 11px);
+  cursor: pointer;
+  transition:
+    background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 120ms,
+    color 120ms;
+
+  &:hover {
+    color: var(--text, #23231f);
+  }
+
+  &.is-selected {
+    border-color: var(--primary, #3b82f6);
+    background: color-mix(in srgb, var(--primary, #3b82f6) 12%, transparent);
+    color: var(--primary, #3b82f6);
+  }
+}
+
+.rc-filter-opt-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-filter-opt-check {
+  display: inline-flex;
+  flex: none;
+}
+
+.rc-filter-empty {
+  padding: 2px;
+  font-size: var(--font-xs, 11px);
+  color: var(--text-faint, #9b9489);
+}
+
+/* 结果视图顶部的「筛选：a · b」摘要条 */
+.rc-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px 6px;
+}
+
+.rc-filter-token {
+  padding: 1px 6px;
+  border-radius: var(--r-xs, 4px);
+  background: var(--bg-sunken, #f2f2f2);
+  color: var(--text-muted, #8d8a86);
+  font-size: var(--font-xs, 11px);
+}
+
+/* 「加载更多」：列表末尾的整行按钮，与提示行同高，不撑开行的 hover 热区 */
+.rc-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: calc(100% - 16px);
+  margin: 2px 8px 4px;
+  height: 26px;
+  border: 1px dashed var(--border-strong, #d7d2c9);
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  color: var(--text-muted, #8d8a86);
+  font-family: inherit;
+  font-size: var(--font-xs, 11px);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: var(--primary, #3b82f6);
+    color: var(--primary, #3b82f6);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.7;
+  }
+}
+
 /* ─── 会话主区 ─────────────────────────────────────────────────────────── */
 
 .rc-chat-pane {
@@ -1021,6 +1186,45 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* ─── 历史翻页（顶部哨兵） ─────────────────────────────────────────────── */
+
+.rc-history-head {
+  display: flex;
+  justify-content: center;
+  flex: none;
+}
+
+.rc-history-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 12px;
+  border: 1px dashed var(--border-strong, #d7d2c9);
+  border-radius: var(--r-pill, 999px);
+  background: transparent;
+  color: var(--text-muted, #8d8a86);
+  font-size: var(--font-xs, 11px);
+  cursor: pointer;
+  transition:
+    color 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &:hover:not(:disabled) {
+    color: var(--primary, #3b82f6);
+    border-color: var(--primary, #3b82f6);
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+.rc-history-end {
+  font-size: var(--font-2xs, 10px);
+  color: var(--text-faint, #9b9489);
 }
 
 /* ─── 消息流 ───────────────────────────────────────────────────────────── */

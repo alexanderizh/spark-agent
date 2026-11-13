@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { MobileBridgeProjectSummary, MobileBridgeSessionSummary } from '@spark/protocol'
 import {
   UNASSIGNED_PROJECT_ID,
+  appendSessionPage,
   buildProjectRows,
   filterSessions,
   formatRelativeTime,
@@ -256,5 +257,38 @@ describe('本地写回', () => {
     removeProjectFromStore(DEVICE, 'p1')
     expect(store.projects).toHaveLength(0)
     expect(store.sessions.p1).toBeUndefined()
+  })
+
+  it('加载更多：去重追加、total 以服务端为准', () => {
+    const store = seed()
+    appendSessionPage(DEVICE, 'p1', {
+      rows: [
+        session({ id: 'b', title: '会话 B 重复页', projectId: 'p1' }),
+        session({ id: 'c', title: '会话 C', projectId: 'p1' }),
+      ],
+      total: 3,
+    })
+    expect(store.sessions.p1?.rows.map((row) => row.id)).toEqual(['a', 'b', 'c'])
+    expect(store.sessions.p1?.total).toBe(3)
+    expect(store.sessions.p1?.offsetUnsupported).toBeUndefined()
+  })
+
+  it('加载更多：目标端忽略 offset（整页都是已有行）时标记 offsetUnsupported', () => {
+    const store = seed()
+    appendSessionPage(DEVICE, 'p1', {
+      rows: [session({ id: 'a', projectId: 'p1' }), session({ id: 'b', projectId: 'p1' })],
+      total: 9,
+    })
+    expect(store.sessions.p1?.rows).toHaveLength(2)
+    expect(store.sessions.p1?.offsetUnsupported).toBe(true)
+  })
+
+  it('加载更多：桶不存在时当作首页写入', () => {
+    const store = seed()
+    appendSessionPage(DEVICE, 'p2', {
+      rows: [session({ id: 'z', projectId: 'p2' })],
+      total: 1,
+    })
+    expect(store.sessions.p2?.rows.map((row) => row.id)).toEqual(['z'])
   })
 })

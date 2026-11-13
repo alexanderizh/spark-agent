@@ -6,6 +6,9 @@ import {
   deriveSessionTitle,
   isTitlePrefixOfMessage,
   shouldDeriveSessionTitle,
+  shouldDeriveSessionTitleOrRemote,
+  stripRemoteCreatedTitle,
+  withRemoteCreatedTitleSuffix,
 } from './session-pure-utils.js'
 
 const log = createLogger('session-command-title-refinement')
@@ -30,9 +33,10 @@ export function initializeCommandSessionTitle(params: InitializeCommandSessionTi
 
   const sessionRepo = new SessionRepository(params.db)
   const session = sessionRepo.get(params.sessionId)
-  if (session == null || !shouldDeriveSessionTitle(session.title)) return
+  if (session == null || !shouldDeriveSessionTitleOrRemote(session.title)) return
 
-  const derivedTitle = deriveSessionTitle(userMessage)
+  // 远程创建的会话保留「 · 远程创建」后缀
+  const derivedTitle = withRemoteCreatedTitleSuffix(session.title, deriveSessionTitle(userMessage))
   sessionRepo.updateTitle(params.sessionId, derivedTitle)
   params.onSessionRenamed?.(params.sessionId, derivedTitle)
 
@@ -73,18 +77,21 @@ async function refineCommandSessionTitleAsync(
 
     const current = params.sessionRepo.get(params.sessionId)
     if (current == null) return
-    // 异步请求期间用户可能手动改名；仅覆盖本入口的派生标题或默认标题。
+    // 异步请求期间用户可能手动改名；仅覆盖本入口的派生标题或默认标题
+    // （远程创建的标题先剥掉后缀再判断，比较口径与写入口径一致）。
+    const currentBase = stripRemoteCreatedTitle(current.title)
     if (
-      current.title !== params.derivedTitle &&
-      !isTitlePrefixOfMessage(current.title, params.userMessage) &&
-      !shouldDeriveSessionTitle(current.title)
+      currentBase !== stripRemoteCreatedTitle(params.derivedTitle) &&
+      !isTitlePrefixOfMessage(currentBase, params.userMessage) &&
+      !shouldDeriveSessionTitle(currentBase)
     ) {
       return
     }
-    if (current.title === refinedTitle) return
+    const nextTitle = withRemoteCreatedTitleSuffix(current.title, refinedTitle)
+    if (nextTitle === current.title) return
 
-    params.sessionRepo.updateTitle(params.sessionId, refinedTitle)
-    params.onSessionRenamed?.(params.sessionId, refinedTitle)
+    params.sessionRepo.updateTitle(params.sessionId, nextTitle)
+    params.onSessionRenamed?.(params.sessionId, nextTitle)
   } catch (err) {
     log.warn(
       `Failed to refine command session title: ${err instanceof Error ? err.message : String(err)}`,

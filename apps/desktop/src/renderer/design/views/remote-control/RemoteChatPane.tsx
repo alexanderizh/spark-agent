@@ -4,8 +4,11 @@
  * 事件归并交给 remoteEventMerge（去重 / delta 抑制 / seq 排序）；
  * 富文本渲染复用桌面端 ChatMarkdown；审批/问答复用桌面端卡片组件与样式，
  * 只把「决策提交」换成远程转发。
+ *
+ * 历史分页：首屏只取最近若干轮，往上滚到顶（或点顶部按钮）按 `beforeSeq` 继续取，
+ * 前插后按「容器高度差」还原滚动位置，视觉上不跳。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   MobileBridgeCommandItem,
   MobileBridgeEvent,
@@ -24,6 +27,17 @@ import { RemoteComposer } from './RemoteComposer'
 import { RemoteMessageList } from './RemoteMessageList'
 import type { RemoteAttachmentRef } from './RemoteAttachmentStrip'
 import { buildRemoteTimeline, mergeRemoteEvents } from './remoteEventMerge'
+import {
+  HISTORY_LOAD_COOLDOWN_MS,
+  HISTORY_MAX_PAGES_PER_GESTURE,
+  HISTORY_TOP_THRESHOLD_PX,
+  buildHistoryUrl,
+  isHistoryCursorAdvancing,
+  pickUnseenEvents,
+  resolveHistoryCursor,
+  resolveHistoryHasMore,
+  type RemoteHistoryPage,
+} from './remoteHistory'
 import { remoteFileUrl } from './remoteFileCache'
 import { clearRemoteDraft, readRemoteDraft, writeRemoteDraft } from './remoteDrafts'
 import { toPastedImageSource } from './remotePaste'
@@ -79,6 +93,23 @@ export function RemoteChatPane({
   const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
 
   const [events, setEvents] = useState<MobileBridgeEvent[]>([])
+  /**
+   * 事件列表的同步镜像。
+   *
+   * 历史前插必须基于「此刻最新的列表」做去重与归并，而 setEvents 的函数式更新在
+   * 异步回调里读不到结果；直接闭包捕获 events 又会拿到陈旧快照（流式期间尤其危险）。
+   * 因此所有写入都走 applyEvents，ref 与 state 永远同值（与小程序端 allEvents 同一套路）。
+   */
+  const eventsRef = useRef<MobileBridgeEvent[]>([])
+  const [history, setHistory] = useState<{
+    hasMore: boolean
+    cursor: number | null
+    loading: boolean
+  }>({ hasMore: false, cursor: null, loading: false })
+  const historyRef = useRef(history)
+  const lastTopLoadAtRef = useRef(0)
+  /** 前插历史后待兑现的滚动锚点（容器旧高度 + 旧 scrollTop） */
+  const pendingAnchorRef = useRef<{ height: number; top: number } | null>(null)
   const [running, setRunning] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -124,9 +155,81 @@ export function RemoteChatPane({
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const stickToBottomRef = useRef(true)
 
+  const applyEvents = useCallback((next: MobileBridgeEvent[]) => {
+    eventsRef.current = next
+    setEvents(next)
+  }, [])
+
+  const applyHistory = useCallback(
+    (next: { hasMore: boolean; cursor: number | null; loading: boolean }) => {
+      historyRef.current = next
+      setHistory(next)
+    },
+    [],
+  )
+
+  /**
+   * 往上取更早的一页。
+   *
+   * 游标语义：`beforeSeq` 是排他下界，服务端按轮次倒序挑 turnLimit 个完整轮次。
+   * 有些页可能只有内部事件（映射后全被丢弃），所以一次手势允许连补几页，
+   * 但只要拿到新事件就停 —— 不做无界循环。
+   */
+  const loadEarlier = useCallback(async () => {
+    const id = sessionId
+    if (id == null) return
+    const current = historyRef.current
+    if (current.loading || !current.hasMore || current.cursor == null) return
+    // 冷却：前插会改变容器高度并触发 scroll，不冷却会「加载→重排→又触发加载」
+    if (Date.now() - lastTopLoadAtRef.current < HISTORY_LOAD_COOLDOWN_MS) return
+    lastTopLoadAtRef.current = Date.now()
+    applyHistory({ ...current, loading: true })
+    // 顶部翻页绝不能落回底部
+    stickToBottomRef.current = false
+    const node = scrollRef.current
+    const anchor = { height: node?.scrollHeight ?? 0, top: node?.scrollTop ?? 0 }
+    try {
+      let cursor: number | null = current.cursor
+      // 显式标 boolean：上面 `!current.hasMore` 的守卫会把属性收窄成 true
+      let hasMore: boolean = current.hasMore
+      const collected: MobileBridgeEvent[] = []
+      for (
+        let page = 0;
+        page < HISTORY_MAX_PAGES_PER_GESTURE && hasMore && cursor != null;
+        page += 1
+      ) {
+        const response = await call<RemoteHistoryPage>(deviceId, 'GET', buildHistoryUrl(id, cursor))
+        const batch = Array.isArray(response.events) ? response.events : []
+        const known = [
+          ...eventsRef.current.map((event) => event.id),
+          ...collected.map((event) => event.id),
+        ]
+        collected.push(...pickUnseenEvents(known, batch))
+        hasMore = resolveHistoryHasMore(response)
+        const next = resolveHistoryCursor(response)
+        if (hasMore && !isHistoryCursorAdvancing(next, cursor)) {
+          // 游标没往更早推进：当成到底，避免原地打转刷请求
+          hasMore = false
+          break
+        }
+        if (next != null) cursor = next
+        if (collected.length > 0) break
+      }
+      if (collected.length > 0) {
+        pendingAnchorRef.current = anchor
+        applyEvents(mergeRemoteEvents(eventsRef.current, collected))
+      }
+      applyHistory({ hasMore, cursor, loading: false })
+    } catch (cause) {
+      applyHistory({ ...current, loading: false })
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }, [applyEvents, applyHistory, call, deviceId, sessionId])
+
   useEffect(() => {
     if (!sessionId) {
-      setEvents([])
+      applyEvents([])
+      applyHistory({ hasMore: false, cursor: null, loading: false })
       setRunning(false)
       setError(null)
       // 待发附件不在这里清：切会话时它由上面的草稿存档逻辑接管（切回还能接着发）
@@ -137,19 +240,22 @@ export function RemoteChatPane({
     let cancelled = false
     setLoading(true)
     setError(null)
-    setEvents([])
+    applyEvents([])
+    applyHistory({ hasMore: false, cursor: null, loading: false })
     setApprovals([])
     setQuestions([])
+    pendingAnchorRef.current = null
     stickToBottomRef.current = true
-    call<{ events: MobileBridgeEvent[]; running: boolean }>(
-      deviceId,
-      'GET',
-      `/v1/sessions/${encodeURIComponent(sessionId)}/messages?limit=200`,
-    )
+    call<RemoteHistoryPage>(deviceId, 'GET', buildHistoryUrl(sessionId))
       .then((response) => {
         if (cancelled) return
-        setEvents(Array.isArray(response.events) ? response.events : [])
+        applyEvents(Array.isArray(response.events) ? response.events : [])
         setRunning(Boolean(response.running))
+        applyHistory({
+          hasMore: resolveHistoryHasMore(response),
+          cursor: resolveHistoryCursor(response),
+          loading: false,
+        })
       })
       .catch((cause: unknown) => {
         if (cancelled) return
@@ -166,23 +272,26 @@ export function RemoteChatPane({
     return () => {
       cancelled = true
     }
-  }, [call, deviceId, onSessionInvalid, sessionId])
+  }, [applyEvents, applyHistory, call, deviceId, onSessionInvalid, sessionId])
 
-  const handleStreamEvents = useCallback((incoming: MobileBridgeEvent[]) => {
-    setEvents((previous) => mergeRemoteEvents(previous, incoming))
-    for (const event of incoming) {
-      if (event.type !== 'agent_status') continue
-      if (event.status === 'running') setRunning(true)
-      else if (
-        event.status === 'idle' ||
-        event.status === 'completed' ||
-        event.status === 'cancelled' ||
-        event.status === 'error'
-      ) {
-        setRunning(false)
+  const handleStreamEvents = useCallback(
+    (incoming: MobileBridgeEvent[]) => {
+      applyEvents(mergeRemoteEvents(eventsRef.current, incoming))
+      for (const event of incoming) {
+        if (event.type !== 'agent_status') continue
+        if (event.status === 'running') setRunning(true)
+        else if (
+          event.status === 'idle' ||
+          event.status === 'completed' ||
+          event.status === 'cancelled' ||
+          event.status === 'error'
+        ) {
+          setRunning(false)
+        }
       }
-    }
-  }, [])
+    },
+    [applyEvents],
+  )
 
   useRemoteSessionStream(deviceId, sessionId, handleStreamEvents)
 
@@ -249,6 +358,20 @@ export function RemoteChatPane({
   // 目标端 500ms 一批推上来，短回答会「一次刷出来」；这里按帧揭示恢复流式手感
   const visibleItems = useSmoothRemoteItems(items)
 
+  /**
+   * 前插历史后还原视觉位置：新内容把上面撑高了 delta，scrollTop 同步加上 delta，
+   * 用户盯着的那一行不动。必须用 layout effect —— 在浏览器绘制前改完，
+   * 否则会先闪一下顶部再被拽回去。
+   */
+  useLayoutEffect(() => {
+    const anchor = pendingAnchorRef.current
+    if (anchor == null) return
+    pendingAnchorRef.current = null
+    const node = scrollRef.current
+    if (node == null) return
+    node.scrollTop = node.scrollHeight - anchor.height + anchor.top
+  }, [visibleItems])
+
   useEffect(() => {
     const node = scrollRef.current
     if (node == null || !stickToBottomRef.current) return
@@ -259,7 +382,11 @@ export function RemoteChatPane({
     const node = scrollRef.current
     if (node == null) return
     stickToBottomRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 120
-  }, [])
+    // 贴到顶部且内容确实可滚动 → 自动补一页更早的（loadEarlier 自带冷却与幂等守卫）
+    if (node.scrollTop < HISTORY_TOP_THRESHOLD_PX && node.scrollHeight > node.clientHeight + 200) {
+      void loadEarlier()
+    }
+  }, [loadEarlier])
 
   const resolveApproval = useCallback(
     async (requestId: string, decision: RemoteApprovalDecision) => {
@@ -496,6 +623,32 @@ export function RemoteChatPane({
       </div>
 
       <div className="rc-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
+        {!loading && items.length > 0 && (
+          <div className="rc-history-head">
+            {history.hasMore ? (
+              <button
+                type="button"
+                className="rc-history-more"
+                onClick={() => void loadEarlier()}
+                disabled={history.loading}
+              >
+                {history.loading ? (
+                  <>
+                    <Icons.Spinner size={11} className="spin" />
+                    正在加载更早的消息…
+                  </>
+                ) : (
+                  <>
+                    <Icons.ChevronUp size={11} />
+                    加载更早的消息
+                  </>
+                )}
+              </button>
+            ) : (
+              <span className="rc-history-end">已经到会话开头</span>
+            )}
+          </div>
+        )}
         {loading && <div className="rc-pane-hint">正在读取会话内容…</div>}
         {!loading && items.length === 0 && <div className="rc-pane-hint">这个会话还没有消息</div>}
         <RemoteMessageList items={visibleItems} deviceId={deviceId} running={running} />

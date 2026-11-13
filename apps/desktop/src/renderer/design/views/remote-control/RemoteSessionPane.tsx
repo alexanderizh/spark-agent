@@ -13,11 +13,19 @@ import { Icons } from '../../Icons'
 import { ContextMenu } from '../../components/ContextMenu'
 import type { ContextMenuEntry } from '../../components/contextMenuModel'
 import {
+  DEFAULT_REMOTE_FILTER,
+  isRemoteFilterActive,
+  matchRemoteSession,
+  summarizeRemoteFilter,
+  type RemoteSessionFilter,
+} from './remoteSessionFilters'
+import {
   UNASSIGNED_PROJECT_ID,
   buildProjectRows,
   filterSessions,
   formatRelativeTime,
   groupSessionsByProject,
+  sliceSearchGroups,
   type RemoteProjectRow,
   type RemoteSessionBucket,
 } from './remoteSessionStore'
@@ -26,7 +34,11 @@ import {
   sessionLabelText,
   useRemoteSessionActions,
 } from './remoteSessionActions'
+import { RemoteSessionFilterMenu } from './RemoteSessionFilterMenu'
 import { useRemoteSessionTree } from './useRemoteSessionTree'
+
+/** 结果视图（搜索/筛选）每页条数：全量窗口 ≤200，翻页在内存里切 */
+const RESULT_PAGE_SIZE = 50
 
 export interface RemoteSessionPaneProps {
   deviceId: string
@@ -117,19 +129,23 @@ function SessionItem({
 }
 
 function ProjectSessions({
+  projectId,
   bucket,
   loading,
   selectedSessionId,
   busyId,
   onSelectSession,
   onMenuSession,
+  onLoadMore,
 }: {
+  projectId: string
   bucket: RemoteSessionBucket | null
   loading: boolean
   selectedSessionId: string | null
   busyId: string | null
   onSelectSession: (session: MobileBridgeSessionSummary) => void
   onMenuSession: (x: number, y: number, session: MobileBridgeSessionSummary) => void
+  onLoadMore: (projectId: string) => void
 }) {
   if (bucket == null) {
     return <div className="rc-project-hint">{loading ? '读取会话…' : '展开以加载会话'}</div>
@@ -137,6 +153,7 @@ function ProjectSessions({
   if (bucket.rows.length === 0) {
     return <div className="rc-project-hint">这个项目下还没有会话</div>
   }
+  const remaining = Math.max(0, bucket.total - bucket.rows.length)
   return (
     <>
       {bucket.rows.map((session) => (
@@ -149,11 +166,29 @@ function ProjectSessions({
           onMenu={onMenuSession}
         />
       ))}
-      {bucket.total > bucket.rows.length && (
-        <div className="rc-project-hint">
-          仅显示最近 {bucket.rows.length} 个 · 共 {bucket.total} 个
-        </div>
-      )}
+      {remaining > 0 &&
+        (bucket.offsetUnsupported === true ? (
+          <div className="rc-project-hint">
+            已显示最近 {bucket.rows.length} 个 · 共 {bucket.total}{' '}
+            个（目标电脑版本较旧，不支持翻页）
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="rc-load-more"
+            onClick={() => onLoadMore(projectId)}
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <Icons.Spinner size={11} className="spin" />
+                加载中…
+              </>
+            ) : (
+              `加载更多（已显示 ${bucket.rows.length} / ${bucket.total}）`
+            )}
+          </button>
+        ))}
     </>
   )
 }
@@ -172,8 +207,26 @@ export function RemoteSessionPane({
 }: RemoteSessionPaneProps) {
   const tree = useRemoteSessionTree(deviceId)
   const actions = useRemoteSessionActions(deviceId)
-  const { store, keyword, setKeyword, searching } = tree
+  const { store, keyword, setKeyword, searching, filter, setFilter, collecting } = tree
   const [menu, setMenu] = useState<MenuState>(null)
+  /**
+   * 结果视图的分页游标。用「筛选指纹」当 key：条件一变就自动回到第一页，
+   * 不用在输入/点选回调里到处 reset（渲染期判定，无 effect 竞态）。
+   */
+  const [paging, setPaging] = useState<{ key: string; visible: number }>({
+    key: '',
+    visible: RESULT_PAGE_SIZE,
+  })
+  const resultKey = `${keyword}\u0000${JSON.stringify(filter)}`
+  const visibleCount = paging.key === resultKey ? paging.visible : RESULT_PAGE_SIZE
+
+  /** 筛选变化：会话级维度由数据层自动补拉全量（needAllSessions），这里只负责落状态 */
+  const handleFilterChange = useCallback(
+    (next: RemoteSessionFilter) => {
+      setFilter(next)
+    },
+    [setFilter],
+  )
 
   const unassignedInSearch = (store.allSessions?.rows ?? []).some(
     (row) => (row.projectId ?? UNASSIGNED_PROJECT_ID) === UNASSIGNED_PROJECT_ID,
@@ -182,17 +235,34 @@ export function RemoteSessionPane({
     store.projects,
     store.unassignedRunning,
     // 目标端只透出未归属的「运行中」数量：没有运行时默认不显示，
-    // 除非已展开过 / 项目列表为空（只剩未归属）/ 搜索结果里命中了它
+    // 除非已展开过 / 项目列表为空（只剩未归属）/ 搜索结果里命中了它 / 项目筛选选中了它
     store.unassignedRunning > 0 ||
       store.sessions[UNASSIGNED_PROJECT_ID] != null ||
       store.projects.length === 0 ||
-      unassignedInSearch,
+      unassignedInSearch ||
+      filter.projectIds.includes(UNASSIGNED_PROJECT_ID),
   )
+  /** 项目维度是唯一能在树上就地生效的筛选（其余维度要切结果视图） */
+  const treeRows =
+    filter.projectIds.length === 0
+      ? projectRows
+      : projectRows.filter((row) => filter.projectIds.includes(row.id))
 
-  const searchGroups = searching
-    ? groupSessionsByProject(filterSessions(store.allSessions?.rows ?? [], keyword), store.projects)
+  // 结果视图：搜索 or 会话级筛选 → 全量窗口里过滤 + 按项目归组 + 分页
+  const matchedRows = collecting
+    ? filterSessions(store.allSessions?.rows ?? [], keyword).filter((row) =>
+        matchRemoteSession(row, filter),
+      )
     : []
-  const searchHits = searchGroups.reduce((sum, group) => sum + group.sessions.length, 0)
+  const matchedGroups = collecting ? groupSessionsByProject(matchedRows, store.projects) : []
+  const { groups: pageGroups, hidden: hiddenHits } = sliceSearchGroups(matchedGroups, visibleCount)
+  const resultHits = matchedRows.length
+  const filterTokens = summarizeRemoteFilter(filter)
+  const filterActive = isRemoteFilterActive(filter)
+  const resultTitle = searching ? '搜索结果' : '筛选结果'
+  /** 全量窗口只有 200 条：命中数触到窗口上限时说清楚，别让人以为「就这么多」 */
+  const windowCapped =
+    store.allSessions != null && store.allSessions.rows.length < store.allSessions.total
 
   const handleSelect = useCallback(
     (session: MobileBridgeSessionSummary) => {
@@ -375,6 +445,12 @@ export function RemoteSessionPane({
           )}
         </div>
         <div className="rc-pane-head-actions">
+          <RemoteSessionFilterMenu
+            filter={filter}
+            onChange={handleFilterChange}
+            projects={projectRows}
+            onClear={() => handleFilterChange(DEFAULT_REMOTE_FILTER)}
+          />
           <button
             type="button"
             className="rc-icon-btn"
@@ -443,17 +519,49 @@ export function RemoteSessionPane({
           <div className="rc-pane-hint">正在读取远程项目…</div>
         )}
 
-        {tree.error == null && store.projectsLoaded && searching && (
+        {tree.error == null && store.projectsLoaded && collecting && (
           <>
             <div className="rc-group-head">
-              <span className="rc-group-name">搜索结果</span>
-              <span className="rc-group-count">{searchHits}</span>
+              <span className="rc-group-name">{resultTitle}</span>
+              <span className="rc-group-count">{resultHits}</span>
             </div>
-            {store.allSessions == null && <div className="rc-project-hint">正在搜索全部会话…</div>}
-            {store.allSessions != null && searchHits === 0 && (
-              <div className="rc-pane-hint">没有匹配的会话</div>
+            {filterTokens.length > 0 && (
+              <div className="rc-filter-bar">
+                {filterTokens.map((token) => (
+                  <span key={token} className="rc-filter-token">
+                    {token}
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  className="rc-link-btn"
+                  onClick={() => handleFilterChange(DEFAULT_REMOTE_FILTER)}
+                >
+                  清除
+                </button>
+              </div>
             )}
-            {searchGroups.map((group) => (
+            {store.allSessions == null && (
+              <div className="rc-project-hint">
+                {searching ? '正在搜索全部会话…' : '正在读取会话…'}
+              </div>
+            )}
+            {store.allSessions != null && resultHits === 0 && (
+              <div className="rc-pane-hint">
+                {searching && filterActive
+                  ? '没有同时满足搜索与筛选的会话'
+                  : searching
+                    ? '没有匹配的会话'
+                    : '没有符合筛选的会话'}
+              </div>
+            )}
+            {windowCapped && (
+              <div className="rc-project-hint">
+                只在最近 {store.allSessions?.rows.length ?? 0} 个会话里找（这台电脑共{' '}
+                {store.allSessions?.total ?? 0} 个）
+              </div>
+            )}
+            {pageGroups.map((group) => (
               <div key={group.projectId} className="rc-project is-open">
                 <div className="rc-project-head is-static">
                   <span className="rc-project-icon">
@@ -476,15 +584,44 @@ export function RemoteSessionPane({
                 </div>
               </div>
             ))}
+            {hiddenHits > 0 && (
+              <button
+                type="button"
+                className="rc-load-more"
+                onClick={() =>
+                  setPaging({ key: resultKey, visible: visibleCount + RESULT_PAGE_SIZE })
+                }
+              >
+                显示更多（还有 {hiddenHits} 个）
+              </button>
+            )}
           </>
         )}
 
-        {tree.error == null && store.projectsLoaded && !searching && (
+        {tree.error == null && store.projectsLoaded && !collecting && (
           <>
-            {projectRows.length === 0 ? (
-              <div className="rc-pane-hint">这台电脑上还没有会话</div>
+            {filter.projectIds.length > 0 && (
+              <div className="rc-filter-bar">
+                {filterTokens.map((token) => (
+                  <span key={token} className="rc-filter-token">
+                    {token}
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  className="rc-link-btn"
+                  onClick={() => handleFilterChange(DEFAULT_REMOTE_FILTER)}
+                >
+                  清除
+                </button>
+              </div>
+            )}
+            {treeRows.length === 0 ? (
+              <div className="rc-pane-hint">
+                {filter.projectIds.length > 0 ? '没有符合项目筛选的项目' : '这台电脑上还没有会话'}
+              </div>
             ) : (
-              projectRows.map((row) => {
+              treeRows.map((row) => {
                 const open = store.expanded[row.id] === true
                 const pinned = projectPinned(row.id)
                 return (
@@ -573,12 +710,14 @@ export function RemoteSessionPane({
                     {open && (
                       <div className="rc-project-body">
                         <ProjectSessions
+                          projectId={row.id}
                           bucket={store.sessions[row.id] ?? null}
                           loading={tree.pending[row.id] === true}
                           selectedSessionId={selectedSessionId}
                           busyId={actions.busyId}
                           onSelectSession={handleSelect}
                           onMenuSession={openSessionMenu}
+                          onLoadMore={(projectId) => void tree.loadMoreSessions(projectId)}
                         />
                       </div>
                     )}

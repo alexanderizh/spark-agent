@@ -246,9 +246,14 @@ export type {
 export { SessionService } from './services/session.service.js'
 export {
   SCHEDULED_TASK_SESSION_TITLE_PREFIX,
+  REMOTE_CREATED_TITLE_SUFFIX,
+  SESSION_TITLE_MAX_LENGTH,
   deriveScheduledTaskSessionTitle,
+  isRemoteCreatedTitle,
   isScheduledTaskSyntheticTitle,
   shouldDeriveSessionTitleFromScheduledTurn,
+  stripRemoteCreatedTitle,
+  withRemoteCreatedTitleSuffix,
 } from './services/session/session-pure-utils.js'
 export {
   ensureSessionWorkspaceRootPath,

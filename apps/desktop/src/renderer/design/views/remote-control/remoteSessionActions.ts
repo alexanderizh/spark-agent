@@ -34,19 +34,10 @@ import { resolveComposerPrefsPatch } from './remoteComposerPrefs'
 import { readCachedCatalog } from './useRemoteComposerConfig'
 import { forgetLastSession, forgetProjectSessions, readComposerPrefs } from './remoteViewState'
 
-/** 会话标记（顺序与桌面端侧栏右键菜单一致） */
-export const REMOTE_SESSION_LABELS: ReadonlyArray<{ key: SessionLabelKey; label: string }> = [
-  { key: 'suspended', label: '挂起' },
-  { key: 'not-started', label: '未开始' },
-  { key: 'pending-review', label: '待审查' },
-  { key: 'pending-advance', label: '待推进' },
-  { key: 'undelivered', label: '未交付' },
-]
-
-export function sessionLabelText(key: SessionLabelKey | null | undefined): string | null {
-  if (key == null) return null
-  return REMOTE_SESSION_LABELS.find((meta) => meta.key === key)?.label ?? null
-}
+/** 会话标记（顺序与桌面端侧栏右键菜单一致）；文案定义见 remoteSessionLabels */
+import { sessionLabelText } from './remoteSessionLabels'
+export { REMOTE_SESSION_LABELS } from './remoteSessionLabels'
+export { sessionLabelText }
 
 interface UpdateSessionResponse {
   session?: MobileBridgeSessionSummary
@@ -57,7 +48,8 @@ interface UpdateProjectResponse {
 }
 
 interface CreateSessionResponse {
-  session?: { id: string }
+  /** 目标端返回完整会话摘要；旧版可能只有 id，字段一律按缺失兜底 */
+  session?: Partial<MobileBridgeSessionSummary> & { id: string }
 }
 
 /**
@@ -276,10 +268,12 @@ export function useRemoteSessionActions(deviceId: string): RemoteSessionActions 
         }
         insertSessionInStore(deviceId, {
           id: created.id,
-          title: '新会话',
-          status: 'idle',
-          updatedAt: new Date().toISOString(),
-          preview: '',
+          // 标题以目标端为准：桥接会写成「新会话 · 远程创建」，本地写死「新会话」
+          // 会让刚建出来的那一行看起来没挂来源标记（刷新后又会变，像 bug）
+          title: created.title ?? '新会话',
+          status: created.status ?? 'idle',
+          updatedAt: created.updatedAt ?? new Date().toISOString(),
+          preview: created.preview ?? '',
           projectId,
           pinnedAt: null,
           sessionLabel: null,

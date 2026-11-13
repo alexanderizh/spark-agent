@@ -650,9 +650,13 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
       }
     },
 
-    listSessions: async (limit, projectId) => {
+    listSessions: async (limit, projectId, offset = 0) => {
       const db = getDatabase()
       const sessionRepository = new SessionRepository(db)
+      // 翻页要按「合并排序后」的窗口切，所以每个来源都多取 offset 条：
+      // worktree 合并是客户端排序，只取 limit 条会缺页。
+      // offset 已在 readPageParams 里收敛到 0~10000，这里不再二次夹紧（夹紧会让页边界静悄悄错位）。
+      const fetchLimit = limit + Math.max(offset, 0)
       let projectIds: string[] | null = null
       if (projectId != null && projectId !== 'default') {
         projectIds = [projectId]
@@ -672,11 +676,11 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
         projectIds == null
           ? [
               sessionRepository.list({
-                limit,
+                limit: fetchLimit,
                 ...(projectId != null ? { projectId } : {}),
               }),
             ]
-          : projectIds.map((id) => sessionRepository.list({ limit, projectId: id }))
+          : projectIds.map((id) => sessionRepository.list({ limit: fetchLimit, projectId: id }))
       // 置顶区语义与桌面端渲染 sortSessionsByPinned 同口径：
       // pinnedAt 或会话标记任一存在即入置顶区，区内按有效置顶时间（pinnedAt ?? labeledAt）倒序，
       // 普通区按 updatedAt 倒序（session-pure-utils 解析语义：标记非法时两者都视为 null）。
@@ -719,7 +723,7 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
           }
           return b.updated_at.localeCompare(a.updated_at)
         })
-        .slice(0, limit)
+        .slice(offset, offset + limit)
       const total = queryResults.reduce((count, result) => count + result.total, 0)
       const previewBySession = readSessionPreviews(
         db.raw,

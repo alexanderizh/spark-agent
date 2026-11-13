@@ -80,7 +80,7 @@ function parseNotarytoolJson(result) {
     return JSON.parse(result.output.trim());
   } catch (err) {
     const parseError = new Error(
-      `notarytool did not return JSON (exit ${result.code}): ${summarizeOutput(result.output)}`,
+      `notarytool did not return JSON (exit ${result.code}): ${summarizeOutput(result.output)}${notarytoolRecoveryHint(result.output)}`,
     );
     parseError.cause = err;
     parseError.rawOutput = result.output;
@@ -89,8 +89,26 @@ function parseNotarytoolJson(result) {
   }
 }
 
+function notarytoolRecoveryHint(output) {
+  if (/required agreement|in-effect agreement|legal agreements/i.test(output)) {
+    return '\n[notarize] Apple 开发者协议缺失或已过期。请团队 Account Holder 登录 https://developer.apple.com/account/ 确认并接受待签协议，再重跑失败任务；重试上传无法解决该问题。';
+  }
+  return '';
+}
+
 function isTransientNotarytoolOutput(output) {
-  return /(^|\b)(HTTP|timed? ?out|timeout|network|connection|temporarily|unavailable|try again|ECONN|ETIMEDOUT|EAI_AGAIN|TLS|SSL|502|503|504)(\b|$)/i.test(
+  // notarytool 的协议/鉴权错误可能只有纯文本，不能把所有 HTTP 错误都当网络抖动。
+  if (
+    /required agreement|in-effect agreement|legal agreements|unauthorized|forbidden|invalid credentials/i.test(output)
+  ) {
+    return false;
+  }
+  const httpStatus = /\bHTTP(?:\s+status(?:\s+code)?)?\s*[:=]?\s*(\d{3})\b/i.exec(output);
+  if (httpStatus) {
+    const status = Number(httpStatus[1]);
+    return status === 408 || status === 429 || (status >= 500 && status <= 599);
+  }
+  return /(^|\b)(timed? ?out|timeout|network|connection|temporarily|unavailable|try again|ECONN\w*|ETIMEDOUT|EAI_AGAIN|TLS|SSL|502|503|504)(\b|$)/i.test(
     output,
   );
 }
@@ -136,10 +154,14 @@ async function submitForNotarization(zipPath, credentials) {
 
   const status = parsed.status || 'unknown';
   const message = parsed.message || parsed.statusSummary || summarizeOutput(result.output);
-  const error = new Error(`notarytool submission failed with status ${status}: ${message}`);
+  const error = new Error(
+    `notarytool submission failed with status ${status}: ${message}${notarytoolRecoveryHint(result.output)}`,
+  );
   error.submission = parsed;
   error.rawOutput = result.output;
-  error.transient = isTransientNotarytoolOutput(result.output) || /in progress|timeout/i.test(message);
+  error.transient =
+    !/^(Invalid|Rejected)$/i.test(status) &&
+    (isTransientNotarytoolOutput(result.output) || /^in progress$/i.test(status));
   throw error;
 }
 

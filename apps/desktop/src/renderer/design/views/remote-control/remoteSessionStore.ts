@@ -25,6 +25,11 @@ export interface RemoteSessionBucket {
   rows: MobileBridgeSessionSummary[]
   total: number
   fetchedAt: number
+  /**
+   * 目标端忽略了 offset（旧版本只认 limit）：「加载更多」返回的全是已加载的行。
+   * 标上之后调用方不再给按钮，改为提示「目标电脑版本较旧」。
+   */
+  offsetUnsupported?: boolean
 }
 
 export interface RemoteDeviceSessionStore {
@@ -186,6 +191,30 @@ export function groupSessionsByProject(
   return groups
 }
 
+/**
+ * 结果视图分页：按「全局条数」截断分组（不是每组各取 limit 条），
+ * 返回截断后的分组与被折叠的条数，供「显示更多（还有 N 个）」使用。
+ */
+export function sliceSearchGroups(
+  groups: RemoteSearchGroup[],
+  limit: number,
+): { groups: RemoteSearchGroup[]; hidden: number } {
+  let budget = Math.max(0, limit)
+  const sliced: RemoteSearchGroup[] = []
+  let hidden = 0
+  for (const group of groups) {
+    if (budget <= 0) {
+      hidden += group.sessions.length
+      continue
+    }
+    const take = Math.min(budget, group.sessions.length)
+    sliced.push({ ...group, sessions: group.sessions.slice(0, take) })
+    budget -= take
+    if (take < group.sessions.length) hidden += group.sessions.length - take
+  }
+  return { groups: sliced, hidden }
+}
+
 /** 相对时间：侧栏只到「天」，再久就没必要更细 */
 export function formatRelativeTime(value: string, now = Date.now()): string {
   const then = new Date(value).getTime()
@@ -262,6 +291,34 @@ export function removeSessionFromStore(
         project.runningSessionCount = Math.max(0, (project.runningSessionCount ?? 0) - 1)
       }
     }
+  })
+}
+
+/**
+ * 「加载更多」：把服务端下一页并进已有桶。
+ *
+ * 目标端返回的是「合并排序后的窗口」，所以只能追加、不能重排；
+ * 若这一页一条新行都没有，说明目标端没认 offset（旧版本），标 offsetUnsupported
+ * 让调用方收掉按钮——否则用户会看到一个点了没反应的「加载更多」。
+ */
+export function appendSessionPage(
+  deviceId: string,
+  projectId: string,
+  page: { rows: MobileBridgeSessionSummary[]; total: number },
+): void {
+  updateRemoteSessionStore(deviceId, (store) => {
+    const bucket = store.sessions[projectId]
+    const existing = bucket?.rows ?? []
+    const seen = new Set(existing.map((row) => row.id))
+    const fresh = page.rows.filter((row) => !seen.has(row.id))
+    if (bucket == null) {
+      store.sessions[projectId] = { rows: page.rows, total: page.total, fetchedAt: Date.now() }
+      return
+    }
+    bucket.rows = [...existing, ...fresh]
+    bucket.total = Math.max(page.total, bucket.rows.length)
+    bucket.fetchedAt = Date.now()
+    if (fresh.length === 0 && page.rows.length > 0) bucket.offsetUnsupported = true
   })
 }
 

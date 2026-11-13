@@ -3,6 +3,8 @@
  *
  * 懒加载：只有展开的项目才拉会话；项目层只用 /v1/projects 的 sessionCount /
  * runningSessionCount 渲染角标，所以首屏只发一个几百字节的请求。
+ * 分页：项目内「加载更多」按 offset 追加下一页（目标端不支持时自动收掉按钮）；
+ * 搜索/会话级筛选一次拉「全量窗口」（limit 200），翻页在内存里切。
  * 缓存：全部落在 remoteSessionStore（模块级），切视图回来命中 TTL 就不发请求。
  * 刷新：手动按钮 force 全刷；另有 30s 轮询，页面不可见时跳过，已展开项目按 TTL 去重。
  */
@@ -10,11 +12,18 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import type { MobileBridgeProjectSummary, MobileBridgeSessionSummary } from '@spark/protocol'
 import { useRemoteCall } from './useRemoteBridge'
 import {
+  DEFAULT_REMOTE_FILTER,
+  hasSessionLevelFilter,
+  isRemoteFilterActive,
+  type RemoteSessionFilter,
+} from './remoteSessionFilters'
+import {
   ALL_SESSIONS_TTL_MS,
   PROJECTS_TTL_MS,
   REFRESH_INTERVAL_MS,
   SESSIONS_TTL_MS,
   UNASSIGNED_PROJECT_ID,
+  appendSessionPage,
   getRemoteSessionStore,
   isStale,
   subscribeRemoteSessionStore,
@@ -49,12 +58,19 @@ export function useRemoteSessionTree(deviceId: string) {
   const [pending, setPending] = useState<Record<string, boolean>>({})
   const [refreshing, setRefreshing] = useState(false)
   const [keyword, setKeywordState] = useState('')
-  /** 轮询回调里要读最新关键词，避免用 effect 依赖反复重建定时器 */
+  const [filter, setFilterState] = useState<RemoteSessionFilter>(DEFAULT_REMOTE_FILTER)
+  /** 轮询回调里要读最新关键词/筛选，避免用 effect 依赖反复重建定时器 */
   const keywordRef = useRef('')
+  const filterRef = useRef<RemoteSessionFilter>(DEFAULT_REMOTE_FILTER)
 
   const setKeyword = useCallback((value: string) => {
     keywordRef.current = value
     setKeywordState(value)
+  }, [])
+
+  const setFilter = useCallback((value: RemoteSessionFilter) => {
+    filterRef.current = value
+    setFilterState(value)
   }, [])
 
   const toMessage = (cause: unknown): string =>
@@ -173,10 +189,56 @@ export function useRemoteSessionTree(deviceId: string) {
     }
   }, [deviceId, loadProjects, loadSessions])
 
-  /** 搜索才需要全量会话：命中缓存就不发请求，输入过程中不会连打 */
+  /**
+   * 「加载更多」：按已加载行数当 offset 取下一页。
+   * 目标端忽略 offset 时 appendSessionPage 会标 offsetUnsupported，这里只负责写回与报错。
+   */
+  const loadMoreSessions = useCallback(
+    async (projectId: string) => {
+      const snapshot = getRemoteSessionStore(deviceId)
+      const bucket = snapshot.sessions[projectId]
+      // 还没拉过首页（或缓存已空）→ 直接当首次加载
+      if (bucket == null) {
+        await loadSessions(projectId, true)
+        return
+      }
+      if (bucket.offsetUnsupported === true || bucket.rows.length >= bucket.total) return
+      const offset = bucket.rows.length
+      setPending((previous) =>
+        previous[projectId] ? previous : { ...previous, [projectId]: true },
+      )
+      try {
+        const body = await call<SessionsBody>(
+          deviceId,
+          'GET',
+          `/v1/sessions?projectId=${encodeURIComponent(projectId)}&limit=${SESSION_PAGE_LIMIT}&offset=${offset}`,
+        )
+        appendSessionPage(deviceId, projectId, {
+          rows: Array.isArray(body.sessions) ? body.sessions : [],
+          total: body.total ?? 0,
+        })
+      } catch (cause) {
+        setError(toMessage(cause))
+      } finally {
+        setPending((previous) => {
+          if (previous[projectId] == null) return previous
+          const next = { ...previous }
+          delete next[projectId]
+          return next
+        })
+      }
+    },
+    [call, deviceId, loadSessions],
+  )
+
+  /**
+   * 搜索或「会话级筛选」都要全量会话：命中缓存就不发请求，输入/点选过程中不会连打。
+   * 只有项目筛选时树上就能过滤，不切结果视图、也不拉全量。
+   */
   const searching = keyword.trim().length > 0
+  const needAllSessions = searching || hasSessionLevelFilter(filter)
   useEffect(() => {
-    if (!searching) return
+    if (!needAllSessions) return
     let cancelled = false
     loadAllSessions().catch((cause: unknown) => {
       if (!cancelled) setError(toMessage(cause))
@@ -184,7 +246,7 @@ export function useRemoteSessionTree(deviceId: string) {
     return () => {
       cancelled = true
     }
-  }, [loadAllSessions, searching])
+  }, [loadAllSessions, needAllSessions])
 
   /** 轮询：项目列表每轮刷；展开的项目按 TTL 去重（25s < 30s，等于每轮都刷） */
   useEffect(() => {
@@ -201,7 +263,7 @@ export function useRemoteSessionTree(deviceId: string) {
           })
         }
       }
-      if (keywordRef.current.trim().length > 0) {
+      if (keywordRef.current.trim().length > 0 || hasSessionLevelFilter(filterRef.current)) {
         loadAllSessions().catch(() => {
           /* 同上 */
         })
@@ -251,7 +313,9 @@ export function useRemoteSessionTree(deviceId: string) {
         expanded.push(UNASSIGNED_PROJECT_ID)
       }
       await Promise.all(expanded.map((projectId) => loadSessions(projectId, true)))
-      if (keywordRef.current.trim().length > 0) await loadAllSessions(true)
+      if (keywordRef.current.trim().length > 0 || hasSessionLevelFilter(filterRef.current)) {
+        await loadAllSessions(true)
+      }
       setError(null)
     } catch (cause) {
       setError(toMessage(cause))
@@ -266,9 +330,17 @@ export function useRemoteSessionTree(deviceId: string) {
     store,
     keyword,
     setKeyword,
+    filter,
+    setFilter,
     searching,
+    /** 搜索或会话级筛选：调用方据此切「结果视图」 */
+    collecting: needAllSessions,
+    filterActive: isRemoteFilterActive(filter),
+    /** 只有项目维度时仍能留在树视图 */
+    sessionLevelFilter: hasSessionLevelFilter(filter),
     toggleProject,
     expandProject,
+    loadMoreSessions,
     refresh,
     refreshing,
     pending,

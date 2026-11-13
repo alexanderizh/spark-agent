@@ -332,4 +332,25 @@ describe('MobileBridgeService 侧栏同步端点', () => {
     expect(deps.deleteSession).toHaveBeenCalledWith('s1')
     expect(notify).toHaveBeenCalledTimes(1)
   })
+
+  it('GET /v1/sessions 透传 limit / offset / projectId（加载更多靠它翻页）', async () => {
+    const { service, deps } = buildService()
+    await service.invokeRelay('GET', '/v1/sessions?limit=20&offset=40&projectId=p1', null)
+    expect(deps.listSessions).toHaveBeenCalledWith(20, 'p1', 40)
+  })
+
+  it('GET /v1/sessions 缺省 offset=0，脏参数收敛到合法范围', async () => {
+    const { service, deps } = buildService()
+    await service.invokeRelay('GET', '/v1/sessions', null)
+    expect(deps.listSessions).toHaveBeenLastCalledWith(50, undefined, 0)
+    // limit 上限 200；负 offset 归零（不能把负值送进 SQL）
+    await service.invokeRelay('GET', '/v1/sessions?limit=9999&offset=-8', null)
+    expect(deps.listSessions).toHaveBeenLastCalledWith(200, undefined, 0)
+  })
+
+  it('GET /v1/projects/:id/sessions 同样支持 offset', async () => {
+    const { service, deps } = buildService()
+    await service.invokeRelay('GET', '/v1/projects/p1/sessions?limit=10&offset=30', null)
+    expect(deps.listSessions).toHaveBeenCalledWith(10, 'p1', 30)
+  })
 })

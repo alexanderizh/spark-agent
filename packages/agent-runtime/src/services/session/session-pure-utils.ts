@@ -94,12 +94,52 @@ export const DEFAULT_SESSION_TITLES = new Set([
   '新会话',
   'Workspace Session',
   '未命名会话',
+  /** 移动桥接建会话的旧占位标题（存量空会话靠它解救：首轮仍可派生） */
+  '移动端会话',
 ])
 export const SESSION_TITLE_MAX_LENGTH = 40
 
 export function shouldDeriveSessionTitle(title: string | null | undefined): boolean {
   const normalized = title?.trim() ?? ''
   return DEFAULT_SESSION_TITLES.has(normalized) || normalized.endsWith(' 会话')
+}
+
+/**
+ * 远程创建标记（标题后缀）。
+ *
+ * 移动桥接（小程序 / 桌面端「远程」视图）建的会话都带这个后缀：设备上同时有
+ * 本机会话和远程会话时，侧栏一眼能看出这条是从别的设备开出来的。派生标题时
+ * 必须保留它——否则首轮一改标题，来源信息就没了。
+ */
+export const REMOTE_CREATED_TITLE_SUFFIX = ' · 远程创建'
+
+export function isRemoteCreatedTitle(title: string | null | undefined): boolean {
+  return (title ?? '').trim().endsWith(REMOTE_CREATED_TITLE_SUFFIX)
+}
+
+/** 去掉远程创建后缀（非远程标题原样返回，已 trim） */
+export function stripRemoteCreatedTitle(title: string | null | undefined): string {
+  const normalized = title?.trim() ?? ''
+  if (!isRemoteCreatedTitle(normalized)) return normalized
+  return normalized.slice(0, -REMOTE_CREATED_TITLE_SUFFIX.length).trim()
+}
+
+/**
+ * 首轮是否允许派生标题：占位标题（含带远程标记的占位）即可覆盖。
+ * 用户手动改过名的标题（既不是默认标题、也不是远程占位）不动。
+ */
+export function shouldDeriveSessionTitleOrRemote(title: string | null | undefined): boolean {
+  return shouldDeriveSessionTitle(stripRemoteCreatedTitle(title))
+}
+
+/** 派生结果补回远程标记（原本不是远程标题则原样返回，保证幂等） */
+export function withRemoteCreatedTitleSuffix(
+  previousTitle: string | null | undefined,
+  derivedTitle: string,
+): string {
+  if (!isRemoteCreatedTitle(previousTitle)) return derivedTitle
+  const base = stripRemoteCreatedTitle(derivedTitle)
+  return `${base}${REMOTE_CREATED_TITLE_SUFFIX}`
 }
 
 /** 定时任务执行器为自动创建的会话写入的合成标题前缀（`[⏰] 任务名`）。 */
