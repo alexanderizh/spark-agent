@@ -1391,19 +1391,11 @@ async function initializeApp(): Promise<void> {
   // 快照协议按 snapshot ID 查询数据库并解密，必须在数据库初始化后、窗口创建前注册。
   registerSnapshotProtocol()
 
-  // 2. 注册 IPC handlers
-  registerAllIpcHandlers()
-  registerAppUnreadBadgeIpc()
-  registerBrowserPanelDevtoolsIpc()
-
-  // 2.01 事件循环阻塞监测（诊断插桩）：registerAllIpcHandlers 内部已完成
-  // initFileLogger，此后 profile 落盘目录可解析。定位「鼠标变忙碌圈」类
-  // 主进程间歇卡顿根因后移除。SPARK_DISABLE_LOOP_MONITOR=1 可关闭。
-  startEventLoopMonitor(app)
-
-  // 2.05 初始化 Cloud Auth（对接 spark-edugen/edu-server）
+  // 认证消费者在 IPC 注册时就会绑定退出回调、恢复远程协作任务。
+  // 必须先创建 AuthService 并完成本地会话恢复，避免未初始化崩溃或漏恢复。
   // 默认 base URL：生产环境 https://www.yiqibyte.com/；本地开发可通过
   // 环境变量 SPARK_EDUGEN_BASE_URL 覆盖。
+  let cloudAuthSessionRestored = false
   try {
     initAuthService({
       defaultBaseUrl: process.env.SPARK_EDUGEN_BASE_URL?.trim() || 'https://www.yiqibyte.com/',
@@ -1415,14 +1407,34 @@ async function initializeApp(): Promise<void> {
       // 已有数据库的升级安装仍允许读取一次旧 keytar 会话并写入加密备份。
       allowLegacyKeytarFallback: databaseExistedBeforeInitialization,
     })
-    getPlatformModelService()
-    getAuthService().addLoginHook(async () => processPendingPlatformRedeemCodes())
-    cloudAuthReady = true
-    await processPendingPlatformRedeemCodes()
-    clearPersistedEduServerBaseUrl()
-    log.info('Cloud auth service started')
+    cloudAuthSessionRestored = true
+    log.info('Cloud auth session restored before IPC registration')
   } catch (err) {
-    log.error(`Cloud auth service init failed: ${String(err)}`)
+    log.error(`Cloud auth session restore failed: ${String(err)}`)
+  }
+
+  // 2. 注册 IPC handlers
+  registerAllIpcHandlers()
+  registerAppUnreadBadgeIpc()
+  registerBrowserPanelDevtoolsIpc()
+
+  // 2.01 事件循环阻塞监测（诊断插桩）：registerAllIpcHandlers 内部已完成
+  // initFileLogger，此后 profile 落盘目录可解析。定位「鼠标变忙碌圈」类
+  // 主进程间歇卡顿根因后移除。SPARK_DISABLE_LOOP_MONITOR=1 可关闭。
+  startEventLoopMonitor(app)
+
+  // 2.05 平台模型依赖 IPC 注入的凭据 vault，必须在注册完成后初始化。
+  if (cloudAuthSessionRestored) {
+    try {
+      getPlatformModelService()
+      getAuthService().addLoginHook(async () => processPendingPlatformRedeemCodes())
+      cloudAuthReady = true
+      await processPendingPlatformRedeemCodes()
+      clearPersistedEduServerBaseUrl()
+      log.info('Cloud auth service started')
+    } catch (err) {
+      log.error(`Cloud auth service init failed: ${String(err)}`)
+    }
   }
 
   // 终端与桌面端共享同一份 Provider 权威数据。必须等 IPC 初始化完成（凭据 vault

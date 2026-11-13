@@ -58,6 +58,8 @@ async function verifyPackagedWindowsNativeHost(options) {
     architecture: options.architecture,
     timeoutMs: WINDOWS_RELEASE_SMOKE_TIMEOUT_MS,
   })
+  const { verifyAppStartup } = await import('./verify-app-startup.mjs')
+  await verifyAppStartup({ appExecutable })
   return contract
 }
 
