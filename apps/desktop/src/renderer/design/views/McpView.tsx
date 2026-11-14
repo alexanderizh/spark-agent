@@ -84,6 +84,8 @@ type DraftBase = {
   url: string
   description: string
   env: Array<{ key: string; value: string }>
+  /** 自定义请求头（仅 http / sse 生效），用于手动配置 Authorization: Bearer 等鉴权头。 */
+  headers: Array<{ key: string; value: string }>
   authType: 'none' | 'oauth2'
   authScope: string
   authDcr: boolean
@@ -101,6 +103,7 @@ const EMPTY_DRAFT: DraftBase = {
   url: '',
   description: '',
   env: [],
+  headers: [],
   authType: 'none',
   authScope: '',
   authDcr: true,
@@ -118,7 +121,7 @@ function parseConfig(configJson: string): ParsedConfig {
   }
 }
 
-function serializeConfig(draft: DraftBase): string {
+export function serializeConfig(draft: DraftBase): string {
   const config: ParsedConfig = {
     transport: draft.transport,
     tools: [],
@@ -152,13 +155,48 @@ function serializeConfig(draft: DraftBase): string {
         : {}),
     }
   }
-  const env: Record<string, string> = {}
-  for (const { key, value } of draft.env) {
-    const k = key.trim()
-    if (k.length > 0) env[k] = value
+  const env = rowsToRecord(draft.env)
+  if (env != null) config.env = env
+  // 请求头只对远程传输有意义；stdio 下不落库，但 draft 里保留，切回远程时不丢。
+  if (draft.transport !== 'stdio') {
+    const headers = rowsToRecord(draft.headers)
+    if (headers != null) config.headers = headers
   }
-  if (Object.keys(env).length > 0) config.env = env
   return JSON.stringify(config)
+}
+
+/** 键值行 → Record；全为空 key 时返回 null（不写入空对象）。 */
+function rowsToRecord(rows: Array<{ key: string; value: string }>): Record<string, string> | null {
+  const out: Record<string, string> = {}
+  for (const { key, value } of rows) {
+    const k = key.trim()
+    if (k.length > 0) out[k] = value
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
+function recordToRows(
+  record: Record<string, string> | undefined,
+): Array<{ key: string; value: string }> {
+  return Object.entries(record ?? {}).map(([key, value]) => ({ key, value }))
+}
+
+/** 请求头名称：HTTP token 字符集，避免把非法头名静默写进配置。 */
+const HEADER_NAME_PATTERN = /^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$/
+
+/** 校验请求头行，返回中文错误信息；合法返回 null。 */
+export function validateHeaderRows(rows: Array<{ key: string; value: string }>): string | null {
+  for (const row of rows) {
+    const key = row.key.trim()
+    if (key.length === 0) continue
+    if (!HEADER_NAME_PATTERN.test(key)) {
+      return translate('mcpView.t113Desc')
+    }
+    if (/[\r\n]/.test(row.value)) {
+      return translate('mcpView.t114Desc')
+    }
+  }
+  return null
 }
 
 /**
@@ -231,10 +269,9 @@ function deriveServer(
   }
 }
 
-function draftFromItem(item: McpServerItem | null): DraftBase {
-  if (item == null) return { ...EMPTY_DRAFT, env: [] }
+export function draftFromItem(item: McpServerItem | null): DraftBase {
+  if (item == null) return { ...EMPTY_DRAFT, env: [], headers: [] }
   const config = parseConfig(item.configJson)
-  const env = Object.entries(config.env ?? {}).map(([key, value]) => ({ key, value }))
   return {
     name: item.name,
     scope: item.scope,
@@ -243,7 +280,8 @@ function draftFromItem(item: McpServerItem | null): DraftBase {
     args: (config.args ?? []).join(' '),
     url: config.url ?? '',
     description: config.description ?? '',
-    env,
+    env: recordToRows(config.env),
+    headers: recordToRows(config.headers),
     authType: config.auth?.type === 'oauth2' ? 'oauth2' : 'none',
     authScope: config.auth?.scope ?? '',
     authDcr: config.auth?.dcr !== false,
@@ -398,6 +436,8 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
     ) {
       return translate('mcpView.t19Desc')
     }
+    const headerError = validateHeaderRows(value.headers)
+    if (headerError != null) return headerError
     return null
   }
 
@@ -773,9 +813,7 @@ function EmptyState({
           ) : (
             <div>
               <div className="mv_empty_title">{translate('mcpView.t75Desc')}</div>
-              <div className="mv_empty_desc">
-                {translate('mcpView.tpl2LongDesc')}
-              </div>
+              <div className="mv_empty_desc">{translate('mcpView.tpl2LongDesc')}</div>
             </div>
           )
         }
@@ -804,23 +842,8 @@ function McpForm({
   const update = <K extends keyof DraftBase>(key: K, value: DraftBase[K]) =>
     setDraft((prev) => ({ ...prev, [key]: value }))
 
-  const updateEnvRow = (idx: number, patch: Partial<{ key: string; value: string }>) => {
-    setDraft((prev) => ({
-      ...prev,
-      env: prev.env.map((row, i) => (i === idx ? { ...row, ...patch } : row)),
-    }))
-  }
-
-  const removeEnvRow = (idx: number) => {
-    setDraft((prev) => ({
-      ...prev,
-      env: prev.env.filter((_, i) => i !== idx),
-    }))
-  }
-
-  const addEnvRow = () => {
-    setDraft((prev) => ({ ...prev, env: [...prev.env, { key: '', value: '' }] }))
-  }
+  const setRows = (field: 'env' | 'headers', rows: KeyValueRow[]) =>
+    setDraft((prev) => ({ ...prev, [field]: rows }))
 
   return (
     <div className="mv_drawer_body">
@@ -1052,6 +1075,37 @@ function McpForm({
         </section>
       )}
 
+      {/* ── 请求头（仅 http / sse） ── */}
+      {!isStdio && (
+        <section className="mv_drawer_section">
+          <header className="mv_drawer_section_head">
+            <span className="mv_drawer_section_icon">🛡</span>
+            <span className="mv_drawer_section_title">{translate('mcpView.t108')}</span>
+            <span className="mv_drawer_section_hint">{translate('mcpView.t109')}</span>
+          </header>
+          <div className="mv_drawer_section_body">
+            <KeyValueEditor
+              rows={draft.headers}
+              onChange={(rows) => setRows('headers', rows)}
+              keyPlaceholder="Header"
+              valuePlaceholder="Bearer token"
+              emptyText={translate('mcpView.t110Desc')}
+              addText={translate('mcpView.t111')}
+              presets={[
+                {
+                  label: translate('mcpView.t112'),
+                  row: { key: 'Authorization', value: 'Bearer ' },
+                },
+              ]}
+              hint={translate('mcpView.t115Desc')}
+            />
+            {draft.authType === 'oauth2' && (
+              <div className="mv_form_hint">{translate('mcpView.t116Desc')}</div>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* ── 环境变量 ── */}
       <section className="mv_drawer_section">
         <header className="mv_drawer_section_head">
@@ -1060,49 +1114,111 @@ function McpForm({
           <span className="mv_drawer_section_hint">{translate('mcpView.t94')}</span>
         </header>
         <div className="mv_drawer_section_body">
-          <div className="mv_env_list">
-            {draft.env.length === 0 ? (
-              <div className="mv_env_empty">{translate('mcpView.t95Desc')}</div>
-            ) : (
-              draft.env.map((row, idx) => (
-                <div key={idx} className="mv_env_row">
-                  <div className="mv_env_key">
-                    <Input
-                      value={row.key}
-                      onChange={(event) => updateEnvRow(idx, { key: event.target.value })}
-                      placeholder="KEY"
-                    />
-                  </div>
-                  <div className="mv_env_val">
-                    <Input
-                      value={row.value}
-                      onChange={(event) => updateEnvRow(idx, { value: event.target.value })}
-                      placeholder="value"
-                    />
-                  </div>
-                  <Button
-                    type="text"
-                    size="middle"
-                    danger
-                    icon={<Icons.X />}
-                    onClick={() => removeEnvRow(idx)}
-                  />
-                </div>
-              ))
-            )}
-          </div>
-          <Button
-            className="mv_env_add"
-            type="text"
-            size="middle"
-            icon={<Icons.Plus />}
-            onClick={addEnvRow}
-          >
-            {translate('mcpView.t96')}
-          </Button>
+          <KeyValueEditor
+            rows={draft.env}
+            onChange={(rows) => setRows('env', rows)}
+            keyPlaceholder="KEY"
+            valuePlaceholder="value"
+            emptyText={translate('mcpView.t95Desc')}
+            addText={translate('mcpView.t96')}
+          />
         </div>
       </section>
     </div>
+  )
+}
+
+// ── 子组件：键值对编辑器（环境变量 / 请求头共用） ──────────────────────────
+
+type KeyValueRow = { key: string; value: string }
+
+function KeyValueEditor({
+  rows,
+  onChange,
+  keyPlaceholder,
+  valuePlaceholder,
+  emptyText,
+  addText,
+  presets = [],
+  hint,
+}: {
+  rows: KeyValueRow[]
+  onChange: (rows: KeyValueRow[]) => void
+  keyPlaceholder: string
+  valuePlaceholder: string
+  emptyText: string
+  addText: string
+  presets?: Array<{ label: string; row: KeyValueRow }>
+  hint?: string
+}) {
+  const patchRow = (idx: number, patch: Partial<KeyValueRow>) => {
+    onChange(rows.map((row, i) => (i === idx ? { ...row, ...patch } : row)))
+  }
+  const removeRow = (idx: number) => {
+    onChange(rows.filter((_, i) => i !== idx))
+  }
+  const addRow = (row: KeyValueRow = { key: '', value: '' }) => {
+    onChange([...rows, row])
+  }
+
+  return (
+    <>
+      {hint != null && <div className="mv_form_hint">{hint}</div>}
+      <div className="mv_kv_list">
+        {rows.length === 0 ? (
+          <div className="mv_kv_empty">{emptyText}</div>
+        ) : (
+          rows.map((row, idx) => (
+            <div key={idx} className="mv_kv_row">
+              <div className="mv_kv_key">
+                <Input
+                  value={row.key}
+                  onChange={(event) => patchRow(idx, { key: event.target.value })}
+                  placeholder={keyPlaceholder}
+                />
+              </div>
+              <div className="mv_kv_val">
+                <Input
+                  value={row.value}
+                  onChange={(event) => patchRow(idx, { value: event.target.value })}
+                  placeholder={valuePlaceholder}
+                />
+              </div>
+              <Button
+                type="text"
+                size="middle"
+                danger
+                icon={<Icons.X />}
+                onClick={() => removeRow(idx)}
+              />
+            </div>
+          ))
+        )}
+      </div>
+      <div className="mv_kv_actions">
+        <Button
+          className="mv_kv_add"
+          type="text"
+          size="middle"
+          icon={<Icons.Plus />}
+          onClick={() => addRow()}
+        >
+          {addText}
+        </Button>
+        {presets.map((preset) => (
+          <Button
+            key={preset.label}
+            className="mv_kv_add"
+            type="text"
+            size="middle"
+            icon={<Icons.Plus />}
+            onClick={() => addRow(preset.row)}
+          >
+            {preset.label}
+          </Button>
+        ))}
+      </div>
+    </>
   )
 }
 
@@ -1243,7 +1359,8 @@ function getConnectorStatusMeta(
       ? { color: 'red', label: translate('mcpView.t40') }
       : { color: 'orange', label: translate('mcpView.t41') }
   }
-  if (!state.enabled || state.status === 'disabled') return { color: 'default', label: translate('mcpView.t42') }
+  if (!state.enabled || state.status === 'disabled')
+    return { color: 'default', label: translate('mcpView.t42') }
   if (state.status === 'connected') return { color: 'green', label: translate('mcpView.t43') }
   if (state.status === 'syncing') return { color: 'blue', label: translate('mcpView.t44') }
   if (state.status === 'needs_auth') return { color: 'orange', label: translate('mcpView.t45') }
@@ -1321,7 +1438,9 @@ function ConnectorsPanel() {
       setState({
         ...state,
         status: 'needs_auth',
-        lastError: translate('mcpView.tpl4LongDesc', { label: selectedAuth?.label ?? translate('mcpView.t47') }),
+        lastError: translate('mcpView.tpl4LongDesc', {
+          label: selectedAuth?.label ?? translate('mcpView.t47'),
+        }),
       })
       return
     }
@@ -1449,17 +1568,21 @@ function ConnectorsPanel() {
             )}
             <span>{translate('mcpView.tpl5Desc', { account: state.accountLogin })}</span>
             {state.lastCheckedAt != null && (
-              <small>{translate('mcpView.tpl6Desc', { time: new Date(state.lastCheckedAt).toLocaleString() })}</small>
+              <small>
+                {translate('mcpView.tpl6Desc', {
+                  time: new Date(state.lastCheckedAt).toLocaleString(),
+                })}
+              </small>
             )}
           </div>
         )}
         {state.grantedScopes.length > 0 && (
-          <div className="mv_connector_error">{translate('mcpView.tpl7Desc', { scopes: state.grantedScopes.join(', ') })}</div>
+          <div className="mv_connector_error">
+            {translate('mcpView.tpl7Desc', { scopes: state.grantedScopes.join(', ') })}
+          </div>
         )}
         {state.lastError != null && <div className="mv_connector_error">{state.lastError}</div>}
-        {bootstrapping && (
-          <div className="mv_connector_error">{translate('mcpView.t97Desc')}</div>
-        )}
+        {bootstrapping && <div className="mv_connector_error">{translate('mcpView.t97Desc')}</div>}
 
         <div className="mv_auth_strategy_grid">
           {manifest.auth.map((auth) => {
@@ -1497,9 +1620,7 @@ function ConnectorsPanel() {
                   onChange={(event) => setPatToken(event.target.value)}
                   placeholder="github_pat_..."
                 />
-                <span className="mv_form_hint">
-                  {translate('mcpView.t99LongDesc')}
-                </span>
+                <span className="mv_form_hint">{translate('mcpView.t99LongDesc')}</span>
               </div>
             </>
           )}
@@ -1511,9 +1632,7 @@ function ConnectorsPanel() {
               onChange={(event) => setState({ ...state, repos: event.target.value })}
               placeholder="owner/repo, org/backend"
             />
-            <span className="mv_form_hint">
-              {translate('mcpView.t101Desc')}
-            </span>
+            <span className="mv_form_hint">{translate('mcpView.t101Desc')}</span>
           </div>
 
           <label className="mv_form_label">{translate('mcpView.t102')}</label>
@@ -1525,9 +1644,7 @@ function ConnectorsPanel() {
               checkedChildren="ON"
               unCheckedChildren="OFF"
             />
-            <span className="mv_form_hint">
-              {translate('mcpView.t103Desc')}
-            </span>
+            <span className="mv_form_hint">{translate('mcpView.t103Desc')}</span>
           </div>
 
           <label className="mv_form_label">{translate('mcpView.t104')}</label>
@@ -1539,9 +1656,7 @@ function ConnectorsPanel() {
               checkedChildren="ON"
               unCheckedChildren="OFF"
             />
-            <span className="mv_form_hint">
-              {translate('mcpView.t105Desc')}
-            </span>
+            <span className="mv_form_hint">{translate('mcpView.t105Desc')}</span>
           </div>
         </div>
 

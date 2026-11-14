@@ -529,7 +529,8 @@
   line-height: 1.4;
 }
 
-.mv_env_list {
+// 键值对编辑器：环境变量与请求头（http / sse）共用
+.mv_kv_list {
   display: flex;
   flex-direction: column;
   gap: var(--pad-xs);
@@ -538,29 +539,36 @@
   border-radius: var(--r-md, 8px);
 }
 
-.mv_env_row {
+.mv_kv_row {
   display: flex;
   align-items: center;
   gap: var(--pad-xs);
 }
 
-.mv_env_key {
+.mv_kv_key {
   flex: 0 0 180px;
 }
 
-.mv_env_val {
+.mv_kv_val {
   flex: 1;
   min-width: 0;
 }
 
-.mv_env_empty {
+.mv_kv_empty {
   font-size: var(--font-sm);
   color: var(--text-faint);
   text-align: center;
   padding: var(--pad-sm);
 }
 
-.mv_env_add {
+.mv_kv_actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pad-3xs);
+}
+
+.mv_kv_add {
   align-self: flex-start;
   font-size: var(--font-sm);
   padding: 0 var(--pad-3xs);
