@@ -13,7 +13,8 @@
   width: 100%;
   max-height: 82vh;
   box-sizing: border-box;
-  /* 纵向三段：固定头 / 可滚动列表 / 固定底。内容不超高时整张 sheet 仍按内容自适应高度 */
+  /* 纵向三段：固定头 / 可滚动列表 / 固定底。内容不超高时整张 sheet 仍按内容自适应高度；
+     列表那段的上限由组件量完底栏后写成内联 max-height（见 utils/config-sheet-layout） */
   display: flex;
   flex-direction: column;
   background: #f2f0ed;
@@ -70,10 +71,13 @@
   opacity: 0.6;
 }
 
-/* 可滚动区：撑满头尾之间的剩余空间；min-height:0 让它能被 max-height 压缩，滚动交给 scroll-view */
+/* 可滚动区：只有它滚，底部「推理强度 / 权限」固定。
+   真机上 scroll-view 必须拿到确定高度才滚动（flex 分配撑不住），所以组件量完底栏高度后会
+   写内联 max-height；下面这个值只是首帧兜底，别当成真实上限 */
 .cs-body {
   flex: 1 1 auto;
   min-height: 0;
+  max-height: 46vh;
 }
 
 /* 固定底栏：推理强度 + 权限永远贴在弹窗底部，不参与列表滚动 */

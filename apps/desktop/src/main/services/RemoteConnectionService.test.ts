@@ -465,6 +465,7 @@ describe('remote command coverage', () => {
       telegramCommands: ['/new-session', 'new_session', 'use-model', 'use_model'],
       capabilities: {
         sendMessages: true,
+        proactivePush: true,
         switchModel: false,
         switchSession: true,
         switchAgent: true,
@@ -489,6 +490,7 @@ describe('remote command coverage', () => {
       qqCommands: ['help', 'use_model', 'use-model', 'use-permission', 'use-reasoning', 'missing'],
       capabilities: {
         sendMessages: true,
+        proactivePush: true,
         switchModel: true,
         switchSession: true,
         switchAgent: true,
@@ -519,6 +521,7 @@ describe('remote command coverage', () => {
       qqCommands: [...DEFAULT_QQ_REMOTE_COMMANDS],
       capabilities: {
         sendMessages: true,
+        proactivePush: true,
         switchModel: true,
         switchSession: true,
         switchAgent: true,
@@ -546,6 +549,7 @@ describe('remote command coverage', () => {
       qqCommands: [...DEFAULT_QQ_REMOTE_COMMANDS],
       capabilities: {
         sendMessages: true,
+        proactivePush: true,
         switchModel: true,
         switchSession: true,
         switchAgent: true,

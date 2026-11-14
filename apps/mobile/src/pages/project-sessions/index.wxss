@@ -58,12 +58,24 @@
   font-size: 22rpx;
   color: #8a8782;
 }
-.ps-context-name {
+.ps-context-main {
+  display: flex;
+  flex-direction: column;
   flex: 1;
+  min-width: 0;
+}
+.ps-context-name {
   min-width: 0;
   color: #1a1a1a;
   font-size: 25rpx;
   font-weight: 500;
+}
+/* 有本机备注名时，自报名降级为第二行小字 */
+.ps-context-real {
+  margin-top: 2rpx;
+  min-width: 0;
+  color: #8a8782;
+  font-size: 20rpx;
 }
 .ps-context-action {
   flex: none;
@@ -100,9 +112,11 @@
 .ps-segments {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 12rpx;
 }
 .ps-segment {
+  flex: none;
   padding: 10rpx 26rpx;
   border-radius: 999rpx;
   background: #efedea;

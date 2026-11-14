@@ -216,6 +216,8 @@ const DEFAULT_GLOBAL: RemoteConnectionGlobalSettings = {
 
 const DEFAULT_CAPABILITIES: RemoteConnectionCapabilities = {
   sendMessages: true,
+  // 对齐 sendMessages：每条路由都是用户配对过的自己的聊天，主动推送风险面等同被动回复。
+  proactivePush: true,
   switchModel: true,
   switchSession: true,
   switchAgent: true,

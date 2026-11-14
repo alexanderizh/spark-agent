@@ -30,13 +30,21 @@ import {
 } from '../../utils/chat-reducer'
 import {
   ATTACHMENT_ONLY_FALLBACK_TEXT,
+  assignTimelineGaps,
   buildTimelineItems,
+  collapseFinishedTurns,
   displayTextOf,
   filterExecutionDetails,
   isAttachmentOnlyText,
   type TimelineItem,
   type TimelineUserAttachment,
 } from '../../utils/chat-view'
+import {
+  buildTurnRail,
+  pickActiveTurnKey,
+  TURN_ACTIVATION_MARGIN_PX,
+  type TurnRailItem,
+} from '../../utils/turn-rail'
 import {
   loadChatSnapshot,
   mapToRecord,
@@ -138,8 +146,12 @@ interface ChatPageData {
   deviceOffline: boolean
   title: string
   updatedAtLabel: string
-  items: ReturnType<typeof buildTimelineItems>
+  items: TimelineItem[]
   running: boolean
+  /** 轮次轨道数据（见 utils/turn-rail）；少于两轮时组件自身不渲染 */
+  turns: TurnRailItem[]
+  /** 当前轮次 key：按滚动位置算出，驱动轨道刻度高亮 */
+  activeTurnKey: string
   inputText: string
   loading: boolean
   connected: boolean
@@ -211,6 +223,21 @@ const SCROLL_MOMENTUM_WINDOW_MS = 800
 /** scroll-top 回底值：交替 ±1 保证每次需要回底时值都会变化 */
 const BOTTOM_SCROLL_VALUE = 99_999_999
 
+/**
+ * SelectorQuery.exec 的回参元素。typings 里 exec 的回参是 any[]，
+ * 这里自己收窄成「可能缺字段的矩形」，避免把 any 泄进业务代码。
+ */
+interface MeasuredRect {
+  top?: number
+  height?: number
+  scrollTop?: number
+}
+
+/** 轮次轨道组件实例上用到的极小接口（避免把整个组件类型拖进页面） */
+interface TurnRailHandle {
+  closePreview?: () => void
+}
+
 /** 单张图片保存到系统相册（回调 → Promise；拒绝授权时 errMsg 带 auth deny） */
 function saveImageToPhotosAlbum(filePath: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -231,6 +258,10 @@ Page({
     updatedAtLabel: '',
     items: [],
     running: false,
+    /** 轮次轨道数据（见 utils/turn-rail）；少于两轮时组件自身不渲染 */
+    turns: [] as TurnRailItem[],
+    /** 当前轮次 key：按滚动位置算出，驱动轨道刻度高亮 */
+    activeTurnKey: '',
     inputText: '',
     loading: true,
     connected: false,
@@ -316,6 +347,17 @@ Page({
   expandedDividerKeys: new Set<string>(),
   /** 单条工具行被展开查看详情的 key */
   expandedToolKeys: new Set<string>(),
+  /**
+   * 轮次锚点的内容偏移（anchorId → px）。
+   * 只在轮次结构变化时量一次：流式追加只往末尾长，旧轮位置不会动。
+   */
+  turnTops: new Map<string, number>(),
+  /** 上次同步给组件的轮次表 JSON；摘要变化也要推给组件，见 syncTurnRail */
+  turnSignature: '',
+  /** 上次量过的锚点集合；只有它变了才重量 */
+  turnAnchors: '',
+  /** 轨道组件实例缓存：scroll 事件里每次 selectComponent 太浪费 */
+  turnRailRef: null as TurnRailHandle | null,
   /** 设备列表订阅取消函数（onShow 校验所选电脑在线状态 + 实时刷新） */
   unsubscribeDevices: null as (() => void) | null,
   /** 已加载的全部历史事件（按 seq 升序累积；向上翻页时前插） */
@@ -859,15 +901,34 @@ Page({
       this.flushTimer = 0
       const timeline = this.latestTimeline
       if (!timeline) return
+      // 先按回合折叠（处理完的轮次只留最后一段正文），再按「隐藏执行详情」
+      // 把展开轮次里的工具/思考收成横线：两步顺序不能反，否则折叠轮的工具
+      // 已经被收过一遍，执行详情折叠又会为它们多画一条横线。
+      const folded = collapseFinishedTurns(buildTimelineItems(timeline.messages), {
+        running: timeline.running,
+        expandedKeys: this.expandedDividerKeys,
+      })
       const base = filterExecutionDetails(
-        buildTimelineItems(timeline.messages),
+        folded,
         this.data.hideExecutionDetails,
         this.expandedDividerKeys,
       ).map((item) => this.decorateItem(item))
-      const items = [...base, ...this.buildPendingItems()]
+      // 间距档位放在折叠/过滤之后算：这两步会增删 divider，早算会整体错位
+      const withGaps = assignTimelineGaps([...base, ...this.buildPendingItems()])
+      // 轮次轨道同样在折叠/过滤之后派生：锚点要落在「该轮首条」上，
+      // 而折叠插入的 divider 会改变首条是谁。
+      const rail = buildTurnRail(withGaps)
+      const items = rail.items
       // 差量 setData：流式 delta 只改一个 assistant 项，不再每 100ms 重设整条列表
       const patch = this.diffItems(this.data.items, items)
+      // 结构变化（折叠/展开/翻页会增删条目）会让下方所有锚点偏移失效，重量一次
+      if ('items' in patch) {
+        this.turnSignature = ''
+        this.turnAnchors = ''
+      }
       if (timeline.running !== this.data.running) patch.running = timeline.running
+      // 轮次列表结构没变就不碰：整表 setData 会打断轨道自身的滚动
+      Object.assign(patch, this.syncTurnRail(rail.turns))
       // 回底并入同一次 setData：原来用 60ms setTimeout 二次设 scroll-into-view，
       // 与 scroll-anchoring 反复抢位置，是「抖屏」的主因。
       if (opts?.keepScroll !== true && this.stickBottom) {
@@ -1173,6 +1234,131 @@ Page({
     this.setData({ scrollTop: BOTTOM_SCROLL_VALUE + (this.scrollTick % 2) })
   },
 
+  // ─── 轮次轨道（右侧刻度：当前轮高亮 + 点击跳转 + 长按预览） ─────────────────
+
+  /**
+   * 把轮次列表同步给轨道组件。
+   *
+   * 返回要合并进本轮 setData 的补丁。两个签名分开用：
+   *   - turnSignature（整表 JSON）：摘要会随流式增长，结构没变也得把最新列表推给组件，
+   *     否则长按预览看到的是上一轮的旧摘要；
+   *   - turnAnchors（锚点集合）：只有增删轮次才会让旧锚点的偏移失效，才需要重量。
+   * 流式期间每 100ms 都会走到这里，无脑重量会把轨道自身的滚动反复打断。
+   */
+  syncTurnRail(turns: TurnRailItem[]): Record<string, unknown> {
+    const serialized = JSON.stringify(turns)
+    const structureChanged = turns.map((turn) => turn.anchorId).join('|') !== this.turnAnchors
+    if (serialized === this.turnSignature && !structureChanged) return {}
+    this.turnSignature = serialized
+    this.turnAnchors = turns.map((turn) => turn.anchorId).join('|')
+    if (structureChanged) {
+      // 等本轮 setData 落屏再量：锚点还没渲染出来时量不到
+      setTimeout(() => this.measureTurnTops(turns), 0)
+    }
+    return { turns }
+  },
+
+  /**
+   * 量一遍所有轮次锚点在滚动内容里的偏移。
+   *
+   * 只在轮次结构变化时调用：流式追加只往末尾长，旧轮的偏移不会变，
+   * 没必要跟着 100ms 的 flush 反复量。
+   */
+  measureTurnTops(turns: TurnRailItem[]) {
+    if (turns.length === 0) {
+      this.turnTops = new Map()
+      this.refreshActiveTurn()
+      return
+    }
+    const query = wx.createSelectorQuery().in(this)
+    query.select('.chat-scroll').boundingClientRect()
+    query.select('.chat-scroll').scrollOffset()
+    for (const turn of turns) query.select(`#${turn.anchorId}`).boundingClientRect()
+    query.exec((res: Array<MeasuredRect | null | undefined>) => {
+      const container = res[0]
+      const offset = res[1]
+      // 取成局部常量：属性上的收窄不会传进 forEach 回调，回调里再用会报 possibly undefined
+      const containerTop = container?.top
+      const baseScrollTop = offset?.scrollTop
+      if (containerTop == null || baseScrollTop == null) return
+      const tops = new Map<string, number>()
+      turns.forEach((turn, index) => {
+        const rect = res[index + 2]
+        if (rect?.top == null) return
+        tops.set(turn.anchorId, baseScrollTop + (rect.top - containerTop))
+      })
+      this.turnTops = tops
+      this.refreshActiveTurn()
+    })
+  },
+
+  /**
+   * 按滚动位置重算当前轮并回填给轨道。
+   *
+   * 一次刷新只是「遍历轮次查 Map」，比 requestAnimationFrame 节流还便宜，
+   * 而 setData 只在轮次真正切换时发生，所以直接跟着 scroll 调即可。
+   *
+   * 还没量到偏移时取最后一轮：用户进场就落在会话底部，先让刻度高亮在末轮，
+   * 量完之后再由滚动位置接管。
+   */
+  refreshActiveTurn() {
+    const { turns } = this.data
+    if (turns.length === 0) return
+    const key =
+      this.turnTops.size === 0
+        ? (turns[turns.length - 1]?.key ?? '')
+        : (pickActiveTurnKey(turns, this.turnTops, this.lastScrollTop) ?? '')
+    if (key !== '' && key !== this.data.activeTurnKey) this.setData({ activeTurnKey: key })
+  },
+
+  /** 点轨道刻度：量目标锚点位置后跳过去，并收起预览 */
+  onTurnJump(e: WechatMiniprogram.CustomEvent<{ key: string }>) {
+    const { key } = e.detail
+    const turns = this.data.turns as TurnRailItem[]
+    const index = turns.findIndex((turn) => turn.key === key)
+    const turn = index >= 0 ? turns[index] : undefined
+    if (turn == null) return
+    this.closeTurnPreview()
+
+    // 跳到最后一轮 = 回到「跟随」态；跳中间轮次则退出跟随，
+    // 否则流式刷新会把视口重新抢回底部，跳转等于没跳。
+    const isLast = index === turns.length - 1
+    const query = wx.createSelectorQuery().in(this)
+    query.select('.chat-scroll').boundingClientRect()
+    query.select('.chat-scroll').scrollOffset()
+    query.select(`#${turn.anchorId}`).boundingClientRect()
+    query.exec((res: Array<MeasuredRect | null | undefined>) => {
+      const container = res[0]
+      const offset = res[1]
+      const rect = res[2]
+      // 同样取成局部常量：属性收窄进不了回调
+      const containerTop = container?.top
+      const baseScrollTop = offset?.scrollTop
+      const anchorTop = rect?.top
+      // 目标轮顶部留一点余量，别紧贴视口上沿
+      const target =
+        containerTop == null || baseScrollTop == null || anchorTop == null
+          ? null
+          : Math.max(0, baseScrollTop + (anchorTop - containerTop) - TURN_ACTIVATION_MARGIN_PX)
+      this.stickBottom = isLast
+      // 高亮立刻跟上（不等量位置），跳转目标算不出来时至少反馈已经在响应用户
+      this.setData({
+        activeTurnKey: turn.key,
+        showJumpLatest: !isLast,
+        ...(target != null ? { scrollTop: target } : {}),
+      })
+    })
+  },
+
+  /** 收起轮次预览（聊天区滚动 / 点消息时都要收，别让预览挂在失效位置） */
+  closeTurnPreview() {
+    // 少于两轮时组件整体不渲染，没必要去摸组件树
+    if (this.data.turns.length < 2) return
+    // 缓存实例：scroll 事件里每次 selectComponent 太浪费
+    this.turnRailRef ??= this.selectComponent('#turn-rail') as TurnRailHandle | null
+    this.turnRailRef?.closePreview?.()
+  },
+
   // ─── 滚动意图跟踪（贴底跟随 / 上滑停止跟随 + 悬浮「最新」按钮） ─────────────
 
   /** 测量消息区视口高度（scroll 事件里算距底距离用） */
@@ -1194,6 +1380,10 @@ Page({
   onChatScroll(e: WechatMiniprogram.CustomEvent<{ scrollTop: number; scrollHeight: number }>) {
     const { scrollTop, scrollHeight } = e.detail
     if (typeof scrollTop === 'number') this.lastScrollTop = scrollTop
+    // 轮次高亮跟着滚动走；同时收起轮次预览——
+    // 刻度都移走了，预览还挂在老位置会很违和。
+    this.refreshActiveTurn()
+    this.closeTurnPreview()
     const userDriven =
       this.scrollTouching || Date.now() - this.lastScrollTouchEndAt < SCROLL_MOMENTUM_WINDOW_MS
     if (!userDriven) return
@@ -1825,7 +2015,7 @@ Page({
         efforts.findIndex((item) => item.id === current),
         0,
       ),
-      configPermissionLabel: PERMISSION_LABELS[permissionMode] ?? (permissionMode || '电脑默认'),
+      configPermissionLabel: PERMISSION_LABELS[permissionMode] ?? permissionMode,
     })
   },
 

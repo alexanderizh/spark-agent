@@ -74,12 +74,12 @@
   height: 8rpx;
 }
 
-/* 天级时间分界 */
+/* 天级时间分界（居中灰字）。纵向间距由 .gap-* 负责，这里只留自身的内边距 */
 .chat-time {
   text-align: center;
   font-size: 22rpx;
   color: #b3b0ab;
-  margin: 24rpx 0;
+  padding: 26rpx 0 14rpx;
 }
 
 /* 历史翻页顶部提示（加载更早 / 已到最前面） */
@@ -115,7 +115,7 @@
 /* ─── 消息行 ───────────────────────────────────────────────────────────────── */
 
 .msg-row {
-  margin: 16rpx 0;
+  margin: 0;
 }
 
 .msg-row--user {
@@ -176,11 +176,11 @@
   color: #b42318;
 }
 
-/* 工具/思考记录隐藏后的分块横线：浅色线 + 到达时间 + 折叠条数 */
+/* 工具/思考记录隐藏后的分块横线：浅色线 + 到达时间 + 折叠条数（间距由 .gap-* 负责） */
 .chat-divider {
   align-items: center;
   gap: 16rpx;
-  margin: 22rpx 0 18rpx;
+  margin: 0;
 }
 .chat-divider-line {
   flex: 1;
@@ -191,6 +191,10 @@
   flex: none;
   font-size: 21rpx;
   color: #a09c95;
+}
+/* 回合折叠横线：这轮内容的入口，比执行详情横线扎实半档（只调字重，颜色交给主题生成） */
+.chat-divider--turn .chat-divider-label {
+  font-weight: 500;
 }
 
 /* AI 文档式回复的复制入口 */
@@ -245,9 +249,9 @@
   padding: 4rpx 0;
 }
 
-/* 思考过程用轻量折叠行呈现；展开后仅用细线区分正文 */
+/* 思考过程用轻量折叠行呈现；展开后仅用细线区分正文（间距由 .gap-* 负责） */
 .msg-row--thinking {
-  margin: 4rpx 0 8rpx;
+  margin: 0;
 }
 .thinking-toggle {
   box-sizing: border-box;
@@ -328,7 +332,7 @@
 /* ─── 工具调用行 ───────────────────────────────────────────────────────────── */
 
 .tool-block {
-  margin: 4rpx 0;
+  margin: 0;
 }
 .tool-line {
   padding: 10rpx 0 10rpx 4rpx;
@@ -674,4 +678,33 @@
   background-repeat: no-repeat;
   background-position: center;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e8e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4'/%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3Cpath d='M12 15V3'/%3E%3C/svg%3E");
+}
+
+/* ─── 纵向间距档位 ───────────────────────────────────────────────────────────
+ * 消息行的纵向间距统一由这几个类承担（上面各行的基准 margin 已全部归零），
+ * 档位由 utils/chat-view.ts 的 assignTimelineGaps 按「轮边界 / 轮内阶段」算出。
+ * 必须放在所有基准规则之后：同为单类选择器，后写的才能覆盖前面的 margin:0。
+ *
+ * 手感目标：同一轮的 思考 → 工具 → 正文 紧扣成一组，轮与轮之间才明显换气。
+ * 原来统一 16rpx 上下边距（≈16pt 空隙），阶段被撑得七零八落，
+ * 用户反馈「各个阶段输出之间的空隙太大」就是指这个。 */
+
+.gap-first {
+  margin-top: 0;
+}
+/* 新一轮开始（用户提问）：与上一轮总结之间留出换气距离 */
+.gap-turn {
+  margin-top: 30rpx;
+}
+/* 轮内正文段 / 产物图片：阅读单元，间距中等 */
+.gap-block {
+  margin-top: 14rpx;
+}
+/* 轮内过程段（思考 / 工具 / 状态行）：紧贴上下文，不抢注意力 */
+.gap-tight {
+  margin-top: 6rpx;
+}
+/* 天级分界与折叠横线：自带分隔语义，比正文松一档 */
+.gap-section {
+  margin-top: 20rpx;
 }

@@ -6,7 +6,7 @@
  *   - 能力直接复用目标设备的 MobileBridge /v1/* 语义路由，无需另开协议；
  *   - UI 按桌面端设计语言重做（紧凑密度、中性灰、无渐变）。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { RemoteAgentDeviceSummary } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useApp } from '../../AppContext'
@@ -14,14 +14,19 @@ import { useToast } from '../../components/Toast'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import { RemoteChatPane } from './RemoteChatPane'
 import { RemoteSessionPane } from './RemoteSessionPane'
+import { RemoteDeviceSwitcher } from './RemoteDeviceSwitcher'
 import { deviceLabel, deviceRealName, deviceTooltip } from './remoteDevices'
 import { findSessionProjectId } from './remoteSessionStore'
 import {
+  readDeviceSwitcher,
   readLastSession,
   readRemoteViewState,
+  rememberDeviceSwitcher,
   rememberLastDevice,
   rememberLastSession,
+  resolveDeviceSwitcherMode,
 } from './remoteViewState'
+import type { RemoteDeviceSwitcherMode } from './remoteViewState'
 import { useRemoteRelay } from './useRemoteBridge'
 import { useRemoteSessionTitle } from './useRemoteSessionTree'
 import './remote-control.less'
@@ -109,11 +114,12 @@ export function RemoteControlView() {
     const ref = deviceId != null ? restored.lastSessionByDevice[deviceId] : null
     return deviceId != null && ref != null ? { deviceId, sessionId: ref.sessionId } : null
   })
-  /** 顶部设备名下拉：只有多台设备时才当切换入口用 */
-  const [deviceMenuOpen, setDeviceMenuOpen] = useState(false)
+  /** 顶部设备切换器形态（自动 / Tab 栏 / 下拉），持久化在本机 */
+  const [deviceSwitcher, setDeviceSwitcher] = useState<RemoteDeviceSwitcherMode>(() =>
+    readDeviceSwitcher(),
+  )
   /** 正在保存备注名的设备：按钮显示 spinner，避免连点写出多条 */
   const [aliasPendingId, setAliasPendingId] = useState<string | null>(null)
-  const deviceMenuRef = useRef<HTMLDivElement | null>(null)
 
   const onlineDevices = useMemo(
     () => relay.devices.filter((device) => device.online),
@@ -215,25 +221,18 @@ export function RemoteControlView() {
 
   /** 至少两台「在线」设备才给切换入口：只多一台离线机器时没什么可切的 */
   const canSwitchDevice = onlineDevices.length > 1
+  /**
+   * 切换器形态：auto 按设备规模判定（少则 Tab、多则下拉），显式选择优先。
+   * 两台设备是最常见场景，Tab 少一次点击，所以 auto 默认倾向 Tab。
+   */
+  const switcherShape = useMemo(
+    () => resolveDeviceSwitcherMode(deviceSwitcher, onlineDevices.length, relay.devices.length),
+    [deviceSwitcher, onlineDevices.length, relay.devices.length],
+  )
 
-  // 设备下拉：点外部 / Esc 关闭；切换设备后也立刻收起
-  useEffect(() => {
-    if (!deviceMenuOpen) return
-    const onPointerDown = (event: MouseEvent) => {
-      const node = deviceMenuRef.current
-      if (node != null && event.target instanceof Node && node.contains(event.target)) return
-      setDeviceMenuOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setDeviceMenuOpen(false)
-    }
-    document.addEventListener('mousedown', onPointerDown, true)
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown, true)
-      document.removeEventListener('keydown', onKeyDown, true)
-    }
-  }, [deviceMenuOpen])
+  const handleSwitcherModeChange = useCallback((next: RemoteDeviceSwitcherMode) => {
+    setDeviceSwitcher(rememberDeviceSwitcher(next).deviceSwitcher)
+  }, [])
 
   const relayLabel = relay.status.connected
     ? '中继已连接'
@@ -337,62 +336,15 @@ export function RemoteControlView() {
           <Icons.RemoteMonitor size={16} />
           <h2>远程</h2>
           {activeDevice != null && (
-            <div className="rc-head-device-wrap" ref={deviceMenuRef}>
-              {canSwitchDevice ? (
-                <button
-                  type="button"
-                  className={`rc-head-device is-switchable${deviceMenuOpen ? ' is-open' : ''}`}
-                  onClick={() => setDeviceMenuOpen((open) => !open)}
-                  aria-haspopup="menu"
-                  aria-expanded={deviceMenuOpen}
-                  title={`切换电脑（当前：${deviceTooltip(activeDevice)}）`}
-                >
-                  <span className="rc-head-device-name">{deviceLabel(activeDevice)}</span>
-                  <Icons.ChevronDown size={11} />
-                </button>
-              ) : (
-                <span className="rc-head-device" title={deviceTooltip(activeDevice)}>
-                  {deviceLabel(activeDevice)}
-                </span>
-              )}
-              {deviceMenuOpen && (
-                <div className="rc-device-menu" role="menu" aria-label="选择电脑">
-                  <div className="rc-device-menu-title">切换到其它电脑</div>
-                  {relay.devices.map((device) => {
-                    const current = device.deviceId === activeDeviceId
-                    return (
-                      <button
-                        key={device.deviceId}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={current}
-                        className={`rc-device-menu-item${current ? ' is-current' : ''}${
-                          device.online ? '' : ' is-offline'
-                        }`}
-                        disabled={!device.online}
-                        onClick={() => {
-                          setDeviceMenuOpen(false)
-                          if (!current) handleSelectDevice(device.deviceId)
-                        }}
-                      >
-                        <span className={`rc-device-menu-dot${device.online ? ' online' : ''}`} />
-                        <span className="rc-device-menu-name" title={deviceTooltip(device)}>
-                          {deviceLabel(device)}
-                          {deviceRealName(device) != null && (
-                            <span className="rc-device-menu-real">{deviceRealName(device)}</span>
-                          )}
-                        </span>
-                        {device.online ? (
-                          current && <Icons.Check size={12} />
-                        ) : (
-                          <span className="rc-device-menu-state">离线</span>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+            <RemoteDeviceSwitcher
+              devices={relay.devices}
+              activeDevice={activeDevice}
+              canSwitch={canSwitchDevice}
+              shape={switcherShape}
+              mode={deviceSwitcher}
+              onModeChange={handleSwitcherModeChange}
+              onSelectDevice={handleSelectDevice}
+            />
           )}
         </div>
         <div className="rc-head-right">

@@ -17,6 +17,7 @@ import type {
 } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useIpcInvoke } from '../../hooks/useIpc'
+import { useOptionalToast } from '../../components/Toast'
 import { UserQuestionDock } from '../chat/UserQuestionDock'
 import {
   RemoteApprovalCard,
@@ -24,9 +25,13 @@ import {
   type RemoteApprovalDecision,
 } from './RemoteApprovalCard'
 import { RemoteComposer } from './RemoteComposer'
-import { RemoteMessageList } from './RemoteMessageList'
+import { RemoteMessageList, type RemoteUserItem } from './RemoteMessageList'
 import type { RemoteAttachmentRef } from './RemoteAttachmentStrip'
 import { buildRemoteTimeline, mergeRemoteEvents } from './remoteEventMerge'
+import { ATTACHMENT_ONLY_TEXT, toReusableDraft } from './remoteMessageReuse'
+import { resolvePendingQuickReplies } from './remoteQuickReplies'
+import { fileNameOf } from './remoteRichContent'
+import { buildQuickReplyMessage } from '../../services/quick-reply-suggestions'
 import {
   HISTORY_LOAD_COOLDOWN_MS,
   HISTORY_MAX_PAGES_PER_GESTURE,
@@ -67,9 +72,6 @@ interface RemoteInteractions {
   questions?: RemoteQuestion[]
 }
 
-/** 纯附件消息：目标端 /turns 的 text 必填，空串会 400，用零宽占位（与小程序端一致） */
-const ATTACHMENT_ONLY_TEXT = '\u200B请查看附件'
-
 export interface RemoteChatPaneProps {
   deviceId: string
   sessionId: string | null
@@ -88,6 +90,7 @@ export function RemoteChatPane({
   onSessionInvalid,
 }: RemoteChatPaneProps) {
   const call = useRemoteCall()
+  const toast = useOptionalToast()?.toast ?? null
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: uploadAttachments } = useIpcInvoke('remote-agent:attachment:upload')
   const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
@@ -359,6 +362,21 @@ export function RemoteChatPane({
   const visibleItems = useSmoothRemoteItems(items)
 
   /**
+   * 快捷回复建议：从**原始事件**里找最近一次未被消费的建议（时间线把 tool_call
+   * 折叠进活动段，不再保留 quickReplies）。有待回答的问答卡时不显示，与桌面端一致。
+   */
+  const pendingQuickReplies = useMemo(
+    () => resolvePendingQuickReplies(events, { hasPendingQuestion: questions.length > 0 }),
+    [events, questions.length],
+  )
+  /** 用户点过「关闭」的那一批：换了新的建议（不同 toolCallId）会重新出现 */
+  const [dismissedQuickReply, setDismissedQuickReply] = useState<string | null>(null)
+  const activeQuickReplies =
+    pendingQuickReplies != null && pendingQuickReplies.toolCallId !== dismissedQuickReply
+      ? pendingQuickReplies.replies
+      : undefined
+
+  /**
    * 前插历史后还原视觉位置：新内容把上面撑高了 delta，scrollTop 同步加上 delta，
    * 用户盯着的那一行不动。必须用 layout effect —— 在浏览器绘制前改完，
    * 否则会先闪一下顶部再被拽回去。
@@ -427,7 +445,13 @@ export function RemoteChatPane({
     [call, deviceId, sessionId],
   )
 
-  /** 上传结果入待发条：同一路径不重复加；粘贴图片带上本机预览图，不用等远程回图 */
+  /**
+   * 上传结果入待发条：同一路径不重复加。
+   *
+   * previews 用「本机文件名」做键——上传返回的是**目标端**路径，与本机路径不同名不同根，
+   * 按路径查永远查不到（粘贴图片于是白等一轮远程回图）。目标端保存时保留了原始文件名
+   * （见 registerMobileBridgeIpc 的 saveAttachments），所以文件名是两端唯一稳定的锚点。
+   */
   const appendUploaded = useCallback(
     (uploaded: RemoteAgentAttachmentSummary[], previews?: Map<string, string>) => {
       setPendingAttachments((previous) => {
@@ -435,7 +459,7 @@ export function RemoteChatPane({
         const added = uploaded
           .filter((item) => !seen.has(item.path))
           .map((item) => {
-            const previewUrl = previews?.get(item.path)
+            const previewUrl = previews?.get(item.name ?? fileNameOf(item.path))
             return {
               type: item.type,
               path: item.path,
@@ -522,7 +546,8 @@ export function RemoteChatPane({
             suggestedBaseName: source.suggestedBaseName,
           })
           paths.push(saved.filePath)
-          previews.set(saved.filePath, remoteFileUrl(saved.filePath))
+          // 键用文件名，与 appendUploaded 查表的一侧对齐（见该函数的说明）
+          previews.set(fileNameOf(saved.filePath), remoteFileUrl(saved.filePath))
         }
         if (paths.length === 0) return
         const result = await uploadAttachments({ deviceId, sessionId, paths })
@@ -540,49 +565,82 @@ export function RemoteChatPane({
     setPendingAttachments((previous) => previous.filter((item) => item.path !== path))
   }, [])
 
-  const handleSend = useCallback(async () => {
-    if (!sessionId || sending) return
-    const text = draft.trim()
-    if (text.length === 0 && pendingAttachments.length === 0) return
-    setSending(true)
-    stickToBottomRef.current = true
-    try {
-      // 斜杠命令走目标端的命令执行路由：/clear 这类本地命令不产生回合，
-      // 技能命令则由目标端转给 agent（随后事件经流推送）。
-      if (text.startsWith('/') && pendingAttachments.length === 0) {
-        const result = await call<{ isCommand: boolean; forwardToAgent: boolean }>(
-          deviceId,
-          'POST',
-          `/v1/sessions/${encodeURIComponent(sessionId)}/commands`,
-          { raw: text },
-        )
-        if (result.isCommand) {
-          setDraft('')
-          clearRemoteDraft(deviceId, sessionId)
-          if (result.forwardToAgent) setRunning(true)
-          setError(null)
-          return
+  /**
+   * 「重新发送」：把这条用户消息的正文与附件放回输入区。
+   *
+   * 附件直接复用目标端已有路径（不重新上传，也不会在目标机留下第二份）；
+   * 纯附件消息的零宽占位正文由 toReusableDraft 抹掉，否则会把「请查看附件」当正文再发。
+   */
+  const handleReuseUserMessage = useCallback(
+    (item: RemoteUserItem) => {
+      setDraft(toReusableDraft(item.text))
+      setPendingAttachments(
+        item.attachments.map((attachment) => ({
+          type: attachment.type,
+          path: attachment.path,
+          ...(attachment.name != null ? { name: attachment.name } : {}),
+        })),
+      )
+      toast?.success(
+        item.attachments.length > 0 ? '已填回输入框（含附件）' : '已填回输入框，可直接再次发送',
+      )
+    },
+    [toast],
+  )
+
+  /**
+   * 发送一条消息。
+   *
+   * `quickReply` 走的是「建议 + 用户已打的补充」合成文本（与桌面端主输入区同一口径），
+   * 合成后同样清空草稿；其余行为（斜杠命令、附件、清草稿存档）与手发完全一致。
+   */
+  const handleSend = useCallback(
+    async (options?: { quickReply?: string }) => {
+      if (!sessionId || sending) return
+      const reply = options?.quickReply
+      const text = (reply != null ? buildQuickReplyMessage(reply, draft) : draft).trim()
+      if (text.length === 0 && pendingAttachments.length === 0) return
+      setSending(true)
+      stickToBottomRef.current = true
+      try {
+        // 斜杠命令走目标端的命令执行路由：/clear 这类本地命令不产生回合，
+        // 技能命令则由目标端转给 agent（随后事件经流推送）。
+        if (text.startsWith('/') && pendingAttachments.length === 0) {
+          const result = await call<{ isCommand: boolean; forwardToAgent: boolean }>(
+            deviceId,
+            'POST',
+            `/v1/sessions/${encodeURIComponent(sessionId)}/commands`,
+            { raw: text },
+          )
+          if (result.isCommand) {
+            setDraft('')
+            clearRemoteDraft(deviceId, sessionId)
+            if (result.forwardToAgent) setRunning(true)
+            setError(null)
+            return
+          }
+          // 不是已注册命令：按普通消息继续走下面的 /turns
         }
-        // 不是已注册命令：按普通消息继续走下面的 /turns
+        await call(deviceId, 'POST', `/v1/sessions/${encodeURIComponent(sessionId)}/turns`, {
+          text: text.length > 0 ? text : ATTACHMENT_ONLY_TEXT,
+          ...(pendingAttachments.length > 0
+            ? { attachmentPaths: pendingAttachments.map((item) => item.path) }
+            : {}),
+          clientMessageId: `desktop-remote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        })
+        setDraft('')
+        setPendingAttachments([])
+        clearRemoteDraft(deviceId, sessionId)
+        setRunning(true)
+        setError(null)
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        setSending(false)
       }
-      await call(deviceId, 'POST', `/v1/sessions/${encodeURIComponent(sessionId)}/turns`, {
-        text: text.length > 0 ? text : ATTACHMENT_ONLY_TEXT,
-        ...(pendingAttachments.length > 0
-          ? { attachmentPaths: pendingAttachments.map((item) => item.path) }
-          : {}),
-        clientMessageId: `desktop-remote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      })
-      setDraft('')
-      setPendingAttachments([])
-      clearRemoteDraft(deviceId, sessionId)
-      setRunning(true)
-      setError(null)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setSending(false)
-    }
-  }, [call, deviceId, draft, pendingAttachments, sending, sessionId])
+    },
+    [call, deviceId, draft, pendingAttachments, sending, sessionId],
+  )
 
   const handleStop = useCallback(async () => {
     if (!sessionId) return
@@ -651,7 +709,12 @@ export function RemoteChatPane({
         )}
         {loading && <div className="rc-pane-hint">正在读取会话内容…</div>}
         {!loading && items.length === 0 && <div className="rc-pane-hint">这个会话还没有消息</div>}
-        <RemoteMessageList items={visibleItems} deviceId={deviceId} running={running} />
+        <RemoteMessageList
+          items={visibleItems}
+          deviceId={deviceId}
+          running={running}
+          onReuseUserMessage={handleReuseUserMessage}
+        />
       </div>
 
       {error != null && (
@@ -691,6 +754,7 @@ export function RemoteChatPane({
 
       <RemoteComposer
         deviceId={deviceId}
+        deviceName={deviceName}
         draft={draft}
         onChangeDraft={setDraft}
         attachments={pendingAttachments}
@@ -704,6 +768,11 @@ export function RemoteChatPane({
         onStop={() => void handleStop()}
         config={config}
         commands={commands}
+        {...(activeQuickReplies != null ? { quickReplies: activeQuickReplies } : {})}
+        onPickQuickReply={(reply) => void handleSend({ quickReply: reply })}
+        onDismissQuickReplies={() =>
+          setDismissedQuickReply(pendingQuickReplies?.toolCallId ?? null)
+        }
       />
     </section>
   )

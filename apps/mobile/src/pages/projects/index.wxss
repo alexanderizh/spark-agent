@@ -54,7 +54,7 @@
 }
 
 .projects-context-label {
-  margin-bottom: 6rpx;
+  margin-top: 6rpx;
   color: #8a8782;
   font-size: 21rpx;
 }
@@ -63,6 +63,96 @@
   color: #1a1a1a;
   font-size: 26rpx;
   font-weight: 600;
+}
+
+/* 备注名优先：自报名降级为第二行小字 */
+.projects-context-main {
+  min-width: 0;
+}
+
+.projects-context-name-line {
+  align-items: center;
+  gap: 8rpx;
+  min-width: 0;
+}
+
+.projects-context-caret {
+  flex: none;
+  color: #8a8782;
+}
+
+.projects-context-real {
+  display: block;
+  margin-top: 6rpx;
+  color: #8a8782;
+  font-size: 21rpx;
+}
+
+.projects-device-context--hover {
+  background: #f7f6f4;
+}
+
+/* ─── 筛选 / 全部会话工具行 ─────────────────────────────────────────────────── */
+
+.projects-toolbar {
+  margin: 0 32rpx 16rpx;
+  gap: 16rpx;
+}
+
+.projects-filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  max-width: 62%;
+  padding: 10rpx 20rpx;
+  border: 1rpx solid #e9e7e4;
+  border-radius: 999rpx;
+  background: #fff;
+}
+
+.projects-filter-chip--hover {
+  background: #f7f6f4;
+}
+
+.projects-filter-chip--on {
+  border-color: #3b82f6;
+  background: #eef4fe;
+}
+
+.projects-filter-text {
+  min-width: 0;
+  font-size: 24rpx;
+  line-height: 32rpx;
+  color: #4b4944;
+}
+
+.projects-filter-chip--on .projects-filter-text {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.projects-filter-caret {
+  flex: none;
+  color: #8a8782;
+}
+
+.projects-all-link {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  flex: none;
+  padding: 10rpx 4rpx 10rpx 12rpx;
+  color: #3b82f6;
+  font-size: 24rpx;
+}
+
+.projects-all-caret {
+  color: #3b82f6;
+}
+
+.projects-row-time {
+  flex: none;
+  color: #b3b0ab;
 }
 
 /* ─── 项目搜索 ─────────────────────────────────────────────────────────────── */

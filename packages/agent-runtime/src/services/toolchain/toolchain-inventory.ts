@@ -39,6 +39,7 @@ import {
   SUB_APP_TOOL_NAMES,
   TOOL_RESULT_TOOL_NAMES,
   VALIDATION_SUGGESTION_TOOL_NAMES,
+  NOTIFY_USER_TOOL_NAMES,
   VOICE_CONTROL_TOOL_NAMES,
   REMOTE_AGENT_TOOL_NAMES,
 } from '../session-mcp-tooling-helpers.js'
@@ -225,6 +226,15 @@ const PLATFORM_SERVERS: readonly PlatformServerSpec[] = [
     adapterNote:
       '进程内（type=sdk）实现依赖轮次闭包，仅 claude-sdk 引擎挂载；codex/spark 会话不可用。',
     mountNote: '有工作区根路径的会话按轮次挂载。',
+  },
+  {
+    server: 'spark_notify',
+    title: '主动推送通知（spark_notify）',
+    toolNames: NOTIFY_USER_TOOL_NAMES,
+    adapters: CLAUDE_ONLY,
+    adapterNote:
+      '进程内（type=sdk）实现依赖轮次闭包，仅 claude-sdk 引擎挂载；codex/spark 会话不可用。',
+    mountNote: 'desktop 环境（注入推送 provider）的会话默认挂载；CLI 环境不挂载。',
   },
   {
     server: 'spark_team',

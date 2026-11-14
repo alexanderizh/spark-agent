@@ -33,6 +33,44 @@ export function extractHtmlDocument(text: string): string | null {
   return trimmed.length <= MAX_INLINE_HTML_CHARS ? trimmed : null
 }
 
+export type RemoteContentSegment =
+  | { kind: 'markdown'; text: string }
+  | { kind: 'html'; html: string }
+
+const HTML_FENCE_GLOBAL = /```(?:html|htm)[ \t]*\r?\n([\s\S]*?)\r?\n?```/gi
+
+/**
+ * 把「讲解文字 + 完整 HTML 文档块」混排的正文拆成段：文档围栏抽出为 html 段
+ * （渲染成隔离预览卡片），其余原样留给 markdown 渲染。
+ *
+ * 只抽出「完整文档」（doctype / <html> 开头）：讲解里随手贴的 html 片段仍是
+ * 普通代码块，不会被误升级成页面预览。正文里没有任何可预览块时返回 null，
+ * 调用方走原来的整段 markdown 路径（行为零变化）。
+ */
+export function splitRemoteHtmlSegments(text: string): RemoteContentSegment[] | null {
+  const segments: RemoteContentSegment[] = []
+  let cursor = 0
+  let match: RegExpExecArray | null
+  HTML_FENCE_GLOBAL.lastIndex = 0
+
+  while ((match = HTML_FENCE_GLOBAL.exec(text)) != null) {
+    const body = (match[1] ?? '').trim()
+    // 片段围栏不算文档：留在 markdown 里按代码块展示
+    if (body.length === 0 || body.length > MAX_INLINE_HTML_CHARS || !HTML_DOC_START.test(body)) {
+      continue
+    }
+    const before = text.slice(cursor, match.index)
+    if (before.trim().length > 0) segments.push({ kind: 'markdown', text: before })
+    segments.push({ kind: 'html', html: body })
+    cursor = match.index + match[0].length
+  }
+
+  if (segments.length === 0) return null
+  const tail = text.slice(cursor)
+  if (tail.trim().length > 0) segments.push({ kind: 'markdown', text: tail })
+  return segments
+}
+
 export type RemoteFileKind =
   | 'html'
   | 'image'

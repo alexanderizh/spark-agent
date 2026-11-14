@@ -1,0 +1,41 @@
+<!-- 多维筛选面板：分组卡片 + 流式 chip，点选项不关闭（可连续勾选）。 -->
+
+<view wx:if="{{show}}" class="fs-mask" bindtap="onClose" catchtouchmove="noop">
+  <view class="fs-sheet" catchtap="noop">
+    <view class="fs-grabber"></view>
+
+    <view class="fs-head">
+      <text wx:if="{{activeCount > 0}}" class="fs-reset" hover-class="fs-reset--hover" bindtap="onReset">清除</text>
+      <text class="fs-title">{{title}}</text>
+      <text class="fs-done" hover-class="fs-done--hover" bindtap="onClose">完成</text>
+    </view>
+
+    <scroll-view class="fs-body" scroll-y>
+      <view wx:for="{{sections}}" wx:for-item="section" wx:key="key" class="fs-card">
+        <view class="fs-card-head">
+          <text class="fs-card-title">{{section.label}}</text>
+          <text wx:if="{{section.mode === 'multi'}}" class="fs-card-hint">可多选</text>
+        </view>
+        <view class="fs-chips">
+          <view
+            wx:for="{{section.options}}"
+            wx:for-item="option"
+            wx:key="id"
+            class="fs-chip {{option.checked ? 'fs-chip--on' : ''}}"
+            hover-class="fs-chip--hover"
+            data-section="{{section.key}}"
+            data-id="{{option.id}}"
+            bindtap="onToggle"
+          >
+            <text class="fs-chip-label">{{option.label}}</text>
+            <text wx:if="{{option.sub}}" class="fs-chip-sub ellipsis">{{option.sub}}</text>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+
+    <view wx:if="{{resultText}}" class="fs-foot">
+      <text class="fs-foot-text">{{resultText}}</text>
+    </view>
+  </view>
+</view>

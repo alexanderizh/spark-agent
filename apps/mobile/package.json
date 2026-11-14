@@ -1,6 +1,6 @@
 {
   "name": "@spark/mobile",
-  "version": "1.4.1",
+  "version": "1.7.1",
   "private": true,
   "description": "SparkWork 移动端（微信小程序）— 桌面端的移动伴侣：账号登录同步、同步状态、设备与会话管理",
   "scripts": {
@@ -9,6 +9,7 @@
     "theme": "node scripts/build-theme.mjs",
     "icons": "node scripts/gen-tabbar-icons.mjs",
     "verify": "node scripts/verify-dist.mjs && node scripts/verify-wxml-methods.mjs",
+    "release:check": "node scripts/preflight-release.mjs",
     "smoke": "node scripts/smoke-api.mjs",
     "smoke:boot": "node scripts/smoke-boot.mjs",
     "smoke:theme": "node scripts/smoke-theme.mjs",
@@ -19,8 +20,13 @@
     "smoke:home-composer": "node scripts/smoke-home-composer.mjs",
     "smoke:chat-upgrade": "node scripts/smoke-chat-upgrade.mjs",
     "smoke:chat-order": "node scripts/smoke-chat-order.mjs",
+    "smoke:chat-gap": "node scripts/smoke-chat-gap.mjs",
+    "smoke:chat-turn-rail": "node scripts/smoke-chat-turn-rail.mjs",
+    "smoke:config-sheet": "node scripts/smoke-config-sheet.mjs",
+    "smoke:filters": "node scripts/smoke-filters.mjs",
     "e2e:home-alignment": "node scripts/devtools-home-alignment-e2e.mjs",
     "e2e:project-composer": "node scripts/e2e-project-composer.mjs",
+    "e2e:filters-probe": "node scripts/e2e-filters-probe.mjs",
     "e2e:relay": "node scripts/e2e-relay-prod.mjs"
   },
   "devDependencies": {

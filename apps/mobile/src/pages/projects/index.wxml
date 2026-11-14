@@ -9,16 +9,25 @@
     <view class="projects-manage" bindtap="onOpenBridgeDevices">设备管理</view>
   </view>
 
-  <view class="projects-device-context row">
+  <!-- 当前电脑：点整行就地切换（备注名优先，原名降级为副标题） -->
+  <view
+    class="projects-device-context row"
+    hover-class="projects-device-context--hover"
+    bindtap="onOpenDeviceSwitch"
+  >
     <view class="projects-device-dot {{deviceOffline ? '' : 'projects-device-dot--on'}}"></view>
-    <view class="grow">
-      <text class="projects-context-label">当前电脑</text>
-      <text class="projects-context-name ellipsis">{{deviceName}}</text>
+    <view class="grow projects-context-main">
+      <view class="row projects-context-name-line">
+        <text class="projects-context-name ellipsis">{{deviceName}}</text>
+        <view class="icon icon-chevron-down projects-context-caret"></view>
+      </view>
+      <text wx:if="{{deviceRealName}}" class="projects-context-real ellipsis">{{deviceRealName}}</text>
+      <text wx:else class="projects-context-label">当前电脑 · 点此切换</text>
     </view>
-    <view class="projects-switch" bindtap="onBackToComputers">返回电脑列表</view>
+    <view class="projects-switch" catchtap="onBackToComputers">返回电脑列表</view>
   </view>
 
-  <!-- 项目搜索（桌面端同款标题过滤；与置顶/手动排序叠加生效） -->
+  <!-- 项目搜索（桌面端同款标题过滤；与筛选/置顶/手动排序叠加生效） -->
   <view wx:if="{{!loading && !deviceUnavailable && !deviceOffline && !errorText}}" class="projects-search row">
     <view class="icon icon-sm icon-search"></view>
     <input
@@ -29,6 +38,22 @@
       confirm-type="search"
       bindinput="onSearchInput"
     />
+  </view>
+
+  <!-- 筛选 + 全部会话入口 -->
+  <view wx:if="{{!loading && !deviceUnavailable && !deviceOffline && !errorText}}" class="projects-toolbar row between">
+    <view
+      class="projects-filter-chip {{filterActiveCount > 0 ? 'projects-filter-chip--on' : ''}}"
+      hover-class="projects-filter-chip--hover"
+      bindtap="onOpenFilter"
+    >
+      <text class="projects-filter-text ellipsis">{{filterSummary}}</text>
+      <view class="icon icon-chevron-down projects-filter-caret"></view>
+    </view>
+    <view class="projects-all-link" hover-class="hover-dim" bindtap="onOpenAllSessions">
+      <text>全部会话</text>
+      <view class="icon icon-chevron projects-all-caret"></view>
+    </view>
   </view>
 
   <view wx:if="{{loading}}" class="loading-tip">正在加载这台电脑的项目…</view>
@@ -54,7 +79,12 @@
     </view>
 
     <view wx:elif="{{pinnedView.length === 0 && normalView.length === 0}}" class="projects-state">
-      <empty-state icon="folder" title="没有匹配的项目" desc="换个关键词试试" />
+      <empty-state
+        icon="folder"
+        title="{{filterActiveCount > 0 ? '没有符合筛选的项目' : '没有匹配的项目'}}"
+        desc="{{filterActiveCount > 0 ? '换个时间范围，或清除筛选后再看' : '换个关键词试试'}}"
+      />
+      <view wx:if="{{filterActiveCount > 0}}" class="projects-action" bindtap="onFilterReset">清除筛选</view>
     </view>
 
     <view wx:else class="projects-list">
@@ -83,6 +113,7 @@
                 <view class="projects-running-dot"></view>
                 <text>运行中</text>
               </view>
+              <text wx:if="{{item.updatedLabel}}" class="t-caption projects-row-time">{{item.updatedLabel}}</text>
             </view>
           </view>
           <view class="icon icon-chevron"></view>
@@ -111,6 +142,7 @@
                 <view class="projects-running-dot"></view>
                 <text>运行中</text>
               </view>
+              <text wx:if="{{item.updatedLabel}}" class="t-caption projects-row-time">{{item.updatedLabel}}</text>
             </view>
           </view>
           <view class="icon icon-chevron"></view>
@@ -118,4 +150,28 @@
       </block>
     </view>
   </block>
+
+  <!-- 切换电脑：单选即生效；离线设备也可选，切过去显示离线态并由 presence 自动恢复 -->
+  <sheet-panel
+    show="{{deviceSheetShow}}"
+    title="切换电脑"
+    mode="list"
+    options="{{deviceOptions}}"
+    loading="{{deviceOptionsLoading}}"
+    emptyText="还没有已接入的电脑"
+    bind:close="onCloseDeviceSheet"
+    bind:select="onDeviceSelect"
+  />
+
+  <!-- 项目筛选（时间 + 状态，单选；点已选项 = 取消该维度） -->
+  <filter-sheet
+    show="{{filterShow}}"
+    title="筛选项目"
+    sections="{{filterSections}}"
+    activeCount="{{filterActiveCount}}"
+    resultText="{{visibleCount}} 个项目"
+    bind:close="onCloseFilter"
+    bind:toggle="onFilterToggle"
+    bind:reset="onFilterReset"
+  />
 </view>

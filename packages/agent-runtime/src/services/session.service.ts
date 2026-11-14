@@ -417,6 +417,7 @@ import {
   SPARK_WEB_TOOL_SYSTEM_PROMPT,
   VALIDATION_SUGGESTION_TOOL_NAMES,
   VALIDATION_SUGGESTION_TOOL_DESCRIPTION,
+  NOTIFY_USER_TOOL_NAMES,
   VOICE_CONTROL_TOOL_NAMES,
   VOICE_CONTROL_SYSTEM_PROMPT,
   extractPresentedFiles,
@@ -491,6 +492,10 @@ import {
 import { buildGoalContractDraftPrompt, parseGoalContractBlock } from './goal-contract.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
 import { z } from 'zod'
+import {
+  buildNotifyMcpServer,
+  type RemotePushProvider,
+} from './session/inprocess-servers/notify-server.js'
 import { TodoStore } from '../core/todo-store.js'
 import type { CheckpointRestoreResult, CheckpointSnapshot, CommandListItem } from '../core/index.js'
 import { McpService } from './mcp-server.service.js'
@@ -1191,6 +1196,8 @@ export class SessionService {
   private pendingTurns = new Map<string, PendingTurn[]>()
   /** 画布 Agent MCP server 提供器（由主进程注入） */
   private canvasMcpProvider: CanvasMcpProvider | null = null
+  /** 主动推送 provider（desktop 注入；null = 非 desktop 环境，spark_notify 不挂载） */
+  private remotePushProvider: RemotePushProvider | null = null
   /** 工作流 Agent MCP server 提供器（由主进程注入） */
   private workflowMcpProvider: WorkflowMcpProvider | null = null
   /** 语音会话应用控制执行器（desktop 注入；null = 未装配，voice.* 工具安全降级） */
@@ -1889,6 +1896,11 @@ export class SessionService {
   /** 注入画布 Agent MCP provider（主进程持有画布桥后调用一次） */
   setCanvasMcpProvider(provider: CanvasMcpProvider | null): void {
     this.canvasMcpProvider = provider
+  }
+
+  /** 注入主动推送 provider（desktop 装配远程连接服务后调用一次；null = spark_notify 不挂载） */
+  setRemotePushProvider(provider: RemotePushProvider | null): void {
+    this.remotePushProvider = provider
   }
 
   /** 注入工作流 Agent MCP provider（主进程持有工作流桥后调用一次） */
@@ -6812,6 +6824,18 @@ export class SessionService {
       }
     }
 
+    // spark_notify: agent 主动推送通知（远程渠道聊天 → 桌面通知回落）。desktop 注入
+    // provider 后所有会话默认挂载；CLI 等非 desktop 环境为 null 不挂载。与 spark_verify
+    // 同为进程内 type=sdk server，仅 claude-sdk 引擎路径（本方法）可用。
+    if (this.remotePushProvider != null) {
+      const notifyFactory = await loadSdkMcpFactory()
+      if (notifyFactory != null) {
+        mcpServers.spark_notify = buildNotifyMcpServer(notifyFactory, this.remotePushProvider, {
+          sessionId,
+        })
+      }
+    }
+
     // spark_memory（in-process 版，claude SDK 路径）：agent 可调用的 search_memory /
     // recall_memory 工具，进程内 MCP server（无子进程 / 无 bridge HTTP），直接闭包访问
     // this.db。CLI 路径（codex CLI / claude CLI）在 tryStartCodexCliTurn 里走 stdio
@@ -7072,6 +7096,11 @@ export class SessionService {
     }
     if (mcpServers.spark_verify != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, VALIDATION_SUGGESTION_TOOL_NAMES)
+    }
+    if (mcpServers.spark_notify != null) {
+      // 主动推送免逐调用审批（设计要求：用户不在电脑前时弹审批即失去意义）；
+      // 滥用由渠道 proactivePush 能力位 + 每轮频控兜底。
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, NOTIFY_USER_TOOL_NAMES)
     }
     if (mcpServers.spark_memory != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, [

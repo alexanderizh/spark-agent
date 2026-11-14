@@ -18,6 +18,15 @@ import {
   type RelayDesktopInfo,
 } from '../../api/relay'
 import { ensureAuthenticated } from '../../utils/auth-guard'
+import {
+  DEVICE_ALIAS_MAX_LENGTH,
+  deviceDisplayName,
+  deviceRealName,
+  getDeviceAlias,
+  readDeviceAliases,
+  writeDeviceAlias,
+  type DeviceAliasMap,
+} from '../../utils/device-aliases'
 import { formatRelativeTime } from '../../utils/format'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
 import { syncPageTheme } from '../../utils/theme'
@@ -28,7 +37,10 @@ const BRIDGE_DEVICES_CACHE_KEY = 'bridge-devices:list'
 interface DeviceRowVm {
   deviceId: string
   shortId: string
+  /** 展示名（本机备注名优先） */
   name: string
+  /** 自报名；只在设了备注名时出现 */
+  realName?: string
   versionLabel: string
   statusLabel: string
   online: boolean
@@ -49,9 +61,10 @@ interface BridgeDevicesData {
 function toRows(
   restDevices: RelayDeviceInfo[],
   presenceDevices: RelayDesktopInfo[],
+  aliases: DeviceAliasMap,
 ): DeviceRowVm[] {
   const onlineIds = new Set(presenceDevices.map((item) => item.deviceId))
-  const rows = restDevices.map((item) => toRow(item, onlineIds))
+  const rows = restDevices.map((item) => toRow(item, onlineIds, aliases))
   // presence 里有、REST 还没返回的（刚注册接入的设备），先以在线态补进列表
   const known = new Set(restDevices.map((item) => item.deviceId))
   for (const live of presenceDevices) {
@@ -64,18 +77,26 @@ function toRows(
       lastSeenAt: live.lastSeenAt,
       trustedAt: new Date().toISOString(),
     }
-    rows.push(toRow(item, onlineIds))
+    rows.push(toRow(item, onlineIds, aliases))
   }
   return rows
 }
 
 /** REST 列表 + presence 快照合并成行视图 */
-function toRow(item: RelayDeviceInfo, onlineIds: Set<string>): DeviceRowVm {
+function toRow(
+  item: RelayDeviceInfo,
+  onlineIds: Set<string>,
+  aliases: DeviceAliasMap,
+): DeviceRowVm {
   const online = onlineIds.has(item.deviceId)
+  const realName = item.name || '桌面端'
+  const displayName = deviceDisplayName(item.deviceId, realName, aliases)
+  const originName = deviceRealName(item.deviceId, realName, aliases)
   return {
     deviceId: item.deviceId,
     shortId: item.deviceId.length > 12 ? `${item.deviceId.slice(0, 12)}…` : item.deviceId,
-    name: item.name || '桌面端',
+    name: displayName,
+    ...(originName != null ? { realName: originName } : {}),
     versionLabel: item.version ? `v${item.version}` : '',
     statusLabel: online ? '在线' : '离线',
     online,
@@ -95,6 +116,8 @@ Page({
 
   /** REST 设备列表原始数据（presence 只含在线设备，合并用） */
   restDevices: [] as RelayDeviceInfo[],
+  /** 本机设备备注名表（onShow 与改备注后重读） */
+  deviceAliases: {} as DeviceAliasMap,
   /** 设备列表订阅取消函数 */
   unsubscribeDevices: null as (() => void) | null,
 
@@ -104,6 +127,7 @@ Page({
   hiddenAt: 0,
 
   onLoad() {
+    this.deviceAliases = readDeviceAliases()
     // presence 增量：设备上下线时实时刷新在线徽标
     this.unsubscribeDevices = onRelayDevicesChanged(() => this.rebuildRows())
     const cached = readListCache<RelayDeviceInfo[]>(BRIDGE_DEVICES_CACHE_KEY)
@@ -122,6 +146,7 @@ Page({
       return
     }
     // 轻量状态刷新：用本地 presence 快照重算在线徽标（不发起网络请求）
+    this.deviceAliases = readDeviceAliases()
     this.rebuildRows()
     if (this.hiddenAt > 0 && isFresh(BRIDGE_DEVICES_CACHE_KEY)) return
     void this.loadDevices(true)
@@ -163,11 +188,46 @@ Page({
 
   /** presence 到达或列表刷新时重算行视图 */
   rebuildRows() {
-    const devices = toRows(this.restDevices, getPresenceDevices())
+    const devices = toRows(this.restDevices, getPresenceDevices(), this.deviceAliases)
     this.setData({
       devices,
       onlineCount: devices.filter((item) => item.online).length,
       loading: false,
+    })
+  },
+
+  /** 设备备注名（只存本机；留空保存 = 恢复自报名） */
+  onEditAlias(event: WechatMiniprogram.TouchEvent) {
+    const deviceId = String(event.currentTarget.dataset.id ?? '')
+    const device = this.data.devices.find((item) => item.deviceId === deviceId)
+    if (!device) return
+    const current = getDeviceAlias(deviceId, this.deviceAliases) ?? ''
+    wx.showModal({
+      title: '设备备注名',
+      editable: true,
+      content: current,
+      placeholderText: device.realName ?? device.name,
+      confirmText: '保存',
+      success: (res) => {
+        if (!res.confirm) return
+        const raw = (res.content ?? '').trim()
+        writeDeviceAlias(deviceId, raw)
+        this.deviceAliases = readDeviceAliases()
+        this.rebuildRows()
+        const truncated = Array.from(raw).length > DEVICE_ALIAS_MAX_LENGTH
+        wx.showToast({
+          title:
+            raw === ''
+              ? '已恢复原设备名'
+              : truncated
+                ? `备注名最多 ${DEVICE_ALIAS_MAX_LENGTH} 字，已截断保存`
+                : '备注名已保存（只对本机生效）',
+          icon: 'none',
+        })
+      },
+      fail: () => {
+        /* 取消 */
+      },
     })
   },
 

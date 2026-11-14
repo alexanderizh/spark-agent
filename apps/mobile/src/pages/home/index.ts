@@ -2,6 +2,15 @@
 
 import * as bridge from '../../api/bridge'
 import { getState as getAuthState } from '../../store/auth'
+import {
+  DEVICE_ALIAS_MAX_LENGTH,
+  deviceDisplayName,
+  deviceRealName,
+  getDeviceAlias,
+  readDeviceAliases,
+  writeDeviceAlias,
+  type DeviceAliasMap,
+} from '../../utils/device-aliases'
 import { getItem, StorageKeys } from '../../utils/storage'
 import { logMobileError } from '../../utils/logger'
 import {
@@ -9,19 +18,24 @@ import {
   buildPermissionOptions,
   buildReasoningOptions,
   DEFAULT_MODEL_OPTION,
-  DEFAULT_PERMISSION_OPTION,
-  DEFAULT_REASONING_OPTION,
+  PENDING_PERMISSION_OPTION,
+  PENDING_REASONING_OPTION,
+  defaultPermissionId,
+  defaultReasoningId,
   type SessionConfigOption,
 } from '../../utils/session-config'
 import type { BridgeProjectSummary, RelayDeviceInfo } from '../../api/bridge'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
-import { syncPageTheme } from '../../utils/theme'
+import { getThemeTextColor, syncPageTheme } from '../../utils/theme'
 
 const HOME_LIST_CACHE_KEY = 'home:devices'
 
 interface ComputerOption {
   deviceId: string
+  /** 展示名（本机备注名优先） */
   name: string
+  /** 自报名；只在设了备注名时出现，作为副标题 */
+  realName?: string
   pickerLabel: string
   online: boolean
   lastSeenAt?: string
@@ -50,6 +64,12 @@ interface HomeData {
   reasoningIndex: number
   configSummary: string
   configOpen: boolean
+  /** 配置项的底部选择列表（替代原生 picker，跟随应用内主题） */
+  chooserShow: boolean
+  chooserKind: string
+  chooserTitle: string
+  chooserOptions: { id: string; label: string; checked?: boolean }[]
+  chooserEmpty: string
   configLoading: boolean
   configError: string
   quickText: string
@@ -87,12 +107,17 @@ Page({
     projectIndex: 0,
     modelOptions: [DEFAULT_MODEL_OPTION],
     modelIndex: 0,
-    permissionOptions: [DEFAULT_PERMISSION_OPTION],
+    permissionOptions: [PENDING_PERMISSION_OPTION],
     permissionIndex: 0,
-    reasoningOptions: [DEFAULT_REASONING_OPTION],
+    reasoningOptions: [PENDING_REASONING_OPTION],
     reasoningIndex: 0,
     configSummary: '选择电脑、项目、模型和权限',
     configOpen: false,
+    chooserShow: false,
+    chooserKind: '',
+    chooserTitle: '',
+    chooserOptions: [],
+    chooserEmpty: '',
     configLoading: false,
     configError: '',
     quickText: '',
@@ -108,6 +133,8 @@ Page({
 
   restDevices: [] as RelayDeviceInfo[],
   unsubscribeDevices: null as (() => void) | null,
+  /** 本机设备备注名表（onShow 与改备注名后重读） */
+  deviceAliases: {} as DeviceAliasMap,
   loadGeneration: 0,
   configGeneration: 0,
   configLoadedDeviceId: '',
@@ -118,6 +145,7 @@ Page({
   hiddenAt: 0,
 
   onLoad() {
+    this.deviceAliases = readDeviceAliases()
     const cached = readListCache<RelayDeviceInfo[]>(HOME_LIST_CACHE_KEY)
     if (cached != null) {
       this.restDevices = cached
@@ -136,6 +164,9 @@ Page({
       wx.reLaunch({ url: '/pages/login/index' })
       return
     }
+    // 备注名可能刚在设备管理页改过：重读并重建列表（纯内存计算，无请求）
+    this.deviceAliases = readDeviceAliases()
+    if (this.viewReady) this.rebuildDevices()
     const user = getAuthState().user
     this.setData({
       avatarUrl: user?.avatarUrl ?? '',
@@ -208,33 +239,40 @@ Page({
     }
   },
 
-  /** 合并设备快照与在线 presence。 */
+  /** 合并设备快照与在线 presence。展示名走本机备注名，自报名降级为副标题。 */
   rebuildDevices() {
     const presence = bridge.getRelayPresenceDevices()
     const presenceFresh = bridge.isRelayPresenceFresh()
     const liveById = new Map(presence.map((item) => [item.deviceId, item]))
     const devices: ComputerOption[] = []
     const seen = new Set<string>()
+    const aliases = this.deviceAliases
+    const push = (deviceId: string, realName: string, online: boolean, lastSeenAt?: string) => {
+      const name = deviceDisplayName(deviceId, realName, aliases)
+      const real = deviceRealName(deviceId, realName, aliases)
+      devices.push({
+        deviceId,
+        name,
+        ...(real != null ? { realName: real } : {}),
+        pickerLabel: `${name} · ${online ? '在线' : '离线'}`,
+        online,
+        ...(lastSeenAt != null ? { lastSeenAt } : {}),
+      })
+    }
 
     for (const trusted of this.restDevices) {
       seen.add(trusted.deviceId)
       const live = liveById.get(trusted.deviceId)
-      devices.push({
-        deviceId: trusted.deviceId,
-        name: live?.label || trusted.name || '桌面端',
-        pickerLabel: `${live?.label || trusted.name || '桌面端'} · ${presenceFresh ? (live ? '在线' : '离线') : trusted.online ? '在线' : '离线'}`,
-        online: presenceFresh ? live != null : trusted.online,
-        ...(trusted.lastSeenAt != null ? { lastSeenAt: trusted.lastSeenAt } : {}),
-      })
+      push(
+        trusted.deviceId,
+        live?.label || trusted.name || '桌面端',
+        presenceFresh ? live != null : trusted.online,
+        trusted.lastSeenAt ?? undefined,
+      )
     }
     for (const live of presence) {
       if (seen.has(live.deviceId)) continue
-      devices.push({
-        deviceId: live.deviceId,
-        name: live.label || '桌面端',
-        pickerLabel: `${live.label || '桌面端'} · 在线`,
-        online: true,
-      })
+      push(live.deviceId, live.label || '桌面端', true)
     }
 
     let selectedDeviceId = this.data.selectedDeviceId
@@ -259,9 +297,9 @@ Page({
         projectIndex: 0,
         modelOptions: [DEFAULT_MODEL_OPTION],
         modelIndex: 0,
-        permissionOptions: [DEFAULT_PERMISSION_OPTION],
+        permissionOptions: [PENDING_PERMISSION_OPTION],
         permissionIndex: 0,
-        reasoningOptions: [DEFAULT_REASONING_OPTION],
+        reasoningOptions: [PENDING_REASONING_OPTION],
         reasoningIndex: 0,
       })
     }
@@ -291,8 +329,75 @@ Page({
     wx.navigateTo({ url: '/pages/bridge-devices/index' })
   },
 
+  /** 空态里的「看看界面长什么样」：打开只读示例页，不发任何请求 */
+  onOpenDemo() {
+    wx.navigateTo({ url: '/pages/demo/index' })
+  },
+
   onRetry() {
     void this.bootstrap()
+  },
+
+  // ─── 设备备注名（只存本机：桌面端自报名会重名，靠备注名区分） ────────────────
+
+  onDeviceLongPress(event: WechatMiniprogram.CustomEvent) {
+    const deviceId = String(event.currentTarget.dataset.id ?? '')
+    const device = this.data.devices.find((item) => item.deviceId === deviceId)
+    if (!device) return
+    const alias = getDeviceAlias(deviceId, this.deviceAliases)
+    const actions: Array<{ label: string; run: () => void }> = [
+      {
+        label: alias != null ? '修改备注名' : '设置备注名',
+        run: () => this.promptDeviceAlias(device),
+      },
+      ...(alias != null ? [{ label: '清除备注名', run: () => this.clearDeviceAlias(device) }] : []),
+    ]
+    wx.showActionSheet({
+      itemList: actions.map((action) => action.label),
+      itemColor: getThemeTextColor(),
+      success: (res) => actions[res.tapIndex]?.run(),
+      fail: () => {
+        /* 取消 */
+      },
+    })
+  },
+
+  promptDeviceAlias(device: ComputerOption) {
+    const current = getDeviceAlias(device.deviceId, this.deviceAliases) ?? ''
+    wx.showModal({
+      title: '设备备注名',
+      editable: true,
+      content: current,
+      placeholderText: device.realName ?? device.name,
+      confirmText: '保存',
+      success: (res) => {
+        if (!res.confirm) return
+        const raw = (res.content ?? '').trim()
+        writeDeviceAlias(device.deviceId, raw)
+        this.deviceAliases = readDeviceAliases()
+        this.rebuildDevices()
+        const truncated = Array.from(raw).length > DEVICE_ALIAS_MAX_LENGTH
+        wx.showToast({
+          title:
+            raw === ''
+              ? '已恢复原设备名'
+              : truncated
+                ? `备注名最多 ${DEVICE_ALIAS_MAX_LENGTH} 字，已截断保存`
+                : '备注名已保存',
+          icon: 'none',
+        })
+      },
+      fail: () => {
+        /* 取消 */
+      },
+    })
+  },
+
+  clearDeviceAlias(device: ComputerOption) {
+    writeDeviceAlias(device.deviceId, null)
+    this.deviceAliases = readDeviceAliases()
+    this.rebuildDevices()
+    wx.showToast({ title: '已恢复原设备名', icon: 'none' })
   },
 
   onPickDevice(event: WechatMiniprogram.CustomEvent) {
@@ -313,14 +418,14 @@ Page({
       projectIndex: 0,
       modelOptions: [DEFAULT_MODEL_OPTION],
       modelIndex: 0,
-      permissionOptions: [DEFAULT_PERMISSION_OPTION],
+      permissionOptions: [PENDING_PERMISSION_OPTION],
       permissionIndex: 0,
-      reasoningOptions: [DEFAULT_REASONING_OPTION],
+      reasoningOptions: [PENDING_REASONING_OPTION],
       reasoningIndex: 0,
     })
     this.refreshComposerSummary()
     wx.navigateTo({
-      url: `/pages/projects/index?deviceId=${encodeURIComponent(device.deviceId)}&deviceName=${encodeURIComponent(device.name)}`,
+      url: `/pages/projects/index?deviceId=${encodeURIComponent(device.deviceId)}&deviceName=${encodeURIComponent(device.realName ?? device.name)}`,
     })
   },
 
@@ -334,8 +439,8 @@ Page({
       device?.name ?? '选择电脑',
       project?.label ?? DEFAULT_PROJECT.label,
       model?.label ?? DEFAULT_MODEL_OPTION.label,
-      permission?.label ?? DEFAULT_PERMISSION_OPTION.label,
-      reasoning?.label ?? DEFAULT_REASONING_OPTION.label,
+      permission?.label ?? '未设置',
+      reasoning?.label ?? '未设置',
     ].join(' · ')
     const canQuickSend =
       this.data.quickText.trim().length > 0 &&
@@ -386,15 +491,29 @@ Page({
       const permissionOptions = buildPermissionOptions(catalog)
       const reasoningOptions = buildReasoningOptions(catalog)
       this.configLoadedDeviceId = deviceId
+      // 权限 / 推理不再有「电脑默认」合成项：用户手选过的档位能保留就保留，
+      // 否则回落到默认助手在电脑上的当前档位（= 以前「电脑默认」的实际效果）
+      const keptPermission = permissionOptions.findIndex(
+        (option) => option.id === this.data.permissionOptions[this.data.permissionIndex]?.id,
+      )
+      const keptReasoning = reasoningOptions.findIndex(
+        (option) => option.id === this.data.reasoningOptions[this.data.reasoningIndex]?.id,
+      )
+      const resolvedPermission = permissionOptions.findIndex(
+        (option) => option.id === defaultPermissionId(catalog),
+      )
+      const resolvedReasoning = reasoningOptions.findIndex(
+        (option) => option.id === defaultReasoningId(catalog),
+      )
       this.setData({
         projectOptions,
         projectIndex: Math.min(this.data.projectIndex, projectOptions.length - 1),
         modelOptions,
         modelIndex: Math.min(this.data.modelIndex, modelOptions.length - 1),
         permissionOptions,
-        permissionIndex: Math.min(this.data.permissionIndex, permissionOptions.length - 1),
+        permissionIndex: keptPermission >= 0 ? keptPermission : Math.max(resolvedPermission, 0),
         reasoningOptions,
-        reasoningIndex: Math.min(this.data.reasoningIndex, reasoningOptions.length - 1),
+        reasoningIndex: keptReasoning >= 0 ? keptReasoning : Math.max(resolvedReasoning, 0),
       })
       this.refreshComposerSummary()
     } catch (error) {
@@ -408,9 +527,9 @@ Page({
     }
   },
 
-  async onConfigDeviceChange(event: WechatMiniprogram.CustomEvent<{ value: string }>) {
+  /** 切电脑：重置下游配置再按新电脑重新拉目录 */
+  async applyDeviceIndex(index: number) {
     if (this.data.pendingSessionId) return
-    const index = Number(event.detail.value)
     const device = this.data.devices[index]
     if (!device) return
     bridge.setSelectedDeviceId(device.deviceId)
@@ -424,9 +543,9 @@ Page({
       projectIndex: 0,
       modelOptions: [DEFAULT_MODEL_OPTION],
       modelIndex: 0,
-      permissionOptions: [DEFAULT_PERMISSION_OPTION],
+      permissionOptions: [PENDING_PERMISSION_OPTION],
       permissionIndex: 0,
-      reasoningOptions: [DEFAULT_REASONING_OPTION],
+      reasoningOptions: [PENDING_REASONING_OPTION],
       reasoningIndex: 0,
       configError: '',
     })
@@ -434,28 +553,128 @@ Page({
     await this.loadComposerOptions(device.deviceId)
   },
 
-  onProjectChange(event: WechatMiniprogram.CustomEvent<{ value: string }>) {
+  applyProjectIndex(index: number) {
     if (this.data.pendingSessionId) return
-    const projectIndex = Number(event.detail.value)
-    if (!this.data.projectOptions[projectIndex]) return
-    this.setData({ projectIndex })
+    if (!this.data.projectOptions[index]) return
+    this.setData({ projectIndex: index })
     this.refreshComposerSummary()
   },
 
-  onModelChange(event: WechatMiniprogram.CustomEvent<{ value: string }>) {
+  applyModelIndex(index: number) {
     if (this.data.pendingSessionId) return
-    const modelIndex = Number(event.detail.value)
-    if (!this.data.modelOptions[modelIndex]) return
-    this.setData({ modelIndex })
+    if (!this.data.modelOptions[index]) return
+    this.setData({ modelIndex: index })
     this.refreshComposerSummary()
   },
 
-  onPermissionChange(event: WechatMiniprogram.CustomEvent<{ value: string }>) {
+  applyPermissionIndex(index: number) {
     if (this.data.pendingSessionId) return
-    const permissionIndex = Number(event.detail.value)
-    if (!this.data.permissionOptions[permissionIndex]) return
-    this.setData({ permissionIndex })
+    if (!this.data.permissionOptions[index]) return
+    this.setData({ permissionIndex: index })
     this.refreshComposerSummary()
+  },
+
+  /**
+   * 打开底部选择列表。
+   *
+   * 这里不用原生 <picker>：它跟着系统外观走，不跟随应用内「浅色/深色」切换，
+   * 暗色下弹出来的列表是系统配色，和我们自己的深色面板叠在一起就糊了。
+   */
+  onOpenChooser(event: WechatMiniprogram.BaseEvent) {
+    const dataset = event.currentTarget.dataset
+    const kind = String(dataset.kind ?? '')
+    // dataset 里的布尔在不同基础库可能落成字符串，两种都认
+    if (dataset.disabled === true || dataset.disabled === 'true') {
+      // 不做「点了没反应」的静默拦截：说明现在为什么不能选
+      const title = this.data.pendingSessionId
+        ? '正在创建会话，请稍候'
+        : kind === 'device'
+          ? '还没有接入电脑'
+          : '配置读取中，请稍候'
+      wx.showToast({ title, icon: 'none' })
+      return
+    }
+    const data = this.data
+    const toOptions = (items: SessionConfigOption[], current: number) =>
+      items.map((item, index) => ({
+        id: String(index),
+        label: item.label,
+        checked: index === current,
+      }))
+    if (kind === 'device') {
+      if (data.devices.length === 0) {
+        wx.showToast({ title: '还没有接入电脑', icon: 'none' })
+        return
+      }
+      this.setData({
+        chooserShow: true,
+        chooserKind: kind,
+        chooserTitle: '选择电脑',
+        chooserOptions: data.devices.map((item, index) => ({
+          id: String(index),
+          label: item.pickerLabel,
+          checked: index === data.composerDeviceIndex,
+        })),
+        chooserEmpty: '',
+      })
+      return
+    }
+    const table: Record<
+      string,
+      { title: string; options: SessionConfigOption[]; current: number; empty: string }
+    > = {
+      project: {
+        title: '选择项目',
+        options: data.projectOptions,
+        current: data.projectIndex,
+        empty: '这台电脑没有可用项目',
+      },
+      model: {
+        title: '选择模型渠道',
+        options: data.modelOptions,
+        current: data.modelIndex,
+        empty: '这台电脑没有可用模型',
+      },
+      permission: {
+        title: '权限策略',
+        options: data.permissionOptions,
+        current: data.permissionIndex,
+        empty: '当前助手不支持切换权限',
+      },
+    }
+    const entry = table[kind]
+    if (entry == null) return
+    this.setData({
+      chooserShow: true,
+      chooserKind: kind,
+      chooserTitle: entry.title,
+      chooserOptions: toOptions(entry.options, entry.current),
+      chooserEmpty: entry.empty,
+    })
+  },
+
+  onChooserClose() {
+    this.setData({ chooserShow: false })
+  },
+
+  onChooserSelect(event: WechatMiniprogram.CustomEvent<{ id: string }>) {
+    const index = Number(event.detail.id)
+    const kind = this.data.chooserKind
+    this.setData({ chooserShow: false })
+    if (!Number.isFinite(index)) return
+    if (kind === 'device') {
+      void this.applyDeviceIndex(index)
+      return
+    }
+    if (kind === 'project') {
+      this.applyProjectIndex(index)
+      return
+    }
+    if (kind === 'model') {
+      this.applyModelIndex(index)
+      return
+    }
+    if (kind === 'permission') this.applyPermissionIndex(index)
   },
 
   onReasoningChange(event: WechatMiniprogram.CustomEvent<{ value: number }>) {
@@ -522,7 +741,8 @@ Page({
           patch.providerProfileId = model.providerProfileId
           patch.modelId = model.modelId ?? null
         }
-        if (permission != null && permission.id !== 'default') {
+        // 'pending' = 目录还没读到，别把占位当档位写过去
+        if (permission != null && permission.id !== 'pending' && permission.id !== '') {
           patch.permissionMode = permission.id
         }
         if (reasoning?.value) patch.reasoningEffort = reasoning.value

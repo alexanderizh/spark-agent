@@ -97,6 +97,13 @@ export interface MobileBridgeSessionRuntime {
   chatMode?: string
   /** 所属项目（workspace）id；'default' = 未归属 */
   projectId?: string
+  /**
+   * 该会话所属工作区在本机（目标电脑）的绝对根路径。
+   *
+   * 远程回答里的文件引用常常是工作区相对路径（`src/features/x.tsx`），控制端要把它
+   * 拼成目标机绝对路径才能取回文件；缺省 = 旧版桌面端不提供（相对路径不可点）。
+   */
+  workspaceRootPath?: string | null
   /** 工作流绑定摘要（null = 未绑定） */
   workflowBinding?: { mode: 'inherit' | 'override' | 'disabled'; workflowId: string | null } | null
 }
@@ -476,6 +483,14 @@ export interface MobileBridgeEvent {
    * 端上渲染历史用户附件缩略图（图片经本地缓存解析），缺省 = 旧版桌面端不透出。
    */
   attachments?: { type: 'image' | 'file'; path: string; name?: string }[]
+  /**
+   * tool_call：该次调用产出的「快捷回复」建议（仅 `mcp__spark_ui__suggest_replies`）。
+   *
+   * 只透出这一个工具的结果、不透出泛化 toolInput：工具入参可能是整个文件内容，
+   * 全量过桥会让事件体积失控；建议文案上限 4 条 × 40 字，体积可忽略。
+   * 缺省 = 旧版桌面端不提供（控制端不渲染快捷回复）。
+   */
+  quickReplies?: string[]
 }
 
 export interface MobileBridgeHistoryResponse {

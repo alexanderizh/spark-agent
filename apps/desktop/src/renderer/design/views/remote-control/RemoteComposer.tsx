@@ -1,9 +1,17 @@
 /**
  * 远程输入区（对齐桌面端主输入区的形态）：
  *
- *   附件条
- *   textarea（@ 添加上下文 · / 调用技能与指令）
- *   工具条  + | 助手 | 权限 | 推理 …………… 模型 | 语音 | 发送/停止
+ *   ┌───────────────────────────────────────────────┐
+ *   │ 附件条                                        │
+ *   │ textarea（@ 添加上下文 · / 调用技能与指令）      │
+ *   │                                  [模型] 🎤 (发送) │
+ *   ├───────────────────────────────────────────────┤  ← 淡色页脚
+ *   │ [助手] [权限] [推理]              发送到 xxxx │
+ *   └───────────────────────────────────────────────┘
+ *
+ * 分两层的原因：发送相关的动作（模型 / 语音 / 发送）要贴着输入文本，
+ * 而「这一轮按什么策略跑」（助手 / 权限 / 推理）是低频开关，收进页脚条里，
+ * 主行就不会被四五枚 chip 挤成一条灰带。
  *
  * 编排仍在 RemoteChatPane：本组件只负责输入交互、配置下拉与命令补全，
  * 所有写操作通过 props 回调出去（配置写回见 useRemoteComposerConfig）。
@@ -16,6 +24,7 @@ import type { Dispatch, KeyboardEvent as ReactKeyboardEvent, SetStateAction } fr
 import type { MobileBridgeCatalog, MobileBridgeCommandItem } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useComposerVoice } from '../../voice/useComposerVoice'
+import { QuickReplySuggestions } from '../chat/QuickReplySuggestions'
 import { RemoteAttachmentStrip, type RemoteAttachmentRef } from './RemoteAttachmentStrip'
 import { RemoteComposerMenu, type RemoteMenuSection } from './RemoteComposerMenu'
 import { pickImageFiles } from './remotePaste'
@@ -41,6 +50,8 @@ type OpenMenu = 'agent' | 'model' | 'permission' | 'reasoning' | null
 
 export interface RemoteComposerProps {
   deviceId: string
+  /** 目标电脑名字：页脚标注「发送到 xxx」，避免在远程视图里发错机器 */
+  deviceName?: string
   draft: string
   /** 直接用父级 setDraft：语音输入需要一个 updater 形式才能不读到过期草稿 */
   onChangeDraft: Dispatch<SetStateAction<string>>
@@ -58,10 +69,19 @@ export interface RemoteComposerProps {
   config: RemoteComposerConfigState
   /** 目标端斜杠命令目录（旧版目标端为空数组 → 不弹补全） */
   commands: MobileBridgeCommandItem[]
+  /**
+   * 目标端 agent 给出的快捷回复建议（`mcp__spark_ui__suggest_replies`）。
+   * 空数组 / 缺省 = 不渲染；由父级负责「用户已发言即失效」与「关闭过」的判定。
+   */
+  quickReplies?: string[]
+  /** 点建议：父级会把「建议 + 用户补充」拼成一条消息直接发出去 */
+  onPickQuickReply?: (reply: string) => void
+  onDismissQuickReplies?: () => void
 }
 
 export function RemoteComposer({
   deviceId,
+  deviceName,
   draft,
   onChangeDraft,
   attachments,
@@ -75,6 +95,9 @@ export function RemoteComposer({
   onStop,
   config,
   commands,
+  quickReplies,
+  onPickQuickReply,
+  onDismissQuickReplies,
 }: RemoteComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
@@ -94,12 +117,13 @@ export function RemoteComposer({
     disabled: sending,
   })
 
-  // 随内容增高，上限由 CSS max-height 控制
+  // 随内容增高，上限由 CSS max-height 控制。
+  // 下限 54px：空草稿时也要像个输入区，而不是一条单行搜索框（对齐桌面端主输入区）。
   useEffect(() => {
     const node = textareaRef.current
     if (node == null) return
     node.style.height = 'auto'
-    node.style.height = `${Math.min(node.scrollHeight, 168)}px`
+    node.style.height = `${Math.min(Math.max(node.scrollHeight, 54), 168)}px`
   }, [draft])
 
   const catalog: MobileBridgeCatalog | null = config.catalog
@@ -275,6 +299,9 @@ export function RemoteComposer({
   )
 
   const configDisabled = config.saving || !config.catalogSupported
+  const targetLabel =
+    deviceName != null && deviceName.length > 0 ? `发送到 ${deviceName}` : '发送到目标电脑'
+
   return (
     <div className={`rc-composer${voiceInputActive ? ' is-voice' : ''}`}>
       {installToast}
@@ -284,7 +311,17 @@ export function RemoteComposer({
         onRemove={onRemoveAttachment}
       />
 
-      <div className="rc-input-row">
+      {/* 目标端 agent 的下一步建议：与桌面端主输入区同一形态与位置（输入框上方） */}
+      {quickReplies != null && quickReplies.length > 0 && onPickQuickReply != null && (
+        <QuickReplySuggestions
+          replies={quickReplies}
+          disabled={busy || running}
+          onSelect={onPickQuickReply}
+          onDismiss={onDismissQuickReplies ?? (() => undefined)}
+        />
+      )}
+
+      <div className="rc-composer-body">
         <textarea
           ref={textareaRef}
           value={draft}
@@ -332,19 +369,72 @@ export function RemoteComposer({
         )}
       </div>
 
-      <div className="rc-composer-toolbar">
-        <div className="rc-toolbar-left">
+      {/* 主行只留发送相关动作：加附件在左，模型/语音/发送在右，和桌面端主输入区一致 */}
+      <div className="rc-composer-actions">
+        <button
+          type="button"
+          className="rc-composer-add"
+          onClick={onPickFiles}
+          disabled={uploading}
+          title="添加附件"
+          aria-label="添加附件"
+        >
+          {uploading ? <Icons.Spinner size={15} className="spin" /> : <Icons.Plus size={17} />}
+        </button>
+
+        <div className="rc-actions-right">
+          {modelOptions.length > 0 && (
+            <div className="rc-chip-wrap">
+              <button
+                type="button"
+                className="rc-chip rc-chip-model"
+                onClick={() => setOpenMenu(openMenu === 'model' ? null : 'model')}
+                aria-haspopup="menu"
+                aria-expanded={openMenu === 'model'}
+                disabled={configDisabled}
+                title={modelText}
+              >
+                <Icons.Cpu size={12} />
+                <span className="rc-chip-text">{modelText}</span>
+                <Icons.ChevronDown size={11} />
+              </button>
+              {openMenu === 'model' && (
+                <RemoteComposerMenu
+                  ariaLabel="选择模型"
+                  sections={modelSections}
+                  busy={config.saving}
+                  alignRight
+                  onPick={pickModel}
+                  onClose={() => setOpenMenu(null)}
+                />
+              )}
+            </div>
+          )}
+
+          {micButton}
+
           <button
             type="button"
-            className="rc-tool-icon"
-            onClick={onPickFiles}
-            disabled={uploading}
-            title="添加附件"
-            aria-label="添加附件"
+            className={`rc-send-orb${running ? ' is-running' : ''}`}
+            onClick={running ? onStop : onSend}
+            disabled={running ? false : !canSend || busy}
+            title={running ? '停止' : '发送'}
+            aria-label={running ? '停止' : '发送'}
           >
-            {uploading ? <Icons.Spinner size={15} className="spin" /> : <Icons.Plus size={16} />}
+            {running ? (
+              <Icons.Stop size={12} />
+            ) : sending ? (
+              <Icons.Spinner size={13} className="spin" />
+            ) : (
+              <Icons.ArrowUp size={15} />
+            )}
           </button>
+        </div>
+      </div>
 
+      {/* 页脚：这一轮按什么策略跑（低频开关），右侧标注消息落在哪台电脑 */}
+      <div className="rc-composer-footer">
+        <div className="rc-footer-chips">
           {agentOptions.length > 0 && (
             <div className="rc-chip-wrap">
               <button
@@ -356,7 +446,7 @@ export function RemoteComposer({
                 disabled={configDisabled}
                 title="切换助手"
               >
-                <Icons.Agent size={13} />
+                <Icons.Agent size={12} />
                 <span className="rc-chip-text">{agentText}</span>
                 <Icons.ChevronDown size={11} />
               </button>
@@ -410,7 +500,7 @@ export function RemoteComposer({
                 disabled={configDisabled}
                 title={`推理强度：${reasoningText}`}
               >
-                <Icons.Brain size={13} />
+                <Icons.Brain size={12} />
                 <span className="rc-chip-text">{reasoningText}</span>
                 <Icons.ChevronDown size={11} />
               </button>
@@ -425,60 +515,16 @@ export function RemoteComposer({
               )}
             </div>
           )}
-        </div>
-
-        <div className="rc-toolbar-right">
-          {modelOptions.length > 0 && (
-            <div className="rc-chip-wrap">
-              <button
-                type="button"
-                className="rc-chip"
-                onClick={() => setOpenMenu(openMenu === 'model' ? null : 'model')}
-                aria-haspopup="menu"
-                aria-expanded={openMenu === 'model'}
-                disabled={configDisabled}
-                title={modelText}
-              >
-                <Icons.Cpu size={13} />
-                <span className="rc-chip-text">{modelText}</span>
-                <Icons.ChevronDown size={11} />
-              </button>
-              {openMenu === 'model' && (
-                <RemoteComposerMenu
-                  ariaLabel="选择模型"
-                  sections={modelSections}
-                  busy={config.saving}
-                  alignRight
-                  onPick={pickModel}
-                  onClose={() => setOpenMenu(null)}
-                />
-              )}
-            </div>
-          )}
 
           {!config.catalogSupported && (
             <span className="rc-composer-hint">目标电脑版本较旧，暂不支持切换配置</span>
           )}
-
-          {micButton}
-
-          <button
-            type="button"
-            className={`rc-send-orb${running ? ' is-running' : ''}`}
-            onClick={running ? onStop : onSend}
-            disabled={running ? false : !canSend || busy}
-            title={running ? '停止' : '发送'}
-            aria-label={running ? '停止' : '发送'}
-          >
-            {running ? (
-              <Icons.Stop size={12} />
-            ) : sending ? (
-              <Icons.Spinner size={13} className="spin" />
-            ) : (
-              <Icons.ArrowUp size={15} />
-            )}
-          </button>
         </div>
+
+        <span className="rc-footer-target" title={targetLabel}>
+          <Icons.RemoteMonitor size={11} />
+          <span className="rc-footer-target-text">{targetLabel}</span>
+        </span>
       </div>
     </div>
   )

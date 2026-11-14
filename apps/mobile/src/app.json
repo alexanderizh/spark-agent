@@ -4,6 +4,7 @@
     "pages/login/index",
     "pages/home/index",
     "pages/projects/index",
+    "pages/all-sessions/index",
     "pages/project-sessions/index",
     "pages/bridge-devices/index",
     "pages/chat/index",
@@ -11,7 +12,8 @@
     "pages/profile/index",
     "pages/sync/index",
     "pages/devices/index",
-    "pages/password/index"
+    "pages/password/index",
+    "pages/demo/index"
   ],
   "window": {
     "navigationBarBackgroundColor": "#f7f6f4",

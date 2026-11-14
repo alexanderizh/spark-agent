@@ -35,9 +35,12 @@
     >
       <view class="bd-card-head">
         <view class="bd-card-title-row">
-          <view class="row gap-8">
+          <view class="row gap-8 bd-card-title-wrap">
             <view class="bd-online-dot {{item.online ? 'bd-online-dot--on' : ''}}"></view>
-            <text class="bd-card-title ellipsis">{{item.name}}</text>
+            <view class="col bd-card-title-copy">
+              <text class="bd-card-title ellipsis">{{item.name}}</text>
+              <text wx:if="{{item.realName}}" class="bd-card-real ellipsis">{{item.realName}}</text>
+            </view>
           </view>
           <text class="bd-tag {{item.online ? 'bd-tag--online' : 'bd-tag--offline'}}">{{item.statusLabel}}</text>
         </view>
@@ -51,6 +54,7 @@
 
       <view class="bd-card-actions">
         <block wx:if="{{pendingRevoke !== item.deviceId}}">
+          <view class="bd-btn-alias" data-id="{{item.deviceId}}" bindtap="onEditAlias">备注名</view>
           <view class="bd-btn-revoke" data-id="{{item.deviceId}}" bindtap="onAskRevoke">吊销</view>
         </block>
         <block wx:else>

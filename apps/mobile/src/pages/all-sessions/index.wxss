@@ -1,0 +1,297 @@
+/* 全部会话页（跨项目）：标题 + 电脑上下文 + 搜索 + 筛选 + 时间分组列表 */
+
+.as-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding-bottom: 32rpx;
+}
+
+.as-title-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 16rpx;
+  padding: 18rpx 32rpx 24rpx;
+}
+
+.as-title-row .page-title {
+  display: block;
+}
+
+.as-subtitle {
+  display: block;
+  margin-top: 10rpx;
+  color: #8a8782;
+  font-size: 24rpx;
+}
+
+.as-title-action {
+  flex: none;
+  padding: 8rpx 0;
+  color: #3b82f6;
+  font-size: 23rpx;
+}
+
+/* ─── 电脑上下文 ─────────────────────────────────────────────────────────── */
+
+.as-device-context {
+  gap: 14rpx;
+  margin: 0 32rpx 20rpx;
+  padding: 14rpx 20rpx;
+  border: 1rpx solid #e9e7e4;
+  border-radius: 16rpx;
+  background: #fff;
+}
+
+.as-dot {
+  width: 14rpx;
+  height: 14rpx;
+  flex: none;
+  border-radius: 50%;
+  background: #d4d1cc;
+}
+
+.as-dot--on {
+  background: #22c55e;
+}
+
+.as-context-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.as-context-name {
+  min-width: 0;
+  color: #1a1a1a;
+  font-size: 25rpx;
+  font-weight: 600;
+}
+
+.as-context-real {
+  margin-top: 2rpx;
+  min-width: 0;
+  color: #8a8782;
+  font-size: 20rpx;
+}
+
+.as-context-action {
+  flex: none;
+  padding: 8rpx 0 8rpx 8rpx;
+  color: #3b82f6;
+  font-size: 22rpx;
+}
+
+/* ─── 搜索 / 筛选 ─────────────────────────────────────────────────────────── */
+
+.as-search {
+  margin: 0 32rpx 14rpx;
+  padding: 14rpx 24rpx;
+  gap: 12rpx;
+  background: #fff;
+  border: 1rpx solid #ececec;
+  border-radius: 999rpx;
+}
+
+.as-search-input {
+  flex: 1;
+  font-size: 27rpx;
+  color: #1a1a1a;
+}
+
+.as-toolbar {
+  margin: 0 32rpx 12rpx;
+  gap: 16rpx;
+}
+
+.as-filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  max-width: 62%;
+  padding: 10rpx 20rpx;
+  border: 1rpx solid #e9e7e4;
+  border-radius: 999rpx;
+  background: #fff;
+}
+
+.as-filter-chip--hover {
+  background: #f7f6f4;
+}
+
+.as-filter-chip--on {
+  border-color: #3b82f6;
+  background: #eef4fe;
+}
+
+.as-filter-text {
+  min-width: 0;
+  font-size: 24rpx;
+  line-height: 32rpx;
+  color: #4b4944;
+}
+
+.as-filter-chip--on .as-filter-text {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.as-filter-count {
+  flex: none;
+  min-width: 30rpx;
+  padding: 0 8rpx;
+  border-radius: 999rpx;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 20rpx;
+  line-height: 30rpx;
+  text-align: center;
+}
+
+.as-filter-caret {
+  flex: none;
+  color: #8a8782;
+}
+
+.as-hint {
+  margin: 0 32rpx 12rpx;
+  color: #b3b0ab;
+}
+
+/* ─── 列表 ───────────────────────────────────────────────────────────────── */
+
+.as-list {
+  padding: 4rpx 32rpx 24rpx;
+}
+
+.as-group {
+  margin-bottom: 12rpx;
+}
+
+.as-group > .group-title {
+  display: block;
+  margin: 14rpx 0 8rpx;
+}
+
+.as-row {
+  min-height: 96rpx;
+  gap: 16rpx;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid #ececec;
+}
+
+.as-row--hover {
+  background: #f7f6f4;
+}
+
+.as-row-copy {
+  min-width: 0;
+  gap: 6rpx;
+}
+
+.as-row-title {
+  min-width: 0;
+  color: #1a1a1a;
+  font-size: 28rpx;
+  font-weight: 500;
+}
+
+.as-row-meta {
+  align-items: center;
+  gap: 10rpx;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.as-project-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 210rpx;
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  background: #f2f0ed;
+  color: #6b6b6b;
+  font-size: 20rpx;
+  line-height: 28rpx;
+}
+
+/* 所属项目已归档/不在列表：弱化成描边，避免和真实项目混看 */
+.as-project-chip--muted {
+  background: #fff;
+  border: 1rpx dashed #d4d1cc;
+  color: #b3b0ab;
+}
+
+.as-row-time {
+  flex: none;
+  color: #b3b0ab;
+  font-size: 21rpx;
+}
+
+/* 会话标记（与项目会话页同一套配色） */
+.as-label-tag {
+  flex: none;
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  font-size: 20rpx;
+  line-height: 28rpx;
+}
+
+.as-label-tag.label-suspended {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.as-label-tag.label-not-started {
+  background: #eef4fe;
+  color: #2563eb;
+}
+
+.as-label-tag.label-pending-review {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
+.as-label-tag.label-pending-advance {
+  background: #cffafe;
+  color: #0e7490;
+}
+
+.as-label-tag.label-undelivered {
+  background: #ffe4e6;
+  color: #be123c;
+}
+
+.as-more {
+  display: flex;
+  justify-content: center;
+  margin: 20rpx auto 0;
+  padding: 16rpx 28rpx;
+  width: fit-content;
+  border-radius: 999rpx;
+  border: 1rpx solid #e9e7e4;
+  background: #fff;
+  color: #3b82f6;
+  font-size: 24rpx;
+}
+
+.as-end {
+  display: block;
+  margin-top: 20rpx;
+  text-align: center;
+  color: #b3b0ab;
+}
+
+.as-state {
+  padding: 52rpx 40rpx;
+}
+
+.as-action {
+  width: fit-content;
+  margin: 24rpx auto 0;
+  padding: 15rpx 26rpx;
+  border-radius: 999rpx;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 24rpx;
+}

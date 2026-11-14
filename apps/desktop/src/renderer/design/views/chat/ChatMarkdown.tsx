@@ -34,6 +34,7 @@ export const MarkdownText = React.memo(function MarkdownText({
   onFilePreview,
   workspaceRootPath,
   imageBasePath,
+  remoteFileRefs,
 }: {
   content: string
   isStreaming?: boolean
@@ -44,6 +45,12 @@ export const MarkdownText = React.memo(function MarkdownText({
   workspaceRootPath?: string | null | undefined
   /** 文内相对路径图片（![alt](./a.png)）的解析基准目录，如被预览 md 文件所在目录 */
   imageBasePath?: string | null | undefined
+  /**
+   * 文内的文件路径指向**另一台电脑**（远程会话）：
+   * 跳过本机文件存在性检查，点击交给 onFilePreview 的远程取回流程。
+   * 不传（默认）按本机文件处理，行为与主聊天区完全一致。
+   */
+  remoteFileRefs?: boolean | undefined
 }) {
   const { stableBlocks, tailBlocks } = useMemo(() => {
     if (!isStreaming) {
@@ -83,6 +90,7 @@ export const MarkdownText = React.memo(function MarkdownText({
         onFilePreview={onFilePreview}
         workspaceRootPath={workspaceRootPath}
         imageBasePath={imageBasePath}
+        remoteFileRefs={remoteFileRefs}
         detectDocumentOutput={detectDocumentOutput}
       />
       <MarkdownBlocks
@@ -94,6 +102,7 @@ export const MarkdownText = React.memo(function MarkdownText({
         onFilePreview={onFilePreview}
         workspaceRootPath={workspaceRootPath}
         imageBasePath={imageBasePath}
+        remoteFileRefs={remoteFileRefs}
         detectDocumentOutput={detectDocumentOutput}
         initialDocumentKeys={stableDocumentKeys}
       />
@@ -123,6 +132,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
   onFilePreview,
   workspaceRootPath,
   imageBasePath,
+  remoteFileRefs,
   detectDocumentOutput,
   initialDocumentKeys = [],
 }: {
@@ -134,6 +144,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
   onFilePreview?: FileOpenHandler | undefined
   workspaceRootPath?: string | null | undefined
   imageBasePath?: string | null | undefined
+  remoteFileRefs?: boolean | undefined
   detectDocumentOutput: boolean
   initialDocumentKeys?: string[]
 }) {
@@ -156,6 +167,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                 onFilePreview,
                 workspaceRootPath,
                 imageBasePath,
+                remoteFileRefs,
               ),
             )
           }
@@ -178,6 +190,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                   onFilePreview,
                   workspaceRootPath,
                   imageBasePath,
+                  remoteFileRefs,
                 )}
               </p>
             )
@@ -193,6 +206,26 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                     diagramType: 'mermaid',
                     source: block.code,
                     title: 'Mermaid 图表',
+                    height: 360,
+                    status: 'rendered',
+                    error: undefined,
+                    warnings: [],
+                  }}
+                />
+              )
+            }
+            // ```markmap / ```mindmap（markdown 大纲）走 markmap 思维导图，
+            // 与引擎 diagram_block(markmap) 同一渲染器，纯文本链路（远程会话等）也能出图
+            if (isMarkmapLanguage(block.lang) && block.code.trim().length > 0) {
+              return (
+                <RenderDiagramBlock
+                  key={index}
+                  block={{
+                    kind: 'diagram_block',
+                    toolCallId: `markdown-markmap-${index}`,
+                    diagramType: 'markmap',
+                    source: block.code,
+                    title: '思维导图',
                     height: 360,
                     status: 'rendered',
                     error: undefined,
@@ -234,6 +267,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                   onFilePreview,
                   workspaceRootPath,
                   imageBasePath,
+                  remoteFileRefs,
                 )}
               </blockquote>
             )
@@ -258,6 +292,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                       onFilePreview,
                       workspaceRootPath,
                       imageBasePath,
+                      remoteFileRefs,
                     )}
                   </span>
                 </li>
@@ -279,6 +314,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                             onFilePreview,
                             workspaceRootPath,
                             imageBasePath,
+                            remoteFileRefs,
                           )}
                         </th>
                       ))}
@@ -296,6 +332,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                               onFilePreview,
                               workspaceRootPath,
                               imageBasePath,
+                              remoteFileRefs,
                             )}
                           </td>
                         ))}
@@ -320,6 +357,11 @@ function isMermaidLanguage(lang: string): boolean {
   return normalized === 'mermaid' || normalized === 'mmd'
 }
 
+function isMarkmapLanguage(lang: string): boolean {
+  const normalized = lang.trim().toLowerCase()
+  return normalized === 'markmap' || normalized === 'mindmap'
+}
+
 function StreamingCursor() {
   // 光标闪烁效果已移除 — 流式消息不再显示闪烁光标
   return null
@@ -337,6 +379,7 @@ function highlightMentions(
   onFilePreview?: FileOpenHandler | undefined,
   workspaceRootPath?: string | null,
   offset: number = 0,
+  remoteFileRefs?: boolean | undefined,
 ): ReactNode[] {
   const mentionPattern = /(^|\s)(@[\p{L}\p{N}_\-.]+)/gu
   const parts: ReactNode[] = []
@@ -354,6 +397,7 @@ function highlightMentions(
           onFilePreview,
           workspaceRootPath,
           `fp-${offset + cursor}`,
+          remoteFileRefs,
         ),
       )
     const agentId = agentMap?.get(mention.slice(1).toLowerCase())
@@ -391,6 +435,7 @@ function highlightMentions(
         onFilePreview,
         workspaceRootPath,
         `fp-${offset + cursor}`,
+        remoteFileRefs,
       ),
     )
   return parts.length > 0 ? parts : [text]
@@ -402,6 +447,7 @@ function highlightFilePaths(
   onFilePreview?: FileOpenHandler | undefined,
   workspaceRootPath?: string | null,
   keyPrefix: string = 'fp',
+  remoteFileRefs?: boolean | undefined,
 ): ReactNode[] {
   const pathParts = extractFilePaths(text)
   if (pathParts.length === 0) return [text]
@@ -422,6 +468,7 @@ function highlightFilePaths(
         path={part.text}
         workspaceRootPath={workspaceRootPath}
         {...(onFilePreview != null ? { onPreview: onFilePreview } : {})}
+        {...(remoteFileRefs ? { assumeExists: true } : {})}
       />,
     )
   })
@@ -449,6 +496,7 @@ function renderInlineMarkdown(
   onFilePreview?: FileOpenHandler | undefined,
   workspaceRootPath?: string | null,
   imageBasePath?: string | null,
+  remoteFileRefs?: boolean | undefined,
 ): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern =
@@ -466,6 +514,7 @@ function renderInlineMarkdown(
           onFilePreview,
           workspaceRootPath,
           cursor,
+          remoteFileRefs,
         ),
       )
     const token = match[0]
@@ -495,6 +544,7 @@ function renderInlineMarkdown(
               label={link[2] ?? normalizedHref}
               workspaceRootPath={workspaceRootPath}
               {...(onFilePreview != null ? { onPreview: onFilePreview } : {})}
+              {...(remoteFileRefs ? { assumeExists: true } : {})}
             />,
           )
         } else {
@@ -522,6 +572,7 @@ function renderInlineMarkdown(
         onFilePreview,
         workspaceRootPath,
         cursor,
+        remoteFileRefs,
       ),
     )
   const rendered: ReactNode[] = []

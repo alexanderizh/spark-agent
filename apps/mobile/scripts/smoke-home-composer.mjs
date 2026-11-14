@@ -15,6 +15,7 @@ const calls = {
   createSession: [],
   updateSession: [],
   submitTurn: [],
+  showToast: [],
 }
 let shouldFailSubmit = false
 let pageOptions
@@ -27,7 +28,7 @@ globalThis.wx = {
   setStorageSync: () => {},
   getRealtimeLogManager: () => ({ error: () => {} }),
   navigateTo: (options) => navigations.push(options.url),
-  showToast: () => {},
+  showToast: (options) => calls.showToast.push(options.title),
 }
 globalThis.Page = (options) => {
   pageOptions = options
@@ -116,15 +117,24 @@ async function main() {
   assert.equal(page.data.configOpen, true, '打开会话配置面板')
   assert.equal(page.data.projectOptions.length, 2, '项目包含未归属和电脑 A 项目')
   assert.equal(page.data.modelOptions.length, 2, '模型选项包含电脑默认和渠道模型')
+  assert.deepEqual(
+    page.data.reasoningOptions.map((item) => item.id),
+    ['low', 'medium', 'high'],
+    '推理强度只列真实档位，不再有「电脑默认」',
+  )
+  assert.ok(
+    page.data.permissionOptions.every((item) => item.id !== 'default'),
+    '权限策略不再有「电脑默认」',
+  )
   assert.deepEqual(calls.listProjects, ['computer-a'], '初始项目查询定向到电脑 A')
 
-  await page.onConfigDeviceChange({ detail: { value: '1' } })
+  await page.applyDeviceIndex(1)
   assert.deepEqual(calls.listProjects, ['computer-a', 'computer-b'], '切电脑后重载项目')
   assert.deepEqual(calls.getCatalog, ['computer-a', 'computer-b'], '切电脑后重载模型目录')
   assert.equal(page.data.selectedDeviceId, 'computer-b', '配置选中的电脑同步为当前电脑')
-  page.onProjectChange({ detail: { value: '1' } })
-  page.onModelChange({ detail: { value: '1' } })
-  page.onReasoningChange({ detail: { value: 3 } })
+  page.applyProjectIndex(1)
+  page.applyModelIndex(1)
+  page.onReasoningChange({ detail: { value: 2 } })
   page.onQuickInput({ detail: { value: '创建并发送测试消息' } })
   await page.onQuickSend()
 
@@ -174,7 +184,44 @@ async function main() {
   restoredPage.rebuildDevices()
   assert.equal(restoredPage.data.composerDeviceId, 'computer-b', '首页恢复已选在线电脑')
 
-  console.log('主页新建会话闭环冒烟：17 项断言通过')
+  // 配置项走应用内半屏列表（原生 picker 不跟随主题）
+  const chooserPage = makePage()
+  setOnlineComputers(chooserPage)
+  await chooserPage.onOpenConfig()
+  chooserPage.onOpenChooser({
+    currentTarget: { dataset: { kind: 'device', disabled: false } },
+  })
+  assert.equal(chooserPage.data.chooserShow, true, '点配置行打开半屏选择列表')
+  assert.equal(chooserPage.data.chooserTitle, '选择电脑')
+  assert.deepEqual(
+    chooserPage.data.chooserOptions.map((item) => item.label),
+    ['电脑 A · 在线', '电脑 B · 在线'],
+  )
+  assert.equal(chooserPage.data.chooserOptions[0].checked, true, '当前电脑打勾')
+  chooserPage.onChooserSelect({ detail: { id: '1' } })
+  assert.equal(chooserPage.data.chooserShow, false, '选完关闭列表')
+  assert.equal(chooserPage.data.composerDeviceId, 'computer-b', '选电脑后切到目标电脑')
+
+  chooserPage.onOpenChooser({
+    currentTarget: { dataset: { kind: 'permission', disabled: false } },
+  })
+  assert.equal(chooserPage.data.chooserShow, true)
+  assert.equal(chooserPage.data.chooserTitle, '权限策略')
+  chooserPage.onChooserClose()
+  assert.equal(chooserPage.data.chooserShow, false, '关闭按钮收起列表')
+
+  chooserPage.onOpenChooser({ currentTarget: { dataset: { kind: 'model', disabled: true } } })
+  assert.equal(chooserPage.data.chooserShow, false, '禁用态点不开')
+  assert.equal(calls.showToast.at(-1), '配置读取中，请稍候', '禁用态要说明原因，不做无反应的点击')
+
+  // 不同基础库可能把 data-* 的布尔落成字符串，两种都要拦住
+  chooserPage.onOpenChooser({ currentTarget: { dataset: { kind: 'model', disabled: 'true' } } })
+  assert.equal(chooserPage.data.chooserShow, false, '禁用态传成字符串也点不开')
+
+  chooserPage.onOpenChooser({ currentTarget: { dataset: { kind: 'model', disabled: 'false' } } })
+  assert.equal(chooserPage.data.chooserShow, true, '字符串 false 视作可点')
+
+  console.log('主页新建会话闭环冒烟：27 项断言通过')
 }
 
 main().catch((error) => {

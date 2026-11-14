@@ -46,7 +46,7 @@ interface ComposerCommand {
   description: string
 }
 
-/** 模型胶囊：主值取 model chip，后缀取 reasoning chip（「电脑默认」时不显示后缀） */
+/** 模型胶囊：主值取 model chip，后缀取 reasoning chip（没有推理档位时不显示后缀） */
 interface ComposerModelChip {
   value: string
   effort: string
@@ -165,7 +165,7 @@ Component({
       this.setData({
         modelChip: {
           value: model?.value ?? '',
-          effort: reasoning != null && reasoning.value !== '电脑默认' ? reasoning.value : '',
+          effort: reasoning?.value ?? '',
         },
         extraChips: list.filter((chip) => !MODEL_SHEET_CHIP_KEYS.includes(chip.key)),
       })

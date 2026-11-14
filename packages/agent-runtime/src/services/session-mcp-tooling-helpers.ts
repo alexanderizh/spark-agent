@@ -544,6 +544,9 @@ export const RENDER_DIAGRAM_TOOL_NAMES = ['mcp__spark_ui__render_diagram']
 
 export const VALIDATION_SUGGESTION_TOOL_NAMES = ['mcp__spark_verify__suggest_validation']
 
+/** spark_notify（主动推送通知）工具名——desktop 注入 provider 的会话挂载，白名单免审批。 */
+export const NOTIFY_USER_TOOL_NAMES = ['mcp__spark_notify__notify_user']
+
 /**
  * spark_voice（语音会话应用控制）工具名——仅语音路由绑定的会话挂载。
  * 全部为 list/switch/new 导航级操作，进白名单免审批（与 spark_memory 只读工具同策略）。

@@ -75,6 +75,7 @@ import {
 import { PASTED_IMAGE_MAX_EDGE, resizePastedImageBuffer } from '../services/PastedImageResizer.js'
 import { calibrateMobileBridgeSessionAdapter } from '../services/mobile-bridge-session-adapter.js'
 import { isPathWithinRoots } from './mobile-bridge-path-policy.js'
+import { isQuickReplyTool, parseQuickReplies } from './mobile-bridge-quick-replies.js'
 import type { RemoteVoiceTranscriber } from '../services/remoteVoiceTranscription.js'
 import { DEFAULT_MOBILE_BRIDGE_RELAY_SETTINGS } from '@spark/protocol'
 import { MobileBridgeService, type MobileBridgeDeps } from '../services/MobileBridgeService.js'
@@ -297,8 +298,20 @@ function toMobileEvent(event: AgentEvent): MobileBridgeEvent | null {
         mode: event.mode,
         ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
       }
-    case 'tool_call':
-      return { ...base, type: 'tool_call', toolName: event.toolName, toolCallId: event.toolCallId }
+    case 'tool_call': {
+      // 快捷回复是「给用户的下一步建议」，控制端要在输入区渲染 chip；
+      // 只透这一个工具的建议文案，其它工具入参一律不过桥（体积与隐私）
+      const quickReplies = isQuickReplyTool(event.toolName)
+        ? parseQuickReplies(event.toolInput)
+        : []
+      return {
+        ...base,
+        type: 'tool_call',
+        toolName: event.toolName,
+        toolCallId: event.toolCallId,
+        ...(quickReplies.length > 0 ? { quickReplies } : {}),
+      }
+    }
     case 'tool_result':
       return {
         ...base,
@@ -352,6 +365,14 @@ const ADAPTER_PERMISSION_MODES: Record<string, string[]> = {
 
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
+/**
+ * 会话所属工作区在本机的根路径（供控制端拼「工作区相对路径」）。
+ *
+ * 由 buildDeps 注入（与附件白名单同一次 30s 扫描），未就绪时返回 null：
+ * 拿不到根路径只是相对路径链接不可点，不该影响会话摘要本身。
+ */
+let workspaceRootByProjectProvider: (projectId: string) => string | null = () => null
+
 /** 会话行 + 工作流绑定 → 移动端运行配置摘要（exactOptionalPropertyTypes：缺省字段不写键） */
 function toBridgeRuntime(
   row: {
@@ -366,6 +387,7 @@ function toBridgeRuntime(
   },
   binding: MobileBridgeWorkflowBindingResponse['binding'],
 ): MobileBridgeSessionRuntime {
+  const workspaceRootPath = workspaceRootByProjectProvider(row.project_id)
   return {
     ...(row.provider_profile_id != null ? { providerProfileId: row.provider_profile_id } : {}),
     modelId: row.model_id,
@@ -375,6 +397,7 @@ function toBridgeRuntime(
     reasoningEffort: row.reasoning_effort,
     chatMode: row.chat_mode,
     projectId: row.project_id,
+    ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
     workflowBinding: binding,
   }
 }
@@ -551,7 +574,14 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
   // 工作区白名单根：惰性求值 + 30s TTL（附件校验高频调用，不能每附件扫全表；
   // 拉取失败保留上一份缓存——启动早期 DB 未就绪时不放行任何工作区路径）
   const workspaceRootsCache: { roots: string[]; fetchedAt: number } = { roots: [], fetchedAt: 0 }
+  /** project_id → 工作区根（控制端拼相对路径用；与白名单同一次扫描产出） */
+  const workspaceRootByProjectCache = new Map<string, string>()
   const WORKSPACE_ROOTS_TTL_MS = 30_000
+  workspaceRootByProjectProvider = (projectId) => {
+    // 触发一次（可能命中的）刷新：与白名单共用同一个 TTL 判断
+    workspaceRootsProvider()
+    return workspaceRootByProjectCache.get(projectId) ?? null
+  }
   workspaceRootsProvider = () => {
     const now = Date.now()
     if (now - workspaceRootsCache.fetchedAt < WORKSPACE_ROOTS_TTL_MS) {
@@ -559,6 +589,16 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
     }
     try {
       const workspaces = deps.getWorkspaceService().listWorkspaces(500, 0, {})
+      workspaceRootByProjectCache.clear()
+      for (const workspace of workspaces) {
+        const rootPath = typeof workspace.root_path === 'string' ? workspace.root_path : ''
+        if (rootPath.length === 0) continue
+        try {
+          workspaceRootByProjectCache.set(workspace.id, realpathSync(rootPath))
+        } catch {
+          // 单个根缺失只影响该项目的相对路径解析，继续处理其余项目
+        }
+      }
       workspaceRootsCache.roots = workspaces
         .map((workspace) => workspace.root_path)
         .filter(
@@ -1504,4 +1544,5 @@ export function __resetMobileBridgeServiceForTesting(): void {
   relayClient = null
   sidebarOrderController = null
   workspaceRootsProvider = () => []
+  workspaceRootByProjectProvider = () => null
 }

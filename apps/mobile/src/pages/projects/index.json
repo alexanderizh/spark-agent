@@ -4,6 +4,8 @@
   "backgroundTextStyle": "dark",
   "usingComponents": {
     "safe-nav-bar": "../../components/safe-nav-bar/index",
-    "empty-state": "../../components/empty-state/index"
+    "empty-state": "../../components/empty-state/index",
+    "sheet-panel": "../../components/sheet-panel/index",
+    "filter-sheet": "../../components/filter-sheet/index"
   }
 }

@@ -118,6 +118,160 @@
   white-space: nowrap;
 }
 
+/* ─── Tab 形态：标题栏里直接点 tag 切换 ──────────────────────────────── */
+
+.rc-device-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: min(52vw, 560px);
+  min-width: 0;
+  height: 100%;
+  padding-left: 4px;
+  border-left: 1px solid var(--divider, #efede8);
+  -webkit-app-region: no-drag;
+}
+
+.rc-device-tabs-track {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 被裁掉时右端渐隐，暗示「还能横向滑」，也避免设备名被硬切一半 */
+  &.is-scrollable {
+    padding-right: 14px;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+  }
+}
+
+.rc-device-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  font-size: 12px;
+  color: var(--text-muted, #8d8a86);
+  cursor: pointer;
+  transition:
+    background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &:hover:not(:disabled) {
+    background: var(--bg-sunken, #f2f2f2);
+    color: var(--text, #23231f);
+  }
+
+  &.is-current {
+    background: var(--bg-sunken, #f2f2f2);
+    color: var(--text-strong, #11100e);
+    font-weight: 500;
+  }
+
+  &.is-offline,
+  &:disabled {
+    color: var(--text-faint, #9b9489);
+    cursor: default;
+  }
+}
+
+.rc-device-tab-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--text-faint, #9b9489);
+
+  &.online {
+    background: var(--success, #10b981);
+  }
+}
+
+.rc-device-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+.rc-device-tabs-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 24px;
+  border: none;
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  color: var(--text-faint, #9b9489);
+  cursor: pointer;
+
+  &:hover,
+  &.is-open {
+    background: var(--bg-sunken, #f2f2f2);
+    color: var(--text, #23231f);
+  }
+}
+
+/* 菜单底部：切换形态（自动 / Tab 栏 / 下拉） */
+.rc-device-menu-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--border, #f6f3ec);
+}
+
+.rc-device-menu-foot-label {
+  font-size: var(--font-2xs, 11px);
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-device-seg {
+  display: inline-flex;
+  gap: 1px;
+  padding: 1px;
+  border-radius: var(--r-sm, 6px);
+  background: var(--bg-sunken, #f2f2f2);
+}
+
+.rc-device-seg-btn {
+  height: 20px;
+  padding: 0 7px;
+  border: none;
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  font-size: var(--font-2xs, 11px);
+  color: var(--text-muted, #8d8a86);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text, #23231f);
+  }
+
+  &.is-active {
+    background: var(--panel, #fff);
+    color: var(--text-strong, #11100e);
+    box-shadow: inset 0 0 0 1px var(--border, #f6f3ec);
+  }
+}
+
 .rc-device-menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -497,6 +651,8 @@
 }
 
 .rc-session-pane {
+  /* 悬停浮现的「刚新建」说明条贴在它底部（见 .rc-create-note） */
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 288px;
@@ -507,6 +663,9 @@
 }
 
 .rc-pane-head {
+  /* 筛选浮层的定位锚点：浮层比单个按钮宽，锚在按钮上会朝左溢出侧栏，
+     改由整个头部锚定（见 .rc-filter-menu） */
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -692,6 +851,11 @@
 .rc-project-line:focus-within .rc-project-add,
 .rc-project-line .rc-project-add:focus-visible {
   opacity: 1;
+}
+
+/* 结果视图的分组头不可折叠，加号常显一点——藏起来会让人以为这里没有新建入口 */
+.rc-project-head.is-static + .rc-project-add {
+  opacity: 0.7;
 }
 
 .rc-project-head {
@@ -953,11 +1117,19 @@
   opacity: 0.28;
 }
 
+/* 运行中：药丸 + 呼吸点。比一行绿字更像状态，也更容易在顶栏扫到 */
 .rc-running {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  color: var(--success, #10b981);
+  gap: 5px;
+  flex: none;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--r-pill, 999px);
+  background: color-mix(in srgb, var(--success, #10b981) 12%, transparent);
+  font-size: var(--font-2xs, 11px);
+  line-height: 1;
+  color: color-mix(in srgb, var(--success, #10b981) 82%, var(--text, #23231f));
 }
 
 .rc-running-dot {
@@ -966,6 +1138,26 @@
   border-radius: 50%;
   background: var(--success, #10b981);
   flex: none;
+  animation: rc-running-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes rc-running-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-running-dot {
+    animation: none;
+  }
 }
 
 .rc-pane-hint {
@@ -980,13 +1172,19 @@
 }
 
 /* ─── 侧栏筛选（状态 / 标记 / 活动 / 项目 / 置顶） ──────────────────────
- * 浮层锚在筛选按钮下方靠右（按钮在侧栏头部右侧，朝左开才不会越过窗口边）。
+ * 浮层锚在侧栏头部、右对齐到头部内边距（而不是筛选按钮本身）：浮层 232px
+ * 比 288px 侧栏只窄一点点，锚按钮会让 left 算成负数，溢出后被 .rc-body 的
+ * overflow: hidden 裁掉。竖直方向朝下开，高度受 max-height 限制。
  * 选项用 chip 换行排列：五个维度加起来十几项，铺成竖排会顶出屏幕。
  */
 
 .rc-filter-wrap {
-  position: relative;
+  /* 只做布局容器，不再是定位锚点；角标因此改锚按钮自身 */
   display: inline-flex;
+}
+
+.rc-filter-wrap > .rc-icon-btn {
+  position: relative;
 }
 
 .rc-icon-btn.is-active {
@@ -1013,9 +1211,11 @@
 .rc-filter-menu {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  /* 与头部 padding-right 对齐：浮层右边缘落在侧栏内，左边缘 = 288 - 8 - 232 = 48 */
+  right: 8px;
   z-index: 40;
   width: 232px;
+  max-width: calc(100% - 16px);
   max-height: min(60vh, 460px);
   overflow: auto;
   padding: 6px 8px 8px;
@@ -1099,6 +1299,229 @@
   color: var(--text-faint, #9b9489);
 }
 
+/* ─── 项目维度：选择器子视图 ─────────────────────────────────────────────
+ * 项目数量只增不减，chip 平铺几十个会把 232px 的面板拉成一条长龙。主面板只留
+ * 一行摘要（「全部（N）」/「已选 N / M」），点进子视图后列表占满整个面板高度——
+ * 内嵌列表会和上面三个维度抢空间，出现「面板滚一层、列表再滚一层」。
+ */
+
+/* 主面板里的项目摘要行：整行可点，直接进选择器 */
+.rc-filter-picker-entry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-faint, #9b9489);
+  font-family: inherit;
+  font-size: var(--font-xs, 11px);
+  text-align: left;
+  cursor: pointer;
+  transition: color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &:hover:not(:disabled) {
+    color: var(--text, #23231f);
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+
+  > svg {
+    flex: none;
+  }
+}
+
+.rc-filter-picker-entry-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted, #8d8a86);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 选择器子视图：面板定高，列表 flex 撑满后自己滚 */
+.rc-filter-menu.is-picker {
+  display: flex;
+  flex-direction: column;
+  height: min(60vh, 460px);
+  overflow: hidden;
+}
+
+.rc-picker-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 0 4px;
+}
+
+.rc-picker-back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-xs, 4px);
+  background: transparent;
+  color: var(--text-muted, #8d8a86);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-sunken, #f2f2f2);
+    color: var(--text, #23231f);
+  }
+}
+
+.rc-picker-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-sm, 12px);
+  color: var(--text, #23231f);
+}
+
+.rc-picker-count {
+  flex: none;
+  font-size: var(--font-xs, 11px);
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-filter-search {
+  box-sizing: border-box;
+  width: 100%;
+  height: 24px;
+  margin-bottom: 4px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong, #d7d2c9);
+  border-radius: var(--r-sm, 6px);
+  background: var(--bg, #fafafa);
+  color: var(--text, #23231f);
+  font-family: inherit;
+  font-size: var(--font-xs, 11px);
+
+  &::placeholder {
+    color: var(--text-faint, #9b9489);
+  }
+
+  &:focus {
+    border-color: var(--primary, #3b82f6);
+    outline: none;
+  }
+}
+
+/* 列表吃满面板剩余高度（面板 is-picker 定高），滚动只在这一层发生 */
+.rc-picker-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.rc-filter-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 24px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--r-xs, 4px);
+  background: transparent;
+  color: var(--text, #23231f);
+  font-family: inherit;
+  font-size: var(--font-xs, 11px);
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-sunken, #f2f2f2);
+  }
+
+  &.is-selected {
+    color: var(--primary, #3b82f6);
+  }
+}
+
+/* 勾选框：未选也留位，选中时文字不跳格 */
+.rc-filter-check {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--border-strong, #d7d2c9);
+  border-radius: var(--r-xs, 4px);
+  color: var(--primary-fg, #fff);
+
+  .rc-filter-picker-item.is-selected & {
+    border-color: var(--primary, #3b82f6);
+    background: var(--primary, #3b82f6);
+  }
+}
+
+.rc-filter-picker-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-picker-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider, #efede8);
+
+  .rc-link-btn {
+    margin-left: 0;
+  }
+}
+
+.rc-picker-done {
+  height: 22px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--r-sm, 6px);
+  background: var(--primary, #3b82f6);
+  color: var(--primary-fg, #fff);
+  font-family: inherit;
+  font-size: var(--font-xs, 11px);
+  cursor: pointer;
+
+  &:hover {
+    background: color-mix(in srgb, var(--primary, #3b82f6) 86%, var(--text, #23231f));
+  }
+}
+
+/* 收起态的「+N」：点开就是完整列表 */
+.rc-filter-more {
+  height: 22px;
+  padding: 0 7px;
+  border: 1px dashed var(--border-strong, #d7d2c9);
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  color: var(--text-muted, #8d8a86);
+  font-family: inherit;
+  font-size: var(--font-xs, 11px);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--text-faint, #9b9489);
+    color: var(--text, #23231f);
+  }
+}
+
 /* 结果视图顶部的「筛选：a · b」摘要条 */
 .rc-filter-bar {
   display: flex;
@@ -1114,6 +1537,85 @@
   background: var(--bg-sunken, #f2f2f2);
   color: var(--text-muted, #8d8a86);
   font-size: var(--font-xs, 11px);
+}
+
+/* 结果视图里「刚新建的会话不满足当前筛选」的说明。
+ * 侧栏内容区只有 264px，一句话塞完必然折行挤成一团，所以拆成两行：
+ * 第一行只说建到哪个项目（超长省略，完整名在 title 里），第二行说原因 + 给动作。
+ * 平时不显示——它只是「点了加号之后为什么列表没变」的补充解释，常驻会一直占位、
+ * 也一直抢注意力；鼠标进到列表区时以浮层淡入，不占布局、不移位任何一行。
+ */
+.rc-create-note {
+  /* 贴侧栏底部而不是顶部：顶部会盖住「筛选结果 N」和条件摘要条，一 hover 就像
+     筛选条件消失了；底部只在几秒内压住最后一行，观感更接近一条轻提示 */
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  left: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--primary, #3b82f6) 26%, transparent);
+  border-radius: var(--r-sm, 6px);
+  background: var(--panel, #fff);
+  box-shadow: var(--shadow-md, 0 4px 14px rgba(17, 16, 14, 0.12));
+  color: var(--text, #23231f);
+  font-size: var(--font-xs, 11px);
+  line-height: 1.5;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition:
+    opacity 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    visibility 140ms;
+
+  > svg {
+    flex: none;
+    /* 压在第一行文字的字身上，别跟着两行整体居中 */
+    margin-top: 2px;
+    color: var(--primary, #3b82f6);
+  }
+}
+
+/* 鼠标在列表区里才浮现：它只是补充说明，不该一直杵在那里抢注意力 */
+.rc-session-scroll:hover .rc-create-note,
+.rc-create-note:focus-within {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.rc-create-note-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rc-create-note-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text, #23231f);
+}
+
+.rc-create-note-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text-muted, #8d8a86);
+
+  .rc-link-btn {
+    flex: none;
+    margin-left: 0;
+    font-size: var(--font-xs, 11px);
+  }
 }
 
 /* 「加载更多」：列表末尾的整行按钮，与提示行同高，不撑开行的 hover 热区 */
@@ -1162,27 +1664,32 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 34px;
+  height: 40px;
   flex: none;
-  padding: 0 16px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--divider, #efede8);
-  font-size: 12px;
+  font-size: var(--font-xs, 12px);
   color: var(--text-muted, #8d8a86);
 }
 
+/* 会话标题是这一屏的主标题：压到 13px / 500，和下方正文拉开层级 */
 .rc-chat-title {
-  max-width: 56%;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text, #23231f);
+  font-size: var(--font-base, 13px);
+  font-weight: 500;
+  color: var(--text-strong, #11100e);
 }
 
 .rc-chat-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 20px 10px;
+  /* 消息列最宽 820px（与桌面端对话区同一口径），超出部分平分到左右内边距 */
+  padding: 18px max(20px, calc((100% - 820px) / 2)) 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1229,40 +1736,65 @@
 
 /* ─── 消息流 ───────────────────────────────────────────────────────────── */
 
+/* 阅读宽度：正文铺满上千像素时一行七八十个字，眼睛要来回扫。
+   收窄放在滚动容器的**内边距**上（见 .rc-chat-scroll），而不是逐条 max-width +
+   居中——后者会把不同宽度的条目各自居中，活动行比正文右移二十几像素，左边界参差。
+   输入区用同一条公式取外边距，消息列与输入框左右边对齐。 */
 .rc-msg {
   max-width: 100%;
   font-size: var(--font-base, 13px);
-  line-height: 1.7;
+  line-height: 1.72;
   color: var(--text, #23231f);
 }
 
-/* 角色标签：紧凑小字，图标走主色，避免和大标题抢视觉 */
-.rc-msg-role {
+/* 身份行：整条会话只在第一段回答前出现一次。
+   远程视图是单一 Agent，逐段挂「远程 Agent」只会变成刷屏噪声。 */
+.rc-msg-identity {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  margin-bottom: 5px;
+  gap: 6px;
+  margin-bottom: 7px;
   font-size: var(--font-2xs, 11px);
   font-weight: 500;
   color: var(--text-muted, #8d8a86);
+}
 
-  svg {
-    color: color-mix(in srgb, var(--primary, #3b82f6) 72%, var(--text-muted, #8d8a86));
-  }
+.rc-msg-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primary, #3b82f6) 12%, var(--bg-sunken, #f2f2f2));
+  color: color-mix(in srgb, var(--primary, #3b82f6) 76%, var(--text, #23231f));
 }
 
 .rc-msg-user {
+  /* 纵向排：气泡右对齐，操作条落在气泡下方（横向排会把复制按钮挤到气泡右边） */
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  /* 提问就是新的一段，和上一轮回答之间多留 4px，读起来有呼吸 */
+  margin-top: 4px;
+}
+
+/* 消息操作条：形态直接复用桌面端 .msg-hover-bar / .msg-hover-btn，
+   但显隐由 hover 本条消息决定（桌面端的触发规则挂在 .msg 上，远程用的是 .rc-msg） */
+.rc-msg:hover .msg-hover-bar,
+.rc-msg:focus-within .msg-hover-bar {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .rc-bubble {
-  max-width: min(78%, 620px);
-  padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--primary, #3b82f6) 16%, transparent);
-  border-radius: var(--r-md, 8px) var(--r-md, 8px) var(--r-xs, 4px) var(--r-md, 8px);
+  max-width: min(78%, 560px);
+  padding: 7px 12px;
+  border: none;
+  border-radius: var(--r-lg, 12px) var(--r-lg, 12px) var(--r-xs, 4px) var(--r-lg, 12px);
   background: var(--primary-soft, rgba(59, 130, 246, 0.12));
-  color: var(--text-strong, #11100e);
+  color: var(--text, #23231f);
   font-size: var(--font-base, 13px);
   line-height: 1.65;
 }
@@ -1287,6 +1819,80 @@
   min-width: 0;
 }
 
+/* ─── 回合级折叠条 ─────────────────────────────────────────────────────────
+ * 一轮处理完，中间过程收进这一行；点开原地变成「收起过程」。
+ * 形态刻意比活动摘要行重一档（有底色描边）：它是「这里藏着内容」的入口，
+ * 而不是又一次工具摘要。
+ */
+
+.rc-turn-collapse {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 3px 8px 3px 4px;
+  border: 1px solid var(--divider, #efede8);
+  border-radius: var(--r-md, 8px);
+  background: var(--bg-soft, #fff);
+  font-family: inherit;
+  font-size: var(--font-xs, 12px);
+  color: var(--text-muted, #8d8a86);
+  cursor: pointer;
+  transition:
+    background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &:hover {
+    border-color: var(--border-strong, #d7d2c9);
+    color: var(--text, #23231f);
+  }
+}
+
+.rc-turn-collapse-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm, 6px);
+  background: var(--bg-sunken, #f2f2f2);
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-turn-collapse-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-turn-collapse-fail {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 17px;
+  padding: 0 7px;
+  border-radius: var(--r-pill, 999px);
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+  font-size: var(--font-2xs, 11px);
+  line-height: 1;
+  color: var(--danger, #ef4444);
+}
+
+.rc-turn-collapse-chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-faint, #9b9489);
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.rc-turn-collapse.is-open .rc-turn-collapse-chevron {
+  transform: rotate(90deg);
+}
+
 /* ─── 活动段：思考 + 工具调用折叠成一行 ──────────────────────────────── */
 
 .rc-activity {
@@ -1296,26 +1902,36 @@
 .rc-activity-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   width: 100%;
-  padding: 4px 8px 4px 4px;
+  padding: 3px 8px 3px 3px;
   border: none;
-  border-radius: var(--r-sm, 6px);
+  border-radius: var(--r-md, 8px);
   background: transparent;
   text-align: left;
-  font-size: var(--font-sm, 12px);
+  font-size: var(--font-xs, 12px);
   color: var(--text-muted, #8d8a86);
   cursor: pointer;
-  transition: background 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
   &:hover {
     background: var(--bg-sunken, #f2f2f2);
+    color: var(--text, #23231f);
   }
 }
 
+/* 小方块图标：给摘要行一个稳定的视觉锚点，比裸 glyph 更像「一段记录」 */
 .rc-activity-icon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm, 6px);
+  background: var(--bg-sunken, #f2f2f2);
   color: var(--text-faint, #9b9489);
 }
 
@@ -1336,9 +1952,17 @@
   color: var(--primary, #3b82f6);
 }
 
+/* 失败计数做成小药丸：数字一眼可见，不靠红字硬喊 */
 .rc-activity-fail {
+  display: inline-flex;
+  align-items: center;
   flex: none;
+  height: 17px;
+  padding: 0 7px;
+  border-radius: var(--r-pill, 999px);
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
   font-size: var(--font-2xs, 11px);
+  line-height: 1;
   color: var(--danger, #ef4444);
 }
 
@@ -1353,22 +1977,60 @@
   transform: rotate(90deg);
 }
 
-/* 展开后的步骤列表：左侧一条细线表示「这些都从属于上面那一行」。
-   限宽是为了不让状态文字飘到几百像素之外——摘要行可以通栏，明细不必要。 */
-.rc-activity-body {
-  margin: 1px 0 2px 8px;
-  padding-left: 6px;
-  max-width: 460px;
-  border-left: 1px solid var(--divider, #efede8);
+/* 进行中：图标方块转主色、摘要提亮，扫一眼就知道这段还在跑 */
+.rc-activity.is-running .rc-activity-icon {
+  background: color-mix(in srgb, var(--primary, #3b82f6) 12%, var(--bg-sunken, #f2f2f2));
+  color: var(--primary, #3b82f6);
 }
 
-/* 单步不套摘要行，直接一行读过去；也不画从属线 */
+.rc-activity.is-running .rc-activity-summary {
+  color: var(--text, #23231f);
+}
+
+/* 展开后的执行轨迹：一条竖线 + 每步一个圆点，读起来像时间轴。
+   限宽是为了不让状态文字飘到几百像素之外——摘要行可以通栏，明细不必要。 */
+.rc-activity-body {
+  margin: 2px 0 4px 12px;
+  padding-left: 13px;
+  max-width: 560px;
+  border-left: 1px solid color-mix(in srgb, var(--text-faint, #9b9489) 30%, transparent);
+}
+
+/* 单步不套摘要行，直接一行读过去；也不画轨迹点（没有竖线可落） */
 .rc-activity.is-single .rc-step-head {
-  padding-left: 4px;
+  padding-left: 3px;
+}
+
+.rc-activity.is-single .rc-step-dot {
+  display: none;
 }
 
 .rc-step {
+  position: relative;
   min-width: 0;
+}
+
+/* 轨迹点正压在 .rc-activity-body 的左边线上（13px 内边距 + 5px 直径） */
+.rc-step-dot {
+  position: absolute;
+  left: -17px;
+  top: 9px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-faint, #9b9489) 60%, transparent);
+
+  &.state-running {
+    background: var(--primary, #3b82f6);
+  }
+
+  &.state-error {
+    background: var(--danger, #ef4444);
+  }
+
+  &.is-stale {
+    background: var(--text-faint, #9b9489);
+  }
 }
 
 .rc-step-head {
@@ -1376,12 +2038,12 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 4px 8px 4px 2px;
+  padding: 3px 8px 3px 0;
   border: none;
   border-radius: var(--r-sm, 6px);
   background: transparent;
   text-align: left;
-  font-size: var(--font-sm, 12px);
+  font-size: var(--font-xs, 12px);
   color: var(--text-muted, #8d8a86);
   cursor: pointer;
   transition: background 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -1403,7 +2065,7 @@
 
 .rc-step-name {
   flex: none;
-  max-width: 60%;
+  max-width: 46%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1411,15 +2073,29 @@
 
   &.is-mono {
     font-family: var(--font-mono, monospace);
+    font-size: var(--font-2xs, 11px);
+    letter-spacing: -0.01em;
   }
+}
+
+/* 折叠态的思考摘要：比只写「思考 · 128 字」有信息量，也不多占一行 */
+.rc-step-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint, #9b9489);
 }
 
 .rc-step-meta {
   flex: none;
+  margin-left: auto;
+  font-size: var(--font-2xs, 11px);
   color: var(--text-faint, #9b9489);
 
-  &.is-quiet {
-    margin-left: auto;
+  &.is-live {
+    color: var(--primary, #3b82f6);
   }
 }
 
@@ -1450,28 +2126,43 @@
   display: inline-flex;
   flex: none;
   color: var(--text-faint, #9b9489);
-  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* 十几行都挂一个箭头太吵：悬停 / 聚焦 / 已展开时才露出来 */
+  opacity: 0;
+  transition:
+    transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
   &.is-open {
+    opacity: 1;
     transform: rotate(90deg);
   }
 }
 
+.rc-step:hover .rc-step-chevron,
+.rc-step-head:focus-visible .rc-step-chevron {
+  opacity: 1;
+}
+
+/* 思考全文：淡淡的一块底，和正文区分但不喧哗 */
 .rc-step-body {
-  padding: 2px 8px 6px 22px;
-  max-height: 260px;
+  margin: 2px 0 4px;
+  padding: 8px 10px;
+  border-radius: var(--r-md, 8px);
+  background: color-mix(in srgb, var(--bg-sunken, #f2f2f2) 55%, transparent);
+  max-height: 280px;
   overflow-y: auto;
   font-size: var(--font-sm, 12px);
+  line-height: 1.65;
   color: var(--text-muted, #8d8a86);
 }
 
+/* 工具输出：等宽 + 独立滚动，长日志不把消息流顶飞 */
 .rc-step-result {
-  margin: 1px 0 5px 22px;
+  margin: 2px 0 5px;
   padding: 8px 10px;
-  border-radius: var(--r-sm, 6px);
+  border-radius: var(--r-md, 8px);
   background: var(--bg-sunken, #f2f2f2);
-  max-width: 620px;
-  max-height: 220px;
+  max-height: 240px;
   overflow: auto;
   font-family: var(--font-mono, monospace);
   font-size: 11.5px;
@@ -1501,7 +2192,7 @@
   align-items: center;
   gap: 6px;
   flex: none;
-  margin: 0 20px 8px;
+  margin: 0 max(20px, calc((100% - 820px) / 2)) 8px;
   padding: 6px 10px;
   border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 22%, transparent);
   border-radius: var(--r-sm, 6px);
@@ -1704,6 +2395,51 @@
   background: var(--panel, #fff);
 }
 
+/* 正文流里的 HTML 块卡片（讲解文字与文档块混排）：与前后段落拉开距离 */
+.rc-assistant-body .rc-html {
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.rc-html-open-actions {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.rc-html-open-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  border: none;
+  border-radius: var(--r-xs, 4px);
+  background: transparent;
+  color: var(--text-muted, #8d8a86);
+  cursor: pointer;
+  transition:
+    background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &:hover {
+    background: color-mix(in srgb, var(--text, #23231f) 8%, transparent);
+    color: var(--text, #23231f);
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--primary, #6366f1);
+    outline-offset: 1px;
+  }
+}
+
+.rc-html-open-error {
+  padding: 4px 10px;
+  font-size: var(--font-xs, 12px);
+  color: var(--danger, #e5484d);
+  background: color-mix(in srgb, var(--danger, #e5484d) 8%, transparent);
+}
+
 .rc-html-source {
   margin: 0;
   padding: 10px 12px;
@@ -1882,23 +2618,29 @@
 
 /* ─── 输入区 ───────────────────────────────────────────────────────────── */
 
+/* 一张卡分两层：上半是「写什么」，下半是「这一轮怎么跑」。
+   圆角与内边距对齐桌面端主输入区，低频配置收进淡色页脚，主行就不会被 chip 挤成一排灰字。 */
 .rc-composer {
   flex: none;
-  margin: 0 20px 14px;
-  border: 1px solid var(--border-strong, #d7d2c9);
-  border-radius: var(--r-lg, 12px);
+  /* 与消息列同宽同轴：左右边和正文对齐，输入框不会比内容窄一截 */
+  margin: 0 max(20px, calc((100% - 820px) / 2)) 14px;
+  border: 1px solid color-mix(in srgb, var(--border-strong, #d7d2c9) 68%, transparent);
+  border-radius: var(--r-xl, 14px);
   background: var(--panel, #fff);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-strong, #11100e) 5%, transparent);
   transition:
     border-color 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
     box-shadow 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
   &:focus-within {
-    border-color: color-mix(in srgb, var(--primary, #3b82f6) 62%, var(--border-strong, #d7d2c9));
-    box-shadow: 0 0 0 3px var(--primary-soft, rgba(59, 130, 246, 0.12));
+    border-color: color-mix(in srgb, var(--primary, #3b82f6) 48%, var(--border-strong, #d7d2c9));
+    box-shadow:
+      0 0 0 3px var(--primary-soft, rgba(59, 130, 246, 0.12)),
+      0 1px 2px color-mix(in srgb, var(--text-strong, #11100e) 5%, transparent);
   }
 
   > .rc-attach-strip {
-    padding: 8px 10px 0;
+    padding: 12px 12px 0;
   }
 
   textarea {
@@ -1909,10 +2651,10 @@
     border: none;
     outline: none;
     background: transparent;
-    padding: 10px 12px 2px;
+    padding: 13px 14px 2px;
     font-family: inherit;
     font-size: var(--font-base, 13px);
-    line-height: 1.6;
+    line-height: 1.62;
     color: var(--text, #23231f);
 
     &::placeholder {
@@ -1921,39 +2663,37 @@
   }
 }
 
-.rc-input-row {
+.rc-composer-body {
   position: relative;
 }
 
-.rc-composer-toolbar {
+/* 主行：加附件贴左，模型 / 语音 / 发送贴右——所有「发出去」相关动作都在这一行 */
+.rc-composer-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 2px 8px 8px 8px;
+  padding: 2px 10px 8px;
 }
 
-.rc-toolbar-left,
-.rc-toolbar-right {
+.rc-actions-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  flex: none;
   min-width: 0;
 }
 
-.rc-toolbar-right {
-  flex: none;
-}
-
-.rc-tool-icon {
+.rc-composer-add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  flex: none;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
-  border-radius: var(--r-sm, 6px);
+  border-radius: var(--r-md, 8px);
   background: transparent;
   color: var(--text-muted, #8d8a86);
   cursor: pointer;
@@ -1972,6 +2712,61 @@
   }
 }
 
+/* 页脚条：助手 / 权限 / 推理 + 目标电脑。底色比卡片略沉，读起来是「同一张卡的第二层」 */
+.rc-composer-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--divider, #efede8);
+  border-bottom-left-radius: var(--r-xl, 14px);
+  border-bottom-right-radius: var(--r-xl, 14px);
+  background: color-mix(in srgb, var(--bg-sunken, #f2f2f2) 78%, var(--panel, #fff));
+}
+
+.rc-footer-chips {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.rc-footer-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  max-width: 44%;
+  font-size: var(--font-2xs, 11px);
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-footer-target-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 页脚上的 chip 更矮一档；悬停底色也不能再用 --bg-sunken（那正好是页脚底色） */
+.rc-composer-footer .rc-chip {
+  height: 24px;
+  padding: 0 7px;
+
+  &:hover:not(:disabled),
+  &[aria-expanded='true'] {
+    background: color-mix(in srgb, var(--text, #23231f) 7%, transparent);
+    color: var(--text, #23231f);
+  }
+
+  &.is-danger:hover:not(:disabled),
+  &.is-danger[aria-expanded='true'] {
+    background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+    color: var(--danger, #ef4444);
+  }
+}
+
 /* ─── 配置 chip（助手 / 权限 / 模型） ─────────────────────────────────── */
 
 .rc-chip-wrap {
@@ -1986,9 +2781,9 @@
   gap: 5px;
   max-width: 190px;
   height: 26px;
-  padding: 0 7px;
+  padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: var(--r-sm, 6px);
+  border-radius: var(--r-md, 8px);
   background: transparent;
   font-family: inherit;
   font-size: var(--font-xs, 12px);
@@ -1998,6 +2793,12 @@
     background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
     border-color 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
     color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* 图标是「这是什么开关」的快速入口，比文字浅半档，别和标签抢 */
+  > svg {
+    flex: none;
+    opacity: 0.9;
+  }
 
   &:hover:not(:disabled),
   &[aria-expanded='true'] {
@@ -2020,6 +2821,11 @@
       color: var(--danger, #ef4444);
     }
   }
+}
+
+/* 模型 chip 在发送行里，给宽一点的名字留位置 */
+.rc-chip-model {
+  max-width: 220px;
 }
 
 .rc-chip-text {
@@ -2192,37 +2998,46 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  flex: none;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 50%;
   background: var(--text-strong, #11100e);
   color: var(--bg-soft, #fff);
   cursor: pointer;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--text-strong, #11100e) 16%, transparent);
   transition:
     background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    opacity 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
   &:hover:not(:disabled) {
-    background: var(--text, #23231f);
+    background: var(--primary, #3b82f6);
+    transform: translateY(-1px);
   }
 
   /* 禁用（空草稿）时保留深色锚点的存在感，只压暗不变成灰块。
      图标用 --text-muted 而不是 --bg-soft：后者在深色主题下同样偏暗，会把箭头吃掉。 */
   &:disabled {
-    background: color-mix(in srgb, var(--text-strong, #11100e) 16%, var(--bg-sunken, #f2f2f2));
+    background: color-mix(in srgb, var(--text-strong, #11100e) 14%, var(--bg-sunken, #f2f2f2));
     color: var(--text-muted, #8d8a86);
     cursor: default;
+    box-shadow: none;
   }
 
-  /* 运行中：同一位置变停止，红点提示可中断 */
+  /* 运行中：同一位置变停止。与桌面端主输入区一致——实心危险色，
+     一眼能看出「这里可以中断」，浅色描边的红圈在深色页脚上太暧昧 */
   &.is-running {
-    background: color-mix(in srgb, var(--danger, #ef4444) 14%, var(--bg-sunken, #f2f2f2));
-    color: var(--danger, #ef4444);
+    border-color: transparent;
+    background: var(--danger, #ef4444);
+    color: var(--bg-soft, #fff);
+    box-shadow: none;
 
     &:hover {
-      background: color-mix(in srgb, var(--danger, #ef4444) 22%, var(--bg-sunken, #f2f2f2));
+      background: color-mix(in srgb, var(--danger, #ef4444) 86%, var(--text-strong, #11100e));
+      transform: none;
     }
   }
 }

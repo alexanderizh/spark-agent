@@ -140,6 +140,8 @@ const RemoteCredentialsSchema = z.object({
 
 const RemoteCapabilitiesSchema = z.object({
   sendMessages: z.boolean(),
+  // optional：存量连接 JSON 无此字段，读取侧由 DEFAULT_CAPABILITIES 兜底。
+  proactivePush: z.boolean().optional(),
   switchModel: z.boolean(),
   switchSession: z.boolean(),
   switchAgent: z.boolean(),

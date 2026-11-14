@@ -32,9 +32,20 @@ export function fetchRemoteAttachment(
   return task
 }
 
-/** userData 在 safe-file 白名单内，取回后的本地路径可直接给渲染层用 */
+/**
+ * 取回后的本机缓存路径 → `<img>` 可加载的 URL。
+ *
+ * safe-file 只认 `safe-file://x/<base64url(绝对路径)>`（见 main/services/SafeFileProtocol
+ * 的 decodeSafeFileUrl）；早先这里直接拼 `safe-file://${localPath}`，解析端把 `/Users/...`
+ * 当成 base64 段、还原失败 → 400，于是远程会话里的图片一律停在占位（目标端看得到、本机看不到）。
+ * 编码方式与 SafeFileProtocol.toSafeFileUrl、MarkdownImage 保持一致。
+ */
 export function remoteFileUrl(localPath: string): string {
-  return `safe-file://${localPath}`
+  const encoded = btoa(unescape(encodeURIComponent(localPath)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `safe-file://x/${encoded}`
 }
 
 export interface RemoteFileState {

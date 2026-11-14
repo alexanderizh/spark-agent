@@ -188,6 +188,25 @@ describe('MarkdownText', () => {
     expect(container.querySelector('pre')?.textContent).toBe('const value = 1')
   })
 
+  it.each(['markmap', 'MindMap'])('renders %s fences as markmap diagram blocks', (lang) => {
+    const source = '# 根节点\n## 分支 A\n## 分支 B'
+    markdownMocks.parseMarkdown.mockReturnValueOnce([{ kind: 'code', lang, code: source }])
+
+    act(() => root.render(<MarkdownText content={`\`\`\`${lang}\n${source}\n\`\`\``} />))
+
+    expect(diagramMocks.RenderDiagramBlock.mock.calls[0]?.[0]).toMatchObject(
+      expect.objectContaining({
+        block: expect.objectContaining({
+          diagramType: 'markmap',
+          source,
+          title: '思维导图',
+          status: 'rendered',
+        }),
+      }),
+    )
+    expect(container.querySelector('[data-diagram-type="markmap"]')?.textContent).toBe(source)
+  })
+
   it.each(['svg', 'SVG'])('renders %s fences as directly rendered svg blocks', (lang) => {
     markdownMocks.parseMarkdown.mockReturnValueOnce([
       { kind: 'code', lang, code: '<g id="bicycle">\n  <circle r="5" />\n</g>' },

@@ -62,4 +62,45 @@ describe('RemoteHtmlPreview', () => {
       expect.objectContaining({ token: expect.stringMatching(/^hr-/) }),
     )
   })
+
+  it('默认不显示打开方式动作；openActions 时经对应通道交给主进程打开', async () => {
+    const html = '<!doctype html><main>remote</main>'
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<RemoteHtmlPreview html={html} title="HTML 块" openActions />)
+    })
+    await act(async () => {})
+
+    const openWindow = container.querySelector('button[aria-label="在独立窗口打开"]')
+    const openExternal = container.querySelector('button[aria-label="用系统浏览器打开"]')
+    expect(openWindow).not.toBeNull()
+    expect(openExternal).not.toBeNull()
+
+    await act(async () => {
+      ;(openWindow as HTMLButtonElement).click()
+    })
+    expect(invoke).toHaveBeenCalledWith(
+      'html:open-window',
+      expect.objectContaining({ html, title: 'HTML 块' }),
+    )
+
+    await act(async () => {
+      ;(openExternal as HTMLButtonElement).click()
+    })
+    expect(invoke).toHaveBeenCalledWith(
+      'html:open-external',
+      expect.objectContaining({ html, title: 'HTML 块' }),
+    )
+  })
+
+  it('不传 openActions 时不渲染打开方式按钮（产物卡就地预览保持原样）', async () => {
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<RemoteHtmlPreview html="<main>remote</main>" />)
+    })
+    await act(async () => {})
+
+    expect(container.querySelector('button[aria-label="在独立窗口打开"]')).toBeNull()
+    expect(container.querySelector('button[aria-label="用系统浏览器打开"]')).toBeNull()
+  })
 })

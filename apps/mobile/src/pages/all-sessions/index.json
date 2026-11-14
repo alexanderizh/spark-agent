@@ -1,0 +1,11 @@
+{
+  "navigationStyle": "custom",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
+  "onReachBottomDistance": 120,
+  "usingComponents": {
+    "safe-nav-bar": "../../components/safe-nav-bar/index",
+    "empty-state": "../../components/empty-state/index",
+    "filter-sheet": "../../components/filter-sheet/index"
+  }
+}

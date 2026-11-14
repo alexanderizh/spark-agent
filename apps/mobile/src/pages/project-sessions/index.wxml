@@ -9,11 +9,14 @@
     <view class="ps-title-action" bindtap="onOpenBridgeDevices">设备管理</view>
   </view>
 
-  <!-- 电脑是上层上下文；此处只显示归属，返回顶层后才能切换 -->
+  <!-- 电脑是上层上下文；此处只显示归属，返回项目页后可切换 -->
   <view class="ps-device-context">
     <view class="ps-context-dot {{deviceOffline ? '' : 'ps-context-dot--on'}}"></view>
     <text class="ps-context-label">电脑</text>
-    <text class="ps-context-name ellipsis">{{deviceName}}</text>
+    <view class="ps-context-main">
+      <text class="ps-context-name ellipsis">{{deviceName}}</text>
+      <text wx:if="{{deviceRealName}}" class="ps-context-real ellipsis">{{deviceRealName}}</text>
+    </view>
     <text class="ps-context-action" bindtap="onBackToProjects">返回项目 ›</text>
   </view>
 
@@ -31,6 +34,10 @@
         class="ps-segment {{labelFilter !== '' ? 'ps-segment--accent' : ''}}"
         bindtap="onOpenLabelFilterPanel"
       >{{labelFilterText}}</view>
+      <view
+        class="ps-segment {{activityFilter !== 'all' ? 'ps-segment--accent' : ''}}"
+        bindtap="onOpenActivityFilterPanel"
+      >{{activityText}}</view>
     </view>
     <view class="ps-search row">
       <view class="icon icon-sm icon-search"></view>
@@ -67,8 +74,8 @@
     <view wx:if="{{groups.length === 0 && contentMatches.length === 0}}" class="ps-empty">
       <empty-state
         icon="chat"
-        title="{{searchText ? '没有匹配的会话' : '项目下还没有会话'}}"
-        desc="{{searchText ? '换个关键词试试' : '在下方输入框发起第一条对话'}}"
+        title="{{searchText || filter !== 'all' || activityFilter !== 'all' ? '没有匹配的会话' : '项目下还没有会话'}}"
+        desc="{{searchText ? '换个关键词试试，或放宽筛选条件' : (filter !== 'all' || activityFilter !== 'all' ? '放宽状态或时间范围后再看' : '在下方输入框发起第一条对话')}}"
       />
     </view>
 

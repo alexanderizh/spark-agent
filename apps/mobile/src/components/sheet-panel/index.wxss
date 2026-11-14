@@ -191,5 +191,6 @@
 }
 
 .sheet-slider-tick {
-  color: #b3b0ab;
+  /* 档位名是滑块的唯一标签，原来的 #b3b0ab 在 #f2f0ed 上只有 1.9:1，提亮到 4.66:1 */
+  color: #6f6b64;
 }

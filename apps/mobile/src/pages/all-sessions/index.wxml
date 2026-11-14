@@ -1,0 +1,120 @@
+<!-- 全部会话：跨项目列表 + 组合筛选（时间/项目/状态/标记/置顶） -->
+
+<view class="as-page theme-root {{themeClass}}">
+  <safe-nav-bar title="" />
+
+  <view class="as-title-row">
+    <view class="grow">
+      <text class="page-title">全部会话</text>
+      <text class="as-subtitle">跨项目看这台电脑的会话</text>
+    </view>
+    <view class="as-title-action" bindtap="onOpenBridgeDevices">设备管理</view>
+  </view>
+
+  <view class="as-device-context row">
+    <view class="as-dot {{deviceOffline ? '' : 'as-dot--on'}}"></view>
+    <view class="as-context-main grow">
+      <text class="as-context-name ellipsis">{{deviceName}}</text>
+      <text wx:if="{{deviceRealName}}" class="as-context-real ellipsis">{{deviceRealName}}</text>
+    </view>
+    <text class="as-context-action" bindtap="onBackToProjects">返回项目 ›</text>
+  </view>
+
+  <view class="as-search row">
+    <view class="icon icon-sm icon-search"></view>
+    <input
+      class="as-search-input"
+      value="{{searchText}}"
+      placeholder="搜索会话标题"
+      placeholder-class="themed-placeholder"
+      confirm-type="search"
+      bindinput="onSearchInput"
+    />
+  </view>
+
+  <view class="as-toolbar row between">
+    <view
+      class="as-filter-chip {{filterActiveCount > 0 ? 'as-filter-chip--on' : ''}}"
+      hover-class="as-filter-chip--hover"
+      bindtap="onOpenFilter"
+    >
+      <text class="as-filter-text ellipsis">{{filterSummary}}</text>
+      <text wx:if="{{filterActiveCount > 1}}" class="as-filter-count">{{filterActiveCount}}</text>
+      <view class="icon icon-chevron-down as-filter-caret"></view>
+    </view>
+    <text class="t-caption">{{visibleCount}} 条{{total > visibleCount ? ' / 共 ' + total : ''}}</text>
+  </view>
+
+  <view wx:if="{{total > fetchLimit}}" class="as-hint t-caption">
+    只加载了最近 {{fetchLimit}} 条，用筛选缩小范围可看更早的会话
+  </view>
+
+  <view wx:if="{{loading}}" class="loading-tip">正在读取全部会话…</view>
+
+  <view wx:elif="{{deviceUnavailable}}" class="as-state">
+    <empty-state icon="monitor" title="这台电脑已被吊销" desc="返回电脑列表，选择其他已接入的电脑" />
+    <view class="as-action" bindtap="onBackToProjects">返回电脑列表</view>
+  </view>
+
+  <view wx:elif="{{deviceOffline}}" class="as-state">
+    <empty-state icon="monitor" title="这台电脑当前离线" desc="电脑重新连上中继后，会自动恢复这里的会话列表。" />
+  </view>
+
+  <view wx:elif="{{errorText}}" class="as-state">
+    <empty-state icon="monitor" title="加载失败" desc="{{errorText}}" />
+    <view class="as-action" bindtap="onRetry">重试</view>
+  </view>
+
+  <block wx:else>
+    <view wx:if="{{groups.length === 0}}" class="as-state">
+      <empty-state
+        icon="chat"
+        title="{{filterActiveCount > 0 || searchText ? '没有匹配的会话' : '这台电脑还没有会话'}}"
+        desc="{{filterActiveCount > 0 ? '放宽筛选条件后再看' : (searchText ? '换个关键词试试' : '回到项目页新建第一条对话')}}"
+      />
+      <view wx:if="{{filterActiveCount > 0}}" class="as-action" bindtap="onFilterReset">清除筛选</view>
+    </view>
+
+    <view wx:else class="as-list">
+      <view wx:for="{{groups}}" wx:for-item="group" wx:key="key" class="as-group">
+        <text class="group-title">{{group.label}}</text>
+        <view
+          wx:for="{{group.rows}}"
+          wx:key="id"
+          class="as-row row"
+          hover-class="as-row--hover"
+          data-id="{{item.id}}"
+          data-title="{{item.title}}"
+          bindtap="onOpenSession"
+        >
+          <view class="dot {{item.dotClass}}"></view>
+          <view class="grow col as-row-copy">
+            <text class="as-row-title ellipsis">{{item.title}}</text>
+            <view class="row as-row-meta">
+              <text class="as-project-chip {{item.projectMissing ? 'as-project-chip--muted' : ''}} ellipsis">{{item.projectName}}</text>
+              <text class="t-caption">{{item.statusLabel}}</text>
+              <text wx:if="{{item.labelText}}" class="as-label-tag {{item.labelClass}}">{{item.labelText}}</text>
+            </view>
+          </view>
+          <text class="as-row-time">{{item.timeLabel}}</text>
+        </view>
+      </view>
+
+      <view wx:if="{{hasMore}}" class="as-more" bindtap="onLoadMore">
+        <text>加载更多（还有 {{visibleCount - renderedCount}} 条）</text>
+      </view>
+      <view wx:else class="as-end t-caption">已经到底了</view>
+    </view>
+  </block>
+
+  <filter-sheet
+    show="{{filterShow}}"
+    title="筛选会话"
+    sections="{{filterSections}}"
+    activeCount="{{filterActiveCount}}"
+    resultText="{{visibleCount}} 条会话"
+    bind:close="onCloseFilter"
+    bind:toggle="onFilterToggle"
+    bind:reset="onFilterReset"
+  />
+</view>

@@ -8,6 +8,7 @@
 import { createLogger } from '@spark/shared'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Icons } from '../../Icons'
+import { useResolvedTheme } from '../../hooks/useResolvedTheme'
 import {
   buildHtmlRenderToken,
   htmlRenderDocUrl,
@@ -27,16 +28,41 @@ export function RemoteHtmlPreview({
   html,
   title = 'HTML 预览',
   height = 300,
+  openActions = false,
 }: {
   html: string
   title?: string
   height?: number
+  /** 显示「独立窗口 / 外部浏览器」动作（正文里的 HTML 块用；产物卡里的就地预览不显示） */
+  openActions?: boolean
 }) {
   const [mode, setMode] = useState<'preview' | 'source'>('preview')
   const [frameState, setFrameState] = useState<RemoteHtmlFrameState | null>(null)
+  const [openError, setOpenError] = useState<string | null>(null)
   const frameVersionRef = useRef(0)
   const previewId = useId()
+  const resolvedTheme = useResolvedTheme()
   const token = buildHtmlRenderToken(`remote-preview:${previewId}`)
+
+  // 与本地会话 RenderHtmlBlock 相同的通道：主进程把原文装进独立窗口或系统浏览器
+  const openExternally = async (channel: 'html:open-window' | 'html:open-external') => {
+    setOpenError(null)
+    try {
+      const response = await window.spark.invoke(channel, { html, title, theme: resolvedTheme })
+      if (
+        response != null &&
+        typeof response === 'object' &&
+        'success' in response &&
+        response.success === false
+      ) {
+        setOpenError('HTML 打开失败')
+      }
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause)
+      setOpenError(message)
+      logger.warn('Failed to open remote HTML externally', { channel, message })
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -83,7 +109,30 @@ export function RemoteHtmlPreview({
             源码
           </button>
         </div>
+        {openActions && (
+          <div className="rc-html-open-actions">
+            <button
+              type="button"
+              className="rc-html-open-btn"
+              title="在独立窗口打开"
+              aria-label="在独立窗口打开"
+              onClick={() => void openExternally('html:open-window')}
+            >
+              <Icons.ExternalLink size={12} />
+            </button>
+            <button
+              type="button"
+              className="rc-html-open-btn"
+              title="用系统浏览器打开"
+              aria-label="用系统浏览器打开"
+              onClick={() => void openExternally('html:open-external')}
+            >
+              <Icons.Globe size={12} />
+            </button>
+          </div>
+        )}
       </div>
+      {openError != null && <div className="rc-html-open-error">{openError}</div>}
       {mode === 'preview' ? (
         activeFrame?.error ? (
           <div className="rc-html-source" role="alert">

@@ -219,6 +219,15 @@ export function RemoteSessionPane({
   })
   const resultKey = `${keyword}\u0000${JSON.stringify(filter)}`
   const visibleCount = paging.key === resultKey ? paging.visible : RESULT_PAGE_SIZE
+  /**
+   * 结果视图里刚新建的会话：它一条消息都没有、也还没跑起来，几乎必然不满足当时的
+   * 筛选/搜索条件，于是「建完列表一条没变」看起来就像没建成。记一条提示补上这个反馈；
+   * 条件一变（resultKey 不匹配）提示自动失效，不需要定时器。
+   */
+  const [justCreated, setJustCreated] = useState<{
+    projectName: string
+    resultKey: string
+  } | null>(null)
 
   /** 筛选变化：会话级维度由数据层自动补拉全量（needAllSessions），这里只负责落状态 */
   const handleFilterChange = useCallback(
@@ -281,27 +290,63 @@ export function RemoteSessionPane({
     [],
   )
 
-  /** 新建：落在选中会话所属项目；没有选中就落当前展开的第一个项目；都没有才落未归属 */
+  /** 新建：落在选中会话所属项目；没有选中就落当前筛选/展开的第一个项目；都没有才落未归属 */
   const handleCreate = useCallback(
     async (projectId: string) => {
       tree.expandProject(projectId)
       const created = await actions.createSession(projectId)
-      if (created != null) onSelectSession(created)
+      if (created == null) return
+      onSelectSession(created)
+      // 结果视图会把「刚建出来、一条消息都没有」的会话过滤掉（筛「运行中」必然不命中），
+      // 不解释一句的话，用户看到的就是「点了加号，列表一点没变」。
+      const row =
+        store.allSessions?.rows.find((item) => item.id === created) ??
+        store.sessions[projectId]?.rows.find((item) => item.id === created) ??
+        null
+      if (
+        row != null &&
+        (!matchRemoteSession(row, filter) || filterSessions([row], keyword).length === 0)
+      ) {
+        setJustCreated({
+          projectName:
+            projectId === UNASSIGNED_PROJECT_ID
+              ? '未归属会话'
+              : store.projects.find((project) => project.id === projectId)?.name || '未命名项目',
+          resultKey,
+        })
+      }
     },
-    [actions, onSelectSession, tree],
+    [actions, filter, keyword, onSelectSession, resultKey, store, tree],
   )
 
   const createIntoSelected = useCallback(() => {
-    const owner =
+    // 选中会话属于哪个项目：项目桶优先；结果视图里会话可能只存在于全量窗口（项目没展开过）
+    const ownerBucket =
       selectedSessionId == null
         ? undefined
         : Object.entries(store.sessions).find(([, bucket]) =>
             bucket.rows.some((row) => row.id === selectedSessionId),
           )
+    const ownerRow =
+      ownerBucket == null && selectedSessionId != null
+        ? store.allSessions?.rows.find((row) => row.id === selectedSessionId)
+        : undefined
+    const ownerProjectId =
+      ownerBucket?.[0] ??
+      (ownerRow != null ? (ownerRow.projectId ?? UNASSIGNED_PROJECT_ID) : undefined)
     const expandedProject = Object.keys(store.expanded).find((id) => store.expanded[id] === true)
-    const target = owner?.[0] ?? expandedProject ?? UNASSIGNED_PROJECT_ID
+    // 只筛了一个项目时，那个项目就是用户眼下的落点，比「碰巧展开的第一个」更可信
+    const onlyFilteredProject = filter.projectIds.length === 1 ? filter.projectIds[0] : undefined
+    const target = ownerProjectId ?? onlyFilteredProject ?? expandedProject ?? UNASSIGNED_PROJECT_ID
     void handleCreate(target)
-  }, [handleCreate, selectedSessionId, store.expanded, store.sessions])
+  }, [
+    filter.projectIds,
+    handleCreate,
+    selectedSessionId,
+    store.allSessions,
+    store.expanded,
+    store.sessions,
+  ])
 
   const projectPinned = useCallback(
     (projectId: string) =>
@@ -541,6 +586,39 @@ export function RemoteSessionPane({
                 </button>
               </div>
             )}
+            {justCreated != null && justCreated.resultKey === resultKey && (
+              <div className="rc-create-note">
+                <Icons.MessageSquarePlus size={12} />
+                {/* 两行：一行说清建到哪，一行说清为什么看不见 + 给动作。
+                    侧栏只有 264px 内容宽，塞成一句话必然折行挤成一团。 */}
+                <div className="rc-create-note-body">
+                  <span
+                    className="rc-create-note-title"
+                    title={`新会话已建到「${justCreated.projectName}」`}
+                  >
+                    {`新会话已建到「${justCreated.projectName}」`}
+                  </span>
+                  <span className="rc-create-note-sub">
+                    {searching ? '当前搜索看不到它' : '当前筛选看不到它'}
+                    <button
+                      type="button"
+                      className="rc-link-btn"
+                      onClick={() => {
+                        // 搜索词也会挡住这条新会话，一起清掉；项目维度保留——用户筛了项目
+                        // 就还是想待在那个项目里
+                        if (searching) setKeyword('')
+                        handleFilterChange({
+                          ...DEFAULT_REMOTE_FILTER,
+                          projectIds: filter.projectIds,
+                        })
+                      }}
+                    >
+                      {searching ? '清除搜索' : '清除筛选'}
+                    </button>
+                  </span>
+                </div>
+              </div>
+            )}
             {store.allSessions == null && (
               <div className="rc-project-hint">
                 {searching ? '正在搜索全部会话…' : '正在读取会话…'}
@@ -563,12 +641,36 @@ export function RemoteSessionPane({
             )}
             {pageGroups.map((group) => (
               <div key={group.projectId} className="rc-project is-open">
-                <div className="rc-project-head is-static">
-                  <span className="rc-project-icon">
-                    <Icons.Folder size={13} />
-                  </span>
-                  <span className="rc-project-name">{group.name}</span>
-                  <span className="rc-project-count">{group.sessions.length}</span>
+                {/*
+                 * 分组头在结果视图里不可折叠（没有展开态可言），但仍给一个「＋」：
+                 * 筛过之后用户照样要能指定「在这个项目下新建」，否则只剩头部那个
+                 * 只能猜落点的按钮。
+                 */}
+                <div className="rc-project-line">
+                  <div className="rc-project-head is-static">
+                    <span className="rc-project-icon">
+                      <Icons.Folder size={13} />
+                    </span>
+                    <span className="rc-project-name">{group.name}</span>
+                    <span className="rc-project-count">{group.sessions.length}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="rc-project-add"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void handleCreate(group.projectId)
+                    }}
+                    disabled={actions.busyId != null}
+                    title={`在「${group.name}」新建会话`}
+                    aria-label={`在 ${group.name} 新建会话`}
+                  >
+                    {actions.busyId === group.projectId ? (
+                      <Icons.Spinner size={11} className="spin" />
+                    ) : (
+                      <Icons.Plus size={12} />
+                    )}
+                  </button>
                 </div>
                 <div className="rc-project-body">
                   {group.sessions.map((session) => (

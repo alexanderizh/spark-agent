@@ -17,6 +17,8 @@ export const StorageKeys = {
   sessionListPinnedCollapsed: `${PREFIX}session-list-pinned-collapsed`,
   /** 外观偏好：system / light / dark */
   themePreference: `${PREFIX}theme-preference`,
+  /** 设备备注名（本机视图；值为 deviceId → 备注名 的映射，见 utils/device-aliases） */
+  deviceAliases: `${PREFIX}device-aliases`,
 } as const
 
 export function getItem<T>(key: string): T | null {

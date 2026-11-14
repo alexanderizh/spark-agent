@@ -1,0 +1,188 @@
+/* 多维筛选面板：与 sheet-panel 同一套视觉（抓手 + 居中标题 + 完成），内容改为分组 chip。 */
+
+.fs-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(15, 14, 12, 0.42);
+  display: flex;
+  align-items: flex-end;
+}
+
+.fs-sheet {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  max-height: 78vh;
+  background: #f2f0ed;
+  border-radius: 36rpx 36rpx 0 0;
+  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
+  display: flex;
+  flex-direction: column;
+  animation: fs-rise 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes fs-rise {
+  from {
+    transform: translateY(40rpx);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.fs-grabber {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 4rpx;
+  background: #c9c6c0;
+  margin: 0 auto 12rpx;
+  flex: none;
+}
+
+/* 头部：标题居中，「清除」左、「完成」右（绝对定位避免标题被带偏） */
+.fs-head {
+  position: relative;
+  height: 76rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.fs-title {
+  max-width: 44%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.fs-reset {
+  position: absolute;
+  left: 4rpx;
+  top: 0;
+  height: 76rpx;
+  line-height: 76rpx;
+  padding: 0 8rpx;
+  font-size: 28rpx;
+  color: #6b6b6b;
+}
+.fs-reset--hover {
+  opacity: 0.6;
+}
+
+.fs-done {
+  position: absolute;
+  right: 4rpx;
+  top: 0;
+  height: 76rpx;
+  line-height: 76rpx;
+  padding: 0 8rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+.fs-done--hover {
+  opacity: 0.6;
+}
+
+/* 必须给确定高度：scroll-view 靠 flex:1 在真机不会收缩（见 config-sheet 的教训） */
+.fs-body {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  max-height: 58vh;
+}
+
+.fs-card {
+  background: #fff;
+  border-radius: 28rpx;
+  padding: 22rpx 24rpx 24rpx;
+  margin-bottom: 16rpx;
+}
+.fs-card:last-child {
+  margin-bottom: 0;
+}
+
+.fs-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.fs-card-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.fs-card-hint {
+  font-size: 21rpx;
+  color: #b3b0ab;
+}
+
+.fs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+}
+
+.fs-chip {
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 12rpx 22rpx;
+  border: 1rpx solid #e9e7e4;
+  border-radius: 999rpx;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+.fs-chip--hover {
+  background: #f7f6f4;
+}
+
+.fs-chip--on {
+  border-color: #3b82f6;
+  background: #eef4fe;
+}
+
+.fs-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 26rpx;
+  line-height: 34rpx;
+  color: #4b4944;
+}
+
+.fs-chip--on .fs-chip-label {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.fs-chip-sub {
+  max-width: 240rpx;
+  font-size: 21rpx;
+  color: #b3b0ab;
+}
+
+.fs-foot {
+  flex: none;
+  padding: 18rpx 8rpx 0;
+  text-align: center;
+}
+
+.fs-foot-text {
+  font-size: 23rpx;
+  color: #8a8782;
+}

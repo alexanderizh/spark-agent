@@ -25,14 +25,26 @@ import {
   type LocalAttachment,
 } from '../../utils/attachment-flow'
 import { ATTACHMENT_ONLY_FALLBACK_TEXT } from '../../utils/chat-view'
+import {
+  deviceDisplayName,
+  deviceRealName,
+  readDeviceAliases,
+  type DeviceAliasMap,
+} from '../../utils/device-aliases'
 import { formatRelativeTime } from '../../utils/format'
+import {
+  DEFAULT_SESSION_FILTER,
+  matchSession,
+  SESSION_ACTIVITY_OPTIONS,
+  type SessionActivityKey,
+} from '../../utils/session-filters'
 import {
   buildModelOptions,
   buildPermissionOptions,
   buildReasoningOptions,
   DEFAULT_MODEL_OPTION,
-  DEFAULT_PERMISSION_OPTION,
-  DEFAULT_REASONING_OPTION,
+  defaultPermissionId,
+  defaultReasoningId,
   type SessionConfigOption,
 } from '../../utils/session-config'
 import {
@@ -56,7 +68,7 @@ type StatusFilter = 'all' | 'running' | 'error' | 'idle'
 /** 标记筛选值：'' = 不筛选；与桌面端 SidebarLabelsFilter 同语义（移动端单选简化） */
 type LabelFilter = '' | 'labeled' | 'unlabeled' | BridgeSessionLabelKey
 
-type QuickPanelKind = 'model' | 'permission' | 'reasoning' | 'label'
+type QuickPanelKind = 'model' | 'permission' | 'reasoning' | 'label' | 'activity'
 
 interface SessionRow extends BridgeSessionSummary {
   statusLabel: string
@@ -119,6 +131,12 @@ interface ProjectSessionsData {
   groups: SessionGroup[]
   total: number
   filter: StatusFilter
+  /** 最近活动筛选（'all' = 不限；与状态/标记/搜索叠加） */
+  activityFilter: SessionActivityKey
+  /** 时间筛选 chip 的展示文案 */
+  activityText: string
+  /** 自报名（本机设了备注名时作为副标题，空串表示不需要） */
+  deviceRealName: string
   /** 标记筛选（'' = 全部；chip 上回显当前值） */
   labelFilter: LabelFilter
   /** 标记筛选 chip 的展示文案 */
@@ -153,7 +171,7 @@ interface ProjectSessionsData {
   panelOptions: { id: string; label: string; checked?: boolean }[]
   panelLoading: boolean
   panelEmpty: string
-  /** slider 模式展示用中文档位（含「电脑默认」） */
+  /** slider 模式展示用中文档位（只含真实档位） */
   panelSliderLabels: string[]
   panelSliderIndex: number
   quickModelId: string
@@ -245,6 +263,9 @@ Page({
     groups: [],
     total: 0,
     filter: 'all',
+    activityFilter: 'all' as SessionActivityKey,
+    activityText: '时间',
+    deviceRealName: '',
     labelFilter: '' as LabelFilter,
     labelFilterText: '标记',
     searchText: '',
@@ -273,8 +294,8 @@ Page({
     panelSliderLabels: [],
     panelSliderIndex: 0,
     quickModelId: DEFAULT_MODEL_OPTION.id,
-    quickPermissionId: DEFAULT_PERMISSION_OPTION.id,
-    quickReasoningId: DEFAULT_REASONING_OPTION.id,
+    quickPermissionId: '',
+    quickReasoningId: '',
     pinnedCollapsed: false,
   } as ProjectSessionsData,
 
@@ -305,6 +326,10 @@ Page({
   reasoningOptions: [] as SessionConfigOption[],
   /** 置顶分组折叠偏好缓存（`${deviceId}/${projectId}` → 是否折叠；冷启动时从本地存储恢复） */
   pinnedCollapsedMap: {} as Record<string, boolean>,
+  /** 本机设备备注名表（进入页面与 onShow 各读一次） */
+  deviceAliases: {} as DeviceAliasMap,
+  /** 目标机自报的设备名（路由传的是它，备注名只覆盖展示） */
+  rawDeviceName: '桌面端',
 
   onLoad(options: Record<string, string | undefined>) {
     const deviceId = options.deviceId ?? ''
@@ -321,14 +346,15 @@ Page({
       })
       return
     }
+    this.deviceAliases = readDeviceAliases()
+    this.rawDeviceName = options.deviceName ? decodeURIComponent(options.deviceName) : '桌面端'
     this.setData({
       deviceId,
-      deviceName: options.deviceName ? decodeURIComponent(options.deviceName) : '桌面端',
+      ...this.deviceLabelPatch(deviceId),
       projectId,
       projectName: options.projectName ? decodeURIComponent(options.projectName) : '',
       autoFocusSearch: options.search === '1',
-    })
-    // 置顶分组折叠偏好：按 电脑+项目 维度记忆，跨冷启动生效
+    }) // 置顶分组折叠偏好：按 电脑+项目 维度记忆，跨冷启动生效
     // 注意 wx.getStorageSync 对不存在的键返回 ""（不是 null），必须做对象形态守卫
     const storedCollapse = getItem<Record<string, boolean>>(StorageKeys.sessionListPinnedCollapsed)
     this.pinnedCollapsedMap =
@@ -361,6 +387,9 @@ Page({
   onShow() {
     syncPageTheme(this)
     if (!this.data.deviceId) return
+    // 备注名是本机视图：在别处改完返回时立即生效
+    this.deviceAliases = readDeviceAliases()
+    this.setData(this.deviceLabelPatch(this.data.deviceId))
     // 轻量状态刷新：仅用本地 presence 快照校正在线徽标，且只在状态真变化时才 setData
     if (bridge.isRelayPresenceFresh()) {
       const online = bridge
@@ -415,6 +444,13 @@ Page({
       this.modelOptions = buildModelOptions(catalog)
       this.permissionOptions = buildPermissionOptions(catalog)
       this.reasoningOptions = buildReasoningOptions(catalog)
+      // 权限 / 推理不再有「电脑默认」合成项：选中项已失效时回落到默认助手在电脑上的档位
+      if (!this.permissionOptions.some((item) => item.id === this.data.quickPermissionId)) {
+        this.setData({ quickPermissionId: defaultPermissionId(catalog) })
+      }
+      if (!this.reasoningOptions.some((item) => item.id === this.data.quickReasoningId)) {
+        this.setData({ quickReasoningId: defaultReasoningId(catalog) })
+      }
     } catch {
       this.catalog = null
     }
@@ -432,7 +468,7 @@ Page({
     this.setData({
       chips: [
         { key: 'model', value: model?.label ?? DEFAULT_MODEL_OPTION.label },
-        { key: 'reasoning', value: reasoning?.label ?? DEFAULT_REASONING_OPTION.label },
+        { key: 'reasoning', value: reasoning?.label ?? '推理强度' },
       ],
     })
   },
@@ -537,12 +573,17 @@ Page({
     }
   },
 
-  /** 前端过滤（状态 + 标记 + 搜索）→ 置顶区/时间分组 → setData */
+  /** 前端过滤（状态 + 时间 + 标记 + 搜索）→ 置顶区/时间分组 → setData */
   applyFilters() {
-    const { filter, searchText, labelFilter } = this.data
+    const { filter, searchText, labelFilter, activityFilter } = this.data
     const keyword = searchText.trim().toLowerCase()
+    const now = Date.now()
+    // 时间维度复用 utils/session-filters 的匹配器（其余维度留空 = 不参与判断）
+    const timeFilter =
+      activityFilter === 'all' ? null : { ...DEFAULT_SESSION_FILTER, activity: activityFilter }
     const rows = this.allRows.filter((row) => {
       if (filter !== 'all' && row.status !== filter) return false
+      if (timeFilter != null && !matchSession(row, timeFilter, now)) return false
       if (labelFilter === 'labeled' && row.sessionLabel == null) return false
       if (labelFilter === 'unlabeled' && row.sessionLabel != null) return false
       if (
@@ -657,11 +698,19 @@ Page({
   },
 
   /** 返回项目列表；如通过旧链接直接进入，则恢复固定电脑上下文。 */
+  /** 设备展示名 patch：备注名优先，自报名降级为副标题 */
+  deviceLabelPatch(deviceId: string): { deviceName: string; deviceRealName: string } {
+    return {
+      deviceName: deviceDisplayName(deviceId, this.rawDeviceName, this.deviceAliases),
+      deviceRealName: deviceRealName(deviceId, this.rawDeviceName, this.deviceAliases) ?? '',
+    }
+  },
+
   onBackToProjects() {
     wx.navigateBack({
       fail: () =>
         wx.redirectTo({
-          url: `/pages/projects/index?deviceId=${encodeURIComponent(this.data.deviceId)}&deviceName=${encodeURIComponent(this.data.deviceName)}`,
+          url: `/pages/projects/index?deviceId=${encodeURIComponent(this.data.deviceId)}&deviceName=${encodeURIComponent(this.rawDeviceName)}`,
         }),
     })
   },
@@ -1026,8 +1075,7 @@ Page({
         this.reasoningOptions.findIndex((item) => item.id === this.data.quickReasoningId),
         0,
       ),
-      // 「电脑默认」也要明确标出来，否则 Options 行会空着
-      configPermissionLabel: permission?.label ?? DEFAULT_PERMISSION_OPTION.label,
+      configPermissionLabel: permission?.label ?? '未设置',
     })
   },
 
@@ -1090,10 +1138,39 @@ Page({
     })
   },
 
+  /** 时间筛选面板：单选，选「不限」= 关闭该维度 */
+  onOpenActivityFilterPanel() {
+    const current = this.data.activityFilter
+    this.openPanel({
+      kind: 'activity',
+      title: '按时间筛选',
+      options: SESSION_ACTIVITY_OPTIONS.map((option) => ({
+        id: option.value,
+        label: option.label,
+        checked: current === option.value,
+      })),
+    })
+  },
+
   onPanelSelect(e: WechatMiniprogram.CustomEvent<{ id: string }>) {
     const kind = this.data.panelKind
     const id = e.detail.id
     if (kind === '') return
+    if (kind === 'activity') {
+      const value = (
+        SESSION_ACTIVITY_OPTIONS.some((option) => option.value === id) ? id : 'all'
+      ) as SessionActivityKey
+      this.setData({
+        activityFilter: value,
+        activityText:
+          value === 'all'
+            ? '时间'
+            : (SESSION_ACTIVITY_OPTIONS.find((option) => option.value === value)?.label ?? '时间'),
+      })
+      this.applyFilters()
+      this.closePanel()
+      return
+    }
     if (kind === 'label') {
       const value = (
         id === 'labeled' || id === 'unlabeled' || id === ''
@@ -1160,7 +1237,7 @@ Page({
         patch.providerProfileId = model.providerProfileId
         patch.modelId = model.modelId ?? null
       }
-      if (permission != null && permission.id !== 'default') {
+      if (permission != null && permission.id !== '') {
         patch.permissionMode = permission.id
       }
       if (reasoning?.value) patch.reasoningEffort = reasoning.value

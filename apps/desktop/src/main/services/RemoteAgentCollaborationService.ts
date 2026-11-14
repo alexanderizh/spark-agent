@@ -741,7 +741,6 @@ export class RemoteAgentCollaborationService {
         message,
         turnSource: 'remote_agent',
         userMessageVisibility: 'hidden',
-        userMessageDisplayContent: '远端 Agent 已返回结果，当前助手正在复核。',
       })
       const acceptedTurn = turnRequests.findByClientMessageId(link.source_session_id, operationId)
       if (acceptedTurn != null) {

@@ -1,0 +1,42 @@
+<!-- 轮次轨道：会话右侧竖排刻度。少于两轮整体不渲染（只有一轮时是噪音） -->
+
+<view wx:if="{{turns.length >= 2}}" class="rail">
+  <!-- 刻度轨：自身可滚，scroll-into-view 把当前轮自动带到可见处 -->
+  <scroll-view
+    class="rail-track"
+    scroll-y
+    enhanced
+    show-scrollbar="{{false}}"
+    scroll-into-view="{{activeAnchorId}}"
+    scroll-with-animation
+    bindscroll="onTrackScroll"
+  >
+    <view
+      wx:for="{{turns}}"
+      wx:key="key"
+      id="{{item.anchorId}}"
+      class="rail-mark {{item.key === activeKey ? 'rail-mark--active' : ''}}"
+      data-key="{{item.key}}"
+      hover-class="rail-mark--hover"
+      bindtap="onMarkerTap"
+      bindlongpress="onMarkerLongPress"
+    >
+      <view class="rail-mark-line"></view>
+    </view>
+  </scroll-view>
+
+  <!-- 轮次预览卡：轨道的兄弟节点，避免被滚动容器的 overflow 裁掉 -->
+  <view
+    wx:if="{{previewKey}}"
+    class="rail-preview {{previewFlip ? 'rail-preview--flip' : ''}}"
+    style="top: {{previewTop}}px"
+    catchtouchmove="onPreviewCatch"
+  >
+    <view class="rail-preview-head">
+      <text class="rail-preview-ordinal">第 {{previewTurn.ordinal}} 轮</text>
+      <text class="rail-preview-total">/ {{turns.length}}</text>
+    </view>
+    <view class="rail-preview-user">{{previewTurn.userPreview}}</view>
+    <view class="rail-preview-assistant">{{previewTurn.assistantPreview}}</view>
+  </view>
+</view>

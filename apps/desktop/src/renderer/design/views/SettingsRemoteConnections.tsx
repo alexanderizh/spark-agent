@@ -62,9 +62,7 @@ function getRemoteChannelLabels(t: TranslateFn): Record<RemoteChannelType, strin
  */
 const AVAILABLE_REMOTE_CHANNELS: RemoteChannelType[] = ['telegram', 'feishu', 'qq', 'wechat']
 
-function getRemoteStatusLabels(
-  t: TranslateFn,
-): Record<RemoteConnectionConfig['status'], string> {
+function getRemoteStatusLabels(t: TranslateFn): Record<RemoteConnectionConfig['status'], string> {
   return {
     disabled: t('settings.remote.status.disabled'),
     draft: t('settings.remote.status.draft'),
@@ -134,6 +132,7 @@ function getRemoteChannelMeta(t: TranslateFn): Record<RemoteChannelType, RemoteC
 /* ───────── REMOTE CONNECTIONS ───────── */
 const DEFAULT_REMOTE_CAPABILITIES: RemoteConnectionCapabilities = {
   sendMessages: true,
+  proactivePush: true,
   switchModel: true,
   switchSession: true,
   switchAgent: true,
@@ -206,9 +205,7 @@ export function RemoteConnectionsSection() {
   })
   const [selectedId, setSelectedId] = useState<string>('')
   const [lastChannel, setLastChannel] = useState<RemoteChannelType>('telegram')
-  const [draft, setDraft] = useState<RemoteConnectionConfig>(() =>
-    createRemoteDraft('telegram', t),
-  )
+  const [draft, setDraft] = useState<RemoteConnectionConfig>(() => createRemoteDraft('telegram', t))
   const [editorOpen, setEditorOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
@@ -830,9 +827,7 @@ export function RemoteConnectionsSection() {
         </div>
         <div className="remote-runtime-summary">
           <span className={runtimeStatus.running ? 'live' : ''}>
-            {runtimeStatus.running
-              ? t('settings.remote.running')
-              : t('settings.remote.notRunning')}
+            {runtimeStatus.running ? t('settings.remote.running') : t('settings.remote.notRunning')}
           </span>
           <strong>
             {connectedCount}/{connections.length}
@@ -843,9 +838,7 @@ export function RemoteConnectionsSection() {
 
       <div className="remote-runtime-bar">
         <div>
-          <strong>
-            {runtimeStatus.localBaseUrl ?? t('settings.remote.webhookNotStarted')}
-          </strong>
+          <strong>{runtimeStatus.localBaseUrl ?? t('settings.remote.webhookNotStarted')}</strong>
           <span>
             {enabledCount > 0
               ? t('settings.remote.enabledChannelsDesc', { count: enabledCount })
@@ -902,7 +895,9 @@ export function RemoteConnectionsSection() {
           <span className="remote-card-main">
             <span className="remote-card-title">{t('settings.remote.newConnection')}</span>
             <span className="remote-card-desc">
-              {t('settings.remote.defaultPlatformDesc', { platform: channelMeta[lastChannel].label })}
+              {t('settings.remote.defaultPlatformDesc', {
+                platform: channelMeta[lastChannel].label,
+              })}
             </span>
           </span>
         </button>
@@ -935,7 +930,9 @@ export function RemoteConnectionsSection() {
                     ? t('settings.remote.enabledLabel')
                     : t('settings.remote.notEnabledLabel')}
                 </span>
-                <span>{t('settings.remote.deviceCount', { count: item.pairedDevices.length })}</span>
+                <span>
+                  {t('settings.remote.deviceCount', { count: item.pairedDevices.length })}
+                </span>
                 <span>
                   {session?.title || item.defaultSessionId || t('settings.remote.noSession')}
                 </span>
@@ -1389,9 +1386,7 @@ export function RemoteConnectionsSection() {
                     rows={5}
                     placeholder="help&#10;sessions&#10;models&#10;agents"
                   />
-                  <div className="remote-muted-box">
-                    {t('settings.remote.qqPanelHintLongDesc')}
-                  </div>
+                  <div className="remote-muted-box">{t('settings.remote.qqPanelHintLongDesc')}</div>
                 </>
               )}
               <div className="remote-command-list">
@@ -1415,6 +1410,7 @@ function getRemoteCapabilityLabels(
 ): Record<keyof RemoteConnectionCapabilities, string> {
   return {
     sendMessages: t('settings.remote.cap.sendMessagesTitle'),
+    proactivePush: t('settings.remote.cap.proactivePushTitle'),
     switchModel: t('settings.remote.cap.switchModelTitle'),
     switchSession: t('settings.remote.cap.switchSessionTitle'),
     switchAgent: t('settings.remote.cap.switchAgentTitle'),
@@ -1435,6 +1431,7 @@ function getRemoteCapabilityDescs(
 ): Record<keyof RemoteConnectionCapabilities, string> {
   return {
     sendMessages: t('settings.remote.cap.sendMessagesDesc'),
+    proactivePush: t('settings.remote.cap.proactivePushDesc'),
     switchModel: t('settings.remote.cap.switchModelDesc'),
     switchSession: t('settings.remote.cap.switchSessionDesc'),
     switchAgent: t('settings.remote.cap.switchAgentDesc'),
@@ -1464,9 +1461,7 @@ function RemoteCapabilityGrid({
   const descs = useMemo(() => getRemoteCapabilityDescs(t), [t])
   return (
     <>
-      {(
-        Object.entries(capabilities) as Array<[keyof RemoteConnectionCapabilities, boolean]>
-      )
+      {(Object.entries(capabilities) as Array<[keyof RemoteConnectionCapabilities, boolean]>)
         .filter(([key]) => channel !== 'wechat' || key !== 'transferFiles')
         .map(([key, value]) => (
           <div key={key} className="settings-card-row">
@@ -1475,11 +1470,7 @@ function RemoteCapabilityGrid({
               <div className="row-desc">{descs[key]}</div>
             </div>
             <div className="row-action">
-              <Switch
-                size="middle"
-                checked={value}
-                onChange={(v) => onChange(key, v)}
-              />
+              <Switch size="middle" checked={value} onChange={(v) => onChange(key, v)} />
             </div>
           </div>
         ))}

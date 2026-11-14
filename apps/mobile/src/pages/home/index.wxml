@@ -17,7 +17,10 @@
 
   <view class="home-section-head row between">
     <text class="group-title">电脑</text>
-    <text class="t-caption">{{devices.length}} 台已接入</text>
+    <view class="row gap-8">
+      <text class="t-caption">{{devices.length}} 台已接入</text>
+      <text class="t-caption home-section-hint">· 长按可设备注名</text>
+    </view>
   </view>
 
   <view wx:if="{{devicesLoading}}" class="home-state">
@@ -36,6 +39,7 @@
       desc="在桌面端登录同一 Spark 平台账号并开启云端中继，电脑首次连接后会自动接入并出现在这里。"
     />
     <view class="home-action" bindtap="onOpenBridgeDevices">管理设备</view>
+    <view class="home-action home-action--ghost" bindtap="onOpenDemo">看看界面长什么样</view>
   </view>
 
   <view wx:else class="home-device-list">
@@ -46,13 +50,17 @@
       hover-class="home-device-card--hover"
       data-id="{{item.deviceId}}"
       bindtap="onPickDevice"
+      bindlongpress="onDeviceLongPress"
     >
       <view class="row between home-device-heading">
         <view class="row gap-12 grow home-device-name-wrap">
           <view class="home-device-icon">
             <view class="icon icon-monitor"></view>
           </view>
-          <text class="home-device-name ellipsis">{{item.name}}</text>
+          <view class="grow col home-device-name-copy">
+            <text class="home-device-name ellipsis">{{item.name}}</text>
+            <text wx:if="{{item.realName}}" class="home-device-real ellipsis">{{item.realName}}</text>
+          </view>
         </view>
         <view class="row gap-8 home-device-status">
           <view class="home-device-dot {{item.online ? 'home-device-dot--on' : ''}}"></view>
@@ -126,76 +134,68 @@
         <view class="home-config-close" hover-class="hover-dim" bindtap="onCloseConfig">完成</view>
       </view>
 
-      <view class="home-config-row row">
+      <view
+        class="home-config-row row home-config-choice"
+        hover-class="home-config-choice--hover"
+        data-kind="device"
+        data-disabled="{{devices.length === 0 || pendingSessionId !== ''}}"
+        bindtap="onOpenChooser"
+      >
         <text class="home-config-label">电脑</text>
-        <picker
-          class="home-config-picker grow"
-          mode="selector"
-          range="{{devices}}"
-          range-key="pickerLabel"
-          value="{{composerDeviceIndex}}"
-          disabled="{{devices.length === 0 || pendingSessionId}}"
-          bindchange="onConfigDeviceChange"
-        >
+        <view class="home-config-picker grow">
           <view class="home-config-picker-value row between">
             <text class="ellipsis">{{composerDeviceLabel}}</text>
             <view class="icon icon-chevron-down home-config-chevron"></view>
           </view>
-        </picker>
+        </view>
       </view>
 
-      <view class="home-config-row row">
+      <view
+        class="home-config-row row home-config-choice"
+        hover-class="home-config-choice--hover"
+        data-kind="project"
+        data-disabled="{{configLoading || configError !== '' || pendingSessionId !== ''}}"
+        bindtap="onOpenChooser"
+      >
         <text class="home-config-label">项目</text>
-        <picker
-          class="home-config-picker grow"
-          mode="selector"
-          range="{{projectOptions}}"
-          range-key="label"
-          value="{{projectIndex}}"
-          disabled="{{configLoading || configError || pendingSessionId}}"
-          bindchange="onProjectChange"
-        >
+        <view class="home-config-picker grow">
           <view class="home-config-picker-value row between">
             <text class="ellipsis">{{projectOptions[projectIndex].label}}</text>
             <view class="icon icon-chevron-down home-config-chevron"></view>
           </view>
-        </picker>
+        </view>
       </view>
 
-      <view class="home-config-row row">
+      <view
+        class="home-config-row row home-config-choice"
+        hover-class="home-config-choice--hover"
+        data-kind="model"
+        data-disabled="{{configLoading || configError !== '' || pendingSessionId !== ''}}"
+        bindtap="onOpenChooser"
+      >
         <text class="home-config-label">模型渠道</text>
-        <picker
-          class="home-config-picker grow"
-          mode="selector"
-          range="{{modelOptions}}"
-          range-key="label"
-          value="{{modelIndex}}"
-          disabled="{{configLoading || configError || pendingSessionId}}"
-          bindchange="onModelChange"
-        >
+        <view class="home-config-picker grow">
           <view class="home-config-picker-value row between">
             <text class="ellipsis">{{modelOptions[modelIndex].label}}</text>
             <view class="icon icon-chevron-down home-config-chevron"></view>
           </view>
-        </picker>
+        </view>
       </view>
 
-      <view class="home-config-row row">
+      <view
+        class="home-config-row row home-config-choice"
+        hover-class="home-config-choice--hover"
+        data-kind="permission"
+        data-disabled="{{configLoading || configError !== '' || pendingSessionId !== ''}}"
+        bindtap="onOpenChooser"
+      >
         <text class="home-config-label">权限模式</text>
-        <picker
-          class="home-config-picker grow"
-          mode="selector"
-          range="{{permissionOptions}}"
-          range-key="label"
-          value="{{permissionIndex}}"
-          disabled="{{configLoading || configError || pendingSessionId}}"
-          bindchange="onPermissionChange"
-        >
+        <view class="home-config-picker grow">
           <view class="home-config-picker-value row between">
             <text class="ellipsis">{{permissionOptions[permissionIndex].label}}</text>
             <view class="icon icon-chevron-down home-config-chevron"></view>
           </view>
-        </picker>
+        </view>
       </view>
 
       <view class="home-config-row row">
@@ -231,4 +231,18 @@
       </view>
     </view>
   </view>
+
+  <!-- 配置选择的半屏列表：原生 picker 不跟随应用内浅色/深色切换，暗色下文字会和背景糊在一起 -->
+  <sheet-panel
+    show="{{chooserShow}}"
+    title="{{chooserTitle}}"
+    mode="list"
+    options="{{chooserOptions}}"
+    emptyText="{{chooserEmpty}}"
+    accentColor="{{themeAccentColor}}"
+    trackColor="{{themeTrackColor}}"
+    blockColor="{{themeBlockColor}}"
+    bind:close="onChooserClose"
+    bind:select="onChooserSelect"
+  />
 </view>

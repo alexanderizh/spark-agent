@@ -38,11 +38,26 @@ type Props = {
   workspaceRootPath?: string | null | undefined
   /** 点击/右键打开时的回调（预览优先路由；opts.mode 可显式指定预览或编辑） */
   onPreview?: FileOpenHandler
+  /**
+   * 路径指向**另一台电脑**上的文件（远程会话）。
+   *
+   * 默认会先 `file:stat-kind` 探一下本机有没有这个文件，不存在就整条链接点不动 ——
+   * 这对本机文件是合理的防呆，对远程路径却是死路（文件永远不在本机）。
+   * 置为 true 时跳过本机 stat，存在性交给点击后的「取回 → 预览/打开」流程；
+   * 必须搭配 onPreview 使用（没有回调时点击仍会落到本机 file:open，必然失败）。
+   */
+  assumeExists?: boolean
 }
 
 export type { PreviewFileType } from './FileDisplay'
 
-export function ClickableFilePath({ path, label, workspaceRootPath, onPreview }: Props): ReactNode {
+export function ClickableFilePath({
+  path,
+  label,
+  workspaceRootPath,
+  onPreview,
+  assumeExists = false,
+}: Props): ReactNode {
   const { invoke: openFile } = useIpcInvoke('file:open')
   const { invoke: revealFile } = useIpcInvoke('file:reveal')
   const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
@@ -54,8 +69,13 @@ export function ClickableFilePath({ path, label, workspaceRootPath, onPreview }:
     [normalizedPath, workspaceRootPath],
   )
   const [fileStatus, setFileStatus] = useState<{ path: string; isFile: boolean } | null>(null)
+  // 远程路径不做本机 stat：文件在目标电脑上，本机永远 stat 不到
   const isOpenable =
-    resolvedPath != null && fileStatus?.path === resolvedPath ? fileStatus.isFile : null
+    assumeExists === true
+      ? true
+      : resolvedPath != null && fileStatus?.path === resolvedPath
+        ? fileStatus.isFile
+        : null
   const isPreviewable = useMemo(
     () => getPreviewFileType(resolvedPath ?? normalizedPath) !== null,
     [normalizedPath, resolvedPath],
@@ -67,7 +87,7 @@ export function ClickableFilePath({ path, label, workspaceRootPath, onPreview }:
 
   useEffect(() => {
     let cancelled = false
-    if (resolvedPath == null) {
+    if (resolvedPath == null || assumeExists) {
       return () => {
         cancelled = true
       }
@@ -84,7 +104,7 @@ export function ClickableFilePath({ path, label, workspaceRootPath, onPreview }:
     return () => {
       cancelled = true
     }
-  }, [resolvedPath, statFileKind])
+  }, [assumeExists, resolvedPath, statFileKind])
 
   const handleClick = useCallback(
     async (e: React.MouseEvent) => {
@@ -187,24 +207,30 @@ export function ClickableFilePath({ path, label, workspaceRootPath, onPreview }:
         ),
         onClick: () => void handleCopyPath(),
       },
-      {
-        key: 'open',
-        label: (
-          <span className="clickable-file-menu-item">
-            <Icons.ExternalLink size={14} /> 用默认应用打开
-          </span>
-        ),
-        onClick: () => void handleOpenWithDefault(),
-      },
-      {
-        key: 'reveal',
-        label: (
-          <span className="clickable-file-menu-item">
-            <Icons.Folder size={14} /> 在文件夹中显示
-          </span>
-        ),
-        onClick: () => void handleReveal(),
-      },
+      // 远程路径本机没有：「默认应用打开 / 在文件夹中显示」都落在错误的本机路径上，
+      // 不给这两个必失败的入口；点击主行为（预览/打开）由 onPreview 的远程流程接管
+      ...(assumeExists
+        ? []
+        : [
+            {
+              key: 'open',
+              label: (
+                <span className="clickable-file-menu-item">
+                  <Icons.ExternalLink size={14} /> 用默认应用打开
+                </span>
+              ),
+              onClick: () => void handleOpenWithDefault(),
+            },
+            {
+              key: 'reveal',
+              label: (
+                <span className="clickable-file-menu-item">
+                  <Icons.Folder size={14} /> 在文件夹中显示
+                </span>
+              ),
+              onClick: () => void handleReveal(),
+            },
+          ]),
     ],
   }
 

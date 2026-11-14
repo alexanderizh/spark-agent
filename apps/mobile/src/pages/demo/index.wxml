@@ -1,0 +1,90 @@
+<view class="demo-page theme-root {{themeClass}}">
+  <view class="demo-banner">
+    <view class="demo-banner-head row gap-8">
+      <view class="icon icon-chat demo-banner-icon"></view>
+      <text class="demo-banner-title">界面预览 · 示例数据</text>
+    </view>
+    <text class="demo-banner-desc">
+      还没有电脑接入时，可以先看看真实界面。以下内容均为静态示例，不会发送到任何服务器。
+    </text>
+  </view>
+
+  <!-- 电脑 -->
+  <view class="demo-section">
+    <view class="demo-section-head row between">
+      <text class="group-title">电脑</text>
+      <text class="t-caption">1 台（示例）</text>
+    </view>
+    <view class="demo-device">
+      <view class="demo-device-icon center">
+        <view class="icon icon-monitor"></view>
+      </view>
+      <view class="grow col demo-device-copy">
+        <text class="demo-device-name ellipsis">{{device.name}}</text>
+        <text class="t-caption ellipsis">{{device.meta}}</text>
+      </view>
+      <view class="badge badge-success">在线</view>
+    </view>
+  </view>
+
+  <!-- 会话 -->
+  <view class="demo-section">
+    <view class="demo-section-head row between">
+      <text class="group-title">会话</text>
+      <text class="t-caption">3 个（示例）</text>
+    </view>
+    <view class="demo-session-list">
+      <view
+        wx:for="{{sessions}}"
+        wx:key="id"
+        class="demo-session"
+        hover-class="demo-session--hover"
+        bindtap="onBlocked"
+      >
+        <view class="demo-session-main grow col">
+          <view class="row gap-8">
+            <view wx:if="{{item.pinned}}" class="icon icon-pin demo-pin"></view>
+            <text class="demo-session-title ellipsis">{{item.title}}</text>
+          </view>
+          <text class="t-caption ellipsis">{{item.project}} · {{item.time}}</text>
+        </view>
+        <view class="badge {{item.badgeClass}}">{{item.badge}}</view>
+        <view class="icon icon-chevron demo-chevron"></view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 对话 -->
+  <view class="demo-section">
+    <view class="demo-section-head row between">
+      <text class="group-title">对话</text>
+      <text class="t-caption">只读</text>
+    </view>
+    <view class="demo-chat">
+      <view wx:for="{{messages}}" wx:key="role" class="demo-msg demo-msg--{{item.role}}">
+        <text class="demo-msg-text">{{item.text}}</text>
+        <view wx:if="{{item.code}}" class="demo-code">
+          <text class="demo-code-text">{{item.code}}</text>
+        </view>
+        <view wx:if="{{item.tool}}" class="demo-tool">
+          <view class="icon icon-terminal demo-tool-icon"></view>
+          <text class="demo-tool-text">{{item.tool}}</text>
+        </view>
+        <text wx:if="{{item.tail}}" class="demo-msg-text demo-msg-tail">{{item.tail}}</text>
+      </view>
+    </view>
+    <view class="demo-composer" bindtap="onBlocked">
+      <text class="demo-composer-placeholder">示例界面，不能输入</text>
+      <view class="demo-composer-send center">
+        <view class="icon icon-send-white"></view>
+      </view>
+    </view>
+  </view>
+
+  <view class="demo-foot">
+    <text class="t-caption demo-foot-tip">
+      想真正用起来：在电脑上安装 SparkWork 桌面端并登录同一账号，开启云端中继后回到首页下拉刷新。
+    </text>
+    <view class="btn btn-plain btn-block" hover-class="btn-plain--hover" bindtap="onBack">返回</view>
+  </view>
+</view>

@@ -9,13 +9,20 @@
       <text class="cs-done" hover-class="cs-done--hover" bindtap="onClose">完成</text>
     </view>
 
-    <!-- 只有模型列表参与滚动 -->
-    <scroll-view class="cs-body" scroll-y>
+    <!-- 只有模型列表参与滚动：高度上限由组件按底栏实测高度算（scroll-view 必须有确定高度才滚） -->
+    <scroll-view
+      class="cs-body"
+      scroll-y
+      scroll-into-view="{{scrollTarget}}"
+      style="{{bodyMax > 0 ? 'max-height:' + bodyMax + 'px' : ''}}"
+    >
       <text wx:if="{{models.length > 0}}" class="cs-section">模型</text>
       <view wx:if="{{models.length > 0}}" class="cs-card">
         <view
           wx:for="{{models}}"
+          wx:for-index="modelIndex"
           wx:key="id"
+          id="cs-model-{{modelIndex}}"
           class="cs-row row"
           hover-class="cs-row--hover"
           data-id="{{item.id}}"

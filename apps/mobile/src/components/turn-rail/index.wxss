@@ -1,0 +1,159 @@
+/* 轮次轨道（样式隔离：自带完整样式，不依赖页面 class）
+ *
+ * 形态对齐桌面端 ChatTurnNavigator：细竖轨 + 一刻度一轮，当前轮加长高亮。
+ * 移动端差异：悬浮预览改成长按弹出，预览卡必须在滚动容器外（否则被 overflow 裁掉）。
+ *
+ * 尺寸刻意收进 .chat-body 既有 32rpx 右边距内：不侵占正文宽度、不遮右对齐的用户气泡，
+ * 触摸不够用的问题靠 ::after 透明热区向左扩解决，视觉仍然只是一条细轨。 */
+
+.rail {
+  position: absolute;
+  right: 2rpx;
+  /* 垂直居中：轨道是「你在哪」的常驻标识，不该占满屏高抢注意力 */
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 9;
+  width: 30rpx;
+  /* 长会话轮次多，轨内自滚；隐藏滚动条，只留刻度 */
+  max-height: 46vh;
+}
+
+.rail-track {
+  width: 30rpx;
+  max-height: 46vh;
+}
+
+.rail-mark {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 30rpx;
+  height: 40rpx;
+  padding: 0;
+  background: transparent;
+  /* 刻度线才是视觉本体，按钮本身完全透明，不抢正文 */
+  border: 0;
+}
+
+.rail-mark::after {
+  /* 透明触摸热区：向左扩 10rpx、上下各扩 6rpx，手指点得中但看不出按钮边界。
+     10rpx 是刻意收着的——用户气泡自身有 28rpx 内边距，热区不越界就不会抢走
+     气泡的 bindlongpress（长按菜单），点正文文字更不会误触。 */
+  content: '';
+  position: absolute;
+  inset: -6rpx 0 -6rpx -10rpx;
+}
+
+.rail-mark-line {
+  display: block;
+  width: 7rpx;
+  height: 2rpx;
+  border-radius: 2rpx;
+  background: #c9c5be;
+  transition:
+    width 160ms ease-out,
+    background-color 160ms ease-out;
+}
+
+.rail-mark--hover .rail-mark-line {
+  /* 用 #8e8b85 而不是近似的 #8e8a83：前者在 NEUTRALS 表里，深色会映射成 #98958f，
+     按压反馈在暗色下依然看得出来（#8e8a83 会走 fallback 落到 #3b3935，与常态同色）。 */
+  background: #8e8b85;
+}
+
+/* 当前轮：加长 + 加重，一眼看出读到哪了 */
+.rail-mark--active .rail-mark-line {
+  width: 22rpx;
+  background: #1a1a1a;
+  box-shadow: 0 0 8rpx rgba(26, 26, 26, 0.22);
+}
+
+/* ─── 轮次预览卡（长按弹出） ─────────────────────────────────────────────── */
+
+.rail-preview {
+  position: absolute;
+  /* 贴在轨道左侧，留 10rpx 呼吸 */
+  right: calc(100% + 10rpx);
+  z-index: 12;
+  box-sizing: border-box;
+  width: 300rpx;
+  padding: 16rpx 20rpx;
+  border: 1rpx solid #e5e2dd;
+  border-radius: 16rpx;
+  background: #ffffff;
+  box-shadow: 0 12rpx 32rpx rgba(26, 26, 26, 0.16);
+  /* 预览卡跟着刻度走，不做进入动画也够用；加一点点上浮更明确 */
+  animation: rail-preview-in 140ms ease-out both;
+}
+
+/* 贴底时向上翻转：改以刻度顶为基准，避免下半截溢出屏幕。
+   注意动画名必须一起换——keyframes 里的 transform 会覆盖静态 transform，
+   只写 transform: translateY(-100%) 在动画结束后会被 keyframes 的终态盖掉。 */
+.rail-preview--flip {
+  transform: translateY(-100%);
+  animation-name: rail-preview-in-flip;
+}
+
+@keyframes rail-preview-in {
+  from {
+    opacity: 0;
+    transform: translateX(6rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes rail-preview-in-flip {
+  from {
+    opacity: 0;
+    transform: translateX(6rpx) translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(-100%);
+  }
+}
+
+.rail-preview-head {
+  display: flex;
+  align-items: baseline;
+  gap: 2rpx;
+  margin-bottom: 8rpx;
+}
+
+.rail-preview-ordinal {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.rail-preview-total {
+  font-size: 20rpx;
+  color: #a09c95;
+}
+
+.rail-preview-user {
+  font-size: 24rpx;
+  font-weight: 500;
+  line-height: 1.5;
+  color: #1a1a1a;
+  /* 两行封顶：预览是「认得出是哪一轮」，不是把整轮搬出来 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.rail-preview-assistant {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: #8e8b85;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}

@@ -41,7 +41,8 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.meta.feishuLabel': '飞书机器人',
     'settings.remote.meta.feishuShort': '飞书',
     'settings.remote.meta.feishuConsole': '飞书开放平台',
-    'settings.remote.meta.feishuHint': '填写 App ID / App Secret 后保存并启用，系统会自动启动长连接。',
+    'settings.remote.meta.feishuHint':
+      '填写 App ID / App Secret 后保存并启用，系统会自动启动长连接。',
     'settings.remote.meta.qqLabel': 'QQ 机器人',
     'settings.remote.meta.qqConsole': 'QQ 开放平台',
     'settings.remote.meta.qqHint':
@@ -49,11 +50,13 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.meta.wechatLabel': '微信机器人',
     'settings.remote.meta.wechatShort': '微信',
     'settings.remote.meta.wechatConsole': '微信扫码授权',
-    'settings.remote.meta.wechatHint': '通过微信 ClawBot 扫码授权，保存并启用后会自动启动消息长轮询。',
+    'settings.remote.meta.wechatHint':
+      '通过微信 ClawBot 扫码授权，保存并启用后会自动启动消息长轮询。',
     'settings.remote.meta.wechatClawLabel': '微信 Claw（旧网关）',
     'settings.remote.meta.wechatClawShort': '微信',
     'settings.remote.meta.wechatClawConsole': 'Claw 服务',
-    'settings.remote.meta.wechatClawHint': '填写 Claw Endpoint 和 Access Token，用本地 webhook 对接微信侧服务。',
+    'settings.remote.meta.wechatClawHint':
+      '填写 Claw Endpoint 和 Access Token，用本地 webhook 对接微信侧服务。',
     'settings.remote.meta.telegramHint': '填写 Bot Token 后保存并启用，系统会自动启动 polling。',
     'settings.remote.status.disabled': '已停用',
     'settings.remote.status.draft': '草稿',
@@ -63,12 +66,14 @@ export const SETTINGS_RESOURCE = {
 
     // ── 远程连接：主体 ────────────────────────────────────────────────────
     'settings.remote.title': '远程连接',
-    'settings.remote.ledeDesc': '通过 Telegram、飞书、QQ、微信从远程桌面或移动端与 SparkWork 通信。',
+    'settings.remote.ledeDesc':
+      '通过 Telegram、飞书、QQ、微信从远程桌面或移动端与 SparkWork 通信。',
     'settings.remote.running': '运行中',
     'settings.remote.notRunning': '未运行',
     'settings.remote.connectedLabel': '已连接',
     'settings.remote.webhookNotStarted': '本地 webhook 服务未启动',
-    'settings.remote.enabledChannelsDesc': '{{count}} 个渠道已启用，远程消息会进入各聊天独立绑定的会话',
+    'settings.remote.enabledChannelsDesc':
+      '{{count}} 个渠道已启用，远程消息会进入各聊天独立绑定的会话',
     'settings.remote.noneEnabledDesc': '启用任一渠道后，远程消息才会被接收',
     'settings.remote.refreshBtn': '刷新',
     'settings.remote.creating': '创建中...',
@@ -105,7 +110,8 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.prefixLabel': '命令前缀',
     'settings.remote.prefixHint': 'Telegram 可同步为 bot command',
     'settings.remote.defaultSessionLabel': '默认会话',
-    'settings.remote.defaultSessionHintDesc': '仅供新的、唯一可识别的聊天首次绑定；已有聊天使用各自的会话',
+    'settings.remote.defaultSessionHintDesc':
+      '仅供新的、唯一可识别的聊天首次绑定；已有聊天使用各自的会话',
     'settings.remote.noSelection': '未选择',
     'settings.remote.newSessionFallback': '新会话',
     'settings.remote.shareSession': '跨连接共享会话',
@@ -118,7 +124,8 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.wechatCodePlaceholder': '微信客户端显示的数字验证码',
     'settings.remote.submitCodeBtn': '提交验证码',
     'settings.remote.qrExpires': '二维码过期时间：{{time}}',
-    'settings.remote.wechatPollingOnDesc': '微信 iLink 长轮询已启动，可在微信 ClawBot 对话中发送 /bind 配对码。',
+    'settings.remote.wechatPollingOnDesc':
+      '微信 iLink 长轮询已启动，可在微信 ClawBot 对话中发送 /bind 配对码。',
     'settings.remote.wechatPollingOffDesc': '微信长轮询未启动：{{error}}',
     'settings.remote.wechatPollingHintDesc':
       '保存并启用连接后会启动长轮询；生成配对码后在微信中发送 /bind 配对码。',
@@ -127,7 +134,8 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.telegramPollingOnDesc':
       'Telegram polling 已启动，无需公网 webhook；发送 /bind 配对码 后即可使用。',
     'settings.remote.telegramPollingOffDesc': 'Telegram polling 未启动：{{error}}',
-    'settings.remote.telegramPollingHintDesc': '保存并启用 Telegram Bot Token 后会自动启动 polling。',
+    'settings.remote.telegramPollingHintDesc':
+      '保存并启用 Telegram Bot Token 后会自动启动 polling。',
     'settings.remote.feishuConnOnDesc':
       '飞书 WebSocket 长连接已启动，无需公网 webhook；在飞书里发送 /bind 配对码 后即可使用。',
     'settings.remote.feishuConnOffDesc': '飞书长连接未启动：{{error}}',
@@ -149,7 +157,8 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.remoteUserIdPlaceholder': '远程用户 ID',
     'settings.remote.displayNamePlaceholder': '显示名称（可选）',
     'settings.remote.confirmManualBtn': '手动确认',
-    'settings.remote.pairingHintDesc': '连接保存后生成一次性配对码，然后在远程聊天里发送 /bind 配对码 完成绑定。',
+    'settings.remote.pairingHintDesc':
+      '连接保存后生成一次性配对码，然后在远程聊天里发送 /bind 配对码 完成绑定。',
     'settings.remote.allowedUsersLabel': '允许用户 ID',
     'settings.remote.allowedUsersHint': '英文逗号或换行分隔，留空表示配对后允许',
     'settings.remote.allowedChatsLabel': '允许会话/群 ID',
@@ -161,8 +170,12 @@ export const SETTINGS_RESOURCE = {
     // ── 远程连接：能力开关 ────────────────────────────────────────────────
     'settings.remote.cap.sendMessagesTitle': '发送消息到会话',
     'settings.remote.cap.sendMessagesDesc': '允许远程端向当前聊天绑定的会话提交 /send 或普通消息',
+    'settings.remote.cap.proactivePushTitle': '允许主动推送',
+    'settings.remote.cap.proactivePushDesc':
+      '允许会话中的助手主动向此聊天推送通知（长任务完成、需要决策等场景）',
     'settings.remote.cap.switchModelTitle': '切换模型 / Provider',
-    'settings.remote.cap.switchModelDesc': '允许 /models、/providers、/use-model、/use-provider、/reasoning',
+    'settings.remote.cap.switchModelDesc':
+      '允许 /models、/providers、/use-model、/use-provider、/reasoning',
     'settings.remote.cap.switchSessionTitle': '切换会话',
     'settings.remote.cap.switchSessionDesc': '允许 /sessions 与 /use-session',
     'settings.remote.cap.switchAgentTitle': '切换 Agent',
@@ -172,11 +185,13 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.cap.runCommandsTitle': '运行内置命令',
     'settings.remote.cap.runCommandsDesc': '允许解析命令前缀并执行命令目录',
     'settings.remote.cap.approvePermissionsTitle': '远程审批权限',
-    'settings.remote.cap.approvePermissionsDesc': '将待审批的权限请求发回本聊天；/approve 只对本次授权，/deny 拒绝',
+    'settings.remote.cap.approvePermissionsDesc':
+      '将待审批的权限请求发回本聊天；/approve 只对本次授权，/deny 拒绝',
     'settings.remote.cap.observeDesktopTitle': '观察桌面',
     'settings.remote.cap.observeDesktopDesc': '允许 /screen、/windows 查看桌面与窗口概览',
     'settings.remote.cap.controlDesktopTitle': '控制桌面',
-    'settings.remote.cap.controlDesktopDesc': '允许 /focus、/click、/type、/hotkey 等桌面控制命令，默认关闭',
+    'settings.remote.cap.controlDesktopDesc':
+      '允许 /focus、/click、/type、/hotkey 等桌面控制命令，默认关闭',
     'settings.remote.cap.useInternalBrowserTitle': '使用内置浏览器窗口',
     'settings.remote.cap.useInternalBrowserLongDesc':
       '允许远程会话打开本机可见的 spark_browser 窗口，并读取控制台 / 网络元信息，默认关闭',
@@ -184,7 +199,8 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.cap.transferFilesLongDesc':
       '允许 Telegram、飞书和 QQ 双向传输图片：入站图片进入当前会话识别；QQ 大图及 Telegram 发送失败时可使用 Spark 临时存储中转',
     'settings.remote.cap.manageRuntimeTitle': '管理运行时',
-    'settings.remote.cap.manageRuntimeDesc': '允许 /progress、/queue、/history、/cancel 管理远程任务',
+    'settings.remote.cap.manageRuntimeDesc':
+      '允许 /progress、/queue、/history、/cancel 管理远程任务',
     'settings.remote.cap.dangerousActionsTitle': '高危动作确认',
     'settings.remote.cap.dangerousActionsDesc': '允许 /confirm 确认高危动作，仍需二次确认',
 
@@ -192,7 +208,8 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.cred.appIdLabel': '机器人 AppID',
     'settings.remote.cred.appSecretLabel': '机器人 AppSecret',
     'settings.remote.cred.authModeLabel': '授权方式',
-    'settings.remote.cred.wechatAuthDesc': '使用微信 ClawBot 扫码授权，访问凭证由 SparkWork 保存在本机设置中。',
+    'settings.remote.cred.wechatAuthDesc':
+      '使用微信 ClawBot 扫码授权，访问凭证由 SparkWork 保存在本机设置中。',
 
     // ── 远程连接：提示消息 ────────────────────────────────────────────────
     'settings.remote.loadFailed': '加载远程连接失败',
@@ -342,7 +359,8 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.wechatCodePlaceholder': 'Code shown in WeChat',
     'settings.remote.submitCodeBtn': 'Submit code',
     'settings.remote.qrExpires': 'QR expires at: {{time}}',
-    'settings.remote.wechatPollingOnDesc': 'WeChat polling started; send /bind <code> in the ClawBot chat.',
+    'settings.remote.wechatPollingOnDesc':
+      'WeChat polling started; send /bind <code> in the ClawBot chat.',
     'settings.remote.wechatPollingOffDesc': 'WeChat polling not started: {{error}}',
     'settings.remote.wechatPollingHintDesc':
       'Save and enable to start polling; then send /bind <code> in WeChat.',
@@ -351,11 +369,13 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.telegramPollingOnDesc':
       'Telegram polling is running; no public webhook needed. Send /bind <code> to start.',
     'settings.remote.telegramPollingOffDesc': 'Telegram polling not started: {{error}}',
-    'settings.remote.telegramPollingHintDesc': 'Save and enable the Telegram bot token to start polling.',
+    'settings.remote.telegramPollingHintDesc':
+      'Save and enable the Telegram bot token to start polling.',
     'settings.remote.feishuConnOnDesc':
       'Feishu long connection is running; no public webhook needed. Send /bind <code> in Feishu.',
     'settings.remote.feishuConnOffDesc': 'Feishu connection not started: {{error}}',
-    'settings.remote.feishuConnHintDesc': 'Save and enable App ID / App Secret to start the Feishu connection.',
+    'settings.remote.feishuConnHintDesc':
+      'Save and enable App ID / App Secret to start the Feishu connection.',
     'settings.remote.qqConnOnLongDesc':
       'QQ long connection is running; no public webhook needed. Send /bind <code> in QQ (DM directly, mention the bot in groups).',
     'settings.remote.qqConnOffDesc': 'QQ connection not started: {{error}}',
@@ -376,7 +396,8 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.pairingHintDesc':
       'After saving, generate a one-time code and send /bind <code> in the remote chat.',
     'settings.remote.allowedUsersLabel': 'Allowed user IDs',
-    'settings.remote.allowedUsersHint': 'Comma or newline separated; empty allows any after pairing',
+    'settings.remote.allowedUsersHint':
+      'Comma or newline separated; empty allows any after pairing',
     'settings.remote.allowedChatsLabel': 'Allowed chat IDs',
     'settings.remote.allowedChatsHint': 'Limits group chats, channels or Feishu groups',
     'settings.remote.qqPanelHintLongDesc':
@@ -387,8 +408,12 @@ export const SETTINGS_RESOURCE = {
     'settings.remote.cap.sendMessagesTitle': 'Send messages to session',
     'settings.remote.cap.sendMessagesDesc':
       'Allow the remote side to submit /send or plain messages to the bound session',
+    'settings.remote.cap.proactivePushTitle': 'Allow proactive push',
+    'settings.remote.cap.proactivePushDesc':
+      'Let the assistant proactively push notifications to this chat (long-task completion, decisions needed, etc.)',
     'settings.remote.cap.switchModelTitle': 'Switch model / provider',
-    'settings.remote.cap.switchModelDesc': 'Allow /models, /providers, /use-model, /use-provider, /reasoning',
+    'settings.remote.cap.switchModelDesc':
+      'Allow /models, /providers, /use-model, /use-provider, /reasoning',
     'settings.remote.cap.switchSessionTitle': 'Switch session',
     'settings.remote.cap.switchSessionDesc': 'Allow /sessions and /use-session',
     'settings.remote.cap.switchAgentTitle': 'Switch agent',
@@ -427,11 +452,13 @@ export const SETTINGS_RESOURCE = {
 
     // ── 远程连接：提示消息 ────────────────────────────────────────────────
     'settings.remote.loadFailed': 'Failed to load remote connections',
-    'settings.remote.authPollFailedDesc': 'Cannot query auth status; refresh the QR and retry: {{detail}}',
+    'settings.remote.authPollFailedDesc':
+      'Cannot query auth status; refresh the QR and retry: {{detail}}',
     'settings.remote.wechatAuthorizedToast': 'WeChat bot authorized; enable to receive',
     'settings.remote.wechatScanHintDesc': 'Scan the QR with WeChat and confirm the authorization.',
     'settings.remote.wechatQrFailed': 'Failed to generate WeChat QR code',
-    'settings.remote.verifySubmitFailedDesc': 'Failed to submit the code; refresh the QR and retry: {{detail}}',
+    'settings.remote.verifySubmitFailedDesc':
+      'Failed to submit the code; refresh the QR and retry: {{detail}}',
     'settings.remote.wechatVerifyFailed': 'WeChat code verification failed',
     'settings.remote.saved': 'Remote connection saved',
     'settings.remote.saveFailed': 'Save failed',

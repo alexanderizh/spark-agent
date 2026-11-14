@@ -322,7 +322,12 @@ export function appendSessionPage(
   })
 }
 
-/** 新建成功后插到对应项目顶部（该项目没展开过就不用管，展开时会重新拉） */
+/**
+ * 新建成功后插到对应项目顶部（该项目没展开过就不用管，展开时会重新拉）。
+ *
+ * 全量窗口（搜索/筛选的结果视图）也要插：不插的话，刚建的会话在结果视图里
+ * 既不会被后端那 200 条窗口带上，本地也找不到它——清掉筛选前等于凭空消失。
+ */
 export function insertSessionInStore(deviceId: string, session: MobileBridgeSessionSummary): void {
   updateRemoteSessionStore(deviceId, (store) => {
     const projectId = projectIdOf(session)
@@ -330,6 +335,10 @@ export function insertSessionInStore(deviceId: string, session: MobileBridgeSess
     if (bucket != null) {
       bucket.rows = [session, ...bucket.rows.filter((row) => row.id !== session.id)]
       bucket.total += 1
+    }
+    if (store.allSessions != null && !store.allSessions.rows.some((row) => row.id === session.id)) {
+      store.allSessions.rows = [session, ...store.allSessions.rows]
+      store.allSessions.total += 1
     }
     const project = store.projects.find((item) => item.id === projectId)
     if (project != null) project.sessionCount = (project.sessionCount ?? 0) + 1

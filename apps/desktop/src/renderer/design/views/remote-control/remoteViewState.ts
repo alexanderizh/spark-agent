@@ -16,6 +16,18 @@ export const REMOTE_VIEW_STATE_VERSION = 1
 /** 记住多少台设备的历史；超过按写入顺序淘汰最旧的（跳过当前设备） */
 export const MAX_CACHED_DEVICES = 20
 
+/**
+ * 顶部设备切换器的形态：
+ *   - 'auto'     按在线设备数自动判定（少量设备用 Tab 更直观，多了交给下拉）；
+ *   - 'tabs'     常驻 Tab 栏，点一下就切换；
+ *   - 'dropdown' 保持原来的下拉菜单。
+ */
+export type RemoteDeviceSwitcherMode = 'auto' | 'tabs' | 'dropdown'
+/** auto 模式下仍有 Tab 栏的在线设备上限；再多就会挤成一串，交给下拉 */
+export const AUTO_TABS_MAX_DEVICES = 4
+/** 设备总数（含离线）超过这个数时，auto 也退回下拉：Tab 里塞离线项没意义 */
+export const AUTO_TABS_MAX_TOTAL_DEVICES = 6
+
 export interface RemoteSessionRef {
   sessionId: string
   /** 目标端项目 id；未归属 / 未知为 null */
@@ -40,6 +52,8 @@ export interface RemoteViewState {
   /** 设备 → 展开过的项目 id 列表 */
   expandedByDevice: Record<string, string[]>
   composerByDevice: Record<string, RemoteComposerPrefs>
+  /** 顶部设备切换器形态（用户显式选过的才不是 auto） */
+  deviceSwitcher: RemoteDeviceSwitcherMode
 }
 
 export interface RemoteViewStorage {
@@ -54,7 +68,28 @@ export function defaultRemoteViewState(): RemoteViewState {
     lastSessionByDevice: {},
     expandedByDevice: {},
     composerByDevice: {},
+    deviceSwitcher: 'auto',
   }
+}
+
+/** 把任意输入收敛成合法的切换器形态（旧版本没这个字段 → auto） */
+export function parseDeviceSwitcherMode(value: unknown): RemoteDeviceSwitcherMode {
+  return value === 'tabs' || value === 'dropdown' ? value : 'auto'
+}
+
+/**
+ * 实际生效的形态：用户显式选了就用用户的，auto 按设备规模判定。
+ * 只在线设备可点，所以 Tab 栏只数在线设备。
+ */
+export function resolveDeviceSwitcherMode(
+  mode: RemoteDeviceSwitcherMode,
+  onlineCount: number,
+  totalCount: number,
+): 'tabs' | 'dropdown' {
+  if (mode !== 'auto') return mode
+  if (onlineCount < 2 || onlineCount > AUTO_TABS_MAX_DEVICES) return 'dropdown'
+  if (totalCount > AUTO_TABS_MAX_TOTAL_DEVICES) return 'dropdown'
+  return 'tabs'
 }
 
 function cleanString(value: unknown, maxLength = 200): string | null {
@@ -127,6 +162,7 @@ export function parseRemoteViewState(raw: string | null): RemoteViewState {
 
   const state = defaultRemoteViewState()
   state.lastDeviceId = cleanString(data.lastDeviceId)
+  state.deviceSwitcher = parseDeviceSwitcherMode(data.deviceSwitcher)
 
   for (const [deviceId, value] of Object.entries(asRecord(data.lastSessionByDevice))) {
     const id = cleanString(deviceId)
@@ -197,6 +233,21 @@ function capDeviceMap<T>(map: Record<string, T>, keepId: string): Record<string,
     delete map[id]
   }
   return map
+}
+
+/** 读顶部设备切换器形态 */
+export function readDeviceSwitcher(storage?: RemoteViewStorage | null): RemoteDeviceSwitcherMode {
+  return readRemoteViewState(storage).deviceSwitcher
+}
+
+/** 记住顶部设备切换器形态（写这个字段不动设备 / 会话状态） */
+export function rememberDeviceSwitcher(
+  mode: RemoteDeviceSwitcherMode,
+  storage?: RemoteViewStorage | null,
+): RemoteViewState {
+  const state = readRemoteViewState(storage)
+  state.deviceSwitcher = parseDeviceSwitcherMode(mode)
+  return writeRemoteViewState(state, storage)
 }
 
 /** 记住「上次在这台设备上」+ 上次停留的设备 */

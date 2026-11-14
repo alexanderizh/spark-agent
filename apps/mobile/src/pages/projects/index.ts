@@ -2,7 +2,26 @@
 
 import * as bridge from '../../api/bridge'
 import type { BridgeProjectSummary, RelayDeviceInfo } from '../../api/bridge'
+import type { FilterSheetSection } from '../../components/filter-sheet/index'
+import {
+  deviceDisplayName,
+  deviceRealName,
+  readDeviceAliases,
+  type DeviceAliasMap,
+} from '../../utils/device-aliases'
+import { formatRelativeTime } from '../../utils/format'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+import {
+  countProjectFilterFacets,
+  DEFAULT_PROJECT_FILTER,
+  describeProjectFilter,
+  matchProject,
+  PROJECT_ACTIVITY_OPTIONS,
+  PROJECT_STATUS_OPTIONS,
+  type ProjectActivityKey,
+  type ProjectFilterState,
+  type ProjectStatusKey,
+} from '../../utils/project-filters'
 import { getThemeTextColor, syncPageTheme } from '../../utils/theme'
 import {
   mergeManualOrderWithHidden,
@@ -13,22 +32,46 @@ import {
 
 interface ProjectOption extends BridgeProjectSummary {
   isVirtual: boolean
+  /** 最近活跃时间（相对；时间筛选开启时便于核对） */
+  updatedLabel: string
+}
+
+/** 切换电脑弹层的一行（sheet-panel 单选列表） */
+interface SwitchDeviceOption {
+  id: string
+  label: string
+  sub?: string
+  checked?: boolean
 }
 
 interface ProjectsPageData {
   deviceId: string
   deviceName: string
+  /** 自报名（仅当本机设了备注名且与自报名不同才非空，作为副标题） */
+  deviceRealName: string
   /** 置顶段（含项目名搜索过滤前的完整数据；渲染列表由 pinnedView/normalView 承担） */
   projects: ProjectOption[]
-  /** 搜索过滤后的置顶/普通两段视图（虚拟「未归属项目」恒在普通段末尾） */
+  /** 搜索 + 筛选过滤后的置顶/普通两段视图（虚拟「未归属项目」恒在普通段末尾） */
   pinnedView: ProjectOption[]
   normalView: ProjectOption[]
   searchText: string
   pinnedCount: number
+  /** 当前筛选下可见的真实项目数（面板底部展示） */
+  visibleCount: number
   loading: boolean
   errorText: string
   deviceOffline: boolean
   deviceUnavailable: boolean
+  /** 切换电脑弹层 */
+  deviceSheetShow: boolean
+  deviceOptions: SwitchDeviceOption[]
+  deviceOptionsLoading: boolean
+  /** 项目筛选（时间 + 状态） */
+  filterShow: boolean
+  filter: ProjectFilterState
+  filterSummary: string
+  filterActiveCount: number
+  filterSections: FilterSheetSection[]
 }
 
 function decodeRouteValue(value: string | undefined, fallback: string): string {
@@ -44,21 +87,37 @@ Page({
   data: {
     deviceId: '',
     deviceName: '桌面端',
+    deviceRealName: '',
     projects: [],
     pinnedView: [],
     normalView: [],
     searchText: '',
     pinnedCount: 0,
+    visibleCount: 0,
     loading: true,
     errorText: '',
     deviceOffline: false,
     deviceUnavailable: false,
+    deviceSheetShow: false,
+    deviceOptions: [],
+    deviceOptionsLoading: false,
+    filterShow: false,
+    filter: DEFAULT_PROJECT_FILTER,
+    filterSummary: describeProjectFilter(DEFAULT_PROJECT_FILTER),
+    filterActiveCount: 0,
+    filterSections: [],
   } as ProjectsPageData,
 
   unsubscribeDevices: null as (() => void) | null,
   loadGeneration: 0,
   /** 桌面端侧栏手动序（projects scope；空数组 = 桌面端未排过序/旧版本） */
   manualProjectIds: [] as string[],
+  /** 本机设备备注名表（进入页面与 onShow 各读一次，改名后返回即生效） */
+  deviceAliases: {} as DeviceAliasMap,
+  /** 目标机自报的设备名（别名只是本机视图，改备注名不影响它） */
+  rawDeviceName: '桌面端',
+  /** 切换弹层里的 deviceId → 自报名（弹层只回传 id，切页要还原原名） */
+  switchDeviceNames: {} as Record<string, string>,
 
   /** 视图是否已有数据（来自缓存秒开或一次成功加载） */
   viewReady: false,
@@ -71,9 +130,11 @@ Page({
       wx.redirectTo({ url: '/pages/home/index' })
       return
     }
+    this.deviceAliases = readDeviceAliases()
+    this.rawDeviceName = decodeRouteValue(options.deviceName, '桌面端')
     this.setData({
       deviceId,
-      deviceName: decodeRouteValue(options.deviceName, '桌面端'),
+      ...this.deviceLabelPatch(deviceId, this.rawDeviceName),
     })
     this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.onPresenceUpdate())
     const cached = readListCache<{ projects: ProjectOption[]; manualProjectIds: string[] }>(
@@ -90,6 +151,9 @@ Page({
   onShow() {
     syncPageTheme(this)
     if (!this.data.deviceId) return
+    // 备注名是本机视图：从设备管理页改完返回要立即生效
+    this.deviceAliases = readDeviceAliases()
+    this.setData(this.deviceLabelPatch(this.data.deviceId, this.rawDeviceName))
     // 轻量状态刷新：仅用本地 presence 快照校正在线徽标，且只在状态真变化时才 setData
     if (bridge.isRelayPresenceFresh()) {
       const online = bridge
@@ -120,6 +184,21 @@ Page({
     void this.bootstrap().finally(() => wx.stopPullDownRefresh())
   },
 
+  /**
+   * 设备展示名 patch：备注名优先，原名降级为副标题。
+   * 自报名以目标机/路由给出的为准（rawDeviceName），别名只改展示，不改这个值。
+   */
+  deviceLabelPatch(
+    deviceId: string,
+    realName: string,
+  ): { deviceName: string; deviceRealName: string } {
+    this.rawDeviceName = realName.trim() === '' ? '桌面端' : realName
+    return {
+      deviceName: deviceDisplayName(deviceId, this.rawDeviceName, this.deviceAliases),
+      deviceRealName: deviceRealName(deviceId, this.rawDeviceName, this.deviceAliases) ?? '',
+    }
+  },
+
   onBackToComputers() {
     wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/index' }) })
   },
@@ -145,12 +224,8 @@ Page({
       if (!trusted) {
         // 静默后台刷新不清空现有列表；设备不可用态交由 presence 增量/全量加载维护
         if (!silent) {
-          this.setData({
-            deviceUnavailable: true,
-            deviceOffline: true,
-            projects: [],
-            loading: false,
-          })
+          this.clearProjectViews()
+          this.setData({ deviceUnavailable: true, deviceOffline: true, loading: false })
         }
         return
       }
@@ -159,12 +234,18 @@ Page({
       const live = presence.find((item) => item.deviceId === this.data.deviceId)
       const online = bridge.isRelayPresenceFresh() ? live != null : trusted.online
       this.setData({
-        deviceName: live?.label || trusted.name || this.data.deviceName,
+        ...this.deviceLabelPatch(
+          this.data.deviceId,
+          live?.label || trusted.name || this.rawDeviceName,
+        ),
         deviceOffline: !online,
         deviceUnavailable: false,
       })
       if (!online) {
-        if (!silent) this.setData({ projects: [], loading: false })
+        if (!silent) {
+          this.clearProjectViews()
+          this.setData({ loading: false })
+        }
         return
       }
 
@@ -183,6 +264,7 @@ Page({
       const projects: ProjectOption[] = projectResult.projects.map((project) => ({
         ...project,
         isVirtual: false,
+        updatedLabel: project.updatedAt ? formatRelativeTime(project.updatedAt) : '',
       }))
       if (unassignedResult.total > 0) {
         projects.push({
@@ -196,6 +278,8 @@ Page({
           // 旧版桌面端不透出（undefined → 不显示徽标）
           runningSessionCount: projectResult.unassignedRunningSessionCount ?? 0,
           isVirtual: true,
+          // 虚拟项目没有「最近活跃」概念：留空而不是显示「刚刚」
+          updatedLabel: '',
         })
       }
       this.setData({ projects, errorText: '' })
@@ -208,8 +292,8 @@ Page({
     } catch (error) {
       // 静默后台刷新失败时保留旧数据
       if (generation === this.loadGeneration && !silent) {
+        this.clearProjectViews()
         this.setData({
-          projects: [],
           errorText: error instanceof Error ? error.message : '项目列表加载失败，请下拉重试',
         })
       }
@@ -220,11 +304,16 @@ Page({
 
   /**
    * 排序与过滤（前端计算，桌面端同口径）：
+   * 先按筛选（时间/状态）剔一遍，再套搜索关键词，最后排序——
    * 真实项目套用手动序 + 置顶分区（sortByManualOrderWithinPinnedSections），
-   * 虚拟「未归属项目」不参与排序恒在末尾；搜索按项目名过滤（两段都生效）。
+   * 虚拟「未归属项目」不参与排序恒在末尾；三个条件对两段都生效。
    */
   applyProjectOrder() {
     const keyword = this.data.searchText.trim().toLowerCase()
+    const filter = this.data.filter
+    const now = Date.now()
+    const matchesKeyword = (project: ProjectOption): boolean =>
+      keyword === '' || project.name.toLowerCase().includes(keyword)
     const realProjects = this.data.projects.filter((project) => !project.isVirtual)
     const ordered = sortByManualOrderWithinPinnedSections(
       realProjects,
@@ -232,23 +321,209 @@ Page({
       (project) => project.id,
       (project) => project.pinnedAt != null,
     )
-    const visible = keyword
-      ? ordered.filter((project) => project.name.toLowerCase().includes(keyword))
-      : ordered
+    const visible = ordered.filter(
+      (project) => matchProject(project, filter, now) && matchesKeyword(project),
+    )
     const virtual = this.data.projects.filter((project) => project.isVirtual)
-    const virtualVisible = keyword
-      ? virtual.filter((project) => project.name.toLowerCase().includes(keyword))
-      : virtual
+    const virtualVisible = virtual.filter(
+      (project) => matchProject(project, filter, now) && matchesKeyword(project),
+    )
     this.setData({
       pinnedView: visible.filter((project) => project.pinnedAt != null),
       normalView: [...visible.filter((project) => project.pinnedAt == null), ...virtualVisible],
       pinnedCount: ordered.filter((project) => project.pinnedAt != null).length,
+      visibleCount: visible.length + virtualVisible.length,
     })
   },
 
   onSearchInput(e: WechatMiniprogram.Input) {
     this.setData({ searchText: e.detail.value })
     this.applyProjectOrder()
+  },
+
+  // ─── 项目筛选（时间 + 状态；与搜索、置顶/手动序叠加生效） ────────────────────
+
+  /** 筛选面板的分组数据（勾选态由当前 filter 计算，面板本身无状态） */
+  buildFilterSections(filter: ProjectFilterState): FilterSheetSection[] {
+    return [
+      {
+        key: 'activity',
+        label: '最近活跃',
+        mode: 'single',
+        options: PROJECT_ACTIVITY_OPTIONS.map((option) => ({
+          id: option.value,
+          label: option.label,
+          checked: filter.activity === option.value,
+        })),
+      },
+      {
+        key: 'status',
+        label: '项目状态',
+        mode: 'single',
+        options: PROJECT_STATUS_OPTIONS.map((option) => ({
+          id: option.value,
+          label: option.label,
+          checked: filter.status === option.value,
+        })),
+      },
+    ]
+  },
+
+  applyFilter(next: ProjectFilterState) {
+    this.setData({
+      filter: next,
+      filterSummary: describeProjectFilter(next),
+      filterActiveCount: countProjectFilterFacets(next),
+      filterSections: this.buildFilterSections(next),
+    })
+    this.applyProjectOrder()
+  },
+
+  onOpenFilter() {
+    this.setData({ filterShow: true, filterSections: this.buildFilterSections(this.data.filter) })
+  },
+
+  onCloseFilter() {
+    this.setData({ filterShow: false })
+  },
+
+  /** 单选维度：点已选项 = 取消该维度（回到「不限/全部」） */
+  onFilterToggle(e: WechatMiniprogram.CustomEvent<{ section: string; id: string }>) {
+    const section = e.detail.section
+    const id = e.detail.id
+    const current = this.data.filter
+    if (section === 'activity') {
+      const next = PROJECT_ACTIVITY_OPTIONS.some((option) => option.value === id)
+        ? (id as ProjectActivityKey)
+        : 'all'
+      this.applyFilter({ ...current, activity: current.activity === next ? 'all' : next })
+      return
+    }
+    if (section === 'status') {
+      const next = PROJECT_STATUS_OPTIONS.some((option) => option.value === id)
+        ? (id as ProjectStatusKey)
+        : 'all'
+      this.applyFilter({ ...current, status: current.status === next ? 'all' : next })
+    }
+  },
+
+  onFilterReset() {
+    this.applyFilter(DEFAULT_PROJECT_FILTER)
+  },
+
+  // ─── 切换电脑（就地切换，不返回顶层） ─────────────────────────────────────
+
+  /** 切换弹层：REST 列表（含离线）+ presence 在线态，展示名走本机备注名 */
+  async onOpenDeviceSwitch() {
+    this.setData({ deviceSheetShow: true, deviceOptionsLoading: true })
+    // 备注名可能刚在设备管理页改过
+    this.deviceAliases = readDeviceAliases()
+    void bridge.ensureRelay().catch(() => undefined)
+    try {
+      const result = await bridge.listRelayDevices()
+      const trusted = result?.devices ?? []
+      const presence = bridge.getRelayPresenceDevices()
+      const presenceFresh = bridge.isRelayPresenceFresh()
+      const liveById = new Map(presence.map((item) => [item.deviceId, item]))
+      const seen = new Set<string>()
+      const names: Record<string, string> = {}
+      const rows: SwitchDeviceOption[] = []
+      const pushRow = (
+        deviceId: string,
+        realName: string,
+        online: boolean,
+        version?: string | null,
+      ) => {
+        seen.add(deviceId)
+        names[deviceId] = realName
+        const real = deviceRealName(deviceId, realName, this.deviceAliases)
+        rows.push({
+          id: deviceId,
+          label: `${deviceDisplayName(deviceId, realName, this.deviceAliases)} · ${online ? '在线' : '离线'}`,
+          ...(real != null ? { sub: real } : version ? { sub: `v${version}` } : {}),
+          checked: deviceId === this.data.deviceId,
+        })
+      }
+      for (const item of trusted) {
+        const live = liveById.get(item.deviceId)
+        pushRow(
+          item.deviceId,
+          live?.label || item.name || '桌面端',
+          presenceFresh ? live != null : item.online,
+          item.version,
+        )
+      }
+      // presence 里有、REST 还没返回的（刚注册接入的设备）
+      for (const live of presence) {
+        if (seen.has(live.deviceId)) continue
+        pushRow(live.deviceId, live.label || '桌面端', true, live.version)
+      }
+      this.switchDeviceNames = names
+      this.setData({ deviceOptions: rows })
+    } catch (error) {
+      wx.showToast({ title: (error as Error).message || '电脑列表加载失败', icon: 'none' })
+    } finally {
+      this.setData({ deviceOptionsLoading: false })
+    }
+  },
+
+  onCloseDeviceSheet() {
+    this.setData({ deviceSheetShow: false })
+  },
+
+  onDeviceSelect(e: WechatMiniprogram.CustomEvent<{ id: string }>) {
+    const deviceId = String(e.detail.id ?? '')
+    this.setData({ deviceSheetShow: false })
+    if (deviceId === '' || deviceId === this.data.deviceId) return
+    this.switchDevice(deviceId)
+  },
+
+  /**
+   * 就地切换电脑：清掉上一台的项目/筛选/手动序（不同电脑数据完全不同），
+   * 保留搜索词以外的偏好为默认值，然后整页重新加载。
+   */
+  switchDevice(deviceId: string) {
+    const realName = this.switchDeviceNames[deviceId] ?? '桌面端'
+    const presence = bridge.getRelayPresenceDevices()
+    const online = bridge.isRelayPresenceFresh()
+      ? presence.some((item) => item.deviceId === deviceId)
+      : true
+    bridge.setSelectedDeviceId(deviceId)
+    this.loadGeneration += 1
+    this.manualProjectIds = []
+    this.viewReady = false
+    this.hiddenAt = 0
+    this.setData({
+      deviceId,
+      ...this.deviceLabelPatch(deviceId, realName),
+      projects: [],
+      pinnedView: [],
+      normalView: [],
+      searchText: '',
+      pinnedCount: 0,
+      visibleCount: 0,
+      filter: DEFAULT_PROJECT_FILTER,
+      filterSummary: describeProjectFilter(DEFAULT_PROJECT_FILTER),
+      filterActiveCount: 0,
+      filterSections: [],
+      filterShow: false,
+      errorText: '',
+      deviceUnavailable: false,
+      deviceOffline: !online,
+      loading: true,
+    })
+    void this.bootstrap()
+  },
+
+  /** 全部会话：跨项目视图（筛选维度含项目） */
+  onOpenAllSessions() {
+    if (this.data.deviceOffline || this.data.deviceUnavailable) {
+      wx.showToast({ title: '这台电脑不在线，连上中继后可查看全部会话', icon: 'none' })
+      return
+    }
+    wx.navigateTo({
+      url: `/pages/all-sessions/index?deviceId=${encodeURIComponent(this.data.deviceId)}&deviceName=${encodeURIComponent(this.rawDeviceName)}`,
+    })
   },
 
   onPresenceUpdate() {
@@ -258,8 +533,14 @@ Page({
       .some((item) => item.deviceId === this.data.deviceId)
     const wasOffline = this.data.deviceOffline
     this.setData({ deviceOffline: !online })
-    if (!online) this.setData({ projects: [] })
+    // projects 只是数据源，渲染走 pinnedView/normalView —— 只清数据源会残留旧行
+    if (!online) this.clearProjectViews()
     if (wasOffline && online) void this.bootstrap()
+  },
+
+  /** 离线/吊销时清空列表视图（三个字段一起清，避免渲染残留） */
+  clearProjectViews() {
+    this.setData({ projects: [], pinnedView: [], normalView: [], visibleCount: 0 })
   },
 
   onOpenProject(event: WechatMiniprogram.CustomEvent) {
@@ -268,7 +549,7 @@ Page({
     const name = String(event.currentTarget.dataset.name ?? '')
     if (!id) return
     wx.navigateTo({
-      url: `/pages/project-sessions/index?deviceId=${encodeURIComponent(this.data.deviceId)}&deviceName=${encodeURIComponent(this.data.deviceName)}&projectId=${encodeURIComponent(id)}&projectName=${encodeURIComponent(name)}`,
+      url: `/pages/project-sessions/index?deviceId=${encodeURIComponent(this.data.deviceId)}&deviceName=${encodeURIComponent(this.rawDeviceName)}&projectId=${encodeURIComponent(id)}&projectName=${encodeURIComponent(name)}`,
     })
   },
 

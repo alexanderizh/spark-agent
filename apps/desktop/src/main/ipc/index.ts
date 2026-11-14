@@ -118,6 +118,7 @@ import {
 } from '@spark/shared'
 import { getAppSkillsManager } from '../services/AppSkillsManager.js'
 import { shouldSuppressSessionNotification } from '../services/AppUnreadBadgeService.js'
+import { deliverProactivePush } from '../services/proactiveRemotePush.js'
 import { HistoryImportService } from '../services/HistoryImport/HistoryImportService.js'
 import type { ImportProviderResolution } from '../services/HistoryImport/HistoryImportService.js'
 import { registerAuthIpc } from '../services/Auth/registerAuthIpc.js'
@@ -3160,6 +3161,15 @@ function getSessionService(): SessionService {
     _sessionService.setWorkflowMcpProvider(getWorkflowHostBridge().asMcpProvider())
     _sessionService.setBrowserAutomationMcpProvider(browserAutomationMcpProvider)
     _sessionService.setComputerUseMcpProvider(computerUseMcpProvider)
+    // 接入主动推送投递器：spark_notify.notify_user → 会话绑定远程路由逐条投递，
+    // 未绑定（或渠道关闭 proactivePush）时回落桌面系统通知（点击跳转对应会话）。
+    _sessionService.setRemotePushProvider({
+      notifyUser: (sessionId, text, title) =>
+        deliverProactivePush(getRemoteConnectionService(), sessionId, text, title, {
+          showDesktopNotification: (request) =>
+            showSystemNotification(request.title, request.body, request.navigationTarget),
+        }),
+    })
     // 会话引擎级 worktree 状态变化（agent 工具上报）→ 推流渲染层更新分支显示与徽标
     _sessionService.setSessionWorktreeChangedHandler((sessionId, worktree) => {
       pushStreamEvent('stream:session:worktree-changed', { sessionId, worktree })

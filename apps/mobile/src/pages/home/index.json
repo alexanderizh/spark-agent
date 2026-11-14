@@ -2,6 +2,7 @@
   "navigationStyle": "custom",
   "navigationBarTitleText": "SparkWork",
   "usingComponents": {
-    "empty-state": "../../components/empty-state/index"
+    "empty-state": "../../components/empty-state/index",
+    "sheet-panel": "../../components/sheet-panel/index"
   }
 }

@@ -120,6 +120,22 @@
   font-weight: 600;
 }
 
+/* 有本机备注名时，自报名降级为第二行小字 */
+.home-device-name-copy {
+  min-width: 0;
+  gap: 2rpx;
+}
+
+.home-device-real {
+  min-width: 0;
+  color: #8a8782;
+  font-size: 21rpx;
+}
+
+.home-section-hint {
+  color: #b3b0ab;
+}
+
 .home-device-status {
   flex: none;
   color: #77736d;
@@ -154,6 +170,14 @@
   background: #1a1a1a;
   color: #fff;
   font-size: 24rpx;
+}
+
+/* 空态次按钮：无电脑接入时给一个「先看界面」的软入口（审核/新用户体验用） */
+.home-action--ghost {
+  margin-top: 14rpx;
+  background: transparent;
+  border: 1rpx solid #e9e7e4;
+  color: #6b6b6b;
 }
 
 .home-composer {
@@ -331,6 +355,10 @@
   font-size: 24rpx;
 }
 
+/* 整行可点：打开应用内半屏选择列表（原生 picker 不跟随浅色/深色切换） */
+.home-config-choice--hover {
+  background: #f2f0ed;
+}
 .home-config-picker {
   min-width: 0;
 }

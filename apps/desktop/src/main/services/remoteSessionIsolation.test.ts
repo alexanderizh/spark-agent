@@ -32,6 +32,7 @@ function connection(
     qqCommands: [],
     capabilities: {
       sendMessages: true,
+      proactivePush: true,
       switchModel: true,
       switchSession: true,
       switchAgent: true,

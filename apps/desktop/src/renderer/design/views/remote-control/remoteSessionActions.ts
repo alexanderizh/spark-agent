@@ -256,7 +256,9 @@ export function useRemoteSessionActions(deviceId: string): RemoteSessionActions 
 
   const createSession = useCallback(
     async (projectId: string): Promise<string | null> => {
-      setBusyId(`create:${projectId}`)
+      // busyId 直接用 projectId：项目行按 `busyId === row.id` 显示 spinner，
+      // 以前挂 `create:` 前缀导致创建期间那一行毫无反馈，看着像点了没反应
+      setBusyId(projectId)
       try {
         // 未归属不是真实项目：不带 projectId 让目标端落到默认归属
         const body = projectId === UNASSIGNED_PROJECT_ID ? {} : { projectId }

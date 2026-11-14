@@ -6,6 +6,7 @@ import {
   describeFileCount,
   extractHtmlDocument,
   fileNameOf,
+  splitRemoteHtmlSegments,
 } from './remoteRichContent'
 
 describe('extractHtmlDocument', () => {
@@ -40,6 +41,45 @@ describe('extractHtmlDocument', () => {
   it('超过预览上限的文档不内联，避免渲染进程被拖死', () => {
     const huge = `<!doctype html>${'<p>x</p>'.repeat(MAX_INLINE_HTML_CHARS)}`
     expect(extractHtmlDocument(huge)).toBeNull()
+  })
+})
+
+describe('splitRemoteHtmlSegments', () => {
+  it('没有文档围栏时返回 null（走纯 markdown 路径）', () => {
+    expect(splitRemoteHtmlSegments('## 标题\n\n正文')).toBeNull()
+    expect(splitRemoteHtmlSegments('')).toBeNull()
+  })
+
+  it('讲解文字里夹的 html 片段不算文档，不拆段', () => {
+    const text = '先看这段：\n\n```html\n<div>片段</div>\n```\n\n再解释一下。'
+    expect(splitRemoteHtmlSegments(text)).toBeNull()
+  })
+
+  it('正文中间的完整文档围栏抽出为 html 段，前后文保留为 markdown 段', () => {
+    const text =
+      '下面是一个演示页面：\n\n```html\n<!doctype html><html><body><h1>hi</h1></body></html>\n```\n\n可以直接交互试试。'
+    const segments = splitRemoteHtmlSegments(text)
+    expect(segments).toEqual([
+      { kind: 'markdown', text: '下面是一个演示页面：\n\n' },
+      { kind: 'html', html: '<!doctype html><html><body><h1>hi</h1></body></html>' },
+      { kind: 'markdown', text: '\n\n可以直接交互试试。' },
+    ])
+  })
+
+  it('多个文档块各自成段', () => {
+    const text = '```html\n<!doctype html><p>a</p>\n```\n中\n```html\n<html><p>b</p></html>\n```'
+    const segments = splitRemoteHtmlSegments(text)
+    expect(segments?.filter((segment) => segment.kind === 'html')).toHaveLength(2)
+  })
+
+  it('超过预览上限的文档块不抽出（按代码块展示）', () => {
+    const huge = `<!doctype html>${'<p>x</p>'.repeat(MAX_INLINE_HTML_CHARS)}`
+    expect(splitRemoteHtmlSegments(`\`\`\`html\n${huge}\n\`\`\``)).toBeNull()
+  })
+
+  it('htm 围栏同样识别', () => {
+    const segments = splitRemoteHtmlSegments('```htm\n<!doctype html><p>a</p>\n```')
+    expect(segments).toEqual([{ kind: 'html', html: '<!doctype html><p>a</p>' }])
   })
 })
 

@@ -61,23 +61,26 @@
         >没有更早消息</view>
         <block wx:for="{{items}}" wx:key="key">
           <!-- 天级时间分界（居中灰字） -->
-          <view wx:if="{{item.kind === 'time'}}" class="chat-time">{{item.label}}</view>
+          <view wx:if="{{item.kind === 'time'}}" id="{{item.turnAnchorId}}"
+            class="chat-time gap-{{item.gap}}">{{item.label}}</view>
 
-          <!-- 隐藏工具/思考记录：浅色横线代替工具，把会话输出分块；横线后跟到达时间 -->
+          <!-- 折叠横线（两种来源共用）：隐藏执行详情时的工具段 / 一轮处理完后自动收起的中间过程 -->
           <view
             wx:elif="{{item.kind === 'divider'}}"
-            class="chat-divider row"
+            id="{{item.turnAnchorId}}"
+            class="chat-divider chat-divider--{{item.variant || 'execution'}} gap-{{item.gap}} row"
             data-key="{{item.key}}"
             hover-class="hover-dim"
             bindtap="onDividerTap"
           >
             <view class="chat-divider-line"></view>
-            <text class="chat-divider-label">{{item.label}} · {{item.hiddenCount}} 条工具记录{{item.expanded ? ' · 收起' : ' · 展开'}}</text>
+            <text class="chat-divider-label">{{item.text}}{{item.expanded ? ' · 收起' : ' · 展开'}}</text>
             <view class="chat-divider-line"></view>
           </view>
 
           <!-- 用户消息：右侧灰色气泡（长按 = 复制 / 从此处分支） -->
-          <view wx:elif="{{item.kind === 'user'}}" class="msg-row msg-row--user">
+          <view wx:elif="{{item.kind === 'user'}}" id="{{item.turnAnchorId}}"
+            class="msg-row msg-row--user gap-{{item.gap}}">
             <!-- 附件 chips（本次发送用本地图；历史消息图片经缓存解析） -->
             <view wx:if="{{item.attachments.length > 0}}" class="msg-attach row">
               <block wx:for="{{item.attachments}}" wx:for-item="att" wx:key="path">
@@ -125,7 +128,8 @@
           <!-- AI 回复：全宽文档式 Markdown -->
           <view
             wx:elif="{{item.kind === 'assistant'}}"
-            class="msg-row msg-row--assistant"
+            id="{{item.turnAnchorId}}"
+            class="msg-row msg-row--assistant gap-{{item.gap}}"
             data-key="{{item.key}}"
             data-text="{{item.text}}"
             bindlongpress="onAssistantLongPress"
@@ -150,7 +154,8 @@
           </view>
 
           <!-- agent 呈现的产物图片条（横向缩略图，点击全屏预览；图片走本地缓存） -->
-          <view wx:elif="{{item.kind === 'media'}}" class="msg-row msg-row--media">
+          <view wx:elif="{{item.kind === 'media'}}" id="{{item.turnAnchorId}}"
+            class="msg-row msg-row--media gap-{{item.gap}}">
             <scroll-view class="media-strip" scroll-x>
               <view class="media-strip-inner">
                 <block
@@ -189,7 +194,8 @@
           </view>
 
           <!-- 思考内容默认折叠；仍按桌面端事件逐段增量更新，点击标题可展开 -->
-          <view wx:elif="{{item.kind === 'thinking'}}" class="msg-row msg-row--thinking">
+          <view wx:elif="{{item.kind === 'thinking'}}" id="{{item.turnAnchorId}}"
+            class="msg-row msg-row--thinking gap-{{item.gap}}">
             <view
               class="thinking-toggle row"
               data-key="{{item.key}}"
@@ -209,7 +215,8 @@
           </view>
 
           <!-- 工具调用行：点击展开摘要详情 -->
-          <view wx:elif="{{item.kind === 'tool'}}" class="tool-block">
+          <view wx:elif="{{item.kind === 'tool'}}" id="{{item.turnAnchorId}}"
+            class="tool-block gap-{{item.gap}}">
             <view
               class="tool-line row"
               data-key="{{item.key}}"
@@ -224,7 +231,8 @@
           </view>
 
           <!-- 状态行（思考中 / 错误） -->
-          <view wx:elif="{{item.kind === 'status'}}" class="status-line {{item.tone === 'error' ? 'status-line--error' : ''}}">
+          <view wx:elif="{{item.kind === 'status'}}" id="{{item.turnAnchorId}}"
+            class="status-line gap-{{item.gap}} {{item.tone === 'error' ? 'status-line--error' : ''}}">
             <view wx:if="{{item.tone === 'running'}}" class="status-spinner"></view>
             <text class="t-caption">{{item.text}}</text>
           </view>
@@ -245,6 +253,14 @@
       <view class="icon icon-chevron-down chat-jump-latest-chevron"></view>
       <text>最新</text>
     </view>
+
+    <!-- 轮次轨道：右侧竖排刻度，点一刻度跳到该轮，长按看该轮讲了什么 -->
+    <turn-rail
+      id="turn-rail"
+      turns="{{turns}}"
+      active-key="{{activeTurnKey}}"
+      bind:jump="onTurnJump"
+    />
   </view>
 
   <!-- 挂起交互卡：权限审批 + 用户问答（桌面端弹卡的移动端等价物，置于输入区上方） -->

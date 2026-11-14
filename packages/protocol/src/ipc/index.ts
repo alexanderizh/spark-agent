@@ -6566,6 +6566,8 @@ export interface RemoteConnectionCredentials {
 
 export interface RemoteConnectionCapabilities {
   sendMessages: boolean
+  /** Allow the assistant to proactively push notifications to this chat (spark_notify). */
+  proactivePush: boolean
   switchModel: boolean
   switchSession: boolean
   switchAgent: boolean

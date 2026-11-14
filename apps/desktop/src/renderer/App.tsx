@@ -57,6 +57,10 @@ import {
   type PlatformQuotaGuideReason,
 } from './design/views/platform-model/platform-quota-guide'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
+import {
+  INITIAL_REMOTE_SIDEBAR_TRACKER,
+  decideRemoteSidebarAction,
+} from './design/remoteSidebarAutoCollapse'
 import { MacWindowDragHeader } from './design/components/MacWindowDragHeader'
 import { WindowControls } from './design/components/WindowControls'
 import { SidebarSessionList } from './design/SidebarSessionList'
@@ -1400,6 +1404,8 @@ function Shell() {
   const [quotaGuideReason, setQuotaGuideReason] = useState<PlatformQuotaGuideReason | null>(null)
   const lowBalanceCheckedAccountRef = useRef<string | null>(null)
   const wasCanvasWorkspaceActiveRef = useRef(false)
+  /** 远程视图自动折叠菜单的记忆（是不是我们折的 / 上次在不在远程），判定见 remoteSidebarAutoCollapse */
+  const remoteSidebarTrackerRef = useRef(INITIAL_REMOTE_SIDEBAR_TRACKER)
   const sidebarHiddenRef = useRef(t.sidebarHidden)
   const autoSidebarCollapsedRef = useRef(false)
   const lastSidebarViewportWidthRef = useRef<number | null>(null)
@@ -1616,6 +1622,23 @@ function Shell() {
     }
     wasCanvasWorkspaceActiveRef.current = isCanvasWorkspaceActive
   }, [canvasWorkspaceActive, setTweak, t.sidebarHidden, t.view])
+
+  /**
+   * 进入远程视图自动收起左侧菜单：
+   * 远程是「设备/会话树 + 对话」的双栏工作区，横向空间本来就紧，
+   * 再占掉 288px 侧栏后远程会话区会被压得很窄。头部的展开按钮还在，想用菜单随手就能开。
+   * 只在「进入的那一刻」折叠，用户之后自己展开就不再干扰；离开时也只恢复自己折叠的那次。
+   */
+  useEffect(() => {
+    const { action, next } = decideRemoteSidebarAction(
+      t.view === 'remote-control',
+      t.sidebarHidden,
+      remoteSidebarTrackerRef.current,
+    )
+    remoteSidebarTrackerRef.current = next
+    if (action === 'collapse') setTweak('sidebarHidden', true)
+    else if (action === 'restore') setTweak('sidebarHidden', false)
+  }, [setTweak, t.sidebarHidden, t.view])
 
   const handleNewBlankSession = useCallback(() => {
     sessionCtx.setActiveSession(null)

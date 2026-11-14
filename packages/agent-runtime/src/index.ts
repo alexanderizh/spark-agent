@@ -244,6 +244,10 @@ export type {
   UpdateRuleFields,
 } from './services/rules.service.js'
 export { SessionService } from './services/session.service.js'
+export type {
+  RemotePushProvider,
+  NotifyUserResult,
+} from './services/session/inprocess-servers/notify-server.js'
 export {
   SCHEDULED_TASK_SESSION_TITLE_PREFIX,
   REMOTE_CREATED_TITLE_SUFFIX,
