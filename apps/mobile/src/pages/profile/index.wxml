@@ -34,8 +34,9 @@
     <view class="card-head">
       <text class="card-title">账号与安全</text>
     </view>
-    <view class="list-row" bindtap="onGoChangePassword">
+    <view class="list-row {{smsDisabled ? 'list-row-disabled' : ''}}" bindtap="onGoChangePassword">
       <text class="list-row-label grow">修改密码</text>
+      <text wx:if="{{smsDisabled}}" class="list-row-hint">短信服务升级中</text>
       <text class="t-faint">›</text>
     </view>
   </view>

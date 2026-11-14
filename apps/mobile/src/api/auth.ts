@@ -10,6 +10,19 @@ export function getCaptcha(): Promise<AuthCaptcha> {
   return request<AuthCaptcha>('/auth/captcha')
 }
 
+/** 认证能力开关（由服务端 client-config 下发，决定短信等入口是否可用） */
+export interface AuthCapabilities {
+  smsEnabled: boolean
+  wechatEnabled: boolean
+}
+
+/** GET /client-config — 客户端公开配置（无需登录；用于短信等入口的启用/置灰） */
+export function getClientConfig(): Promise<{ authCapabilities?: AuthCapabilities }> {
+  return request<{ authCapabilities?: AuthCapabilities }>('/client-config/', {
+    skipAuth: true,
+  })
+}
+
 /** POST /auth/send-code — 发送邮箱验证码（需先过图片验证码） */
 export function sendEmailCode(input: {
   account: string

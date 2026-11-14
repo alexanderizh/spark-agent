@@ -18,6 +18,7 @@ export const AUTH_RESOURCE = {
   zh: {
     // ── 通用 ──────────────────────────────────────────────────────────────
     'auth.common.emailOrPhone': '邮箱或手机号',
+    'auth.common.emailOnly': '请输入邮箱',
     'auth.common.password': '密码',
     'auth.common.code': '验证码',
     'auth.common.sendBtn': '发送',
@@ -164,6 +165,7 @@ export const AUTH_RESOURCE = {
   en: {
     // ── 通用 ──────────────────────────────────────────────────────────────
     'auth.common.emailOrPhone': 'Email or phone',
+    'auth.common.emailOnly': 'Email only',
     'auth.common.password': 'Password',
     'auth.common.code': 'Code',
     'auth.common.sendBtn': 'Send',

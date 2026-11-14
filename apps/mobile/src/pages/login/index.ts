@@ -7,7 +7,7 @@
  * 三种登录方式（loginMode）：
  *   password — 账号 + 密码 + 图片验证码
  *   code     — 账号（邮箱）+ 邮箱验证码（发送前需图片验证码）
- *   sms      — 手机号 + 短信验证码（发送前需图片验证码）
+ *   sms      — 手机号 + 短信验证码（发送前需图片验证码；短信服务停用期间置灰禁用）
  * 注册走 code 模式（account 为邮箱）。
  */
 
@@ -32,6 +32,8 @@ interface LoginPageData {
   sendingCode: boolean
   codeCountdown: number
   submitting: boolean
+  /** 短信服务停用期间：短信登录 Tab 置灰禁用（client-config 下发，默认禁用） */
+  smsDisabled: boolean
 }
 
 const COUNTDOWN_SECONDS = 60
@@ -54,10 +56,24 @@ Page({
     sendingCode: false,
     codeCountdown: 0,
     submitting: false,
+    smsDisabled: true,
   } as LoginPageData,
 
   onLoad() {
     syncPageTheme(this)
+    // 拉取认证能力开关：短信服务停用期间短信登录入口置灰禁用（配置未到达前按禁用处理）
+    authApi
+      .getClientConfig()
+      .then((cfg) => {
+        const smsDisabled = cfg.authCapabilities?.smsEnabled !== true
+        this.setData({ smsDisabled })
+        // 兜底：配置到达后若正停在短信登录表单，切回密码登录
+        if (smsDisabled && this.data.mode === 'sms') {
+          this.setData({ mode: 'password', captchaText: '' })
+          this.loadCaptcha()
+        }
+      })
+      .catch(() => undefined)
   },
 
   onUnload() {
@@ -93,6 +109,11 @@ Page({
   onModeChange(e: WechatMiniprogram.CustomEvent) {
     const mode = e.currentTarget.dataset.mode as LoginMode
     if (mode === this.data.mode) return
+    // 短信服务停用期间：短信登录 Tab 置灰，点击给出引导提示
+    if (mode === 'sms' && this.data.smsDisabled) {
+      wx.showToast({ title: '短信服务升级中，请使用密码或邮箱验证码登录', icon: 'none' })
+      return
+    }
     this.setData({ mode, registering: false, captchaText: '' })
     this.loadCaptcha()
   },

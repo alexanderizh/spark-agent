@@ -17,7 +17,7 @@
       bindtap="onModeChange"
     >邮箱验证码</view>
     <view
-      class="segment-item {{mode === 'sms' ? 'active' : ''}}"
+      class="segment-item {{mode === 'sms' ? 'active' : ''}} {{smsDisabled ? 'disabled' : ''}}"
       data-mode="sms"
       bindtap="onModeChange"
     >短信登录</view>

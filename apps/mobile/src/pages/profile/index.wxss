@@ -133,3 +133,16 @@
 .btn-danger-plain--hover {
   background: #fef2f2;
 }
+
+/* ─── 短信服务停用期间：修改密码入口置灰禁用态 ─────────────────────────────── */
+.list-row-disabled .list-row-label {
+  color: #b8b8b8;
+}
+.list-row-disabled {
+  opacity: 0.6;
+}
+.list-row-hint {
+  font-size: 24rpx;
+  color: #b8b8b8;
+  margin-right: 8rpx;
+}

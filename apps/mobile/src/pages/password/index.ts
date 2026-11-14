@@ -25,6 +25,8 @@ interface PasswordPageData {
   sendingCode: boolean
   codeCountdown: number
   submitting: boolean
+  /** 短信服务停用期间：整页短信改密链路禁用，展示引导空状态（client-config 下发，默认禁用） */
+  smsDisabled: boolean
 }
 
 const COUNTDOWN_SECONDS = 60
@@ -57,10 +59,18 @@ Page({
     sendingCode: false,
     codeCountdown: 0,
     submitting: false,
+    smsDisabled: true,
   } as PasswordPageData,
 
   onLoad() {
     syncPageTheme(this)
+    // 拉取认证能力开关：短信服务停用期间整页禁用，仅展示引导提示（配置未到达前按禁用处理）
+    authApi
+      .getClientConfig()
+      .then((cfg) => {
+        this.setData({ smsDisabled: cfg.authCapabilities?.smsEnabled !== true })
+      })
+      .catch(() => undefined)
     // 账号本身是手机号时预填（短信发到绑定手机号 = 账号手机号）
     const account = getState().user?.account ?? ''
     if (/^1[3-9]\d{9}$/.test(account)) {
@@ -112,8 +122,13 @@ Page({
   },
 
   async onSendCode() {
-    const { phone, captchaId, captchaText, sendingCode, codeCountdown } = this.data
+    const { phone, captchaId, captchaText, sendingCode, codeCountdown, smsDisabled } = this.data
     if (sendingCode || codeCountdown > 0) return
+    // 兜底：短信服务停用期间不允许触发发送（正常情况下页面已展示禁用态）
+    if (smsDisabled) {
+      wx.showToast({ title: '短信服务升级中，请前往官网或桌面端修改密码', icon: 'none' })
+      return
+    }
     if (!/^1[3-9]\d{9}$/.test(phone.trim())) {
       wx.showToast({ title: '请填写账号绑定的手机号', icon: 'none' })
       return
@@ -151,8 +166,13 @@ Page({
   },
 
   async onSubmit() {
-    const { phone, smsCode, newPassword, confirmPassword, submitting } = this.data
+    const { phone, smsCode, newPassword, confirmPassword, submitting, smsDisabled } = this.data
     if (submitting) return
+    // 兜底：短信服务停用期间不允许提交（正常情况下页面已展示禁用态）
+    if (smsDisabled) {
+      wx.showToast({ title: '短信服务升级中，请前往官网或桌面端修改密码', icon: 'none' })
+      return
+    }
     if (!/^1[3-9]\d{9}$/.test(phone.trim())) {
       wx.showToast({ title: '请填写账号绑定的手机号', icon: 'none' })
       return

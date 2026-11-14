@@ -33,3 +33,21 @@
 .btn-plain--hover {
   background: #f7f7f5;
 }
+
+/* ─── 短信服务停用期间：整页禁用引导态 ─────────────────────────────────────── */
+.sms-disabled-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  padding: 32rpx 8rpx 16rpx;
+}
+.sms-disabled-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+.sms-disabled-desc {
+  font-size: 26rpx;
+  line-height: 1.7;
+  color: #8d8a86;
+}

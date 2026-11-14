@@ -115,9 +115,7 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
         form.setFields([{ name: 'emailCode', value: '', errors: [] }])
       }
       toast.success(
-        isStillCurrentTarget
-          ? t('auth.common.emailCodeSent')
-          : t('auth.common.emailCodeSentStale'),
+        isStillCurrentTarget ? t('auth.common.emailCodeSent') : t('auth.common.emailCodeSentStale'),
       )
     } catch (e) {
       const msg = (e as Error).message ?? t('auth.common.sendFailed')
@@ -168,9 +166,7 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
         startCodeTimer(result.expire_in, requestedAt)
         form.setFields([{ name: 'smsCode', value: '', errors: [] }])
       }
-      toast.success(
-        isStillCurrentTarget ? t('auth.common.smsSent') : t('auth.common.smsSentStale'),
-      )
+      toast.success(isStillCurrentTarget ? t('auth.common.smsSent') : t('auth.common.smsSentStale'))
     } catch (e) {
       const msg = (e as Error).message ?? t('auth.common.sendFailed')
       const target = matchFieldError(msg, ['account', 'captchaText'])
@@ -270,7 +266,7 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
             },
           ]}
         >
-          <AccountInput onAccountChange={handleAccountChange} />
+          <AccountInput onAccountChange={handleAccountChange} emailOnly={!smsEnabled} />
         </Form.Item>
 
         {usesPhone ? (
@@ -387,7 +383,12 @@ function AccountInput({
   value,
   onChange,
   onAccountChange,
-}: ControlledInputProps & { onAccountChange?: (value: string) => void }): React.ReactElement {
+  emailOnly,
+}: ControlledInputProps & {
+  onAccountChange?: (value: string) => void
+  /** 短信服务停用期间仅支持邮箱，占位提示收窄 */
+  emailOnly?: boolean
+}): React.ReactElement {
   const { t } = useI18n()
   return (
     <div className="auth-input auth-input--flat">
@@ -398,7 +399,7 @@ function AccountInput({
           onAccountChange?.(event.target.value)
           onChange?.(event)
         }}
-        placeholder={t('auth.common.emailOrPhone')}
+        placeholder={emailOnly ? t('auth.common.emailOnly') : t('auth.common.emailOrPhone')}
         allowClear
         autoComplete="username"
       />
@@ -477,7 +478,11 @@ function CodeInput({
         onClick={() => countdown <= 0 && !sending && onSend()}
         disabled={countdown > 0 || sending}
       >
-        {sending ? t('auth.common.sending') : countdown > 0 ? `${countdown}s` : t('auth.common.sendBtn')}
+        {sending
+          ? t('auth.common.sending')
+          : countdown > 0
+            ? `${countdown}s`
+            : t('auth.common.sendBtn')}
       </button>
     </div>
   )

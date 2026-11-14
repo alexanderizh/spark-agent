@@ -1,4 +1,16 @@
 <view class="password-page theme-root {{themeClass}}">
+  <!-- 短信服务停用期间：整页短信改密链路禁用，展示引导空状态 -->
+  <view wx:if="{{smsDisabled}}" class="card">
+    <view class="card-head">
+      <text class="card-title">修改密码</text>
+    </view>
+    <view class="sms-disabled-hint">
+      <text class="sms-disabled-title">短信服务升级中</text>
+      <text class="sms-disabled-desc">暂时无法通过短信验证修改密码，请前往官网（yiqibyte.com）或 SparkWork 桌面端操作。</text>
+    </view>
+  </view>
+
+  <block wx:else>
   <view class="card">
     <view class="card-head">
       <text class="card-title">验证身份</text>
@@ -91,6 +103,7 @@
       <text>修改成功后，所有设备（含桌面端）的登录状态都会失效，需要重新登录。</text>
     </view>
   </view>
+  </block>
 
   <view class="safe-bottom"></view>
 </view>

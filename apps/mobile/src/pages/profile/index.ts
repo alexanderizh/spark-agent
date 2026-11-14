@@ -48,6 +48,8 @@ interface ProfilePageData {
   themePreference: ThemePreference
   themeModeLabel: string
   themeResolvedLabel: string
+  /** 短信服务停用期间：修改密码入口置灰禁用（client-config 下发，默认禁用） */
+  smsDisabled: boolean
 }
 
 /** 读取小程序版本号；getAccountInfoSync 在低版本基础库可能缺失，失败回退 em dash */
@@ -80,6 +82,7 @@ Page({
     themePreference: 'system',
     themeModeLabel: '跟随系统',
     themeResolvedLabel: '浅色',
+    smsDisabled: true,
   } as ProfilePageData,
 
   /** onHide 记录的离开时刻；> 0 表示本次 onShow 是「从别处返回」 */
@@ -88,6 +91,13 @@ Page({
   onLoad() {
     const cached = readListCache<ProfileCache>(PROFILE_CACHE_KEY)
     if (cached != null) this.setData(cached)
+    // 拉取认证能力开关：短信服务停用期间「修改密码」入口置灰禁用（配置未到达前按禁用处理）
+    authApi
+      .getClientConfig()
+      .then((cfg) => {
+        this.setData({ smsDisabled: cfg.authCapabilities?.smsEnabled !== true })
+      })
+      .catch(() => undefined)
   },
 
   onShow() {
@@ -232,6 +242,11 @@ Page({
   },
 
   onGoChangePassword() {
+    // 短信服务停用期间：小程序改密走短信链路，入口置灰并引导到官网/桌面端
+    if (this.data.smsDisabled) {
+      wx.showToast({ title: '短信服务升级中，请前往官网或桌面端修改密码', icon: 'none' })
+      return
+    }
     wx.navigateTo({ url: '/pages/password/index' })
   },
 
