@@ -3,9 +3,12 @@ import type { MobileBridgeSessionSummary } from '@spark/protocol'
 import {
   DEFAULT_REMOTE_FILTER,
   countActiveFilterFacets,
+  defaultRemoteSessionFilter,
   hasSessionLevelFilter,
   isRemoteFilterActive,
   matchRemoteSession,
+  parseRemoteKeyword,
+  parseRemoteSessionFilter,
   sortFilterValues,
   summarizeRemoteFilter,
   toggleFilterValue,
@@ -182,6 +185,62 @@ describe('toggleFilterValue / sortFilterValues', () => {
       { value: 'c' },
     ]
     expect(sortFilterValues<'a' | 'b' | 'c'>(['c', 'a'], order)).toEqual(['a', 'c'])
+  })
+})
+
+describe('defaultRemoteSessionFilter', () => {
+  it('每次都是新数组，不会被调用方改坏共享状态', () => {
+    const first = defaultRemoteSessionFilter()
+    first.statuses.push('running')
+    first.projectIds.push('p1')
+    expect(defaultRemoteSessionFilter()).toEqual(DEFAULT_REMOTE_FILTER)
+    expect(DEFAULT_REMOTE_FILTER.statuses).toEqual([])
+  })
+})
+
+describe('parseRemoteSessionFilter', () => {
+  it('非对象 / null 回落默认筛选', () => {
+    expect(parseRemoteSessionFilter(null)).toEqual(DEFAULT_REMOTE_FILTER)
+    expect(parseRemoteSessionFilter('oops')).toEqual(DEFAULT_REMOTE_FILTER)
+    expect(parseRemoteSessionFilter([1, 2])).toEqual(DEFAULT_REMOTE_FILTER)
+  })
+
+  it('白名单外的值丢掉，合法值按选项顺序归一化', () => {
+    expect(
+      parseRemoteSessionFilter({
+        statuses: ['archived', 'idle', 'running', 'idle'],
+        labels: ['unknown-label', 'pending-review', 'unlabeled'],
+        activity: '7d',
+        projectIds: ['p2', ' p1 ', 'p2', '', 42],
+        pinnedOnly: 'yes',
+      }),
+    ).toEqual({
+      statuses: ['running', 'idle'],
+      labels: ['unlabeled', 'pending-review'],
+      activity: '7d',
+      projectIds: ['p2', 'p1'],
+      pinnedOnly: false,
+    })
+  })
+
+  it('字段缺失按「该维度不过滤」处理', () => {
+    expect(parseRemoteSessionFilter({ projectIds: ['p1'] })).toEqual({
+      ...DEFAULT_REMOTE_FILTER,
+      projectIds: ['p1'],
+    })
+    expect(parseRemoteSessionFilter({ activity: 'forever' }).activity).toBe('all')
+    expect(parseRemoteSessionFilter({ pinnedOnly: true }).pinnedOnly).toBe(true)
+  })
+})
+
+describe('parseRemoteKeyword', () => {
+  it('只收字符串，超长与非字符串按没有搜索词处理', () => {
+    expect(parseRemoteKeyword('远程会话')).toBe('远程会话')
+    expect(parseRemoteKeyword('')).toBe('')
+    expect(parseRemoteKeyword(null)).toBe('')
+    expect(parseRemoteKeyword(42)).toBe('')
+    expect(parseRemoteKeyword('x'.repeat(101))).toBe('')
+    expect(parseRemoteKeyword('x'.repeat(100))).toHaveLength(100)
   })
 })
 

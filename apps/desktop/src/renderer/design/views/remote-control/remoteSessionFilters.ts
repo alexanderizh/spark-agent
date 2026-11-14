@@ -11,7 +11,7 @@
  */
 import type { MobileBridgeSessionSummary, SessionLabelKey } from '@spark/protocol'
 import { UNASSIGNED_PROJECT_ID } from './remoteSessionStore'
-import { sessionLabelText } from './remoteSessionLabels'
+import { REMOTE_SESSION_LABELS, sessionLabelText } from './remoteSessionLabels'
 
 /** 会话状态（目标端 sessions.status 的实际取值：idle / running / completed / cancelled / error） */
 export type RemoteStatusFilter = 'running' | 'idle' | 'completed' | 'cancelled' | 'error'
@@ -28,13 +28,21 @@ export interface RemoteSessionFilter {
   pinnedOnly: boolean
 }
 
-export const DEFAULT_REMOTE_FILTER: RemoteSessionFilter = {
-  statuses: [],
-  labels: [],
-  activity: 'all',
-  projectIds: [],
-  pinnedOnly: false,
+/**
+ * 一份新的默认筛选。数组必须是新的：DEFAULT_REMOTE_FILTER 会被多处引用
+ * （组件初值、清除筛选、持久化回退），共享同一份数组迟早被谁改坏。
+ */
+export function defaultRemoteSessionFilter(): RemoteSessionFilter {
+  return { statuses: [], labels: [], activity: 'all', projectIds: [], pinnedOnly: false }
 }
+
+export const DEFAULT_REMOTE_FILTER: RemoteSessionFilter = defaultRemoteSessionFilter()
+
+/** 标记维度的合法值与顺序：「未标记」在前，其余与 REMOTE_SESSION_LABELS 同序 */
+const REMOTE_LABEL_FILTER_OPTIONS: ReadonlyArray<{ value: RemoteLabelFilter }> = [
+  { value: 'unlabeled' },
+  ...REMOTE_SESSION_LABELS.map((meta) => ({ value: meta.key })),
+]
 
 export const REMOTE_STATUS_FILTER_OPTIONS: ReadonlyArray<{
   value: RemoteStatusFilter
@@ -161,4 +169,79 @@ export function sortFilterValues<T extends string>(
   order: ReadonlyArray<{ value: T }>,
 ): T[] {
   return order.filter((option) => list.includes(option.value)).map((option) => option.value)
+}
+
+/* ─── 持久化收敛（localStorage 是外来数据） ─── */
+
+const REMOTE_STATUS_VALUES: readonly RemoteStatusFilter[] = REMOTE_STATUS_FILTER_OPTIONS.map(
+  (option) => option.value,
+)
+const REMOTE_ACTIVITY_VALUES: readonly RemoteActivityFilter[] = REMOTE_ACTIVITY_FILTER_OPTIONS.map(
+  (option) => option.value,
+)
+const REMOTE_LABEL_VALUES: readonly RemoteLabelFilter[] = REMOTE_LABEL_FILTER_OPTIONS.map(
+  (option) => option.value,
+)
+/** 搜索词上限：按标题匹配，超长词没有意义，还能防止把状态块撑爆 */
+const REMOTE_KEYWORD_MAX_LENGTH = 100
+/** 项目 id 上限：与 remoteViewState 的 cleanString 保持一致 */
+const REMOTE_PROJECT_ID_MAX_LENGTH = 200
+
+function isOneOf<T extends string>(list: readonly T[], value: unknown): value is T {
+  return typeof value === 'string' && list.some((item) => item === value)
+}
+
+/** 字符串数组收敛：去重、去空、限长，脏数据不进状态 */
+function parseIdList(value: unknown, maxLength: number): string[] {
+  if (!Array.isArray(value)) return []
+  const list: string[] = []
+  for (const item of value) {
+    if (typeof item !== 'string') continue
+    const id = item.trim()
+    if (id.length === 0 || id.length > maxLength || list.includes(id)) continue
+    list.push(id)
+  }
+  return list
+}
+
+/** 多选维度收敛：白名单外的值直接丢掉（旧版本新增/删除过选项时靠这个兜底） */
+function parseEnumList<T extends string>(list: readonly T[], value: unknown): T[] {
+  if (!Array.isArray(value)) return []
+  const picked: T[] = []
+  for (const item of value) {
+    if (!isOneOf(list, item) || picked.includes(item)) continue
+    picked.push(item)
+  }
+  return picked
+}
+
+/**
+ * 持久化的筛选 → 合法筛选。
+ *
+ * 落盘的数据可能是旧版本写的、手改的、半截写入的，所以按白名单丢项而不是抛错；
+ * 字段缺失按「该维度不过滤」处理，返回值形状永远合法（调用方可以直接用）。
+ */
+export function parseRemoteSessionFilter(value: unknown): RemoteSessionFilter {
+  const raw =
+    value != null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+  return {
+    statuses: sortFilterValues(
+      parseEnumList(REMOTE_STATUS_VALUES, raw.statuses),
+      REMOTE_STATUS_FILTER_OPTIONS,
+    ),
+    labels: sortFilterValues(
+      parseEnumList(REMOTE_LABEL_VALUES, raw.labels),
+      REMOTE_LABEL_FILTER_OPTIONS,
+    ),
+    activity: isOneOf(REMOTE_ACTIVITY_VALUES, raw.activity) ? raw.activity : 'all',
+    projectIds: parseIdList(raw.projectIds, REMOTE_PROJECT_ID_MAX_LENGTH),
+    pinnedOnly: raw.pinnedOnly === true,
+  }
+}
+
+/** 搜索词收敛：只收字符串并限长，其余按「没有搜索词」处理 */
+export function parseRemoteKeyword(value: unknown): string {
+  return typeof value === 'string' && value.length <= REMOTE_KEYWORD_MAX_LENGTH ? value : ''
 }

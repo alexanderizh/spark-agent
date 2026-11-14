@@ -41,7 +41,7 @@ export const KeyCode = new Proxy(
   {
     get(target, key) {
       const map = target as Record<string | symbol, number>
-      if (typeof map[key] !== 'number') map[key] = 100 + (autoId += 1) % 600
+      if (typeof map[key] !== 'number') map[key] = 100 + ((autoId += 1) % 600)
       return map[key]
     },
   },
@@ -52,12 +52,7 @@ export class Range {
   startColumn: number
   endLineNumber: number
   endColumn: number
-  constructor(
-    startLineNumber = 1,
-    startColumn = 1,
-    endLineNumber = 1,
-    endColumn = 1,
-  ) {
+  constructor(startLineNumber = 1, startColumn = 1, endLineNumber = 1, endColumn = 1) {
     this.startLineNumber = startLineNumber
     this.startColumn = startColumn
     this.endLineNumber = endLineNumber
@@ -107,6 +102,23 @@ export const editor = {
   EditorFocus: { Text: 1 },
 }
 
+// TS/JS 语言服务：monacoInit.configureTsJsLanguageService 在 CodeEditor 的 import
+// 阶段就会被调用，缺 languages.typescript 会让任何（间接）引入 CodeEditor 的测试
+// 在收集阶段直接抛 "Cannot read properties of undefined (reading 'JsxEmit')"。
+export const typescript = {
+  JsxEmit: { None: 0, Preserve: 1, React: 2, ReactJSX: 3, ReactJSXDev: 4 },
+  ScriptTarget: { ES5: 1, ES2015: 2, ESNext: 99 },
+  ModuleKind: { None: 0, CommonJS: 1, ESNext: 99 },
+  typescriptDefaults: {
+    setCompilerOptions: () => undefined,
+    setDiagnosticsOptions: () => undefined,
+  },
+  javascriptDefaults: {
+    setCompilerOptions: () => undefined,
+    setDiagnosticsOptions: () => undefined,
+  },
+}
+
 export const languages = {
   register: () => undefined,
   getLanguages: () => [],
@@ -115,13 +127,19 @@ export const languages = {
   registerDefinitionProvider: () => ({ dispose: () => undefined }),
   registerHoverProvider: () => ({ dispose: () => undefined }),
   setLanguageConfiguration: () => ({ dispose: () => undefined }),
+  typescript,
 }
 
 export const MarkerSeverity = { Hint: 1, Info: 2, Warning: 4, Error: 8 }
 export const MarkerTag = {}
 
 export const Selection = class {
-  constructor(public a = 0, public b = 0, public c = 0, public d = 0) {}
+  constructor(
+    public a = 0,
+    public b = 0,
+    public c = 0,
+    public d = 0,
+  ) {}
 }
 
 // 未显式列出的导出（如 token、theme 相关）经 default 兜底为自动 no-op stub。

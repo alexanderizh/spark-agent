@@ -12,7 +12,6 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import type { MobileBridgeProjectSummary, MobileBridgeSessionSummary } from '@spark/protocol'
 import { useRemoteCall } from './useRemoteBridge'
 import {
-  DEFAULT_REMOTE_FILTER,
   hasSessionLevelFilter,
   isRemoteFilterActive,
   type RemoteSessionFilter,
@@ -29,7 +28,12 @@ import {
   subscribeRemoteSessionStore,
   updateRemoteSessionStore,
 } from './remoteSessionStore'
-import { readExpandedProjects, rememberExpandedProjects } from './remoteViewState'
+import {
+  readExpandedProjects,
+  readTreeQuery,
+  rememberExpandedProjects,
+  rememberTreeQuery,
+} from './remoteViewState'
 
 const SESSION_PAGE_LIMIT = 60
 const SEARCH_PAGE_LIMIT = 200
@@ -57,21 +61,48 @@ export function useRemoteSessionTree(deviceId: string) {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<Record<string, boolean>>({})
   const [refreshing, setRefreshing] = useState(false)
-  const [keyword, setKeywordState] = useState('')
-  const [filter, setFilterState] = useState<RemoteSessionFilter>(DEFAULT_REMOTE_FILTER)
+  /**
+   * 搜索词与筛选按设备落在 localStorage：远程视图是 lazy 挂载的，切到本地会话
+   * 再回来组件整个重建，不落盘的话用户选好的筛选每次都得重点一遍。
+   */
+  const [initialQuery] = useState(() => readTreeQuery(deviceId))
+  const [keyword, setKeywordState] = useState(initialQuery.keyword)
+  const [filter, setFilterState] = useState<RemoteSessionFilter>(initialQuery.filter)
   /** 轮询回调里要读最新关键词/筛选，避免用 effect 依赖反复重建定时器 */
-  const keywordRef = useRef('')
-  const filterRef = useRef<RemoteSessionFilter>(DEFAULT_REMOTE_FILTER)
+  const keywordRef = useRef(initialQuery.keyword)
+  const filterRef = useRef<RemoteSessionFilter>(initialQuery.filter)
 
-  const setKeyword = useCallback((value: string) => {
-    keywordRef.current = value
-    setKeywordState(value)
-  }, [])
+  const setKeyword = useCallback(
+    (value: string) => {
+      keywordRef.current = value
+      setKeywordState(value)
+      rememberTreeQuery(deviceId, { keyword: value, filter: filterRef.current })
+    },
+    [deviceId],
+  )
 
-  const setFilter = useCallback((value: RemoteSessionFilter) => {
-    filterRef.current = value
-    setFilterState(value)
-  }, [])
+  const setFilter = useCallback(
+    (value: RemoteSessionFilter) => {
+      filterRef.current = value
+      setFilterState(value)
+      rememberTreeQuery(deviceId, { keyword: keywordRef.current, filter: value })
+    },
+    [deviceId],
+  )
+
+  /**
+   * 设备切换：RemoteSessionPane 不随设备重挂（同一个 hook 实例，只是 deviceId 变），
+   * 所以要把查询条件换成目标设备自己那份；没有记录就回到默认。
+   * 不换的话 A 机器选的「只看某项目」会留在 B 机器上，项目 id 还对不上。
+   */
+  const queryDeviceRef = useRef(deviceId)
+  useEffect(() => {
+    if (queryDeviceRef.current === deviceId) return
+    queryDeviceRef.current = deviceId
+    const remembered = readTreeQuery(deviceId)
+    setKeyword(remembered.keyword)
+    setFilter(remembered.filter)
+  }, [deviceId, setKeyword, setFilter])
 
   const toMessage = (cause: unknown): string =>
     cause instanceof Error ? cause.message : String(cause)

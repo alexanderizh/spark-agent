@@ -1,5 +1,5 @@
 /**
- * 远程视图的本地状态（上次选的设备 / 会话 / 展开的项目 / 输入区配置）。
+ * 远程视图的本地状态（上次选的设备 / 会话 / 展开的项目 / 输入区配置 / 列表查询条件）。
  *
  * 为什么放在渲染端 localStorage 而不是主进程 settings：
  *   - 这些是「这台机器上这个窗口上次看到哪」的纯 UI 状态，不需要跨设备同步，
@@ -10,6 +10,13 @@
  * parseRemoteViewState 收敛：版本号不符直接重置，单个设备的脏字段丢掉，
  * 不影响其它设备。每类设备状态表最多 MAX_CACHED_DEVICES 项，超限后按写入顺序淘汰。
  */
+import {
+  defaultRemoteSessionFilter,
+  isRemoteFilterActive,
+  parseRemoteKeyword,
+  parseRemoteSessionFilter,
+  type RemoteSessionFilter,
+} from './remoteSessionFilters'
 
 export const REMOTE_VIEW_STATE_KEY = 'spark-agent:remote-view-state'
 export const REMOTE_VIEW_STATE_VERSION = 1
@@ -44,6 +51,17 @@ export interface RemoteComposerPrefs {
   reasoningEffort?: string
 }
 
+/**
+ * 一台设备上次的列表查询条件（搜索词 + 筛选）。
+ *
+ * 远程视图是 lazy 挂载的：切到本地会话再回来组件整个重建，只靠组件 state 的话
+ * 「选好的筛选、打好的搜索词」每次都从零开始，用户得重新点一遍。
+ */
+export interface RemoteTreeQuery {
+  keyword: string
+  filter: RemoteSessionFilter
+}
+
 export interface RemoteViewState {
   version: number
   /** 上次停留的设备（离线/不存在时由调用方回落，不在这里清） */
@@ -52,6 +70,8 @@ export interface RemoteViewState {
   /** 设备 → 展开过的项目 id 列表 */
   expandedByDevice: Record<string, string[]>
   composerByDevice: Record<string, RemoteComposerPrefs>
+  /** 设备 → 上次的搜索词与筛选 */
+  treeQueryByDevice: Record<string, RemoteTreeQuery>
   /** 顶部设备切换器形态（用户显式选过的才不是 auto） */
   deviceSwitcher: RemoteDeviceSwitcherMode
 }
@@ -68,6 +88,7 @@ export function defaultRemoteViewState(): RemoteViewState {
     lastSessionByDevice: {},
     expandedByDevice: {},
     composerByDevice: {},
+    treeQueryByDevice: {},
     deviceSwitcher: 'auto',
   }
 }
@@ -181,6 +202,18 @@ export function parseRemoteViewState(raw: string | null): RemoteViewState {
     const prefs = parseComposerPrefs(value)
     if (id == null || prefs == null) continue
     state.composerByDevice[id] = prefs
+  }
+  for (const [deviceId, value] of Object.entries(asRecord(data.treeQueryByDevice))) {
+    const id = cleanString(deviceId)
+    if (id == null) continue
+    const raw = asRecord(value)
+    const query: RemoteTreeQuery = {
+      keyword: parseRemoteKeyword(raw.keyword),
+      filter: parseRemoteSessionFilter(raw.filter),
+    }
+    // 空的查询条件不值得占位：读出来和默认值一样，写进去只会让状态块变胖
+    if (query.keyword.length === 0 && !isRemoteFilterActive(query.filter)) continue
+    state.treeQueryByDevice[id] = query
   }
   return state
 }
@@ -330,6 +363,32 @@ export function readComposerPrefs(
   return readRemoteViewState(storage).composerByDevice[deviceId] ?? null
 }
 
+/** 读这台设备上次的搜索词与筛选；没有记录就返回一份全新的默认值 */
+export function readTreeQuery(
+  deviceId: string,
+  storage?: RemoteViewStorage | null,
+): RemoteTreeQuery {
+  const stored = readRemoteViewState(storage).treeQueryByDevice[deviceId]
+  if (stored != null) return stored
+  return { keyword: '', filter: defaultRemoteSessionFilter() }
+}
+
+/** 记住这台设备这次的搜索词与筛选（覆盖式；清空筛选也会照写，好让「清除」也能被记住） */
+export function rememberTreeQuery(
+  deviceId: string,
+  query: RemoteTreeQuery,
+  storage?: RemoteViewStorage | null,
+): RemoteViewState {
+  const state = readRemoteViewState(storage)
+  if (query.keyword.length === 0 && !isRemoteFilterActive(query.filter)) {
+    delete state.treeQueryByDevice[deviceId]
+  } else {
+    state.treeQueryByDevice[deviceId] = { keyword: query.keyword, filter: query.filter }
+  }
+  capDeviceMap(state.treeQueryByDevice, deviceId)
+  return writeRemoteViewState(state, storage)
+}
+
 /** 会话被删 / 已不存在：只清「记住的会话」，展开状态与偏好保留 */
 export function forgetLastSession(
   deviceId: string,
@@ -360,6 +419,7 @@ export function forgetDevice(deviceId: string, storage?: RemoteViewStorage | nul
   delete state.lastSessionByDevice[deviceId]
   delete state.expandedByDevice[deviceId]
   delete state.composerByDevice[deviceId]
+  delete state.treeQueryByDevice[deviceId]
   if (state.lastDeviceId === deviceId) state.lastDeviceId = null
   writeRemoteViewState(state, storage)
 }
