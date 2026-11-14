@@ -1689,7 +1689,9 @@
   min-height: 0;
   overflow-y: auto;
   /* 消息列最宽 820px（与桌面端对话区同一口径），超出部分平分到左右内边距 */
-  padding: 18px max(20px, calc((100% - 820px) / 2)) 12px;
+  /* 底部留 20px：最后一条的操作条是绝对定位在消息下沿的（22px 高），
+     只给 12px 会被滚动容器裁掉一截 */
+  padding: 18px max(20px, calc((100% - 820px) / 2)) 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1741,6 +1743,8 @@
    居中——后者会把不同宽度的条目各自居中，活动行比正文右移二十几像素，左边界参差。
    输入区用同一条公式取外边距，消息列与输入框左右边对齐。 */
 .rc-msg {
+  /* 操作条要能贴着本条消息下方绝对定位（见 .rc-msg .msg-hover-bar） */
+  position: relative;
   max-width: 100%;
   font-size: var(--font-base, 13px);
   line-height: 1.72;
@@ -1781,7 +1785,30 @@
 }
 
 /* 消息操作条：形态直接复用桌面端 .msg-hover-bar / .msg-hover-btn，
-   但显隐由 hover 本条消息决定（桌面端的触发规则挂在 .msg 上，远程用的是 .rc-msg） */
+   但显隐由 hover 本条消息决定（桌面端的触发规则挂在 .msg 上，远程用的是 .rc-msg）。
+   定位必须拿走：桌面端让操作条占在流内，一条消息只多一排空气；远程视图一轮被拆成
+   十几段（正文→工具→正文→工具…），每段都留一排就是 30px×N，段与段之间能空出
+   70px——正文读起来是断的。改成绝对定位贴在消息下沿后静态零占位，hover 才淡入，
+   视觉上多出来的是一排图标而不是一排空白。 */
+.rc-msg .msg-hover-bar {
+  position: absolute;
+  /* 上提 4px：消息自身的行盒在正文下方还有约 5px 留白，先吃掉它，
+     压到下一段的量从 10px 降到 6px */
+  top: 100%;
+  margin-top: -4px;
+  left: 0;
+  right: 0;
+  /* 收窄到 22px：绝对定位后会压在下一段顶端（容器 gap 只有 12px），
+     能少压一像素是一像素 */
+  padding: 2px 0 0;
+}
+
+/* 图标热区同步收窄，20px 仍大于 12px 图标的点击需求 */
+.rc-msg .msg-hover-btn {
+  width: 20px;
+  height: 20px;
+}
+
 .rc-msg:hover .msg-hover-bar,
 .rc-msg:focus-within .msg-hover-bar {
   opacity: 1;
@@ -2010,10 +2037,13 @@
   min-width: 0;
 }
 
-/* 轨迹点正压在 .rc-activity-body 的左边线上（13px 内边距 + 5px 直径） */
+/* 轨迹点正压在 .rc-activity-body 的左边线上：线的外沿到步骤内容左边是
+   「1px 边框 + 13px 内边距 = 14px」，5px 圆点要中心落在 1px 线的中心上，
+   左偏移就是 -(14 + 0.5) + 2.5 = -15px。
+   （早先写的 -17px 会让圆点整体偏到线的左侧 2px，时间轴看起来是「点和线错位」。） */
 .rc-step-dot {
   position: absolute;
-  left: -17px;
+  left: -15px;
   top: 9px;
   width: 5px;
   height: 5px;
@@ -2643,6 +2673,14 @@
     padding: 12px 12px 0;
   }
 
+  /* 快捷回复建议：复用桌面端主输入区同一个组件，但那套样式是放在有内边距的容器里；
+     远程输入区是一张四边无内边距的卡，直接放进来会贴着上边框和左边缘（用户看着
+     就是「和输入框粘在一起」）。这里补上与附件条一致的内边距，底部间距沿用组件
+     自带的 margin-bottom。 */
+  > .composer-quick-replies {
+    padding: 12px 12px 0;
+  }
+
   textarea {
     display: block;
     width: 100%;
@@ -2730,7 +2768,12 @@
   gap: 2px;
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
+  /* 只裁横向，纵向必须放行：配置下拉是从 chip 往上弹出页脚的，
+     overflow: hidden 会把 absolute 子层一起裁掉（z-index 再高也看不见，
+     表现为「点了 chip 但弹窗不存在」）。拆成 clip + visible 后，
+     横向仍不会溢出压到右侧「发送到 xxx」，浮层能正常往上开。 */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .rc-footer-target {
