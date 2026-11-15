@@ -99,6 +99,8 @@ Component({
     recording: { type: Boolean, value: false },
     /** 转写中 */
     transcribing: { type: Boolean, value: false },
+    /** 进入页面即聚焦输入框（项目行「＋」新建场景；拿到 focus 事件后由页面复位） */
+    autoFocus: { type: Boolean, value: false },
   },
 
   data: {
@@ -179,6 +181,8 @@ Component({
 
     onFocus() {
       this.setData({ focus: true })
+      // 页面用来复位 autoFocus：只聚焦一次，用户收起键盘后不再被拉回
+      this.triggerEvent('focus')
     },
     onBlur() {
       this.setData({ focus: false })

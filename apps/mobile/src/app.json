@@ -16,11 +16,37 @@
     "pages/demo/index"
   ],
   "window": {
-    "navigationBarBackgroundColor": "#f7f6f4",
-    "navigationBarTextStyle": "black",
+    "navigationBarBackgroundColor": "@navBgColor",
+    "navigationBarTextStyle": "@navTxtStyle",
     "navigationBarTitleText": "SparkWork",
-    "backgroundColor": "#f7f6f4",
-    "backgroundTextStyle": "dark"
+    "backgroundColor": "@bgColor",
+    "backgroundTextStyle": "@bgTxtStyle"
+  },
+  "tabBar": {
+    "color": "@tabFontColor",
+    "selectedColor": "@tabSelectedColor",
+    "backgroundColor": "@tabBgColor",
+    "borderStyle": "@tabBorderStyle",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "工作台",
+        "iconPath": "assets/tabbar/home-normal.png",
+        "selectedIconPath": "assets/tabbar/home-active.png"
+      },
+      {
+        "pagePath": "pages/projects/index",
+        "text": "项目",
+        "iconPath": "assets/tabbar/projects-normal.png",
+        "selectedIconPath": "assets/tabbar/projects-active.png"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的",
+        "iconPath": "assets/tabbar/profile-normal.png",
+        "selectedIconPath": "assets/tabbar/profile-active.png"
+      }
+    ]
   },
   "style": "v2",
   "darkmode": true,

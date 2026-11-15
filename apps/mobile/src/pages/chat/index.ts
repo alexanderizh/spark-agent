@@ -419,7 +419,8 @@ Page({
     const deviceId = options.deviceId ?? ''
     if (!deviceId) {
       // 聊天必须继承项目层传入的电脑，缺少上下文时回到顶层重新选择。
-      wx.redirectTo({ url: '/pages/home/index' })
+      // 「工作台」是 tabBar 页：redirectTo 不能跳 tab 页，用 reLaunch 清栈
+      wx.reLaunch({ url: '/pages/home/index' })
       return
     }
     const sessionId = options.sessionId ?? ''

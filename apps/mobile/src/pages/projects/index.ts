@@ -10,6 +10,11 @@ import {
   type DeviceAliasMap,
 } from '../../utils/device-aliases'
 import { formatRelativeTime } from '../../utils/format'
+import {
+  readProjectListFilter,
+  writeProjectListFilter,
+  type CachedProjectListFilter,
+} from '../../utils/filter-cache'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
 import {
   countProjectFilterFacets,
@@ -62,6 +67,8 @@ interface ProjectsPageData {
   errorText: string
   deviceOffline: boolean
   deviceUnavailable: boolean
+  /** 没有任何电脑上下文（tabBar 页直接进入且从未选过电脑）：显示引导而不是跳走 */
+  deviceMissing: boolean
   /** 切换电脑弹层 */
   deviceSheetShow: boolean
   deviceOptions: SwitchDeviceOption[]
@@ -98,6 +105,7 @@ Page({
     errorText: '',
     deviceOffline: false,
     deviceUnavailable: false,
+    deviceMissing: false,
     deviceSheetShow: false,
     deviceOptions: [],
     deviceOptionsLoading: false,
@@ -125,15 +133,19 @@ Page({
   hiddenAt: 0,
 
   onLoad(options: Record<string, string | undefined>) {
-    const deviceId = options.deviceId ?? ''
+    // tabBar 页：从「工作台」tab 切过来不带 query，回落到上次选中的电脑。
+    // 一个候选都没有时停在本页给引导 —— tab 页之间不能用 redirectTo 互跳。
+    const deviceId = options.deviceId || bridge.getSelectedDeviceId()
+    this.deviceAliases = readDeviceAliases()
     if (!deviceId) {
-      wx.redirectTo({ url: '/pages/home/index' })
+      this.setData({ loading: false, deviceMissing: true })
       return
     }
-    this.deviceAliases = readDeviceAliases()
     this.rawDeviceName = decodeRouteValue(options.deviceName, '桌面端')
+    this.restoreFilter(deviceId)
     this.setData({
       deviceId,
+      deviceMissing: false,
       ...this.deviceLabelPatch(deviceId, this.rawDeviceName),
     })
     this.unsubscribeDevices = bridge.onRelayDevicesChanged(() => this.onPresenceUpdate())
@@ -150,7 +162,20 @@ Page({
 
   onShow() {
     syncPageTheme(this)
-    if (!this.data.deviceId) return
+    // tab 页切换不会重新 onLoad：工作台上换了电脑后切到本 tab 要跟着换数据
+    const selected = bridge.getSelectedDeviceId()
+    if (!this.data.deviceId) {
+      if (selected) {
+        this.switchDevice(selected)
+        return
+      }
+      if (!this.data.deviceMissing) this.setData({ loading: false, deviceMissing: true })
+      return
+    }
+    if (selected && selected !== this.data.deviceId) {
+      this.switchDevice(selected)
+      return
+    }
     // 备注名是本机视图：从设备管理页改完返回要立即生效
     this.deviceAliases = readDeviceAliases()
     this.setData(this.deviceLabelPatch(this.data.deviceId, this.rawDeviceName))
@@ -200,7 +225,8 @@ Page({
   },
 
   onBackToComputers() {
-    wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/index' }) })
+    // 「工作台」是 tabBar 页：navigateBack 可能回到无关页面，直接切 tab 更确定
+    wx.switchTab({ url: '/pages/home/index' })
   },
 
   onOpenBridgeDevices() {
@@ -213,6 +239,11 @@ Page({
 
   async bootstrap(silent = false) {
     const generation = ++this.loadGeneration
+    // 没有电脑上下文时没有任何可拉的数据（tabBar 页直接进入的引导态）
+    if (!this.data.deviceId) {
+      if (!silent) this.setData({ loading: false, deviceMissing: true })
+      return
+    }
     if (!silent) this.setData({ loading: true, errorText: '', deviceUnavailable: false })
     void bridge.ensureRelay().catch(() => undefined)
     try {
@@ -376,7 +407,20 @@ Page({
       filterActiveCount: countProjectFilterFacets(next),
       filterSections: this.buildFilterSections(next),
     })
+    // 按电脑维度记住筛选，下次进页面（含冷启动）直接沿用
+    writeProjectListFilter(this.data.deviceId, { activity: next.activity, status: next.status })
     this.applyProjectOrder()
+  },
+
+  /** 从本地缓存恢复筛选并同步 chip 文案/角标（无缓存时即默认值） */
+  restoreFilter(deviceId: string) {
+    const cached: CachedProjectListFilter = readProjectListFilter(deviceId)
+    const filter: ProjectFilterState = { activity: cached.activity, status: cached.status }
+    this.setData({
+      filter,
+      filterSummary: describeProjectFilter(filter),
+      filterActiveCount: countProjectFilterFacets(filter),
+    })
   },
 
   onOpenFilter() {
@@ -495,6 +539,7 @@ Page({
     this.hiddenAt = 0
     this.setData({
       deviceId,
+      deviceMissing: false,
       ...this.deviceLabelPatch(deviceId, realName),
       projects: [],
       pinnedView: [],
@@ -512,6 +557,8 @@ Page({
       deviceOffline: !online,
       loading: true,
     })
+    // 不同电脑的筛选是独立的：先清空，再恢复目标电脑上次的筛选
+    this.restoreFilter(deviceId)
     void this.bootstrap()
   },
 
@@ -550,6 +597,23 @@ Page({
     if (!id) return
     wx.navigateTo({
       url: `/pages/project-sessions/index?deviceId=${encodeURIComponent(this.data.deviceId)}&deviceName=${encodeURIComponent(this.rawDeviceName)}&projectId=${encodeURIComponent(id)}&projectName=${encodeURIComponent(name)}`,
+    })
+  },
+
+  /**
+   * 项目行「＋」：进该项目的会话页并直接聚焦底部发起区（create=1）。
+   * 与点整行进项目的唯一区别是「进去就能打字」，不跳过任何校验。
+   */
+  onCreateSessionInProject(event: WechatMiniprogram.CustomEvent) {
+    if (this.data.deviceOffline || this.data.deviceUnavailable) {
+      wx.showToast({ title: '这台电脑不在线，连上中继后可新建会话', icon: 'none' })
+      return
+    }
+    const id = String(event.currentTarget.dataset.id ?? '')
+    const name = String(event.currentTarget.dataset.name ?? '')
+    if (!id) return
+    wx.navigateTo({
+      url: `/pages/project-sessions/index?deviceId=${encodeURIComponent(this.data.deviceId)}&deviceName=${encodeURIComponent(this.rawDeviceName)}&projectId=${encodeURIComponent(id)}&projectName=${encodeURIComponent(name)}&create=1`,
     })
   },
 

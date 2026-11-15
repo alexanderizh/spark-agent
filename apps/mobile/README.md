@@ -141,18 +141,18 @@ TOKEN=<上一步输出> pnpm --filter @spark/mobile e2e:relay
 
 常用命令：
 
-| 命令                                             | 说明                                                                                                                      |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm --filter @spark/mobile dev`                | watch 模式（tsc --watch + 静态资产变更拷贝）                                                                              |
-| `pnpm --filter @spark/mobile build`              | 构建 + dist 产物完整性校验                                                                                                |
-| `pnpm --filter @spark/mobile typecheck`          | 纯类型检查                                                                                                                |
-| `pnpm --filter @spark/mobile smoke`              | 请求层冒烟测试（mock wx + 本地 HTTP，10 条断言，需先 build）                                                              |
-| `pnpm --filter @spark/mobile smoke:boot`         | 启动冒烟（mock 运行时逐页 require，抓白屏类加载期异常，需先 build）                                                       |
-| `pnpm --filter @spark/mobile smoke:relay`        | 云端中继端到端冒烟（真实 edu-server RelayHub + 真实 bridge/relay，21 条断言）                                             |
-| `pnpm --filter @spark/mobile smoke:chat-upgrade` | 会话增强回归（纯附件 / 分块横线 / 权威 running / 待发队列 / 复制纯文本，10 条断言，需先 build）                           |
+| 命令                                             | 说明                                                                                                                                         |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm --filter @spark/mobile dev`                | watch 模式（tsc --watch + 静态资产变更拷贝）                                                                                                 |
+| `pnpm --filter @spark/mobile build`              | 构建 + dist 产物完整性校验                                                                                                                   |
+| `pnpm --filter @spark/mobile typecheck`          | 纯类型检查                                                                                                                                   |
+| `pnpm --filter @spark/mobile smoke`              | 请求层冒烟测试（mock wx + 本地 HTTP，10 条断言，需先 build）                                                                                 |
+| `pnpm --filter @spark/mobile smoke:boot`         | 启动冒烟（mock 运行时逐页 require，抓白屏类加载期异常，需先 build）                                                                          |
+| `pnpm --filter @spark/mobile smoke:relay`        | 云端中继端到端冒烟（真实 edu-server RelayHub + 真实 bridge/relay，21 条断言）                                                                |
+| `pnpm --filter @spark/mobile smoke:chat-upgrade` | 会话增强回归（纯附件 / 分块横线 / 权威 running / 待发队列 / 复制纯文本，10 条断言，需先 build）                                              |
 | `pnpm --filter @spark/mobile smoke:chat-order`   | 顺序与去重回归（seq 稳定排序 / 补写插回原位 / 时间单调 / 天分界 / 回放 delta 不叠加 / dropped 记入已见 / final 查重，15 条断言，需先 build） |
-| `pnpm --filter @spark/mobile e2e:relay`          | 生产链路端到端验证（真实公网 wss 双端连接，24 条断言，需 TOKEN）                                                          |
-| `pnpm --filter @spark/mobile icons`              | 重新生成 tabBar 图标（依赖根 node_modules 的 sharp）                                                                      |
+| `pnpm --filter @spark/mobile e2e:relay`          | 生产链路端到端验证（真实公网 wss 双端连接，24 条断言，需 TOKEN）                                                                             |
+| `pnpm --filter @spark/mobile icons`              | 重新生成 tabBar 图标（依赖根 node_modules 的 sharp）                                                                                         |
 
 ## 技术选型
 
@@ -188,15 +188,20 @@ apps/mobile/
     └── pages/
         ├── entry/           # 启动分流（有 token → 工作台，否则 → 登录）
         ├── login/           # 登录/注册（密码 / 邮箱验证码 / 短信三种模式）
-        ├── home/            # 远程会话顶层：先选电脑，再浏览该电脑的项目/会话
+        ├── home/            # 【tab】工作台：先选电脑，再进入该电脑的项目
+        ├── projects/        # 【tab】项目：当前电脑的项目列表，行右侧「＋」直建会话
+        ├── all-sessions/    # 跨项目「全部会话」：时间 + 项目 + 状态 + 标记 + 仅置顶组合筛选
         ├── sync/            # 同步中心：状态详情 + 分页历史 + 类别清单
         ├── devices/         # 设备：当前设备 + 同步记录聚合的桌面端设备
-        ├── project-sessions/# 固定电脑下的会话列表 + 新建（从顶层电脑选择进入）
+        ├── project-sessions/# 固定电脑下的会话列表 + 新建（底部发起区，`create=1` 自动聚焦）
         ├── bridge-devices/  # 设备管理：列表 / 实时在线 / 吊销（行内二次确认）
         ├── chat/            # 远程对话：历史回放 + 增量跟流 + 发送 / 停止（deviceId 定向）
-        ├── profile/         # 我的：头像/昵称、远程会话状态、设备管理入口、退出
+        ├── profile/         # 【tab】我的：头像/昵称、远程会话状态、设备管理入口、退出
+        ├── demo/            # 只读示例页（审核配套，零网络请求）
         └── password/        # 修改密码（短信验证码链路）
 ```
+
+**底部导航（tabBar）**：工作台 / 项目 / 我的 三页固定为 tab（`app.json` 的 `tabBar`，颜色走 `theme.json` 的深浅色变量）。tab 页之间只能用 `wx.switchTab`，且不能带 query——需要「进项目页时定位到某台电脑」时，先 `bridge.setSelectedDeviceId()` 再切 tab；项目页读 `bridge.getSelectedDeviceId()`，且因为 tab 切换不重新 `onLoad`，在 `onShow` 里比对选中设备变化后整页换数据。
 
 ## 远程会话（MobileBridge，云端中继）
 
@@ -209,9 +214,9 @@ apps/mobile/
 事件流 sub（可带 d）→ event（带来源 d；按 (deviceId, sessionId) 隔离）
 ```
 
-**多电脑层级（电脑 → 项目 → 聊天）**：电脑选择位于远程会话顶层，数据源为接入设备 REST 列表 + WS presence；
-选择持久化到本地，进入项目后电脑上下文固定，项目列表、会话列表和聊天历史都只向该电脑读取。
-项目会话页不提供横向换电脑入口；要切换时返回电脑顶层重新选择，避免把一台电脑的项目 ID 带到另一台。
+**多电脑层级（电脑 → 项目 → 聊天）**：电脑选择位于「工作台」tab，数据源为接入设备 REST 列表 + WS presence；
+选择持久化到本地（`bridge.getSelectedDeviceId()`），进入项目后电脑上下文固定，项目列表、会话列表和聊天历史都只向该电脑读取。
+项目页可就地切换电脑（切完清空筛选与手动序，按新电脑重载）；项目会话页不提供横向换电脑入口，要切换时返回项目页，避免把一台电脑的项目 ID 带到另一台。
 未归属会话显示在虚拟「未归属项目」中；从该层新建会话时不写入项目 ID。
 主项目会话列表包含归属该项目的 worktree 会话，和项目列表中的会话计数保持一致。
 项目列表对存在运行中会话的项目显示「运行中」徽标（桌面端按 `sessions.status = 'running'` 统计，worktree 会话并入所属主项目，未归属会话计入虚拟「未归属项目」；旧版桌面端不透出该字段时不显示）。

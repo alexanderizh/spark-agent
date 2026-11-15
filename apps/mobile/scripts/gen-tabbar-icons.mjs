@@ -27,6 +27,9 @@ const ICONS = {
     '<rect x="2.2" y="4.2" width="14" height="9.6" rx="1.4"/><path d="M5.8 16.2v1.6h6.8v-1.6"/><path d="M9.2 13.8v2.4"/><rect x="17.6" y="8.4" width="4.6" height="10.4" rx="1.2"/><path d="M19.2 16.6h1.4"/>',
   profile:
     '<circle cx="12" cy="7.8" r="3.7"/><path d="M4.6 20.4c0-4.1 3.3-6.6 7.4-6.6s7.4 2.5 7.4 6.6"/>',
+  // 项目：立面文件夹 + 内折线，与桌面端 icon-folder 同形（tabBar 三件套：工作台 / 项目 / 我的）
+  projects:
+    '<path d="M3.2 6.9c0-.9.7-1.6 1.6-1.6h3.5l1.9 2.2h8c.9 0 1.6.7 1.6 1.6v8.4c0 .9-.7 1.6-1.6 1.6H4.8c-.9 0-1.6-.7-1.6-1.6V6.9Z"/>',
 }
 
 function svg(paths, color) {

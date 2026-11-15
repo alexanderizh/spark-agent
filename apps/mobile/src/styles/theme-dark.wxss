@@ -1879,6 +1879,15 @@
   color: #f2f1ef;
 }
 
+.theme-dark .projects-row-add {
+  color: #98958f;
+}
+
+.theme-dark .projects-row-add--hover {
+  background: #2c2b29;
+  color: #f2f1ef;
+}
+
 .theme-dark .projects-action {
   background: #f2f1ef;
   color: #171716;

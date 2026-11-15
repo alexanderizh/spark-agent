@@ -242,6 +242,23 @@
   font-weight: 500;
 }
 
+/* 项目行「＋」：直接进该项目会话页并发起（catchtap 不触发行点击） */
+.projects-row-add {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 8rpx;
+  color: #8d8a86;
+}
+
+.projects-row-add--hover {
+  background: #f2f1ef;
+  color: #1a1a1a;
+}
+
 .projects-state {
   padding: 52rpx 40rpx;
 }

@@ -196,7 +196,8 @@ Page({
   onLoad(options: Record<string, string | undefined>) {
     const deviceId = options.deviceId ?? ''
     if (!deviceId) {
-      wx.redirectTo({ url: '/pages/home/index' })
+      // 「工作台」是 tabBar 页：redirectTo 不能跳 tab 页，用 reLaunch 清栈
+      wx.reLaunch({ url: '/pages/home/index' })
       return
     }
     this.deviceAliases = readDeviceAliases()

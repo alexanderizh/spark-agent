@@ -19,6 +19,10 @@ export const StorageKeys = {
   themePreference: `${PREFIX}theme-preference`,
   /** 设备备注名（本机视图；值为 deviceId → 备注名 的映射，见 utils/device-aliases） */
   deviceAliases: `${PREFIX}device-aliases`,
+  /** 项目会话页筛选（`${deviceId}/${projectId}` → { status, activity, label }，见 utils/filter-cache） */
+  sessionListFilters: `${PREFIX}session-list-filters`,
+  /** 项目列表页筛选（deviceId → { activity, status }，见 utils/filter-cache） */
+  projectListFilters: `${PREFIX}project-list-filters`,
 } as const
 
 export function getItem<T>(key: string): T | null {

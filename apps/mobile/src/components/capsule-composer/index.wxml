@@ -67,6 +67,7 @@
       placeholder-style="color:#b3b0ab"
       auto-height
       maxlength="8000"
+      focus="{{autoFocus}}"
       show-confirm-bar="{{false}}"
       confirm-type="send"
       disabled="{{disabled}}"

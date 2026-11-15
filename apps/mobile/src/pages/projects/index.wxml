@@ -1,5 +1,6 @@
 <view class="projects-page theme-root {{themeClass}}">
-  <safe-nav-bar title="" />
+  <!-- tabBar 页：不挂返回按钮（返回工作台走底部 tab） -->
+  <safe-nav-bar title="" show-back="{{false}}" />
 
   <view class="projects-heading row between">
     <view class="grow">
@@ -11,6 +12,7 @@
 
   <!-- 当前电脑：点整行就地切换（备注名优先，原名降级为副标题） -->
   <view
+    wx:if="{{!deviceMissing}}"
     class="projects-device-context row"
     hover-class="projects-device-context--hover"
     bindtap="onOpenDeviceSwitch"
@@ -28,7 +30,7 @@
   </view>
 
   <!-- 项目搜索（桌面端同款标题过滤；与筛选/置顶/手动排序叠加生效） -->
-  <view wx:if="{{!loading && !deviceUnavailable && !deviceOffline && !errorText}}" class="projects-search row">
+  <view wx:if="{{!deviceMissing && !loading && !deviceUnavailable && !deviceOffline && !errorText}}" class="projects-search row">
     <view class="icon icon-sm icon-search"></view>
     <input
       class="projects-search-input"
@@ -41,7 +43,7 @@
   </view>
 
   <!-- 筛选 + 全部会话入口 -->
-  <view wx:if="{{!loading && !deviceUnavailable && !deviceOffline && !errorText}}" class="projects-toolbar row between">
+  <view wx:if="{{!deviceMissing && !loading && !deviceUnavailable && !deviceOffline && !errorText}}" class="projects-toolbar row between">
     <view
       class="projects-filter-chip {{filterActiveCount > 0 ? 'projects-filter-chip--on' : ''}}"
       hover-class="projects-filter-chip--hover"
@@ -56,7 +58,16 @@
     </view>
   </view>
 
-  <view wx:if="{{loading}}" class="loading-tip">正在加载这台电脑的项目…</view>
+  <view wx:if="{{deviceMissing}}" class="projects-state">
+    <empty-state
+      icon="monitor"
+      title="还没有选择电脑"
+      desc="先在「工作台」点一台已接入的电脑，再回来浏览它的项目与会话。"
+    />
+    <view class="projects-action" bindtap="onBackToComputers">去工作台选电脑</view>
+  </view>
+
+  <view wx:elif="{{loading}}" class="loading-tip">正在加载这台电脑的项目…</view>
 
   <view wx:elif="{{deviceUnavailable}}" class="projects-state">
     <empty-state icon="monitor" title="这台电脑已被吊销" desc="返回电脑列表，选择其他已接入的电脑" />
@@ -116,6 +127,15 @@
               <text wx:if="{{item.updatedLabel}}" class="t-caption projects-row-time">{{item.updatedLabel}}</text>
             </view>
           </view>
+          <view
+            class="projects-row-add"
+            hover-class="projects-row-add--hover"
+            data-id="{{item.id}}"
+            data-name="{{item.name}}"
+            catchtap="onCreateSessionInProject"
+          >
+            <view class="icon icon-sm icon-plus"></view>
+          </view>
           <view class="icon icon-chevron"></view>
         </view>
       </block>
@@ -144,6 +164,15 @@
               </view>
               <text wx:if="{{item.updatedLabel}}" class="t-caption projects-row-time">{{item.updatedLabel}}</text>
             </view>
+          </view>
+          <view
+            class="projects-row-add"
+            hover-class="projects-row-add--hover"
+            data-id="{{item.id}}"
+            data-name="{{item.name}}"
+            catchtap="onCreateSessionInProject"
+          >
+            <view class="icon icon-sm icon-plus"></view>
           </view>
           <view class="icon icon-chevron"></view>
         </view>

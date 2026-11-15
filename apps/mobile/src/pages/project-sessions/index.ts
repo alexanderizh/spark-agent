@@ -33,6 +33,11 @@ import {
 } from '../../utils/device-aliases'
 import { formatRelativeTime } from '../../utils/format'
 import {
+  readSessionListFilters,
+  writeSessionListFilters,
+  type CachedSessionListFilters,
+} from '../../utils/filter-cache'
+import {
   DEFAULT_SESSION_FILTER,
   matchSession,
   SESSION_ACTIVITY_OPTIONS,
@@ -146,6 +151,8 @@ interface ProjectSessionsData {
   contentMatches: ContentMatchView[]
   /** 进入时聚焦搜索（来自首页搜索按钮） */
   autoFocusSearch: boolean
+  /** 进入时聚焦底部发起区（来自项目行「＋」） */
+  composerAutoFocus: boolean
   quickText: string
   quickSending: boolean
   /** 首条消息附件（新建会话尚未创建，先上传到桌面端白名单目录） */
@@ -271,6 +278,7 @@ Page({
     searchText: '',
     contentMatches: [],
     autoFocusSearch: false,
+    composerAutoFocus: false,
     quickText: '',
     quickSending: false,
     attachments: [],
@@ -332,28 +340,32 @@ Page({
   rawDeviceName: '桌面端',
 
   onLoad(options: Record<string, string | undefined>) {
-    const deviceId = options.deviceId ?? ''
+    const deviceId = options.deviceId || bridge.getSelectedDeviceId()
     if (!deviceId) {
-      // 旧入口没有电脑上下文时回到顶层选择，禁止使用服务端的自动选机路由。
-      wx.redirectTo({ url: '/pages/home/index' })
+      // 旧入口没有电脑上下文时回到顶层选择；「工作台」是 tabBar 页，用 reLaunch 清栈
+      wx.reLaunch({ url: '/pages/home/index' })
       return
     }
     const projectId = options.projectId ?? ''
     if (!projectId) {
-      // 项目页是会话列表唯一入口；旧的无项目聚合链接回到项目选择层。
-      wx.redirectTo({
-        url: `/pages/projects/index?deviceId=${encodeURIComponent(deviceId)}&deviceName=${encodeURIComponent(options.deviceName ?? '')}`,
-      })
+      // 项目页是会话列表唯一入口；「项目」是 tabBar 页，只能 switchTab 且不能带 query
+      bridge.setSelectedDeviceId(deviceId)
+      wx.switchTab({ url: '/pages/projects/index' })
       return
     }
     this.deviceAliases = readDeviceAliases()
     this.rawDeviceName = options.deviceName ? decodeURIComponent(options.deviceName) : '桌面端'
+    // 筛选按「电脑 + 项目」记忆：切走再回来（含冷启动）沿用上次条件
+    const cachedFilters = readSessionListFilters(deviceId, projectId)
     this.setData({
       deviceId,
       ...this.deviceLabelPatch(deviceId),
       projectId,
       projectName: options.projectName ? decodeURIComponent(options.projectName) : '',
       autoFocusSearch: options.search === '1',
+      ...sessionFilterPatch(cachedFilters),
+      // 从项目行「＋」进来：直接聚焦底部发起区
+      composerAutoFocus: options.create === '1',
     }) // 置顶分组折叠偏好：按 电脑+项目 维度记忆，跨冷启动生效
     // 注意 wx.getStorageSync 对不存在的键返回 ""（不是 null），必须做对象形态守卫
     const storedCollapse = getItem<Record<string, boolean>>(StorageKeys.sessionListPinnedCollapsed)
@@ -383,6 +395,18 @@ Page({
   viewReady: false,
   /** onHide 记录的离开时刻；> 0 表示本次 onShow 是「从别处返回」 */
   hiddenAt: 0,
+
+  /**
+   * 首帧渲染完成后再补一次聚焦：textarea 的 focus 属性在个别机型首帧不生效，
+   * 从项目行「＋」进来会看着像没反应。
+   */
+  onReady() {
+    if (!this.data.composerAutoFocus) return
+    this.setData({ composerAutoFocus: false })
+    setTimeout(() => {
+      if (!this.data.composerAutoFocus) this.setData({ composerAutoFocus: true })
+    }, 120)
+  },
 
   onShow() {
     syncPageTheme(this)
@@ -609,7 +633,22 @@ Page({
   onFilterChange(e: WechatMiniprogram.CustomEvent) {
     const filter = e.currentTarget.dataset.filter as StatusFilter
     this.setData({ filter })
+    this.persistFilters()
     this.applyFilters()
+  },
+
+  /** 自动聚焦只需一次：拿到 focus 事件即复位，用户收起键盘后不再被拉回 */
+  onComposerFocus() {
+    if (this.data.composerAutoFocus) this.setData({ composerAutoFocus: false })
+  },
+
+  /** 筛选变更落盘（按 电脑 + 项目 维度），下次进页面直接沿用上次条件 */
+  persistFilters() {
+    writeSessionListFilters(this.data.deviceId, this.data.projectId, {
+      status: this.data.filter,
+      activity: this.data.activityFilter,
+      label: this.data.labelFilter,
+    })
   },
 
   onSearchInput(e: WechatMiniprogram.Input) {
@@ -708,10 +747,8 @@ Page({
 
   onBackToProjects() {
     wx.navigateBack({
-      fail: () =>
-        wx.redirectTo({
-          url: `/pages/projects/index?deviceId=${encodeURIComponent(this.data.deviceId)}&deviceName=${encodeURIComponent(this.rawDeviceName)}`,
-        }),
+      // 「项目」是 tabBar 页：只能 switchTab，且不能再带 query
+      fail: () => wx.switchTab({ url: '/pages/projects/index' }),
     })
   },
 
@@ -1167,6 +1204,7 @@ Page({
             ? '时间'
             : (SESSION_ACTIVITY_OPTIONS.find((option) => option.value === value)?.label ?? '时间'),
       })
+      this.persistFilters()
       this.applyFilters()
       this.closePanel()
       return
@@ -1181,6 +1219,7 @@ Page({
         labelFilter: value,
         labelFilterText: value === '' ? '标记' : describeLabelFilter(value),
       })
+      this.persistFilters()
       this.applyFilters()
       this.closePanel()
       return
@@ -1287,4 +1326,30 @@ function describeLabelFilter(value: Exclude<LabelFilter, ''>): string {
   if (value === 'labeled') return '已标记'
   if (value === 'unlabeled') return '未标记'
   return SESSION_LABELS.find((meta) => meta.key === value)?.label ?? '标记'
+}
+
+/**
+ * 本地缓存的筛选 → 页面字段 patch。
+ * chip 文案（时间 / 标记）必须一起回填：只恢复值不回填文案，进页面会显示默认的
+ * 「时间 / 标记」，看着像没筛，实际列表已经被过滤了。
+ */
+function sessionFilterPatch(cached: CachedSessionListFilters): {
+  filter: StatusFilter
+  activityFilter: SessionActivityKey
+  activityText: string
+  labelFilter: LabelFilter
+  labelFilterText: string
+} {
+  const activity = cached.activity
+  const label = cached.label as LabelFilter
+  return {
+    filter: cached.status as StatusFilter,
+    activityFilter: activity,
+    activityText:
+      activity === 'all'
+        ? '时间'
+        : (SESSION_ACTIVITY_OPTIONS.find((option) => option.value === activity)?.label ?? '时间'),
+    labelFilter: label,
+    labelFilterText: label === '' ? '标记' : describeLabelFilter(label),
+  }
 }

@@ -322,7 +322,8 @@ Page({
   },
 
   onGoProfile() {
-    wx.navigateTo({ url: '/pages/profile/index' })
+    // 「我的」是 tabBar 页：navigateTo 会直接失败
+    wx.switchTab({ url: '/pages/profile/index' })
   },
 
   onOpenBridgeDevices() {
@@ -424,9 +425,8 @@ Page({
       reasoningIndex: 0,
     })
     this.refreshComposerSummary()
-    wx.navigateTo({
-      url: `/pages/projects/index?deviceId=${encodeURIComponent(device.deviceId)}&deviceName=${encodeURIComponent(device.realName ?? device.name)}`,
-    })
+    // 「项目」是 tabBar 页：先写入选中的电脑（项目页从 bridge 读），再切 tab
+    wx.switchTab({ url: '/pages/projects/index' })
   },
 
   refreshComposerSummary() {
