@@ -59,6 +59,11 @@
       <view class="status-spinner"></view>
       <text class="voice-hint">转写中…</text>
     </view>
+    <!-- 页面弹层打开期间的等高占位：textarea 是原生组件，弹层 mask 的 z-index 拦不住
+         它的触摸命中，弹层底部控件（推理强度滑块/分段）的点击会聚焦到它而弹出键盘 -->
+    <view wx:elif="{{suppress}}" class="composer-input composer-input--ghost">
+      <text class="composer-input--ghost-text">{{localValue}}</text>
+    </view>
     <textarea
       wx:else
       class="composer-input"

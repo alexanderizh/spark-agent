@@ -350,6 +350,7 @@
               value="{{q.otherText}}"
               placeholder="{{q.otherPlaceholder}}"
               placeholder-class="ia-placeholder"
+              disabled="{{configShow || panelShow || attachShow}}"
               data-qid="{{item.questionId}}"
               data-index="{{q.index}}"
               bindinput="onQuestionOtherInput"
@@ -366,6 +367,7 @@
             placeholder-class="ia-placeholder"
             auto-height
             maxlength="2000"
+            disabled="{{configShow || panelShow || attachShow}}"
             data-qid="{{item.questionId}}"
             data-index="{{q.index}}"
             bindinput="onQuestionTextInput"
@@ -376,6 +378,7 @@
             value="{{q.text}}"
             placeholder="{{q.placeholder}}"
             placeholder-class="ia-placeholder"
+            disabled="{{configShow || panelShow || attachShow}}"
             data-qid="{{item.questionId}}"
             data-index="{{q.index}}"
             bindinput="onQuestionTextInput"
@@ -412,6 +415,7 @@
       commands="{{showCommands ? commands : []}}"
       recording="{{recording}}"
       transcribing="{{transcribing}}"
+      suppress="{{configShow || panelShow || attachShow}}"
       bind:input="onInput"
       bind:send="onSend"
       bind:stop="onCancel"
@@ -436,6 +440,7 @@
     options="{{panelOptions}}"
     loading="{{panelLoading}}"
     emptyText="{{panelEmpty}}"
+    pinHint="{{panelPinHint}}"
     sliderOptions="{{panelSliderOptions}}"
     sliderIndex="{{panelSliderIndex}}"
     accentColor="{{themeTextColor}}"
@@ -443,6 +448,7 @@
     blockColor="{{themeBlockColor}}"
     bind:close="closePanel"
     bind:select="onPanelSelect"
+    bind:optionlongpress="onModelPinToggle"
     bind:sliderchange="onPanelSliderChange"
   />
 
@@ -461,9 +467,11 @@
     efforts="{{configEfforts}}"
     effortIndex="{{configEffortIndex}}"
     permissionLabel="{{configPermissionLabel}}"
+    pinHint="长按模型可置顶为常用"
     bind:close="onConfigClose"
     bind:pickmodel="onConfigModel"
     bind:pickeffort="onConfigEffort"
+    bind:modellongpress="onModelPinToggle"
     bind:openpermission="onConfigPermission"
   />
 </view>

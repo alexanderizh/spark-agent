@@ -1382,17 +1382,44 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
 }
 
 function Shell() {
-  const { t, setTweak, hasDialogOpen } = useApp()
+  const { t, setTweak, navigateToView, hasDialogOpen } = useApp()
   const auth = useAuth()
   const { t: tr } = useI18n()
   const { toast } = useToast()
   const scaleRef = useRef<HTMLDivElement>(null)
+  const [wikiCandidateReviewRequest, setWikiCandidateReviewRequest] = useState(0)
+  const [wikiCandidateReviewHandled, setWikiCandidateReviewHandled] = useState(0)
+  const pendingWikiCandidateReviewRequest =
+    wikiCandidateReviewRequest > wikiCandidateReviewHandled ? wikiCandidateReviewRequest : 0
+  const openDreamTrack = useCallback(
+    (track: 'memory' | 'wiki', pendingReview: number) => {
+      const view: ViewId =
+        track === 'memory' ? 'memory' : pendingReview > 0 ? 'wiki' : 'settings'
+      void navigateToView(view, () => {
+        setTweak('workspaceMode', 'workbench')
+        if (track === 'memory') {
+          setWikiCandidateReviewHandled(wikiCandidateReviewRequest)
+          return
+        }
+        if (pendingReview > 0) {
+          setWikiCandidateReviewRequest((request) => request + 1)
+          return
+        }
+        setTweak('settingsSection', 'wiki')
+      })
+    },
+    [navigateToView, setTweak, wikiCandidateReviewRequest],
+  )
+  const handleWikiCandidateReviewRequestHandled = useCallback(
+    (request: number) =>
+      setWikiCandidateReviewHandled((handled) => Math.max(handled, request)),
+    [],
+  )
   useAppearanceEffects()
   // wiki 里程碑沉淀产出候选 → 右上角 toast +「去确认」跳转知识库（任意视图常驻）
   useWikiCandidatesToast({
     onOpenWiki: () => {
-      setTweak('workspaceMode', 'workbench')
-      setTweak('view', 'wiki')
+      void navigateToView('wiki', () => setTweak('workspaceMode', 'workbench'))
     },
   })
   const [approvalRequests, setApprovalRequests] = useState<
@@ -2043,7 +2070,12 @@ function Shell() {
       case 'recovery-center':
         return <RecoveryCenterView />
       case 'wiki':
-        return <WikiView />
+        return (
+          <WikiView
+            candidateReviewRequest={pendingWikiCandidateReviewRequest}
+            onCandidateReviewRequestHandled={handleWikiCandidateReviewRequestHandled}
+          />
+        )
       case 'canvas':
         return <CanvasProjectsView onWorkspaceActiveChange={setCanvasWorkspaceActive} />
       case 'canvas-workflows':
@@ -2355,7 +2387,7 @@ function Shell() {
           {t.view !== 'onboarding' && <OptionalCapabilityCenter />}
           <PressureNoticeHost />
           <ComputerKillSwitchNoticeHost />
-          <DreamNoticeHost />
+          <DreamNoticeHost onOpenTrack={openDreamTrack} />
           <ToastContainer />
         </div>
       </SubAppSurfaceProvider>

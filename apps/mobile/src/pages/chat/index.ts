@@ -86,6 +86,13 @@ import {
 } from '../../utils/interaction-view'
 import { PERMISSION_LABELS, REASONING_LABELS } from '../../utils/session-config'
 import {
+  parseComposerModelRef,
+  readComposerModelCache,
+  rememberLastComposerModel,
+  sortComposerModelOptions,
+  toggleComposerModelPin,
+} from '../../utils/composer-model-cache'
+import {
   MAX_ATTACHMENTS,
   pickImages,
   pickMessageFiles,
@@ -125,6 +132,8 @@ interface PanelOptionView {
   sub?: string
   checked?: boolean
   disabled?: boolean
+  /** 置顶态（仅模型面板项携带）：置顶项排最前并显示图钉 */
+  pinned?: boolean
 }
 
 type PanelKind =
@@ -189,6 +198,8 @@ interface ChatPageData {
   panelSliderIndex: number
   panelLoading: boolean
   panelEmpty: string
+  /** 模型面板的长按置顶提示（仅模型面板非空） */
+  panelPinHint: string
   // ── 输入扩展 ──
   attachments: ComposerAttachmentView[]
   /** 附件菜单弹层（照片/文件/技能/命令） */
@@ -196,7 +207,7 @@ interface ChatPageData {
   attachItems: AttachMenuItem[]
   /** 模型配置弹层（模型列表 / 推理强度 / 权限） */
   configShow: boolean
-  configModels: { id: string; label: string; sub?: string; checked?: boolean }[]
+  configModels: { id: string; label: string; sub?: string; checked?: boolean; pinned?: boolean }[]
   configEfforts: { id: string; label: string }[]
   configEffortIndex: number
   configPermissionLabel: string
@@ -285,13 +296,15 @@ Page({
     panelSliderIndex: 0,
     panelLoading: false,
     panelEmpty: '',
+    /** 模型面板的长按置顶提示（仅模型面板非空；sheet-panel 空值不渲染提示行） */
+    panelPinHint: '',
     attachments: [] as ComposerAttachmentView[],
     /** 附件菜单弹层（照片/文件/技能/命令） */
     attachShow: false,
     attachItems: [] as AttachMenuItem[],
     /** 模型配置弹层（模型列表 / 推理强度 / 权限） */
     configShow: false,
-    configModels: [] as { id: string; label: string; sub?: string; checked?: boolean }[],
+    configModels: [] as { id: string; label: string; sub?: string; checked?: boolean; pinned?: boolean }[],
     configEfforts: [] as { id: string; label: string }[],
     configEffortIndex: 0,
     configPermissionLabel: '',
@@ -1513,13 +1526,18 @@ Page({
         })
         this.flushTimeline(true)
         try {
-          await bridge.submitTurn(
+          const result = await bridge.submitTurn(
             sessionId,
             next.text,
             next.attachmentPaths.length > 0 ? next.attachmentPaths : undefined,
             this.targetDeviceId(),
             next.clientId,
           )
+          // 会话有活跃回合时目标端会排队（起跑前没有 user_message 事件）：
+          // 明确告诉用户「没丢，在排队」，不然看起来就像发了没反应
+          if (result.started === false) {
+            wx.showToast({ title: '已加入队列，当前回合结束后执行', icon: 'none', duration: 2500 })
+          }
           dropQueuedMessage(sessionId, next.clientId)
           // 真实 user_message 可能还没推回来：先留一个普通气泡，避免消息闪一下消失
           this.confirmedViews.push({
@@ -1952,6 +1970,7 @@ Page({
     sliderOptions?: string[]
     sliderIndex?: number
     empty?: string
+    pinHint?: string
   }) {
     this.setData({
       panelShow: true,
@@ -1962,7 +1981,31 @@ Page({
       panelSliderOptions: config.sliderOptions ?? [],
       panelSliderIndex: config.sliderIndex ?? 0,
       panelEmpty: config.empty ?? '',
+      panelPinHint: config.pinHint ?? '',
     })
+  },
+
+  /**
+   * 长按模型行：置顶 / 取消置顶，就地重排当前打开的面板。
+   * 模型面板有两个入口（chips 的 sheet-panel 与模型配置的 config-sheet），
+   * 按各自正在打开的面板刷新对应选项。
+   */
+  onModelPinToggle(e: WechatMiniprogram.CustomEvent<{ id: string }>) {
+    const id = e.detail.id
+    const ref = parseComposerModelRef(id)
+    if (ref == null) {
+      wx.showToast({ title: '该项不支持置顶', icon: 'none' })
+      return
+    }
+    toggleComposerModelPin(this.targetDeviceId(), ref)
+    const pinned = readComposerModelCache(this.targetDeviceId()).pinned.some(
+      (item) => item.providerProfileId === ref.providerProfileId && item.modelId === ref.modelId,
+    )
+    wx.showToast({ title: pinned ? '已置顶为常用' : '已取消置顶', icon: 'none', duration: 1200 })
+    if (this.data.configShow) this.applyConfigSheet()
+    if (this.data.panelShow && this.data.panelKind === 'model') {
+      this.setData({ panelOptions: this.modelSheetOptions() })
+    }
   },
 
   closePanel() {
@@ -2035,6 +2078,11 @@ Page({
         { providerProfileId: id.slice(0, sep), modelId: modelId !== '' ? modelId : null },
         this.targetDeviceId(),
       )
+      // 记住这次选择：下次新建会话（首页 / 项目页）默认选中它
+      rememberLastComposerModel(this.targetDeviceId(), {
+        providerProfileId: id.slice(0, sep),
+        modelId: modelId !== '' ? modelId : null,
+      })
       await this.refreshRuntime()
       this.applyConfigSheet()
       wx.showToast({ title: '已切换模型', icon: 'success' })
@@ -2065,11 +2113,15 @@ Page({
     this.openPermissionPanel()
   },
 
-  /** 模型弹层选项（弹层与旧面板同口径，抽取避免两处漂移） */
-  modelSheetOptions(): { id: string; label: string; sub?: string; checked?: boolean }[] {
+  /** 模型弹层选项（弹层与旧面板同口径，抽取避免两处漂移）；置顶的常用模型排最前 */
+  modelSheetOptions(): PanelOptionView[] {
     const catalog = this.catalog
     if (catalog == null) return []
-    const options: { id: string; label: string; sub?: string; checked?: boolean }[] = []
+    const cache = readComposerModelCache(this.targetDeviceId())
+    const pinnedKeys = new Set(
+      cache.pinned.map((ref) => `${ref.providerProfileId}::${ref.modelId ?? ''}`),
+    )
+    const options: PanelOptionView[] = []
     for (const provider of catalog.providers) {
       if (provider.isAutoRouter) {
         options.push({
@@ -2081,16 +2133,18 @@ Page({
         continue
       }
       for (const model of provider.models) {
+        const id = `${provider.id}::${model.id}`
         options.push({
-          id: `${provider.id}::${model.id}`,
+          id,
           label: model.name,
           sub: provider.name,
           checked:
             this.runtime?.providerProfileId === provider.id && this.runtime?.modelId === model.id,
+          pinned: pinnedKeys.has(id),
         })
       }
     }
-    return options
+    return sortComposerModelOptions(options, cache, (option) => parseComposerModelRef(option.id))
   },
 
   openModelPanel() {
@@ -2104,6 +2158,7 @@ Page({
       title: '切换模型',
       options: this.modelSheetOptions(),
       empty: '没有可用模型',
+      pinHint: '长按模型可置顶为常用',
     })
   },
 
@@ -2223,6 +2278,11 @@ Page({
           },
           this.targetDeviceId(),
         )
+        // 记住这次选择：下次新建会话（首页 / 项目页）默认选中它
+        rememberLastComposerModel(this.targetDeviceId(), {
+          providerProfileId: providerId,
+          modelId: modelId !== '' ? modelId : null,
+        })
       } else if (kind === 'permission') {
         await bridge.updateSession(
           this.data.sessionId,

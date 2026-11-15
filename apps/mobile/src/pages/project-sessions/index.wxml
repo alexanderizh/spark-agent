@@ -153,6 +153,7 @@
     placeholder="{{projectId === 'default' ? '在未归属项目中发起对话…' : '在 ' + (projectName || '项目') + ' 发起对话…'}}"
     disabled="{{quickSending || deviceOffline || deviceUnavailable}}"
     auto-focus="{{composerAutoFocus}}"
+    suppress="{{configShow || panelShow || attachShow}}"
     chips="{{chips}}"
     attachments="{{attachments}}"
     bind:input="onQuickInput"
@@ -180,9 +181,11 @@
   efforts="{{configEfforts}}"
   effortIndex="{{configEffortIndex}}"
   permissionLabel="{{configPermissionLabel}}"
+  pinHint="长按模型可置顶为常用"
   bind:close="onConfigClose"
   bind:pickmodel="onConfigModel"
   bind:pickeffort="onConfigEffort"
+  bind:modellongpress="onModelPinToggle"
   bind:openpermission="onConfigPermission"
 />
 

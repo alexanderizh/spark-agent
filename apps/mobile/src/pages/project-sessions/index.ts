@@ -64,6 +64,14 @@ import {
   type BridgeSessionLabelKey,
 } from '../../utils/sidebar-order'
 import type { BridgeCatalog, BridgeSessionSummary, BridgeSidebarOrderState } from '../../api/bridge'
+import {
+  parseComposerModelRef,
+  readComposerModelCache,
+  rememberLastComposerModel,
+  resolveCachedModelId,
+  sortComposerModelOptions,
+  toggleComposerModelPin,
+} from '../../utils/composer-model-cache'
 import { StorageKeys, getItem, setItem } from '../../utils/storage'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
 import { getThemeTextColor, syncPageTheme } from '../../utils/theme'
@@ -465,7 +473,11 @@ Page({
     try {
       const catalog = await bridge.getCatalog(this.data.deviceId || undefined)
       this.catalog = catalog
-      this.modelOptions = buildModelOptions(catalog)
+      // 置顶的常用模型排最前；用户没手选过模型时，上次选的作为本次默认
+      const modelCache = readComposerModelCache(this.data.deviceId)
+      this.modelOptions = sortComposerModelOptions(buildModelOptions(catalog), modelCache, (item) =>
+        parseComposerModelRef(item.id),
+      )
       this.permissionOptions = buildPermissionOptions(catalog)
       this.reasoningOptions = buildReasoningOptions(catalog)
       // 权限 / 推理不再有「电脑默认」合成项：选中项已失效时回落到默认助手在电脑上的档位
@@ -474,6 +486,13 @@ Page({
       }
       if (!this.reasoningOptions.some((item) => item.id === this.data.quickReasoningId)) {
         this.setData({ quickReasoningId: defaultReasoningId(catalog) })
+      }
+      // 上次选的模型作为默认：仅当用户还没手选过（仍是「电脑默认」）时套用
+      if (this.data.quickModelId === DEFAULT_MODEL_OPTION.id) {
+        const lastId = resolveCachedModelId(this.modelOptions, modelCache, (item) =>
+          parseComposerModelRef(item.id),
+        )
+        if (lastId != null) this.setData({ quickModelId: lastId })
       }
     } catch {
       this.catalog = null
@@ -1101,11 +1120,17 @@ Page({
     const permission = this.permissionOptions.find(
       (item) => item.id === this.data.quickPermissionId,
     )
+    const pinnedKeys = new Set(
+      readComposerModelCache(this.data.deviceId).pinned.map(
+        (ref) => `${ref.providerProfileId}::${ref.modelId ?? ''}`,
+      ),
+    )
     this.setData({
       configModels: this.modelOptions.map((item) => ({
         id: item.id,
         label: item.label,
         checked: item.id === this.data.quickModelId,
+        ...(pinnedKeys.has(item.id) ? { pinned: true } : {}),
       })),
       configEfforts: this.reasoningOptions.map((item) => ({ id: item.id, label: item.label })),
       configEffortIndex: Math.max(
@@ -1121,9 +1146,42 @@ Page({
   },
 
   onConfigModel(e: WechatMiniprogram.CustomEvent<{ id: string }>) {
+    // 记住这次选择：下次进本页（乃至冷启动）新建会话默认还是它
+    rememberLastComposerModel(this.data.deviceId, parseComposerModelRef(e.detail.id))
     this.setData({ quickModelId: e.detail.id })
     this.refreshQuickChips()
     this.refreshConfigSheet()
+  },
+
+  /** 长按模型行：置顶 / 取消置顶，就地重排配置弹层 */
+  onModelPinToggle(e: WechatMiniprogram.CustomEvent<{ id: string }>) {
+    const ref = parseComposerModelRef(e.detail.id)
+    if (ref == null) {
+      wx.showToast({ title: '该项不支持置顶', icon: 'none' })
+      return
+    }
+    toggleComposerModelPin(this.data.deviceId, ref)
+    const pinned = readComposerModelCache(this.data.deviceId).pinned.some(
+      (item) => item.providerProfileId === ref.providerProfileId && item.modelId === ref.modelId,
+    )
+    wx.showToast({ title: pinned ? '已置顶为常用' : '已取消置顶', icon: 'none', duration: 1200 })
+    const cache = readComposerModelCache(this.data.deviceId)
+    const pinnedKeys = new Set(
+      cache.pinned.map((pin) => `${pin.providerProfileId}::${pin.modelId ?? ''}`),
+    )
+    const sorted = sortComposerModelOptions(this.modelOptions, cache, (item) =>
+      parseComposerModelRef(item.id),
+    )
+    this.modelOptions = sorted
+    this.setData({
+      configModels: sorted.map((item) => ({
+        id: item.id,
+        label: item.label,
+        checked: item.id === this.data.quickModelId,
+        ...(pinnedKeys.has(item.id) ? { pinned: true } : {}),
+      })),
+    })
+    this.refreshQuickChips()
   },
 
   onConfigEffort(e: WechatMiniprogram.CustomEvent<{ index: number }>) {

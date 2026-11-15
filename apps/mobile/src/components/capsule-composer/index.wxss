@@ -271,6 +271,16 @@
   color: #1a1a1a;
 }
 
+/* 弹层打开期间的 textarea 占位：同字号同行高保高度，文本可见不可聚焦 */
+.composer-input--ghost {
+  overflow: hidden;
+}
+.composer-input--ghost-text {
+  font-size: 31rpx;
+  line-height: 44rpx;
+  color: #1a1a1a;
+}
+
 /* 发送：常态浅底灰箭头，可用（或运行中停止）时反色圆底 + 白箭头 */
 .composer-send {
   background: #f2f0ed;

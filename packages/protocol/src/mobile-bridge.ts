@@ -336,6 +336,11 @@ export interface MobileBridgeSubmitTurnRequest {
 
 export interface MobileBridgeSubmitTurnResponse {
   turnId: string
+  /**
+   * false = 该会话已有回合在跑，本条消息已入队，会在当前回合结束后自动执行。
+   * 排队的回合在起跑前不产生 user_message 事件，端上只能靠这个字段知道「已排队」。
+   */
+  started: boolean
 }
 
 export interface MobileBridgeCancelResponse {

@@ -26,6 +26,14 @@ import {
 } from '../../utils/session-config'
 import type { BridgeProjectSummary, RelayDeviceInfo } from '../../api/bridge'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+import {
+  parseComposerModelRef,
+  readComposerModelCache,
+  rememberLastComposerModel,
+  resolveCachedModelId,
+  sortComposerModelOptions,
+  toggleComposerModelPin,
+} from '../../utils/composer-model-cache'
 import { getThemeTextColor, syncPageTheme } from '../../utils/theme'
 
 const HOME_LIST_CACHE_KEY = 'home:devices'
@@ -70,6 +78,8 @@ interface HomeData {
   chooserTitle: string
   chooserOptions: { id: string; label: string; checked?: boolean }[]
   chooserEmpty: string
+  /** 长按置顶提示（仅模型 chooser 非空） */
+  chooserPinHint: string
   configLoading: boolean
   configError: string
   quickText: string
@@ -118,6 +128,7 @@ Page({
     chooserTitle: '',
     chooserOptions: [],
     chooserEmpty: '',
+    chooserPinHint: '',
     configLoading: false,
     configError: '',
     quickText: '',
@@ -487,7 +498,16 @@ Page({
       ])
       if (generation !== this.configGeneration) return
       const projectOptions = buildProjectOptions(projectResult.projects)
-      const modelOptions = buildModelOptions(catalog)
+      // 置顶的常用模型排最前；上次选过的模型直接作为本次默认（不再回落「电脑默认」）
+      const modelCache = readComposerModelCache(deviceId)
+      const modelOptions = sortComposerModelOptions(
+        buildModelOptions(catalog),
+        modelCache,
+        (option) => parseComposerModelRef(option.id),
+      )
+      const lastModelId = resolveCachedModelId(modelOptions, modelCache, (option) =>
+        parseComposerModelRef(option.id),
+      )
       const permissionOptions = buildPermissionOptions(catalog)
       const reasoningOptions = buildReasoningOptions(catalog)
       this.configLoadedDeviceId = deviceId
@@ -505,11 +525,14 @@ Page({
       const resolvedReasoning = reasoningOptions.findIndex(
         (option) => option.id === defaultReasoningId(catalog),
       )
+      const modelIndex = lastModelId
+        ? modelOptions.findIndex((option) => option.id === lastModelId)
+        : -1
       this.setData({
         projectOptions,
         projectIndex: Math.min(this.data.projectIndex, projectOptions.length - 1),
         modelOptions,
-        modelIndex: Math.min(this.data.modelIndex, modelOptions.length - 1),
+        modelIndex: modelIndex >= 0 ? modelIndex : 0,
         permissionOptions,
         permissionIndex: keptPermission >= 0 ? keptPermission : Math.max(resolvedPermission, 0),
         reasoningOptions,
@@ -562,8 +585,54 @@ Page({
 
   applyModelIndex(index: number) {
     if (this.data.pendingSessionId) return
-    if (!this.data.modelOptions[index]) return
+    const option = this.data.modelOptions[index]
+    if (!option) return
+    // 记住这次选择：下次进页面（乃至下次冷启动）默认还是它；
+    // 「电脑默认」清除记录（回落目标端默认），具体模型 / 自动路由渠道都记
+    rememberLastComposerModel(this.data.composerDeviceId, parseComposerModelRef(option.id))
     this.setData({ modelIndex: index })
+    this.refreshComposerSummary()
+  },
+
+  /** 长按 chooser 里的模型行：置顶 / 取消置顶，就地重排（仅模型 chooser 生效） */
+  onChooserLongPress(event: WechatMiniprogram.CustomEvent<{ id: string }>) {
+    if (this.data.chooserKind !== 'model') return
+    const index = Number(event.detail.id)
+    const option = this.data.modelOptions[index]
+    if (option == null) return
+    const ref = parseComposerModelRef(option.id)
+    if (ref == null) {
+      wx.showToast({ title: '该项不支持置顶', icon: 'none' })
+      return
+    }
+    const deviceId = this.data.composerDeviceId
+    toggleComposerModelPin(deviceId, ref)
+    const pinned = readComposerModelCache(deviceId).pinned.some(
+      (item) => item.providerProfileId === ref.providerProfileId && item.modelId === ref.modelId,
+    )
+    wx.showToast({ title: pinned ? '已置顶为常用' : '已取消置顶', icon: 'none', duration: 1200 })
+    const cache = readComposerModelCache(deviceId)
+    const pinnedKeys = new Set(
+      cache.pinned.map((pin) => `${pin.providerProfileId}::${pin.modelId ?? ''}`),
+    )
+    const sorted = sortComposerModelOptions(this.data.modelOptions, cache, (item) =>
+      parseComposerModelRef(item.id),
+    )
+    const selectedId = this.data.modelOptions[this.data.modelIndex]?.id ?? ''
+    const nextIndex = Math.max(
+      sorted.findIndex((item) => item.id === selectedId),
+      0,
+    )
+    this.setData({
+      modelOptions: sorted,
+      modelIndex: nextIndex,
+      chooserOptions: sorted.map((item, itemIndex) => ({
+        id: String(itemIndex),
+        label: item.label,
+        checked: itemIndex === nextIndex,
+        ...(pinnedKeys.has(item.id) ? { pinned: true } : {}),
+      })),
+    })
     this.refreshComposerSummary()
   },
 
@@ -595,12 +664,23 @@ Page({
       return
     }
     const data = this.data
-    const toOptions = (items: SessionConfigOption[], current: number) =>
-      items.map((item, index) => ({
+    const toOptions = (items: SessionConfigOption[], current: number) => {
+      // 模型项从缓存查置顶态（图钉标记）；其它 kind 不带该字段
+      const pinnedKeys =
+        kind === 'model'
+          ? new Set(
+              readComposerModelCache(this.data.composerDeviceId).pinned.map(
+                (ref) => `${ref.providerProfileId}::${ref.modelId ?? ''}`,
+              ),
+            )
+          : null
+      return items.map((item, index) => ({
         id: String(index),
         label: item.label,
         checked: index === current,
+        ...(pinnedKeys != null && pinnedKeys.has(item.id) ? { pinned: true } : {}),
       }))
+    }
     if (kind === 'device') {
       if (data.devices.length === 0) {
         wx.showToast({ title: '还没有接入电脑', icon: 'none' })
@@ -650,6 +730,7 @@ Page({
       chooserTitle: entry.title,
       chooserOptions: toOptions(entry.options, entry.current),
       chooserEmpty: entry.empty,
+      chooserPinHint: kind === 'model' ? '长按模型可置顶为常用' : '',
     })
   },
 

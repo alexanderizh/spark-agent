@@ -8,6 +8,7 @@ import {
   agentLabel,
   applyCommandPick,
   buildAgentOptions,
+  buildModelMenuSections,
   buildModelOptions,
   buildPermissionOptions,
   buildReasoningOptions,
@@ -293,5 +294,80 @@ describe('运行时缺字段的容错', () => {
     expect(() => agentLabel(catalog, runtime)).not.toThrow()
     expect(() => modelLabel(catalog, runtime)).not.toThrow()
     expect(() => permissionLabel(catalog, runtime)).not.toThrow()
+  })
+})
+
+describe('buildModelMenuSections', () => {
+  const options = buildModelOptions(catalog, {})
+  const allOptions: never[] = []
+
+  function idsOf(sections: ReturnType<typeof buildModelMenuSections>): string[] {
+    return sections.flatMap((section) => section.options.map((option) => option.id))
+  }
+
+  it('按渠道分组，分组标题用渠道名', () => {
+    const sections = buildModelMenuSections(catalog, options, [])
+    expect(sections.map((section) => section.title)).toEqual(['智能路由', 'DeepSeek'])
+    expect(idsOf(sections)).toEqual([
+      'p-auto::',
+      'p-deepseek::deepseek-v4',
+      'p-deepseek::deepseek-r',
+    ])
+  })
+
+  it('置顶的具体模型汇总到顶部「常用」组，label 带渠道名', () => {
+    const sections = buildModelMenuSections(
+      catalog,
+      options,
+      [{ providerId: 'p-deepseek', modelId: 'deepseek-r' }],
+    )
+    expect(sections[0]?.title).toBe('常用')
+    expect(sections[0]?.options).toHaveLength(1)
+    expect(sections[0]?.options[0]?.label).toBe('R2 · DeepSeek')
+    expect(sections[0]?.options[0]?.pinned).toBe(true)
+    // 原分组保留该项（重复是快捷入口，不是状态漂移）
+    expect(idsOf(sections)).toContain('p-deepseek::deepseek-r')
+  })
+
+  it('常用组按置顶顺序排列（而非分组顺序）', () => {
+    const sections = buildModelMenuSections(
+      catalog,
+      options,
+      [
+        { providerId: 'p-deepseek', modelId: 'deepseek-r' },
+        { providerId: 'p-deepseek', modelId: 'deepseek-v4' },
+      ],
+    )
+    expect(sections[0]?.options.map((option) => option.id)).toEqual([
+      'p-deepseek::deepseek-r',
+      'p-deepseek::deepseek-v4',
+    ])
+  })
+
+  it('置顶记录里渠道/模型已消失的自动跳过，不影响其余置顶项', () => {
+    const sections = buildModelMenuSections(
+      catalog,
+      options,
+      [
+        { providerId: 'p-gone', modelId: 'm1' },
+        { providerId: 'p-deepseek', modelId: 'retired' },
+        { providerId: 'p-deepseek', modelId: 'deepseek-v4' },
+      ],
+    )
+    expect(sections[0]?.options.map((option) => option.id)).toEqual(['p-deepseek::deepseek-v4'])
+  })
+
+  it('具体模型项携带 pinned 布尔，AutoRouter 项不带该字段（不渲染置顶按钮）', () => {
+    const sections = buildModelMenuSections(catalog, options, [])
+    const auto = sections[0]?.options[0]
+    expect(auto?.pinned).toBeUndefined()
+    const model = sections[1]?.options[0]
+    expect(model?.pinned).toBe(false)
+  })
+
+  it('目录缺失时标题回退 providerId，不抛错；没有选项时不产生分组', () => {
+    const sections = buildModelMenuSections(null, options, [])
+    expect(sections.map((section) => section.title)).toEqual(['p-auto', 'p-deepseek'])
+    expect(buildModelMenuSections(null, [], [])).toEqual([])
   })
 })

@@ -24,6 +24,7 @@ import { MessageHoverBar } from '../chat/MessageHoverBar'
 import type { FileOpenHandler } from '../../components/fileOpenRouting'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { RemoteAttachmentStrip } from './RemoteAttachmentStrip'
+import type { RemoteAttachmentRef } from './RemoteAttachmentStrip'
 import { RemoteDocPreview } from './RemoteDocPreview'
 import { RemoteFileCards } from './RemoteFileCards'
 import { RemoteHtmlPreview } from './RemoteHtmlPreview'
@@ -385,7 +386,9 @@ function MessageItem({
       />
       {/* 生成中的分段不挂操作条：按钮会随正文增长反复位移 */}
       {!streaming && item.text.trim().length > 0 && (
-        <MessageHoverBar position="left" textContent={item.text} />
+        // 靠右：远程视图一轮拆成十几段，操作栏贴在正文下沿，左对齐时会落在
+        // 下一段（活动摘要 / 正文）的左边缘上，和正文起点抢视线
+        <MessageHoverBar position="right" textContent={item.text} />
       )}
     </div>
   )
@@ -422,6 +425,66 @@ function TurnCollapseBar({
         <Icons.ChevronRight size={12} />
       </span>
     </button>
+  )
+}
+
+/**
+ * 本地待发的乐观气泡：POST /turns 在途时先上屏，事件回流后整条交棒给真实消息。
+ * 失败态停在气泡上，点它重发（文字与附件都还在，不会丢）。
+ * queued 态表示目标端已接受但排队（会话有活跃回合）：状态行换成「已加入队列」，
+ * 气泡继续挂着等回合起跑——排队期间时间线不会出现这条消息，不能让它凭空消失。
+ */
+function PendingUserBubble({
+  pending,
+  deviceId,
+  onRetry,
+}: {
+  pending: RemotePendingUserView
+  deviceId: string
+  onRetry?: () => void
+}) {
+  return (
+    <div className="rc-msg rc-msg-user rc-msg-user--pending">
+      <div className="rc-bubble">
+        {pending.text.length > 0 && <p className="rc-text">{pending.text}</p>}
+        <RemoteAttachmentStrip deviceId={deviceId} attachments={pending.attachments} />
+      </div>
+      {pending.status === 'sending' && (
+        <button type="button" className="rc-send-state" disabled>
+          <Icons.Spinner size={11} className="spin" />
+          发送中…
+        </button>
+      )}
+      {pending.status === 'sent' && pending.queued === true && (
+        <span className="rc-send-state is-queued">
+          <Icons.Clock size={11} />
+          已加入队列 · 当前回合结束后自动执行
+        </span>
+      )}
+      {pending.status === 'failed' && (
+        <button type="button" className="rc-send-state is-failed" onClick={onRetry}>
+          发送失败 · 点击重试
+          {pending.error != null ? `（${pending.error}）` : ''}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 回合已跑起来但目标端还没吐第一个字：三点跳动 + 一行说明。
+ * 没有它，发送成功到首字到达之间界面毫无变化，用户只能干等。
+ */
+function AwaitingResponseRow() {
+  return (
+    <div className="rc-msg rc-msg-awaiting">
+      <span className="rc-awaiting-dots" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span className="rc-awaiting-text">等待响应…</span>
+    </div>
   )
 }
 
@@ -506,11 +569,30 @@ function RemoteTurnBlock({
   )
 }
 
+/**
+ * 本地待发的用户消息（乐观气泡）在列表里的形态。
+ * 状态机由 RemoteChatPane 推进：sending（POST 在途）→ sent（已送达等事件回流）
+ * → 事件到位后整条消失；failed 停在气泡上可点击重试。
+ * queued = 目标端已接受但排队（会话有活跃回合）：状态行显示「已加入队列」，
+ * 气泡挂到 user 事件入库为止（判据见 isPendingUserVisible）。
+ */
+export interface RemotePendingUserView {
+  text: string
+  attachments: RemoteAttachmentRef[]
+  status: 'sending' | 'sent' | 'failed'
+  turnIds?: string[]
+  queued?: boolean
+  error?: string
+}
+
 export function RemoteMessageList({
   items,
   deviceId,
   running = false,
   onReuseUserMessage,
+  pendingUser,
+  onRetryPendingUser,
+  awaitingResponse = false,
 }: {
   items: RemoteTimelineItem[]
   deviceId: string
@@ -518,6 +600,12 @@ export function RemoteMessageList({
   running?: boolean
   /** 用户消息「重新发送」回调；不传则不显示该按钮（预览壳等场景） */
   onReuseUserMessage?: (item: RemoteUserItem) => void
+  /** 本地待发的乐观气泡；事件回流后由调用方置 null 交棒 */
+  pendingUser?: RemotePendingUserView | null
+  /** 点击失败气泡的重试入口 */
+  onRetryPendingUser?: () => void
+  /** 已送达、目标端还未吐字：列表末尾显示等待指示器 */
+  awaitingResponse?: boolean
 }) {
   // 折叠在这里做而不是让调用方记住：thinking / tool 未折叠时本组件无从渲染，
   // 放在入口保证任何来源的时间线都能正确显示。
@@ -571,6 +659,14 @@ export function RemoteMessageList({
           {...(onReuseUserMessage != null ? { onReuseUserMessage } : {})}
         />
       ))}
+      {pendingUser != null && (
+        <PendingUserBubble
+          pending={pendingUser}
+          deviceId={deviceId}
+          {...(onRetryPendingUser != null ? { onRetry: onRetryPendingUser } : {})}
+        />
+      )}
+      {awaitingResponse && <AwaitingResponseRow />}
       {docPath != null && (
         <RemoteDocPreview
           deviceId={deviceId}

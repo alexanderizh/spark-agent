@@ -314,6 +314,7 @@ export const PRIMARIES: Record<string, { name: string; hover: string; soft: stri
 type AppCtx = {
   t: Tweaks
   setTweak: <K extends keyof Tweaks>(key: K, val: Tweaks[K]) => void
+  navigateToView: (view: ViewId, onApproved?: () => void) => Promise<boolean>
   registerNavGuard: (guard: NavGuard | null) => void
   /**
    * 同步设置全局是否有未保存改动。`beforeunload` 监听器会读取这个 ref
@@ -430,6 +431,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setT((prev) => ({ ...prev, ...patch }))
   }, [])
 
+  const navigateToView = useCallback<AppCtx['navigateToView']>(
+    async (view, onApproved) => {
+      if (view !== t.view && navGuardRef.current) {
+        const guard = navGuardRef.current
+        if (!(await guard())) return false
+      }
+      onApproved?.()
+      if (view !== t.view) applyTweak('view', view)
+      return true
+    },
+    [applyTweak, t.view],
+  )
+
   const setTweak = useCallback<AppCtx['setTweak']>(
     (key, val) => {
       if (key === 'view' && navGuardRef.current && val !== t.view) {
@@ -513,6 +527,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => ({
       t,
       setTweak,
+      navigateToView,
       registerNavGuard,
       setHasUnsavedChanges,
       requestConfirm,
@@ -554,6 +569,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [
       t,
       setTweak,
+      navigateToView,
       registerNavGuard,
       setHasUnsavedChanges,
       requestConfirm,

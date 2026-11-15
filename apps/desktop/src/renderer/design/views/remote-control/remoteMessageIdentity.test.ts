@@ -11,7 +11,7 @@ function assistant(id: string, seq: number): RemoteTimelineItem {
 }
 
 function user(id: string, seq: number): RemoteTimelineItem {
-  return { kind: 'user', id, seq, text: '问一句', attachments: [] }
+  return { kind: 'user', id, seq, turnId: 't1', text: '问一句', attachments: [] }
 }
 
 describe('resolveAgentIdentityIndex', () => {

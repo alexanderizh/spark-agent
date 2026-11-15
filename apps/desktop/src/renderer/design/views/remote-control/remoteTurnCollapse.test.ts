@@ -3,7 +3,7 @@ import type { RemoteTimelineItem } from './remoteEventMerge'
 import { projectRemoteTurnCollapse, splitRemoteTurns } from './remoteTurnCollapse'
 
 function user(id: string, seq: number, text = '问一句'): RemoteTimelineItem {
-  return { kind: 'user', id, seq, text, attachments: [] }
+  return { kind: 'user', id, seq, turnId: 't1', text, attachments: [] }
 }
 
 function assistant(id: string, seq: number, text = '正文'): RemoteTimelineItem {

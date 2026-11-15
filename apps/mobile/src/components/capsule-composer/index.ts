@@ -101,6 +101,12 @@ Component({
     transcribing: { type: Boolean, value: false },
     /** 进入页面即聚焦输入框（项目行「＋」新建场景；拿到 focus 事件后由页面复位） */
     autoFocus: { type: Boolean, value: false },
+    /**
+     * 页面弹层（配置/面板/附件菜单）打开期间置 true：textarea 换成等高占位。
+     * textarea 是原生组件，弹层 mask 的 z-index 拦不住它的触摸命中——
+     * 弹层底部控件（如推理强度滑块）的点击会命中它而误弹键盘
+     */
+    suppress: { type: Boolean, value: false },
   },
 
   data: {

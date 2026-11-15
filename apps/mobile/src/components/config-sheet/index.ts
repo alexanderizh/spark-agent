@@ -19,6 +19,8 @@ interface ConfigSheetModel {
   label: string
   sub?: string
   checked?: boolean
+  /** 置顶态：true 的项排最前并显示置顶图标（调用方排序后传入） */
+  pinned?: boolean
 }
 
 interface ConfigSheetEffort {
@@ -35,6 +37,8 @@ Component({
     effortIndex: { type: Number, value: 0 },
     /** 权限当前值文案；空字符串 = 不显示 Options 段（助手不支持切换权限） */
     permissionLabel: { type: String, value: '' },
+    /** 长按置顶的提示文案（空 = 不显示）；提示段在模型列表末尾随列表滚动 */
+    pinHint: { type: String, value: '' },
   },
 
   data: {
@@ -109,6 +113,13 @@ Component({
       const id = e.currentTarget.dataset.id as string | undefined
       if (id == null) return
       this.triggerEvent('pickmodel', { id })
+    },
+
+    /** 长按模型行：置顶 / 取消置顶（页面刷新 models 后重新排序回显） */
+    onModelLongPress(e: WechatMiniprogram.BaseEvent) {
+      const id = e.currentTarget.dataset.id as string | undefined
+      if (id == null) return
+      this.triggerEvent('modellongpress', { id })
     },
 
     onPickEffort(e: WechatMiniprogram.BaseEvent) {

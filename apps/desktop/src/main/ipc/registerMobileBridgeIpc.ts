@@ -1046,7 +1046,8 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
             }
           : {}),
       })
-      return { turnId: result.turnId }
+      // started=false 表示已入队（会话有活跃回合）：端上据此显示「已加入队列」
+      return { turnId: result.turnId, started: result.started }
     },
 
     cancelTurn: async (sessionId) => {

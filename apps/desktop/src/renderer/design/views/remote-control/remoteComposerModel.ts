@@ -16,6 +16,7 @@ import type {
   SessionAgentAdapter,
 } from '@spark/protocol'
 import { REASONING_EFFORT_OPTIONS } from '../chat/reasoning-effort-options'
+import { isPinnedModelRef } from '../chat/pinned-models'
 import { getPermissionModeOptions } from '../../utils/permission-options'
 
 export type RemoteOptionTone = 'default' | 'auto' | 'danger'
@@ -27,6 +28,11 @@ export interface RemoteSelectOption {
   description?: string
   tone?: RemoteOptionTone
   selected?: boolean
+  /**
+   * 置顶态（仅模型菜单的「具体模型」项携带）。
+   * 字段缺省 = 该项不参与置顶（助手 / 权限 / 自动路由项），菜单不渲染置顶按钮。
+   */
+  pinned?: boolean
 }
 
 /** 模型选项需要额外携带写回 PATCH 的两个字段 */
@@ -108,6 +114,79 @@ export function buildModelOptions(
     }
   }
   return options
+}
+
+/**
+ * 权限选项：以目标端给出的合法档位为准（catalog.permissionModes[adapter]），
+ * 标签/语气复用桌面端 permission-options；目录里没有该 adapter 就返回空数组，
+ * 调用方据此隐藏权限 chip。
+ */
+export interface RemoteMenuSectionData {
+  title?: string
+  options: RemoteSelectOption[]
+}
+
+/**
+ * 按目录解析置顶记录（渠道被删 / 模型下架的记录自动跳过，不回写清理）。
+ *
+ * 与 chat/pinned-models 的 resolvePinnedModelEntries 同一套规则，但入参是
+ * mobile bridge 的目录（渠道结构比主对话区的 ProviderProfile 薄），不强行共用类型。
+ */
+function resolvePinnedCatalogEntries(
+  pinned: ReadonlyArray<{ providerId: string; modelId: string }>,
+  catalog: MobileBridgeCatalog | null,
+): Array<{ providerId: string; providerName: string; modelId: string }> {
+  const entries: Array<{ providerId: string; providerName: string; modelId: string }> = []
+  for (const ref of pinned) {
+    const provider = catalog?.providers.find((item) => item.id === ref.providerId)
+    if (provider == null) continue
+    if (!provider.models.some((model) => model.id === ref.modelId)) continue
+    entries.push({ providerId: provider.id, providerName: provider.name, modelId: ref.modelId })
+  }
+  return entries
+}
+
+/**
+ * 模型菜单分组：按渠道分组 + 置顶的具体模型汇总到顶部「常用」组。
+ *
+ * 与桌面端主对话区同一套 pinned 存储（chat/pinned-models，按 providerId+modelId
+ * 记录），跨视图互通。置顶解析基于当前目录：渠道被删 / 模型下架的记录自动跳过。
+ * AutoRouter / 渠道默认模型项不参与置顶（不带 pinned 字段，菜单不渲染置顶按钮）。
+ */
+export function buildModelMenuSections(
+  catalog: MobileBridgeCatalog | null,
+  modelOptions: RemoteModelOption[],
+  pinned: ReadonlyArray<{ providerId: string; modelId: string }>,
+): RemoteMenuSectionData[] {
+  const groups = new Map<string, RemoteSelectOption[]>()
+  for (const option of modelOptions) {
+    const providerId = option.providerProfileId
+    const bucket = groups.get(providerId) ?? []
+    // 分组标题已经是渠道名，选项里只留模型短名
+    bucket.push({
+      ...option,
+      label: option.shortLabel,
+      ...(option.modelId != null
+        ? { pinned: isPinnedModelRef(pinned, providerId, option.modelId) }
+        : {}),
+    })
+    groups.set(providerId, bucket)
+  }
+  const sections: RemoteMenuSectionData[] = [...groups.entries()].map(([providerId, options]) => ({
+    title: catalog?.providers.find((item) => item.id === providerId)?.name ?? providerId,
+    options,
+  }))
+  const pinnedOptions: RemoteSelectOption[] = []
+  for (const entry of resolvePinnedCatalogEntries(pinned, catalog)) {
+    const option = modelOptions.find(
+      (item) => item.providerProfileId === entry.providerId && item.modelId === entry.modelId,
+    )
+    if (option == null) continue
+    // 常用组混着多个渠道：带上渠道名，短名撞了也能分清
+    pinnedOptions.push({ ...option, label: `${option.shortLabel} · ${entry.providerName}`, pinned: true })
+  }
+  if (pinnedOptions.length > 0) sections.unshift({ title: '常用', options: pinnedOptions })
+  return sections
 }
 
 /**

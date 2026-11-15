@@ -17,19 +17,69 @@ import { rememberComposerPrefs } from './remoteViewState'
 import { useRemoteCall, type RemoteCallError } from './useRemoteBridge'
 
 const CATALOG_TTL_MS = 5 * 60_000
+/**
+ * 落盘目录的有效期。目录只在「新建会话套用上次偏好」时被读收敛用到，放宽到
+ * 24h：重启后内存缓存为空，不落盘的话收敛直接放弃（patch 为空），新会话就
+ * 回到目标端默认模型——「下次进来不是上次选的模型」的老毛病就是这么来的。
+ */
+const CATALOG_PERSISTED_TTL_MS = 24 * 3600_000
+const CATALOG_STORAGE_KEY = 'spark-agent:remote-catalog-cache'
 
 const catalogCache = new Map<string, { at: number; catalog: MobileBridgeCatalog }>()
 
+function readPersistedCatalogTable(): Record<string, { at: number; catalog: MobileBridgeCatalog }> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(CATALOG_STORAGE_KEY)
+    if (raw == null) return {}
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed as Record<string, { at: number; catalog: MobileBridgeCatalog }>
+  } catch {
+    return {}
+  }
+}
+
+function persistCatalog(deviceId: string, catalog: MobileBridgeCatalog): void {
+  if (typeof window === 'undefined') return
+  try {
+    // 只保留最近的几台设备，避免长期使用后无限膨胀
+    const table = readPersistedCatalogTable()
+    const entries = Object.entries(table).filter(([id, entry]) => {
+      return id !== deviceId && entry != null && typeof entry === 'object'
+    })
+    const kept = entries.slice(-5)
+    const next: Record<string, { at: number; catalog: MobileBridgeCatalog }> = {}
+    for (const [id, entry] of kept) next[id] = entry
+    next[deviceId] = { at: Date.now(), catalog }
+    window.localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(next))
+  } catch {
+    // 落盘失败不影响内存缓存；大不了重启后少一次「套用上次偏好」
+  }
+}
+
 /**
- * 同步取「这台设备最近一次拉到的目录」（未过期才算）。
+ * 同步取「这台设备最近一次拉到的目录」（内存 5 分钟内，或落盘 24 小时内）。
  *
  * 新建会话要在创建后立刻 PATCH 上次记下的助手/模型/权限，那时手上没有目录：
- * 这里复用同一份缓存，避免为一个下拉框再拉一遍 /v1/catalog。
+ * 这里复用同一份缓存，避免为一个下拉框再拉一遍 /v1/catalog。重启后内存为空，
+ * 从落盘兜底——否则新建会话的偏好套用会静默放弃。
  */
 export function readCachedCatalog(deviceId: string): MobileBridgeCatalog | null {
   const cached = catalogCache.get(deviceId)
-  if (cached == null) return null
-  return Date.now() - cached.at < CATALOG_TTL_MS ? cached.catalog : null
+  if (cached != null && Date.now() - cached.at < CATALOG_TTL_MS) return cached.catalog
+  const persisted = readPersistedCatalogTable()[deviceId]
+  if (
+    persisted != null &&
+    typeof persisted === 'object' &&
+    typeof persisted.at === 'number' &&
+    persisted.catalog != null &&
+    typeof persisted.catalog === 'object' &&
+    Date.now() - persisted.at < CATALOG_PERSISTED_TTL_MS
+  ) {
+    return persisted.catalog
+  }
+  return null
 }
 
 export interface RemoteComposerConfigState {
@@ -77,18 +127,35 @@ export function useRemoteComposerConfig(
       setCatalogSupported(true)
       return
     }
+    // 内存过期先试落盘：有就先渲染（配置栏立即可用），网络回来后覆盖。
+    // 落盘目录最多滞后 24h，chips 短暂显示旧模型名好过白等一趟中继往返。
+    const persisted = readPersistedCatalogTable()[deviceId]
+    const stale =
+      persisted != null &&
+      typeof persisted === 'object' &&
+      typeof persisted.at === 'number' &&
+      persisted.catalog != null &&
+      typeof persisted.catalog === 'object'
+        ? persisted.catalog
+        : null
+    if (stale != null) {
+      setCatalog(stale)
+      setCatalogSupported(true)
+    }
     call<MobileBridgeCatalog>(deviceId, 'GET', '/v1/catalog')
       .then((next) => {
         if (cancelled) return
         catalogCache.set(deviceId, { at: Date.now(), catalog: next })
+        persistCatalog(deviceId, next)
         setCatalog(next)
         setCatalogSupported(true)
       })
       .catch((cause: unknown) => {
         if (cancelled) return
-        // 404 = 旧版目标端没有该端点 → 隐藏配置栏；其它错误只降级为「无目录」
+        // 404 = 旧版目标端没有该端点 → 隐藏配置栏；其它错误只降级为「无目录」。
+        // 落盘目录还在时保留它（离线也能看到上次的渠道），只标记不支持写。
+        if (stale == null) setCatalog(null)
         setCatalogSupported((cause as RemoteCallError | null)?.status !== 404)
-        setCatalog(null)
       })
     return () => {
       cancelled = true

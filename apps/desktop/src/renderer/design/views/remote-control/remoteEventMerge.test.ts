@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { MobileBridgeEvent } from '@spark/protocol'
-import { buildRemoteTimeline, mergeRemoteEvents } from './remoteEventMerge'
+import {
+  buildRemoteTimeline,
+  isAwaitingResponse,
+  isPendingUserVisible,
+  mergeRemoteEvents,
+} from './remoteEventMerge'
 
 let seed = 0
 
@@ -664,5 +669,223 @@ describe('buildRemoteTimeline — 历史会话不该停在「进行中」', () =
     // 收到终态后连最后一条正文也不再流式
     expect(items.every((item) => !('streaming' in item) || item.streaming === false)).toBe(true)
     expect(items.filter((item) => item.kind === 'thinking')).toHaveLength(2)
+  })
+})
+
+describe('isPendingUserVisible', () => {
+  const pending = { text: '拉下最新代码' }
+
+  it('没有待发消息时不显示', () => {
+    expect(isPendingUserVisible(buildRemoteTimeline([]), null)).toBe(false)
+  })
+
+  it('事件流为空时立即显示（发送即上屏）', () => {
+    expect(isPendingUserVisible(buildRemoteTimeline([]), pending)).toBe(true)
+  })
+
+  it('末尾是同文本 user 消息时交棒给真实消息', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '拉下最新代码' }),
+    ])
+    expect(isPendingUserVisible(items, pending)).toBe(false)
+  })
+
+  it('末尾 user 文本不同时继续显示（事件还没到）', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '上一轮的问题' }),
+    ])
+    expect(isPendingUserVisible(items, pending)).toBe(true)
+  })
+
+  it('对账忽略首尾空白', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: ' 拉下最新代码 ' }),
+    ])
+    expect(isPendingUserVisible(items, pending)).toBe(false)
+  })
+
+  it('末尾已推进到 assistant：user 事件必然已入库', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '上一轮的问题' }),
+      ev({
+        id: 'a1',
+        seq: 2,
+        type: 'assistant_message',
+        content: '好的',
+        mode: 'complete',
+        segmentId: 'seg-1',
+      }),
+    ])
+    expect(isPendingUserVisible(items, pending)).toBe(false)
+  })
+
+  it('历史中间有相同文本不误伤：只看末尾', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '拉下最新代码' }),
+      ev({
+        id: 'a1',
+        seq: 2,
+        type: 'assistant_message',
+        content: '已完成',
+        mode: 'complete',
+        segmentId: 'seg-1',
+      }),
+      ev({ id: 'u2', seq: 3, type: 'user_message', content: '在吗' }),
+    ])
+    expect(isPendingUserVisible(items, pending)).toBe(true)
+  })
+})
+
+describe('isPendingUserVisible · turnId 对账与排队', () => {
+  it('user 条目携带事件来源的 turnId（精确对账的依据）', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: 'hi', turnId: 'turn-9' }),
+    ])
+    const first = items[0]
+    expect(first).toMatchObject({ kind: 'user', turnId: 'turn-9' })
+  })
+
+  it('turnIds 命中事件流即交棒（即使末尾已推进到 assistant）', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '拉下最新代码', turnId: 'turn-a' }),
+      ev({
+        id: 'a1',
+        seq: 2,
+        type: 'assistant_message',
+        content: '好的',
+        mode: 'complete',
+        segmentId: 'seg-1',
+        turnId: 'turn-a',
+      }),
+    ])
+    expect(isPendingUserVisible(items, { text: '拉下最新代码', turnIds: ['turn-a'] })).toBe(false)
+  })
+
+  it('排队回合未起跑（无同 turnId 条目）时气泡继续挂：末尾是 assistant 也不撤', () => {
+    const items = buildRemoteTimeline([
+      ev({
+        id: 'a1',
+        seq: 1,
+        type: 'assistant_message',
+        content: '上一轮的回答',
+        mode: 'complete',
+        segmentId: 'seg-1',
+        turnId: 'turn-prev',
+      }),
+    ])
+    expect(isPendingUserVisible(items, { text: '在吗', turnIds: ['turn-new'] })).toBe(true)
+  })
+
+  it('同文本的历史 user 消息不误伤 turnId 对账', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '在吗', turnId: 'turn-old' }),
+    ])
+    expect(isPendingUserVisible(items, { text: '在吗', turnIds: ['turn-new'] })).toBe(true)
+  })
+
+  it('重试拿到多个 turnId：任一命中即交棒', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '在吗', turnId: 'turn-retry' }),
+    ])
+    expect(isPendingUserVisible(items, { text: '在吗', turnIds: ['turn-first', 'turn-retry'] })).toBe(
+      false,
+    )
+  })
+
+  it('queued 且无 turnIds（命令转发）：末尾非 user 时气泡不撤', () => {
+    const items = buildRemoteTimeline([
+      ev({
+        id: 'a1',
+        seq: 1,
+        type: 'assistant_message',
+        content: '上一轮的回答',
+        mode: 'complete',
+        segmentId: 'seg-1',
+      }),
+    ])
+    expect(isPendingUserVisible(items, { text: '/翻译 你好', queued: true })).toBe(true)
+  })
+
+  it('queued 且无 turnIds：同文本 user 到达后照常交棒', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '/翻译 你好' }),
+    ])
+    expect(isPendingUserVisible(items, { text: '/翻译 你好', queued: true })).toBe(false)
+  })
+
+  it('未排队且无 turnIds 时保持原末尾文本对账行为', () => {
+    const items = buildRemoteTimeline([
+      ev({
+        id: 'a1',
+        seq: 1,
+        type: 'assistant_message',
+        content: '上一轮的回答',
+        mode: 'complete',
+        segmentId: 'seg-1',
+      }),
+    ])
+    expect(isPendingUserVisible(items, { text: '在吗' })).toBe(false)
+  })
+})
+
+describe('isAwaitingResponse', () => {
+  it('空时间线不显示（没有回合在跑）', () => {
+    expect(isAwaitingResponse(buildRemoteTimeline([]))).toBe(false)
+  })
+
+  it('末尾是 user 消息 = 已送达、还没吐字', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '帮我看看' }),
+    ])
+    expect(isAwaitingResponse(items)).toBe(true)
+  })
+
+  it('末尾 assistant 仍在流式：不需要等待指示', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '帮我看看' }),
+      ev({ id: 'a1', seq: 2, type: 'assistant_message', content: '正在', mode: 'delta' }),
+    ])
+    expect(isAwaitingResponse(items)).toBe(false)
+  })
+
+  it('末尾 thinking 仍在流式：不需要等待指示', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '帮我看看' }),
+      ev({ id: 't1', seq: 2, type: 'agent_thinking', content: '想想', mode: 'delta' }),
+    ])
+    expect(isAwaitingResponse(items)).toBe(false)
+  })
+
+  it('工具执行中：活动段自己有进行态，不叠加等待指示', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '帮我看看' }),
+      ev({ id: 'c1', seq: 2, type: 'tool_call', toolName: 'bash', toolCallId: 'call-1' }),
+    ])
+    expect(isAwaitingResponse(items)).toBe(false)
+  })
+
+  it('工具做完还没吐字：回到等待态', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '帮我看看' }),
+      ev({ id: 'c1', seq: 2, type: 'tool_call', toolName: 'bash', toolCallId: 'call-1' }),
+      ev({
+        id: 'r1',
+        seq: 3,
+        type: 'tool_result',
+        toolName: 'bash',
+        toolCallId: 'call-1',
+        toolStatus: 'success',
+        content: 'ok',
+      }),
+    ])
+    expect(isAwaitingResponse(items)).toBe(true)
+  })
+
+  it('末尾是产物卡片：同样在等下一段输出', () => {
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: '帮我看看' }),
+      ev({ id: 'f1', seq: 2, type: 'presented_files', files: [{ path: 'D:\\a.png' }] }),
+    ])
+    expect(isAwaitingResponse(items)).toBe(true)
   })
 })

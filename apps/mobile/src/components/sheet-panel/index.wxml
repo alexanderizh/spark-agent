@@ -29,13 +29,18 @@
           data-id="{{item.id}}"
           data-disabled="{{item.disabled}}"
           bindtap="onSelect"
+          bindlongpress="onOptionLongPress"
         >
           <view class="sheet-option-main grow">
             <text class="sheet-option-label">{{item.label}}</text>
             <text wx:if="{{item.sub}}" class="sheet-option-sub">{{item.sub}}</text>
           </view>
+          <view wx:if="{{item.pinned}}" class="icon icon-pin sheet-pin"></view>
           <view wx:if="{{item.checked}}" class="icon icon-check sheet-check"></view>
         </view>
+      </view>
+      <view wx:if="{{pinHint}}" class="sheet-pin-hint">
+        <text class="t-caption">{{pinHint}}</text>
       </view>
     </scroll-view>
 

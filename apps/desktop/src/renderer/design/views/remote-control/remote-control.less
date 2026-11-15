@@ -1784,6 +1784,106 @@
   margin-top: 4px;
 }
 
+/* 本地待发的乐观气泡：目标端还没回录，压淡一档 + 虚线口表示「在途」 */
+.rc-msg-user--pending .rc-bubble {
+  border: 1px dashed color-mix(in srgb, var(--primary, #3b82f6) 45%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--primary-soft, rgba(59, 130, 246, 0.12)) 55%,
+    transparent
+  );
+}
+
+/* 乐观气泡状态行：发送中（spinner 跟随）/ 失败（整行可点，重发） */
+.rc-send-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: var(--font-2xs, 11px);
+  line-height: 1.4;
+  color: var(--text-muted, #8d8a86);
+  cursor: default;
+
+  &.is-failed {
+    color: var(--danger, #ef4444);
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+  }
+
+  /* 已加入队列（目标端会话有活跃回合）：等执行，不可点 */
+  &.is-queued {
+    color: var(--warning, #d97706);
+    cursor: default;
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+/* 已送达、等目标端吐第一个字：三点跳动 + 一行说明。
+   没有它，发送成功到首字到达之间界面毫无变化，用户只能干等。 */
+.rc-msg-awaiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px 2px;
+  color: var(--text-muted, #8d8a86);
+  font-size: var(--font-2xs, 11px);
+}
+
+.rc-awaiting-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: rc-awaiting-bounce 1.2s ease-in-out infinite;
+
+    &:nth-child(2) {
+      animation-delay: 0.15s;
+    }
+
+    &:nth-child(3) {
+      animation-delay: 0.3s;
+    }
+  }
+}
+
+@keyframes rc-awaiting-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-awaiting-dots i {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 /* 消息操作条：形态直接复用桌面端 .msg-hover-bar / .msg-hover-btn，
    但显隐由 hover 本条消息决定（桌面端的触发规则挂在 .msg 上，远程用的是 .rc-msg）。
    定位必须拿走：桌面端让操作条占在流内，一条消息只多一排空气；远程视图一轮被拆成
@@ -2967,6 +3067,51 @@
   right: 8px;
   display: inline-flex;
   color: var(--primary, #3b82f6);
+}
+
+/* 模型置顶行：主体 + 置顶按钮并排（button 不能嵌套，pin 是主体的兄弟节点） */
+.rc-config-item-row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+
+  .rc-config-item {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.rc-config-pin {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  padding: 5px;
+  border: none;
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  color: var(--text-faint, #9b9489);
+  cursor: pointer;
+  /* 未置顶的默认隐着，悬停行时现身，不打扰普通选择 */
+  opacity: 0;
+
+  &:hover:not(:disabled) {
+    background: var(--bg-sunken, #f2f2f2);
+    color: var(--text, #23231f);
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+
+  &.is-pinned {
+    opacity: 1;
+    color: var(--primary, #3b82f6);
+  }
+
+  .rc-config-item-row:hover & {
+    opacity: 1;
+  }
 }
 
 /* ─── 斜杠命令补全 ───────────────────────────────────────────────────── */

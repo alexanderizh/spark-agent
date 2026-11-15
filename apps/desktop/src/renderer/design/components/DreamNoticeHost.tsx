@@ -17,9 +17,18 @@ const TRACK_LABEL: Record<DreamRunState['track'], string> = {
 }
 
 /** 只对「本进程见过活跃态」的 run 弹终态通知：避免挂载时收到持久化残留状态重放 */
-export function DreamNoticeHost(): null {
-  const { toast } = useToast()
+export function DreamNoticeHost({
+  onOpenTrack,
+}: {
+  onOpenTrack: (track: DreamRunState['track'], pendingReview: number) => void
+}): null {
+  const { toast, dismiss } = useToast()
   const activeRuns = useRef(new Set<string>())
+  const onOpenTrackRef = useRef(onOpenTrack)
+
+  useEffect(() => {
+    onOpenTrackRef.current = onOpenTrack
+  }, [onOpenTrack])
 
   useEffect(() => {
     const off =
@@ -34,9 +43,21 @@ export function DreamNoticeHost(): null {
         const label = TRACK_LABEL[state.track] ?? state.track
         if (state.status === 'succeeded') {
           const { proposals, autoApplied, pendingReview } = state.stats
-          toast.success(
+          let toastId = ''
+          toastId = toast.success(
             `自动整编完成（${label}）：提案 ${proposals} · 自动落库 ${autoApplied}` +
               (pendingReview > 0 ? ` · 待审 ${pendingReview}` : ''),
+            {
+              actions: [
+                {
+                  label: pendingReview > 0 ? '去处理' : '查看记录',
+                  onClick: () => {
+                    dismiss(toastId)
+                    onOpenTrackRef.current(state.track, pendingReview)
+                  },
+                },
+              ],
+            },
           )
           return
         }
@@ -47,7 +68,7 @@ export function DreamNoticeHost(): null {
         toast.info(`自动整编已取消（${label}）`)
       }) ?? (() => {})
     return off
-  }, [toast])
+  }, [dismiss, toast])
 
   return null
 }

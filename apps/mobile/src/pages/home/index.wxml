@@ -94,7 +94,14 @@
       <text class="home-pending-open" bindtap="openPendingSession">打开会话</text>
     </view>
     <view class="home-compose-shell row">
+      <!-- 配置弹层（home-config-mask / chooser）打开期间把 textarea 换成等高占位：
+           textarea 是原生组件，普通 view 的 z-index 盖不住它的触摸命中，
+           弹层里点「推理强度」滑块会被叠在上面的 textarea 捕获而弹出键盘 -->
+      <view wx:if="{{configOpen || chooserShow}}" class="home-compose-input home-compose-input--ghost">
+        <text class="home-compose-input--ghost-text">{{quickText}}</text>
+      </view>
       <textarea
+        wx:else
         class="home-compose-input"
         value="{{quickText}}"
         placeholder="发起一条新的远程对话…"
@@ -239,10 +246,12 @@
     mode="list"
     options="{{chooserOptions}}"
     emptyText="{{chooserEmpty}}"
+    pinHint="{{chooserPinHint}}"
     accentColor="{{themeAccentColor}}"
     trackColor="{{themeTrackColor}}"
     blockColor="{{themeBlockColor}}"
     bind:close="onChooserClose"
     bind:select="onChooserSelect"
+    bind:optionlongpress="onChooserLongPress"
   />
 </view>

@@ -23,6 +23,36 @@ function click(element: Element) {
   element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 }
 
+function NavigationHarness({
+  guard,
+  onApproved,
+}: {
+  guard: () => boolean | Promise<boolean>
+  onApproved: () => void
+}) {
+  const { t, navigateToView, registerNavGuard, setTweak } = useApp()
+  React.useEffect(() => {
+    registerNavGuard(guard)
+    return () => registerNavGuard(null)
+  }, [guard, registerNavGuard])
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          void navigateToView('wiki', () => {
+            onApproved()
+            setTweak('workspaceMode', 'canvas')
+          })
+        }
+      >
+        Open wiki
+      </button>
+      <span data-testid="navigation-state">{`${t.workspaceMode}:${t.view}`}</span>
+    </>
+  )
+}
+
 describe('AppContext visual tweak persistence', () => {
   let container: HTMLDivElement
   let root: Root | null = null
@@ -244,5 +274,96 @@ describe('AppContext visual tweak persistence', () => {
         fontSize: 16,
       }),
     })
+  })
+})
+
+describe('AppContext guarded view navigation', () => {
+  let container: HTMLDivElement
+  let root: Root | null = null
+
+  beforeEach(() => {
+    localStorage.clear()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+  })
+
+  afterEach(() => {
+    if (root != null) {
+      act(() => root?.unmount())
+      root = null
+    }
+    container.remove()
+    document.documentElement.removeAttribute('style')
+    vi.unstubAllGlobals()
+  })
+
+  it('leaves navigation side effects untouched when the guard rejects', async () => {
+    const guard = vi.fn(async () => false)
+    const onApproved = vi.fn()
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <AppProvider>
+          <NavigationHarness guard={guard} onApproved={onApproved} />
+        </AppProvider>,
+      )
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      const button = container.querySelector('button')
+      if (button == null) throw new Error('Button missing')
+      click(button)
+      await Promise.resolve()
+    })
+
+    expect(guard).toHaveBeenCalledOnce()
+    expect(onApproved).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="navigation-state"]')?.textContent).toBe(
+      'workbench:chat',
+    )
+  })
+
+  it('commits navigation side effects after the guard approves', async () => {
+    const guard = vi.fn(async () => true)
+    const onApproved = vi.fn()
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <AppProvider>
+          <NavigationHarness guard={guard} onApproved={onApproved} />
+        </AppProvider>,
+      )
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      const button = container.querySelector('button')
+      if (button == null) throw new Error('Button missing')
+      click(button)
+      await Promise.resolve()
+    })
+
+    expect(guard).toHaveBeenCalledOnce()
+    expect(onApproved).toHaveBeenCalledOnce()
+    expect(container.querySelector('[data-testid="navigation-state"]')?.textContent).toBe(
+      'canvas:wiki',
+    )
   })
 })

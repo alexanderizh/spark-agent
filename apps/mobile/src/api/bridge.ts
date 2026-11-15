@@ -533,8 +533,8 @@ export function submitTurn(
   attachmentPaths?: string[],
   deviceId?: string,
   clientMessageId?: string,
-): Promise<{ turnId: string }> {
-  return request<{ turnId: string }>(
+): Promise<{ turnId: string; /** false = 已入队等当前回合结束（旧版桌面端不返回，缺省按未排队处理） */ started?: boolean }> {
+  return request<{ turnId: string; started?: boolean }>(
     `/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
     'POST',
     {

@@ -58,7 +58,7 @@ describe('groupRemoteActivity', () => {
 
   it('用户消息与产物卡片不参与折叠', () => {
     const items: RemoteTimelineItem[] = [
-      { kind: 'user', id: 'u', seq: 1, text: '你好', attachments: [] },
+      { kind: 'user', id: 'u', seq: 1, turnId: 't1', text: '你好', attachments: [] },
       { kind: 'files', id: 'f', seq: 2, files: [{ path: '/a.html' }] },
     ]
     expect(groupRemoteActivity(items).map((item) => item.kind)).toEqual(['user', 'files'])

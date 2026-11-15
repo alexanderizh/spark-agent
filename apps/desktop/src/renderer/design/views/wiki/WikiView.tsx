@@ -116,7 +116,13 @@ function WikiEmptyGraph() {
   )
 }
 
-export function WikiView() {
+export function WikiView({
+  candidateReviewRequest = 0,
+  onCandidateReviewRequestHandled,
+}: {
+  candidateReviewRequest?: number
+  onCandidateReviewRequestHandled?: (request: number) => void
+} = {}) {
   const { toast } = useToast()
   const { setTweak } = useApp()
   const { invoke: listSpaces } = useIpcInvoke('wiki:space:list')
@@ -173,6 +179,7 @@ export function WikiView() {
   const [repoSpaceExists, setRepoSpaceExists] = useState(false)
   // 知识库 Tab 内的三种互斥视图：页面 / 候选区（S2）/ 技能提议区（S3）
   const [candidateView, setCandidateView] = useState(false)
+  const [handledCandidateReviewRequest, setHandledCandidateReviewRequest] = useState(0)
   const [skillView, setSkillView] = useState(false)
   const [candidateCount, setCandidateCount] = useState(0)
   const [skillCount, setSkillCount] = useState(0)
@@ -192,6 +199,22 @@ export function WikiView() {
   /** 阅读区容器：右键「全选」的范围 + 选中态判定。 */
   const articleBodyRef = useRef<HTMLDivElement>(null)
   const [hasSelection, setHasSelection] = useState(false)
+
+  if (candidateReviewRequest > handledCandidateReviewRequest) {
+    setHandledCandidateReviewRequest(candidateReviewRequest)
+    setMainTab('wiki')
+    setArchivedOnly(false)
+    setHits(null)
+    setSearchQuery('')
+    setSkillView(false)
+    setCandidateView(true)
+  }
+
+  useEffect(() => {
+    if (candidateReviewRequest > 0) {
+      onCandidateReviewRequestHandled?.(candidateReviewRequest)
+    }
+  }, [candidateReviewRequest, onCandidateReviewRequestHandled])
 
   const activeSpace = useMemo(
     () => spaces.find((s) => s.id === activeSpaceId) ?? null,

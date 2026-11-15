@@ -137,6 +137,8 @@ export type RemoteTimelineItem =
       kind: 'user'
       id: string
       seq: number
+      /** 所属回合：乐观气泡靠它精确对账（POST /turns 返回同一个 turnId） */
+      turnId: string
       text: string
       /** 随消息提交的附件（图片缩略图 / 文件 chip） */
       attachments: Array<{ type: 'image' | 'file'; path: string; name?: string }>
@@ -227,7 +229,14 @@ export function buildRemoteTimeline(events: MobileBridgeEvent[]): RemoteTimeline
       )
       // 纯附件消息文本可能为空（端上用 U+200B 占位），有附件就不能丢弃
       if (text.length === 0 && attachments.length === 0) continue
-      items.push({ kind: 'user', id: event.id, seq: event.seq, text, attachments })
+      items.push({
+        kind: 'user',
+        id: event.id,
+        seq: event.seq,
+        turnId: event.turnId,
+        text,
+        attachments,
+      })
       continue
     }
 
@@ -446,4 +455,63 @@ function removeEmptyTextItems(items: RemoteTimelineItem[]): RemoteTimelineItem[]
     out.push(item)
   }
   return out
+}
+
+/**
+ * 本地待发用户消息的最小判据结构（完整态由渲染层持有，含附件与状态机）。
+ */
+export interface RemotePendingUserLike {
+  text: string
+  /** 目标端已接受但排队（会话有活跃回合）：起跑前不会产生 user_message 事件 */
+  queued?: boolean
+  /**
+   * 本条消息历次提交拿到的回合 id（重试会追加）。事件流里出现同 turnId 的
+   * user_message 即已入库，气泡让位——比按文本对账精确，多条同文本也不串。
+   */
+  turnIds?: string[]
+}
+
+/**
+ * 乐观用户气泡是否还该显示。
+ *
+ * POST /turns 是 await 的：消息进列表要等目标端把 user_message 事件推回来，
+ * 中继一慢界面就「发了却看不到」。发送瞬间先本地渲染一条 pending 气泡，
+ * 事件到位后让位给真实消息。
+ *
+ * 精确对账：提交响应返回 turnId，时间线里出现同 turnId 的 user 条目即已入库。
+ * 排队（queued）场景也天然成立——排队的回合起跑前不产生 user_message，
+ * 气泡就继续挂着，起跑后按 turnId 交棒。
+ *
+ * turnIds 缺失时（旧路径 / 命令转发拿不到 turnId）退回末尾文本对账：
+ * MobileBridgeEvent 不传 clientMessageId，只能按末尾文本；末尾已推进到
+ * assistant / 工具等后续条目时，同样说明 user 事件早已入库——但排队回合
+ * 起跑前末尾正停在上一轮的条目上，所以 queued 时不能据此撤气泡。
+ */
+export function isPendingUserVisible(
+  items: RemoteTimelineItem[],
+  pending: RemotePendingUserLike | null,
+): boolean {
+  if (pending == null) return false
+  if (pending.turnIds != null && pending.turnIds.length > 0) {
+    const committed = new Set(pending.turnIds)
+    return !items.some((item) => item.kind === 'user' && committed.has(item.turnId))
+  }
+  const last = items[items.length - 1]
+  if (last == null) return true
+  if (last.kind !== 'user') return pending.queued === true
+  return last.text.trim() !== pending.text.trim()
+}
+
+/**
+ * 是否处于「已送达、等目标端吐第一个字」的空窗期。
+ *
+ * 回合在跑（agent_status running）但时间线末尾没有任何流式文本、也没有运行中
+ * 的工具步骤时，界面不会有任何自发变化——调用方据此在列表末尾渲染等待指示器。
+ */
+export function isAwaitingResponse(items: RemoteTimelineItem[]): boolean {
+  const last = items[items.length - 1]
+  if (last == null) return false
+  if (last.kind === 'assistant' || last.kind === 'thinking') return !last.streaming
+  if (last.kind === 'tool') return last.status !== 'running'
+  return true
 }

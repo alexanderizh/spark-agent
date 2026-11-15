@@ -11,6 +11,8 @@ interface SheetOption {
   sub?: string
   checked?: boolean
   disabled?: boolean
+  /** 置顶态：true 的项排最前并显示置顶图标（调用方排序后传入） */
+  pinned?: boolean
 }
 
 interface SheetPanelData {
@@ -35,6 +37,8 @@ Component({
     accentColor: { type: String, value: '#1a1a1a' },
     trackColor: { type: String, value: '#e8e5e0' },
     blockColor: { type: String, value: '#ffffff' },
+    /** 长按置顶的提示文案（空 = 不显示提示；只有模型列表这类支持置顶的面板传） */
+    pinHint: { type: String, value: '' },
   },
 
   data: {
@@ -67,6 +71,13 @@ Component({
       const id = e.currentTarget.dataset.id
       if (id == null) return
       this.triggerEvent('select', { id })
+    },
+
+    /** 长按选项：支持置顶的面板（模型列表）监听；不监听则无任何效果 */
+    onOptionLongPress(e: WechatMiniprogram.CustomEvent<Record<string, never>>) {
+      const id = e.currentTarget.dataset.id
+      if (id == null) return
+      this.triggerEvent('optionlongpress', { id })
     },
 
     onSliderChanging(e: WechatMiniprogram.SliderChange) {

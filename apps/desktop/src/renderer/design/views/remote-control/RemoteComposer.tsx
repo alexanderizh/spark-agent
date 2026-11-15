@@ -25,13 +25,15 @@ import type { MobileBridgeCatalog, MobileBridgeCommandItem } from '@spark/protoc
 import { Icons } from '../../Icons'
 import { useComposerVoice } from '../../voice/useComposerVoice'
 import { QuickReplySuggestions } from '../chat/QuickReplySuggestions'
+import { usePinnedModels } from '../chat/pinned-models'
 import { RemoteAttachmentStrip, type RemoteAttachmentRef } from './RemoteAttachmentStrip'
-import { RemoteComposerMenu, type RemoteMenuSection } from './RemoteComposerMenu'
+import { RemoteComposerMenu } from './RemoteComposerMenu'
 import { pickImageFiles } from './remotePaste'
 import {
   agentLabel,
   applyCommandPick,
   buildAgentOptions,
+  buildModelMenuSections,
   buildModelOptions,
   buildPermissionOptions,
   buildReasoningOptions,
@@ -129,6 +131,9 @@ export function RemoteComposer({
   const catalog: MobileBridgeCatalog | null = config.catalog
   const adapter = resolveAdapter(catalog, config.runtime)
 
+  // 置顶模型（与桌面端主对话区同一份 settings 存储，跨视图互通）
+  const { pinned, togglePinned } = usePinnedModels()
+
   const agentOptions = useMemo(
     () => buildAgentOptions(catalog, config.runtime),
     [catalog, config.runtime],
@@ -151,21 +156,21 @@ export function RemoteComposer({
   const permission = permissionLabel(catalog, config.runtime)
   const reasoningText = reasoningLabel(config.runtime)
 
-  // 模型按渠道分组，避免几十个模型摊平成一坨
-  const modelSections = useMemo<RemoteMenuSection[]>(() => {
-    const groups = new Map<string, RemoteSelectOption[]>()
-    for (const option of modelOptions) {
-      const providerId = option.providerProfileId
-      const bucket = groups.get(providerId) ?? []
-      // 分组标题已经是渠道名，选项里只留模型短名
-      bucket.push({ ...option, label: option.shortLabel })
-      groups.set(providerId, bucket)
-    }
-    return [...groups.entries()].map(([providerId, options]) => ({
-      title: catalog?.providers.find((item) => item.id === providerId)?.name ?? providerId,
-      options,
-    }))
-  }, [catalog, modelOptions])
+  // 模型按渠道分组 + 置顶汇总「常用」组（与主对话区同一套 pinned 存储，跨视图互通）
+  const modelSections = useMemo(
+    () => buildModelMenuSections(catalog, modelOptions, pinned),
+    [catalog, modelOptions, pinned],
+  )
+
+  /** 模型菜单的置顶切换：选项 id 解析回 providerId/modelId（AutoRouter 项无 pinned 字段不会进来） */
+  const toggleModelPin = useCallback(
+    (option: RemoteSelectOption) => {
+      const sep = option.id.indexOf('::')
+      if (sep <= 0) return
+      togglePinned(option.id.slice(0, sep), option.id.slice(sep + 2))
+    },
+    [togglePinned],
+  )
 
   const trigger = slashTriggerAt(draft, caret)
   const commandMatches = useMemo(
@@ -406,6 +411,7 @@ export function RemoteComposer({
                   alignRight
                   onPick={pickModel}
                   onClose={() => setOpenMenu(null)}
+                  onTogglePin={toggleModelPin}
                 />
               )}
             </div>

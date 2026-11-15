@@ -27,7 +27,12 @@ import {
 import { RemoteComposer } from './RemoteComposer'
 import { RemoteMessageList, type RemoteUserItem } from './RemoteMessageList'
 import type { RemoteAttachmentRef } from './RemoteAttachmentStrip'
-import { buildRemoteTimeline, mergeRemoteEvents } from './remoteEventMerge'
+import {
+  buildRemoteTimeline,
+  isAwaitingResponse,
+  isPendingUserVisible,
+  mergeRemoteEvents,
+} from './remoteEventMerge'
 import { ATTACHMENT_ONLY_TEXT, toReusableDraft } from './remoteMessageReuse'
 import { resolvePendingQuickReplies } from './remoteQuickReplies'
 import { fileNameOf } from './remoteRichContent'
@@ -121,6 +126,27 @@ export function RemoteChatPane({
   const [uploading, setUploading] = useState(false)
   const [pendingAttachments, setPendingAttachments] = useState<RemoteAttachmentRef[]>([])
   /**
+   * 本地待发的用户消息（乐观气泡）。
+   *
+   * POST /turns 是 await 的，消息进列表要等目标端把 user_message 事件推回来，
+   * 链路一慢界面就「发了却看不到、也没有任何反馈」。发送瞬间先本地渲染：
+   *   sending → POST 在途；sent → 已送达、等事件回流（由 isPendingUserVisible 对账）；
+   *   failed → 留在气泡上可点击重试，文字不丢。
+   * queued = 目标端已接受但排队（会话有活跃回合）：气泡挂到 user 事件入库为止，
+   * 状态行显示「已加入队列」，避免消息看起来发了就没影了。
+   * 会话切换（下面 composeKey 那段）一并清掉：换会话不该带上一条的待发态。
+   */
+  const [pendingUser, setPendingUser] = useState<{
+    clientMessageId: string
+    text: string
+    attachments: RemoteAttachmentRef[]
+    status: 'sending' | 'sent' | 'failed'
+    /** 历次提交拿到的回合 id：事件流出现同 turnId 的 user 条目即交棒（见 isPendingUserVisible） */
+    turnIds: string[]
+    queued?: boolean
+    error?: string
+  } | null>(null)
+  /**
    * 草稿与待发附件按（设备, 会话）存档。
    *
    * 组件是长驻的：`sessionId` 变了只是换数据、不重建组件，草稿 state 不会自己重置，
@@ -146,6 +172,7 @@ export function RemoteChatPane({
     const restored = sessionId != null ? readRemoteDraft(deviceId, sessionId) : null
     setDraft(restored?.text ?? '')
     setPendingAttachments(restored?.attachments ?? [])
+    setPendingUser(null)
   }
   const [approvals, setApprovals] = useState<RemoteApproval[]>([])
   const [questions, setQuestions] = useState<RemoteQuestion[]>([])
@@ -362,6 +389,15 @@ export function RemoteChatPane({
   const visibleItems = useSmoothRemoteItems(items)
 
   /**
+   * 乐观气泡可见性：事件流末尾出现同文本 user 消息 = 目标端已回录，交棒。
+   * 判据用数据层 items（不是平滑后的 visibleItems）——揭示动画没播到末尾时，
+   * 气泡也该按时退场，否则会和真实消息重叠。
+   */
+  const showPendingUser = isPendingUserVisible(items, pendingUser)
+  /** 已送达但目标端还没吐第一个字：列表末尾渲染等待指示器（空窗期唯一反馈） */
+  const awaitingResponse = running && isAwaitingResponse(items)
+
+  /**
    * 快捷回复建议：从**原始事件**里找最近一次未被消费的建议（时间线把 tool_call
    * 折叠进活动段，不再保留 quickReplies）。有待回答的问答卡时不显示，与桌面端一致。
    */
@@ -394,7 +430,7 @@ export function RemoteChatPane({
     const node = scrollRef.current
     if (node == null || !stickToBottomRef.current) return
     node.scrollTop = node.scrollHeight
-  }, [visibleItems])
+  }, [visibleItems, showPendingUser, awaitingResponse])
 
   const handleScroll = useCallback(() => {
     const node = scrollRef.current
@@ -589,57 +625,122 @@ export function RemoteChatPane({
   )
 
   /**
-   * 发送一条消息。
+   * 把一条待发消息提交到目标端（斜杠命令路由 + POST /turns），并推进乐观气泡状态机。
    *
-   * `quickReply` 走的是「建议 + 用户已打的补充」合成文本（与桌面端主输入区同一口径），
-   * 合成后同样清空草稿；其余行为（斜杠命令、附件、清草稿存档）与手发完全一致。
+   * 与 handleSend 分开：失败重发走同一入口（clientMessageId 复用即幂等键）。
+   * 输入区的清空不在这里——发送瞬间就清，不等往返（见 handleSend）。
    */
-  const handleSend = useCallback(
-    async (options?: { quickReply?: string }) => {
-      if (!sessionId || sending) return
-      const reply = options?.quickReply
-      const text = (reply != null ? buildQuickReplyMessage(reply, draft) : draft).trim()
-      if (text.length === 0 && pendingAttachments.length === 0) return
+  const submitPendingUser = useCallback(
+    async (entry: {
+      clientMessageId: string
+      text: string
+      attachments: RemoteAttachmentRef[]
+    }) => {
+      if (!sessionId) return
       setSending(true)
-      stickToBottomRef.current = true
       try {
         // 斜杠命令走目标端的命令执行路由：/clear 这类本地命令不产生回合，
         // 技能命令则由目标端转给 agent（随后事件经流推送）。
-        if (text.startsWith('/') && pendingAttachments.length === 0) {
-          const result = await call<{ isCommand: boolean; forwardToAgent: boolean }>(
-            deviceId,
-            'POST',
-            `/v1/sessions/${encodeURIComponent(sessionId)}/commands`,
-            { raw: text },
-          )
+        if (entry.text.startsWith('/') && entry.attachments.length === 0) {
+          const result = await call<{
+            isCommand: boolean
+            forwardToAgent: boolean
+            queued?: boolean
+          }>(deviceId, 'POST', `/v1/sessions/${encodeURIComponent(sessionId)}/commands`, {
+            raw: entry.text,
+          })
           if (result.isCommand) {
-            setDraft('')
-            clearRemoteDraft(deviceId, sessionId)
-            if (result.forwardToAgent) setRunning(true)
             setError(null)
+            if (result.forwardToAgent) {
+              // 转给 agent 的技能命令同样产生回合：气泡留着等事件回流（命令
+              // 响应没有 turnId，交棒走文本对账回退）；会话在跑时它同样会被
+              // 排队，queued 态挂到 user 事件入库为止
+              setPendingUser((previous) =>
+                previous != null && previous.clientMessageId === entry.clientMessageId
+                  ? { ...previous, status: 'sent', ...(result.queued ? { queued: true } : {}) }
+                  : { ...entry, status: 'sent', turnIds: [], ...(result.queued ? { queued: true } : {}) },
+              )
+              setRunning(true)
+            } else {
+              // 本地命令不产生回合：气泡直接撤下
+              setPendingUser(null)
+            }
             return
           }
           // 不是已注册命令：按普通消息继续走下面的 /turns
         }
-        await call(deviceId, 'POST', `/v1/sessions/${encodeURIComponent(sessionId)}/turns`, {
-          text: text.length > 0 ? text : ATTACHMENT_ONLY_TEXT,
-          ...(pendingAttachments.length > 0
-            ? { attachmentPaths: pendingAttachments.map((item) => item.path) }
-            : {}),
-          clientMessageId: `desktop-remote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        })
-        setDraft('')
-        setPendingAttachments([])
-        clearRemoteDraft(deviceId, sessionId)
+        const turn = await call<{ turnId: string; started: boolean }>(
+          deviceId,
+          'POST',
+          `/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
+          {
+            text: entry.text.length > 0 ? entry.text : ATTACHMENT_ONLY_TEXT,
+            ...(entry.attachments.length > 0
+              ? { attachmentPaths: entry.attachments.map((item) => item.path) }
+              : {}),
+            clientMessageId: entry.clientMessageId,
+          },
+        )
         setRunning(true)
         setError(null)
+        // 真实 user_message 还要绕目标端一圈才回来：先转 sent，事件流出现同
+        // turnId 的 user 条目后由 isPendingUserVisible 交棒给真实消息。
+        // started=false = 已入队等当前回合结束：气泡标 queued 继续挂着，
+        // 排队回合在起跑前不会产生 user_message 事件。
+        setPendingUser((previous) =>
+          previous != null && previous.clientMessageId === entry.clientMessageId
+            ? {
+                ...previous,
+                status: 'sent',
+                turnIds: [...previous.turnIds, turn.turnId],
+                ...(turn.started ? {} : { queued: true }),
+              }
+            : previous,
+        )
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause))
+        const message = cause instanceof Error ? cause.message : String(cause)
+        setError(message)
+        // 不回滚输入区：文字还在气泡上，点它就能重发（与小程序端同一套路）
+        setPendingUser((previous) =>
+          previous != null && previous.clientMessageId === entry.clientMessageId
+            ? { ...previous, status: 'failed', error: message }
+            : previous,
+        )
       } finally {
         setSending(false)
       }
     },
-    [call, deviceId, draft, pendingAttachments, sending, sessionId],
+    [call, deviceId, sessionId],
+  )
+
+  /**
+   * 发送一条消息。
+   *
+   * `quickReply` 走的是「建议 + 用户已打的补充」合成文本（与桌面端主输入区同一口径），
+   * 合成后同样清空草稿；其余行为（斜杠命令、附件、清草稿存档）与手发完全一致。
+   *
+   * 输入区在提交前就清空、乐观气泡立即上屏：POST 要经中继绕一趟目标端，
+   * 等它返回再动界面，慢一点就像「发了却没反应」。
+   */
+  const handleSend = useCallback(
+    (options?: { quickReply?: string }) => {
+      if (!sessionId || sending) return
+      const reply = options?.quickReply
+      const text = (reply != null ? buildQuickReplyMessage(reply, draft) : draft).trim()
+      if (text.length === 0 && pendingAttachments.length === 0) return
+      const entry = {
+        clientMessageId: `desktop-remote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        text,
+        attachments: pendingAttachments,
+      }
+      setDraft('')
+      setPendingAttachments([])
+      clearRemoteDraft(deviceId, sessionId)
+      setPendingUser({ ...entry, status: 'sending', turnIds: [] })
+      stickToBottomRef.current = true
+      void submitPendingUser(entry)
+    },
+    [deviceId, draft, pendingAttachments, sending, sessionId, submitPendingUser],
   )
 
   const handleStop = useCallback(async () => {
@@ -651,6 +752,22 @@ export function RemoteChatPane({
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }, [call, deviceId, sessionId])
+
+  /** 点击失败气泡：同一条消息重发（文字与附件都还在 pendingUser 里，clientMessageId 复用做幂等） */
+  const retryPendingUser = useCallback(() => {
+    if (pendingUser == null || pendingUser.status !== 'failed') return
+    const entry = {
+      clientMessageId: pendingUser.clientMessageId,
+      text: pendingUser.text,
+      attachments: pendingUser.attachments,
+    }
+    // 重试沿用同一 clientMessageId；已拿到的 turnIds 保留——上一次提交可能
+    // 实际已在目标端入队，旧 turnId 的 user 事件同样能精确交棒
+    setPendingUser((previous) =>
+      previous != null ? { ...entry, status: 'sending', turnIds: previous.turnIds } : previous,
+    )
+    void submitPendingUser(entry)
+  }, [pendingUser, submitPendingUser])
 
   if (sessionId == null) {
     return (
@@ -714,6 +831,9 @@ export function RemoteChatPane({
           deviceId={deviceId}
           running={running}
           onReuseUserMessage={handleReuseUserMessage}
+          {...(showPendingUser && pendingUser != null ? { pendingUser } : {})}
+          {...(awaitingResponse ? { awaitingResponse: true } : {})}
+          {...(pendingUser?.status === 'failed' ? { onRetryPendingUser: retryPendingUser } : {})}
         />
       </div>
 

@@ -243,6 +243,17 @@
   line-height: 1.5;
 }
 
+/* 配置弹层打开期间的 textarea 占位：同字号同行高保高度，文本可见不可聚焦 */
+.home-compose-input--ghost {
+  overflow: hidden;
+}
+.home-compose-input--ghost-text {
+  color: #1a1a1a;
+  font-size: 27rpx;
+  line-height: 1.5;
+  max-height: 180rpx;
+}
+
 .home-compose-send {
   min-width: 76rpx;
   height: 64rpx;

@@ -27,13 +27,18 @@
           hover-class="cs-row--hover"
           data-id="{{item.id}}"
           bindtap="onPickModel"
+          bindlongpress="onModelLongPress"
         >
           <view class="cs-row-main grow">
             <text class="cs-row-label">{{item.label}}</text>
             <text wx:if="{{item.sub}}" class="cs-row-sub">{{item.sub}}</text>
           </view>
+          <view wx:if="{{item.pinned}}" class="icon icon-cs-pin cs-pin"></view>
           <view wx:if="{{item.checked}}" class="icon icon-check cs-check"></view>
         </view>
+      </view>
+      <view wx:if="{{pinHint}}" class="cs-pin-hint">
+        <text class="cs-pin-hint-text">{{pinHint}}</text>
       </view>
     </scroll-view>
 

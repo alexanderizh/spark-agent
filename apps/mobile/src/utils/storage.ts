@@ -23,6 +23,8 @@ export const StorageKeys = {
   sessionListFilters: `${PREFIX}session-list-filters`,
   /** 项目列表页筛选（deviceId → { activity, status }，见 utils/filter-cache） */
   projectListFilters: `${PREFIX}project-list-filters`,
+  /** 模型选择偏好（deviceId → { pinned, last }，见 utils/composer-model-cache） */
+  composerModelPrefs: `${PREFIX}composer-model-prefs`,
 } as const
 
 export function getItem<T>(key: string): T | null {
