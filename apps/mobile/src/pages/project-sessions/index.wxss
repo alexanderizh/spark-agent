@@ -100,7 +100,34 @@
   font-size: 24rpx;
 }
 
-/* ─── 筛选 + 搜索 ──────────────────────────────────────────────────────────── */
+/* ─── 筛选 + 搜索（吸顶） ──────────────────────────────────────────────────── */
+
+/* 状态栏遮罩：始终盖住状态栏那一条，滚过的内容不会在状态栏下露出半截 */
+.ps-status-scrim {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9;
+  background: #f7f6f4;
+  pointer-events: none;
+}
+
+/* 哨兵只用来判断吸附，占位 1rpx 不可见 */
+.ps-sticky-anchor {
+  height: 1rpx;
+}
+
+/* 吸顶容器：top 由页面按状态栏高度内联给出，底色素成与页面同色遮住下方滚过的行 */
+.ps-sticky {
+  position: sticky;
+  z-index: 10;
+  background: #f7f6f4;
+  transition: box-shadow 0.18s ease;
+}
+.ps-sticky--stuck {
+  box-shadow: 0 8rpx 18rpx rgba(26, 26, 26, 0.07);
+}
 
 .ps-controls {
   display: flex;

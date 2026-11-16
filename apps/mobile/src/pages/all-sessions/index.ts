@@ -23,6 +23,7 @@ import {
 } from '../../utils/device-aliases'
 import { formatRelativeTime } from '../../utils/format'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
+import { observeStuck, statusBarTop } from '../../utils/sticky-header'
 import {
   ARCHIVED_PROJECT_FILTER_ID,
   countSessionFilterFacets,
@@ -92,6 +93,10 @@ interface AllSessionsData {
   filterSummary: string
   filterActiveCount: number
   filterSections: FilterSheetSection[]
+  /** 吸顶区 top（状态栏高度 px）：导航栏滚出后搜索/筛选停在状态栏下方 */
+  stickyTop: number
+  /** 吸顶区是否已吸附（吸附后加投影，与下方滚过的列表分层） */
+  stickyStuck: boolean
 }
 
 /** 状态展示（与项目会话页同一套 dot 口径） */
@@ -176,6 +181,8 @@ Page({
     filterSummary: '筛选',
     filterActiveCount: 0,
     filterSections: [],
+    stickyTop: statusBarTop(),
+    stickyStuck: false,
   } as AllSessionsData,
 
   /** 全量行（接口顺序无关，展示前统一排序） */
@@ -192,6 +199,19 @@ Page({
 
   viewReady: false,
   hiddenAt: 0,
+  /** 吸顶哨兵观察器（判断搜索/筛选区是否已吸附） */
+  stickyObserver: null as WechatMiniprogram.IntersectionObserver | null,
+
+  onReady() {
+    this.stickyObserver = observeStuck(
+      this,
+      '#as-sticky-sentinel',
+      this.data.stickyTop,
+      (stuck) => {
+        if (stuck !== this.data.stickyStuck) this.setData({ stickyStuck: stuck })
+      },
+    )
+  },
 
   onLoad(options: Record<string, string | undefined>) {
     const deviceId = options.deviceId ?? ''
@@ -252,6 +272,8 @@ Page({
     this.loadGeneration += 1
     this.unsubscribeDevices?.()
     this.unsubscribeDevices = null
+    this.stickyObserver?.disconnect()
+    this.stickyObserver = null
   },
 
   onPullDownRefresh() {

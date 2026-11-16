@@ -14,6 +14,8 @@
  * 结构（对齐设计稿）：
  *   上半  输入区（textarea / 录音覆盖层）
  *   下半  工具条：+ 附件、模型胶囊（模型名 + 推理强度）、麦克风、发送 / 停止
+ *         录音中整行只留麦克风并放大成大按片（其余按钮收起），转写中麦克风转圈禁用，
+ *         转写结果回到输入框后发送键才重新出现 —— 按住的指腹全程落在同一个节点上
  *   下方  其余配置 chips（助手 / 工作流 / 项目 / 标记），模型与权限收进模型胶囊
  *
  * 能力面：
@@ -99,6 +101,8 @@ Component({
     recording: { type: Boolean, value: false },
     /** 转写中 */
     transcribing: { type: Boolean, value: false },
+    /** 是否提供语音入口（页面没有接转写链路时置 false，隐藏麦克风而不是留一个按了没反应的键） */
+    voiceEnabled: { type: Boolean, value: true },
     /** 进入页面即聚焦输入框（项目行「＋」新建场景；拿到 focus 事件后由页面复位） */
     autoFocus: { type: Boolean, value: false },
     /**
@@ -258,6 +262,11 @@ Component({
     // ─── 语音（按住说话） ──────────────────────────────────────────────────────
 
     onVoiceStart() {
+      // 转写中不再开新录音：页面层的 recording 守卫只能挡渲染态，
+      // 手指再按一次仍会真的启动录音（转写与录音叠在一起）
+      const { transcribing } = (this as unknown as { properties: { transcribing: boolean } })
+        .properties
+      if (transcribing) return
       if (sharedRecorder == null) return
       this.triggerEvent('voicestart')
       // 16k 单声道 mp3：桌面端 ffmpeg 解码链路的最佳兼容格式

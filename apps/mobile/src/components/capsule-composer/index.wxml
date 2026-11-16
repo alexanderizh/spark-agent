@@ -35,7 +35,7 @@
         <view wx:else class="attach-file-icon icon icon-file"></view>
         <text class="attach-name ellipsis">{{item.name}}</text>
         <view wx:if="{{!item.uploaded}}" class="attach-uploading">
-          <view class="status-spinner"></view>
+          <view class="composer-spinner"></view>
         </view>
         <view
           class="attach-remove"
@@ -53,10 +53,10 @@
     <!-- 上半：输入区（录音 / 转写时由覆盖层替换） -->
     <view wx:if="{{recording}}" class="voice-overlay row">
       <view class="voice-pulse"></view>
-      <text class="voice-hint">松开结束，语音将转成文字</text>
+      <text class="voice-hint">正在聆听，松开结束</text>
     </view>
     <view wx:elif="{{transcribing}}" class="voice-overlay row">
-      <view class="status-spinner"></view>
+      <view class="composer-spinner"></view>
       <text class="voice-hint">转写中…</text>
     </view>
     <!-- 页面弹层打开期间的等高占位：textarea 是原生组件，弹层 mask 的 z-index 拦不住
@@ -85,10 +85,14 @@
       bindkeyboardheightchange="onKeyboardHeight"
     />
 
-    <!-- 下半：工具条 -->
-    <view class="composer-tools row">
+    <!-- 下半：工具条
+         录音中整行只留语音键（放大成大按片，手指按着的目标不位移），
+         转写中只留禁用的语音键：空间永远够放，也不会误点发送/附件。 -->
+    <view
+      class="composer-tools row {{recording ? 'composer-tools--rec' : ''}} {{transcribing ? 'composer-tools--busy' : ''}}"
+    >
       <view
-        class="composer-btn composer-btn--plus"
+        class="composer-btn composer-btn--plus composer-tools-aside"
         hover-class="hover-dim"
         bindtap="onAddAttachment"
       >
@@ -98,7 +102,7 @@
       <!-- 模型胶囊：点开「模型 / 推理强度 / 权限」配置面板 -->
       <view
         wx:if="{{modelChip.value}}"
-        class="composer-model row"
+        class="composer-model composer-tools-aside row"
         hover-class="hover-dim"
         bindtap="onModelTap"
       >
@@ -109,19 +113,22 @@
 
       <view class="grow"></view>
 
-      <!-- 语音：按住说话 -->
+      <!-- 语音：按住说话（节点在录音前后保持同一个，touchend 不会丢） -->
       <view
-        class="composer-btn {{recording ? 'composer-btn--rec' : ''}}"
-        hover-class="hover-dim"
+        wx:if="{{voiceEnabled}}"
+        class="composer-btn composer-btn--mic {{recording ? 'composer-btn--mic-rec' : ''}} {{transcribing ? 'composer-btn--mic-busy' : ''}}"
+        hover-class="{{recording ? 'none' : 'hover-dim'}}"
         bindtouchstart="onVoiceStart"
         bindtouchend="onVoiceEnd"
         bindtouchcancel="onVoiceCancel"
       >
-        <view class="icon icon-sm icon-mic"></view>
+        <view wx:if="{{transcribing}}" class="composer-spinner composer-mic-spinner"></view>
+        <view wx:else class="icon composer-mic-icon"></view>
+        <text wx:if="{{recording}}" class="composer-mic-label">松开 结束</text>
       </view>
 
       <view
-        class="composer-btn composer-send {{running || canSend ? 'composer-send--active' : ''}}"
+        class="composer-btn composer-send composer-tools-aside {{running || canSend ? 'composer-send--active' : ''}}"
         hover-class="composer-send--hover"
         bindtap="onSend"
       >

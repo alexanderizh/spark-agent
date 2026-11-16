@@ -73,6 +73,7 @@ import {
   toggleComposerModelPin,
 } from '../../utils/composer-model-cache'
 import { StorageKeys, getItem, setItem } from '../../utils/storage'
+import { observeStuck, statusBarTop } from '../../utils/sticky-header'
 import { isFresh, readListCache, writeListCache } from '../../utils/list-cache'
 import { getThemeTextColor, syncPageTheme } from '../../utils/theme'
 
@@ -194,6 +195,10 @@ interface ProjectSessionsData {
   quickReasoningId: string
   /** 「置顶」分组是否折叠（本地偏好，按 电脑+项目 记忆） */
   pinnedCollapsed: boolean
+  /** 吸顶区 top（状态栏高度 px）：导航栏滚出后筛选/搜索停在状态栏下方 */
+  stickyTop: number
+  /** 吸顶区是否已吸附（吸附后加投影，与下方滚过的列表分层） */
+  stickyStuck: boolean
 }
 
 /** 今天 0 点（本地时区） */
@@ -313,6 +318,8 @@ Page({
     quickPermissionId: '',
     quickReasoningId: '',
     pinnedCollapsed: false,
+    stickyTop: statusBarTop(),
+    stickyStuck: false,
   } as ProjectSessionsData,
 
   /** 全量缓存（前端过滤：状态 + 标记 + 标题搜索） */
@@ -335,6 +342,8 @@ Page({
   } as BridgeSidebarOrderState,
   /** 设备列表订阅取消函数 */
   unsubscribeDevices: null as (() => void) | null,
+  /** 吸顶哨兵观察器（判断筛选/搜索区是否已吸附） */
+  stickyObserver: null as WechatMiniprogram.IntersectionObserver | null,
   /** 桌面端目录（chips 数据源；null = 未就绪/加载失败，chips 隐藏） */
   catalog: null as BridgeCatalog | null,
   modelOptions: [] as SessionConfigOption[],
@@ -409,6 +418,14 @@ Page({
    * 从项目行「＋」进来会看着像没反应。
    */
   onReady() {
+    this.stickyObserver = observeStuck(
+      this,
+      '#ps-sticky-sentinel',
+      this.data.stickyTop,
+      (stuck) => {
+        if (stuck !== this.data.stickyStuck) this.setData({ stickyStuck: stuck })
+      },
+    )
     if (!this.data.composerAutoFocus) return
     this.setData({ composerAutoFocus: false })
     setTimeout(() => {
@@ -453,6 +470,8 @@ Page({
     this.searchGeneration += 1
     this.unsubscribeDevices?.()
     this.unsubscribeDevices = null
+    this.stickyObserver?.disconnect()
+    this.stickyObserver = null
   },
 
   onPullDownRefresh() {

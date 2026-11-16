@@ -1,4 +1,7 @@
 <view class="projects-page theme-root {{themeClass}}">
+  <!-- 状态栏遮罩：内容滚到顶部时被它挡住，不会从系统状态栏下面穿过去 -->
+  <view class="projects-status-scrim" style="height: {{stickyTop}}px"></view>
+
   <!-- tabBar 页：不挂返回按钮（返回工作台走底部 tab） -->
   <safe-nav-bar title="" show-back="{{false}}" />
 
@@ -29,32 +32,42 @@
     <view class="projects-switch" catchtap="onBackToComputers">返回电脑列表</view>
   </view>
 
-  <!-- 项目搜索（桌面端同款标题过滤；与筛选/置顶/手动排序叠加生效） -->
-  <view wx:if="{{!deviceMissing && !loading && !deviceUnavailable && !deviceOffline && !errorText}}" class="projects-search row">
-    <view class="icon icon-sm icon-search"></view>
-    <input
-      class="projects-search-input"
-      value="{{searchText}}"
-      placeholder="搜索项目"
-      placeholder-class="themed-placeholder"
-      confirm-type="search"
-      bindinput="onSearchInput"
-    />
-  </view>
+  <!-- 吸顶哨兵：越过状态栏下沿即代表下面这块搜索/筛选区已贴顶 -->
+  <view class="projects-sticky-anchor" id="projects-sticky-sentinel"></view>
 
-  <!-- 筛选 + 全部会话入口 -->
-  <view wx:if="{{!deviceMissing && !loading && !deviceUnavailable && !deviceOffline && !errorText}}" class="projects-toolbar row between">
-    <view
-      class="projects-filter-chip {{filterActiveCount > 0 ? 'projects-filter-chip--on' : ''}}"
-      hover-class="projects-filter-chip--hover"
-      bindtap="onOpenFilter"
-    >
-      <text class="projects-filter-text ellipsis">{{filterSummary}}</text>
-      <view class="icon icon-chevron-down projects-filter-caret"></view>
+  <!-- 搜索 + 筛选（吸顶：标题与电脑上下文滚走后仍可随时改条件） -->
+  <view
+    wx:if="{{!deviceMissing && !loading && !deviceUnavailable && !deviceOffline && !errorText}}"
+    class="projects-sticky {{stickyStuck ? 'projects-sticky--stuck' : ''}}"
+    style="top: {{stickyTop}}px"
+  >
+    <!-- 项目搜索（桌面端同款标题过滤；与筛选/置顶/手动排序叠加生效） -->
+    <view class="projects-search row">
+      <view class="icon icon-sm icon-search"></view>
+      <input
+        class="projects-search-input"
+        value="{{searchText}}"
+        placeholder="搜索项目"
+        placeholder-class="themed-placeholder"
+        confirm-type="search"
+        bindinput="onSearchInput"
+      />
     </view>
-    <view class="projects-all-link" hover-class="hover-dim" bindtap="onOpenAllSessions">
-      <text>全部会话</text>
-      <view class="icon icon-chevron projects-all-caret"></view>
+
+    <!-- 筛选 + 全部会话入口 -->
+    <view class="projects-toolbar row between">
+      <view
+        class="projects-filter-chip {{filterActiveCount > 0 ? 'projects-filter-chip--on' : ''}}"
+        hover-class="projects-filter-chip--hover"
+        bindtap="onOpenFilter"
+      >
+        <text class="projects-filter-text ellipsis">{{filterSummary}}</text>
+        <view class="icon icon-chevron-down projects-filter-caret"></view>
+      </view>
+      <view class="projects-all-link" hover-class="hover-dim" bindtap="onOpenAllSessions">
+        <text>全部会话</text>
+        <view class="icon icon-chevron projects-all-caret"></view>
+      </view>
     </view>
   </view>
 
@@ -116,7 +129,6 @@
           <view class="grow col gap-4 projects-row-copy">
             <view class="row projects-row-name-line">
               <text class="projects-row-name ellipsis grow">{{item.name}}</text>
-              <view class="icon icon-pin projects-row-pin"></view>
             </view>
             <view class="row projects-row-meta">
               <text class="t-caption">{{item.sessionCount}} 条会话</text>
@@ -126,6 +138,10 @@
               </view>
               <text wx:if="{{item.updatedLabel}}" class="t-caption projects-row-time">{{item.updatedLabel}}</text>
             </view>
+          </view>
+          <!-- 置顶标记放在行级操作区，与「＋ / chevron」同轴心对齐（放进标题行会因两行文字而偏上） -->
+          <view class="projects-row-pin-slot">
+            <view class="icon icon-pin projects-row-pin"></view>
           </view>
           <view
             class="projects-row-add"
@@ -165,6 +181,8 @@
               <text wx:if="{{item.updatedLabel}}" class="t-caption projects-row-time">{{item.updatedLabel}}</text>
             </view>
           </view>
+          <!-- 同宽空槽位：普通段没有图钉也要占位，两段行的「＋ / chevron」才落在同一竖列 -->
+          <view class="projects-row-pin-slot"></view>
           <view
             class="projects-row-add"
             hover-class="projects-row-add--hover"

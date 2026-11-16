@@ -207,6 +207,14 @@ const extras = `
 .theme-dark .icon-close-sm {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6L6 18M6 6l12 12'/%3E%3C/svg%3E");
 }
+/* 录音整行按钮：浅色为实心红底，深色降明度，保留「红色 = 正在录音」的语义 */
+.theme-dark .composer-btn--mic-rec {
+  background: #7f2c2c;
+}
+/* 深色下 mic 常态被改成浅色描边，录音态描边必须回到白色（优先级高于上面那条） */
+.theme-dark .composer-btn--mic-rec .composer-mic-icon {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='11' rx='3'/%3E%3Cpath d='M5 11a7 7 0 0014 0M12 18v3'/%3E%3C/svg%3E");
+}
 /* 代码块本身恒为深底，深色下补内描边避免与页面底融为一体（不改盒模型） */
 .theme-dark .md-code {
   box-shadow: inset 0 0 0 1rpx rgba(255, 255, 255, 0.1);

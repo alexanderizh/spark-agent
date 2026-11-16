@@ -2435,13 +2435,18 @@ Page({
 
   onVoiceEnd() {
     if (!this.data.recording) return
-    this.setData({ recording: false })
+    // 松手到 recorder.onStop 之间有一小段空窗：直接切到转写态，
+    // 避免工具条闪回「发送」再消失（转写失败/太短会在对应分支复位）
+    this.setData({ recording: false, transcribing: true })
   },
 
   onVoiceFile(e: WechatMiniprogram.CustomEvent<{ tempFilePath: string; duration: number }>) {
     const { tempFilePath, duration } = e.detail
+    // 录满上限（60s）会被录音管理器自动停止，此时手指还按着：先离开录音态再走转写
+    if (this.data.recording) this.setData({ recording: false })
     // 松开太短视为误触
     if (duration != null && duration < 800) {
+      this.setData({ transcribing: false })
       wx.showToast({ title: '说话时间太短', icon: 'none' })
       return
     }

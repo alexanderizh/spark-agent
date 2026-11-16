@@ -27,6 +27,7 @@ import {
   type ProjectFilterState,
   type ProjectStatusKey,
 } from '../../utils/project-filters'
+import { observeStuck, statusBarTop } from '../../utils/sticky-header'
 import { getThemeTextColor, syncPageTheme } from '../../utils/theme'
 import {
   mergeManualOrderWithHidden,
@@ -79,6 +80,10 @@ interface ProjectsPageData {
   filterSummary: string
   filterActiveCount: number
   filterSections: FilterSheetSection[]
+  /** 吸顶区 top（状态栏高度 px）：导航栏滚出后搜索/筛选停在状态栏下方 */
+  stickyTop: number
+  /** 吸顶区是否已吸附（吸附后加投影，与下方滚过的列表分层） */
+  stickyStuck: boolean
 }
 
 function decodeRouteValue(value: string | undefined, fallback: string): string {
@@ -114,6 +119,8 @@ Page({
     filterSummary: describeProjectFilter(DEFAULT_PROJECT_FILTER),
     filterActiveCount: 0,
     filterSections: [],
+    stickyTop: statusBarTop(),
+    stickyStuck: false,
   } as ProjectsPageData,
 
   unsubscribeDevices: null as (() => void) | null,
@@ -131,6 +138,19 @@ Page({
   viewReady: false,
   /** onHide 记录的离开时刻；> 0 表示本次 onShow 是「从别处返回」 */
   hiddenAt: 0,
+  /** 吸顶哨兵观察器（判断搜索/筛选区是否已吸附） */
+  stickyObserver: null as WechatMiniprogram.IntersectionObserver | null,
+
+  onReady() {
+    this.stickyObserver = observeStuck(
+      this,
+      '#projects-sticky-sentinel',
+      this.data.stickyTop,
+      (stuck) => {
+        if (stuck !== this.data.stickyStuck) this.setData({ stickyStuck: stuck })
+      },
+    )
+  },
 
   onLoad(options: Record<string, string | undefined>) {
     // tabBar 页：从「工作台」tab 切过来不带 query，回落到上次选中的电脑。
@@ -203,6 +223,8 @@ Page({
     this.loadGeneration += 1
     this.unsubscribeDevices?.()
     this.unsubscribeDevices = null
+    this.stickyObserver?.disconnect()
+    this.stickyObserver = null
   },
 
   onPullDownRefresh() {

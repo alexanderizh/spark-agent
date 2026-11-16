@@ -1,6 +1,9 @@
 <!-- 固定电脑下的项目/全部会话列表：大标题 + 电脑上下文 + 筛选 + 分组条目 -->
 
 <view class="ps-page theme-root {{themeClass}}">
+  <!-- 状态栏遮罩：内容滚到顶部时被它挡住，不会从系统状态栏下面穿过去 -->
+  <view class="ps-status-scrim" style="height: {{stickyTop}}px"></view>
+
   <safe-nav-bar title="" />
 
   <!-- 当前项目 -->
@@ -20,36 +23,41 @@
     <text class="ps-context-action" bindtap="onBackToProjects">返回项目 ›</text>
   </view>
 
-  <!-- 筛选 + 搜索行 -->
-  <view class="ps-controls">
-    <view class="ps-segments">
-      <view
-        wx:for="{{['all','running','error']}}"
-        wx:key="*this"
-        class="ps-segment {{filter === item ? 'ps-segment--active' : ''}}"
-        data-filter="{{item}}"
-        bindtap="onFilterChange"
-      >{{item === 'all' ? '全部' : (item === 'running' ? '进行中' : '异常')}}</view>
-      <view
-        class="ps-segment {{labelFilter !== '' ? 'ps-segment--accent' : ''}}"
-        bindtap="onOpenLabelFilterPanel"
-      >{{labelFilterText}}</view>
-      <view
-        class="ps-segment {{activityFilter !== 'all' ? 'ps-segment--accent' : ''}}"
-        bindtap="onOpenActivityFilterPanel"
-      >{{activityText}}</view>
-    </view>
-    <view class="ps-search row">
-      <view class="icon icon-sm icon-search"></view>
-      <input
-        class="ps-search-input"
-        value="{{searchText}}"
-        placeholder="搜索会话"
-        placeholder-class="themed-placeholder"
-        confirm-type="search"
-        focus="{{autoFocusSearch}}"
-        bindinput="onSearchInput"
-      />
+  <!-- 吸顶哨兵：越过状态栏下沿即代表下面这块筛选/搜索区已贴顶（用于加投影） -->
+  <view class="ps-sticky-anchor" id="ps-sticky-sentinel"></view>
+
+  <!-- 筛选 + 搜索行（吸顶：标题与电脑上下文滚走后仍可随时改条件） -->
+  <view class="ps-sticky {{stickyStuck ? 'ps-sticky--stuck' : ''}}" style="top: {{stickyTop}}px">
+    <view class="ps-controls">
+      <view class="ps-segments">
+        <view
+          wx:for="{{['all','running','error']}}"
+          wx:key="*this"
+          class="ps-segment {{filter === item ? 'ps-segment--active' : ''}}"
+          data-filter="{{item}}"
+          bindtap="onFilterChange"
+        >{{item === 'all' ? '全部' : (item === 'running' ? '进行中' : '异常')}}</view>
+        <view
+          class="ps-segment {{labelFilter !== '' ? 'ps-segment--accent' : ''}}"
+          bindtap="onOpenLabelFilterPanel"
+        >{{labelFilterText}}</view>
+        <view
+          class="ps-segment {{activityFilter !== 'all' ? 'ps-segment--accent' : ''}}"
+          bindtap="onOpenActivityFilterPanel"
+        >{{activityText}}</view>
+      </view>
+      <view class="ps-search row">
+        <view class="icon icon-sm icon-search"></view>
+        <input
+          class="ps-search-input"
+          value="{{searchText}}"
+          placeholder="搜索会话"
+          placeholder-class="themed-placeholder"
+          confirm-type="search"
+          focus="{{autoFocusSearch}}"
+          bindinput="onSearchInput"
+        />
+      </view>
     </view>
   </view>
 
@@ -154,6 +162,7 @@
     disabled="{{quickSending || deviceOffline || deviceUnavailable}}"
     auto-focus="{{composerAutoFocus}}"
     suppress="{{configShow || panelShow || attachShow}}"
+    voice-enabled="{{false}}"
     chips="{{chips}}"
     attachments="{{attachments}}"
     bind:input="onQuickInput"

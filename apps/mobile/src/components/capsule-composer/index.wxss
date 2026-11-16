@@ -50,31 +50,96 @@
   margin-top: 16rpx;
 }
 .composer-btn {
-  width: 72rpx;
-  height: 72rpx;
+  /* 44px 触摸目标：72rpx（36px）在真机上偏小，语音键尤其难按住 */
+  width: 88rpx;
+  height: 88rpx;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
+  box-sizing: border-box;
 }
 .composer-btn--plus {
   background: #f2f0ed;
 }
-.composer-btn--rec {
-  background: #fdecec;
+
+/* 录音中：整行只留语音键（aside 全部收起，grow 让位），
+   语音键撑满一行变成大按片 —— 手指按着的目标整体变大但不会离开指腹 */
+.composer-tools--rec .composer-tools-aside,
+.composer-tools--rec .grow {
+  display: none;
+}
+.composer-btn--mic {
+  background: #f2f0ed;
+  transition: width 0.16s ease, background-color 0.16s ease;
+}
+/* 转写中：按住说话暂时失效，用灰化 + 转圈的禁用态，避免重复触发 */
+.composer-btn--mic-busy {
+  background: #efedea;
+  pointer-events: none;
+}
+.composer-btn--mic-rec {
+  color: #ffffff;
+  flex: 1;
+  width: auto;
+  height: 96rpx;
+  border-radius: 999rpx;
+  background: #dc2626;
+  gap: 14rpx;
+}
+.composer-mic-icon {
+  width: 36rpx;
+  height: 36rpx;
+  flex: none;
+  background-size: 36rpx 36rpx;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='11' rx='3'/%3E%3Cpath d='M5 11a7 7 0 0014 0M12 18v3'/%3E%3C/svg%3E");
+}
+/* 录音态：红底上的白麦克风（常态与录音态一眼能分开） */
+.composer-btn--mic-rec .composer-mic-icon {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='11' rx='3'/%3E%3Cpath d='M5 11a7 7 0 0014 0M12 18v3'/%3E%3C/svg%3E");
+}
+.composer-mic-label {
+  font-size: 27rpx;
+  font-weight: 500;
+  color: #ffffff;
+  flex: none;
+}
+.composer-mic-spinner {
+  width: 32rpx;
+  height: 32rpx;
+  border-width: 3rpx;
+}
+
+/* 组件内自带转圈（页面样式不进组件作用域，不能借用页面里的 status-spinner） */
+.composer-spinner {
+  width: 20rpx;
+  height: 20rpx;
+  border-radius: 50%;
+  border: 2rpx solid #d7d4cf;
+  border-top-color: #1a1a1a;
+  animation: composer-spin 0.8s linear infinite;
+  flex: none;
+  box-sizing: border-box;
+}
+@keyframes composer-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 模型胶囊：盾牌 + 模型名 + 推理强度后缀 */
 .composer-model {
   align-items: center;
   gap: 8rpx;
-  height: 72rpx;
-  padding: 0 22rpx;
-  border-radius: 36rpx;
+  height: 88rpx;
+  padding: 0 24rpx;
+  border-radius: 44rpx;
   background: #f2f0ed;
   min-width: 0;
-  max-width: 420rpx;
+  max-width: 380rpx;
 }
 .composer-model-shield {
   width: 30rpx;

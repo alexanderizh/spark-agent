@@ -1,6 +1,9 @@
 <!-- 全部会话：跨项目列表 + 组合筛选（时间/项目/状态/标记/置顶） -->
 
 <view class="as-page theme-root {{themeClass}}">
+  <!-- 状态栏遮罩：内容滚到顶部时被它挡住，不会从系统状态栏下面穿过去 -->
+  <view class="as-status-scrim" style="height: {{stickyTop}}px"></view>
+
   <safe-nav-bar title="" />
 
   <view class="as-title-row">
@@ -20,33 +23,39 @@
     <text class="as-context-action" bindtap="onBackToProjects">返回项目 ›</text>
   </view>
 
-  <view class="as-search row">
-    <view class="icon icon-sm icon-search"></view>
-    <input
-      class="as-search-input"
-      value="{{searchText}}"
-      placeholder="搜索会话标题"
-      placeholder-class="themed-placeholder"
-      confirm-type="search"
-      bindinput="onSearchInput"
-    />
-  </view>
+  <!-- 吸顶哨兵：越过状态栏下沿即代表下面这块搜索/筛选区已贴顶 -->
+  <view class="as-sticky-anchor" id="as-sticky-sentinel"></view>
 
-  <view class="as-toolbar row between">
-    <view
-      class="as-filter-chip {{filterActiveCount > 0 ? 'as-filter-chip--on' : ''}}"
-      hover-class="as-filter-chip--hover"
-      bindtap="onOpenFilter"
-    >
-      <text class="as-filter-text ellipsis">{{filterSummary}}</text>
-      <text wx:if="{{filterActiveCount > 1}}" class="as-filter-count">{{filterActiveCount}}</text>
-      <view class="icon icon-chevron-down as-filter-caret"></view>
+  <!-- 搜索 + 筛选（吸顶：标题与电脑上下文滚走后仍可随时改条件） -->
+  <view class="as-sticky {{stickyStuck ? 'as-sticky--stuck' : ''}}" style="top: {{stickyTop}}px">
+    <view class="as-search row">
+      <view class="icon icon-sm icon-search"></view>
+      <input
+        class="as-search-input"
+        value="{{searchText}}"
+        placeholder="搜索会话标题"
+        placeholder-class="themed-placeholder"
+        confirm-type="search"
+        bindinput="onSearchInput"
+      />
     </view>
-    <text class="t-caption">{{visibleCount}} 条{{total > visibleCount ? ' / 共 ' + total : ''}}</text>
-  </view>
 
-  <view wx:if="{{total > fetchLimit}}" class="as-hint t-caption">
-    只加载了最近 {{fetchLimit}} 条，用筛选缩小范围可看更早的会话
+    <view class="as-toolbar row between">
+      <view
+        class="as-filter-chip {{filterActiveCount > 0 ? 'as-filter-chip--on' : ''}}"
+        hover-class="as-filter-chip--hover"
+        bindtap="onOpenFilter"
+      >
+        <text class="as-filter-text ellipsis">{{filterSummary}}</text>
+        <text wx:if="{{filterActiveCount > 1}}" class="as-filter-count">{{filterActiveCount}}</text>
+        <view class="icon icon-chevron-down as-filter-caret"></view>
+      </view>
+      <text class="t-caption">{{visibleCount}} 条{{total > visibleCount ? ' / 共 ' + total : ''}}</text>
+    </view>
+
+    <view wx:if="{{total > fetchLimit}}" class="as-hint t-caption">
+      只加载了最近 {{fetchLimit}} 条，用筛选缩小范围可看更早的会话
+    </view>
   </view>
 
   <view wx:if="{{loading}}" class="loading-tip">正在读取全部会话…</view>
