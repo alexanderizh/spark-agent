@@ -11,12 +11,16 @@ import {
 } from '@spark/storage'
 import type {
   MobileBridgeAttachment,
+  MobileBridgeCatalog,
   MobileBridgeEvent,
   MobileBridgeInteractionsResponse,
+  MobileBridgeUpdateSessionRequest,
   RemoteCollaborationAttachmentUploadRequest,
   RemoteCollaborationEventsResponse,
   RemoteCollaborationLinkCreateRequest,
   RemoteCollaborationLinkCreateResponse,
+  RemoteCollaborationModelUpdateRequest,
+  RemoteCollaborationModelUpdateResponse,
   RemoteCollaborationMessageRequest,
   RemoteCollaborationMessageResponse,
   RemoteCollaborationOperationStatus,
@@ -24,6 +28,8 @@ import type {
   RemoteAgentDispatchResponse,
   RemoteAgentDispatchStatusResponse,
   RemoteAgentRemoteAgentListResponse,
+  RemoteAgentModelCatalogResponse,
+  RemoteAgentModelSelection,
   RemoteAgentRemoteProjectListResponse,
   RemoteAgentSharedContextItem,
 } from '@spark/protocol'
@@ -37,6 +43,10 @@ import { serializeRemoteAgentInputFingerprintPayload } from '@spark/protocol'
 import type { SessionService } from '@spark/agent-runtime'
 import { createLogger } from '@spark/shared'
 import type { SparkDatabase } from '@spark/storage'
+import {
+  RemoteAgentModelSelectionError,
+  resolveRemoteAgentModelSelection,
+} from './remote-agent-model-selection.js'
 
 const log = createLogger('remote-agent:execution')
 
@@ -52,6 +62,9 @@ type SavedSessionAttachment = Pick<MobileBridgeAttachment, 'type' | 'path'>
 export interface RemoteAgentExecutionServiceDeps {
   getDatabase(): SparkDatabase
   getSessionService(): SessionService
+  getCatalog(): Promise<MobileBridgeCatalog>
+  updateSession(sessionId: string, patch: MobileBridgeUpdateSessionRequest): Promise<unknown>
+  deleteSession(sessionId: string): Promise<unknown>
   getAccountUserId(): string | null
   getDeviceId(): string
   saveAttachments(
@@ -120,6 +133,12 @@ export class RemoteAgentExecutionService {
           body: this.listAgents(url.searchParams.get('projectId') ?? ''),
         }
       }
+      if (normalizedMethod === 'GET' && path === '/v1/remote-agent/models') {
+        return {
+          status: 200,
+          body: await this.listModelCatalog(url.searchParams.get('projectId')),
+        }
+      }
       if (normalizedMethod === 'POST' && path === '/v1/remote-agent/tasks') {
         const result = await this.dispatch(body)
         return { status: 200, body: result }
@@ -128,9 +147,12 @@ export class RemoteAgentExecutionService {
         return { status: 200, body: await this.openCollaborationLink(body) }
       }
       const linkMatch =
-        /^\/v1\/remote-agent\/links\/([^/]+)(?:\/(messages|attachments|events))?$/.exec(path)
+        /^\/v1\/remote-agent\/links\/([^/]+)(?:\/(messages|attachments|events|model))?$/.exec(path)
       if (linkMatch?.[1] != null) {
         const linkId = decodeURIComponent(linkMatch[1])
+        if (normalizedMethod === 'PATCH' && linkMatch[2] === 'model') {
+          return { status: 200, body: await this.setCollaborationModel(linkId, body) }
+        }
         if (normalizedMethod === 'POST' && linkMatch[2] === 'messages') {
           return { status: 200, body: await this.submitCollaborationMessage(linkId, body) }
         }
@@ -193,6 +215,7 @@ export class RemoteAgentExecutionService {
     accountUserId: string,
     request: RemoteCollaborationLinkCreateRequest,
   ): Promise<RemoteCollaborationLinkCreateResponse> {
+    const modelSelection = await this.resolveRequestedModelSelection(request)
     const repository = new RemoteAgentCollaborationRepository(this.deps.getDatabase())
     const targetDeviceId = this.safeDeviceId()
     if (targetDeviceId == null) {
@@ -222,7 +245,17 @@ export class RemoteAgentExecutionService {
           '远程协作会话已归档或不存在',
         )
       }
-      return { linkId: link.link_id, remoteSessionId: link.remote_session_id, status: 'ready' }
+      if (modelSelection != null) {
+        this.assertCollaborationAgentAvailable(link.target_project_id, link.target_agent_id)
+        this.assertCollaborationSessionIdle(link.remote_session_id)
+        await this.deps.updateSession(link.remote_session_id, modelSelection)
+      }
+      return {
+        linkId: link.link_id,
+        remoteSessionId: link.remote_session_id,
+        status: 'ready',
+        ...(modelSelection ?? {}),
+      }
     }
 
     const workspace = this.getActiveWorkspace(request.targetProjectId)
@@ -244,6 +277,7 @@ export class RemoteAgentExecutionService {
       agent.id,
       title,
     )
+    let createdHere = false
     if (remoteSessionId == null) {
       const created = await this.deps.getSessionService().createSession({
         providerProfileId: agent.providerProfileId ?? '',
@@ -253,6 +287,18 @@ export class RemoteAgentExecutionService {
         workspaceId: workspace.id,
       })
       remoteSessionId = created.sessionId
+      createdHere = true
+    }
+    try {
+      if (modelSelection != null) {
+        this.assertCollaborationSessionIdle(remoteSessionId)
+        await this.deps.updateSession(remoteSessionId, modelSelection)
+      }
+    } catch (error) {
+      if (createdHere) {
+        await this.deps.deleteSession(remoteSessionId).catch(() => undefined)
+      }
+      throw error
     }
     new SessionRepository(this.deps.getDatabase()).patchMetadata(remoteSessionId, {
       remoteAgentLinkId: request.linkId,
@@ -265,7 +311,84 @@ export class RemoteAgentExecutionService {
       agentId: agent.id,
       phase: 'session-open',
     })
-    return { linkId: request.linkId, remoteSessionId, status: 'ready' }
+    return {
+      linkId: request.linkId,
+      remoteSessionId,
+      status: 'ready',
+      ...(modelSelection ?? {}),
+    }
+  }
+
+  private async resolveRequestedModelSelection(
+    request: Pick<RemoteCollaborationLinkCreateRequest, 'providerProfileId' | 'modelId'>,
+  ): Promise<RemoteAgentModelSelection | null> {
+    if (request.providerProfileId === undefined && request.modelId === undefined) return null
+    try {
+      return resolveRemoteAgentModelSelection(
+        { providerProfileId: request.providerProfileId, modelId: request.modelId },
+        await this.deps.getCatalog(),
+      )
+    } catch (error) {
+      if (error instanceof RemoteAgentModelSelectionError) {
+        throw new RemoteAgentRequestError(400, 'BAD_REQUEST', error.message)
+      }
+      throw error
+    }
+  }
+
+  private assertCollaborationSessionIdle(sessionId: string): void {
+    const queue = this.deps.getSessionService().getQueueState({ sessionId })
+    if (queue.running || queue.queuedTurns.length > 0) {
+      throw new RemoteAgentRequestError(
+        409,
+        'REMOTE_EXECUTION_FAILED',
+        'The remote session must be idle with no queued turns before changing its model.',
+      )
+    }
+  }
+
+  private async setCollaborationModel(
+    linkId: string,
+    body: unknown,
+  ): Promise<RemoteCollaborationModelUpdateResponse> {
+    if (!UUID_PATTERN.test(linkId)) {
+      throw new RemoteAgentRequestError(400, 'BAD_REQUEST', 'linkId must be a UUID.')
+    }
+    const accountUserId = this.requireAccountUserId()
+    return this.withCollaborationLock(`${accountUserId}\u0000link:${linkId}`, () =>
+      this.setCollaborationModelLocked(linkId, body, accountUserId),
+    )
+  }
+
+  private async setCollaborationModelLocked(
+    linkId: string,
+    body: unknown,
+    accountUserId: string,
+  ): Promise<RemoteCollaborationModelUpdateResponse> {
+    const request = validateCollaborationModelUpdateRequest(body)
+    const repository = new RemoteAgentCollaborationRepository(this.deps.getDatabase())
+    const link = this.requireCollaborationLink(repository, accountUserId, linkId)
+    if (link.remote_session_id == null) {
+      throw new RemoteAgentRequestError(
+        409,
+        'REMOTE_TARGET_NOT_FOUND',
+        'Remote session is not ready.',
+      )
+    }
+    this.assertCollaborationAgentAvailable(link.target_project_id, link.target_agent_id)
+    this.assertCollaborationSessionIdle(link.remote_session_id)
+
+    let selection: RemoteAgentModelSelection
+    try {
+      selection = resolveRemoteAgentModelSelection(request, await this.deps.getCatalog())
+    } catch (error) {
+      if (error instanceof RemoteAgentModelSelectionError) {
+        throw new RemoteAgentRequestError(400, 'BAD_REQUEST', error.message)
+      }
+      throw error
+    }
+    await this.deps.updateSession(link.remote_session_id, selection)
+    return { linkId, ...selection }
   }
 
   private async uploadCollaborationAttachment(
@@ -354,8 +477,10 @@ export class RemoteAgentExecutionService {
     const request = validateCollaborationMessageRequest(body)
     const accountUserId = this.requireAccountUserId()
     const lockKey = `${accountUserId}\u0000operation:${request.operationId}`
-    return this.withCollaborationLock(lockKey, () =>
-      this.submitCollaborationMessageLocked(accountUserId, linkId, request),
+    return this.withCollaborationLock(`${accountUserId}\u0000link:${linkId}`, () =>
+      this.withCollaborationLock(lockKey, () =>
+        this.submitCollaborationMessageLocked(accountUserId, linkId, request),
+      ),
     )
   }
 
@@ -785,6 +910,32 @@ export class RemoteAgentExecutionService {
     return { agents }
   }
 
+  private async listModelCatalog(
+    projectId: string | null,
+  ): Promise<RemoteAgentModelCatalogResponse> {
+    this.requireAccountUserId()
+    const catalog = await this.deps.getCatalog()
+    const allowedIds =
+      projectId == null
+        ? null
+        : parseAllowedAgentIds(this.getActiveWorkspace(projectId).allowed_agent_ids_json)
+    return {
+      agents: catalog.agents
+        .filter(
+          (agent) => allowedIds == null || allowedIds.length === 0 || allowedIds.includes(agent.id),
+        )
+        .map(({ id, name, agentAdapter, providerProfileId, modelId, isDefault }) => ({
+          id,
+          name,
+          agentAdapter,
+          providerProfileId: providerProfileId ?? null,
+          modelId: modelId ?? null,
+          isDefault,
+        })),
+      providers: catalog.providers,
+    }
+  }
+
   private async getTask(taskId: string): Promise<{ status: number; body: unknown }> {
     const accountUserId = this.requireAccountUserId()
     if (!taskId.trim() || taskId.length > 128) {
@@ -1022,7 +1173,39 @@ function validateCollaborationLinkRequest(body: unknown): RemoteCollaborationLin
   if (!sourceDeviceId.trim() || !sourceSessionId.trim()) {
     throw new RemoteAgentRequestError(400, 'BAD_REQUEST', '来源设备与会话不能为空')
   }
-  return { linkId, sourceDeviceId, sourceSessionId, targetProjectId, targetAgentId }
+  const providerProfileId =
+    body.providerProfileId === undefined
+      ? undefined
+      : readBoundedString(body.providerProfileId, 'providerProfileId', 256)
+  let modelId: string | null | undefined
+  if (body.modelId === null) modelId = null
+  else if (body.modelId !== undefined) modelId = readBoundedString(body.modelId, 'modelId', 256)
+  if (providerProfileId !== undefined && !providerProfileId.trim()) {
+    throw new RemoteAgentRequestError(400, 'BAD_REQUEST', 'providerProfileId cannot be empty.')
+  }
+  return {
+    linkId,
+    sourceDeviceId,
+    sourceSessionId,
+    targetProjectId,
+    targetAgentId,
+    ...(providerProfileId !== undefined ? { providerProfileId } : {}),
+    ...(modelId !== undefined ? { modelId } : {}),
+  }
+}
+
+function validateCollaborationModelUpdateRequest(
+  body: unknown,
+): RemoteCollaborationModelUpdateRequest {
+  if (!isRecord(body)) {
+    throw new RemoteAgentRequestError(400, 'BAD_REQUEST', 'Model selection is invalid.')
+  }
+  const providerProfileId = readBoundedString(body.providerProfileId, 'providerProfileId', 256)
+  if (!providerProfileId.trim()) {
+    throw new RemoteAgentRequestError(400, 'BAD_REQUEST', 'providerProfileId cannot be empty.')
+  }
+  const modelId = body.modelId === null ? null : readBoundedString(body.modelId, 'modelId', 256)
+  return { providerProfileId, modelId }
 }
 
 function validateCollaborationAttachmentRequest(

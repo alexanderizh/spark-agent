@@ -6,8 +6,10 @@ export type RemoteAgentToolCallBlock = Extract<UIBlock, { kind: 'tool_call' }>
 export type RemoteAgentToolAction =
   | 'devices_list'
   | 'device_inspect'
+  | 'model_catalog'
   | 'sessions_list'
   | 'session_open'
+  | 'session_model_set'
   | 'message_send'
   | 'events_read'
   | 'operation_cancel'
@@ -43,8 +45,10 @@ export function getRemoteAgentToolAction(toolName: string): RemoteAgentToolActio
   switch (action) {
     case 'devices_list':
     case 'device_inspect':
+    case 'model_catalog':
     case 'sessions_list':
     case 'session_open':
+    case 'session_model_set':
     case 'message_send':
     case 'events_read':
     case 'operation_cancel':
@@ -179,6 +183,14 @@ function summarizeRequest(action: RemoteAgentToolAction, input: Record<string, u
       return translate('remoteAgent.call.request.cancel')
     case 'session_open':
       return translate('remoteAgent.call.request.openSession')
+    case 'model_catalog':
+      return translate('remoteAgent.call.request.modelCatalog')
+    case 'session_model_set': {
+      const provider = stringField(input, 'providerProfileId')
+      const model = input['modelId'] === null ? null : stringField(input, 'modelId')
+      const route = [provider, model ?? 'default'].filter(Boolean).join(' / ')
+      return route || translate('remoteAgent.call.request.setModel')
+    }
     case 'device_inspect':
       return translate('remoteAgent.call.request.inspectDevice')
     case 'devices_list':
@@ -220,6 +232,20 @@ function summarizeResponse(
       return stringField(response, 'status') === 'ready'
         ? translate('remoteAgent.call.result.sessionReady')
         : translate('remoteAgent.call.result.uncertain')
+    case 'model_catalog': {
+      const providers = arrayField(response, 'providers') ?? []
+      const models = providers.reduce<number>(
+        (total, provider) =>
+          total + (isRecord(provider) ? (arrayField(provider, 'models')?.length ?? 0) : 0),
+        0,
+      )
+      return translate('remoteAgent.call.result.modelCatalog', {
+        providers: providers.length,
+        models,
+      })
+    }
+    case 'session_model_set':
+      return translate('remoteAgent.call.result.modelUpdated')
     case 'devices_list': {
       const devices = arrayField(response, 'devices')
       if (devices == null) break

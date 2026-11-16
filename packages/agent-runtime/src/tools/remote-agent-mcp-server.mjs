@@ -58,6 +58,19 @@ const tools = [
     },
   },
   {
+    name: 'model_catalog',
+    description:
+      'List enabled conversational channels and model IDs on a remote device. Pass projectRef to include only Agents available to that project. Agent entries include the configured adapter and preferred route. Inspect this before opening a session when the target Agent route may be unavailable; the catalog contains no credentials. If no compatible route can be inferred, show the available choices to the user and ask which provider/model to use.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        deviceRef: { type: 'string', description: 'deviceRef returned by devices_list.' },
+        projectRef: { type: 'string', description: 'Optional target projectRef.' },
+      },
+      required: ['deviceRef'],
+    },
+  },
+  {
     name: 'sessions_list',
     description:
       'List remote collaboration sessions previously opened from the current local session.',
@@ -72,13 +85,21 @@ const tools = [
   {
     name: 'session_open',
     description:
-      'Open a dedicated remote Agent session, or resume an opening link by passing its linkId. Opening a session does not send a message.',
+      'Open a dedicated remote Agent session, or resume an opening link by passing its linkId. Opening a session does not send a message. You may select a providerProfileId and modelId from model_catalog; omit both to use the target Agent defaults. If the configured route is absent from the catalog, choose a compatible listed route; if compatibility is ambiguous or no route is suitable, ask the user which one to use.',
     inputSchema: {
       type: 'object',
       properties: {
         deviceRef: { type: 'string', description: 'Target deviceRef.' },
         projectRef: { type: 'string', description: 'Target projectRef.' },
         agentRef: { type: 'string', description: 'Target agentRef.' },
+        providerProfileId: {
+          type: 'string',
+          description: 'Optional target-device provider ID from model_catalog.',
+        },
+        modelId: {
+          type: ['string', 'null'],
+          description: 'Optional model ID from that provider; null selects its default route.',
+        },
         linkId: {
           type: 'string',
           description: 'Optional linkId to resume an uncertain open request.',
@@ -88,9 +109,23 @@ const tools = [
     },
   },
   {
+    name: 'session_model_set',
+    description:
+      'Switch the model channel for an existing linked remote Agent session using a route from model_catalog. The target rejects changes while the session is active or has queued work. After a clear provider/model setup failure, switch routes and retry the original task at most once only if events show no user-visible output and no side-effecting tool ran; otherwise ask the user before retrying. If there is no safe compatible alternate, ask the user to choose from model_catalog.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        linkId: { type: 'string' },
+        providerProfileId: { type: 'string' },
+        modelId: { type: ['string', 'null'] },
+      },
+      required: ['linkId', 'providerProfileId', 'modelId'],
+    },
+  },
+  {
     name: 'message_send',
     description:
-      'Send a task or follow-up to the same remote Agent conversation. To answer an AskUserQuestion, first ask the user and pass their actual answer in questionReply; do not guess. Remote permission approvals must be handled by a user on the target device. Returns an operationId for event reading or cancellation. Reuse that operationId only when retrying an uncertain submission.',
+      'Send a task or follow-up to the same remote Agent conversation. To answer an AskUserQuestion, first ask the user and pass their actual answer in questionReply; do not guess. Remote permission approvals must be handled by a user on the target device. Returns an operationId for event reading or cancellation. Reuse that operationId only when retrying an uncertain submission. For a definitive provider/model setup failure, inspect events; if there was no user-visible output or side-effecting tool execution, choose another route with model_catalog and session_model_set, then retry the task once. If that safety condition is unclear, do not retry: ask the user.',
     inputSchema: {
       type: 'object',
       properties: {

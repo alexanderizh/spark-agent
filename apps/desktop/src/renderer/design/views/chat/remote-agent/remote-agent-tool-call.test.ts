@@ -91,6 +91,47 @@ describe('remote agent tool call projection', () => {
     )
   })
 
+  it('summarizes model catalog reads and route changes', () => {
+    const catalog = presentRemoteAgentToolCall(
+      remoteTool(
+        'model_catalog',
+        {},
+        {
+          output: JSON.stringify({
+            providers: [
+              { id: 'provider-a', models: [{ id: 'model-a' }, { id: 'model-b' }] },
+              { id: 'provider-b', models: [{ id: 'model-c' }] },
+            ],
+          }),
+        },
+      ),
+    )
+    expect(catalog.outputText).toBe(
+      translate('remoteAgent.call.result.modelCatalog', { providers: 2, models: 3 }),
+    )
+    expect(catalog.requestText).toBe(translate('remoteAgent.call.request.modelCatalog'))
+
+    const switched = presentRemoteAgentToolCall(
+      remoteTool(
+        'session_model_set',
+        {
+          providerProfileId: 'provider-b',
+          modelId: 'model-c',
+        },
+        {
+          output: JSON.stringify({
+            linkId: 'link-1',
+            providerProfileId: 'provider-b',
+            modelId: 'model-c',
+          }),
+        },
+      ),
+    )
+    expect(switched.action).toBe('session_model_set')
+    expect(switched.requestText).toBe('provider-b / model-c')
+    expect(switched.outputText).toBe(translate('remoteAgent.call.result.modelUpdated'))
+  })
+
   it('marks a remotely failed operation as failed even when events_read itself succeeded', () => {
     const presentation = presentRemoteAgentToolCall(
       remoteTool(

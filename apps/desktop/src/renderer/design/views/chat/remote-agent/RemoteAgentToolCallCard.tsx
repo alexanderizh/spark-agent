@@ -14,8 +14,10 @@ import './remote-agent.less'
 const ACTION_TRANSLATION: Record<RemoteAgentToolCallPresentation['action'], TranslationKey> = {
   devices_list: 'remoteAgent.call.action.devices',
   device_inspect: 'remoteAgent.call.action.inspect',
+  model_catalog: 'remoteAgent.call.action.models',
   sessions_list: 'remoteAgent.call.action.sessions',
   session_open: 'remoteAgent.call.action.open',
+  session_model_set: 'remoteAgent.call.action.setModel',
   message_send: 'remoteAgent.call.action.send',
   events_read: 'remoteAgent.call.action.read',
   operation_cancel: 'remoteAgent.call.action.cancel',

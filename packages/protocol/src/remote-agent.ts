@@ -1,4 +1,8 @@
-import type { MobileBridgeEvent } from './mobile-bridge.js'
+import type {
+  MobileBridgeCatalogAgent,
+  MobileBridgeCatalogProvider,
+  MobileBridgeEvent,
+} from './mobile-bridge.js'
 
 /**
  * Remote Agent collaborator contracts shared by the desktop main and renderer.
@@ -156,6 +160,22 @@ export interface RemoteAgentTargetAgentListRequest {
 
 export interface RemoteAgentRemoteAgentListResponse {
   agents: RemoteAgentAgentSummary[]
+}
+
+export type RemoteAgentModelCatalogAgent = Pick<
+  MobileBridgeCatalogAgent,
+  'id' | 'name' | 'agentAdapter' | 'providerProfileId' | 'modelId' | 'isDefault'
+>
+
+export interface RemoteAgentModelCatalogResponse {
+  agents: RemoteAgentModelCatalogAgent[]
+  providers: MobileBridgeCatalogProvider[]
+}
+
+export interface RemoteAgentModelSelection {
+  providerProfileId: string
+  /** null selects the provider default / automatic route. */
+  modelId: string | null
 }
 
 export interface RemoteAgentDispatchResponse {

@@ -49,15 +49,17 @@ describe('spark_remote MCP server', () => {
     return child
   }
 
-  it('exposes all eight collaboration tools and binds RPC to the current session', async () => {
+  it('exposes collaboration model routing tools and binds RPC to the current session', async () => {
     const process = start()
     const listed = await callMcp(process, { jsonrpc: '2.0', id: 1, method: 'tools/list' })
     const result = listed.result as { tools: Array<{ name: string; inputSchema: unknown }> }
     expect(result.tools.map((tool) => tool.name)).toEqual([
       'devices_list',
       'device_inspect',
+      'model_catalog',
       'sessions_list',
       'session_open',
+      'session_model_set',
       'message_send',
       'events_read',
       'operation_cancel',
@@ -65,6 +67,70 @@ describe('spark_remote MCP server', () => {
     ])
     expect(JSON.stringify(result.tools)).not.toContain('sourceSessionId')
     expect(JSON.stringify(result.tools)).not.toContain('remoteSessionId')
+
+    await callMcp(process, {
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/call',
+      params: {
+        name: 'model_catalog',
+        arguments: { deviceRef: 'device-b', projectRef: 'project-b' },
+      },
+    })
+    expect(lastRpc).toEqual({
+      method: 'remote.model_catalog',
+      params: { deviceRef: 'device-b', projectRef: 'project-b', sessionId: 'session-current' },
+    })
+
+    await callMcp(process, {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: {
+        name: 'session_open',
+        arguments: {
+          deviceRef: 'device-b',
+          projectRef: 'project-b',
+          agentRef: 'agent-b',
+          providerProfileId: 'provider-b',
+          modelId: 'model-b',
+        },
+      },
+    })
+    expect(lastRpc).toEqual({
+      method: 'remote.session_open',
+      params: {
+        deviceRef: 'device-b',
+        projectRef: 'project-b',
+        agentRef: 'agent-b',
+        providerProfileId: 'provider-b',
+        modelId: 'model-b',
+        sessionId: 'session-current',
+      },
+    })
+
+    await callMcp(process, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: {
+        name: 'session_model_set',
+        arguments: {
+          linkId: 'link-1',
+          providerProfileId: 'provider-b',
+          modelId: null,
+        },
+      },
+    })
+    expect(lastRpc).toEqual({
+      method: 'remote.session_model_set',
+      params: {
+        linkId: 'link-1',
+        providerProfileId: 'provider-b',
+        modelId: null,
+        sessionId: 'session-current',
+      },
+    })
 
     const called = await callMcp(process, {
       jsonrpc: '2.0',

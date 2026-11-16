@@ -33,18 +33,33 @@ export interface RemoteCollaborationLinkCreateRequest {
   sourceSessionId: string
   targetProjectId: string
   targetAgentId: string
+  providerProfileId?: string
+  modelId?: string | null
 }
 
 export interface RemoteCollaborationLinkCreateResponse {
   linkId: string
   remoteSessionId: string | null
   status: 'ready' | 'uncertain'
+  providerProfileId?: string
+  modelId?: string | null
 }
 
 export interface RemoteCollaborationSessionOpenToolResponse {
   linkId: string
   deviceRef: string
   status: 'ready' | 'uncertain'
+  providerProfileId?: string
+  modelId?: string | null
+}
+
+export interface RemoteCollaborationModelUpdateRequest {
+  providerProfileId: string
+  modelId: string | null
+}
+
+export interface RemoteCollaborationModelUpdateResponse extends RemoteCollaborationModelUpdateRequest {
+  linkId: string
 }
 
 export interface RemoteCollaborationAttachmentInput {

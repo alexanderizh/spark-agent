@@ -66,8 +66,10 @@ let beforeQuitHookRegistered = false
 const REMOTE_AGENT_TOOL_METHODS = [
   'devices_list',
   'device_inspect',
+  'model_catalog',
   'sessions_list',
   'session_open',
+  'session_model_set',
   'message_send',
   'events_read',
   'operation_cancel',

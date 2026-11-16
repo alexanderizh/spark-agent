@@ -15,6 +15,7 @@ import type {
   RemoteAgentDeviceSummary,
   RemoteAgentRelayStatus,
   RemoteAgentRemoteAgentListResponse,
+  RemoteAgentModelCatalogResponse,
   RemoteAgentRemoteProjectListResponse,
   RemoteCollaborationArtifactResponse,
   RemoteCollaborationCancelResponse,
@@ -26,6 +27,7 @@ import type {
   RemoteCollaborationLinkCreateResponse,
   RemoteCollaborationMessageResponse,
   RemoteCollaborationMessageToolResponse,
+  RemoteCollaborationModelUpdateResponse,
   RemoteCollaborationOperationStatus,
   RemoteCollaborationSessionOpenToolResponse,
 } from '@spark/protocol'
@@ -137,10 +139,14 @@ export class RemoteAgentCollaborationService {
         return this.devicesList()
       case 'device_inspect':
         return this.deviceInspect(params)
+      case 'model_catalog':
+        return this.modelCatalog(params)
       case 'sessions_list':
         return this.sessionsList(context, params)
       case 'session_open':
         return this.sessionOpen(context, params)
+      case 'session_model_set':
+        return this.sessionModelSet(context, params)
       case 'message_send':
         return this.messageSend(context, params)
       case 'events_read':
@@ -204,6 +210,24 @@ export class RemoteAgentCollaborationService {
     return { deviceRef: deviceId, projects: projects.projects, agents: agents.agents }
   }
 
+  private async modelCatalog(
+    params: Record<string, unknown>,
+  ): Promise<RemoteAgentModelCatalogResponse> {
+    const deviceId = boundedString(params.deviceRef, 'deviceRef', 256)
+    const projectId = optionalString(params.projectRef, 'projectRef', 256)
+    const path =
+      projectId == null
+        ? '/v1/remote-agent/models'
+        : `/v1/remote-agent/models?projectId=${encodeURIComponent(projectId)}`
+    return this.requestJson<RemoteAgentModelCatalogResponse>(
+      await this.requireConnectedRelay(),
+      deviceId,
+      'GET',
+      path,
+      isModelCatalog,
+    )
+  }
+
   private sessionsList(
     context: ToolContext,
     params: Record<string, unknown>,
@@ -224,6 +248,15 @@ export class RemoteAgentCollaborationService {
     const deviceId = boundedString(params.deviceRef, 'deviceRef', 256)
     const projectId = boundedString(params.projectRef, 'projectRef', 256)
     const agentId = boundedString(params.agentRef, 'agentRef', 256)
+    const providerProfileId = optionalString(params.providerProfileId, 'providerProfileId', 256)
+    let modelId: string | null | undefined
+    if (params.modelId === null) modelId = null
+    else if (params.modelId !== undefined) {
+      modelId = boundedString(params.modelId, 'modelId', 256)
+    }
+    if (modelId !== undefined && providerProfileId == null) {
+      throw new Error('providerProfileId is required when modelId is specified.')
+    }
     const linkIdValue = optionalString(params.linkId, 'linkId', 64)
     const linkId = linkIdValue ?? randomUUID()
     if (!UUID_PATTERN.test(linkId)) throw new Error('linkId 必须是 UUID')
@@ -239,7 +272,7 @@ export class RemoteAgentCollaborationService {
       targetProjectId: projectId,
       targetAgentId: agentId,
     })
-    if (link.remote_session_id != null) {
+    if (link.remote_session_id != null && providerProfileId == null) {
       return { linkId, status: 'ready', deviceRef: deviceId }
     }
 
@@ -257,6 +290,8 @@ export class RemoteAgentCollaborationService {
           sourceSessionId: context.sessionId,
           targetProjectId: projectId,
           targetAgentId: agentId,
+          ...(providerProfileId != null ? { providerProfileId } : {}),
+          ...(modelId !== undefined ? { modelId } : {}),
         },
       )
       if (response.remoteSessionId == null) throw new Error('目标端尚未确认远端会话')
@@ -267,7 +302,15 @@ export class RemoteAgentCollaborationService {
         sourceSessionId: context.sessionId,
         phase: 'session-open',
       })
-      return { linkId, status: 'ready', deviceRef: deviceId }
+      return {
+        linkId,
+        status: 'ready',
+        deviceRef: deviceId,
+        ...(response.providerProfileId != null
+          ? { providerProfileId: response.providerProfileId }
+          : {}),
+        ...(response.modelId !== undefined ? { modelId: response.modelId } : {}),
+      }
     } catch (error) {
       repository.setLinkStatus(accountUserId, linkId, 'unreachable')
       log.warn('remote collaboration session open uncertain', {
@@ -282,6 +325,27 @@ export class RemoteAgentCollaborationService {
         deviceRef: deviceId,
       }
     }
+  }
+
+  private async sessionModelSet(
+    context: ToolContext,
+    params: Record<string, unknown>,
+  ): Promise<RemoteCollaborationModelUpdateResponse> {
+    const linkId = boundedString(params.linkId, 'linkId', 64)
+    const providerProfileId = boundedString(params.providerProfileId, 'providerProfileId', 256)
+    const modelId = params.modelId === null ? null : boundedString(params.modelId, 'modelId', 256)
+    const accountUserId = this.requireAccountUserId()
+    const link = this.requireLinkForSession(accountUserId, context.sessionId, linkId)
+    if (link.remote_session_id == null) throw new Error('Remote session is not ready.')
+    const client = await this.requireConnectedRelay()
+    return this.requestJson<RemoteCollaborationModelUpdateResponse>(
+      client,
+      link.target_device_id,
+      'PATCH',
+      `/v1/remote-agent/links/${encodeURIComponent(linkId)}/model`,
+      isModelUpdateResponse,
+      { providerProfileId, modelId },
+    )
   }
 
   private async messageSend(
@@ -1030,7 +1094,7 @@ export class RemoteAgentCollaborationService {
   private async requestJson<T>(
     client: RemoteAgentRelayClient,
     deviceId: string,
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PATCH',
     requestPath: string,
     isResponse: (value: unknown) => value is T,
     body?: unknown,
@@ -1258,6 +1322,34 @@ function isAgentList(value: unknown): value is RemoteAgentRemoteAgentListRespons
   return isRecord(value) && Array.isArray(value.agents) && value.agents.every(isNamedId)
 }
 
+function isModelCatalog(value: unknown): value is RemoteAgentModelCatalogResponse {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.agents) &&
+    value.agents.every(
+      (agent) =>
+        isRecord(agent) &&
+        typeof agent.id === 'string' &&
+        typeof agent.name === 'string' &&
+        typeof agent.agentAdapter === 'string' &&
+        (agent.providerProfileId == null || typeof agent.providerProfileId === 'string') &&
+        (agent.modelId == null || typeof agent.modelId === 'string') &&
+        typeof agent.isDefault === 'boolean',
+    ) &&
+    Array.isArray(value.providers) &&
+    value.providers.every(
+      (provider) =>
+        isRecord(provider) &&
+        typeof provider.id === 'string' &&
+        typeof provider.name === 'string' &&
+        typeof provider.providerType === 'string' &&
+        typeof provider.isAutoRouter === 'boolean' &&
+        Array.isArray(provider.models) &&
+        provider.models.every(isNamedId),
+    )
+  )
+}
+
 function isNamedId(value: unknown): value is { id: string; name: string } {
   return isRecord(value) && typeof value.id === 'string' && typeof value.name === 'string'
 }
@@ -1268,6 +1360,15 @@ function isLinkCreateResponse(value: unknown): value is RemoteCollaborationLinkC
     typeof value.linkId === 'string' &&
     typeof value.remoteSessionId === 'string' &&
     value.status === 'ready'
+  )
+}
+
+function isModelUpdateResponse(value: unknown): value is RemoteCollaborationModelUpdateResponse {
+  return (
+    isRecord(value) &&
+    typeof value.linkId === 'string' &&
+    typeof value.providerProfileId === 'string' &&
+    (value.modelId === null || typeof value.modelId === 'string')
   )
 }
 

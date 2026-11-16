@@ -564,8 +564,10 @@ export const VOICE_CONTROL_TOOL_NAMES = [
 export const REMOTE_AGENT_TOOL_NAMES = [
   'mcp__spark_remote__devices_list',
   'mcp__spark_remote__device_inspect',
+  'mcp__spark_remote__model_catalog',
   'mcp__spark_remote__sessions_list',
   'mcp__spark_remote__session_open',
+  'mcp__spark_remote__session_model_set',
   'mcp__spark_remote__message_send',
   'mcp__spark_remote__events_read',
   'mcp__spark_remote__operation_cancel',

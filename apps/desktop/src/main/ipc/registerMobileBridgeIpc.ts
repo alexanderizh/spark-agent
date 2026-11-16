@@ -240,6 +240,9 @@ function getService(deps: MobileBridgeIpcDeps): MobileBridgeService {
   const remoteAgentExecution = new RemoteAgentExecutionService({
     getDatabase,
     getSessionService: deps.getSessionService,
+    getCatalog: bridgeDeps.getCatalog,
+    updateSession: bridgeDeps.updateSession,
+    deleteSession: bridgeDeps.deleteSession,
     getAccountUserId: () => {
       try {
         return getAuthService().getCurrentUserId()

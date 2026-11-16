@@ -119,6 +119,10 @@ describe('buildToolchainInventory', () => {
     const wiki = inventory.groups.find((group) => group.key === 'platform:spark_wiki')
     expect(wiki?.toolCount).toBe(12)
 
+    const remote = inventory.groups.find((group) => group.key === 'platform:spark_remote')
+    expect(remote?.tools.map((tool) => tool.name)).toContain('mcp__spark_remote__model_catalog')
+    expect(remote?.tools.map((tool) => tool.name)).toContain('mcp__spark_remote__session_model_set')
+
     // generatedAt 为 ISO 时间戳，供前端页脚展示
     expect(Number.isNaN(Date.parse(inventory.generatedAt))).toBe(false)
   })
