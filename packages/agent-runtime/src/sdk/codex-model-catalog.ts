@@ -14,6 +14,10 @@ type ModelCatalog = { models: CatalogModel[] }
 
 const DEFAULT_EFFECTIVE_CONTEXT_WINDOW_PERCENT = 100
 
+export function providerModelSupportsCodexVision(modelType: string | null | undefined): boolean {
+  return modelType == null || modelType === 'multimodal'
+}
+
 /**
  * 旧版 native runtime 的 model catalog schema 分界线（本仓库实测矩阵）：
  *   - 0.144.5 要求条目必须显式携带 `base_instructions` / `supports_reasoning_summaries`，
@@ -47,6 +51,7 @@ export async function withCodexModelCatalog(config: SDKExecutorConfig): Promise<
   const catalogPath = await ensureCodexModelCatalog({
     model: config.model,
     contextWindowTokens: config.contextWindowTokens,
+    supportsVision: config.supportsVision,
     ...(configuredCodexHome != null ? { codexHome: configuredCodexHome } : {}),
     runtimeVersion: resolveActiveCodexRuntimeVersion(),
   })
@@ -64,6 +69,7 @@ export async function withCodexModelCatalog(config: SDKExecutorConfig): Promise<
 export async function ensureCodexModelCatalog(params: {
   model: string
   contextWindowTokens: number
+  supportsVision?: boolean | undefined
   codexHome?: string | undefined
   runtimeVersion?: string | null | undefined
 }): Promise<string | null> {
@@ -78,6 +84,7 @@ export async function ensureCodexModelCatalog(params: {
   const catalog = createCodexModelCatalog({
     model,
     contextWindowTokens,
+    supportsVision: params.supportsVision,
     sourceCatalog,
     runtimeVersion: params.runtimeVersion ?? null,
   })
@@ -112,6 +119,7 @@ export async function ensureCodexModelCatalog(params: {
 export function createCodexModelCatalog(params: {
   model: string
   contextWindowTokens: number
+  supportsVision?: boolean | undefined
   sourceCatalog?: ModelCatalog | null
   runtimeVersion?: string | null
 }): ModelCatalog {
@@ -133,7 +141,9 @@ export function createCodexModelCatalog(params: {
   // 拷贝给第三方模型会改变 Codex 的行为。未知模型使用下面的中性 fallback。
   const sourceModel = sourceModels.find((entry) => entry.slug === params.model)
   const modelEntry: CatalogModel = {
-    ...(sourceModel != null ? cloneRecord(sourceModel) : createFallbackModel(params.model)),
+    ...(sourceModel != null
+      ? cloneRecord(sourceModel)
+      : createFallbackModel(params.model, params.supportsVision === true)),
     slug: params.model,
     display_name: params.model,
     context_window: Math.floor(params.contextWindowTokens),
@@ -250,7 +260,7 @@ function cloneRecord(value: CatalogModel): CatalogModel {
   return JSON.parse(JSON.stringify(value)) as CatalogModel
 }
 
-function createFallbackModel(model: string): CatalogModel {
+function createFallbackModel(model: string, supportsVision: boolean): CatalogModel {
   return {
     slug: model,
     display_name: model,
@@ -283,7 +293,7 @@ function createFallbackModel(model: string): CatalogModel {
     supports_parallel_tool_calls: true,
     supports_image_detail_original: false,
     experimental_supported_tools: [],
-    input_modalities: ['text'],
+    input_modalities: supportsVision ? ['text', 'image'] : ['text'],
     supports_search_tool: false,
     supports_experimental_context: false,
     use_responses_lite: false,

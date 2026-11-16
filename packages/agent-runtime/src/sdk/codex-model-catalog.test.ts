@@ -7,6 +7,7 @@ import {
   ensureCodexModelCatalog,
   isCodexModelCatalogRejected,
   markCodexModelCatalogRejected,
+  providerModelSupportsCodexVision,
   usesLegacyModelCatalogSchema,
   withCodexModelCatalog,
   LEGACY_MODEL_CATALOG_RUNTIME_CEILING,
@@ -46,6 +47,54 @@ describe('codex model catalog bridge', () => {
     )
   })
 
+  it('declares image input for fallback models when the Provider is multimodal', () => {
+    const catalog = createCodexModelCatalog({
+      model: 'custom-vision-model',
+      contextWindowTokens: 128_000,
+      supportsVision: true,
+    })
+
+    expect(catalog.models[0]?.input_modalities).toEqual(['text', 'image'])
+  })
+
+  it.each([
+    { modelType: undefined, supportsVision: true },
+    { modelType: null, supportsVision: true },
+    { modelType: 'multimodal', supportsVision: true },
+    { modelType: 'text', supportsVision: false },
+    { modelType: 'image', supportsVision: false },
+    { modelType: 'voice', supportsVision: false },
+    { modelType: 'video', supportsVision: false },
+  ])(
+    'maps Provider model type $modelType to Codex vision support',
+    ({ modelType, supportsVision }) => {
+      expect(providerModelSupportsCodexVision(modelType)).toBe(supportsVision)
+    },
+  )
+
+  it('keeps fallback models text-only when the Provider explicitly declares text', () => {
+    const catalog = createCodexModelCatalog({
+      model: 'custom-text-model',
+      contextWindowTokens: 128_000,
+      supportsVision: false,
+    })
+
+    expect(catalog.models[0]?.input_modalities).toEqual(['text'])
+  })
+
+  it('does not override modalities from an existing source catalog entry', () => {
+    const catalog = createCodexModelCatalog({
+      model: 'custom-text-model',
+      contextWindowTokens: 128_000,
+      supportsVision: true,
+      sourceCatalog: {
+        models: [{ slug: 'custom-text-model', input_modalities: ['text'] }],
+      },
+    })
+
+    expect(catalog.models[0]?.input_modalities).toEqual(['text'])
+  })
+
   it('writes a valid reusable catalog under the configured Codex home', async () => {
     const codexHome = await mkdtemp(join(tmpdir(), 'spark-codex-catalog-test-'))
     try {
@@ -69,7 +118,7 @@ describe('codex model catalog bridge', () => {
         contextWindowTokens: 1_000_000,
         codexHome,
       })
-      expect(catalogPath).toMatch(/^.+\/spark-model-catalog-[a-f0-9]{20}\.json$/)
+      expect(catalogPath).toMatch(/^.+[\\/]spark-model-catalog-[a-f0-9]{20}\.json$/)
       if (catalogPath == null) throw new Error('catalog path was not generated')
       const catalog = JSON.parse(await readFile(catalogPath, 'utf8')) as {
         models: Array<Record<string, unknown>>
@@ -100,12 +149,17 @@ describe('codex model catalog bridge', () => {
         permissionMode: 'codex-default',
         workspaceRootPath: process.cwd(),
         contextWindowTokens: 1_000_000,
+        supportsVision: true,
         customEnv: { CODEX_HOME: codexHome },
         codexCliProvider: { id: 'opencode', wireApi: 'responses' },
       })
       expect(config.codexModelCatalogPath).toBeDefined()
       if (config.codexModelCatalogPath == null) throw new Error('catalog path was not generated')
       expect(dirname(config.codexModelCatalogPath)).toBe(codexHome)
+      const catalog = JSON.parse(await readFile(config.codexModelCatalogPath, 'utf8')) as {
+        models: Array<Record<string, unknown>>
+      }
+      expect(catalog.models[0]?.input_modalities).toEqual(['text', 'image'])
     } finally {
       await rm(codexHome, { recursive: true, force: true })
     }

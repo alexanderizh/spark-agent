@@ -906,6 +906,8 @@ export interface SDKExecutorConfig {
       }) => void | Promise<void>)
     | undefined
   codexCliProvider?: CodexCliModelProviderConfig | undefined
+  /** Whether the selected Provider model accepts image inputs in Codex. */
+  supportsVision?: boolean | undefined
   /** Spark-managed model catalog path used to prevent Codex fallback metadata for custom models. */
   codexModelCatalogPath?: string | undefined
   systemPrompt?: string | undefined

@@ -538,6 +538,7 @@ import type {
   SDKPermissionRequestContext,
   SDKQuestionRequestContext,
 } from '../sdk/index.js'
+import { providerModelSupportsCodexVision } from '../sdk/codex-model-catalog.js'
 import { CodexRuntimeMcpResourceCoordinator } from './session/codex-runtime-mcp-resources.js'
 import { buildSparkEngineMcpRuntime } from './session/spark-engine-runtime.js'
 import type { ActiveExecution } from '../sdk/index.js'
@@ -3893,6 +3894,7 @@ export class SessionService {
       modelContextWindows?: Record<string, number>
       /** 模型级设置覆盖（推理默认/选择器显隐）；模型级上下文见 modelContextWindows。 */
       modelSettings?: Record<string, ProviderModelSettingStored>
+      modelType?: 'image' | 'text' | 'multimodal' | 'voice' | 'video'
       haikuModel?: string
       sonnetModel?: string
       opusModel?: string
@@ -5937,6 +5939,7 @@ export class SessionService {
         ? { disableCodexNativeSkills: true }
         : {}),
       model,
+      supportsVision: providerModelSupportsCodexVision(config.modelType),
       workspaceRootPath,
       permissionMode,
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
