@@ -45,6 +45,14 @@ function appendSegment(prev: string, text: string): string {
   return prev + (needSpace ? ' ' : '') + text
 }
 
+export function applyRefinedVoiceText(prev: string, previous: string, text: string): string {
+  if (previous && prev.endsWith(previous)) {
+    return prev.slice(0, prev.length - previous.length) + text
+  }
+  if (!previous && text) return appendSegment(prev, text)
+  return prev
+}
+
 export function useComposerVoice(options: UseComposerVoiceOptions): UseComposerVoiceResult {
   const { setValue, disabled = false } = options
   const { toast } = useToast()
@@ -56,13 +64,7 @@ export function useComposerVoice(options: UseComposerVoiceOptions): UseComposerV
       setValue((prev) => appendSegment(prev, text))
     },
     onRefined: ({ previous, text }: VoiceRefinedPayload) => {
-      setValue((prev) => {
-        if (previous && prev.endsWith(previous)) {
-          // 流式文本仍是草稿后缀：安全地整体替换为精修结果
-          return prev.slice(0, prev.length - previous.length) + text
-        }
-        return prev
-      })
+      setValue((prev) => applyRefinedVoiceText(prev, previous, text))
     },
   })
 

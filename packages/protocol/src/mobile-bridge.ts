@@ -12,10 +12,17 @@
  * 小程序实现：apps/mobile/src/api/relay.ts + apps/mobile/src/api/bridge.ts
  */
 
-import type { SessionLabelKey, SessionSearchResponse } from './ipc/index.js'
+import type {
+  SessionLabelKey,
+  SessionSearchResponse,
+  WorkspaceGitCommitEntry,
+  WorkspaceGitFileDiffResponse,
+  WorkspaceGitStatusResponse,
+} from './ipc/index.js'
 import type { SidebarOrderState, SidebarOrderUpdateRequest } from './sidebar-order.js'
 
 export type { SessionLabelKey, SessionSearchResponse, SidebarOrderState, SidebarOrderUpdateRequest }
+export type { WorkspaceGitCommitEntry, WorkspaceGitFileDiffResponse, WorkspaceGitStatusResponse }
 
 import type { UserQuestionPrompt } from './ipc/index.js'
 import type {
@@ -72,6 +79,48 @@ export interface MobileBridgeUpdateProjectResponse {
 /** DELETE /v1/projects/:id 响应（与桌面端 workspace:delete 同语义：级联删除项目下全部会话） */
 export interface MobileBridgeDeleteProjectResponse {
   deleted: boolean
+}
+
+// ─── 项目信息面板（远程桌面右侧栏；只读，2026-11-16） ─────────────────────────
+
+/**
+ * GET /v1/projects/:id/git 响应：远端项目的 git 只读快照。
+ *
+ * status 直接透传桌面端 `workspace:git-status` 的响应形状（含分支/变更文件/stash），
+ * 控制端渲染逻辑可与本地 GitPanel 保持同构；旧版桌面端无此端点（404）。
+ */
+export interface MobileBridgeProjectGitResponse {
+  projectId: string
+  /** 项目根路径（workspace.root_path；未关联目录的项目为空串） */
+  rootPath: string
+  status: WorkspaceGitStatusResponse
+  /** 最近提交（被控端裁剪，缺省 10 条，按时间倒序） */
+  recentCommits: WorkspaceGitCommitEntry[]
+}
+
+/**
+ * GET /v1/projects/:id/git/diff?path=&untracked=1 响应：单文件 diff 文本。
+ * 形状与桌面端 `workspace:git-file-diff` 一致；path 必须是项目内相对路径。
+ */
+export type MobileBridgeProjectGitDiffResponse = WorkspaceGitFileDiffResponse
+
+/** 项目产物条目：最近会话里 presented_files 的聚合（同路径保留最近一次） */
+export interface MobileBridgeProjectArtifactItem {
+  path: string
+  title?: string
+  /** 最近一次呈现该文件的会话 */
+  sessionId: string
+  sessionTitle: string
+  /** ISO 时间（事件落库时间） */
+  presentedAt: string
+}
+
+/** GET /v1/projects/:id/artifacts 响应：项目产物聚合（被控端只扫最近 20 个会话的窗口） */
+export interface MobileBridgeProjectArtifactsResponse {
+  projectId: string
+  artifacts: MobileBridgeProjectArtifactItem[]
+  /** true = 事件扫描触达条数上限，可能还有更早产物未列出 */
+  truncated?: boolean
 }
 
 // ─── 会话搜索（GET /v1/search；标题 LIKE + 内容 FTS5，复用桌面端 session:search 响应形状） ──

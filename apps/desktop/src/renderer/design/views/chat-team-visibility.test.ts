@@ -65,6 +65,24 @@ describe('hasVisibleTeamMemberActivityBlocks', () => {
     expect(hasVisibleTeamMemberActivityBlocks(blocks, true)).toBe(true)
   })
 
+  it('keeps remote collaboration cards visible while ordinary member logs are hidden', () => {
+    const blocks: UIBlock[] = [
+      {
+        kind: 'tool_call',
+        toolCallId: 'remote-call',
+        toolName: 'mcp__spark_remote__message_send',
+        toolInput: { text: 'Build the project' },
+        status: 'success',
+        output: 'accepted',
+        error: undefined,
+        durationMs: 20,
+        teamMemberContext: { dispatchId: 'dispatch-1', memberAgentId: 'agent-1' },
+      },
+    ]
+
+    expect(hasVisibleTeamMemberActivityBlocks(blocks)).toBe(true)
+  })
+
   it('hides assistant thinking and tool logs only while team mode is active', () => {
     const stylesheet = readFileSync(
       fileURLToPath(new URL('./ChatView.less', import.meta.url)),
@@ -138,6 +156,23 @@ describe('hasVisibleAgentBlocks', () => {
     const blocks: UIBlock[] = [
       { kind: 'thinking', content: 'Drafting reply', isStreaming: false },
       { kind: 'text', content: '  已安排成员处理。', isStreaming: false },
+    ]
+
+    expect(hasVisibleAgentBlocks(blocks)).toBe(true)
+  })
+
+  it('keeps remote collaboration calls visible in host segments with team logs disabled', () => {
+    const blocks: UIBlock[] = [
+      {
+        kind: 'tool_call',
+        toolCallId: 'remote-call',
+        toolName: 'mcp__spark_remote__message_send',
+        toolInput: { text: 'Build the project' },
+        status: 'success',
+        output: 'accepted',
+        error: undefined,
+        durationMs: 20,
+      },
     ]
 
     expect(hasVisibleAgentBlocks(blocks)).toBe(true)

@@ -98,6 +98,23 @@ describe('ChatActivitySegments', () => {
     expect(items[2]).toMatchObject({ sealed: false })
   })
 
+  it('keeps remote collaboration calls as visible timeline content in their original position', () => {
+    const items = splitChatActivitySegments([
+      text('开始远程协作', 'before'),
+      tool('remote-send', 'mcp__spark_remote__message_send', 'success'),
+      text('本地继续处理', 'after'),
+    ])
+
+    expect(items.map((item) => item.kind)).toEqual(['content', 'content', 'content'])
+    expect(items[1]).toMatchObject({
+      kind: 'content',
+      block: { kind: 'tool_call', toolCallId: 'remote-send' },
+    })
+    expect(
+      isChatActivityBlock(tool('remote-read', 'mcp__spark_remote__events_read', 'success')),
+    ).toBe(false)
+  })
+
   it('uses stable block identities and only falls back to a turn-local segment ordinal', () => {
     const withStableIdentity = splitChatActivitySegments([tool('tool-stable', 'Read', 'success')])
     const legacyThinking: Extract<UIBlock, { kind: 'thinking' }> = {

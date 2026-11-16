@@ -375,5 +375,9 @@ export function findSessionProjectId(deviceId: string, sessionId: string): strin
   for (const [projectId, bucket] of Object.entries(store.sessions)) {
     if (bucket.rows.some((row) => row.id === sessionId)) return projectId
   }
-  return null
+  // 兜底：搜索/结果视图选中、或重启后恢复的会话，其项目桶可能从未展开过
+  // （桶只在项目展开时才拉取）。从全量窗口里找，否则聊天头部「查看项目信息」
+  // 在这类会话上点了没有任何反馈。
+  const hit = store.allSessions?.rows.find((row) => row.id === sessionId)
+  return hit?.projectId ?? (hit != null ? UNASSIGNED_PROJECT_ID : null)
 }

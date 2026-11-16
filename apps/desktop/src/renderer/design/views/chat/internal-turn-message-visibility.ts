@@ -3,6 +3,7 @@ import { getLegacyRemoteUserDisplayContent } from '@spark/protocol'
 import type { UIMessage } from '../../services/event-mapper'
 
 export const HIDDEN_INTERNAL_TURN_PLACEHOLDER = '内部提示已隐藏'
+const REMOTE_AGENT_TURN_LABEL = '远端协作结果处理中'
 
 /**
  * Builds the chat-only projection without mutating the complete logical message stream.
@@ -26,6 +27,7 @@ export function projectVisibleChatMessages(messages: UIMessage[]): UIMessage[] {
 
   return messages.flatMap((message) => {
     if (message.role === 'user') {
+      if (message.turnSource === 'remote_agent') return []
       const displayContent = message.userMessageDisplayContent
       if (displayContent == null || displayContent.trim().length === 0) {
         if (message.userMessageVisibility === 'hidden') return []
@@ -69,6 +71,13 @@ function getInternalTurnDisplayLabel(turnSource: SessionQueuedTurn['turnSource']
 /** Keeps queue controls available while replacing hidden prompt bodies with safe labels. */
 export function projectQueuedTurnsForDisplay(turns: SessionQueuedTurn[]): SessionQueuedTurn[] {
   return turns.map((turn) => {
+    if (turn.turnSource === 'remote_agent') {
+      return {
+        ...turn,
+        message: REMOTE_AGENT_TURN_LABEL,
+        userMessageVisibility: 'hidden',
+      }
+    }
     const legacyRemoteDisplay = getLegacyRemoteUserDisplayContent(turn.message)
     const displayContent = turn.userMessageDisplayContent ?? legacyRemoteDisplay
     if (displayContent != null && displayContent.trim().length > 0) {
@@ -88,6 +97,7 @@ export function projectQueuedTurnsForDisplay(turns: SessionQueuedTurn[]): Sessio
 
 /** Runtime audit prefers the explicit safe body whenever model input includes internal context. */
 export function getVisibleTurnPromptSnapshotUserMessage(snapshot: TurnPromptSnapshotEvent): string {
+  if (snapshot.turnSource === 'remote_agent') return HIDDEN_INTERNAL_TURN_PLACEHOLDER
   const displayContent =
     snapshot.userMessageDisplayContent ?? getLegacyRemoteUserDisplayContent(snapshot.userMessage)
   if (displayContent != null && displayContent.trim().length > 0) {

@@ -55,6 +55,8 @@ export interface RemoteSessionPaneProps {
   canSwitchDevice: boolean
   /** 会话或其所属项目被删除后，让右侧对话区回到空态 */
   onClearSession?: () => void
+  /** 打开右侧项目信息面板（项目右键菜单入口；缺省不显示该菜单项） */
+  onOpenProjectInfo?: ((projectId: string) => void) | undefined
 }
 
 type MenuState =
@@ -204,6 +206,7 @@ export function RemoteSessionPane({
   onSwitchDevice,
   canSwitchDevice,
   onClearSession,
+  onOpenProjectInfo,
 }: RemoteSessionPaneProps) {
   const tree = useRemoteSessionTree(deviceId)
   const actions = useRemoteSessionActions(deviceId)
@@ -228,6 +231,20 @@ export function RemoteSessionPane({
     projectName: string
     resultKey: string
   } | null>(null)
+  /**
+   * 结果视图（搜索/筛选）里被折叠的项目分组。分组头按 projectId 折叠，
+   * 筛选条件变化后命中集合变了也不影响：还命中的项目保持用户的折叠选择。
+   * 结果视图是临时视图，内存态即可，不落 remoteViewState。
+   */
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleResultGroup = useCallback((projectId: string) => {
+    setCollapsedGroups((previous) => {
+      const next = new Set(previous)
+      if (next.has(projectId)) next.delete(projectId)
+      else next.add(projectId)
+      return next
+    })
+  }, [])
 
   /** 筛选变化：会话级维度由数据层自动补拉全量（needAllSessions），这里只负责落状态 */
   const handleFilterChange = useCallback(
@@ -421,6 +438,16 @@ export function RemoteSessionPane({
                 icon: <Icons.MessageSquarePlus size={13} />,
                 onClick: () => void handleCreate(menu.row.id),
               },
+              ...(onOpenProjectInfo != null
+                ? [
+                    {
+                      key: 'project-info',
+                      label: '查看项目信息',
+                      icon: <Icons.Folder size={13} />,
+                      onClick: () => onOpenProjectInfo(menu.row.id),
+                    },
+                  ]
+                : []),
               { type: 'divider' },
               {
                 key: 'rename',
@@ -639,53 +666,70 @@ export function RemoteSessionPane({
                 {store.allSessions?.total ?? 0} 个）
               </div>
             )}
-            {pageGroups.map((group) => (
-              <div key={group.projectId} className="rc-project is-open">
-                {/*
-                 * 分组头在结果视图里不可折叠（没有展开态可言），但仍给一个「＋」：
-                 * 筛过之后用户照样要能指定「在这个项目下新建」，否则只剩头部那个
-                 * 只能猜落点的按钮。
-                 */}
-                <div className="rc-project-line">
-                  <div className="rc-project-head is-static">
-                    <span className="rc-project-icon">
-                      <Icons.Folder size={13} />
-                    </span>
-                    <span className="rc-project-name">{group.name}</span>
-                    <span className="rc-project-count">{group.sessions.length}</span>
+            {pageGroups.map((group) => {
+              const collapsed = collapsedGroups.has(group.projectId)
+              return (
+                <div key={group.projectId} className={`rc-project${collapsed ? '' : ' is-open'}`}>
+                  {/*
+                   * 分组头与树视图同构：可折叠，行尾保留「＋」——筛过之后用户照样
+                   * 要能指定「在这个项目下新建」，否则只剩头部那个只能猜落点的按钮。
+                   */}
+                  <div className="rc-project-line">
+                    <button
+                      type="button"
+                      className="rc-project-head"
+                      onClick={() => toggleResultGroup(group.projectId)}
+                      aria-expanded={!collapsed}
+                      title={group.name}
+                    >
+                      <span className="rc-project-chevron">
+                        {collapsed ? (
+                          <Icons.ChevronRight size={12} />
+                        ) : (
+                          <Icons.ChevronDown size={12} />
+                        )}
+                      </span>
+                      <span className="rc-project-icon">
+                        <Icons.Folder size={13} />
+                      </span>
+                      <span className="rc-project-name">{group.name}</span>
+                      <span className="rc-project-count">{group.sessions.length}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="rc-project-add"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void handleCreate(group.projectId)
+                      }}
+                      disabled={actions.busyId != null}
+                      title={`在「${group.name}」新建会话`}
+                      aria-label={`在 ${group.name} 新建会话`}
+                    >
+                      {actions.busyId === group.projectId ? (
+                        <Icons.Spinner size={11} className="spin" />
+                      ) : (
+                        <Icons.Plus size={12} />
+                      )}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="rc-project-add"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      void handleCreate(group.projectId)
-                    }}
-                    disabled={actions.busyId != null}
-                    title={`在「${group.name}」新建会话`}
-                    aria-label={`在 ${group.name} 新建会话`}
-                  >
-                    {actions.busyId === group.projectId ? (
-                      <Icons.Spinner size={11} className="spin" />
-                    ) : (
-                      <Icons.Plus size={12} />
-                    )}
-                  </button>
+                  {!collapsed && (
+                    <div className="rc-project-body">
+                      {group.sessions.map((session) => (
+                        <SessionItem
+                          key={session.id}
+                          session={session}
+                          active={session.id === selectedSessionId}
+                          busy={actions.busyId === session.id}
+                          onSelect={handleSelect}
+                          onMenu={openSessionMenu}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="rc-project-body">
-                  {group.sessions.map((session) => (
-                    <SessionItem
-                      key={session.id}
-                      session={session}
-                      active={session.id === selectedSessionId}
-                      busy={actions.busyId === session.id}
-                      onSelect={handleSelect}
-                      onMenu={openSessionMenu}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+              )
+            })}
             {hiddenHits > 0 && (
               <button
                 type="button"

@@ -21,13 +21,18 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, KeyboardEvent as ReactKeyboardEvent, SetStateAction } from 'react'
-import type { MobileBridgeCatalog, MobileBridgeCommandItem } from '@spark/protocol'
+import type {
+  MobileBridgeCatalog,
+  MobileBridgeCommandItem,
+  SessionGetQueueResponse,
+} from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useComposerVoice } from '../../voice/useComposerVoice'
 import { QuickReplySuggestions } from '../chat/QuickReplySuggestions'
 import { usePinnedModels } from '../chat/pinned-models'
 import { RemoteAttachmentStrip, type RemoteAttachmentRef } from './RemoteAttachmentStrip'
 import { RemoteComposerMenu } from './RemoteComposerMenu'
+import { RemoteQueuePanel } from './RemoteQueuePanel'
 import { pickImageFiles } from './remotePaste'
 import {
   agentLabel,
@@ -67,6 +72,7 @@ export interface RemoteComposerProps {
   uploading: boolean
   onSend: () => void
   onStop: () => void
+  queueSnapshot: SessionGetQueueResponse | null
   /** 运行时配置（助手 / 模型 / 权限） */
   config: RemoteComposerConfigState
   /** 目标端斜杠命令目录（旧版目标端为空数组 → 不弹补全） */
@@ -95,6 +101,7 @@ export function RemoteComposer({
   uploading,
   onSend,
   onStop,
+  queueSnapshot,
   config,
   commands,
   quickReplies,
@@ -310,6 +317,7 @@ export function RemoteComposer({
   return (
     <div className={`rc-composer${voiceInputActive ? ' is-voice' : ''}`}>
       {installToast}
+      <RemoteQueuePanel snapshot={queueSnapshot} />
       <RemoteAttachmentStrip
         deviceId={deviceId}
         attachments={attachments}

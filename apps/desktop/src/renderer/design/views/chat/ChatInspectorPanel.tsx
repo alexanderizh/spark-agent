@@ -63,6 +63,8 @@ import type { UIMessage } from '../../services/event-mapper'
 import { getVisibleTurnPromptSnapshotUserMessage } from './internal-turn-message-visibility'
 import { parseEnvVarsJson, serializeEnvVarsJson } from './chat-config-env-json'
 import { SessionHooksSection } from '../hooks/SessionHooksSection'
+import { RemoteAgentInspectorSection } from './remote-agent/RemoteAgentToolCallCard'
+import { extractRemoteAgentToolCalls } from './remote-agent/remote-agent-tool-call'
 
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 const EMPTY_ENV_LAYER: EnvConfigGetResponse['project'] = { enabled: true, vars: [] }
@@ -805,6 +807,7 @@ export function ChatInspector({
 }) {
   const showTeamActivityLogs = useTeamActivityLogsVisible()
   const subagents = extractInspectorSubagents(messages)
+  const remoteAgentCalls = useMemo(() => extractRemoteAgentToolCalls(messages), [messages])
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const projectContextSources = projectContext?.sources ?? []
   // 每来一条 usage_update 就重取一次累计值，保证面板打开期间跟着当前轮实时长
@@ -1012,6 +1015,8 @@ export function ChatInspector({
             </div>
           </div>
         )}
+
+        <RemoteAgentInspectorSection entries={remoteAgentCalls} />
 
         {/* Token usage */}
         <div className="inspector-section">

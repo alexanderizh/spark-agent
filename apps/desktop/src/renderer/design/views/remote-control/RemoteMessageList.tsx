@@ -13,14 +13,24 @@
  * 收进一行「已折叠 N 项过程」，点开才看全过程（见 remoteTurnCollapse）。
  * 运行中的那一轮保持展开，实时进展不能被收起来。
  *
- * 每条消息底部挂操作条（复制 / 用户消息的「重新发送」）：复用桌面端的
+ * 每条消息底部挂操作条（复制 / 助手消息朗读 / 用户消息重新发送）：复用桌面端的
  * MessageHoverBar，鼠标悬停到该条消息才显形，静态时不占视觉。
  */
-import { Fragment, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react'
+import {
+  Fragment,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { createLogger } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { MarkdownText } from '../chat/ChatMarkdown'
 import { MessageHoverBar } from '../chat/MessageHoverBar'
+import { getMessageTtsPlayer } from '../chat/MessageTtsPlayer'
+import { useMessageTtsAvailable } from '../chat/useMessageTtsAvailable'
 import type { FileOpenHandler } from '../../components/fileOpenRouting'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { RemoteAttachmentStrip } from './RemoteAttachmentStrip'
@@ -311,6 +321,53 @@ function AgentIdentity() {
   )
 }
 
+/** 远程助手正文的操作栏与本地会话一致：复制 + 可用时朗读。 */
+function AssistantMessageItem({
+  item,
+  deviceId,
+  showIdentity,
+  sessionRunning,
+  onFilePreview,
+}: {
+  item: Extract<RemoteTimelineItem, { kind: 'assistant' }>
+  deviceId: string
+  showIdentity: boolean
+  sessionRunning: boolean
+  onFilePreview?: FileOpenHandler | undefined
+}) {
+  const streaming = item.streaming && sessionRunning
+  const speechKey = `remote:${deviceId}:${item.id}`
+  const ttsAvailable = useMessageTtsAvailable()
+  const player = getMessageTtsPlayer()
+  const getSpeechStatus = useCallback(() => player.getStatusFor(speechKey), [player, speechKey])
+  const speechStatus = useSyncExternalStore(player.subscribe, getSpeechStatus)
+  const handleSpeechToggle = useCallback(
+    () => player.toggle(speechKey, item.text),
+    [item.text, player, speechKey],
+  )
+
+  return (
+    <div className={`rc-msg rc-msg-assistant${streaming ? ' streaming' : ''}`}>
+      {showIdentity && <AgentIdentity />}
+      <AssistantBody
+        text={item.text}
+        streaming={streaming}
+        {...(onFilePreview != null ? { onFilePreview } : {})}
+      />
+      {/* 生成中的分段不挂操作条：按钮会随正文增长反复位移 */}
+      {!streaming && item.text.trim().length > 0 && (
+        // 靠右：远程视图一轮拆成十几段，操作栏贴在正文下沿，左对齐时会落在
+        // 下一段（活动摘要 / 正文）的左边缘上，和正文起点抢视线
+        <MessageHoverBar
+          position="right"
+          textContent={item.text}
+          {...(ttsAvailable ? { onSpeechToggle: handleSpeechToggle, speechStatus } : {})}
+        />
+      )}
+    </div>
+  )
+}
+
 function MessageItem({
   item,
   deviceId,
@@ -375,22 +432,14 @@ function MessageItem({
 
   if (item.kind !== 'assistant') return null
 
-  const streaming = item.streaming && sessionRunning
   return (
-    <div className={`rc-msg rc-msg-assistant${streaming ? ' streaming' : ''}`}>
-      {showIdentity && <AgentIdentity />}
-      <AssistantBody
-        text={item.text}
-        streaming={streaming}
-        {...(onFilePreview != null ? { onFilePreview } : {})}
-      />
-      {/* 生成中的分段不挂操作条：按钮会随正文增长反复位移 */}
-      {!streaming && item.text.trim().length > 0 && (
-        // 靠右：远程视图一轮拆成十几段，操作栏贴在正文下沿，左对齐时会落在
-        // 下一段（活动摘要 / 正文）的左边缘上，和正文起点抢视线
-        <MessageHoverBar position="right" textContent={item.text} />
-      )}
-    </div>
+    <AssistantMessageItem
+      item={item}
+      deviceId={deviceId}
+      showIdentity={showIdentity}
+      sessionRunning={sessionRunning}
+      {...(onFilePreview != null ? { onFilePreview } : {})}
+    />
   )
 }
 

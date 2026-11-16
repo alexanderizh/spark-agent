@@ -2,6 +2,7 @@ import type { UIBlock } from '../../services/event-mapper'
 import { hasPresentedFiles } from './presented-files'
 import { shouldReplaceSessionTaskBlock, type SessionTaskTimelineEntry } from './SessionTaskTimeline'
 import { classifyToolLog, TOOL_LOG_GROUP_KINDS, type ToolLogGroupKind } from './tool-log-metadata'
+import { isRemoteAgentToolCall } from './remote-agent/remote-agent-tool-call'
 
 export type { ToolLogGroupKind } from './tool-log-metadata'
 
@@ -49,6 +50,7 @@ export function isChatActivityBlock(
   if (block.kind === 'thinking' || block.kind === 'terminal' || block.kind === 'checkpoint') {
     return true
   }
+  if (block.kind === 'tool_call' && isRemoteAgentToolCall(block)) return false
   if (block.kind === 'file_change') return block.diff != null && block.diff.trim().length > 0
   return block.kind === 'tool_call' && getToolLogGroupKind(block, 'main') != null
 }

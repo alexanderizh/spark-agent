@@ -20,11 +20,17 @@
  * 避免 stop 后协程永久悬挂。
  */
 
-import { hasMeaningfulVoiceText, SentenceSplitter, speechifyText } from '@spark/shared'
+import {
+  createLogger,
+  hasMeaningfulVoiceText,
+  SentenceSplitter,
+  speechifyText,
+} from '@spark/shared'
 import { encodeToSafeFileUrl } from './PresentedMedia'
 
 /** 消息播报整段朗读上限（语音助手流式路径保持 800 不变，这里放宽到 5000） */
 const MESSAGE_TTS_MAX_CHARS = 5000
+const logger = createLogger('message-tts-player')
 
 export type MessageTtsStatus = 'off' | 'loading' | 'playing'
 
@@ -141,7 +147,7 @@ class MessageTtsPlayer {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.warn(`[message-tts] broadcast failed: ${message}`)
+      logger.warn('Message speech playback failed', { message })
     } finally {
       if (this.token === token) {
         this.interruptSource()
@@ -161,7 +167,7 @@ class MessageTtsPlayer {
       return await context.decodeAudioData(raw)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.warn(`[message-tts] decode failed: ${message}`)
+      logger.warn('Message speech audio decode failed', { message })
       return null
     }
   }

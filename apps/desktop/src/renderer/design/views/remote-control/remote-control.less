@@ -853,10 +853,7 @@
   opacity: 1;
 }
 
-/* 结果视图的分组头不可折叠，加号常显一点——藏起来会让人以为这里没有新建入口 */
-.rc-project-head.is-static + .rc-project-add {
-  opacity: 0.7;
-}
+/* 结果视图分组头已与树视图同构（可折叠），加号同样 hover 浮现，不再需要常显特例 */
 
 .rc-project-head {
   display: flex;
@@ -874,13 +871,8 @@
   cursor: pointer;
   transition: background 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
-  &:hover:not(.is-static) {
+  &:hover {
     background: var(--bg-sunken, #f2f2f2);
-  }
-
-  /* 搜索结果里的项目名只是分组标题，不可点 */
-  &.is-static {
-    cursor: default;
   }
 }
 
@@ -1697,6 +1689,43 @@
   gap: 12px;
 }
 
+/* 「回到底部」悬浮按钮：sticky 在滚动容器可视区底部靠右，负 margin 抵消自身占位
+ * （高度 28 + gap 12 = 40 上侧、抵掉容器 padding-bottom 12 下侧），不把消息顶开。
+ * 视觉语汇与桌面端对话区 .scroll-to-bottom-btn / 画布 .canvas-prompt-insert-jump 一致。 */
+.rc-scroll-bottom-btn {
+  position: sticky;
+  bottom: 12px;
+  z-index: 4;
+  align-self: flex-end;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: -40px 14px -12px 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--border-strong, #d7d2c9) 70%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--panel-elev, #ffffff) 92%, transparent);
+  box-shadow: 0 4px 12px
+    color-mix(in srgb, var(--shadow-color, rgba(0, 0, 0, 0.3)) 16%, transparent);
+  color: var(--text, #23231f);
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition:
+    background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &:hover,
+  &:focus-visible {
+    background: color-mix(in srgb, var(--panel-elev, #ffffff) 98%, transparent);
+    border-color: var(--primary, #3b82f6);
+    color: var(--primary, #3b82f6);
+  }
+}
+
 /* ─── 历史翻页（顶部哨兵） ─────────────────────────────────────────────── */
 
 .rc-history-head {
@@ -1787,11 +1816,7 @@
 /* 本地待发的乐观气泡：目标端还没回录，压淡一档 + 虚线口表示「在途」 */
 .rc-msg-user--pending .rc-bubble {
   border: 1px dashed color-mix(in srgb, var(--primary, #3b82f6) 45%, transparent);
-  background: color-mix(
-    in srgb,
-    var(--primary-soft, rgba(59, 130, 246, 0.12)) 55%,
-    transparent
-  );
+  background: color-mix(in srgb, var(--primary-soft, rgba(59, 130, 246, 0.12)) 55%, transparent);
 }
 
 /* 乐观气泡状态行：发送中（spinner 跟随）/ 失败（整行可点，重发） */
@@ -2801,6 +2826,73 @@
   }
 }
 
+.rc-queue-panel {
+  padding: 9px 12px 2px;
+  border-bottom: 1px solid var(--divider, #efede8);
+  color: var(--text-muted, #8d8a86);
+}
+
+.rc-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+  margin-bottom: 3px;
+  font-size: var(--font-xs, 12px);
+}
+
+.rc-queue-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text, #23231f);
+  font-weight: 550;
+}
+
+.rc-queue-paused {
+  flex: none;
+  color: var(--warning, #b7791f);
+}
+
+.rc-queue-list {
+  max-height: 116px;
+  overflow-y: auto;
+}
+
+.rc-queue-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 25px;
+  padding: 4px 0;
+  border-top: 1px solid color-mix(in srgb, var(--divider, #efede8) 62%, transparent);
+  font-size: var(--font-xs, 12px);
+}
+
+.rc-queue-index {
+  flex: none;
+  width: 14px;
+  color: var(--text-faint, #9b9489);
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-queue-message {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-muted, #8d8a86);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-queue-attachments {
+  flex: none;
+  color: var(--text-faint, #9b9489);
+  font-size: var(--font-2xs, 11px);
+}
+
 .rc-composer-body {
   position: relative;
 }
@@ -3387,4 +3479,428 @@
   &.is-error {
     color: var(--danger, #ef4444);
   }
+}
+
+/* ─── 项目信息面板（右侧栏；git 快照 + 会话活动 + 产物，2026-11-16） ─────────── */
+
+.rc-project-panel {
+  display: flex;
+  flex-direction: column;
+  width: clamp(280px, 26vw, 340px);
+  flex: none;
+  min-height: 0;
+  border-left: 1px solid var(--border, #f6f3ec);
+  background: var(--panel, #fff);
+}
+
+.rc-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  height: 34px;
+  flex: none;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--divider, #efede8);
+}
+
+.rc-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-muted, #8d8a86);
+}
+
+.rc-panel-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-base, 13px);
+  font-weight: 500;
+  color: var(--text-strong, #11100e);
+}
+
+.rc-panel-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.rc-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px 16px;
+}
+
+.rc-panel-rootpath {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: var(--r-xs, 4px);
+  background: var(--bg-sunken, #f2f2f2);
+  font-size: var(--font-xs, 11px);
+  color: var(--text-faint, #9b9489);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+
+  /* 路径从尾部省略（尾部最有信息量），方向反转后纠正标点位置 */
+  > span {
+    direction: ltr;
+    unicode-bidi: bidi-override;
+  }
+}
+
+.rc-panel-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--text-faint, #9b9489);
+  font-size: var(--font-xs, 12px);
+
+  p {
+    margin: 0;
+    line-height: 1.6;
+  }
+
+  .rc-panel-placeholder-sub {
+    font-size: var(--font-xs, 11px);
+    opacity: 0.8;
+  }
+}
+
+.rc-panel-section {
+  margin-top: 12px;
+}
+
+.rc-panel-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: var(--font-xs, 11px);
+  font-weight: 500;
+  color: var(--text-faint, #9b9489);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.rc-panel-section-count {
+  font-weight: 400;
+}
+
+.rc-panel-empty {
+  padding: 10px 2px;
+  font-size: var(--font-xs, 12px);
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-panel-hint-note {
+  margin-top: 6px;
+  font-size: var(--font-xs, 11px);
+  color: var(--text-faint, #9b9489);
+}
+
+/* 概览行：分支 + ahead/behind + 行数增减 + stash */
+.rc-git-overview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: var(--font-xs, 12px);
+  color: var(--text-muted, #8d8a86);
+}
+
+.rc-git-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--r-pill, 999px);
+  background: var(--bg-sunken, #f2f2f2);
+  color: var(--text, #23231f);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-git-ahead,
+.rc-git-behind {
+  flex: none;
+  color: var(--warning, #d97706);
+}
+
+.rc-git-nums {
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+
+  .is-add {
+    color: var(--success, #16a34a);
+  }
+
+  .is-del {
+    color: var(--danger, #ef4444);
+  }
+}
+
+.rc-git-stash {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--r-xs, 4px);
+  background: var(--bg-sunken, #f2f2f2);
+  font-size: var(--font-xs, 11px);
+}
+
+/* 变更文件列表 */
+.rc-git-files {
+  display: flex;
+  flex-direction: column;
+}
+
+.rc-git-file {
+  border-radius: var(--r-sm, 6px);
+
+  &:hover {
+    background: var(--bg-sunken, #f2f2f2);
+  }
+}
+
+.rc-git-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 4px;
+  border: none;
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--font-xs, 12px);
+  color: var(--text, #23231f);
+}
+
+.rc-git-file-badge {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-xs, 4px);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+
+  &.is-add {
+    background: color-mix(in srgb, var(--success, #16a34a) 14%, transparent);
+    color: var(--success, #16a34a);
+  }
+
+  &.is-del {
+    background: color-mix(in srgb, var(--danger, #ef4444) 14%, transparent);
+    color: var(--danger, #ef4444);
+  }
+
+  &.is-mod {
+    background: color-mix(in srgb, var(--warning, #d97706) 16%, transparent);
+    color: var(--warning, #d97706);
+  }
+
+  &.is-ren {
+    background: color-mix(in srgb, var(--info, #2563eb) 12%, transparent);
+    color: var(--info, #2563eb);
+  }
+
+  &.is-untracked {
+    background: var(--bg-sunken, #f2f2f2);
+    color: var(--text-muted, #8d8a86);
+  }
+}
+
+.rc-git-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.rc-git-file-dir {
+  color: var(--text-faint, #9b9489);
+
+  /* 路径尾部对齐（尾部文件名最有信息量），反转后把文件名转回正方向 */
+  + .rc-git-file-name {
+    direction: ltr;
+    unicode-bidi: bidi-override;
+  }
+}
+
+.rc-git-file-name {
+  color: var(--text, #23231f);
+}
+
+.rc-git-file-nums {
+  display: inline-flex;
+  gap: 3px;
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+
+  .is-add {
+    color: var(--success, #16a34a);
+  }
+
+  .is-del {
+    color: var(--danger, #ef4444);
+  }
+}
+
+.rc-git-file-chevron {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-git-diff {
+  margin: 2px 0 4px 26px;
+}
+
+.rc-git-diff-hint,
+.rc-git-diff-error {
+  padding: 6px 8px;
+  font-size: var(--font-xs, 11px);
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-git-diff-error {
+  color: var(--danger, #ef4444);
+}
+
+.rc-git-diff-text {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--r-md, 8px);
+  background: var(--bg-sunken, #f2f2f2);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text, #23231f);
+  white-space: pre;
+  user-select: text;
+}
+
+/* 最近提交 */
+.rc-git-commits {
+  display: flex;
+  flex-direction: column;
+}
+
+.rc-git-commit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 2px;
+  font-size: var(--font-xs, 12px);
+}
+
+.rc-git-commit-hash {
+  flex: none;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  color: var(--text-muted, #8d8a86);
+}
+
+.rc-git-commit-subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text, #23231f);
+}
+
+.rc-git-commit-unpushed {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--r-xs, 4px);
+  background: color-mix(in srgb, var(--warning, #d97706) 14%, transparent);
+  color: var(--warning, #d97706);
+  font-size: 10px;
+}
+
+.rc-git-commit-time {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-faint, #9b9489);
+}
+
+/* 会话活动 */
+.rc-panel-sessions {
+  display: flex;
+  flex-direction: column;
+}
+
+.rc-panel-session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 2px;
+  font-size: var(--font-xs, 12px);
+}
+
+.rc-panel-session-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text, #23231f);
+}
+
+.rc-panel-session-time {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-faint, #9b9489);
+}
+
+/* 聊天头部的面板开关（Folder 图标按钮，激活态高亮） */
+.rc-chat-panel-toggle {
+  flex: none;
+
+  &.is-active {
+    background: var(--bg-sunken, #f2f2f2);
+    color: var(--text-strong, #11100e);
+  }
+}
+
+/* RemoteFileCards 的 meta 插槽（产物行内「会话 · 时间」标注） */
+.rc-file-meta {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-file-meta-text {
+  font: inherit;
 }

@@ -76,6 +76,11 @@ import { ChatTabbar } from './chat/ChatTabbar'
 import { SessionShareDialog } from './chat/SessionShareDialog'
 import { SessionShareLiveFrame } from './chat/SessionShareSheet'
 import { RemoteAgentSessionEntry } from './chat/remote-agent/RemoteAgentChatEntry'
+import { RemoteAgentToolCallCard } from './chat/remote-agent/RemoteAgentToolCallCard'
+import {
+  isRemoteAgentToolCall,
+  projectRemoteAgentTimelineMessages,
+} from './chat/remote-agent/remote-agent-tool-call'
 import { ContextCompactionCard } from './chat/ContextCompactionCard'
 import { EmptySessionTopbar } from './chat/EmptySessionTopbar'
 import { SessionSchedulePanel } from './chat/SessionSchedulePanel'
@@ -397,6 +402,12 @@ import {
   shouldShowScrollToBottom,
   SMOOTH_SCROLL_TO_BOTTOM_GUARD_MS,
 } from './chat-scroll'
+import {
+  clampChatScrollTop,
+  isChatScrollAtBottom,
+  readChatScroll,
+  rememberChatScroll,
+} from './chat-scroll-memory'
 import {
   getLastAssistantMessageMarkdown,
   isLocalCopySlashCommand,
@@ -1243,11 +1254,11 @@ export function ChatView({
   const [shareCaptureHost, setShareCaptureHost] = useState<HTMLElement | null>(null)
   const [shareOmitCount, setShareOmitCount] = useState(0)
   const activeVisibleMessages = useMemo(
-    () => projectVisibleChatMessages(activeMessages),
+    () => projectRemoteAgentTimelineMessages(projectVisibleChatMessages(activeMessages)),
     [activeMessages],
   )
   const sideChatVisibleMessages = useMemo(
-    () => projectVisibleChatMessages(sideChatMessages),
+    () => projectRemoteAgentTimelineMessages(projectVisibleChatMessages(sideChatMessages)),
     [sideChatMessages],
   )
   const activeHtmlPanelBlock = useMemo(() => {
@@ -4013,8 +4024,10 @@ function ChatStream({
   }, [sessionId])
   const displayMessages = useMemo(
     () =>
-      projectVisibleChatMessages(
-        mergeOptimisticUserMessages(messages, optimisticMessages ?? [], sessionId),
+      projectRemoteAgentTimelineMessages(
+        projectVisibleChatMessages(
+          mergeOptimisticUserMessages(messages, optimisticMessages ?? [], sessionId),
+        ),
       ),
     [messages, optimisticMessages, sessionId],
   )
@@ -4062,6 +4075,9 @@ function ChatStream({
   workspaceIdRef.current = workspaceId
   // 切换/初始加载后需要把视图强制贴到底部（展示最新消息）；置位后由自动滚动 effect 处理。
   const scrollToBottomPendingRef = useRef(false)
+  // 会话阅读进度恢复：切走时存档过「非贴底」位置的会话，切回来不贴底，
+  // 由自动滚动 effect 在历史 commit 后恢复到原 scrollTop（见 chat-scroll-memory）。
+  const restoreScrollTopRef = useRef<number | null>(null)
   // 发送成功后父级会先乐观地把 session 摘要设为 running；在 user_message 事件回流前，
   // 这个 trigger 仍未被确认，不能让摘要状态单独驱动「执行任务中」占位。
   const scrollToBottomTriggerRef = useRef(scrollToBottomTrigger ?? 0)
@@ -4531,6 +4547,8 @@ function ChatStream({
   // 切换会话时加载历史：窗口化——只取最新一页，立即展示最近消息并滚到底部（IM 体感），
   // 更早历史在用户向上滚动时按需懒加载。
   useEffect(() => {
+    // 滚动容器是长驻节点（不随会话切换重建），进入时先捕获引用供 cleanup 读取
+    const scrollNode = streamRef.current
     const loadId = historyLoadIdRef.current + 1
     historyLoadIdRef.current = loadId
     // —— 死循环探针 ——（详见 historyReloadProbeRef 声明处）
@@ -4568,6 +4586,9 @@ function ChatStream({
 
     isStreamingRef.current = false
     userScrolledRef.current = false
+    // 作废上一轮 hydrate 可能留下的未消费恢复指令：快速连切两个会话时，
+    // 前一个的恢复值不能作用到后一个会话上（后面按新会话的存档重新决定）。
+    restoreScrollTopRef.current = null
     // 新会话是全新上下文：清掉上一会话的「新 user 消息」增量检测基线，
     // 避免旧会话尾部 id 残留影响本会话的首条 user 消息贴底判定。
     lastPinnedUserMsgIdRef.current = null
@@ -4587,8 +4608,18 @@ function ChatStream({
         oldestSeqRef.current = events[0]?.seq
         hasMoreHistoryRef.current = hasMore
         setHasMoreHistory(hasMore)
-        // 进入会话先展示最新消息：提交后强制贴底（IM 体感）
-        scrollToBottomPendingRef.current = true
+        // 进入会话：有「非贴底」的阅读进度存档就恢复原位置（切走再回来接着看），
+        // 否则展示最新消息：提交后强制贴底（IM 体感）。
+        const savedScroll = sessionId != null ? readChatScroll(sessionId) : null
+        if (savedScroll != null && !savedScroll.atBottom) {
+          // 先锁住「已上滚」：MutationObserver / 流式 pin 在恢复完成前不得把视图拉回底部；
+          // 恢复后本就不在底部，该状态即最终状态。
+          userScrolledRef.current = true
+          setShowScrollToBottom(true)
+          restoreScrollTopRef.current = savedScroll.scrollTop
+        } else {
+          scrollToBottomPendingRef.current = true
+        }
         await commitEventsToView(events, true, {
           shouldContinue: () => !cancelled && historyLoadIdRef.current === loadId,
         })
@@ -4635,6 +4666,19 @@ function ChatStream({
         hydratingRef.current = false
         bufferedEventsRef.current = []
         liveEventBufferRef.current?.clear()
+      }
+      // 切走前存档阅读进度。cleanup 在新会话内容 commit 前运行，此刻容器里还是
+      // 旧会话的 DOM，scrollTop 即用户的真实阅读位置；贴底状态不存档（见
+      // rememberChatScroll —— 切回来本来就该贴底）。
+      if (scrollNode != null && sessionId != null) {
+        rememberChatScroll(sessionId, {
+          scrollTop: scrollNode.scrollTop,
+          atBottom: isChatScrollAtBottom(
+            scrollNode.scrollTop,
+            scrollNode.scrollHeight,
+            scrollNode.clientHeight,
+          ),
+        })
       }
     }
   }, [getHistory, commitEventsToView, drainBufferedLiveEvents, sessionId])
@@ -4933,6 +4977,23 @@ function ChatStream({
   useEffect(() => {
     const el = streamRef.current
     if (!el) return
+
+    // 阅读进度恢复：历史已 commit 渲染，把视图放回存档位置而非贴底。写 scrollTop
+    // 前记录程序滚动时间戳（与 pinToBottom 同款守卫），随后立即解锁顶部懒加载——
+    // 恢复路径没有「贴底动画」，initialScrollDoneRef 若不解锁，滚到顶永远翻不了页。
+    const restoreTop = restoreScrollTopRef.current
+    if (restoreTop != null) {
+      restoreScrollTopRef.current = null
+      programmaticScrollAtRef.current =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now()
+      el.scrollTop = clampChatScrollTop(restoreTop, el.scrollHeight, el.clientHeight)
+      initialScrollDoneRef.current = true
+      // 首屏不足一屏时 scroll 事件不会派发，与贴底路径同样接力补载更早历史
+      maybeFillViewport()
+      return
+    }
 
     if (scrollToBottomPendingRef.current) {
       scrollToBottomPendingRef.current = false
@@ -5904,6 +5965,9 @@ function renderBlocks(
       case 'tool_call': {
         if (isHiddenTimelineBlock(block)) {
           return null
+        }
+        if (isRemoteAgentToolCall(block)) {
+          return <RemoteAgentToolCallCard key={i} block={block} />
         }
         if (
           options.sessionTaskEntry != null &&
@@ -8466,6 +8530,7 @@ const AgentMsg = React.memo(function AgentMsg({
     (b): b is Extract<UIBlock, { kind: 'tool_call' }> =>
       b.kind === 'tool_call' &&
       !isHiddenTimelineBlock(b) &&
+      !isRemoteAgentToolCall(b) &&
       !(sessionTaskEntry != null && isSessionProgressToolBlock(b)),
   )
   const errorBlocks = blocks.filter((b) => b.kind === 'error')

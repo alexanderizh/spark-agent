@@ -13,8 +13,10 @@ import type {
   MobileBridgeCommandItem,
   MobileBridgeEvent,
   RemoteAgentAttachmentSummary,
+  SessionGetQueueResponse,
   UserQuestionPrompt,
 } from '@spark/protocol'
+import { createLogger } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { useOptionalToast } from '../../components/Toast'
@@ -37,6 +39,14 @@ import { ATTACHMENT_ONLY_TEXT, toReusableDraft } from './remoteMessageReuse'
 import { resolvePendingQuickReplies } from './remoteQuickReplies'
 import { fileNameOf } from './remoteRichContent'
 import { buildQuickReplyMessage } from '../../services/quick-reply-suggestions'
+import { shouldShowScrollToBottom } from '../chat-scroll'
+import {
+  clampChatScrollTop,
+  forgetChatScroll,
+  isChatScrollAtBottom,
+  readChatScroll,
+  rememberChatScroll,
+} from '../chat-scroll-memory'
 import {
   HISTORY_LOAD_COOLDOWN_MS,
   HISTORY_MAX_PAGES_PER_GESTURE,
@@ -54,6 +64,8 @@ import { toPastedImageSource } from './remotePaste'
 import { useSmoothRemoteItems } from './remoteSmoothReveal'
 import { useRemoteCall, useRemoteSessionStream, type RemoteCallError } from './useRemoteBridge'
 import { useRemoteComposerConfig } from './useRemoteComposerConfig'
+
+const logger = createLogger('remote-chat-pane')
 
 interface RemoteApproval {
   requestId: string
@@ -85,6 +97,9 @@ export interface RemoteChatPaneProps {
   deviceName: string
   /** 记住的会话已经不存在（目标端 404）：宿主清掉选择并回到列表 */
   onSessionInvalid?: () => void
+  /** 右侧项目信息面板开关（头部按钮；缺省不渲染按钮） */
+  projectPanelOpen?: boolean | undefined
+  onToggleProjectPanel?: (() => void) | undefined
 }
 
 export function RemoteChatPane({
@@ -93,6 +108,8 @@ export function RemoteChatPane({
   sessionTitle,
   deviceName,
   onSessionInvalid,
+  projectPanelOpen,
+  onToggleProjectPanel,
 }: RemoteChatPaneProps) {
   const call = useRemoteCall()
   const toast = useOptionalToast()?.toast ?? null
@@ -178,12 +195,24 @@ export function RemoteChatPane({
   const [questions, setQuestions] = useState<RemoteQuestion[]>([])
   const [approvalBusy, setApprovalBusy] = useState(false)
   const [commands, setCommands] = useState<MobileBridgeCommandItem[]>([])
+  const [queueSnapshot, setQueueSnapshot] = useState<SessionGetQueueResponse | null>(null)
+  const [queueApiSupported, setQueueApiSupported] = useState<Record<string, boolean>>({})
+  const queueWarningsRef = useRef(new Set<string>())
+  const activeQueueTargetRef = useRef({ deviceId, sessionId })
+
+  useLayoutEffect(() => {
+    activeQueueTargetRef.current = { deviceId, sessionId }
+  }, [deviceId, sessionId])
 
   // 运行时配置（助手 / 模型 / 权限）：目录按设备缓存，运行时按会话拉一次
   const config = useRemoteComposerConfig(deviceId, sessionId)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const stickToBottomRef = useRef(true)
+  /** 「回到底部」悬浮按钮：距底部超过阈值时浮现（与桌面端对话区同一口径） */
+  const [showBottomButton, setShowBottomButton] = useState(false)
+  /** 会话切换后待恢复的阅读进度（一次性指令，见 chat-scroll-memory） */
+  const pendingScrollRestoreRef = useRef<number | null>(null)
 
   const applyEvents = useCallback((next: MobileBridgeEvent[]) => {
     eventsRef.current = next
@@ -196,6 +225,48 @@ export function RemoteChatPane({
       setHistory(next)
     },
     [],
+  )
+
+  const refreshQueueState = useCallback(
+    async (targetSessionId: string | null = sessionId) => {
+      if (targetSessionId == null || queueApiSupported[deviceId] === false) return
+      try {
+        const snapshot = await call<SessionGetQueueResponse>(
+          deviceId,
+          'GET',
+          `/v1/sessions/${encodeURIComponent(targetSessionId)}/queue`,
+        )
+        setQueueApiSupported((previous) =>
+          previous[deviceId] === true ? previous : { ...previous, [deviceId]: true },
+        )
+        const active = activeQueueTargetRef.current
+        if (active.deviceId !== deviceId || active.sessionId !== targetSessionId) return
+        queueWarningsRef.current.delete(`${deviceId}\u0000${targetSessionId}`)
+        setQueueSnapshot(snapshot)
+        setRunning(snapshot.running)
+      } catch (cause) {
+        if ((cause as RemoteCallError | null)?.status === 404) {
+          setQueueApiSupported((previous) =>
+            previous[deviceId] === false ? previous : { ...previous, [deviceId]: false },
+          )
+          const active = activeQueueTargetRef.current
+          if (active.deviceId === deviceId && active.sessionId === targetSessionId) {
+            setQueueSnapshot(null)
+          }
+          return
+        }
+        const warningKey = `${deviceId}\u0000${targetSessionId}`
+        if (!queueWarningsRef.current.has(warningKey)) {
+          queueWarningsRef.current.add(warningKey)
+          logger.warn('Remote queue snapshot request failed', {
+            deviceId,
+            sessionId: targetSessionId,
+            message: cause instanceof Error ? cause.message : String(cause),
+          })
+        }
+      }
+    },
+    [call, deviceId, queueApiSupported, sessionId],
   )
 
   /**
@@ -270,16 +341,35 @@ export function RemoteChatPane({
     let cancelled = false
     setLoading(true)
     setError(null)
+    // 滚动容器是长驻节点（不随会话切换重建），进入时先捕获引用供 cleanup 读取
+    const scrollNode = scrollRef.current
     applyEvents([])
     applyHistory({ hasMore: false, cursor: null, loading: false })
     setApprovals([])
     setQuestions([])
     pendingAnchorRef.current = null
-    stickToBottomRef.current = true
+    // 立即作废上一轮可能残留的恢复指令（快速连切时不得串会话）
+    pendingScrollRestoreRef.current = null
+    // 阅读进度：切走时存档过「非贴底」位置的会话切回来恢复原位置（接着看），
+    // 否则保持原行为贴底跟随最新消息。
+    // 此处只决定 stick/按钮状态；恢复指令**推迟到历史 applyEvents 之后**才武装 ——
+    // 若在这里就设置，会被紧接着「清空旧内容」的过渡渲染提前消费掉（那一刻
+    // scrollHeight≈0，钳制后归零），历史真正渲染时反而无指令可用，最终贴底。
+    const savedScroll = sessionId != null ? readChatScroll(`${deviceId}\u0000${sessionId}`) : null
+    const restoreTop = savedScroll != null && !savedScroll.atBottom ? savedScroll.scrollTop : null
+    if (restoreTop != null) {
+      // 先关掉贴底跟随：贴底 effect 与流式 pin 在恢复完成前不得把视图拉回底部
+      stickToBottomRef.current = false
+      setShowBottomButton(true)
+    } else {
+      stickToBottomRef.current = true
+    }
     call<RemoteHistoryPage>(deviceId, 'GET', buildHistoryUrl(sessionId))
       .then((response) => {
         if (cancelled) return
         applyEvents(Array.isArray(response.events) ? response.events : [])
+        // 历史已就绪：此刻武装恢复指令，由内容 commit 后的 layout effect 消费
+        if (restoreTop != null) pendingScrollRestoreRef.current = restoreTop
         setRunning(Boolean(response.running))
         applyHistory({
           hasMore: resolveHistoryHasMore(response),
@@ -291,6 +381,7 @@ export function RemoteChatPane({
         if (cancelled) return
         // 记住的会话在目标端已经不存在（换机/被删）：交给宿主回落，不弹红条
         if ((cause as RemoteCallError | null)?.status === 404) {
+          if (sessionId != null) forgetChatScroll(`${deviceId}\u0000${sessionId}`)
           onSessionInvalid?.()
           return
         }
@@ -301,6 +392,19 @@ export function RemoteChatPane({
       })
     return () => {
       cancelled = true
+      // 切走前存档阅读进度。cleanup 在新会话内容 commit 前运行，此刻容器里还是
+      // 旧会话的 DOM，scrollTop 即用户的真实阅读位置；贴底状态不存档
+      // （见 rememberChatScroll —— 切回来本来就该贴底）。
+      if (scrollNode != null && sessionId != null) {
+        rememberChatScroll(`${deviceId}\u0000${sessionId}`, {
+          scrollTop: scrollNode.scrollTop,
+          atBottom: isChatScrollAtBottom(
+            scrollNode.scrollTop,
+            scrollNode.scrollHeight,
+            scrollNode.clientHeight,
+          ),
+        })
+      }
     }
   }, [applyEvents, applyHistory, call, deviceId, onSessionInvalid, sessionId])
 
@@ -324,6 +428,22 @@ export function RemoteChatPane({
   )
 
   useRemoteSessionStream(deviceId, sessionId, handleStreamEvents)
+
+  const queuedTurnCount =
+    queueSnapshot?.sessionId === sessionId ? queueSnapshot.queuedTurns.length : 0
+
+  useEffect(() => {
+    if (sessionId == null || queueApiSupported[deviceId] === false) return
+    const initialTimer = window.setTimeout(() => void refreshQueueState(sessionId), 0)
+    if (!running && queuedTurnCount === 0) {
+      return () => window.clearTimeout(initialTimer)
+    }
+    const timer = window.setInterval(() => void refreshQueueState(sessionId), 3000)
+    return () => {
+      window.clearTimeout(initialTimer)
+      window.clearInterval(timer)
+    }
+  }, [deviceId, queueApiSupported, queuedTurnCount, refreshQueueState, running, sessionId])
 
   /**
    * 挂起交互：打开会话先拉一次（遥控端可能在别处已经停住等审批），
@@ -426,21 +546,55 @@ export function RemoteChatPane({
     node.scrollTop = node.scrollHeight - anchor.height + anchor.top
   }, [visibleItems])
 
+  /**
+   * 会话切换后的阅读进度恢复：历史已渲染（绘制前）把视图放回存档位置而非贴底。
+   * 存档值可能超出当前可滚动范围（后台新消息不改首屏，但富内容异步撑高前高度偏小），
+   * 统一钳制兜底；用 layout effect 保证用户看不到「先贴底再跳回去」的闪烁。
+   *
+   * 消费时必须同步把 stickToBottomRef 压回 false：hydrate 的「清空旧内容」过渡渲染
+   * 会让浏览器 clamp scrollTop 并派发 scroll 事件，handleScroll 按塌缩后的小距离把
+   * stick 污染回 true——若不在这里纠正，同一 commit 里随后执行的贴底 effect 会立刻
+   * 把刚恢复的位置覆盖回底部（真机轨迹实测：恢复写 2259 后 1ms 被贴底写 scrollHeight）。
+   */
+  useLayoutEffect(() => {
+    const restoreTop = pendingScrollRestoreRef.current
+    if (restoreTop == null) return
+    pendingScrollRestoreRef.current = null
+    const node = scrollRef.current
+    if (node == null) return
+    node.scrollTop = clampChatScrollTop(restoreTop, node.scrollHeight, node.clientHeight)
+    stickToBottomRef.current = false
+    setShowBottomButton(true)
+  }, [visibleItems])
+
   useEffect(() => {
     const node = scrollRef.current
-    if (node == null || !stickToBottomRef.current) return
+    // 恢复指令在途时不得贴底：过渡渲染可能已把 stick 污染成 true（见上方恢复 effect 注释）
+    if (node == null || !stickToBottomRef.current || pendingScrollRestoreRef.current != null) {
+      return
+    }
     node.scrollTop = node.scrollHeight
   }, [visibleItems, showPendingUser, awaitingResponse])
 
   const handleScroll = useCallback(() => {
     const node = scrollRef.current
     if (node == null) return
-    stickToBottomRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 120
+    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight
+    stickToBottomRef.current = distanceFromBottom < 120
+    setShowBottomButton(shouldShowScrollToBottom(distanceFromBottom))
     // 贴到顶部且内容确实可滚动 → 自动补一页更早的（loadEarlier 自带冷却与幂等守卫）
     if (node.scrollTop < HISTORY_TOP_THRESHOLD_PX && node.scrollHeight > node.clientHeight + 200) {
       void loadEarlier()
     }
   }, [loadEarlier])
+
+  const handleScrollToBottom = useCallback(() => {
+    const node = scrollRef.current
+    if (node == null) return
+    stickToBottomRef.current = true
+    setShowBottomButton(false)
+    node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' })
+  }, [])
 
   const resolveApproval = useCallback(
     async (requestId: string, decision: RemoteApprovalDecision) => {
@@ -658,9 +812,15 @@ export function RemoteChatPane({
               setPendingUser((previous) =>
                 previous != null && previous.clientMessageId === entry.clientMessageId
                   ? { ...previous, status: 'sent', ...(result.queued ? { queued: true } : {}) }
-                  : { ...entry, status: 'sent', turnIds: [], ...(result.queued ? { queued: true } : {}) },
+                  : {
+                      ...entry,
+                      status: 'sent',
+                      turnIds: [],
+                      ...(result.queued ? { queued: true } : {}),
+                    },
               )
               setRunning(true)
+              if (result.queued === true) void refreshQueueState(sessionId)
             } else {
               // 本地命令不产生回合：气泡直接撤下
               setPendingUser(null)
@@ -697,6 +857,8 @@ export function RemoteChatPane({
               }
             : previous,
         )
+        // started=false（已入队）时立刻拉一次队列快照：排队面板马上能看到这条
+        void refreshQueueState(sessionId)
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         setError(message)
@@ -710,7 +872,7 @@ export function RemoteChatPane({
         setSending(false)
       }
     },
-    [call, deviceId, sessionId],
+    [call, deviceId, refreshQueueState, sessionId],
   )
 
   /**
@@ -795,6 +957,18 @@ export function RemoteChatPane({
             运行中
           </span>
         )}
+        {onToggleProjectPanel != null && (
+          <button
+            type="button"
+            className={`rc-icon-btn rc-chat-panel-toggle${projectPanelOpen ? ' is-active' : ''}`}
+            onClick={onToggleProjectPanel}
+            title={projectPanelOpen ? '收起项目信息面板' : '查看项目信息'}
+            aria-label={projectPanelOpen ? '收起项目信息面板' : '查看项目信息'}
+            aria-pressed={projectPanelOpen === true}
+          >
+            <Icons.Folder size={13} />
+          </button>
+        )}
       </div>
 
       <div className="rc-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
@@ -835,6 +1009,17 @@ export function RemoteChatPane({
           {...(awaitingResponse ? { awaitingResponse: true } : {})}
           {...(pendingUser?.status === 'failed' ? { onRetryPendingUser: retryPendingUser } : {})}
         />
+        {showBottomButton && (
+          <button
+            type="button"
+            className="rc-scroll-bottom-btn"
+            onClick={handleScrollToBottom}
+            aria-label="回到底部"
+            title="回到底部"
+          >
+            <Icons.ArrowDown size={13} />
+          </button>
+        )}
       </div>
 
       {error != null && (
@@ -888,6 +1073,7 @@ export function RemoteChatPane({
         onStop={() => void handleStop()}
         config={config}
         commands={commands}
+        queueSnapshot={queueSnapshot?.sessionId === sessionId ? queueSnapshot : null}
         {...(activeQuickReplies != null ? { quickReplies: activeQuickReplies } : {})}
         onPickQuickReply={(reply) => void handleSend({ quickReply: reply })}
         onDismissQuickReplies={() =>

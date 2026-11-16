@@ -99,26 +99,26 @@ describe('MessageTtsPlayer', () => {
   })
 
   it('整段正文切句逐句合成、顺序播放、播完自动归位 off', async () => {
-    player.toggle('m1', '第一句。第二句。')
+    player.toggle('m1', '这是第一句。这是第二句。')
     expect(player.getStatusFor('m1')).toBe('loading')
 
     await vi.waitFor(() => expect(player.getStatusFor('m1')).toBe('playing'))
-    expect(synthesizeMock).toHaveBeenNthCalledWith(1, { text: '第一句。' })
+    expect(synthesizeMock).toHaveBeenNthCalledWith(1, { text: '这是第一句。' })
 
     // 第一句播完 → 立即合成第二句（边合边播）
     activeContext.finishCurrent()
     await vi.waitFor(() => {
-      expect(synthesizeMock).toHaveBeenNthCalledWith(2, { text: '第二句。' })
+      expect(synthesizeMock).toHaveBeenNthCalledWith(2, { text: '这是第二句。' })
     })
 
     // 全部播完 → 归位 off，两个产物文件都已清理
     activeContext.finishCurrent()
     await vi.waitFor(() => expect(player.getStatusFor('m1')).toBe('off'))
     expect(cleanupMock).toHaveBeenCalledWith({
-      filePath: '/virtual/tts/%E7%AC%AC%E4%B8%80%E5%8F%A5%E3%80%82.wav',
+      filePath: '/virtual/tts/%E8%BF%99%E6%98%AF%E7%AC%AC%E4%B8%80%E5%8F%A5%E3%80%82.wav',
     })
     expect(cleanupMock).toHaveBeenCalledWith({
-      filePath: '/virtual/tts/%E7%AC%AC%E4%BA%8C%E5%8F%A5%E3%80%82.wav',
+      filePath: '/virtual/tts/%E8%BF%99%E6%98%AF%E7%AC%AC%E4%BA%8C%E5%8F%A5%E3%80%82.wav',
     })
     const started = activeContext.createdSources.filter((s) => s.started)
     expect(started).toHaveLength(2)
@@ -138,10 +138,10 @@ describe('MessageTtsPlayer', () => {
   })
 
   it('切换消息播报：旧消息不再合成后续句，新消息接管', async () => {
-    player.toggle('m1', '第一句。第二句。')
+    player.toggle('m1', '这是旧消息第一句。这是旧消息第二句。')
     await vi.waitFor(() => expect(player.getStatusFor('m1')).toBe('playing'))
 
-    player.toggle('m2', '另一条。')
+    player.toggle('m2', '这是另一句话。')
     expect(player.getStatusFor('m1')).toBe('off')
     await vi.waitFor(() => expect(player.getStatusFor('m2')).toBe('playing'))
 
@@ -149,7 +149,7 @@ describe('MessageTtsPlayer', () => {
     const synthesizedTexts = synthesizeMock.mock.calls.map(
       (call) => (call[0] as { text: string }).text,
     )
-    expect(synthesizedTexts).toEqual(['第一句。', '另一条。'])
+    expect(synthesizedTexts).toEqual(['这是旧消息第一句。', '这是另一句话。'])
   })
 
   it('stopIfActive：只停正在播报的消息，不动其他状态', async () => {
@@ -199,7 +199,7 @@ describe('MessageTtsPlayer', () => {
     synthesizeMock
       .mockResolvedValueOnce({ filePath: '/virtual/tts/fresh.wav', cached: false })
       .mockResolvedValueOnce({ filePath: '/virtual/cache/hit.wav', cached: true })
-    player.toggle('m1', '新合成句。缓存句。')
+    player.toggle('m1', '这是新合成句。这是缓存句。')
 
     await vi.waitFor(() => expect(player.getStatusFor('m1')).toBe('playing'))
     activeContext.finishCurrent()

@@ -85,6 +85,25 @@ describe('projectVisibleChatMessages', () => {
     expect(projectVisibleChatMessages([legacy, visible])).toEqual([legacy, visible])
   })
 
+  it('never renders remote-agent receipts as user messages, even with stale display metadata', () => {
+    const receipt = message({
+      id: 'remote-agent-receipt',
+      turnId: 'turn-remote-agent',
+      role: 'user',
+      turnSource: 'remote_agent',
+      userMessageDisplayContent: 'stale remote receipt',
+      blocks: [
+        {
+          kind: 'text',
+          content: 'remote collaboration receipt and result',
+          isStreaming: false,
+        },
+      ],
+    })
+
+    expect(projectVisibleChatMessages([receipt])).toEqual([])
+  })
+
   it('shows only the safe user text for a visible remote turn', () => {
     const remote = message({
       id: 'remote-user',
@@ -174,6 +193,24 @@ describe('projectVisibleChatMessages', () => {
     ])
   })
 
+  it('replaces queued remote-agent receipts with a safe status label', () => {
+    const [turn] = projectQueuedTurnsForDisplay([
+      {
+        turnId: 'remote-agent-turn',
+        message: 'remote collaboration receipt and result',
+        enqueuedAt: '2026-11-16T00:00:00.000Z',
+        turnSource: 'remote_agent',
+      },
+    ])
+
+    expect(turn).toMatchObject({
+      turnId: 'remote-agent-turn',
+      message: '远端协作结果处理中',
+      userMessageVisibility: 'hidden',
+    })
+    expect(turn?.message).not.toContain('remote collaboration receipt')
+  })
+
   it('auto-router redispatch queued turns get a dedicated label instead of the generic one', () => {
     expect(
       projectQueuedTurnsForDisplay([
@@ -255,6 +292,26 @@ describe('projectVisibleChatMessages', () => {
         userMessageVisibility: 'hidden',
       }),
     ).toBe('check deployment status')
+  })
+
+  it('redacts remote-agent receipt snapshots from prompt-inspector views', () => {
+    expect(
+      getVisibleTurnPromptSnapshotUserMessage({
+        id: 'snapshot-remote-agent',
+        type: 'turn_prompt_snapshot',
+        sessionId: 'session',
+        turnId: 'turn-remote-agent',
+        timestamp: '2026-11-16T00:00:00.000Z',
+        seq: 1,
+        userMessage: 'remote collaboration receipt',
+        systemPromptSections: [],
+        model: 'model',
+        adapterKind: 'codex',
+        permissionMode: 'default',
+        toolCount: 0,
+        turnSource: 'remote_agent',
+      }),
+    ).toBe(HIDDEN_INTERNAL_TURN_PLACEHOLDER)
   })
 
   it('prefers safe display text in a visible remote prompt snapshot', () => {

@@ -4,7 +4,7 @@
  * 目标端只给路径，所以「打开」先把文件取回到本机缓存，再交给系统默认应用；
  * 「预览」对 html / 图片 / 文本就地在对话里渲染，不另开窗口。
  */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { RemoteAgentFileEntry } from './remoteEventMerge'
 import { Icons } from '../../Icons'
 import { useIpcInvoke } from '../../hooks/useIpc'
@@ -29,7 +29,16 @@ function FileKindIcon({ kind }: { kind: RemoteFileKind }) {
   return <Icons.File size={14} />
 }
 
-function RemoteFileRow({ deviceId, file }: { deviceId: string; file: RemoteAgentFileEntry }) {
+function RemoteFileRow({
+  deviceId,
+  file,
+  meta,
+}: {
+  deviceId: string
+  file: RemoteAgentFileEntry
+  /** 行内补充信息（项目面板标注「所属会话 · 时间」用；消息流不传，行为不变） */
+  meta?: (file: RemoteAgentFileEntry) => ReactNode
+}) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [docOpen, setDocOpen] = useState(false)
   const [opening, setOpening] = useState(false)
@@ -66,6 +75,7 @@ function RemoteFileRow({ deviceId, file }: { deviceId: string; file: RemoteAgent
         <span className="rc-file-name" title={file.path}>
           {name}
         </span>
+        {meta != null && <span className="rc-file-meta">{meta(file)}</span>}
         <div className="rc-file-actions">
           {canPreview && (
             <button
@@ -137,9 +147,11 @@ function RemoteFileRow({ deviceId, file }: { deviceId: string; file: RemoteAgent
 export function RemoteFileCards({
   deviceId,
   files,
+  meta,
 }: {
   deviceId: string
   files: RemoteAgentFileEntry[]
+  meta?: (file: RemoteAgentFileEntry) => ReactNode
 }) {
   if (files.length === 0) return null
   return (
@@ -150,7 +162,12 @@ export function RemoteFileCards({
         <span className="rc-files-count">{describeFileCount(files.length)}</span>
       </div>
       {files.map((file) => (
-        <RemoteFileRow key={file.path} deviceId={deviceId} file={file} />
+        <RemoteFileRow
+          key={file.path}
+          deviceId={deviceId}
+          file={file}
+          {...(meta != null ? { meta } : {})}
+        />
       ))}
     </div>
   )

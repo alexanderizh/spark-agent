@@ -6,7 +6,7 @@
  *   - 能力直接复用目标设备的 MobileBridge /v1/* 语义路由，无需另开协议；
  *   - UI 按桌面端设计语言重做（紧凑密度、中性灰、无渐变）。
  */
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import type { RemoteAgentDeviceSummary } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useApp } from '../../AppContext'
@@ -14,9 +14,14 @@ import { useToast } from '../../components/Toast'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import { RemoteChatPane } from './RemoteChatPane'
 import { RemoteSessionPane } from './RemoteSessionPane'
+import { RemoteProjectPanel } from './RemoteProjectPanel'
 import { RemoteDeviceSwitcher } from './RemoteDeviceSwitcher'
 import { deviceLabel, deviceRealName, deviceTooltip } from './remoteDevices'
-import { findSessionProjectId } from './remoteSessionStore'
+import {
+  findSessionProjectId,
+  getRemoteSessionStore,
+  subscribeRemoteSessionStore,
+} from './remoteSessionStore'
 import {
   readDeviceSwitcher,
   readLastSession,
@@ -120,6 +125,12 @@ export function RemoteControlView() {
   )
   /** 正在保存备注名的设备：按钮显示 spinner，避免连点写出多条 */
   const [aliasPendingId, setAliasPendingId] = useState<string | null>(null)
+  /**
+   * 右侧项目信息面板：open 是显式开关；pinnedProjectId 是项目右键菜单锁定的项目。
+   * 不锁定时面板跟随当前选中会话的项目（会话切换自动跟随，无需手动刷新）。
+   */
+  const [projectPanelOpen, setProjectPanelOpen] = useState(false)
+  const [panelPinnedProjectId, setPanelPinnedProjectId] = useState<string | null>(null)
 
   const onlineDevices = useMemo(
     () => relay.devices.filter((device) => device.online),
@@ -145,6 +156,31 @@ export function RemoteControlView() {
       : null
   const activeSessionId =
     selection != null && selection.deviceId === activeDeviceId ? selection.sessionId : null
+  // 订阅侧栏缓存版本：锁定项目在目标端被删除后，下方派生值要能感知并自动回落。
+  // 版本号只用来驱动重渲染（删除发生在 store 写回层，本组件没有 setState 时机）。
+  // （必须在 activeDeviceId 派生之后声明，快照函数引用了它）
+  useSyncExternalStore(
+    subscribeRemoteSessionStore,
+    () => (activeDeviceId != null ? getRemoteSessionStore(activeDeviceId).version : 0),
+    () => 0,
+  )
+  // 锁定的项目已不在缓存列表里（目标端删除）→ 视为失效，回落跟随选中会话；
+  // 项目列表还没拉到（空）时不判定删除，避免设备刚切换时误清。
+  const pinnedProjectValid =
+    panelPinnedProjectId == null ||
+    (() => {
+      if (activeDeviceId == null) return false
+      const store = getRemoteSessionStore(activeDeviceId)
+      if (store.projects.length === 0) return true
+      return store.projects.some((project) => project.id === panelPinnedProjectId)
+    })()
+  const effectivePinnedProjectId = pinnedProjectValid ? panelPinnedProjectId : null
+  /** 面板展示的项目：有效锁定优先，否则跟随当前选中会话的项目 */
+  const panelProjectId =
+    effectivePinnedProjectId ??
+    (activeDeviceId != null && activeSessionId != null
+      ? findSessionProjectId(activeDeviceId, activeSessionId)
+      : null)
   // 标题栏跟随侧栏缓存（改名后立刻同步），所以要在组件顶层取，不能在 renderBody 里
   const sessionTitle = useRemoteSessionTitle(activeDeviceId ?? '', activeSessionId)
 
@@ -154,11 +190,33 @@ export function RemoteControlView() {
     // 切到这台机器时把它上次的会话一起带回来，不用重新在项目树里找一遍
     const remembered = readLastSession(next)
     setSelection(remembered != null ? { deviceId: next, sessionId: remembered.sessionId } : null)
+    // 与 handleSwitchDevice 同理：锁定的项目属于旧设备，跨设备残留会在新设备上
+    // 请求一个不存在的项目，面板永远显示「未关联目录」占位
+    setPanelPinnedProjectId(null)
   }, [])
 
   const handleSwitchDevice = useCallback(() => {
     setPickedDeviceId(null)
     setSelection(null)
+    // 换机器后锁定的项目属于旧设备：解锁让面板回落「跟随选中会话」
+    setPanelPinnedProjectId(null)
+  }, [])
+
+  /** 项目右键菜单 → 打开信息面板并锁定该项目（不受会话切换影响） */
+  const handleOpenProjectInfo = useCallback((projectId: string) => {
+    setPanelPinnedProjectId(projectId)
+    setProjectPanelOpen(true)
+  }, [])
+
+  /** 聊天头部按钮：开着就关；没开则跟随当前会话项目打开（没有选中会话时不响应） */
+  const handleToggleProjectPanel = useCallback(() => {
+    setProjectPanelOpen((open) => !open)
+    setPanelPinnedProjectId(null)
+  }, [])
+
+  const handleCloseProjectPanel = useCallback(() => {
+    setProjectPanelOpen(false)
+    setPanelPinnedProjectId(null)
   }, [])
 
   const handleSelectSession = useCallback(
@@ -311,6 +369,7 @@ export function RemoteControlView() {
           onClearSession={handleClearSession}
           onRenameDevice={() => void handleRenameDevice(activeDevice)}
           renamingDevice={aliasPendingId === activeDevice.deviceId}
+          onOpenProjectInfo={handleOpenProjectInfo}
         />
         <RemoteChatPane
           deviceId={activeDeviceId}
@@ -318,7 +377,16 @@ export function RemoteControlView() {
           sessionTitle={sessionTitle}
           deviceName={deviceLabel(activeDevice)}
           onSessionInvalid={handleSessionInvalid}
+          projectPanelOpen={projectPanelOpen && panelProjectId != null}
+          onToggleProjectPanel={activeSessionId != null ? handleToggleProjectPanel : undefined}
         />
+        {projectPanelOpen && panelProjectId != null && (
+          <RemoteProjectPanel
+            deviceId={activeDeviceId}
+            projectId={panelProjectId}
+            onClose={handleCloseProjectPanel}
+          />
+        )}
       </div>
     )
   }

@@ -47,6 +47,27 @@ describe('projectAssistantTurnCollapse', () => {
     })
   })
 
+  it('keeps remote collaboration cards at their actual call position in the collapsed timeline', () => {
+    const before = text('先安排远端执行。')
+    const remoteCall: Extract<UIBlock, { kind: 'tool_call' }> = {
+      kind: 'tool_call',
+      toolCallId: 'remote-send',
+      toolName: 'mcp__spark_remote__message_send',
+      toolInput: { text: 'Build the project' },
+      status: 'success',
+      output: 'accepted',
+      error: undefined,
+      durationMs: 20,
+    }
+    const final = text('远端构建通过。', { final: true })
+    const blocks: UIBlock[] = [before, remoteCall, final]
+
+    expect(projectAssistantTurnCollapse('completed', blocks).collapsedBlocks).toEqual([
+      remoteCall,
+      final,
+    ])
+  })
+
   it('keeps the full trailing summary body together with its delivery summary card', () => {
     const finalPartOne = text('修复完成。')
     const finalPartTwo = text('验证结果：聚焦测试通过。', { final: true })

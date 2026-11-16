@@ -1,4 +1,5 @@
 import type { UIBlock } from '../services/event-mapper'
+import { isRemoteAgentToolCall } from './chat/remote-agent/remote-agent-tool-call'
 
 export function hasVisibleTeamMemberActivityBlocks(
   blocks: UIBlock[],
@@ -9,6 +10,7 @@ export function hasVisibleTeamMemberActivityBlocks(
       case 'team_member_message':
         return block.content.trim().length > 0
       case 'tool_call':
+        return isRemoteAgentToolCall(block) || showActivityLogs
       case 'terminal':
       case 'file_change':
       case 'thinking':
@@ -30,12 +32,13 @@ export function hasVisibleAgentBlocks(blocks: UIBlock[]): boolean {
   return blocks.some((block) => {
     switch (block.kind) {
       case 'thinking':
-      case 'tool_call':
       case 'terminal':
       case 'file_change':
       case 'checkpoint':
       case 'plan_proposed':
         return false
+      case 'tool_call':
+        return isRemoteAgentToolCall(block)
       case 'text':
         return block.content.trim().length > 0
       default:

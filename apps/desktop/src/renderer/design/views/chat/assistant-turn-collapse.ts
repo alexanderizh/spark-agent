@@ -1,5 +1,6 @@
 import type { UIBlock, UIMessage } from '../../services/event-mapper'
 import { hasPresentedFiles } from './presented-files'
+import { isRemoteAgentToolCall } from './remote-agent/remote-agent-tool-call'
 
 export interface AssistantTurnCollapseProjection {
   canCollapse: boolean
@@ -28,7 +29,10 @@ export function projectAssistantTurnCollapse(
   }
 
   const visibleResultBlocks = blocks.filter(
-    (block) => summaryBlockSet.has(block) || isVisibleTeamMemberResultBlock(block),
+    (block) =>
+      summaryBlockSet.has(block) ||
+      isVisibleTeamMemberResultBlock(block) ||
+      isRemoteAgentToolCall(block),
   )
 
   return {
@@ -65,6 +69,7 @@ function hasCollapsibleProcessContent(
   return blocks.some((block) => {
     if (summaryBlockSet.has(block)) return false
     if (isVisibleTeamMemberResultBlock(block)) return false
+    if (isRemoteAgentToolCall(block)) return false
     if (isArtifactPresentationBlock(block)) return false
     if (isTimelineInvisibleBlock(block)) return false
     if (isHiddenDispatchToolCall(block)) return false

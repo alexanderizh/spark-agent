@@ -48,9 +48,11 @@ export function extractSearchableEventBody(eventType: string, eventJson: string)
   const event = parsed as {
     content?: unknown
     mode?: unknown
+    turnSource?: unknown
     userMessageVisibility?: unknown
     userMessageDisplayContent?: unknown
   }
+  if (eventType === 'user_message' && event.turnSource === 'remote_agent') return null
   const visibleContent =
     eventType === 'user_message' && event.userMessageVisibility === 'hidden'
       ? event.userMessageDisplayContent

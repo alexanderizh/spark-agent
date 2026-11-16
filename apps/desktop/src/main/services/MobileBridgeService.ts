@@ -36,6 +36,9 @@ import type {
   MobileBridgeHistoryResponse,
   MobileBridgeInteractionsResponse,
   MobileBridgeLineageResponse,
+  MobileBridgeProjectArtifactsResponse,
+  MobileBridgeProjectGitDiffResponse,
+  MobileBridgeProjectGitResponse,
   MobileBridgeProjectListResponse,
   MobileBridgeProjectSummary,
   MobileBridgeScheduledTask,
@@ -51,6 +54,7 @@ import type {
   MobileBridgeUpdateSessionRequest,
   MobileBridgeUploadAttachmentsRequest,
   MobileBridgeWorkflowBindingResponse,
+  SessionGetQueueResponse,
   SessionSearchResponse,
   SidebarOrderState,
   SidebarOrderUpdateRequest,
@@ -153,7 +157,9 @@ export interface MobileBridgeDeps {
     sessionId: string,
     text: string,
     attachmentPaths?: string[],
-  ): Promise<{ turnId: string }>
+  ): Promise<{ turnId: string; started: boolean }>
+  /** Current authoritative queue snapshot for a session. */
+  getSessionQueue(sessionId: string): Promise<SessionGetQueueResponse>
   /** 取消进行中的回合 */
   cancelTurn(sessionId: string): Promise<void>
 
@@ -243,6 +249,19 @@ export interface MobileBridgeDeps {
   getSessionLineage(sessionId: string): Promise<MobileBridgeLineageResponse>
   /** 技能只读列表（平台已安装 + 会话项目技能；移动端选择器数据源，旧版桌面端 404） */
   listSkills(sessionId: string): Promise<MobileBridgeSkillListResponse>
+
+  // ─── 项目信息面板（远程桌面右侧栏；只读，2026-11-16） ───────────────────────
+
+  /** 项目 git 只读快照（状态 + 最近提交；未关联目录 / 非仓库时 state 标注，不抛错） */
+  getProjectGit(projectId: string): Promise<MobileBridgeProjectGitResponse>
+  /** 项目内单文件 diff（path 必须是项目相对路径；越界路径抛 VALIDATION_FAILED） */
+  getProjectGitDiff(
+    projectId: string,
+    filePath: string,
+    untracked: boolean,
+  ): Promise<MobileBridgeProjectGitDiffResponse>
+  /** 项目产物聚合（最近会话的 presented_files，同路径保留最近一次） */
+  getProjectArtifacts(projectId: string): Promise<MobileBridgeProjectArtifactsResponse>
 }
 
 /**
@@ -374,6 +393,66 @@ export class MobileBridgeService {
       try {
         const body = await this.requireDeps().deleteProject(decodeURIComponent(rawId))
         if (body.deleted) this.requireDeps().notifySidebarChanged()
+        this.sendJson(res, 200, body)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    // ─── 项目信息面板（远程桌面右侧栏；只读，2026-11-16） ──────────────────────
+
+    // 项目 git 只读快照（远程桌面项目面板数据源；旧版桌面端无此端点，控制端按 404 降级）
+    const projectGitMatch = /^\/v1\/projects\/([^/]+)\/git$/.exec(path)
+    if (projectGitMatch && req.method === 'GET') {
+      const rawId = projectGitMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      try {
+        const body = await this.requireDeps().getProjectGit(decodeURIComponent(rawId))
+        this.sendJson(res, 200, body)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    // 项目内单文件 diff（点击变更文件时按需拉取；path 为项目相对路径）
+    const projectGitDiffMatch = /^\/v1\/projects\/([^/]+)\/git\/diff$/.exec(path)
+    if (projectGitDiffMatch && req.method === 'GET') {
+      const rawId = projectGitDiffMatch[1]
+      const filePath = (url.searchParams.get('path') ?? '').trim()
+      if (rawId == null || filePath.length === 0) {
+        this.sendJson(res, 400, {
+          error: { code: 'BAD_REQUEST', message: '缺少 path 参数' },
+        })
+        return
+      }
+      try {
+        const body = await this.requireDeps().getProjectGitDiff(
+          decodeURIComponent(rawId),
+          filePath,
+          url.searchParams.get('untracked') === '1',
+        )
+        this.sendJson(res, 200, body)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    // 项目产物聚合（最近会话的 presented_files；产物「打开/预览」仍走 /v1/attachments/content）
+    const projectArtifactsMatch = /^\/v1\/projects\/([^/]+)\/artifacts$/.exec(path)
+    if (projectArtifactsMatch && req.method === 'GET') {
+      const rawId = projectArtifactsMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      try {
+        const body = await this.requireDeps().getProjectArtifacts(decodeURIComponent(rawId))
         this.sendJson(res, 200, body)
       } catch (error) {
         this.sendSparkError(res, error)
@@ -628,6 +707,22 @@ export class MobileBridgeService {
       // 删除实时回流桌面端侧栏（乐观更新模型感知不到外部删除，会一直滞留旧条目）
       this.requireDeps().notifySidebarChanged()
       this.sendJson(res, 200, result)
+      return
+    }
+
+    const sessionQueueMatch = /^\/v1\/sessions\/([^/]+)\/queue$/.exec(path)
+    if (sessionQueueMatch && req.method === 'GET') {
+      const rawId = sessionQueueMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      try {
+        const snapshot = await this.requireDeps().getSessionQueue(decodeURIComponent(rawId))
+        this.sendJson(res, 200, snapshot)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
       return
     }
 

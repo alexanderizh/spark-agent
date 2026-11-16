@@ -56,6 +56,12 @@ import {
   shouldConvertPastedTextToResource,
 } from '../views/chat/composer-pasted-text'
 import { getLatestAgentStatus, isRunningAgentStatus } from '../views/chat-session-status'
+import {
+  clampChatScrollTop,
+  isChatScrollAtBottom,
+  readChatScroll,
+  rememberChatScroll,
+} from '../views/chat-scroll-memory'
 import { isOptionalUserQuestion } from '../utils/user-question-readiness'
 import {
   getDataTransferFilePaths,
@@ -263,6 +269,8 @@ export function ChatPanel({
     autoResizeTextarea()
   }, [input, autoResizeTextarea])
   const isAtBottomRef = useRef(true)
+  // 会话阅读进度恢复（一次性指令，会话切换时武装、hydrate 后消费），见 chat-scroll-memory
+  const pendingScrollRestoreRef = useRef<number | null>(null)
   const preservePendingOnSessionBindRef = useRef(false)
   const preservePendingHistoryLoadRef = useRef(false)
   const liveEventsRef = useRef<AgentEvent[]>([])
@@ -279,6 +287,8 @@ export function ChatPanel({
 
   // 切换 session 时重置 builder
   useEffect(() => {
+    // 消息容器是长驻节点（不随会话切换重建），进入时先捕获引用供 cleanup 读取
+    const scrollNode = messagesContainerRef.current
     builderRef.current = new MessageBuilder()
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMessages([])
@@ -294,6 +304,11 @@ export function ChatPanel({
     setUnseenMessageCount(0)
     isAtBottomRef.current = true
     setCancelling(false)
+    // 阅读进度恢复指令（一次性，仅供随后一次 hydrate 消费）：只在真正的会话切换时
+    // 武装 —— historyReloadKey 触发的面板内重载不走这里，不会把视图跳回旧进度。
+    const savedScroll = sessionId != null ? readChatScroll(sessionId) : null
+    pendingScrollRestoreRef.current =
+      savedScroll != null && !savedScroll.atBottom ? savedScroll.scrollTop : null
     if (!preservePendingOnSessionBindRef.current) {
       setStatus('idle')
       setPendingUserText(null)
@@ -306,6 +321,21 @@ export function ChatPanel({
     }
     setSendError(null)
     preservePendingOnSessionBindRef.current = false
+    return () => {
+      // 切走前存档阅读进度。cleanup 在重置（setMessages([])）之前运行，此刻容器里
+      // 还是旧会话的 DOM，scrollTop 即用户的真实阅读位置；贴底状态不存档
+      // （见 rememberChatScroll —— 切回来本来就该贴底）。
+      if (scrollNode != null && sessionId != null) {
+        rememberChatScroll(sessionId, {
+          scrollTop: scrollNode.scrollTop,
+          atBottom: isChatScrollAtBottom(
+            scrollNode.scrollTop,
+            scrollNode.scrollHeight,
+            scrollNode.clientHeight,
+          ),
+        })
+      }
+    }
   }, [sessionId, updateAttachments])
 
   useEffect(() => {
@@ -329,6 +359,20 @@ export function ChatPanel({
         setHasMoreHistory(historyRes.hasMore)
         setHistoryError(null)
         setMessages(builder.getAllMessages())
+        // 恢复会话切换前的阅读位置（一次性指令；无指令则保持贴底跟随）。
+        // isAtBottomRef 先行翻转：智能滚动 effect 在本批渲染后据此决定不拉底，
+        // 恢复本身等一帧——消息列表（含 markdown）已随 setMessages 渲染完成。
+        const restoreTop = pendingScrollRestoreRef.current
+        pendingScrollRestoreRef.current = null
+        if (restoreTop != null) {
+          isAtBottomRef.current = false
+          setShowScrollToBottom(true)
+          window.requestAnimationFrame(() => {
+            const el = messagesContainerRef.current
+            if (el == null) return
+            el.scrollTop = clampChatScrollTop(restoreTop, el.scrollHeight, el.clientHeight)
+          })
+        }
         const latestStatus = getLatestAgentStatus(mergedEvents, persistedSessionStatus ?? undefined)
         if (isRunningAgentStatus(latestStatus)) {
           setStatus('streaming')

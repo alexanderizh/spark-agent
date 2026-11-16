@@ -160,7 +160,8 @@ export async function getWorkspaceBranches(
   }
 }
 
-function emptyGitStatus(state: WorkspaceGitState): WorkspaceGitStatusResponse {
+/** 非 ready 状态的空壳状态（mobile-bridge 项目面板等远程只读链路复用，不重复造形状） */
+export function emptyGitStatus(state: WorkspaceGitState): WorkspaceGitStatusResponse {
   return {
     state,
     isGitRepo: state.kind === 'not_repository' ? false : state.kind === 'ready' ? true : null,
@@ -568,9 +569,7 @@ export async function getWorkspaceGitStatus(
   }
 }
 
-async function computeWorkspaceGitStatus(
-  rootPath: string,
-): Promise<WorkspaceGitStatusResponse> {
+async function computeWorkspaceGitStatus(rootPath: string): Promise<WorkspaceGitStatusResponse> {
   const state = await getGitCommandService().probeRepository(rootPath)
   if (state.kind !== 'ready') return emptyGitStatus(state)
   try {

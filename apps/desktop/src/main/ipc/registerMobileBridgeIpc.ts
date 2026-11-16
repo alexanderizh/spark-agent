@@ -26,6 +26,7 @@ import type {
   MobileBridgeCommandItem,
   MobileBridgeCreateScheduledTaskRequest,
   MobileBridgeEvent,
+  MobileBridgeProjectArtifactItem,
   MobileBridgeProjectSummary,
   MobileBridgeQuestionItem,
   MobileBridgeRelaySettings,
@@ -75,6 +76,12 @@ import {
 import { PASTED_IMAGE_MAX_EDGE, resizePastedImageBuffer } from '../services/PastedImageResizer.js'
 import { calibrateMobileBridgeSessionAdapter } from '../services/mobile-bridge-session-adapter.js'
 import { isPathWithinRoots } from './mobile-bridge-path-policy.js'
+import {
+  emptyGitStatus,
+  getWorkspaceGitFileDiff,
+  getWorkspaceGitLog,
+  getWorkspaceGitStatus,
+} from './workspace-git-status.js'
 import { isQuickReplyTool, parseQuickReplies } from './mobile-bridge-quick-replies.js'
 import type { RemoteVoiceTranscriber } from '../services/remoteVoiceTranscription.js'
 import { DEFAULT_MOBILE_BRIDGE_RELAY_SETTINGS } from '@spark/protocol'
@@ -351,6 +358,31 @@ function parseWorktreeBaseId(metaJson: string | null): string | null {
   } catch {
     return null
   }
+}
+
+/**
+ * 项目信息面板（远程只读链路）按项目 id 定位 workspace 根路径。
+ * 找不到项目 / 未关联目录返回 null（调用方渲染「非 git 项目」占位，不抛错）。
+ */
+function resolveProjectRootPath(deps: MobileBridgeIpcDeps, projectId: string): string | null {
+  try {
+    const workspaces = deps.getWorkspaceService().listWorkspaces(500, 0, {})
+    const hit = workspaces.find((workspace) => workspace.id === projectId)
+    const rootPath = hit?.root_path
+    return typeof rootPath === 'string' && rootPath.length > 0 ? rootPath : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * agent_events.created_at 落库默认是 SQLite `datetime('now')`（UTC 裸格式，
+ * 无 T/Z 标记）。渲染端 `new Date()` 对这种形状按本地时区解析，UTC+8 会把
+ * 1 分钟前的事件显示成「8 小时前」——远程链路外发前统一补齐成 ISO UTC。
+ * 已经是 ISO 的行（若有）原样返回。
+ */
+function normalizeSqliteTimestampUtc(value: string): string {
+  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value) ? `${value.replace(' ', 'T')}Z` : value
 }
 
 // ─── 会话内配置与输入能力扩展：辅助 ─────────────────────────────────────────────
@@ -1050,6 +1082,8 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
       return { turnId: result.turnId, started: result.started }
     },
 
+    getSessionQueue: async (sessionId) => deps.getSessionService().getQueueState({ sessionId }),
+
     cancelTurn: async (sessionId) => {
       await deps.getSessionService().cancelTurn(sessionId)
     },
@@ -1466,6 +1500,136 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
         }
       }
       return { skills }
+    },
+
+    // ─── 项目信息面板（远程桌面右侧栏；只读，2026-11-16） ──────────────────────
+
+    getProjectGit: async (projectId) => {
+      const rootPath = resolveProjectRootPath(deps, projectId)
+      if (rootPath == null) {
+        // 未关联目录（含「不使用项目」）谈不上 git：返回空壳让控制端渲染占位，不报错
+        return {
+          projectId,
+          rootPath: '',
+          status: emptyGitStatus({ kind: 'not_repository' }),
+          recentCommits: [],
+        }
+      }
+      const [status, gitLog] = await Promise.all([
+        getWorkspaceGitStatus(rootPath),
+        // log 失败不拖垮整个快照（status 的 state 已描述仓库可用性）
+        getWorkspaceGitLog(rootPath, 10).catch(() => ({ commits: [] })),
+      ])
+      return { projectId, rootPath, status, recentCommits: gitLog.commits }
+    },
+
+    getProjectGitDiff: async (projectId, filePath, untracked) => {
+      const rootPath = resolveProjectRootPath(deps, projectId)
+      if (rootPath == null) {
+        throw new SparkError('VALIDATION_FAILED', '该项目未关联本地目录，无法读取 diff')
+      }
+      // 纵深防御：本地链路的调用方与被控端同机可信，远程链路的 path 来自另一台
+      // 电脑的渲染进程——拒绝绝对路径与 .. / .git 段，diff 永远落在项目根语义内。
+      // .git 单独拒绝：untracked diff 走 --no-index 会把文件全文吐给远端，仓库
+      // 内部文件（config 等）不该出现在远程链路；工作树文件本身不受影响。
+      const inGitDir = filePath
+        .split(/[\\/]+/)
+        .some((segment) => segment === '..' || segment === '.git')
+      if (path.isAbsolute(filePath) || inGitDir) {
+        log.warn(`mobile bridge project diff rejected (path out of project): ${filePath}`)
+        throw new SparkError('VALIDATION_FAILED', '文件路径越出项目范围')
+      }
+      const response = await getWorkspaceGitFileDiff(rootPath, filePath, untracked)
+      // untracked diff 走 --no-index 会把文件全文吐出来：几百 MB 的构建产物/日志
+      // 会变成巨型中继帧拖垮两端，远程链路按字符数截断并给出省略标记。
+      const REMOTE_DIFF_MAX_CHARS = 256_000
+      if (response.diff.length > REMOTE_DIFF_MAX_CHARS) {
+        return {
+          diff: `${response.diff.slice(0, REMOTE_DIFF_MAX_CHARS)}\n…（diff 过长，已截断）`,
+          isBinary: response.isBinary,
+        }
+      }
+      return response
+    },
+
+    getProjectArtifacts: async (projectId) => {
+      if (projectId === 'default') return { projectId, artifacts: [] }
+      const db = getDatabase()
+      // worktree 会话在侧栏归到 base 项目（与 listSessions 同口径）：聚合产物同样
+      // 把 worktree 子项目的会话算进来，不然 worktree 里跑出的产物会「消失」。
+      const projectIds = [projectId]
+      const worktrees = db.raw
+        .prepare(
+          `SELECT id, worktree_meta_json FROM workspaces
+           WHERE archived_at IS NULL AND worktree_meta_json IS NOT NULL`,
+        )
+        .all() as { id: string; worktree_meta_json: string | null }[]
+      for (const worktree of worktrees) {
+        if (parseWorktreeBaseId(worktree.worktree_meta_json) === projectId) {
+          projectIds.push(worktree.id)
+        }
+      }
+      const idPlaceholders = projectIds.map(() => '?').join(',')
+      // 扫描窗口：最近 20 个活跃会话。产物按「最近会话优先」聚合，更早会话的产物
+      // 让位给窗口（truncated 标记给控制端一句说明），避免老项目全表扫事件。
+      const ARTIFACT_SESSION_WINDOW = 20
+      const sessionRows = db.raw
+        .prepare(
+          `SELECT id, title FROM sessions
+           WHERE archived_at IS NULL AND project_id IN (${idPlaceholders})
+           ORDER BY updated_at DESC LIMIT ${ARTIFACT_SESSION_WINDOW}`,
+        )
+        .all(...projectIds) as { id: string; title: string }[]
+      if (sessionRows.length === 0) return { projectId, artifacts: [] }
+      const titleBySession = new Map(
+        sessionRows.map((row) => [row.id, row.title || '未命名会话'] as const),
+      )
+      const sessionPlaceholders = sessionRows.map(() => '?').join(',')
+      const eventRows = db.raw
+        .prepare(
+          `SELECT session_id, event_json, created_at FROM agent_events
+           WHERE event_type = 'presented_files' AND session_id IN (${sessionPlaceholders})
+           ORDER BY created_at DESC, rowid DESC LIMIT 300`,
+        )
+        .all(...sessionRows.map((row) => row.id)) as Array<{
+        session_id: string
+        event_json: string
+        created_at: string
+      }>
+      const truncated = eventRows.length >= 300
+      // 同一文件多次呈现只保留最近一次（rows 已按时间倒序，首个即最新）
+      const latestByPath = new Map<string, MobileBridgeProjectArtifactItem>()
+      for (const row of eventRows) {
+        let rawFiles: unknown
+        try {
+          rawFiles = (JSON.parse(row.event_json) as { files?: unknown }).files
+        } catch {
+          continue
+        }
+        if (!Array.isArray(rawFiles)) continue
+        for (const file of rawFiles) {
+          if (file == null || typeof file !== 'object') continue
+          const filePath = (file as { path?: unknown }).path
+          if (typeof filePath !== 'string' || filePath.length === 0) continue
+          if (latestByPath.has(filePath)) continue
+          const title = (file as { title?: unknown }).title
+          latestByPath.set(filePath, {
+            path: filePath,
+            ...(typeof title === 'string' && title.length > 0 ? { title } : {}),
+            sessionId: row.session_id,
+            sessionTitle: titleBySession.get(row.session_id) ?? '未命名会话',
+            presentedAt: normalizeSqliteTimestampUtc(row.created_at),
+          })
+        }
+      }
+      const artifacts = [...latestByPath.values()].sort((a, b) =>
+        a.presentedAt < b.presentedAt ? 1 : a.presentedAt > b.presentedAt ? -1 : 0,
+      )
+      return {
+        projectId,
+        artifacts,
+        ...(truncated ? { truncated: true } : {}),
+      }
     },
   }
 }
