@@ -6,9 +6,12 @@ import { filterPresentedFiles } from './presented-files'
 /** 显式交付的媒体保留原预览，其余文件复用已有文件卡片和打开路由。 */
 export function PresentedFilesList({
   files,
+  workspaceRootPath,
   onFilePreview,
 }: {
   files: readonly PresentedFile[]
+  /** 相对路径解析基准目录（会话工作区根），供右键「在文件夹中显示」定位本机文件 */
+  workspaceRootPath?: string | null
   onFilePreview?: FileOpenHandler
 }) {
   const visibleFiles = filterPresentedFiles(files)
@@ -25,6 +28,7 @@ export function PresentedFilesList({
               key={file.path}
               filePath={file.path}
               {...(file.title != null ? { label: file.title } : {})}
+              {...(workspaceRootPath != null ? { workspaceRootPath } : {})}
               {...(onFilePreview != null ? { onFilePreview } : {})}
             />
           ))}

@@ -178,6 +178,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                   seenDocumentKeys,
                   onFilePreview,
                   `doc-card-${index}`,
+                  workspaceRootPath,
                 )
               : null
             if (documentCards != null) return documentCards

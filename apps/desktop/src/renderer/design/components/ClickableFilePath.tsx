@@ -24,6 +24,7 @@ import {
   getFileExtension,
   getPreviewFileType,
   normalizeFileReference,
+  resolveFileReferencePath,
   stripTrailingFilePunctuation,
   type PreviewFileType,
 } from './FileDisplay'
@@ -245,35 +246,6 @@ export function ClickableFilePath({
       </span>
     </Dropdown>
   )
-}
-
-function isAbsoluteLocalPath(value: string): boolean {
-  return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)
-}
-
-function resolveFileReferencePath(
-  filePath: string,
-  workspaceRootPath?: string | null,
-): string | null {
-  if (isAbsoluteLocalPath(filePath)) return filePath
-
-  const root = workspaceRootPath?.trim()
-  if (root == null || root.length === 0) return null
-
-  const separator = root.includes('\\') ? '\\' : '/'
-  const rootPath = root.replace(/[\\/]+$/, '')
-  const segments: string[] = []
-  for (const segment of filePath.replace(/\\/g, '/').split('/')) {
-    if (segment.length === 0 || segment === '.') continue
-    if (segment === '..') {
-      if (segments.length === 0) return null
-      segments.pop()
-      continue
-    }
-    segments.push(segment)
-  }
-  if (segments.length === 0) return null
-  return `${rootPath}${separator}${segments.join(separator)}`
 }
 
 type UrlContextMenuPosition = {

@@ -17,8 +17,9 @@
  * 保证「后端收集到的」与「前端能渲染的」集合一致。
  */
 import type { ReactNode } from 'react'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { MarkdownImage, type MarkdownImageGalleryItem } from '../../components/MarkdownImage'
+import { FilePathContextMenu } from '../../components/FilePathContextMenu'
 import { Icons } from '../../Icons'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { useToast } from '../../components/Toast'
@@ -126,6 +127,18 @@ export function PresentedMediaList<T extends PresentedFile>({ files }: { files: 
     () => files.filter((file) => classifyPresentedFile(file.path) != null),
     [files],
   )
+  // 右键菜单：本地媒体文件与其他会话内文件共用 FilePathContextMenu
+  //（在文件夹中显示 / 复制文件地址；不传 onOpenWithMode，故不含预览/编辑项）
+  const [mediaContextMenu, setMediaContextMenu] = useState<{
+    x: number
+    y: number
+    filePath: string
+  } | null>(null)
+  const handleMediaContextMenu = useCallback((event: React.MouseEvent, filePath: string) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setMediaContextMenu({ x: event.clientX, y: event.clientY, filePath })
+  }, [])
   // 图集导航：同一组 presented 媒体里的全部图片（按出现顺序）+ 每个图片文件对应的序号。
   // 仅图片参与翻页，音视频不混入；单图时 MarkdownImage 侧自动退化为原单图预览。
   const { galleryImages, galleryIndexByPath } = useMemo(() => {
@@ -155,7 +168,11 @@ export function PresentedMediaList<T extends PresentedFile>({ files }: { files: 
         const label = file.title ?? getBaseName(file.path)
         if (kind === 'image') {
           return (
-            <div key={file.path} className="presented-media-image">
+            <div
+              key={file.path}
+              className="presented-media-image"
+              onContextMenu={(event) => handleMediaContextMenu(event, file.path)}
+            >
               <MarkdownImage
                 src={file.path}
                 alt={label}
@@ -177,7 +194,11 @@ export function PresentedMediaList<T extends PresentedFile>({ files }: { files: 
         if (kind === 'audio') {
           const ext = getExtension(file.path).toUpperCase()
           return (
-            <div key={file.path} className="presented-media-audio">
+            <div
+              key={file.path}
+              className="presented-media-audio"
+              onContextMenu={(event) => handleMediaContextMenu(event, file.path)}
+            >
               <div className="presented-media-audio-head">
                 <span className="presented-media-audio-icon" aria-hidden="true">
                   <Icons.AudioLines size={15} />
@@ -195,7 +216,11 @@ export function PresentedMediaList<T extends PresentedFile>({ files }: { files: 
           )
         }
         return (
-          <div key={file.path} className="presented-media-video-wrap">
+          <div
+            key={file.path}
+            className="presented-media-video-wrap"
+            onContextMenu={(event) => handleMediaContextMenu(event, file.path)}
+          >
             <div className="presented-media-video-head">
               <span className="presented-media-video-name" title={file.path}>
                 {label}
@@ -211,6 +236,14 @@ export function PresentedMediaList<T extends PresentedFile>({ files }: { files: 
           </div>
         )
       })}
+      {mediaContextMenu != null && (
+        <FilePathContextMenu
+          filePath={mediaContextMenu.filePath}
+          x={mediaContextMenu.x}
+          y={mediaContextMenu.y}
+          onClose={() => setMediaContextMenu(null)}
+        />
+      )}
     </div>
   )
 }

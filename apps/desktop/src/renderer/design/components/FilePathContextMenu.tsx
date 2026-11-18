@@ -4,16 +4,20 @@ import { ContextMenu } from './ContextMenu'
 import type { ContextMenuEntry } from './contextMenuModel'
 import { canOpenInEditor, canOpenPreview, type FileOpenMode } from './fileOpenRouting'
 import { decodeSafeFileUrl } from './filePreviewSource'
+import { resolveFileReferencePath } from './FileDisplay'
 import { useToast } from './Toast'
 
 export function FilePathContextMenu({
   filePath,
+  workspaceRootPath,
   x,
   y,
   onClose,
   onOpenWithMode,
 }: {
   filePath: string
+  /** 相对路径解析基准目录（会话工作区根）；提供后消息内的相对路径也能定位本机文件 */
+  workspaceRootPath?: string | null | undefined
   x: number
   y: number
   onClose: () => void
@@ -22,7 +26,8 @@ export function FilePathContextMenu({
   const { toast } = useToast()
   const platform = window.spark?.platform
   const candidate = decodeSafeFileUrl(filePath) ?? filePath
-  const localPath = /^(?:\/(?!\/)|[a-z]:[\\/]|\\\\)/i.test(candidate) ? candidate : null
+  const absoluteLocalPath = /^(?:\/(?!\/)|[a-z]:[\\/]|\\\\)/i.test(candidate) ? candidate : null
+  const localPath = absoluteLocalPath ?? resolveFileReferencePath(candidate, workspaceRootPath)
   const canEdit = canOpenInEditor(candidate)
   const run = (fallback: string, operation: () => Promise<void>) => () => {
     void operation().catch((error: unknown) => {

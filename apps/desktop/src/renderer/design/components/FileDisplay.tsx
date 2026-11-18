@@ -564,6 +564,43 @@ export function stripTrailingFilePunctuation(value: string): string {
   return value.replace(/[)\]>}！？，。；：、,.;:!?]+$/u, '')
 }
 
+function isAbsoluteLocalPath(value: string): boolean {
+  return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)
+}
+
+/**
+ * 把文件引用解析成本机绝对路径；无法解析时返回 null。
+ *
+ * 绝对路径（/unix 或 C:\win）原样返回；相对路径以 workspaceRootPath 为基准
+ * 解析 `./`、`../` 与混用分隔符，越界或缺少基准目录时返回 null。
+ * 供「在文件夹中显示」等需要本机绝对路径的入口统一复用。
+ */
+export function resolveFileReferencePath(
+  value: string,
+  workspaceRootPath?: string | null | undefined,
+): string | null {
+  const filePath = normalizeFileReference(value)
+  if (isAbsoluteLocalPath(filePath)) return filePath
+
+  const root = workspaceRootPath?.trim()
+  if (root == null || root.length === 0) return null
+
+  const separator = root.includes('\\') ? '\\' : '/'
+  const rootPath = root.replace(/[\\/]+$/, '')
+  const segments: string[] = []
+  for (const segment of filePath.replace(/\\/g, '/').split('/')) {
+    if (segment.length === 0 || segment === '.') continue
+    if (segment === '..') {
+      if (segments.length === 0) return null
+      segments.pop()
+      continue
+    }
+    segments.push(segment)
+  }
+  if (segments.length === 0) return null
+  return `${rootPath}${separator}${segments.join(separator)}`
+}
+
 export function FileTypeIcon({
   filePath,
   className,
