@@ -61,10 +61,16 @@ export function getRemoteAgentToolAction(toolName: string): RemoteAgentToolActio
 
 export function extractRemoteAgentToolCalls(messages: UIMessage[]): RemoteAgentToolCallEntry[] {
   const entries: RemoteAgentToolCallEntry[] = []
-  for (const message of messages) {
+  for (const message of projectRemoteAgentTimelineMessages(messages)) {
     if (message.role !== 'assistant') continue
     for (const block of message.blocks) {
-      if (block.kind !== 'tool_call' || !isRemoteAgentToolCall(block)) continue
+      if (
+        block.kind !== 'tool_call' ||
+        !isRemoteAgentToolCall(block) ||
+        !isTimelineRemoteAction(getRemoteAgentToolAction(block.toolName), block.status)
+      ) {
+        continue
+      }
       entries.push({
         block,
         messageId: message.id,
@@ -78,31 +84,37 @@ export function extractRemoteAgentToolCalls(messages: UIMessage[]): RemoteAgentT
 /** Merge each matching events_read result into its original message_send timeline position. */
 export function projectRemoteAgentTimelineMessages(messages: UIMessage[]): UIMessage[] {
   const sendAnchors = new Map<string, string>()
-  const latestReads = new Map<string, RemoteAgentToolCallBlock>()
+  const readsByOperation = new Map<string, RemoteAgentToolCallBlock[]>()
+  const readsByLink = new Map<string, RemoteAgentToolCallBlock[]>()
 
   for (const message of messages) {
     if (message.role !== 'assistant') continue
     for (const block of message.blocks) {
       if (block.kind !== 'tool_call' || !isRemoteAgentToolCall(block)) continue
-      const key = operationKey(block)
-      if (key == null) continue
       const action = getRemoteAgentToolAction(block.toolName)
-      if (action === 'message_send' && !sendAnchors.has(key)) {
+      const key = operationKey(block)
+      if (action === 'message_send' && key != null && !sendAnchors.has(key)) {
         sendAnchors.set(key, block.toolCallId)
       } else if (action === 'events_read') {
-        latestReads.set(key, block)
+        const reads = key == null ? readsByLink : readsByOperation
+        const readKey = key ?? readScopeKey(block)
+        const group = reads.get(readKey)
+        if (group == null) reads.set(readKey, [block])
+        else group.push(block)
       }
     }
   }
 
-  if (sendAnchors.size === 0 || latestReads.size === 0) return messages
   const readsByAnchor = new Map<string, RemoteAgentToolCallBlock>()
-  for (const [key, anchorToolCallId] of sendAnchors) {
-    const read = latestReads.get(key)
-    if (read == null) continue
-    readsByAnchor.set(anchorToolCallId, read)
+  for (const [key, reads] of readsByOperation) {
+    const mergedRead = mergeEventsReadCalls(reads)
+    const anchorToolCallId = sendAnchors.get(key) ?? mergedRead.toolCallId
+    readsByAnchor.set(anchorToolCallId, mergedRead)
   }
-  if (readsByAnchor.size === 0) return messages
+  for (const reads of readsByLink.values()) {
+    const mergedRead = mergeEventsReadCalls(reads)
+    readsByAnchor.set(mergedRead.toolCallId, mergedRead)
+  }
 
   return messages.map((message) => {
     if (message.role !== 'assistant') return message
@@ -110,13 +122,26 @@ export function projectRemoteAgentTimelineMessages(messages: UIMessage[]): UIMes
     const blocks = message.blocks.flatMap((block): UIBlock[] => {
       if (block.kind !== 'tool_call' || !isRemoteAgentToolCall(block)) return [block]
       const action = getRemoteAgentToolAction(block.toolName)
-      const key = action === 'events_read' ? operationKey(block) : null
-      if (key != null && sendAnchors.has(key)) {
+      const key = operationKey(block)
+
+      if (action === 'events_read') {
+        changed = true
+        const mergedRead = readsByAnchor.get(block.toolCallId)
+        return mergedRead == null ? [] : [mergedRead]
+      }
+
+      if (!isTimelineRemoteAction(action, block.status)) {
         changed = true
         return []
       }
+      if (action === 'message_send' && key != null && sendAnchors.get(key) !== block.toolCallId) {
+        changed = true
+        return []
+      }
+
       const read = readsByAnchor.get(block.toolCallId)
       if (read == null) return [block]
+      if (read.toolCallId === block.toolCallId) return [block]
       changed = true
       return [
         {
@@ -130,6 +155,64 @@ export function projectRemoteAgentTimelineMessages(messages: UIMessage[]): UIMes
     })
     return changed ? { ...message, blocks } : message
   })
+}
+
+function mergeEventsReadCalls(reads: RemoteAgentToolCallBlock[]): RemoteAgentToolCallBlock {
+  const first = reads[0]
+  if (first == null) throw new Error('Cannot merge an empty remote events_read group')
+  const latest = reads.at(-1) ?? first
+  const responses = reads.map((read) => parseToolResponse(read.output))
+  const latestResponse = [...responses].reverse().find((response) => response != null)
+  const hasEvents = responses.some((response) => Array.isArray(response?.['events']))
+
+  if (latestResponse == null || !hasEvents) {
+    return { ...latest, toolCallId: first.toolCallId, toolInput: first.toolInput }
+  }
+
+  const eventsById = new Map<string, Record<string, unknown>>()
+  for (const response of responses) {
+    const events = arrayField(response ?? {}, 'events')
+    for (const event of events ?? []) {
+      if (!isRecord(event)) continue
+      const eventId = stringField(event, 'id')
+      const key = eventId == null ? `event:${JSON.stringify(event)}` : `id:${eventId}`
+      if (!eventsById.has(key)) eventsById.set(key, event)
+    }
+  }
+  const events = [...eventsById.values()].sort((left, right) => {
+    const leftSeq = numberField(left, 'seq')
+    const rightSeq = numberField(right, 'seq')
+    return leftSeq == null || rightSeq == null ? 0 : leftSeq - rightSeq
+  })
+
+  return {
+    ...latest,
+    toolCallId: first.toolCallId,
+    toolInput: first.toolInput,
+    output: JSON.stringify({ ...latestResponse, events }),
+  }
+}
+
+function isTimelineRemoteAction(
+  action: RemoteAgentToolAction,
+  status?: RemoteAgentToolCallBlock['status'],
+): boolean {
+  return (
+    action === 'message_send' ||
+    action === 'events_read' ||
+    action === 'operation_cancel' ||
+    action === 'session_model_set' ||
+    action === 'artifact_transfer' ||
+    action === 'unknown' ||
+    status === 'error'
+  )
+}
+
+function readScopeKey(block: RemoteAgentToolCallBlock): string {
+  const response = parseToolResponse(block.output)
+  return (
+    stringField(block.toolInput, 'linkId') ?? stringField(response, 'linkId') ?? block.toolCallId
+  )
 }
 
 export function presentRemoteAgentToolCall(

@@ -68,15 +68,66 @@ describe('RemoteAgentToolCallCard', () => {
     container.remove()
   })
 
-  it('shows the remote request and result in the dedicated timeline card', () => {
+  it('renders as a collapsed sibling tool call and reveals input and output on demand', () => {
     act(() => {
       root.render(<RemoteAgentToolCallCard block={eventsRead} />)
     })
 
-    expect(container.querySelector('[data-testid="remote-agent-call-card"]')).not.toBeNull()
-    expect(container.textContent).toContain(translate('remoteAgent.call.action.read'))
-    expect(container.textContent).toContain(translate('remoteAgent.call.request.eventsRead'))
-    expect(container.textContent).toContain('All tests passed on the remote device.')
+    const toolCall = container.querySelector('[data-testid="remote-agent-tool-call"]')
+    expect(toolCall?.classList.contains('tool-call')).toBe(true)
+    expect(toolCall?.textContent).toContain(translate('remoteAgent.call.action.read'))
+    expect(toolCall?.textContent).toContain(translate('remoteAgent.call.request.eventsRead'))
+    expect(toolCall?.querySelector('[data-testid="remote-agent-tool-call-details"]')).toBeNull()
+
+    act(() => {
+      toolCall?.querySelector<HTMLElement>('.tool-call-head')?.click()
+    })
+
+    expect(toolCall?.textContent).toContain('All tests passed on the remote device.')
+  })
+
+  it('keeps long input and output collapsed until the tool-call row is opened', () => {
+    const longCall = {
+      ...messageSend,
+      toolInput: { ...messageSend.toolInput, text: 'Run the test suite '.repeat(12) },
+      output: JSON.stringify({
+        operationId: 'operation-1',
+        operationStatus: 'completed',
+        events: [
+          {
+            type: 'assistant_message',
+            mode: 'complete',
+            content: 'All tests passed. '.repeat(12),
+          },
+        ],
+      }),
+    }
+
+    act(() => {
+      root.render(<RemoteAgentToolCallCard block={longCall} />)
+    })
+
+    const details = container.querySelector('[data-testid="remote-agent-tool-call-details"]')
+    expect(details).toBeNull()
+    const toggle = container.querySelector<HTMLElement>('.tool-call-head')
+    expect(toggle).not.toBeNull()
+
+    act(() => toggle?.click())
+
+    expect(container.querySelector('[data-testid="remote-agent-tool-call-details"]')).not.toBeNull()
+  })
+
+  it('shows accepted remote work as active instead of completed', () => {
+    act(() => {
+      root.render(<RemoteAgentToolCallCard block={messageSend} />)
+    })
+
+    expect(
+      container
+        .querySelector('[data-testid="remote-agent-tool-call"]')
+        ?.classList.contains('is-pending'),
+    ).toBe(true)
+    expect(container.querySelector('.tool-status.spinner')).not.toBeNull()
   })
 
   it('lists the same calls in history order in a dedicated inspector module', () => {
@@ -100,16 +151,17 @@ describe('RemoteAgentToolCallCard', () => {
       button.textContent?.includes(translate('remoteAgent.call.inspectorTitle')),
     )
     expect(moduleToggle).toBeDefined()
-    expect(container.querySelectorAll('[data-testid="remote-agent-call-card"]')).toHaveLength(0)
+    expect(container.querySelectorAll('[data-testid="remote-agent-tool-call"]')).toHaveLength(0)
 
     act(() => moduleToggle?.click())
 
     const cards = Array.from(
-      container.querySelectorAll<HTMLElement>('[data-testid="remote-agent-call-card"]'),
+      container.querySelectorAll<HTMLElement>('[data-testid="remote-agent-tool-call"]'),
     )
     expect(cards).toHaveLength(1)
     expect(cards[0]?.textContent).toContain(translate('remoteAgent.call.action.send'))
     expect(cards[0]?.textContent).toContain('Run the test suite')
+    act(() => cards[0]?.querySelector<HTMLElement>('.tool-call-head')?.click())
     expect(cards[0]?.textContent).toContain('All tests passed on the remote device.')
   })
 })

@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { Check, ChevronDown, CircleAlert, Cloud, LoaderCircle, Paperclip } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Check, ChevronRight, CircleAlert, Cloud, LoaderCircle, Paperclip } from 'lucide-react'
 import { translate, type TranslationKey } from '../../../i18n'
 import { InspectorCollapsibleSection } from '../../../components/InspectorCollapsibleSection'
 import {
@@ -35,84 +34,86 @@ export function RemoteAgentToolCallCard({
   inspector?: boolean
 }) {
   const presentation = presentRemoteAgentToolCall(block)
-  const [expanded, setExpanded] = useState(false)
+  const [open, setOpen] = useState(false)
   const isRunning = block.status === 'pending' || block.status === 'running'
   const statusLabel = getStatusLabel(presentation, isRunning)
   const outputText = resolveOutputText(presentation, isRunning)
-  const canExpand = presentation.requestText.length > 200 || outputText.length > 220
+  const isRemoteActive =
+    presentation.remoteStatus != null &&
+    ['accepted', 'uncertain', 'submitting', 'queued', 'running', 'cancel_requested'].includes(
+      presentation.remoteStatus,
+    )
+  const isActive = isRunning || isRemoteActive
+  const isError = presentation.status === 'error'
+  const attachmentCount =
+    presentation.action === 'message_send' && Array.isArray(block.toolInput['attachmentRefs'])
+      ? block.toolInput['attachmentRefs'].length
+      : 0
 
   return (
-    <section
-      className={`remote-agent-call-card${inspector ? ' is-inspector' : ''} is-${presentation.status}`}
-      aria-label={translate(ACTION_TRANSLATION[presentation.action])}
-      data-testid="remote-agent-call-card"
+    <div
+      className={`tool-call${open ? ' open' : ''}${isActive ? ' is-pending' : ''}${!isActive && !isError ? ' is-success' : ''}${isError ? ' is-error' : ''}`}
+      data-testid="remote-agent-tool-call"
     >
-      <header className="remote-agent-call-card__head">
-        <span className="remote-agent-call-card__icon" aria-hidden="true">
-          <Cloud size={14} />
+      <div
+        className="tool-call-head"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        aria-label={translate(ACTION_TRANSLATION[presentation.action])}
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            setOpen((value) => !value)
+          }
+        }}
+      >
+        <Cloud className="tool-icon" aria-hidden="true" />
+        <span className="tool-name">{translate(ACTION_TRANSLATION[presentation.action])}</span>
+        <span className="tool-arg" title={presentation.requestText}>
+          {presentation.requestText}
         </span>
-        <strong>{translate(ACTION_TRANSLATION[presentation.action])}</strong>
-        {timestamp != null && inspector && (
-          <time dateTime={timestamp}>{formatTime(timestamp)}</time>
-        )}
-        <span className="remote-agent-call-card__status" role="status" aria-live="polite">
-          {isRunning ? (
-            <LoaderCircle className="remote-agent-call-card__spin" size={13} />
-          ) : presentation.status === 'error' ? (
-            <CircleAlert size={13} />
+        <span className="tool-call-actions">
+          {isActive ? (
+            <LoaderCircle className="tool-status spinner" size={12} />
+          ) : isError ? (
+            <CircleAlert className="tool-status err" size={12} />
           ) : (
-            <Check size={13} />
+            <Check className="tool-status ok" size={12} />
           )}
-          {statusLabel}
+          <span className="tool-duration" role="status" aria-live="polite">
+            {timestamp != null && inspector ? `${formatTime(timestamp)} · ` : ''}
+            {statusLabel}
+          </span>
+          <ChevronRight className="chev" size={12} aria-hidden="true" />
         </span>
-        {canExpand && (
-          <button
-            type="button"
-            className="remote-agent-call-card__toggle"
-            aria-label={
-              expanded
-                ? translate('remoteAgent.call.collapse')
-                : translate('remoteAgent.call.expand')
-            }
-            aria-expanded={expanded}
-            onClick={() => setExpanded((value) => !value)}
-            title={
-              expanded
-                ? translate('remoteAgent.call.collapse')
-                : translate('remoteAgent.call.expand')
-            }
-          >
-            <ChevronDown size={14} />
-          </button>
-        )}
-      </header>
-      <div className={`remote-agent-call-card__body${expanded ? ' is-expanded' : ''}`}>
-        <RemoteAgentCallSection label={translate('remoteAgent.call.input')}>
-          <p>{presentation.requestText}</p>
-          {presentation.action === 'message_send' &&
-            Array.isArray(block.toolInput['attachmentRefs']) &&
-            block.toolInput['attachmentRefs'].length > 0 && (
-              <span className="remote-agent-call-card__attachment-count">
-                <Paperclip size={11} />
-                {translate('remoteAgent.call.attachments', {
-                  count: block.toolInput['attachmentRefs'].length,
-                })}
-              </span>
-            )}
-        </RemoteAgentCallSection>
-        <RemoteAgentCallSection label={translate('remoteAgent.call.output')}>
-          {outputText.length > 0 ? (
-            <p>{outputText}</p>
-          ) : (
-            <p className="is-muted">
-              {isRunning
-                ? translate('remoteAgent.call.waiting')
-                : translate('remoteAgent.call.noOutput')}
-            </p>
-          )}
-        </RemoteAgentCallSection>
       </div>
-    </section>
+      {isActive && (
+        <div className="tool-call-progress-bar">
+          <div className="tool-call-progress-fill" />
+        </div>
+      )}
+      {open && (
+        <div className="tool-call-body" data-testid="remote-agent-tool-call-details">
+          <strong>{translate('remoteAgent.call.input')}</strong>
+          <pre className="tool-output-pre">{presentation.requestText}</pre>
+          {attachmentCount > 0 && (
+            <div>
+              <Paperclip size={12} aria-hidden="true" />{' '}
+              {translate('remoteAgent.call.attachments', { count: attachmentCount })}
+            </div>
+          )}
+          <strong>{translate('remoteAgent.call.output')}</strong>
+          <pre className={`tool-output-pre${isError ? ' tool-error-span' : ''}`}>
+            {outputText ||
+              (isActive
+                ? translate('remoteAgent.call.waiting')
+                : translate('remoteAgent.call.noOutput'))}
+          </pre>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -135,15 +136,6 @@ export function RemoteAgentInspectorSection({ entries }: { entries: RemoteAgentT
         ))}
       </div>
     </InspectorCollapsibleSection>
-  )
-}
-
-function RemoteAgentCallSection({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="remote-agent-call-card__section">
-      <span className="remote-agent-call-card__label">{label}</span>
-      <div className="remote-agent-call-card__text">{children}</div>
-    </div>
   )
 }
 
