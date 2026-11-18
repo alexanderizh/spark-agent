@@ -4,8 +4,8 @@
  * 目标设备同时通过三条路径给出同一段输出：
  *   1. 历史接口 /v1/sessions/:id/messages 返回已落库的 complete 分段；
  *   2. 中继订阅流实时推送同一段的 delta 分片；
- *   3. 回合结束时执行器再补一条 **回合级收尾消息**（`isFinal: true` 且**无
- *      segmentId**，见 agent-runtime/sdk/event-mapper.ts 的 result 分支）。
+ *   3. 回合结束时执行器再补一条 **回合级收尾消息**（`isFinal: true`；Claude 通常无 segmentId，
+ *      Codex 使用独立的 `codex-sdk-{turnId}`，均需与分段对账）。
  *
  * 三条直接拼起来会把同一段文字渲染两遍（小程序端踩过这个坑，见
  * apps/mobile/src/utils/chat-reducer.ts 的 dedupe / stripDoubledText 逻辑）。
@@ -244,9 +244,9 @@ export function buildRemoteTimeline(events: MobileBridgeEvent[]): RemoteTimeline
       const content = event.content ?? ''
       // retry(resetOutput) 用空 complete 清掉失败尝试的半截文本；普通空 delta 无需建项。
       if (content.length === 0 && event.mode !== 'complete') continue
-      // 回合级收尾消息（isFinal 且无 segmentId）不是新分段，而是本回合正文的
-      // 权威全文（执行器在 result 之后补发）。当成新分段就会把同一段回答画两遍。
-      if (event.type === 'assistant_message' && event.isFinal === true && event.segmentId == null) {
+      // 与本地 MessageBuilder 一致：isFinal 是回合收尾，不因带 segmentId 变成新分段。
+      // Codex 收尾使用独立 segmentId；按分段渲染会把已输出的正文再画一遍。
+      if (event.type === 'assistant_message' && event.isFinal === true) {
         turnFinals.push({ turnId: event.turnId, id: event.id, seq: event.seq, text: content })
         continue
       }
