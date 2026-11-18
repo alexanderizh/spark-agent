@@ -3118,6 +3118,13 @@ function getSessionService(): SessionService {
     // stream:config:changed；sub-app 走既有专属目录流。常规分支与本文件
     // typedIpcHandle('agent:create'/...) 等内部调用的 pushConfigChanged 同语义。
     const onPlatformConfigChanged: PlatformConfigChangedHandler = (scope, action, id) => {
+      if (scope === 'session-dispatch') {
+        pushStreamEvent('stream:session:list-changed', {
+          source: 'session-dispatch',
+          ...(id != null ? { sessionId: id } : {}),
+        })
+        return
+      }
       // 子应用目录变化走专属流（renderer 的 App.tsx 订阅后转发为
       // spark:sub-app-directory-changed renderer 事件，侧栏菜单、胶囊启动器、
       // 管理页与运行页统一刷新）；不进 stream:config:changed，避免无关心方误刷。

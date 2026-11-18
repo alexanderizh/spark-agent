@@ -18,6 +18,7 @@ import readline from 'node:readline'
 const BRIDGE_PORT = Number(process.env.SPARK_PLATFORM_BRIDGE_PORT || 0)
 const BRIDGE_HOST = '127.0.0.1'
 const SESSION_ID = process.env.SPARK_SESSION_ID || ''
+const SESSION_DISPATCH_TOKEN = process.env.SPARK_SESSION_DISPATCH_TOKEN || ''
 
 // ─── JSON-RPC helpers ────────────────────────────────────────────────
 
@@ -2362,6 +2363,21 @@ function platformMethodDefinitions() {
 
     // ── Current-session full history retrieval ──
     {
+      name: 'sessions_dispatch',
+      description:
+        '仅当用户明确要求把某件事交给新会话时使用。创建独立会话并提交首条任务消息，不复制历史、不等待、不回传、不切换当前会话。accepted=true 只表示任务已接单，不代表已开跑或完成。收到 accepted=false 或调用结果不确定时，使用完全相同的 requestKey、title 和 task 重试。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requestKey: { type: 'string', minLength: 1, maxLength: 120, description: '每次独立派发使用新键，同一次派发重试沿用原键' },
+          title: { type: 'string', minLength: 1, maxLength: 120, description: '供用户在会话侧栏识别的任务标题' },
+          task: { type: 'string', minLength: 1, maxLength: 24000, description: '完整任务：目标、范围、已确认需求、复现、关键原始报错、相关可访问文件、已尝试事项和验收标准。不要包含密钥、无关历史或原会话 ID；无项目会话的工作目录不会共享。新会话自行执行，不继续分派。' },
+        },
+        required: ['requestKey', 'title', 'task'],
+        additionalProperties: false,
+      },
+    },
+    {
       name: 'session_history_list',
       description:
         '列出当前会话的历史轮次时间线（目录概览，不含正文）：每轮的 seq 范围、用户消息开头、消息/工具计数、工具名列表。上下文被压缩后需要重新定位早期轮次时，先用它浏览结构，再用 session_history_read 读取正文。',
@@ -2461,6 +2477,7 @@ const PLATFORM_METHOD_SEARCH_DOMAINS = [
   { pattern: /看板|任务|board/i, prefix: 'board_' },
   { pattern: /定时任务|计划任务|schedule/i, prefix: 'session_schedule_' },
   { pattern: /会话历史|会话记录|session history/i, prefix: 'session_history_' },
+  { pattern: /新(?:开|建)?会话|会话派发|(?:new session|session dispatch)/i, prefix: 'sessions_dispatch' },
   { pattern: /github|代码仓库|仓库协作/i, prefix: 'github_' },
   { pattern: /安装包|运行时|制品|artifact/i, prefix: 'artifacts_' },
 ]
@@ -2761,6 +2778,7 @@ async function handleToolCall(name, args) {
     session_history_list: 'session_history.list',
     session_history_read: 'session_history.read',
     session_history_search: 'session_history.search',
+    sessions_dispatch: 'sessions.dispatch',
     board_list: 'board.list',
     board_get: 'board.get',
     board_create: 'board.create',
@@ -2798,6 +2816,8 @@ async function handleToolCall(name, args) {
     }
     rpcArgs.sessionId = SESSION_ID
   }
+
+  if (name === 'sessions_dispatch') rpcArgs.dispatchToken = SESSION_DISPATCH_TOKEN
 
   // Skills tools: attach the session id (from env, never model-provided) so the
   // bridge can scope skills_list/skills_load to this session's effective skill

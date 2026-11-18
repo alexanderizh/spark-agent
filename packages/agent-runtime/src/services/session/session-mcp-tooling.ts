@@ -50,6 +50,7 @@ import { ScheduledTaskService } from '../scheduled-task.service.js'
 import { SessionScheduleAgentTools } from '../session-schedule-agent-tools.js'
 import { VoiceControlAgentTools } from '../voice-control-agent-tools.js'
 import { SessionHistoryRetrievalTools } from './session-history-retrieval-tools.js'
+import { SessionDispatch, SessionDispatchAuthorization } from './session-dispatch.js'
 import {
   resolveMediaMcpProviderRoutes,
   writeMediaMcpRuntimeConfig,
@@ -117,6 +118,8 @@ export interface SessionMcpToolingHost {
 }
 
 export class SessionMcpTooling {
+  private readonly dispatchAuthorization = new SessionDispatchAuthorization()
+
   constructor(
     private readonly db: SparkDatabase,
     private readonly host: SessionMcpToolingHost,
@@ -280,6 +283,12 @@ export class SessionMcpTooling {
       ),
       // 会话全量历史检索（session_history.* RPC）：直读 append-only 的 agent_events
       sessionHistoryTools: new SessionHistoryRetrievalTools(new SessionHistoryRepository(this.db)),
+      sessionDispatch: new SessionDispatch(
+        new SessionRepository(this.db),
+        this.host.getSessionService(),
+        (id) => this.host.getPlatformConfigChangedHandler()?.('session-dispatch', 'create', id),
+      ),
+      sessionDispatchAuthorization: this.dispatchAuthorization,
       // 语音会话应用控制（voice.* RPC）：desktop 注入执行器，惰性取用（未装配时安全降级）
       voiceControlTools: new VoiceControlAgentTools(() => this.host.getVoiceControlExecutor()),
       githubConnectorService: new GitHubConnectorService(
@@ -315,6 +324,7 @@ export class SessionMcpTooling {
         env: {
           SPARK_PLATFORM_BRIDGE_PORT: String(port),
           SPARK_SESSION_ID: sessionId,
+          SPARK_SESSION_DISPATCH_TOKEN: this.dispatchAuthorization.issue(sessionId),
         },
       }
     } catch (err) {

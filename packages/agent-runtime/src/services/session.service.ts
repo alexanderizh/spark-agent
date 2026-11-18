@@ -789,7 +789,8 @@ export type PlatformConfigChangedHandler = (
     | 'rule'
     | 'prompt'
     | 'scheduled-task'
-    | 'sub-app',
+    | 'sub-app'
+    | 'session-dispatch',
   action: 'create' | 'update' | 'delete' | 'import',
   id?: string,
 ) => void
@@ -3134,9 +3135,9 @@ export class SessionService {
      * 仅限服务端内部调用，不经 session:create IPC 暴露。
      */
     workflowBindingSource?: 'editor-test' | 'tool-package'
-  }): Promise<SessionCreateResponse> {
+  }, dispatch?: { sessionId: string; dispatchFingerprint: string }): Promise<SessionCreateResponse> {
     const sessionRepo = new SessionRepository(this.db)
-    const id = crypto.randomUUID()
+    const id = dispatch?.sessionId ?? crypto.randomUUID()
     if (params.workspaceId != null) {
       const workspace = new WorkspaceRepository(this.db).get(params.workspaceId)
       if (workspace != null) await ensureSessionWorkspaceRootPath(workspace, id)
@@ -3172,6 +3173,9 @@ export class SessionService {
             params.reasoningEffort ?? normalizeReasoningEffort(agent.reasoningEffort),
         }),
       applyMetadata: (created) => {
+        if (dispatch != null) {
+          sessionRepo.patchMetadata(created.id, { dispatchFingerprint: dispatch.dispatchFingerprint })
+        }
         if (params.debugMode !== undefined) {
           sessionRepo.patchMetadata(created.id, { debugMode: params.debugMode })
         }
@@ -3331,9 +3335,9 @@ export class SessionService {
 
   async submitTurn(
     params: SendTurnParams,
-    options: { startAfter?: Promise<unknown> } = {},
+    options: { startAfter?: Promise<unknown>; onAccepted?: (turnId: string) => void } = {},
   ): Promise<{ turnId: string; accepted: true; started: boolean }> {
-    const result = await this.dispatchTurn(params, true, options.startAfter)
+    const result = await this.dispatchTurn(params, true, options.startAfter, options.onAccepted)
     return { ...result, accepted: true }
   }
 
@@ -3341,6 +3345,7 @@ export class SessionService {
     params: SendTurnParams,
     durable: boolean,
     startAfter?: Promise<unknown>,
+    onAccepted?: (turnId: string) => void,
   ): Promise<{ turnId: string; started: boolean }> {
     if (this.disposing) throw new Error('Session service is shutting down')
     const { sessionId, message, skillId, skillParams, mentionAgentId, invocationObserver } = params
@@ -3423,6 +3428,8 @@ export class SessionService {
         } else {
           turnRequestRepository.create(request)
         }
+        // Persist dispatch's idempotency receipt in the turn acceptance transaction.
+        onAccepted?.(turnId)
         // 执行连续性（Phase 1）：与 turn_request 同事务登记 execution_run，
         // 保证 accepted 之后强杀不丢任务（RPO 0）。
         try {
