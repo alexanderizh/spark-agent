@@ -16,6 +16,7 @@
  * 注：P0-07 中旭阳-高级开发将基于此类型实现 typesafe invoke/handle 封装
  */
 
+import type { ChatFileActionIpcChannelMap } from '../chat-file-actions.js'
 import type {
   AgentEvent,
   SessionId,
@@ -7671,6 +7672,7 @@ export interface CanvasAssetCleanupFilesResponse {
  */
 export interface IpcChannelMap
   extends
+    ChatFileActionIpcChannelMap,
     ProviderFilesIpcChannelMap,
     VideoChannelTasksIpcChannelMap,
     ComputerUseIpcChannelMap,

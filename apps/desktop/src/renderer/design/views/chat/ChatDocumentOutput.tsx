@@ -175,7 +175,11 @@ export function DocumentOutputCard({
           {...(onFilePreview != null
             ? {
                 onOpenWithMode: (mode: FileOpenMode) =>
-                  onFilePreview(normalizedPath, 'text', { mode }),
+                  onFilePreview(
+                    normalizedPath,
+                    mode === 'preview' ? (previewType ?? 'text') : 'text',
+                    { mode },
+                  ),
               }
             : {})}
         />

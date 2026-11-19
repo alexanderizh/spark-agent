@@ -1,14 +1,10 @@
-import { useEffect, useRef } from 'react'
+import type { IpcRequest } from '@spark/protocol'
 import { Icons } from '../Icons'
+import { ContextMenu } from './ContextMenu'
+import type { ContextMenuEntry } from './contextMenuModel'
 import { canOpenInEditor, canOpenPreview, type FileOpenMode } from './fileOpenRouting'
-
-async function copyFilePath(filePath: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(filePath)
-  } catch {
-    // Clipboard access can be unavailable in an untrusted renderer context.
-  }
-}
+import { decodeSafeFileUrl } from './filePreviewSource'
+import { useToast } from './Toast'
 
 export function FilePathContextMenu({
   filePath,
@@ -21,74 +17,118 @@ export function FilePathContextMenu({
   x: number
   y: number
   onClose: () => void
-  /** 显式选择打开方式（预览/编辑）；不传则不显示对应菜单项 */
   onOpenWithMode?: (mode: FileOpenMode) => void
 }) {
-  const ref = useRef<HTMLDivElement | null>(null)
+  const { toast } = useToast()
+  const platform = window.spark?.platform
+  const candidate = decodeSafeFileUrl(filePath) ?? filePath
+  const localPath = /^(?:\/(?!\/)|[a-z]:[\\/]|\\\\)/i.test(candidate) ? candidate : null
+  const canEdit = canOpenInEditor(candidate)
+  const run = (fallback: string, operation: () => Promise<void>) => () => {
+    void operation().catch((error: unknown) => {
+      toast.error(error instanceof Error ? error.message : fallback)
+    })
+  }
 
-  useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
-      if (ref.current != null && !ref.current.contains(event.target as Node)) onClose()
-    }
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('mousedown', handlePointerDown)
-    window.addEventListener('keydown', handleEscape)
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      window.removeEventListener('keydown', handleEscape)
-    }
-  }, [onClose])
+  const items: ContextMenuEntry[] = []
+  if (onOpenWithMode && canOpenPreview(candidate)) {
+    items.push({
+      key: 'preview',
+      label: '预览',
+      icon: <Icons.Eye size={14} />,
+      onClick: () => onOpenWithMode('preview'),
+    })
+  }
+  if (onOpenWithMode && canEdit) {
+    items.push({
+      key: 'edit',
+      label: '编辑',
+      icon: <Icons.Edit size={14} />,
+      onClick: () => onOpenWithMode('edit'),
+    })
+  }
+  if (localPath != null) {
+    const fileAction = (action: IpcRequest<'file:chat-action'>['action'], success?: string) =>
+      run('文件操作失败', async () => {
+        const result = await window.spark.invoke('file:chat-action', {
+          filePath: localPath,
+          action,
+        })
+        if (result.status === 'error') throw new Error(result.error)
+        if (result.status === 'done' && success) toast.success(success)
+      })
 
-  const showPreview = onOpenWithMode != null && canOpenPreview(filePath)
-  const showEdit = onOpenWithMode != null && canOpenInEditor(filePath)
+    items.push({
+      key: 'open',
+      label: '打开文件',
+      icon: <Icons.ExternalLink size={14} />,
+      onClick: run('打开文件失败', async () => {
+        const result = await window.spark.invoke('file:open', { filePath: localPath })
+        if (!result.opened) throw new Error(result.error ?? '无法打开文件')
+      }),
+    })
+    if (platform === 'darwin' || platform === 'win32') {
+      items.push({
+        key: 'open-with',
+        label: '打开方式…',
+        icon: <Icons.File size={14} />,
+        onClick: fileAction('open-with'),
+      })
+    }
+    if (platform === 'darwin' || platform === 'win32' || platform === 'linux') {
+      items.push({
+        key: 'terminal',
+        label: '在终端打开所在目录',
+        icon: <Icons.Terminal size={14} />,
+        onClick: fileAction('open-terminal'),
+      })
+    }
+    items.push(
+      { type: 'divider' },
+      {
+        key: 'save-as',
+        label: '另存为…',
+        icon: <Icons.Download size={14} />,
+        onClick: fileAction('save-as', '已另存为副本'),
+      },
+    )
+    if (canEdit) {
+      items.push({
+        key: 'copy-content',
+        label: '复制文件内容',
+        icon: <Icons.Clipboard size={14} />,
+        onClick: fileAction('copy-content', '已复制文件内容'),
+      })
+    }
+  }
+  items.push({
+    key: 'copy-path',
+    label: '复制路径',
+    icon: <Icons.Copy size={14} />,
+    onClick: run('复制路径失败', async () => {
+      const result = await window.spark.invoke('clipboard:write-text', { text: candidate })
+      if (!result.success) throw new Error('复制路径失败')
+      toast.success('已复制路径')
+    }),
+  })
+  if (localPath != null) {
+    items.push({
+      key: 'reveal',
+      label:
+        platform === 'darwin'
+          ? '在 Finder 中显示'
+          : platform === 'win32'
+            ? '在资源管理器中显示'
+            : '在文件管理器中显示',
+      icon: <Icons.FolderOpen size={14} />,
+      onClick: run('定位文件失败', async () => {
+        const { kind } = await window.spark.invoke('file:stat-kind', { path: localPath })
+        if (kind !== 'file') throw new Error('文件不存在或已被移动')
+        const result = await window.spark.invoke('file:reveal', { filePath: localPath })
+        if (!result.revealed) throw new Error(result.error ?? '无法定位文件')
+      }),
+    })
+  }
 
-  return (
-    <div
-      ref={ref}
-      className="action-menu context-action-menu"
-      style={{ position: 'fixed', left: x, top: y, zIndex: 10000 }}
-      onClick={(event) => event.stopPropagation()}
-      onMouseDown={(event) => event.stopPropagation()}
-    >
-      {showPreview && (
-        <button
-          type="button"
-          className="action-menu-item"
-          onClick={() => {
-            onClose()
-            onOpenWithMode?.('preview')
-          }}
-        >
-          <Icons.Eye size={14} />
-          <span>预览</span>
-        </button>
-      )}
-      {showEdit && (
-        <button
-          type="button"
-          className="action-menu-item"
-          onClick={() => {
-            onClose()
-            onOpenWithMode?.('edit')
-          }}
-        >
-          <Icons.Edit size={14} />
-          <span>编辑</span>
-        </button>
-      )}
-      <button
-        type="button"
-        className="action-menu-item"
-        onClick={() => {
-          onClose()
-          void copyFilePath(filePath)
-        }}
-      >
-        <Icons.Copy size={14} />
-        <span>复制文件地址</span>
-      </button>
-    </div>
-  )
+  return <ContextMenu x={x} y={y} items={items} onClose={onClose} ariaLabel="文件操作" />
 }
