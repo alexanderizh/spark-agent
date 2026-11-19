@@ -137,6 +137,7 @@ export type RemoteTimelineItem =
       kind: 'user'
       id: string
       seq: number
+      timestamp?: string
       /** 所属回合：乐观气泡靠它精确对账（POST /turns 返回同一个 turnId） */
       turnId: string
       text: string
@@ -147,6 +148,7 @@ export type RemoteTimelineItem =
       kind: 'assistant'
       id: string
       seq: number
+      timestamp?: string
       /** 所属回合（回合级收尾消息靠它与分段对账） */
       turnId: string
       text: string
@@ -156,6 +158,7 @@ export type RemoteTimelineItem =
       kind: 'thinking'
       id: string
       seq: number
+      timestamp?: string
       turnId: string
       text: string
       streaming: boolean
@@ -204,7 +207,13 @@ export function buildRemoteTimeline(events: MobileBridgeEvent[]): RemoteTimeline
   const textIndex = new Map<string, number>()
   const toolIndex = new Map<string, number>()
   /** 回合级收尾消息：等所有分段都落位后再对账，避免中途改动下标 */
-  const turnFinals: Array<{ turnId: string; id: string; seq: number; text: string }> = []
+  const turnFinals: Array<{
+    turnId: string
+    id: string
+    seq: number
+    timestamp: string
+    text: string
+  }> = []
   /** 已收到终态（idle/completed/cancelled/error）的回合：流式光标要收敛 */
   const closedTurns = new Set<string>()
 
@@ -233,6 +242,7 @@ export function buildRemoteTimeline(events: MobileBridgeEvent[]): RemoteTimeline
         kind: 'user',
         id: event.id,
         seq: event.seq,
+        timestamp: event.timestamp,
         turnId: event.turnId,
         text,
         attachments,
@@ -247,7 +257,13 @@ export function buildRemoteTimeline(events: MobileBridgeEvent[]): RemoteTimeline
       // 与本地 MessageBuilder 一致：isFinal 是回合收尾，不因带 segmentId 变成新分段。
       // Codex 收尾使用独立 segmentId；按分段渲染会把已输出的正文再画一遍。
       if (event.type === 'assistant_message' && event.isFinal === true) {
-        turnFinals.push({ turnId: event.turnId, id: event.id, seq: event.seq, text: content })
+        turnFinals.push({
+          turnId: event.turnId,
+          id: event.id,
+          seq: event.seq,
+          timestamp: event.timestamp,
+          text: content,
+        })
         continue
       }
       const key = textSegmentKey(event)
@@ -261,6 +277,7 @@ export function buildRemoteTimeline(events: MobileBridgeEvent[]): RemoteTimeline
           kind,
           id: event.id,
           seq: event.seq,
+          timestamp: event.timestamp,
           turnId: event.turnId,
           text: content,
           streaming,
@@ -270,8 +287,10 @@ export function buildRemoteTimeline(events: MobileBridgeEvent[]): RemoteTimeline
       const item = items[existing]
       if (item == null || (item.kind !== 'assistant' && item.kind !== 'thinking')) continue
       // complete 覆盖（历史版本权威），delta 拼接
+      if (event.mode === 'complete') item.seq = event.seq
       item.text = event.mode === 'delta' ? item.text + content : content
       item.streaming = streaming
+      item.timestamp = event.timestamp
       continue
     }
 
@@ -364,7 +383,7 @@ function sortTimelineItems(items: RemoteTimelineItem[]): RemoteTimelineItem[] {
  */
 function reconcileTurnFinal(
   items: RemoteTimelineItem[],
-  final: { turnId: string; id: string; seq: number; text: string },
+  final: { turnId: string; id: string; seq: number; timestamp: string; text: string },
 ): void {
   const finalText = final.text
   const indexes: number[] = []
@@ -382,6 +401,7 @@ function reconcileTurnFinal(
       kind: 'assistant',
       id: final.id,
       seq: final.seq,
+      timestamp: final.timestamp,
       turnId: final.turnId,
       text: finalText,
       streaming: false,
@@ -396,10 +416,18 @@ function reconcileTurnFinal(
   const segments = indexes.map((index) => items[index])
   const texts = segments.map((item) => (item?.kind === 'assistant' ? item.text : ''))
   const joined = texts.join('')
-  if (sameText(joined, finalText)) return
   const lastIndex = indexes[indexes.length - 1]
   const last = lastIndex != null ? items[lastIndex] : undefined
+  if (sameText(joined, finalText)) {
+    if (last != null && last.kind === 'assistant') {
+      last.seq = final.seq
+      last.timestamp = final.timestamp
+    }
+    return
+  }
   if (last != null && last.kind === 'assistant' && sameText(last.text, finalText)) {
+    last.seq = final.seq
+    last.timestamp = final.timestamp
     last.streaming = false
     return
   }
@@ -410,6 +438,8 @@ function reconcileTurnFinal(
     last.kind === 'assistant'
   ) {
     last.text += finalText.slice(joined.length)
+    last.seq = final.seq
+    last.timestamp = final.timestamp
     last.streaming = false
     return
   }
@@ -419,6 +449,8 @@ function reconcileTurnFinal(
   const anchor = anchorIndex != null ? items[anchorIndex] : undefined
   if (anchor != null && anchor.kind === 'assistant') {
     anchor.text = finalText
+    anchor.seq = final.seq
+    anchor.timestamp = final.timestamp
     anchor.streaming = false
   }
   for (let i = 1; i < indexes.length; i += 1) {

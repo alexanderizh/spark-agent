@@ -42,9 +42,7 @@ describe('RemoteMessageList 发送反馈', () => {
     onRetryPendingUser?: () => void
   }): void {
     act(() => {
-      root.render(
-        <RemoteMessageList items={[]} deviceId="device-1" running={false} {...props} />,
-      )
+      root.render(<RemoteMessageList items={[]} deviceId="device-1" running={false} {...props} />)
     })
   }
 
@@ -141,7 +139,14 @@ describe('RemoteMessageList 发送反馈', () => {
           running={false}
           onReuseUserMessage={() => undefined}
           items={[
-            { kind: 'user', id: 'u1', seq: 1, turnId: 't0', text: '帮我看下这段代码', attachments: [] },
+            {
+              kind: 'user',
+              id: 'u1',
+              seq: 1,
+              turnId: 't0',
+              text: '帮我看下这段代码',
+              attachments: [],
+            },
             {
               kind: 'assistant',
               id: 'a1',
@@ -161,6 +166,82 @@ describe('RemoteMessageList 发送反馈', () => {
       expect(bar.classList.contains('msg-hover-right')).toBe(true)
       expect(bar.classList.contains('msg-hover-left')).toBe(false)
     })
+  })
+
+  it('shows timestamps in both user and assistant action bars', () => {
+    act(() => {
+      root.render(
+        <RemoteMessageList
+          deviceId="device-1"
+          items={[
+            {
+              kind: 'user',
+              id: 'u-time',
+              seq: 1,
+              turnId: 'turn-1',
+              text: 'question',
+              attachments: [],
+              timestamp: '2026-11-20T10:30:00.000Z',
+            },
+            {
+              kind: 'assistant',
+              id: 'a-time',
+              seq: 2,
+              turnId: 'turn-1',
+              text: 'answer',
+              streaming: false,
+              timestamp: '2026-11-20T10:31:00.000Z',
+            },
+          ]}
+        />,
+      )
+    })
+
+    const times = Array.from(container.querySelectorAll('.msg-hover-time'))
+    expect(times).toHaveLength(2)
+    expect(times.every((time) => (time.textContent ?? '').trim().length > 0)).toBe(true)
+  })
+
+  it('keeps the final answer after the collapsed activity row', () => {
+    act(() => {
+      root.render(
+        <RemoteMessageList
+          deviceId="device-1"
+          items={[
+            { kind: 'user', id: 'u1', seq: 1, turnId: 'turn-1', text: 'question', attachments: [] },
+            {
+              kind: 'activity',
+              id: 'activity-1',
+              seq: 2,
+              steps: [
+                {
+                  kind: 'tool',
+                  id: 'tool-1',
+                  seq: 2,
+                  toolName: 'bash',
+                  status: 'success',
+                  result: 'done',
+                },
+              ],
+            },
+            {
+              kind: 'assistant',
+              id: 'a1',
+              seq: 3,
+              turnId: 'turn-1',
+              text: 'final answer',
+              streaming: false,
+            },
+          ]}
+        />,
+      )
+    })
+
+    const timeline = Array.from(container.querySelectorAll('.rc-turn-collapse, .rc-msg-assistant'))
+    expect(timeline.map((item) => item.classList.contains('rc-turn-collapse'))).toEqual([
+      true,
+      false,
+    ])
   })
 
   it('生成中的助手分段不挂操作栏（按钮会随正文增长位移）', () => {

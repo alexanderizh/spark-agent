@@ -361,6 +361,7 @@ function AssistantMessageItem({
         // 下一段（活动摘要 / 正文）的左边缘上，和正文起点抢视线
         <MessageHoverBar
           position="right"
+          timestamp={item.timestamp}
           textContent={item.text}
           {...(ttsAvailable ? { onSpeechToggle: handleSpeechToggle, speechStatus } : {})}
         />
@@ -400,6 +401,7 @@ function MessageItem({
         {/* 操作条复用桌面端 .msg-hover-bar 的形态，hover 到气泡才显形（见 remote-control.less） */}
         <MessageHoverBar
           position="right"
+          timestamp={item.timestamp}
           textContent={item.text}
           {...(onReuseUserMessage != null ? { onResend: () => onReuseUserMessage(item) } : {})}
         />

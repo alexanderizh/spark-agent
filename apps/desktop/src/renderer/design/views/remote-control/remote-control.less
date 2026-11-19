@@ -1019,6 +1019,8 @@
   align-items: center;
   gap: 4px;
   min-width: 0;
+  /* Separate title truncation from the menu button at the row end. */
+  padding-right: 24px;
 }
 
 .rc-session-pin {
@@ -1917,14 +1919,12 @@
    视觉上多出来的是一排图标而不是一排空白。 */
 .rc-msg .msg-hover-bar {
   position: absolute;
-  /* 上提 4px：消息自身的行盒在正文下方还有约 5px 留白，先吃掉它，
-     压到下一段的量从 10px 降到 6px */
+  /* Keep the action row directly below its message. */
   top: 100%;
-  margin-top: -4px;
+  margin-top: 0;
   left: 0;
   right: 0;
-  /* 收窄到 22px：绝对定位后会压在下一段顶端（容器 gap 只有 12px），
-     能少压一像素是一像素 */
+  /* The parent reserves vertical space for this absolute 22px action row. */
   padding: 2px 0 0;
 }
 
@@ -1969,6 +1969,11 @@
 
 .rc-msg-assistant {
   min-width: 0;
+}
+
+.rc-msg-assistant:not(.streaming),
+.rc-msg-user:not(.rc-msg-user--pending) {
+  margin-bottom: 16px;
 }
 
 /* ─── 回合级折叠条 ─────────────────────────────────────────────────────────
