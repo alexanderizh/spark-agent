@@ -4,6 +4,7 @@ import { AppState, BackHandler, FlatList, Pressable, StatusBar, Text, View } fro
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { logout } from './auth'
 import { Chat } from './Chat'
+import { ChatDrafts } from './chat-draft'
 import { Login } from './Login'
 import { Relay } from './relay'
 import type { Device, Session } from './relay'
@@ -16,6 +17,7 @@ function DesktopSession({ token, exit }: { token: string; exit(): void }) {
   const [connection, setConnection] = useState(0)
   const [status, setStatus] = useState<'connecting' | 'online' | 'offline'>('connecting')
   const [issue, setIssue] = useState('')
+  const [drafts] = useState(() => new ChatDrafts())
   const [relay] = useState(
     () =>
       new Relay(token, `rn-${randomUUID()}`, {
@@ -92,6 +94,7 @@ function DesktopSession({ token, exit }: { token: string; exit(): void }) {
           key={JSON.stringify([device.deviceId, session.id])}
           deviceId={device.deviceId}
           sessionId={session.id}
+          draft={drafts.forTarget({ deviceId: device.deviceId, sessionId: session.id })}
           relay={relay}
           online={desktopOnline}
           connection={connection}

@@ -1,5 +1,5 @@
 import { randomUUID } from 'expo-crypto'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   Alert,
   FlatList,
@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native'
 import type { MobileBridgeEvent } from '../../../packages/protocol/src/mobile-bridge'
-import { SubmitError } from './relay'
+import type { ChatDraft } from './chat-draft'
 import type { Relay, Target } from './relay'
 import { mergeEvents, messages } from './timeline'
 import type { Message } from './timeline'
@@ -20,11 +20,13 @@ export function Chat({
   relay,
   deviceId,
   sessionId,
+  draft,
   online,
   connection,
   back,
 }: Target & {
   relay: Relay
+  draft: ChatDraft
   online: boolean
   connection: number
   back(): void
@@ -33,10 +35,10 @@ export function Chat({
   const [loaded, setLoaded] = useState(false)
   const [reload, setReload] = useState(0)
   const [historyError, setHistoryError] = useState('')
-  const [compose, setCompose] = useState('')
-  const [sending, setSending] = useState(false)
-  const [notice, setNotice] = useState('')
-  const [uncertain, setUncertain] = useState(false)
+  const snapshot = useSyncExternalStore(draft.subscribe, draft.getSnapshot)
+  const { text: compose, status, notice } = snapshot
+  const sending = status === 'sending'
+  const uncertain = status === 'unconfirmed'
   const list = useRef<FlatList<Message>>(null)
   const follow = useRef(true)
   const rows = useMemo(() => messages(events), [events])
@@ -70,26 +72,9 @@ export function Chat({
   }, [connection, deviceId, online, relay, reload, sessionId])
 
   const send = async () => {
-    const text = compose.trim()
-    if (!text || !online || !loaded || sending || uncertain) return
-    setSending(true)
-    setNotice('')
-    try {
-      const result = await relay.submit({ deviceId, sessionId }, text, randomUUID())
-      setCompose('')
+    if (!online || !loaded) return
+    if (await draft.send((text) => relay.submit({ deviceId, sessionId }, text, randomUUID()))) {
       follow.current = true
-      if (result.started === false) setNotice('已加入电脑端队列')
-    } catch (error) {
-      if (error instanceof SubmitError && error.outcome === 'not-sent') {
-        setNotice('消息未发送，草稿已保留。重新连接后可以发送。')
-      } else {
-        setUncertain(true)
-        setNotice(
-          '发送结果未确认：消息可能已在电脑端排队，暂时不会出现在历史里。请勿仅凭历史重发。',
-        )
-      }
-    } finally {
-      setSending(false)
     }
   }
 
@@ -173,19 +158,12 @@ export function Chat({
                   {
                     text: '不重发，清空草稿',
                     style: 'destructive',
-                    onPress: () => {
-                      setCompose('')
-                      setUncertain(false)
-                      setNotice('')
-                    },
+                    onPress: () => draft.resolveUnconfirmed(snapshot, true),
                   },
                   { text: '取消', style: 'cancel' },
                   {
                     text: '确认未收到，解锁草稿',
-                    onPress: () => {
-                      setUncertain(false)
-                      setNotice('')
-                    },
+                    onPress: () => draft.resolveUnconfirmed(snapshot, false),
                   },
                 ],
               )
@@ -199,7 +177,7 @@ export function Chat({
             placeholderTextColor={colors.muted}
             accessibilityLabel="消息"
             value={compose}
-            onChangeText={setCompose}
+            onChangeText={draft.setText}
             multiline
             editable={!sending && !uncertain}
           />
