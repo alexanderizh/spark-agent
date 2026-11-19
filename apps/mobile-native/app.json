@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "SparkWork 样机",
+    "slug": "sparkwork-native-prototype",
+    "version": "0.1.0",
+    "ios": { "bundleIdentifier": "com.sparkagent.companion.prototype" },
+    "android": { "package": "com.sparkagent.companion.prototype" }
+  }
+}
