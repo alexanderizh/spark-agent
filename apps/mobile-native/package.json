@@ -23,6 +23,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "~19.2.0",
+    "spark-protocol-zod": "npm:zod@4.4.3",
     "tsx": "^4.20.0",
     "typescript": "~5.9.2"
   }
