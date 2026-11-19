@@ -6,8 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PresentedFilesList } from './PresentedFiles'
 import { filterPresentedFiles, hasPresentedFiles } from './presented-files'
 
-const { errorToast } = vi.hoisted(() => ({ errorToast: vi.fn() }))
-vi.mock('../../components/Toast', () => ({ useToast: () => ({ toast: { error: errorToast } }) }))
+const { errorToast, successToast } = vi.hoisted(() => ({
+  errorToast: vi.fn(),
+  successToast: vi.fn(),
+}))
+vi.mock('../../components/Toast', () => ({
+  useToast: () => ({ toast: { error: errorToast, success: successToast } }),
+}))
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('explicit presented attachments', () => {
@@ -21,7 +26,11 @@ describe('explicit presented attachments', () => {
     root = createRoot(container)
     invoke.mockReset().mockResolvedValue({ opened: true })
     errorToast.mockReset()
-    Object.defineProperty(window, 'spark', { configurable: true, value: { invoke } })
+    successToast.mockReset()
+    Object.defineProperty(window, 'spark', {
+      configurable: true,
+      value: { invoke, platform: 'darwin' },
+    })
   })
 
   afterEach(async () => {
@@ -89,16 +98,61 @@ describe('explicit presented attachments', () => {
     expect(errorToast).toHaveBeenCalledWith('文件已被移动')
   })
 
-  it('offers the existing context menu for generic attachments', async () => {
-    await act(async () =>
-      root.render(<PresentedFilesList files={[{ path: '/workspace/clash.yaml' }]} />),
-    )
+  async function openFileMenu() {
     await act(async () =>
       container
         .querySelector('.document-output-card')
         ?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 30 })),
     )
-    expect(container.textContent).toContain('复制文件地址')
+    return Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[aria-label="文件操作"] [role="menuitem"]'),
+    )
+  }
+
+  it('offers system and text actions and routes them to their IPC handlers', async () => {
+    const filePath = '/workspace/clash.yaml'
+    await act(async () => root.render(<PresentedFilesList files={[{ path: filePath }]} />))
+    const items = await openFileMenu()
+    expect(items.map((item) => item.textContent)).toEqual([
+      '打开文件',
+      '打开方式…',
+      '在终端打开所在目录',
+      '另存为…',
+      '复制文件内容',
+      '复制路径',
+      '在 Finder 中显示',
+    ])
+    invoke.mockResolvedValueOnce({ status: 'done' })
+    await act(async () => items.find((item) => item.textContent === '复制文件内容')?.click())
+    expect(invoke).toHaveBeenCalledWith('file:chat-action', { filePath, action: 'copy-content' })
+    expect(successToast).toHaveBeenCalledWith('已复制文件内容')
+    expect(document.querySelector('[aria-label="文件操作"]')).toBeNull()
+
+    const reopened = await openFileMenu()
+    invoke.mockResolvedValueOnce({ status: 'canceled' })
+    successToast.mockClear()
+    await act(async () => reopened.find((item) => item.textContent === '另存为…')?.click())
+    expect(invoke).toHaveBeenCalledWith('file:chat-action', { filePath, action: 'save-as' })
+    expect(successToast).not.toHaveBeenCalled()
+  })
+
+  it('keeps explicit preview and excludes text copying for binary attachments', async () => {
+    const preview = vi.fn()
+    const filePath = '/workspace/report.pdf'
+    await act(async () =>
+      root.render(<PresentedFilesList files={[{ path: filePath }]} onFilePreview={preview} />),
+    )
+    const items = await openFileMenu()
+    expect(items.map((item) => item.textContent)).not.toContain('复制文件内容')
+    await act(async () => items.find((item) => item.textContent === '预览')?.click())
+    expect(preview).toHaveBeenCalledWith(filePath, 'universal', { mode: 'preview' })
+  })
+
+  it('does not run desktop actions on non-local paths', async () => {
+    await act(async () =>
+      root.render(<PresentedFilesList files={[{ path: 'https://example.com/bundle.zip' }]} />),
+    )
+    expect((await openFileMenu()).map((item) => item.textContent)).toEqual(['复制路径'])
   })
 
   it('skips empty paths consistently and renders no empty wrapper', async () => {

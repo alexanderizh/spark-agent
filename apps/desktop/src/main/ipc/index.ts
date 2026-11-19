@@ -387,6 +387,7 @@ import { registerHooksV2Ipc } from './registerHooksV2Ipc.js'
 import { registerWorkspaceSearchIpc } from './registerWorkspaceSearchIpc.js'
 import { getPluginManager, registerPluginIpc } from './registerPluginIpc.js'
 import { registerFilePreviewIpc } from './registerFilePreviewIpc.js'
+import { registerChatFileActionIpc } from './registerChatFileActionIpc.js'
 import { registerFileOperationsIpc } from './registerFileOperationsIpc.js'
 import { registerSkillFilesIpc } from './registerSkillFilesIpc.js'
 import { registerQuickCreateIpc } from './registerQuickCreateIpc.js'
@@ -5286,6 +5287,7 @@ export function ensureDreamSchedulesAsync(): void {
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
   registerFilePreviewIpc()
+  registerChatFileActionIpc()
   registerFileOperationsIpc()
   registerSkillFilesIpc({ getSkillService })
   registerQuickCreateIpc()

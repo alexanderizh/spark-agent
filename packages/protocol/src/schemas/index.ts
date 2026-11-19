@@ -8,6 +8,7 @@
  */
 
 import { z } from 'zod'
+import { ChatFileActionIpcSchemaRegistry } from '../chat-file-actions.js'
 import { AutoRouterConfigSchema } from '../auto-router-config.js'
 import { ProviderExportPayloadSchema, ProviderImportModeSchema } from '../provider-export.js'
 import {
@@ -1288,6 +1289,7 @@ export const IpcSchemaRegistry = {
   'file:prepare-media-input': FilePrepareMediaInputRequestSchema,
   'file:prepare-session-images': FilePrepareSessionImagesRequestSchema,
   'file:stat-kind': FileStatKindRequestSchema,
+  ...ChatFileActionIpcSchemaRegistry,
   'quick-create:cleanup-task-resources': QuickCreateCleanupTaskResourcesRequestSchema,
   'file:trash': FileTrashRequestSchema,
   'file:create-file': FileCreateFileRequestSchema,
