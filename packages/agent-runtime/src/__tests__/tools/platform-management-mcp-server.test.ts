@@ -243,6 +243,46 @@ describe('spark_platform MCP server', () => {
     })
   })
 
+  it('discovers session dispatch and injects only the trusted source and token', async () => {
+    const received: unknown[] = []
+    bridge = createServer(async (req, res) => {
+      req.setEncoding('utf8')
+      let body = ''
+      for await (const chunk of req) body += chunk
+      received.push(JSON.parse(body))
+      res.end(JSON.stringify({ ok: true, data: { accepted: true, sessionId: 'new', turnId: 'turn' } }))
+    })
+    await new Promise<void>((resolve) => bridge?.listen(0, '127.0.0.1', resolve))
+    const address = bridge.address()
+    if (address == null || typeof address === 'string') throw new Error('Failed to bind bridge')
+    child = start({
+      SPARK_PLATFORM_BRIDGE_PORT: String(address.port),
+      SPARK_SESSION_ID: 'current',
+      SPARK_SESSION_DISPATCH_TOKEN: 'test-token',
+    })
+    const search = await callMcp(child, {
+      jsonrpc: '2.0', id: 31, method: 'tools/call',
+      params: { name: 'platform_methods_search', arguments: { query: '新开会话派发' } },
+    })
+    expect(JSON.parse(search.result.content[0].text).methods).toContainEqual(
+      expect.objectContaining({ name: 'sessions_dispatch' }),
+    )
+    const args = { title: 'Fix downloads', task: 'Reproduce the observed failure.', requestKey: 'download' }
+    const invoke = (id: number, arguments_: Record<string, unknown>) => callMcp(child!, {
+      jsonrpc: '2.0', id, method: 'tools/call',
+      params: { name: 'platform_invoke', arguments: { method: 'sessions_dispatch', arguments: arguments_ } },
+    })
+    const spoofed = await invoke(32, { ...args, sessionId: 'another' })
+    expect(spoofed.result.isError).toBe(true)
+    expect(received).toHaveLength(0)
+    const result = await invoke(33, args)
+    expect(JSON.parse(result.result.content[0].text)).toEqual({ accepted: true, sessionId: 'new', turnId: 'turn' })
+    expect(received).toEqual([{
+      method: 'sessions.dispatch',
+      params: { ...args, sessionId: 'current', dispatchToken: 'test-token' },
+    }])
+  })
+
   it('routes custom tool draft creation to the production bridge method', async () => {
     let lastRpc: { method?: string; params?: unknown } | null = null
     bridge = createServer((req, res) => {

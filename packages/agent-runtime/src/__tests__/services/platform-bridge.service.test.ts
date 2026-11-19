@@ -38,6 +38,37 @@ import {
   type PlatformBridgeDeps,
 } from '../../services/platform-bridge.service.js'
 import * as keystore from '@spark/shared/keystore'
+import { SessionDispatchAuthorization } from '../../services/session/session-dispatch.js'
+
+it('session dispatch authenticates the source before forwarding the assignment', async () => {
+  const service = new PlatformBridgeService()
+  const sessionDispatchAuthorization = new SessionDispatchAuthorization()
+  const dispatch = vi.fn(async () => ({ accepted: true, sessionId: 'new', turnId: 'turn' }))
+  const port = await service.start({
+    sessionDispatchAuthorization,
+    sessionDispatch: { dispatch },
+  } as unknown as PlatformBridgeDeps)
+  try {
+    const input = { sessionId: 'source', requestKey: 'key', title: 'Task', task: 'Reproduce and fix' }
+    const token = sessionDispatchAuthorization.issue(input.sessionId)
+    await expect(callBridgeRpc(port, 'sessions.dispatch', input)).resolves.toMatchObject({ ok: false })
+    await expect(callBridgeRpc(port, 'sessions.dispatch', {
+      ...input, sessionId: 'spoofed', dispatchToken: token,
+    })).resolves.toMatchObject({ ok: false })
+    await expect(callBridgeRpc(port, 'sessions.dispatch', {
+      ...input, task: ' ', dispatchToken: token,
+    })).resolves.toMatchObject({ ok: false })
+    expect(dispatch).not.toHaveBeenCalled()
+    await expect(callBridgeRpc(port, 'sessions.dispatch', {
+      ...input, dispatchToken: token,
+    })).resolves.toMatchObject({ ok: true, data: { accepted: true, sessionId: 'new', turnId: 'turn' } })
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({
+      sourceId: input.sessionId, requestKey: input.requestKey, title: input.title, task: input.task,
+    })
+  } finally {
+    await service.stop()
+  }
+})
 
 type ConfigChange = {
   scope:

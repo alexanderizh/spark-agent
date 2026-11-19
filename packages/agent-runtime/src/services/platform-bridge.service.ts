@@ -94,6 +94,7 @@ import type {
   SessionScheduleUpdateInput,
 } from './session-schedule-agent-tools.js'
 import type { SessionHistoryRetrievalTools } from './session/session-history-retrieval-tools.js'
+import type { SessionDispatch, SessionDispatchAuthorization } from './session/session-dispatch.js'
 import type { VoiceControlAgentTools } from './voice-control-agent-tools.js'
 import {
   normalizeSparkReasoningEffort,
@@ -449,6 +450,8 @@ export interface PlatformBridgeDeps {
   voiceControlTools: VoiceControlAgentTools
   /** 会话全量历史检索门面（session_history.* RPC，仅当前会话） */
   sessionHistoryTools: SessionHistoryRetrievalTools
+  sessionDispatch?: SessionDispatch
+  sessionDispatchAuthorization?: SessionDispatchAuthorization
   sessionService: {
     updateSession(params: {
       sessionId: string
@@ -968,6 +971,20 @@ export class PlatformBridgeService {
             actor: 'agent',
           }),
         )
+
+      case 'sessions.dispatch': {
+        const sourceId = requireSessionId(params)
+        if (d.sessionDispatch == null || d.sessionDispatchAuthorization == null) {
+          throw new Error('Session dispatch is unavailable')
+        }
+        d.sessionDispatchAuthorization.verify(sourceId, params.dispatchToken)
+        return d.sessionDispatch.dispatch({
+          sourceId,
+          requestKey: requireText(params, 'requestKey', 120),
+          title: requireText(params, 'title', 120),
+          task: requireText(params, 'task', 24_000),
+        })
+      }
 
       // ── Current-session full history retrieval（上下文压缩后的全量存档逃生门）──
       // 会话身份由子进程 env 注入后经 requireSessionId 回传校验；仓库层所有查询
