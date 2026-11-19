@@ -17,26 +17,40 @@ export interface Message {
 
 export function messages(events: MobileBridgeEvent[]): Message[] {
   const rows = new Map<string, Message>()
-  const finalTurns = new Set(
-    events
-      .filter(
-        (event) =>
-          event.type === 'assistant_message' &&
-          event.isFinal &&
-          event.segmentId == null &&
-          event.mode !== 'delta',
-      )
-      .map((event) => event.turnId),
-  )
+  const finalTurns = new Map<string, MobileBridgeEvent>()
+  const assistantKeys = new Map<string, Set<string>>()
+  for (const event of events) {
+    if (
+      event.type === 'assistant_message' &&
+      event.isFinal &&
+      event.segmentId == null &&
+      event.mode !== 'delta'
+    ) {
+      finalTurns.set(event.turnId, event)
+    }
+  }
   for (const event of events) {
     if (event.type === 'user_message') {
       rows.set(event.id, { key: event.id, role: 'user', text: event.content ?? '' })
     } else if (event.type === 'assistant_message') {
       const wholeTurn = event.isFinal && event.segmentId == null && event.mode !== 'delta'
-      if (!wholeTurn && finalTurns.has(event.turnId)) continue
+      const final = finalTurns.get(event.turnId)
+      const turnKeys = assistantKeys.get(event.turnId) ?? new Set<string>()
+      if (wholeTurn) {
+        if (event !== final) continue
+        // Some engines repeat only the last segment in the terminal event.
+        const last = [...turnKeys].at(-1)
+        const lastText = last === undefined ? undefined : rows.get(last)?.text.trim()
+        if (lastText && lastText === event.content?.trim()) continue
+        for (const key of turnKeys) rows.delete(key)
+      } else if (final && event.seq > final.seq) {
+        continue
+      }
       const key = JSON.stringify([event.turnId, event.segmentId ?? null])
       const previous = event.mode === 'delta' ? (rows.get(key)?.text ?? '') : ''
       rows.set(key, { key, role: 'assistant', text: previous + (event.content ?? '') })
+      turnKeys.add(key)
+      assistantKeys.set(event.turnId, turnKeys)
     } else if (
       event.type === 'agent_error' ||
       (event.type === 'agent_status' && event.status === 'error')

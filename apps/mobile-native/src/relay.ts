@@ -9,6 +9,23 @@ import type {
 import { SERVICE_ORIGIN } from './auth'
 
 export type Device = Pick<MobileBridgeRelayDesktopInfo, 'deviceId' | 'label'>
+export type Session = Pick<MobileBridgeSessionListResponse['sessions'][number], 'id' | 'title'>
+interface SessionPage {
+  sessions: Session[]
+  nextOffset: number | null
+}
+
+class RequestNotSent extends Error {}
+
+export class SubmitError extends Error {
+  constructor(
+    readonly outcome: 'not-sent' | 'unconfirmed',
+    cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : '电脑未确认消息', { cause })
+  }
+}
+
 export interface Target {
   deviceId: string
   sessionId: string
@@ -291,7 +308,8 @@ export class Relay {
     method: 'GET' | 'POST',
     body?: unknown,
   ): Promise<unknown> {
-    if (!this.ready || !deviceId) return Promise.reject(new Error('尚未连接到云中继'))
+    if (!this.ready || !this.socket || !deviceId)
+      return Promise.reject(new RequestNotSent('尚未连接到云中继'))
     const id = `native-${++this.seq}`
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -303,17 +321,23 @@ export class Relay {
     })
   }
 
-  async sessions(
-    deviceId: string,
-  ): Promise<Pick<MobileBridgeSessionListResponse['sessions'][number], 'id' | 'title'>[]> {
-    const body = object(await this.call(deviceId, '/v1/sessions?limit=50', 'GET'))
-    if (!Array.isArray(body?.sessions)) throw new Error('会话列表格式异常')
-    return body.sessions.flatMap((row: unknown) => {
+  async sessions(deviceId: string, offset = 0): Promise<SessionPage> {
+    const body = object(await this.call(deviceId, `/v1/sessions?limit=50&offset=${offset}`, 'GET'))
+    if (
+      !Array.isArray(body?.sessions) ||
+      typeof body.total !== 'number' ||
+      !Number.isSafeInteger(body.total) ||
+      body.total < 0
+    )
+      throw new Error('会话列表格式异常')
+    const end = offset + body.sessions.length
+    const sessions = body.sessions.flatMap((row: unknown) => {
       const session = object(row)
       return typeof session?.id === 'string' && session.id && typeof session.title === 'string'
         ? [{ id: session.id, title: session.title }]
         : []
     })
+    return { sessions, nextOffset: end > offset && end < body.total ? end : null }
   }
 
   async history(target: Target): Promise<Pick<MobileBridgeHistoryResponse, 'events' | 'running'>> {
@@ -339,15 +363,20 @@ export class Relay {
     text: string,
     clientMessageId: string,
   ): Promise<MobileBridgeSubmitTurnResponse> {
-    const body = object(
-      await this.call(
-        target.deviceId,
-        `/v1/sessions/${encodeURIComponent(target.sessionId)}/turns`,
-        'POST',
-        { text, clientMessageId },
-      ),
-    )
-    if (typeof body?.turnId !== 'string' || !body.turnId) throw new Error('电脑未确认消息')
-    return { turnId: body.turnId, started: body.started !== false }
+    try {
+      const body = object(
+        await this.call(
+          target.deviceId,
+          `/v1/sessions/${encodeURIComponent(target.sessionId)}/turns`,
+          'POST',
+          { text, clientMessageId },
+        ),
+      )
+      if (typeof body?.turnId !== 'string' || !body.turnId) throw new Error('电脑未确认消息')
+      return { turnId: body.turnId, started: body.started !== false }
+    } catch (cause) {
+      // Only a local preflight rejection proves the request never left the client.
+      throw new SubmitError(cause instanceof RequestNotSent ? 'not-sent' : 'unconfirmed', cause)
+    }
   }
 }

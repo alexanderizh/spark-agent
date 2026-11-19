@@ -6,20 +6,16 @@ import { logout } from './auth'
 import { Chat } from './Chat'
 import { Login } from './Login'
 import { Relay } from './relay'
-import type { Device } from './relay'
+import type { Device, Session } from './relay'
 import { Action, colors, ui } from './ui'
 
 function DesktopSession({ token, exit }: { token: string; exit(): void }) {
   const [devices, setDevices] = useState<Device[]>([])
   const [device, setDevice] = useState<Device>()
-  const [session, setSession] = useState<{ id: string; title: string }>()
-  const [sessions, setSessions] = useState<NonNullable<typeof session>[]>([])
+  const [session, setSession] = useState<Session>()
   const [connection, setConnection] = useState(0)
   const [status, setStatus] = useState<'connecting' | 'online' | 'offline'>('connecting')
   const [issue, setIssue] = useState('')
-  const [sessionIssue, setSessionIssue] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [reload, setReload] = useState(0)
   const [relay] = useState(
     () =>
       new Relay(token, `rn-${randomUUID()}`, {
@@ -47,34 +43,9 @@ function DesktopSession({ token, exit }: { token: string; exit(): void }) {
 
   const desktopOnline =
     status === 'online' && devices.some((entry) => entry.deviceId === device?.deviceId)
-  useEffect(() => {
-    if (!device || !desktopOnline || session) return
-    let current = true
-    setLoading(true)
-    setSessionIssue('')
-    void relay
-      .sessions(device.deviceId)
-      .then((rows) => {
-        if (current) setSessions(rows)
-      })
-      .catch(() => {
-        if (current) setSessionIssue('会话列表加载失败')
-      })
-      .finally(() => {
-        if (current) setLoading(false)
-      })
-    return () => {
-      current = false
-    }
-  }, [connection, desktopOnline, device, relay, reload, session])
-
   const back = () => {
     if (session) setSession(undefined)
-    else if (device) {
-      setDevice(undefined)
-      setSessions([])
-      setSessionIssue('')
-    }
+    else if (device) setDevice(undefined)
   }
   useEffect(() => {
     const handle = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -84,8 +55,6 @@ function DesktopSession({ token, exit }: { token: string; exit(): void }) {
       }
       if (device) {
         setDevice(undefined)
-        setSessions([])
-        setSessionIssue('')
         return true
       }
       return false
@@ -129,39 +98,16 @@ function DesktopSession({ token, exit }: { token: string; exit(): void }) {
           back={() => {
             setSession(undefined)
             setDevice(undefined)
-            setSessions([])
           }}
         />
       ) : device ? (
-        <>
-          {!!sessionIssue && (
-            <View style={[ui.row, { paddingHorizontal: 20 }]}>
-              <Text style={ui.error}>{sessionIssue}</Text>
-              <Action
-                label="重试"
-                disabled={!desktopOnline}
-                onPress={() => setReload((value) => value + 1)}
-              />
-            </View>
-          )}
-          <FlatList
-            data={desktopOnline ? sessions : []}
-            contentContainerStyle={ui.page}
-            keyExtractor={(row) => row.id}
-            ListEmptyComponent={
-              <Text style={ui.muted}>
-                {!desktopOnline
-                  ? '电脑不在线'
-                  : loading
-                    ? '正在加载会话…'
-                    : sessionIssue || '没有已有会话'}
-              </Text>
-            }
-            renderItem={({ item }) => (
-              <ListRow label={item.title || '未命名会话'} onPress={() => setSession(item)} />
-            )}
-          />
-        </>
+        <SessionList
+          key={JSON.stringify([device.deviceId, connection])}
+          deviceId={device.deviceId}
+          online={desktopOnline}
+          relay={relay}
+          onSelect={setSession}
+        />
       ) : (
         <FlatList
           data={status === 'online' ? devices : []}
@@ -176,6 +122,101 @@ function DesktopSession({ token, exit }: { token: string; exit(): void }) {
         />
       )}
     </View>
+  )
+}
+
+function SessionList({
+  deviceId,
+  online,
+  relay,
+  onSelect,
+}: {
+  deviceId: string
+  online: boolean
+  relay: Relay
+  onSelect(session: Session): void
+}) {
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [offset, setOffset] = useState(0)
+  const [nextOffset, setNextOffset] = useState<number | null>(null)
+  const [reload, setReload] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [issue, setIssue] = useState('')
+
+  useEffect(() => {
+    if (!online) return
+    let current = true
+    setLoading(true)
+    setIssue('')
+    void relay
+      .sessions(deviceId, offset)
+      .then((page) => {
+        if (!current) return
+        setSessions((previous) => {
+          const rows = new Map((offset === 0 ? [] : previous).map((row) => [row.id, row]))
+          for (const row of page.sessions) rows.set(row.id, row)
+          return [...rows.values()]
+        })
+        setNextOffset(page.nextOffset)
+      })
+      .catch(() => {
+        if (current) setIssue(offset === 0 ? '会话列表加载失败' : '更多会话加载失败')
+      })
+      .finally(() => {
+        if (current) setLoading(false)
+      })
+    return () => {
+      current = false
+    }
+  }, [deviceId, offset, online, relay, reload])
+
+  return (
+    <FlatList
+      data={online ? sessions : []}
+      contentContainerStyle={ui.page}
+      keyExtractor={(row) => row.id}
+      ListEmptyComponent={
+        <Text style={ui.muted}>
+          {!online
+            ? '电脑不在线'
+            : loading && offset === 0
+              ? '正在加载会话…'
+              : !issue && nextOffset === null
+                ? '没有已有会话'
+                : ''}
+        </Text>
+      }
+      ListFooterComponent={
+        online && issue ? (
+          <View style={ui.row}>
+            <Text accessibilityLiveRegion="polite" style={[ui.error, { flex: 1 }]}>
+              {issue}
+            </Text>
+            <Action
+              label="重试"
+              onPress={() => {
+                setLoading(true)
+                setIssue('')
+                setReload((value) => value + 1)
+              }}
+            />
+          </View>
+        ) : online && nextOffset !== null ? (
+          <Action
+            label={loading ? '正在加载…' : '加载更多'}
+            disabled={loading}
+            onPress={() => {
+              if (nextOffset === null || loading) return
+              setLoading(true)
+              setOffset(nextOffset)
+            }}
+          />
+        ) : null
+      }
+      renderItem={({ item }) => (
+        <ListRow label={item.title || '未命名会话'} onPress={() => onSelect(item)} />
+      )}
+    />
   )
 }
 

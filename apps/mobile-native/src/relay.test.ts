@@ -135,6 +135,65 @@ test('resubscribes after reconnect without replaying a write with an unknown out
   )
 })
 
+test('distinguishes a write blocked before dispatch from an accepted write with a lost receipt', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const { relay, resume } = setup(t)
+  await assert.rejects(relay.submit(target, 'queued message', 'id'), { outcome: 'not-sent' })
+  const socket = resume()
+  socket.receive({ t: 'welcome', devices: [] })
+  const submit = relay.submit(target, 'queued message', 'id')
+  const rejected = assert.rejects(submit, { outcome: 'unconfirmed' })
+  // The desktop received the write, but it is queued and not yet present in history.
+  assert.equal(socket.sent.at(-1)?.t, 'req')
+  t.mock.timers.tick(30_000)
+  await rejected
+
+  const history = relay.history(target)
+  const req = socket.sent.at(-1)
+  assert.ok(req?.t === 'req')
+  socket.receive({
+    t: 'res',
+    id: req.id,
+    s: 200,
+    b: { sessionId: 'shared', events: [], running: true },
+  })
+  assert.deepEqual((await history).events, [])
+  assert.equal(socket.sent.filter((frame) => frame.t === 'req' && frame.m === 'POST').length, 1)
+})
+
+test('uses the desktop total and raw page length to reach session 51', async (t) => {
+  const { relay, resume } = setup(t)
+  const socket = resume()
+  socket.receive({ t: 'welcome', devices: [] })
+  const first = relay.sessions(target.deviceId)
+  const req = socket.sent.at(-1)
+  assert.ok(req?.t === 'req')
+  socket.receive({
+    t: 'res',
+    id: req.id,
+    s: 200,
+    b: {
+      total: 51,
+      sessions: [...Array.from({ length: 49 }, (_, i) => ({ id: `s${i + 1}`, title: '' })), null],
+    },
+  })
+  const page = await first
+  assert.equal(page.sessions.length, 49)
+  assert.equal(page.nextOffset, 50)
+  const second = relay.sessions(target.deviceId, page.nextOffset)
+  const next = socket.sent.at(-1)
+  assert.ok(next?.t === 'req')
+  assert.equal(next.p, '/v1/sessions?limit=50&offset=50')
+  assert.equal(next.d, target.deviceId)
+  socket.receive({
+    t: 'res',
+    id: next.id,
+    s: 200,
+    b: { total: 51, sessions: [{ id: 's51', title: '旧会话' }] },
+  })
+  assert.deepEqual(await second, { sessions: [{ id: 's51', title: '旧会话' }], nextOffset: null })
+})
+
 test('ignores stale subscriptions and stops reconnecting after an auth error', (t) => {
   const { relay, resume, sockets } = setup(t)
   const socket = resume()
@@ -169,4 +228,19 @@ test('merges out-of-order live deltas with history without duplicate final repli
   assert.deepEqual(readEvents([null, { ...first, seq: '1' }, { ...first, content: {} }]), [
     withoutContent,
   ])
+})
+
+test('keeps earlier reply segments when the final event only repeats the last segment', () => {
+  const first = event(1, 'first', { segmentId: 'intro', mode: 'complete' })
+  const second = event(2, 'la', { segmentId: 'ending' })
+  const third = event(3, 'st', { segmentId: 'ending' })
+  const final = event(4, 'last', { isFinal: true, mode: 'complete' })
+  assert.deepEqual(
+    messages(mergeEvents([first, second, third], [final, third])).map((row) => row.text),
+    ['first', 'last'],
+  )
+  assert.deepEqual(
+    messages([final]).map((row) => row.text),
+    ['last'],
+  )
 })

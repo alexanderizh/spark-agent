@@ -1,7 +1,16 @@
 import { randomUUID } from 'expo-crypto'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FlatList, KeyboardAvoidingView, Platform, Text, TextInput, View } from 'react-native'
+import {
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
 import type { MobileBridgeEvent } from '../../../packages/protocol/src/mobile-bridge'
+import { SubmitError } from './relay'
 import type { Relay, Target } from './relay'
 import { mergeEvents, messages } from './timeline'
 import type { Message } from './timeline'
@@ -70,10 +79,15 @@ export function Chat({
       setCompose('')
       follow.current = true
       if (result.started === false) setNotice('已加入电脑端队列')
-    } catch {
-      setUncertain(true)
-      setNotice('未收到电脑确认。请先同步历史，确认没有发送成功后再决定是否重发。')
-      setReload((value) => value + 1)
+    } catch (error) {
+      if (error instanceof SubmitError && error.outcome === 'not-sent') {
+        setNotice('消息未发送，草稿已保留。重新连接后可以发送。')
+      } else {
+        setUncertain(true)
+        setNotice(
+          '发送结果未确认：消息可能已在电脑端排队，暂时不会出现在历史里。请勿仅凭历史重发。',
+        )
+      }
     } finally {
       setSending(false)
     }
@@ -150,12 +164,32 @@ export function Chat({
         )}
         {uncertain && (
           <Action
-            label="保留草稿并解锁发送"
-            disabled={!loaded}
-            onPress={() => {
-              setUncertain(false)
-              setNotice('')
-            }}
+            label="在电脑端核对后解锁"
+            onPress={() =>
+              Alert.alert(
+                '确认在电脑端核对过？',
+                '请同时检查该会话的排队消息和对话记录。如果消息已排队或已收到，请勿重发。',
+                [
+                  {
+                    text: '不重发，清空草稿',
+                    style: 'destructive',
+                    onPress: () => {
+                      setCompose('')
+                      setUncertain(false)
+                      setNotice('')
+                    },
+                  },
+                  { text: '取消', style: 'cancel' },
+                  {
+                    text: '确认未收到，解锁草稿',
+                    onPress: () => {
+                      setUncertain(false)
+                      setNotice('')
+                    },
+                  },
+                ],
+              )
+            }
           />
         )}
         <View style={ui.row}>
@@ -167,7 +201,7 @@ export function Chat({
             value={compose}
             onChangeText={setCompose}
             multiline
-            editable={!sending}
+            editable={!sending && !uncertain}
           />
           <Action
             primary
