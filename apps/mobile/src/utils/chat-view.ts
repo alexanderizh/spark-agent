@@ -68,8 +68,8 @@ export type TimelineItem =
       text: string
       turnId?: string
       attachments?: TimelineUserAttachment[]
-      /** 本地队列乐观态：发送中 / 发送失败可重试 */
-      sendStatus?: 'sending' | 'failed'
+      /** 本地队列乐观态：发送中 / 发送失败可重试 / 已送达但目标端排队中 */
+      sendStatus?: 'sending' | 'failed' | 'queued'
       clientId?: string
       sendError?: string
       /** 纯附件消息：不渲染文字气泡 */
@@ -92,6 +92,8 @@ export type TimelineItem =
       previews?: string[]
       /** 保存到相册进行中（底部操作按钮组 busy 态；页面实例态经 decorateItem 回填） */
       saving?: boolean
+      /** 全部图片解析失败（占位图变为「点击重试」；页面实例态经 decorateItem 回填） */
+      failed?: boolean
     })
   /**
    * 折叠横线：浅色线 + 文案 + 折叠条数，点击可临时展开。

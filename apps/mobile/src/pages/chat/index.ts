@@ -20,6 +20,8 @@
  */
 
 import * as bridge from '../../api/bridge'
+import type { BridgeSessionQueue } from '../../api/bridge'
+import { buildQueueView, isTurnQueued, type QueueItemView } from '../../utils/queue-view'
 import {
   applyEvents,
   dedupeAssistantMessages,
@@ -124,6 +126,8 @@ interface ConfirmedView {
   text: string
   attachments: SentAttachmentView[]
   createdAt: string
+  /** submitTurn 返回的回合 id：排队中（目标端有活跃回合）时按它显示「排队中」 */
+  turnId?: string
 }
 
 interface PanelOptionView {
@@ -221,6 +225,11 @@ interface ChatPageData {
   // ── 挂起交互卡（权限审批 + 用户问答，置于输入区上方） ──
   approvalCards: (ApprovalCardView & { busy?: boolean })[]
   questionCards: QuestionCardView[]
+  // ── 待执行队列（当前回合运行中时后续消息在桌面端排队） ──
+  /** 队列卡片条目（空 = 卡片隐藏） */
+  queueItems: QueueItemView[]
+  /** 队列暂停原因（上一回合出错暂停；'' = 正常） */
+  queuePausedReason: string
 }
 
 const FLUSH_INTERVAL_MS = 100
@@ -304,7 +313,13 @@ Page({
     attachItems: [] as AttachMenuItem[],
     /** 模型配置弹层（模型列表 / 推理强度 / 权限） */
     configShow: false,
-    configModels: [] as { id: string; label: string; sub?: string; checked?: boolean; pinned?: boolean }[],
+    configModels: [] as {
+      id: string
+      label: string
+      sub?: string
+      checked?: boolean
+      pinned?: boolean
+    }[],
     configEfforts: [] as { id: string; label: string }[],
     configEffortIndex: 0,
     configPermissionLabel: '',
@@ -315,6 +330,8 @@ Page({
     transcribing: false,
     approvalCards: [] as ApprovalCardView[],
     questionCards: [] as QuestionCardView[],
+    queueItems: [] as QueueItemView[],
+    queuePausedReason: '',
   } as ChatPageData,
 
   /** 最近一次渲染的消息快照（节流合并的基准） */
@@ -394,6 +411,14 @@ Page({
   questionDrafts: {} as Record<string, QuestionDraft>,
   /** 应答提交中的卡片（审批 requestId / 问答 questionId），渲染 busy 态防重复提交 */
   submittingKeys: new Set<string>(),
+  /** 桌面端排队中的回合 id（本地「已送达待回显」气泡据此显示排队态） */
+  queuedTurnIds: new Set<string>(),
+  /** 队列快照拉取失败标记（旧版桌面端 404 时停拉，避免每个轮询 tick 都白打一次） */
+  queueProbeUnsupported: false,
+  /** media 图片解析失败记忆（key → 失败时的路径签名；路径变化才允许自动重试） */
+  mediaFailedKeys: new Map<string, string>(),
+  /** 历史用户附件解析失败记忆（同上，防每次重绘都对中继无限重试） */
+  userAttachFailedKeys: new Map<string, string>(),
   /**
    * 用户滚动意图：true = 贴底，跟随流式内容自动回底；
    * 用户上滑查看历史后转 false，流式刷新不再回底（不再抢滚动视口）。
@@ -1010,6 +1035,8 @@ Page({
         createdAt: view.createdAt,
         attachmentOnly: isAttachmentOnlyText(view.text),
         attachments: toViews(view.key, view.attachments),
+        // 已送达但目标端有活跃回合：按队列快照显示「排队中」，起跑后自动恢复
+        ...(isTurnQueued(this.queuedTurnIds, view.turnId) ? { sendStatus: 'queued' as const } : {}),
       })
     }
     return out
@@ -1031,11 +1058,19 @@ Page({
     if (item.kind === 'media') {
       // 解析结果存在实例级 Map 并写快照：全量重绘/返回页面都不会把它冲掉
       const previews = this.mediaPreviews.get(item.key) ?? []
-      if (previews.length < item.paths.length && !this.mediaResolvedKeys.has(item.key)) {
+      // 失败记忆：路径签名没变就不再自动重试（旧实现失败即重置去重 key，流式
+      // 重绘每 100ms 都会对中继重打一次请求，桌面文件缺失时变成无限重试轰炸）
+      const failed = this.mediaFailedKeys.get(item.key) === item.paths.join('|')
+      if (previews.length < item.paths.length && !this.mediaResolvedKeys.has(item.key) && !failed) {
         void this.resolveMediaItem(item.key, item.paths)
       }
       const saving = this.mediaSavingKeys.has(item.key)
-      return { ...item, previews, saving }
+      return {
+        ...item,
+        previews,
+        saving,
+        ...(failed && previews.length === 0 ? { failed: true } : {}),
+      }
     }
     if (item.kind !== 'user') return item
     // 本次会话发出的附件按渲染 key 索引（旧实现按文本索引，同文本会串图）
@@ -1053,7 +1088,8 @@ Page({
       }))
       if (
         views.some((att) => att.type === 'image' && !att.previewUrl) &&
-        !this.userAttachResolvedKeys.has(item.key)
+        !this.userAttachResolvedKeys.has(item.key) &&
+        this.userAttachFailedKeys.get(item.key) !== sent.map((att) => att.path).join('|')
       ) {
         void this.resolveUserAttachments(item.key, sent)
       }
@@ -1062,7 +1098,10 @@ Page({
     // 历史消息透传的附件（旧版桌面端无该字段）：图片经本地缓存解析后可预览
     const historyAtts = item.attachments
     if (historyAtts == null || historyAtts.length === 0) return item
-    if (!this.userAttachResolvedKeys.has(item.key)) {
+    if (
+      !this.userAttachResolvedKeys.has(item.key) &&
+      this.userAttachFailedKeys.get(item.key) !== historyAtts.map((att) => att.path).join('|')
+    ) {
       void this.resolveUserAttachments(item.key, historyAtts)
     }
     // 桌面端 submitTurn 只收路径数组，历史事件的 name 常常缺失（路径末段是随机 ID）。
@@ -1096,17 +1135,27 @@ Page({
       )
       const previews = resolved.filter((path): path is string => path != null)
       if (previews.length === 0) {
-        // 旧实现「解析前就登记去重 key + 只写 data.items」，一次失败就永久不再重试，
-        // 且全量重绘会把已写进 items 的 previews 冲掉 → 图片刷新即消失。
-        this.mediaResolvedKeys.delete(key)
+        // 全部解析失败：记下路径签名，不再自动重试；占位图变为可点击手动重试。
+        // （旧实现失败即重置去重 key，每次重绘都重打一轮中继请求。）
+        this.mediaFailedKeys.set(key, paths.join('|'))
         return
       }
       this.mediaPreviews.set(key, previews)
       this.scheduleSnapshot()
       this.flushTimeline(true, { keepScroll: !this.stickBottom })
     } catch {
-      this.mediaResolvedKeys.delete(key)
+      this.mediaFailedKeys.set(key, paths.join('|'))
     }
+  },
+
+  /** 点击「加载失败」占位：清失败记忆后重试一次解析 */
+  onMediaRetry(e: WechatMiniprogram.BaseEvent<WechatMiniprogram.IAnyObject, { key: string }>) {
+    const key = e.currentTarget.dataset.key
+    if (typeof key !== 'string' || key.length === 0) return
+    this.mediaFailedKeys.delete(key)
+    this.mediaResolvedKeys.delete(key)
+    const item = this.findMediaItem(key)
+    if (item != null) void this.resolveMediaItem(key, item.paths)
   },
 
   /** 历史用户附件图片解析（同 media 条机制；解析结果按 key+path 记录） */
@@ -1118,6 +1167,7 @@ Page({
     const images = attachments.filter((att) => att.type === 'image' && att.path.length > 0)
     if (images.length === 0) return
     this.userAttachResolvedKeys.add(key)
+    const signature = images.map((att) => att.path).join('|')
     try {
       const deviceId = this.targetDeviceId()
       const resolved = await Promise.all(
@@ -1129,7 +1179,8 @@ Page({
         if (local != null) byPath[att.path] = local
       })
       if (Object.keys(byPath).length === 0) {
-        this.userAttachResolvedKeys.delete(key)
+        // 失败记忆（同 media 条）：签名未变不再自动重试，防每帧重打中继
+        this.userAttachFailedKeys.set(key, signature)
         return
       }
       this.userAttachPreviews = { ...this.userAttachPreviews, [key]: byPath }
@@ -1139,7 +1190,7 @@ Page({
         this.flushTimeline(true, { keepScroll: !this.stickBottom })
       }
     } catch {
-      this.userAttachResolvedKeys.delete(key)
+      this.userAttachFailedKeys.set(key, signature)
     }
   },
 
@@ -1539,13 +1590,17 @@ Page({
             wx.showToast({ title: '已加入队列，当前回合结束后执行', icon: 'none', duration: 2500 })
           }
           dropQueuedMessage(sessionId, next.clientId)
-          // 真实 user_message 可能还没推回来：先留一个普通气泡，避免消息闪一下消失
+          // 真实 user_message 可能还没推回来：先留一个普通气泡，避免消息闪一下消失；
+          // 回合 id 记进占位：目标端排队时按它显示「排队中」（refreshQueue 对账）
           this.confirmedViews.push({
             key: `c:${next.clientId}`,
             text: next.text,
             attachments: next.attachments,
             createdAt: new Date(next.createdAt).toISOString(),
+            turnId: result.turnId,
           })
+          // 排队中的消息立即对一次队列：不用等下一轮轮询才亮出「排队中」
+          if (result.started === false) void this.refreshQueue()
         } catch (error) {
           if (next.attempts + 1 >= MAX_SEND_ATTEMPTS) {
             patchQueuedMessage(sessionId, next.clientId, {
@@ -1602,6 +1657,36 @@ Page({
 
   // ─── 挂起交互（权限审批卡 + 问答卡；桌面端无下行推送，轮询对账） ─────────────
 
+  /**
+   * 拉取桌面端排队快照并刷新队列卡片与本地气泡排队态。
+   * - 队列里的回合 id → queuedTurnIds：confirmed 气泡显示「排队中」；
+   *   起跑后快照里消失，气泡自动恢复普通态（真实 user_message 随后到达并替换）。
+   * - 旧版桌面端无该端点（404）：标记一次后不再拉，避免每个轮询 tick 白打。
+   */
+  async refreshQueue() {
+    if (this.queueProbeUnsupported) return
+    const { sessionId } = this.data
+    if (!sessionId) return
+    try {
+      const snapshot: BridgeSessionQueue = await bridge.getSessionQueue(
+        sessionId,
+        this.targetDeviceId(),
+      )
+      const view = buildQueueView(snapshot, Date.now())
+      this.queuedTurnIds = new Set(view.items.map((item) => item.turnId))
+      this.setData({
+        queueItems: view.items,
+        queuePausedReason: view.pausedReason,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes('404') || message.includes('接口不存在')) {
+        this.queueProbeUnsupported = true
+      }
+      // 网络抖动静默等下一轮；不弹错误打断阅读
+    }
+  },
+
   /** 轮询一次挂起交互并按结果刷新卡片；随后自适应安排下一轮 */
   async pollInteractions() {
     if (this.interactionPollStopped) return
@@ -1619,6 +1704,8 @@ Page({
       } catch {
         // 旧版桌面端没有该端点 / 网络抖动：静默等下一轮，不弹错误
       }
+      // 队列快照与交互卡同节奏轮询：运行中才需要（空闲时队列必空，白打请求）
+      if (this.data.running || this.queuedTurnIds.size > 0) void this.refreshQueue()
     }
     const active =
       this.data.running ||

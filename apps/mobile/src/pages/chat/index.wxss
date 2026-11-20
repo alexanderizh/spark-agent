@@ -160,6 +160,20 @@
 .media-thumb--pending {
   background: #eceae5;
 }
+/* 全部图片解析失败：可点击重试的占位（与 pending 同尺寸，失败态给明显提示） */
+.media-thumb--failed {
+  background: #f1efe9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.media-thumb--failed text {
+  font-size: 20rpx;
+  color: #a09c95;
+  text-align: center;
+  line-height: 1.4;
+  padding: 0 8rpx;
+}
 .bubble-user--attach-only {
   padding: 12rpx 24rpx;
   font-size: 24rpx;
@@ -174,6 +188,10 @@
 }
 .msg-send-state--failed {
   color: #b42318;
+}
+/* 已送达但目标端排队中：比「发送中」信息量大一档，颜色仍克制 */
+.msg-send-state--queued {
+  color: #b4770f;
 }
 
 /* 工具/思考记录隐藏后的分块横线：浅色线 + 到达时间 + 折叠条数（间距由 .gap-* 负责） */
@@ -415,6 +433,48 @@
 .ia-card--caution {
   border-color: #f3d4c3;
   background: #fffaf6;
+}
+
+/* 待执行队列卡：只读展示排队消息（与审批/问答卡同容器风格） */
+.ia-dot--queue {
+  background: #7d97b7;
+}
+.queue-row {
+  align-items: center;
+  padding: 8rpx 0;
+}
+.queue-index {
+  flex: none;
+  width: 34rpx;
+  height: 34rpx;
+  border-radius: 50%;
+  background: #eef1f6;
+  color: #5a7093;
+  font-size: 20rpx;
+  text-align: center;
+  line-height: 34rpx;
+}
+.queue-summary {
+  font-size: 24rpx;
+  color: #3c3b38;
+}
+.queue-time {
+  flex: none;
+  font-size: 20rpx;
+  color: #a09c95;
+}
+.queue-paused {
+  margin: 6rpx 0;
+  padding: 10rpx 16rpx;
+  border-radius: 12rpx;
+  background: #fbeae5;
+  font-size: 22rpx;
+  color: #b3402a;
+}
+.queue-hint {
+  margin-top: 8rpx;
+  font-size: 20rpx;
+  color: #a09c95;
 }
 
 .ia-head {

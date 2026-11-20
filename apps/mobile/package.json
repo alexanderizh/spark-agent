@@ -19,6 +19,7 @@
     "smoke:interactions": "node scripts/smoke-interactions.mjs",
     "smoke:home-composer": "node scripts/smoke-home-composer.mjs",
     "smoke:chat-upgrade": "node scripts/smoke-chat-upgrade.mjs",
+    "smoke:chat-final-segment": "node scripts/smoke-chat-final-segment.mjs",
     "smoke:chat-order": "node scripts/smoke-chat-order.mjs",
     "smoke:chat-gap": "node scripts/smoke-chat-gap.mjs",
     "smoke:chat-turn-rail": "node scripts/smoke-chat-turn-rail.mjs",
