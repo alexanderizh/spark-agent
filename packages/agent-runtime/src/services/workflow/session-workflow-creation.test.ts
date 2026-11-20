@@ -77,6 +77,24 @@ describe('session workflow binding creation', () => {
     expect(countSessions(db)).toBe(0)
   })
 
+  it('lets an internally scheduled session disable inheritance with binding writes off', () => {
+    new SettingsRepository(db).set('sessionWorkflowBinding', 'writeEnabled', false)
+
+    expect(() => assertSessionWorkflowBindingCreationReady(db, { mode: 'disabled' })).toThrow(
+      '尚未启用',
+    )
+    expect(() =>
+      assertSessionWorkflowBindingCreationReady(db, { mode: 'inherit' }, 'agent-a', {
+        scheduledTaskSession: true,
+      }),
+    ).toThrow('尚未启用')
+    expect(() =>
+      assertSessionWorkflowBindingCreationReady(db, { mode: 'disabled' }, 'agent-a', {
+        scheduledTaskSession: true,
+      }),
+    ).not.toThrow()
+  })
+
   it('rolls back a created session when binding persistence fails', () => {
     const sessions = new SessionRepository(db)
 
