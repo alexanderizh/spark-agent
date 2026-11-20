@@ -9,11 +9,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     defaults:
-      # Bash enables pipefail for the signature verification pipeline.
-
       run:
         shell: bash
-
         working-directory: apps/mobile-native
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -32,7 +29,12 @@ jobs:
         run: |
           export JAVA_HOME="${JAVA_HOME_17_X64:?}"
           export PATH="$JAVA_HOME/bin:$PATH"
-          sdkmanager 'platforms;android-36' 'build-tools;35.0.0' 'build-tools;36.0.0' 'ndk;27.1.12297006' 'cmake;3.22.1'
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$sdkmanager" ]]; then
+            sdkmanager=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -n 1)
+          fi
+          test -x "$sdkmanager"
+          "$sdkmanager" 'platforms;android-36' 'build-tools;35.0.0' 'build-tools;36.0.0' 'ndk;27.1.12297006' 'cmake;3.22.1'
           cd android
           chmod +x gradlew
           ./gradlew :app:assembleRelease --no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --max-workers=2
