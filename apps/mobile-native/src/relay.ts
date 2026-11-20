@@ -518,11 +518,16 @@ export class Relay {
     return { id: session.id, title: session.title }
   }
 
-  async sessions(deviceId: string, offset = 0, projectId?: string): Promise<SessionPage> {
+  async sessions(
+    deviceId: string,
+    offset = 0,
+    projectId?: string,
+    limit = 50,
+  ): Promise<SessionPage> {
     const path = projectId
       ? `/v1/projects/${encodeURIComponent(projectId)}/sessions`
       : '/v1/sessions'
-    const body = object(await this.call(deviceId, `${path}?limit=50&offset=${offset}`, 'GET'))
+    const body = object(await this.call(deviceId, `${path}?limit=${limit}&offset=${offset}`, 'GET'))
     if (
       !Array.isArray(body?.sessions) ||
       typeof body.total !== 'number' ||

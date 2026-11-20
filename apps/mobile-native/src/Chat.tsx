@@ -22,6 +22,7 @@ import { ChatComposerMedia, readComposerFile, type ComposerFile } from './ChatCo
 import { ChatInteractions } from './ChatInteractions'
 import { ChatRow } from './ChatRow'
 import type { ChatDraft } from './chat-draft'
+import { loadHistoryWindow, reconcileHistory } from './chat-history'
 import type { Relay, Session, Target } from './relay'
 import { mergeEvents, reduceTimeline, timelineRows } from './timeline'
 import type { TimelineItem } from './timeline'
@@ -55,9 +56,11 @@ export function Chat({
   const { ui, colors } = appearance
   const cacheTarget = useMemo(() => ({ deviceId, sessionId }), [deviceId, sessionId])
   const [cached] = useState(() => cache.read(cacheTarget))
-  const [timeline, setTimeline] = useState<ChatSnapshot['timeline']>(
-    cached?.timeline ?? { events: [] },
+  const [snapshotHistory, setSnapshotHistory] = useState<ChatSnapshot>(
+    cached ?? { timeline: { events: [] }, nextBeforeSeq: null },
   )
+  const { timeline, nextBeforeSeq, recentWindow } = snapshotHistory
+  const snapshotForCache = useRef(snapshotHistory)
   const [modelLabel, setModelLabel] = useState('模型配置')
   useEffect(() => {
     if (!online) return
@@ -102,7 +105,6 @@ export function Chat({
   const stopPending = useRef(false)
   const [earlierError, setEarlierError] = useState('')
   const [loadingEarlier, setLoadingEarlier] = useState(false)
-  const [nextBeforeSeq, setNextBeforeSeq] = useState<number | null>(cached?.nextBeforeSeq ?? null)
   const historyGeneration = useRef(0)
   const earlierPending = useRef(false)
   const snapshot = useSyncExternalStore(draft.subscribe, draft.getSnapshot)
@@ -183,10 +185,9 @@ export function Chat({
     list.current?.scrollToEnd({ animated: false })
   }
 
-  const snapshotForCache = useRef<ChatSnapshot>({ timeline, nextBeforeSeq })
   useEffect(() => {
-    snapshotForCache.current = { timeline, nextBeforeSeq }
-  }, [timeline, nextBeforeSeq])
+    snapshotForCache.current = snapshotHistory
+  }, [snapshotHistory])
   useEffect(() => () => cache.write(cacheTarget, snapshotForCache.current), [cache, cacheTarget])
   useEffect(() => cache.setFiles(cacheTarget, files), [cache, cacheTarget, files])
 
@@ -195,10 +196,14 @@ export function Chat({
       relay.subscribe({ deviceId, sessionId }, (incoming) => {
         if (!incoming.length) return
         streamRevision.current += 1
-        setTimeline((previous) => {
-          const events = mergeEvents(previous.events, incoming)
-          const hasNewTail = (events.at(-1)?.seq ?? -1) > (previous.events.at(-1)?.seq ?? -1)
-          return { events, running: hasNewTail ? undefined : previous.running }
+        setSnapshotHistory((previous) => {
+          const events = mergeEvents(previous.timeline.events, incoming)
+          const hasNewTail =
+            (events.at(-1)?.seq ?? -1) > (previous.timeline.events.at(-1)?.seq ?? -1)
+          return {
+            ...previous,
+            timeline: { events, running: hasNewTail ? undefined : previous.timeline.running },
+          }
         })
       }),
     [deviceId, relay, sessionId],
@@ -213,17 +218,15 @@ export function Chat({
     let current = true
     setHistoryError('')
     const revisionAtRequest = streamRevision.current
-    void relay
-      .history({ deviceId, sessionId })
+    void loadHistoryWindow(
+      (beforeSeq) => relay.history({ deviceId, sessionId }, beforeSeq),
+      snapshotForCache.current.historyAnchor,
+      () => current,
+    )
       .then((result) => {
         if (!current) return
-        const reconciled = streamRevision.current === revisionAtRequest
-        setTimeline((previous) => ({
-          events: mergeEvents(previous.events, result.events),
-          running: reconciled ? result.running : previous.running,
-        }))
-        // Resume from the refreshed window so a long disconnect cannot skip unseen pages.
-        setNextBeforeSeq(result.nextBeforeSeq)
+        const liveArrived = streamRevision.current !== revisionAtRequest
+        setSnapshotHistory((previous) => reconcileHistory(previous, result, liveArrived))
         setLoaded(true)
       })
       .catch(() => {
@@ -294,11 +297,14 @@ export function Chat({
     try {
       const result = await relay.history({ deviceId, sessionId }, nextBeforeSeq)
       if (generation !== historyGeneration.current) return
-      setTimeline((previous) => ({
+      setSnapshotHistory((previous) => ({
         ...previous,
-        events: mergeEvents(result.events, previous.events),
+        timeline: {
+          ...previous.timeline,
+          events: mergeEvents(result.events, previous.timeline.events),
+        },
+        nextBeforeSeq: result.nextBeforeSeq,
       }))
-      setNextBeforeSeq(result.nextBeforeSeq)
     } catch {
       if (generation === historyGeneration.current) setEarlierError('更早消息加载失败')
     } finally {
@@ -318,7 +324,10 @@ export function Chat({
     try {
       await relay.cancel({ deviceId, sessionId })
       if (streamRevision.current === revisionAtRequest) {
-        setTimeline((previous) => ({ ...previous, running: false }))
+        setSnapshotHistory((previous) => ({
+          ...previous,
+          timeline: { ...previous.timeline, running: false },
+        }))
       }
     } catch {
       setStopError('停止结果未确认，请检查会话状态')
@@ -537,6 +546,9 @@ export function Chat({
           maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
           ListHeaderComponent={
             <View>
+              {recentWindow && nextBeforeSeq !== null && (
+                <Text style={ui.muted}>已同步近期消息，可继续加载更早记录。</Text>
+              )}
               {nextBeforeSeq !== null && (
                 <Action
                   label={

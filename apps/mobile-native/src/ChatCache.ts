@@ -2,9 +2,13 @@ import type { MobileBridgeEvent } from '../../../packages/protocol/src/mobile-br
 import type { ComposerFile } from './ChatComposerMedia'
 import type { Target } from './relay'
 
+export type HistoryAnchor = Pick<MobileBridgeEvent, 'id' | 'seq'>
+
 export interface ChatSnapshot {
   timeline: { events: MobileBridgeEvent[]; running?: boolean }
   nextBeforeSeq: number | null
+  historyAnchor?: HistoryAnchor
+  recentWindow?: boolean
 }
 
 export class ChatCache {
@@ -34,7 +38,7 @@ export class ChatCache {
     events.reverse()
     const nextBeforeSeq =
       events.length < snapshot.timeline.events.length ? events[0].seq : snapshot.nextBeforeSeq
-    this.snapshots.set(key, { nextBeforeSeq, timeline: { events } })
+    this.snapshots.set(key, { ...snapshot, nextBeforeSeq, timeline: { events } })
     if (this.snapshots.size > 8) {
       const oldest = this.snapshots.keys().next().value
       if (oldest !== undefined) this.snapshots.delete(oldest)

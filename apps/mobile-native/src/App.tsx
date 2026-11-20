@@ -16,7 +16,6 @@ import {
   StatusBar,
   useColorScheme,
   Text,
-  TextInput,
   View,
 } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
@@ -26,7 +25,7 @@ import { AccountError, logout, me, refreshSession, type AuthSession } from './au
 import { ChatCache } from './ChatCache'
 import { Chat } from './Chat'
 import { ChatDrafts } from './chat-draft'
-import { DeviceList, NavigationRow, Profile, TabBar } from './CompanionTabs'
+import { DeviceList, Profile, TabBar } from './CompanionTabs'
 import { Projects } from './Projects'
 import { ProjectComposer } from './ProjectComposer'
 import {
@@ -48,18 +47,23 @@ import { QuickStart } from './QuickStart'
 import { WorkbenchDevices } from './WorkbenchDevices'
 import { WorkbenchSettings, type WorkbenchConfig } from './WorkbenchSettings'
 import {
-  getSessionLabelMeta,
   getSessionPinTime,
   isSessionPinnedZone,
   sortByManualOrder,
   SESSION_LABELS,
 } from '../../mobile/src/utils/sidebar-order'
-import { DEFAULT_SESSION_FILTER, matchSession } from '../../mobile/src/utils/session-filters'
-import { SessionFilters } from './ListFilters'
+import {
+  countSessionFilterFacets,
+  DEFAULT_SESSION_FILTER,
+  matchSession,
+  resolveSessionProject,
+} from '../../mobile/src/utils/session-filters'
+import { AllSessionRow, AllSessionsControls, AllSessionsHeading } from './AllSessionsView'
 import { moveRowActions, RowMenu, type RowAction } from './RowMenu'
 import { Login } from './Login'
 import { Relay } from './relay'
-import type { Device, Project, Session, SessionSearchHit } from './relay'
+import { classifySearchResult, hydrateSessionSearch, type SearchResult } from './session-search'
+import type { Device, Project, Session } from './relay'
 import { Action, ThemeContext, type ThemePreference, useUi } from './ui'
 
 function DesktopSession({
@@ -276,6 +280,7 @@ function DesktopSession({
     setPicker(false)
   }
   const projectDetail = !!project && !session && !accountPage && !picker
+  const allSessions = showAll && !project && !session && !accountPage && !picker
   return (
     <SafeAreaView
       style={[ui.screen, projectDetail && { backgroundColor: colors.entry }]}
@@ -284,7 +289,7 @@ function DesktopSession({
       {nested && (
         <View style={ui.header}>
           <View style={ui.headerSide}>
-            {accountPage === '设备管理' || projectDetail ? (
+            {accountPage === '设备管理' || projectDetail || allSessions ? (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="返回"
@@ -301,7 +306,7 @@ function DesktopSession({
                   backgroundColor: pressed ? colors.tint : colors.paper,
                 })}
               >
-                {projectDetail ? (
+                {projectDetail || allSessions ? (
                   <ProjectSessionIcon name="left" size={32} />
                 ) : (
                   <Text style={{ color: colors.text, fontSize: r(38), lineHeight: r(42) }}>‹</Text>
@@ -376,7 +381,14 @@ function DesktopSession({
             deviceLabel={selected.label}
             online={desktopOnline}
             relay={relay}
-            backToProjects={back}
+            backToProjects={
+              project
+                ? back
+                : () => {
+                    setShowAll(false)
+                    setTab('项目')
+                  }
+            }
             manage={() => {
               setFocusProjectComposer(false)
               setAccountPage('设备管理')
@@ -591,16 +603,18 @@ function SessionList({
   manage(): void
   onSelect(session: Session): void
 }) {
-  const { colors, ui, page, r } = useUi()
+  const { colors, ui, r } = useUi()
   const [sessions, setSessions] = useState<Session[]>([])
+  const [projectNames, setProjectNames] = useState<ReadonlyMap<string, string>>()
   const [offset, setOffset] = useState(0)
   const [nextOffset, setNextOffset] = useState<number | null>(null)
   const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
   const [issue, setIssue] = useState('')
   const [search, setSearch] = useState('')
-  const [searchResults, setSearchResults] = useState<SessionSearchHit[]>()
+  const [searchResults, setSearchResults] = useState<SearchResult[]>()
   const [searchFailed, setSearchFailed] = useState(false)
+  const [searchDetailsFailed, setSearchDetailsFailed] = useState(false)
   const query = search.trim()
   const [menu, setMenu] = useState<Session>()
   const [labels, setLabels] = useState(false)
@@ -750,19 +764,51 @@ function SessionList({
   }, [deviceId, offset, online, projectId, relay, reload])
 
   useEffect(() => {
+    if (!online || projectId) return
+    let current = true
+    void relay
+      .projectList(deviceId)
+      .then((result) => {
+        if (!current) return
+        setProjectNames(new Map(result.projects.map((project) => [project.id, project.name])))
+      })
+      .catch(() => undefined)
+    return () => {
+      current = false
+    }
+  }, [deviceId, online, projectId, relay, reload])
+
+  useEffect(() => {
     setSearchResults(undefined)
     setSearchFailed(false)
+    setSearchDetailsFailed(false)
     if (!online || !query) return
     let current = true
     const timer = setTimeout(() => {
-      void relay
-        .searchSessions(deviceId, query, projectId)
-        .then((rows) => {
-          if (current) setSearchResults(rows)
-        })
-        .catch(() => {
+      void relay.searchSessions(deviceId, query, projectId).then(
+        async (rows) => {
+          if (!current) return
+          if (projectId) {
+            setSearchResults(rows)
+            return
+          }
+          try {
+            const matches = await hydrateSessionSearch(
+              rows,
+              (pageOffset) => relay.sessions(deviceId, pageOffset, undefined, 200),
+              () => current,
+            )
+            if (current) setSearchResults(matches)
+          } catch {
+            if (!current) return
+            setSearchResults(rows.map((row) => ({ ...row, detailsMissing: true })))
+            setSearchDetailsFailed(true)
+          }
+        },
+        () => {
           if (current) setSearchFailed(true)
-        })
+        },
+      )
     }, 300)
     return () => {
       current = false
@@ -770,16 +816,6 @@ function SessionList({
     }
   }, [deviceId, online, projectId, query, relay, reload])
 
-  const shown = query
-    ? (searchResults ??
-      (searchFailed
-        ? sessions.filter((row) =>
-            row.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
-          )
-        : []))
-    : sessions
-
-  const ordered = query ? shown : [...getSection(true), ...getSection(false)]
   const footer =
     !query && online && issue ? (
       <View style={ui.row}>
@@ -958,71 +994,127 @@ function SessionList({
       </View>
     )
   }
+  const shown = query
+    ? (searchResults ??
+      (searchFailed
+        ? sessions.filter((row) =>
+            row.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+          )
+        : []))
+    : sessions
+
+  const ordered = query ? shown : [...getSection(true), ...getSection(false)]
+  const names = projectNames ?? new Map<string, string>()
+  const allFiltered: SearchResult[] = []
+  const unverified: SearchResult[] = []
+  if (online) {
+    for (const row of ordered) {
+      const match = classifySearchResult(row, filter)
+      if (match === 'matched') allFiltered.push(row)
+      if (match === 'unverified') unverified.push(row)
+    }
+  }
+  allFiltered.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+  const allGroups = projectSessionGroups(
+    allFiltered.filter(isSessionPinnedZone),
+    allFiltered.filter((row) => !isSessionPinnedZone(row)),
+    [],
+  )
+  const groups = unverified.length
+    ? [...allGroups, { key: 'unverified', title: '筛选条件待核实', rows: unverified }]
+    : allGroups
+  const allEntries = [
+    { kind: 'controls' as const, id: 'controls' },
+    ...groups.flatMap((group) => [
+      { kind: 'group' as const, id: `group:${group.key}`, title: group.title },
+      ...group.rows.map((row) => ({ kind: 'row' as const, id: `row:${row.id}`, row })),
+    ]),
+  ]
+  const allEmpty = !online
+    ? '这台电脑当前离线'
+    : query
+      ? searchDetailsFailed
+        ? ''
+        : searchResults || searchFailed
+          ? '没有匹配的会话'
+          : '正在搜索…'
+      : loading && offset === 0
+        ? '正在加载会话…'
+        : !issue && nextOffset === null
+          ? countSessionFilterFacets(filter)
+            ? '没有匹配的会话'
+            : '这台电脑还没有会话'
+          : ''
   return (
     <View style={ui.screen}>
       <FlatList
-        data={online ? (query ? ordered : ordered.filter((row) => matchSession(row, filter))) : []}
+        data={allEntries}
         keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: r(32) }}
+        stickyHeaderIndices={[1]}
         ListHeaderComponent={
-          <View style={{ gap: r(14), marginBottom: r(12) }}>
-            <Text accessibilityRole="header" style={ui.title}>
-              {title}
-            </Text>
-            <Text style={ui.muted}>
-              电脑 · {deviceLabel}
-              {online ? '' : ' · 离线'}
-            </Text>
-            <TextInput
-              style={[ui.input, ui.search]}
-              placeholder="搜索会话标题或内容"
-              accessibilityLabel="搜索会话"
-              value={search}
-              onChangeText={setSearch}
-            />
-            {!query && <SessionFilters filter={filter} change={setFilter} />}
-            {searchFailed && <Text style={ui.muted}>仅搜索已加载的会话标题</Text>}
+          <AllSessionsHeading
+            device={deviceLabel}
+            online={online}
+            back={backToProjects}
+            manage={manage}
+          />
+        }
+        keyExtractor={(entry) => entry.id}
+        ListFooterComponent={
+          <View style={{ paddingHorizontal: r(32) }}>
+            {!!allEmpty && allEntries.length === 1 && (!issue || !!query) && (
+              <Text style={[ui.muted, { textAlign: 'center', paddingTop: r(48) }]}>{allEmpty}</Text>
+            )}
+            {online && query && searchDetailsFailed && (
+              <Action
+                label="会话详情加载失败，点击重试"
+                onPress={() => setReload((value) => value + 1)}
+              />
+            )}
+            {footer}
           </View>
         }
-        contentContainerStyle={page(projectId ? 'project-sessions' : 'all-sessions')}
-        ItemSeparatorComponent={() => <View style={ui.separator} />}
-        keyExtractor={(row) => row.id}
-        ListEmptyComponent={
-          <Text style={ui.muted}>
-            {!online
-              ? '电脑不在线'
-              : query
-                ? searchResults || searchFailed
-                  ? '没有匹配会话'
-                  : '正在搜索…'
-                : loading && offset === 0
-                  ? '正在加载会话…'
-                  : !issue && nextOffset === null
-                    ? '没有匹配的会话'
-                    : ''}
-          </Text>
+        renderItem={({ item }) =>
+          item.kind === 'controls' ? (
+            <AllSessionsControls
+              search={search}
+              setSearch={setSearch}
+              filter={filter}
+              setFilter={setFilter}
+              count={allFiltered.length}
+            />
+          ) : item.kind === 'group' ? (
+            <Text
+              style={[
+                ui.groupTitle,
+                { marginHorizontal: r(32), paddingTop: r(24), paddingBottom: r(8) },
+              ]}
+            >
+              {item.title}
+            </Text>
+          ) : (
+            <AllSessionRow
+              row={item.row}
+              projectName={
+                'detailsMissing' in item.row && item.row.detailsMissing
+                  ? undefined
+                  : !projectNames && item.row.projectId && item.row.projectId !== 'default'
+                    ? undefined
+                    : resolveSessionProject(item.row.projectId, names).projectName
+              }
+              open={() => onSelect(item.row)}
+              menu={
+                query
+                  ? undefined
+                  : () => {
+                      setLabels(false)
+                      setMenu(item.row)
+                    }
+              }
+            />
+          )
         }
-        ListFooterComponent={footer}
-        renderItem={({ item }) => (
-          <NavigationRow
-            label={item.title || '未命名会话'}
-            subtitle={[
-              item.pinnedAt ? '置顶' : undefined,
-              getSessionLabelMeta(item.sessionLabel)?.label,
-              item.preview,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-            onPress={() => onSelect(item)}
-            onLongPress={
-              !query
-                ? () => {
-                    setLabels(false)
-                    setMenu(item)
-                  }
-                : undefined
-            }
-          />
-        )}
       />
       {rowMenu}
     </View>

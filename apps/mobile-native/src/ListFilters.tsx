@@ -6,6 +6,7 @@ import {
   SESSION_LABEL_FILTER_OPTIONS,
   SESSION_STATUS_OPTIONS,
   countSessionFilterFacets,
+  summarizeSessionFilter,
   type SessionFilterState,
 } from '../../mobile/src/utils/session-filters'
 import {
@@ -107,13 +108,55 @@ export function SessionFilters({
 }) {
   const [open, setOpen] = useState(false)
   const facets = countSessionFilterFacets(filter)
+  const { colors, r, theme } = useUi()
+  const summary = summarizeSessionFilter(filter)[0] ?? '筛选'
   return (
-    <View>
-      <Action
-        compact
-        label={facets ? `筛选中 · ${facets}` : '筛选会话'}
-        onPress={() => setOpen(!open)}
-      />
+    <View style={{ maxWidth: '62%' }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="筛选会话"
+        onPress={() => setOpen(true)}
+        hitSlop={6}
+        style={({ pressed }) => ({
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: r(8),
+          paddingHorizontal: r(20),
+          paddingVertical: r(10),
+          borderRadius: 999,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: facets ? colors.accent : colors.line,
+          backgroundColor: pressed
+            ? colors.tint
+            : facets
+              ? theme.mode === 'dark'
+                ? '#1e2b3d'
+                : '#eef4fe'
+              : colors.paper,
+        })}
+      >
+        <Text
+          numberOfLines={1}
+          style={{
+            flexShrink: 1,
+            color: facets ? colors.accent : colors.muted,
+            fontSize: r(24),
+            lineHeight: r(32),
+          }}
+        >
+          {summary}
+          {facets > 1 ? ` · ${facets}` : ''}
+        </Text>
+        <Svg width={r(28)} height={r(28)} viewBox="0 0 24 24" accessible={false}>
+          <Path
+            d="M6 9l6 6 6-6"
+            fill="none"
+            stroke={colors.placeholder}
+            strokeWidth={2}
+            strokeLinecap="round"
+          />
+        </Svg>
+      </Pressable>
       {open && (
         <FilterSheet title="筛选会话" close={() => setOpen(false)}>
           <Options
