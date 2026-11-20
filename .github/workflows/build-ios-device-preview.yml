@@ -1,0 +1,65 @@
+name: iPhone 真机预览构建
+
+on:
+  push:
+    branches: [ci/ios-device-preview]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-device-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/mobile-native
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install locked dependencies and run tests
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+      - name: Generate iOS project and install Pods
+        run: |
+          xcodebuild -version
+          npm run prebuild -- --platform ios
+          pod install --project-directory=ios
+      - name: Archive iPhone app without credentials
+        run: |
+          shopt -s nullglob
+          workspaces=(ios/*.xcworkspace)
+          if (( ${#workspaces[@]} != 1 )); then
+            echo 'Expected one generated iOS workspace.' >&2
+            exit 1
+          fi
+          scheme=$(basename "${workspaces[0]}" .xcworkspace)
+          archive="$RUNNER_TEMP/SparkWork.xcarchive"
+          xcodebuild archive \
+            -workspace "${workspaces[0]}" -scheme "$scheme" -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$archive" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+          apps=("$archive"/Products/Applications/*.app)
+          if (( ${#apps[@]} != 1 )); then
+            echo 'Expected one archived iPhone app.' >&2
+            exit 1
+          fi
+          test -s "${apps[0]}/main.jsbundle"
+          ditto -c -k --keepParent "${apps[0]}" "$RUNNER_TEMP/SparkWork-unsigned.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sparkwork-ios-unsigned
+          path: ${{ runner.temp }}/SparkWork-unsigned.zip
+          if-no-files-found: error
+          retention-days: 3

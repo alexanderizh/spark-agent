@@ -10,7 +10,6 @@
  * 小程序不引入 @spark/protocol（包体约束），类型在此手工同步。
  */
 
-import type { BridgeSessionSummary } from '../api/bridge'
 import { SESSION_LABELS, type BridgeSessionLabelKey } from './sidebar-order'
 
 /** 会话状态（目标端 sessions.status 的实际取值） */
@@ -107,12 +106,18 @@ function matchesActivity(updatedAt: string, activity: SessionActivityKey, now: n
 
 /** 单条会话是否命中筛选（只判会话级维度；项目维度由调用方决定是否需要） */
 export function matchSession(
-  session: BridgeSessionSummary,
+  session: {
+    status?: string
+    pinnedAt?: string | null
+    sessionLabel?: BridgeSessionLabelKey | null
+    projectId?: string
+    updatedAt?: string
+  },
   filter: SessionFilterState,
   now = Date.now(),
 ): boolean {
   if (filter.statuses.length > 0) {
-    if (!(filter.statuses as readonly string[]).includes(session.status)) return false
+    if (!(filter.statuses as readonly string[]).includes(session.status ?? '')) return false
   }
   if (filter.pinnedOnly && session.pinnedAt == null) return false
   if (filter.labels.length > 0) {
@@ -123,7 +128,7 @@ export function matchSession(
     const projectId = session.projectId ?? UNASSIGNED_PROJECT_ID
     if (!filter.projectIds.includes(projectId)) return false
   }
-  return matchesActivity(session.updatedAt, filter.activity, now)
+  return matchesActivity(session.updatedAt ?? '', filter.activity, now)
 }
 
 /** 激活了几个维度（按钮角标用；不是选项个数） */

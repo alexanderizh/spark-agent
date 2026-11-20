@@ -6,7 +6,7 @@
  * updateSessionTask 装配按「undefined 不写、null 清除」处理）。
  */
 
-import type { BridgeCreateTaskInput, BridgeScheduledTask } from '../api/bridge'
+import type { BridgeCreateTaskInput, BridgeScheduledTask } from './task-types'
 
 export type TaskTriggerType = 'once' | 'interval' | 'cron'
 

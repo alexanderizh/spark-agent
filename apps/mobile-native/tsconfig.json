@@ -1,0 +1,10 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    // The shared protocol sources live outside this npm project and need Zod 4 for typechecking.
+    "paths": { "zod": ["./node_modules/spark-protocol-zod/index.d.cts"] }
+  },
+  "include": ["index.ts", "src/**/*.ts", "src/**/*.tsx"]
+}

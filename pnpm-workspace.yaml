@@ -7,6 +7,8 @@
 nodeLinker: hoisted
 packages:
   - 'apps/*'
+  # Expo pins its React runtime independently of the Electron renderer.
+  - '!apps/mobile-native'
   - 'packages/*'
   # 自研 agent 引擎：进程内 SDK（@spark/agent）作为第三执行器载具。
   # 独立于 packages/* 命名空间（有自己的 tsup/vitest 工具链与 engines pin）。
