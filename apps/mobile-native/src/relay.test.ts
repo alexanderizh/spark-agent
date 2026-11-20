@@ -7,7 +7,9 @@ import type {
 } from '../../../packages/protocol/src/mobile-bridge'
 import { Relay, readEvents } from './relay'
 import type { SocketPort } from './relay'
-import { mergeEvents, messages } from './timeline'
+import { mergeEvents, reduceTimeline, timelineRows } from './timeline'
+
+const messages = (...args: Parameters<typeof reduceTimeline>) => reduceTimeline(...args).messages
 
 class FakeSocket implements SocketPort {
   onopen: SocketPort['onopen'] = null
@@ -89,14 +91,14 @@ test('waits for welcome, routes the history call, and rejects cross-device event
   const req = socket.sent.at(-1)
   assert.ok(req?.t === 'req')
   assert.equal(req.d, 'desktop-a')
-  assert.equal(req.p, '/v1/sessions/shared/messages?limit=200')
+  assert.equal(req.p, '/v1/sessions/shared/messages?limit=200&turnLimit=12&eventLimit=1200')
   socket.receive({
     t: 'res',
     id: req.id,
     s: 200,
     b: { sessionId: 'shared', events: [], running: true },
   })
-  assert.deepEqual(await history, { events: [], running: true })
+  assert.deepEqual(await history, { events: [], running: true, nextBeforeSeq: null })
   for (const d of ['desktop-b', undefined, 'desktop-a']) {
     socket.receive({ t: 'event', d, sessionId: 'shared', events: [event(1, 'hello')] })
   }
@@ -159,6 +161,30 @@ test('distinguishes a write blocked before dispatch from an accepted write with 
   })
   assert.deepEqual((await history).events, [])
   assert.equal(socket.sent.filter((frame) => frame.t === 'req' && frame.m === 'POST').length, 1)
+})
+
+test('reads unassigned totals from the selected desktop without paging the full list', async (t) => {
+  const { relay, resume } = setup(t)
+  const socket = resume()
+  socket.receive({ t: 'welcome', devices: [] })
+  const count = relay.unassignedSessionCount(target.deviceId)
+  const request = socket.sent.at(-1)
+  assert.ok(request?.t === 'req')
+  assert.equal(request.p, '/v1/sessions?limit=1&projectId=default')
+  assert.equal(request.d, target.deviceId)
+  socket.receive({ t: 'res', id: request.id, s: 200, b: { total: 6, sessions: [] } })
+  assert.equal(await count, 6)
+
+  const list = relay.projectList(target.deviceId)
+  const projects = socket.sent.at(-1)
+  assert.ok(projects?.t === 'req')
+  socket.receive({
+    t: 'res',
+    id: projects.id,
+    s: 200,
+    b: { total: 0, projects: [], unassignedRunningSessionCount: 2 },
+  })
+  assert.equal((await list).unassignedRunningSessionCount, 2)
 })
 
 test('uses the desktop total and raw page length to reach session 51', async (t) => {
@@ -243,4 +269,260 @@ test('keeps earlier reply segments when the final event only repeats the last se
     messages([final]).map((row) => row.text),
     ['last'],
   )
+})
+
+test('preserves the identity and order of streamed segments when a full reply arrives', () => {
+  const intro = event(1, 'Checking.\n', { segmentId: 'intro', mode: 'complete' })
+  const ending = event(2, 'Found', { segmentId: 'ending' })
+  const final = event(3, 'Checking.\nFound it.', { isFinal: true, mode: 'complete' })
+  const live = messages([intro, ending])
+  assert.deepEqual(messages([intro, ending, final]), [live[0], { ...live[1], text: 'Found it.' }])
+  assert.deepEqual(messages([intro, ending, { ...final, content: 'Checking.\nFound' }]), live)
+})
+
+test('keeps tool progress between streamed paragraphs through history reconciliation', () => {
+  const thinking = event(1, 'Reading', { type: 'agent_thinking', segmentId: 'reasoning' })
+  const intro = event(2, 'Checking.\n', { segmentId: 'intro' })
+  const request = event(3, '', { type: 'tool_call', toolCallId: 'tool-1', toolName: 'lookup' })
+  const result = event(4, '', { type: 'tool_result', toolCallId: 'tool-1', toolStatus: 'error' })
+  const reply = event(5, 'Found it.', { segmentId: 'ending' })
+  const final = event(6, 'Checking.\nFound it.', { isFinal: true, mode: 'complete' })
+  const live = readEvents([thinking, intro, request])
+  const progress = messages(live)[2]
+  assert.equal(progress?.toolStatus, 'running')
+  const rows = messages(
+    mergeEvents(live, readEvents([intro, request, result, reply, final])),
+    false,
+  )
+  assert.deepEqual(
+    rows.map((row) => row.role),
+    ['thinking', 'assistant', 'tool', 'assistant'],
+  )
+  assert.equal(rows[2]?.key, progress?.key)
+  assert.equal(rows[2]?.toolName, 'lookup')
+  assert.equal(rows[2]?.toolStatus, 'error')
+  assert.equal(messages(live, false)[2]?.toolStatus, 'success')
+})
+
+test('history uses the raw cursor even when the desktop mapped the page to no events', async (t) => {
+  const { relay, resume } = setup(t)
+  const socket = resume()
+  socket.receive({ t: 'welcome', devices: [] })
+  const load = (beforeSeq?: number) => {
+    const result = relay.history(target, beforeSeq)
+    const req = socket.sent.at(-1)
+    assert.ok(req?.t === 'req')
+    assert.equal(req.d, target.deviceId)
+    assert.equal(
+      req.p,
+      `/v1/sessions/shared/messages?limit=200&turnLimit=12&eventLimit=1200${beforeSeq == null ? '' : `&beforeSeq=${beforeSeq}`}`,
+    )
+    return { result, req }
+  }
+  const latest = load()
+  socket.receive({
+    t: 'res',
+    id: latest.req.id,
+    s: 200,
+    b: {
+      sessionId: 'shared',
+      running: true,
+      events: [],
+      hasMore: true,
+      nextBeforeSeq: 80,
+    },
+  })
+  const page = await latest.result
+  assert.equal(page.nextBeforeSeq, 80)
+  const earlier = load(page.nextBeforeSeq ?? undefined)
+  const failed = assert.rejects(earlier.result, /历史分页游标/)
+  socket.receive({
+    t: 'res',
+    id: earlier.req.id,
+    s: 200,
+    b: {
+      sessionId: 'shared',
+      running: false,
+      events: [],
+      hasMore: true,
+      nextBeforeSeq: 80,
+    },
+  })
+  await failed
+})
+
+test('stops the selected desktop session and requires an acknowledgement', async (t) => {
+  const { relay, resume } = setup(t)
+  const socket = resume()
+  socket.receive({ t: 'welcome', devices: [] })
+  const request = relay.cancel(target)
+  const frame = socket.sent.at(-1)
+  assert.deepEqual(frame, {
+    t: 'req',
+    id: 'native-1',
+    m: 'POST',
+    p: '/v1/sessions/shared/cancel',
+    b: null,
+    d: 'desktop-a',
+  })
+  socket.receive({ t: 'res', id: 'native-1', s: 200, b: { cancelled: true } })
+  await request
+  const rejected = assert.rejects(relay.cancel(target), /电脑未确认停止/)
+  socket.receive({ t: 'res', id: 'native-2', s: 200, b: { cancelled: false } })
+  await rejected
+})
+
+test('projects the same completed-round divider and day grouping as the mini-program', () => {
+  const events = [
+    event(1, 'Question', { type: 'user_message' }),
+    event(2, 'Intro', { segmentId: 'intro' }),
+    event(3, '', { type: 'tool_call', toolCallId: 'tool-1', toolName: 'lookup' }),
+    event(4, 'Answer', { segmentId: 'answer' }),
+    event(5, '', { type: 'agent_status', status: 'completed' }),
+  ]
+  const timeline = reduceTimeline(events)
+  const folded = timelineRows(timeline, new Set())
+  assert.deepEqual(
+    folded.map((row) => row.kind),
+    ['time', 'user', 'divider', 'assistant'],
+  )
+  const divider = folded.find((row) => row.kind === 'divider')
+  assert.ok(divider)
+  const unfolded = timelineRows(timeline, new Set([divider.key]))
+  assert.deepEqual(
+    unfolded.map((row) => row.kind),
+    ['time', 'user', 'divider', 'assistant', 'tool', 'assistant'],
+  )
+})
+
+test('routes interactions to the selected session and recognizes expired replies', async (t) => {
+  const { relay, resume } = setup(t)
+  const socket = resume()
+  socket.receive({ t: 'welcome', devices: [] })
+  const interactions = relay.interactions(target)
+  const question = {
+    questionId: 'q/1',
+    sessionId: 'shared',
+    createdAt: '',
+    questions: [{ header: '', question: 'Ready?' }],
+  }
+  assert.deepEqual(socket.sent.at(-1), {
+    t: 'req',
+    id: 'native-1',
+    m: 'GET',
+    p: '/v1/sessions/shared/interactions',
+    b: null,
+    d: 'desktop-a',
+  })
+  socket.receive({
+    t: 'res',
+    id: 'native-1',
+    s: 200,
+    b: {
+      approvals: [{ requestId: 'different', sessionId: 'other' }],
+      questions: [
+        question,
+        { ...question, questionId: 'malformed', questions: [null, ...question.questions] },
+      ],
+    },
+  })
+  const snapshot = await interactions
+  assert.deepEqual(snapshot.approvals, [])
+  assert.deepEqual(
+    snapshot.questions.map((row) => row.questionId),
+    ['q/1'],
+  )
+  const approval = relay.resolveApproval(target, 'a/1', 'deny')
+  assert.deepEqual(socket.sent.at(-1), {
+    t: 'req',
+    id: 'native-2',
+    m: 'POST',
+    p: '/v1/sessions/shared/approvals/a%2F1/resolve',
+    b: { decision: 'deny' },
+    d: 'desktop-a',
+  })
+  socket.receive({ t: 'res', id: 'native-2', s: 200, b: { ok: false } })
+  assert.equal(await approval, false)
+  const answers = { answers: [{ index: 0, answer: 'Yes' }], questionCount: 1, answeredCount: 1 }
+  const answer = relay.answerQuestion(target, 'q/1', answers)
+  assert.deepEqual(socket.sent.at(-1), {
+    t: 'req',
+    id: 'native-3',
+    m: 'POST',
+    p: '/v1/sessions/shared/questions/q%2F1/answer',
+    b: { answers },
+    d: 'desktop-a',
+  })
+  socket.receive({ t: 'res', id: 'native-3', s: 200, b: { ok: true } })
+  assert.equal(await answer, true)
+})
+
+test('filters unrelated lineage and forks at the selected turn on the target desktop', async (t) => {
+  const { relay, resume } = setup(t)
+  const socket = resume()
+  socket.receive({ t: 'welcome', devices: [] })
+  const lineage = relay.lineage(target)
+  socket.receive({
+    t: 'res',
+    id: 'native-1',
+    s: 200,
+    b: {
+      lineage: { childSessionId: 'shared', parentSessionId: 'source', sourceTitleSnapshot: '来源' },
+      children: [
+        { parentSessionId: 'shared', childSessionId: 'child', childTitle: '分支' },
+        { parentSessionId: 'other', childSessionId: 'bad' },
+      ],
+    },
+  })
+  assert.deepEqual(await lineage, {
+    parent: { id: 'source', title: '来源' },
+    children: [{ id: 'child', title: '分支' }],
+  })
+  const fork = relay.fork(target, 'turn-42', '')
+  assert.deepEqual(socket.sent.at(-1), {
+    t: 'req',
+    id: 'native-2',
+    m: 'POST',
+    p: '/v1/sessions/shared/fork',
+    b: { anchorTurnId: 'turn-42' },
+    d: 'desktop-a',
+  })
+  socket.receive({
+    t: 'res',
+    id: 'native-2',
+    s: 200,
+    b: { session: { id: 'child', title: '分支' } },
+  })
+  assert.equal((await fork).session.id, 'child')
+})
+
+test('keeps a project session creation and sidebar ordering scoped to the selected desktop', async (t) => {
+  const { relay, resume } = setup(t)
+  const socket = resume()
+  socket.receive({ t: 'welcome', devices: [] })
+  const create = relay.createSession('desktop-b', 'project-1', '新会话')
+  const creation = socket.sent.at(-1)
+  assert.ok(creation?.t === 'req')
+  assert.equal(creation.d, 'desktop-b')
+  assert.equal(creation.p, '/v1/sessions')
+  assert.deepEqual(creation.b, { projectId: 'project-1', title: '新会话' })
+  socket.receive({
+    t: 'res',
+    id: creation.id,
+    s: 200,
+    b: { session: { id: 'new', title: '新会话' } },
+  })
+  assert.deepEqual(await create, { id: 'new', title: '新会话' })
+
+  const sort = relay.saveSidebarOrder('desktop-b', {
+    scope: 'projects',
+    itemIds: ['second', 'first'],
+  })
+  const sorting = socket.sent.at(-1)
+  assert.ok(sorting?.t === 'req')
+  assert.equal(sorting.d, 'desktop-b')
+  assert.equal(sorting.p, '/v1/sidebar-order')
+  assert.deepEqual(sorting.b, { scope: 'projects', itemIds: ['second', 'first'] })
+  socket.receive({ t: 'res', id: sorting.id, s: 200, b: { itemIds: ['first', 'second'] } })
+  await assert.rejects(sort, /排序未确认/)
 })

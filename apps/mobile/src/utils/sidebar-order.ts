@@ -13,8 +13,6 @@
  * 小程序不引入 @spark/protocol（包体约束），类型在此手工同步。
  */
 
-import type { BridgeSessionSummary } from '../api/bridge'
-
 // ─── 会话标记（5 预置标签，与桌面端 SESSION_LABEL_KEYS/SESSION_LABELS 对齐） ────
 
 export const SESSION_LABEL_KEYS = [
@@ -65,10 +63,11 @@ export const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
 // ─── 置顶区判定（桌面端统一谓词，移动端所有分区都走这里） ───────────────────────
 
 /** 置顶区最小会话结构 */
-export type SessionLabelCarrier = Pick<
-  BridgeSessionSummary,
-  'pinnedAt' | 'labeledAt' | 'sessionLabel'
->
+export interface SessionLabelCarrier {
+  pinnedAt?: string | null
+  labeledAt?: string | null
+  sessionLabel?: BridgeSessionLabelKey | null
+}
 
 /** 手动置顶或已打标都算置顶区（有标记的会话自动进置顶区，与桌面端一致） */
 export function isSessionPinnedZone(session: SessionLabelCarrier): boolean {
