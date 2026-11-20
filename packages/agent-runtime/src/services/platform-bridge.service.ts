@@ -93,6 +93,9 @@ import type {
   SessionScheduleCreateInput,
   SessionScheduleUpdateInput,
 } from './session-schedule-agent-tools.js'
+import type { ProjectScheduleAgentTools } from './session/project-schedule-agent-tools.js'
+import type { ApplicationScheduleAgentTools } from './application-schedule-agent-tools.js'
+import type { ScheduledTaskService } from './scheduled-task.service.js'
 import type { SessionHistoryRetrievalTools } from './session/session-history-retrieval-tools.js'
 import type { SessionDispatch, SessionDispatchAuthorization } from './session/session-dispatch.js'
 import type { VoiceControlAgentTools } from './voice-control-agent-tools.js'
@@ -446,6 +449,9 @@ export interface PlatformBridgeDeps {
   pluginManager: PluginManager
   githubConnectorService: GitHubConnectorService
   sessionScheduleTools: SessionScheduleAgentTools
+  applicationScheduleTools?: ApplicationScheduleAgentTools
+  projectScheduleTools?: ProjectScheduleAgentTools
+  scheduleExecutionTools?: ScheduledTaskService
   /** 语音会话应用控制桥（voice.* RPC，stdio spark_voice 子进程路径；desktop 注入执行器） */
   voiceControlTools: VoiceControlAgentTools
   /** 会话全量历史检索门面（session_history.* RPC，仅当前会话） */
@@ -453,6 +459,7 @@ export interface PlatformBridgeDeps {
   sessionDispatch?: SessionDispatch
   sessionDispatchAuthorization?: SessionDispatchAuthorization
   sessionService: {
+    confirmScheduleOperation?(sessionId: string, message: string): Promise<void>
     updateSession(params: {
       sessionId: string
       title?: string
@@ -751,6 +758,53 @@ export class PlatformBridgeService {
     if (externalRpc.handled) return externalRpc.value
     const subAppV2 = await handleSubAppV2BridgeMethod(method, d, params)
     if (subAppV2.handled) return subAppV2.value
+    if (method.startsWith('project_schedule.')) {
+      if (d.projectScheduleTools == null || d.sessionDispatchAuthorization == null) {
+        throw new Error('Project scheduled task management is unavailable')
+      }
+      const { sessionId, dispatchToken, ...input } = params
+      const sourceId = requireSessionId({ sessionId })
+      d.sessionDispatchAuthorization.verify(sourceId, dispatchToken)
+      return d.projectScheduleTools.dispatch(
+        sourceId,
+        method.slice('project_schedule.'.length),
+        input,
+      )
+    }
+    if (method.startsWith('application_schedule.')) {
+      if (d.applicationScheduleTools == null || d.sessionDispatchAuthorization == null) {
+        throw new Error('Application scheduled task management is unavailable')
+      }
+      const { sessionId, dispatchToken, ...input } = params
+      const sourceId = requireSessionId({ sessionId })
+      d.sessionDispatchAuthorization.verify(sourceId, dispatchToken)
+      const confirm = d.sessionService?.confirmScheduleOperation?.bind(d.sessionService, sourceId)
+      return d.applicationScheduleTools.dispatch(
+        method.slice('application_schedule.'.length),
+        input,
+        confirm,
+      )
+    }
+    if (method === 'session_schedule.run_now' || method === 'session_schedule.executions') {
+      const sessionId = requireSessionId(params)
+      const task = d.sessionScheduleTools.get(sessionId, requireText(params, 'id', 200))
+      if (d.scheduleExecutionTools == null || d.sessionDispatchAuthorization == null) {
+        throw new Error('Scheduled task execution tools are unavailable')
+      }
+      d.sessionDispatchAuthorization.verify(sessionId, params.dispatchToken)
+      if (method === 'session_schedule.run_now') {
+        return { execution: await d.scheduleExecutionTools.runNow(task.id) }
+      }
+      const page = Number.isInteger(params.page) ? Math.max(1, Number(params.page)) : 1
+      const pageSize = Number.isInteger(params.pageSize)
+        ? Math.min(100, Math.max(1, Number(params.pageSize)))
+        : 20
+      return d.scheduleExecutionTools.getExecutions(task.id, {
+        page,
+        pageSize,
+        ...(typeof params.status === 'string' ? { status: params.status } : {}),
+      })
+    }
     switch (method) {
       // ── Skills ──
       case 'skills.list':

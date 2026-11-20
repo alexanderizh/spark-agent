@@ -213,6 +213,12 @@ export function ScheduledTasksView() {
     void loadTasks()
   }, [loadTasks, refreshKey])
 
+  useEffect(() => {
+    return window.spark?.on?.('stream:config:changed', (event) => {
+      if (event.scope === 'scheduled-task') setRefreshKey((key) => key + 1)
+    })
+  }, [])
+
   // Auto-refresh every 10s for countdown updates
   useEffect(() => {
     const timer = setInterval(() => setRefreshKey((k) => k + 1), 10000)

@@ -12,7 +12,7 @@
  */
 
 import type { ScheduledTaskRepository, TaskExecutionRepository } from '@spark/storage'
-import type { ScheduledTaskRow, TaskExecutionRow } from '@spark/storage'
+import type { CreateScheduledTaskParams, ScheduledTaskRow, TaskExecutionRow } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 import { CronExpressionParser } from 'cron-parser'
 import {
@@ -231,24 +231,26 @@ export class ScheduledTaskService {
   }
 
   createTask(
-    params: Omit<
-      ScheduledTaskRow,
-      | 'status'
-      | 'execution_count'
-      | 'success_count'
-      | 'failure_count'
-      | 'last_run_at'
-      | 'next_run_at'
-      | 'last_error'
-      | 'current_execution_id'
-      | 'created_at'
-      | 'updated_at'
-    > & {
-      id: string
-      name: string
-      trigger_type: TriggerType
-      prompt_template: string
-    },
+    params:
+      | CreateScheduledTaskParams
+      | (Omit<
+          ScheduledTaskRow,
+          | 'status'
+          | 'execution_count'
+          | 'success_count'
+          | 'failure_count'
+          | 'last_run_at'
+          | 'next_run_at'
+          | 'last_error'
+          | 'current_execution_id'
+          | 'created_at'
+          | 'updated_at'
+        > & {
+          id: string
+          name: string
+          trigger_type: TriggerType
+          prompt_template: string
+        }),
   ): ScheduledTaskItem {
     const scope = params.scope ?? 'global'
     if (scope === 'session' && !params.session_id) {
@@ -257,8 +259,15 @@ export class ScheduledTaskService {
     if (scope === 'global' && params.session_id) {
       throw new Error('Global scheduled tasks cannot be bound to a session')
     }
-    if (scope === 'session') validateSessionTaskDefinition(params)
-    const nextRunAt = this.calculateNextRunAt(params as unknown as ScheduledTaskRow)
+    if (scope === 'session')
+      validateSessionTaskDefinition({ ...params, timezone: params.timezone ?? 'system' })
+    const nextRunAt =
+      params.enabled === false || params.enabled === 0
+        ? null
+        : this.calculateNextRunAt({
+            ...params,
+            timezone: params.timezone ?? 'system',
+          } as ScheduledTaskRow)
     const row = this.taskRepo.create({
       ...params,
       next_run_at: nextRunAt,
@@ -282,6 +291,8 @@ export class ScheduledTaskService {
       'trigger_type',
       'interval_seconds',
       'cron_expression',
+      'timezone',
+      'max_executions',
       'run_at',
       'start_at',
       'end_at',
@@ -356,7 +367,7 @@ export class ScheduledTaskService {
           // replace: 更新已存在任务
           // 不重置 enabled（尊重用户的启用偏好）；运行时统计字段保留
           // 触发器字段变化时 updateTask 内部会重新计算 nextRunAt
-          this.updateTask(match.id, exportTaskToUpdateFields(task) as Record<string, unknown>)
+          this.updateTask(match.id, exportTaskToUpdateFields(task))
           result.imported += 1
           continue
         }
@@ -367,12 +378,12 @@ export class ScheduledTaskService {
           id: newId,
           name: task.name,
           description: task.description,
-          enabled: task.enabled ? 1 : 0,
+          enabled: task.enabled,
           scope: 'global',
           session_id: null,
-          paused_by_archive: 0,
-          skip_if_session_running: 1,
-          continue_on_error: 1,
+          paused_by_archive: false,
+          skip_if_session_running: true,
+          continue_on_error: true,
           trigger_type: task.triggerType,
           interval_seconds: task.intervalSeconds,
           cron_expression: task.cronExpression,
@@ -392,9 +403,9 @@ export class ScheduledTaskService {
           max_retries: task.maxRetries,
           retry_delay_seconds: task.retryDelaySeconds,
           retry_backoff: task.retryBackoff,
-          notifications: JSON.stringify(task.notifications),
+          notifications: task.notifications,
           concurrency_policy: task.concurrencyPolicy,
-          tags: JSON.stringify(task.tags),
+          tags: task.tags,
           history_retention_days: task.historyRetentionDays,
         })
         result.imported += 1
@@ -1165,7 +1176,7 @@ function toExecutionItem(row: TaskExecutionRow): TaskExecutionItem {
   }
 }
 
-function validateSessionTaskDefinition(task: {
+export function validateSessionTaskDefinition(task: {
   name: string
   prompt_template: string
   trigger_type: TriggerType
@@ -1270,7 +1281,7 @@ function rowToExportTask(row: ScheduledTaskRow): ScheduledTaskExportTask {
  * 把 export task 转为 update 字段映射（snake_case）。
  * 注意：不更新 name（name 是去重 key）、不更新 enabled（尊重用户启用偏好）。
  */
-function exportTaskToUpdateFields(task: ScheduledTaskExportTask): Partial<ScheduledTaskRow> {
+function exportTaskToUpdateFields(task: ScheduledTaskExportTask): Record<string, unknown> {
   return {
     description: task.description,
     trigger_type: task.triggerType,
@@ -1292,11 +1303,11 @@ function exportTaskToUpdateFields(task: ScheduledTaskExportTask): Partial<Schedu
     max_retries: task.maxRetries,
     retry_delay_seconds: task.retryDelaySeconds,
     retry_backoff: task.retryBackoff,
-    notifications: JSON.stringify(task.notifications),
+    notifications: task.notifications,
     concurrency_policy: task.concurrencyPolicy,
-    tags: JSON.stringify(task.tags),
+    tags: task.tags,
     history_retention_days: task.historyRetentionDays,
-  } as Partial<ScheduledTaskRow>
+  }
 }
 
 function sleep(ms: number): Promise<void> {

@@ -5,7 +5,7 @@ import { z } from 'zod'
 
 import type { ScheduledTaskService } from './scheduled-task.service.js'
 
-const SessionScheduleCreateInputSchema = z
+export const SessionScheduleCreateInputSchema = z
   .object({
     name: z.string().trim().min(1).max(200),
     description: z.string().max(2_000).optional(),
@@ -31,7 +31,7 @@ const SessionScheduleCreateInputSchema = z
   })
   .strict()
 
-const SessionScheduleUpdateInputSchema = SessionScheduleCreateInputSchema.partial()
+export const SessionScheduleUpdateInputSchema = SessionScheduleCreateInputSchema.partial()
 
 export type SessionScheduleCreateInput = z.infer<typeof SessionScheduleCreateInputSchema>
 export type SessionScheduleUpdateInput = z.infer<typeof SessionScheduleUpdateInputSchema>
@@ -66,11 +66,15 @@ export class SessionScheduleAgentTools {
     return this.requireOwnedTask(sessionId, taskId)
   }
 
-  create(sessionId: string, input: SessionScheduleCreateInput): ScheduledTaskItem {
+  create(
+    sessionId: string,
+    input: SessionScheduleCreateInput,
+    id = crypto.randomUUID().toString(),
+  ): ScheduledTaskItem {
     const currentSessionId = requireCurrentSessionId(sessionId)
     const parsed = SessionScheduleCreateInputSchema.parse(input)
     const task = this.tasks.createTask({
-      id: crypto.randomUUID(),
+      id,
       name: parsed.name,
       description: parsed.description ?? '',
       enabled: parsed.enabled !== false,
@@ -103,7 +107,7 @@ export class SessionScheduleAgentTools {
       concurrency_policy: parsed.concurrencyPolicy ?? 'queue',
       tags: parsed.tags ?? [],
       history_retention_days: parsed.historyRetentionDays ?? 30,
-    } as unknown as Parameters<ScheduledTaskService['createTask']>[0]) as ScheduledTaskItem
+    })
     this.onChanged?.('create', task.id)
     return task
   }
