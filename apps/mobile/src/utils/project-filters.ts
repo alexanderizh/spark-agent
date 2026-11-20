@@ -8,7 +8,6 @@
  *   - 维度之间是 **AND**，维度内单选。
  */
 
-import type { BridgeProjectSummary } from '../api/bridge'
 import { SESSION_ACTIVITY_OPTIONS, startOfToday, type SessionActivityKey } from './session-filters'
 
 export type ProjectActivityKey = SessionActivityKey
@@ -50,7 +49,10 @@ function matchesActivity(updatedAt: string, activity: ProjectActivityKey, now: n
   return now - time <= ACTIVITY_WINDOW_MS[activity]
 }
 
-function matchesStatus(project: BridgeProjectSummary, status: ProjectStatusKey): boolean {
+function matchesStatus(
+  project: { sessionCount: number; runningSessionCount?: number },
+  status: ProjectStatusKey,
+): boolean {
   if (status === 'all') return true
   const running = project.runningSessionCount ?? 0
   if (status === 'running') return running > 0
@@ -59,12 +61,12 @@ function matchesStatus(project: BridgeProjectSummary, status: ProjectStatusKey):
 }
 
 export function matchProject(
-  project: BridgeProjectSummary,
+  project: { sessionCount: number; runningSessionCount?: number; updatedAt?: string },
   filter: ProjectFilterState,
   now = Date.now(),
 ): boolean {
   return (
-    matchesActivity(project.updatedAt, filter.activity, now) &&
+    matchesActivity(project.updatedAt ?? '', filter.activity, now) &&
     matchesStatus(project, filter.status)
   )
 }

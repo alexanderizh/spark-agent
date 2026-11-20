@@ -16,7 +16,7 @@ import type {
   BridgeQuestionItem,
   BridgeQuestionOption,
   BridgeQuestionPrompt,
-} from '../api/bridge'
+} from './chat-interactions'
 
 // ─── 权限审批卡 ───────────────────────────────────────────────────────────────
 

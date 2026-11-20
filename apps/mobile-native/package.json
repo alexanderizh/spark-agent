@@ -1,0 +1,39 @@
+{
+  "name": "sparkwork-mobile-native",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --localhost",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild --no-install --template expo-template-bare-minimum@56.0.38",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/*.test.ts",
+    "bundle": "expo export --platform android --platform ios"
+  },
+  "dependencies": {
+    "expo": "56.0.24",
+    "expo-asset": "~56.0.25",
+    "expo-audio": "~56.0.13",
+    "expo-crypto": "~56.0.5",
+    "expo-document-picker": "~56.0.4",
+    "expo-file-system": "~56.0.11",
+    "expo-image-picker": "~56.0.25",
+    "expo-media-library": "~56.0.11",
+    "expo-secure-store": "~56.0.4",
+    "expo-splash-screen": "~56.0.16",
+    "expo-system-ui": "~56.0.5",
+    "react": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-svg": "15.15.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "~19.2.0",
+    "spark-protocol-zod": "npm:zod@4.4.3",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.2"
+  }
+}
