@@ -1,0 +1,57 @@
+name: Android 真机测试包
+on:
+  push:
+    branches: [ci/android-device-preview]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      # Bash enables pipefail for the signature verification pipeline.
+
+      run:
+        shell: bash
+
+        working-directory: apps/mobile-native
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Check source and generate Android project
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run prebuild -- --platform android
+      - name: Build standalone APK
+        run: |
+          export JAVA_HOME="${JAVA_HOME_17_X64:?}"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          sdkmanager 'platforms;android-36' 'build-tools;35.0.0' 'build-tools;36.0.0' 'ndk;27.1.12297006' 'cmake;3.22.1'
+          cd android
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --max-workers=2
+      - name: Verify APK
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$tools/apksigner" verify --verbose --print-certs "$apk" | tee "$RUNNER_TEMP/apk-verification.txt"
+          "$tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
+          unzip -tq "$apk"
+          python3 -c 'import sys,zipfile; f=zipfile.ZipFile(sys.argv[1]); assert f.open("assets/index.android.bundle").read(8).hex()=="c61fbc03c103191f"' "$apk"
+          cp "$apk" "$RUNNER_TEMP/sparkwork-android-b6812ce43.apk"
+          sha256sum "$RUNNER_TEMP/sparkwork-android-b6812ce43.apk"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sparkwork-android-b6812ce43
+          path: |
+            ${{ runner.temp }}/sparkwork-android-b6812ce43.apk
+            ${{ runner.temp }}/apk-verification.txt
+            ${{ runner.temp }}/apk-badging.txt
+          if-no-files-found: error
+          retention-days: 3
