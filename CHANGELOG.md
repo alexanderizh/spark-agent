@@ -6,9 +6,18 @@
 
 ## [Unreleased]
 
+## [0.15.33] - 2026-11-23
+
+### 新增
+
+- **远程控制界面可移到独立窗口打开**：远程控制页主窗口页头新增「在独立窗口中打开」入口，远程界面整体迁入单例 BrowserWindow（已打开则直接聚焦），复用同一套渲染与中继链路。独立窗口模式下隐藏侧栏展开按钮、渲染窗口控制按钮并适配三平台标题栏；窗口生命周期对齐快速创作窗口策略，应用退出时自动清理。
+
 ### 修复
 
 - **Spark 引擎的 bash 工具在 Linux/macOS 上能读取并使用终端别名**：远程会话（agent 跑在 Linux 主机上）此前用 `bash -lc` 执行命令，非交互 shell 会跳过 `~/.bashrc` 的交互段并关闭别名展开，agent 既看不到也用不了用户配置的别名。现在 POSIX 平台改为 `bash -lic`（login + interactive）：`.bash_profile` → `.bashrc` 完整加载，别名可直接执行、可用 `alias` 命令列出；无终端时的 bash 作业控制提示已从输出中剥离。Windows 保持 `-lc` 不变（Git Bash 的交互 rc 常把 node/npm 指到需要 tty 的 winpty 别名，开了交互模式反而会炸）。顺带修复：Windows 上命令取消/输出超限终止改用 `taskkill /T` 结束整棵进程树，此前复合命令的孙进程会攥着输出管道导致取消挂起；SHELL 未设置的 POSIX 环境优先回落 `/bin/bash` 而不是 `/bin/sh`，别名与用户 shell 配置不再因 init 启动而丢失。
+- **Codex 远程会话的任务列表恢复显示**：Codex CLI 0.155.1 切换 app-server 载具后，上游 schema 移除了 todo_list 条目、继任的 turn/plan/updated 通知又未被消费，Codex 会话的任务列表自 09-18 起一直断流。现在接入 turn/plan/updated 通知：计划步骤的三态（待办/进行中/已完成）映射为 todo_write 工具对，同轮多版本复用同一调用 ID，收尾携带最新清单；上游后续任一形态的 todo_list 落地也能直接接住。注：update_plan 工具在 codex 0.167 默认未暴露给模型（上游灰度中），管道修复后需待上游放开才有数据流入。
+- **第三方模型会话强制启用任务清单工具**：Claude Code CLI 仅对官方白名单模型原生开启任务工具，第三方渠道模型会话里任务清单工具不可用，且 ToolSearch 在第三方渠道会被拒绝请求。现在托管运行时为非 Claude 家族模型自动注入 CLAUDE_CODE_ENABLE_TODO_TOOLS=true 与 ENABLE_TOOL_SEARCH=false，任务清单工具强制可用、不再触发被拒的 ToolSearch；用户显式配置的 customEnv 仍然优先。
+- **远程会话输入草稿随打随存**：远程控制界面的输入框草稿此前只在切换会话/设备时写入缓存，而远程视图按路由条件渲染，切到其它界面组件即卸载、状态销毁时无人写缓存，回来草稿已丢失。现在草稿与待发附件每次变化都同步写回缓存，组件任意路径卸载/重建后都能恢复最新值。
 
 ### 改进
 
