@@ -354,6 +354,27 @@
   align-items: center;
   gap: 8px;
   flex: none;
+  -webkit-app-region: no-drag;
+}
+
+// 独立窗口（.remote-control-window-standalone）下的适配：
+//   - 窗口控制按钮（win32/linux）压到标题栏右缘，去掉默认占位；
+//   - darwin 由全局 .platform-darwin .window-controls 规则自动隐藏。
+.rc-head-right > .window-controls {
+  width: auto;
+  gap: 2px;
+  padding: 0;
+}
+
+.remote-control-window-standalone {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-soft, #fff);
+}
+
+.remote-control-window-standalone > .remote-control {
+  flex: 1;
+  min-height: 0;
 }
 
 .rc-relay-pill {

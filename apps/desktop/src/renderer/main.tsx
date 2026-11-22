@@ -4,6 +4,7 @@ import { App } from './App'
 import { readCanvasWindowProjectId } from './canvasWindowParams'
 import { isBrowserWindowMode } from './browserWindowParams'
 import { isQuickCreateWindowMode } from './quickCreateWindowParams'
+import { isRemoteControlWindowMode } from './remoteControlWindowParams'
 
 import './design/styles/styles.css'
 import './design/styles/views.css'
@@ -26,9 +27,13 @@ const BrowserWindowApp = lazy(async () => ({
 const QuickCreateWindowApp = lazy(async () => ({
   default: (await import('./QuickCreateWindowApp')).QuickCreateWindowApp,
 }))
+const RemoteControlWindowApp = lazy(async () => ({
+  default: (await import('./RemoteControlWindowApp')).RemoteControlWindowApp,
+}))
 const isCanvasWindow = readCanvasWindowProjectId() != null
 const isBrowserWindow = isBrowserWindowMode()
 const isQuickCreateWindow = isQuickCreateWindowMode()
+const isRemoteControlWindow = isRemoteControlWindowMode()
 
 let rootContent: React.ReactNode
 if (isCanvasWindow) {
@@ -37,6 +42,8 @@ if (isCanvasWindow) {
   rootContent = <BrowserWindowApp />
 } else if (isQuickCreateWindow) {
   rootContent = <QuickCreateWindowApp />
+} else if (isRemoteControlWindow) {
+  rootContent = <RemoteControlWindowApp />
 } else {
   rootContent = <App />
 }

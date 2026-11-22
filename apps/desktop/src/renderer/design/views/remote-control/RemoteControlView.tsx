@@ -11,7 +11,9 @@ import type { RemoteAgentDeviceSummary } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useApp } from '../../AppContext'
 import { useToast } from '../../components/Toast'
+import { WindowControls } from '../../components/WindowControls'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
+import { isRemoteControlWindowMode } from '../../../remoteControlWindowParams'
 import { RemoteChatPane } from './RemoteChatPane'
 import { RemoteSessionPane } from './RemoteSessionPane'
 import { RemoteProjectPanel } from './RemoteProjectPanel'
@@ -113,6 +115,8 @@ export function RemoteControlView() {
   const { t, requestPrompt } = useApp()
   const { toast } = useToast()
   const relay = useRemoteRelay()
+  /** 独立窗口模式：隐藏主窗口专属的侧栏展开按钮，改渲染窗口控制按钮 */
+  const isStandaloneWindow = isRemoteControlWindowMode()
   /**
    * 上次停留的设备与会话从本地状态恢复：远程视图是 lazy 挂载的，切走再回来组件
    * 就是新的，只靠模块级缓存能救列表、救不了「选中的是哪台机器哪个会话」。
@@ -305,6 +309,16 @@ export function RemoteControlView() {
 
   /** 至少两台「在线」设备才给切换入口：只多一台离线机器时没什么可切的 */
   const canSwitchDevice = onlineDevices.length > 1
+
+  /** 主窗口页头入口：把远程界面挪到独立窗口（已打开则聚焦那个窗口） */
+  const handleOpenStandaloneWindow = useCallback(async () => {
+    try {
+      const response = await window.spark.invoke('remote-control:window:open', {})
+      if (!response.success) toast.error('独立窗口打开失败，请重试')
+    } catch {
+      toast.error('独立窗口打开失败，请重试')
+    }
+  }, [toast])
   /**
    * 切换器形态：auto 按设备规模判定（少则 Tab、多则下拉），显式选择优先。
    * 两台设备是最常见场景，Tab 少一次点击，所以 auto 默认倾向 Tab。
@@ -433,7 +447,7 @@ export function RemoteControlView() {
         }}
       >
         <div className="rc-head-left">
-          {t.sidebarHidden && <SidebarExpandButton />}
+          {t.sidebarHidden && !isStandaloneWindow && <SidebarExpandButton />}
           <Icons.RemoteMonitor size={16} />
           <h2>远程</h2>
           {activeDevice != null && (
@@ -462,6 +476,18 @@ export function RemoteControlView() {
           >
             <Icons.Refresh size={14} />
           </button>
+          {!isStandaloneWindow && (
+            <button
+              type="button"
+              className="rc-icon-btn"
+              onClick={() => void handleOpenStandaloneWindow()}
+              aria-label="在独立窗口中打开"
+              title="在独立窗口中打开"
+            >
+              <Icons.ExternalLink size={14} />
+            </button>
+          )}
+          {isStandaloneWindow && <WindowControls />}
         </div>
       </header>
       <div className="rc-body">{renderBody()}</div>

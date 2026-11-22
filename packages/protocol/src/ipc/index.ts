@@ -7473,6 +7473,13 @@ export interface QuickCreateWindowOpenResponse {
   windowId?: number
 }
 
+/** `remote-control:window:open` — 打开或聚焦远程操作独立窗口 */
+export interface RemoteControlWindowOpenRequest {}
+export interface RemoteControlWindowOpenResponse {
+  success: boolean
+  windowId?: number
+}
+
 /** `canvas:project:delete` — 软删除（status=deleted）或物理删除项目+快照 */
 export interface CanvasProjectDeleteRequest {
   projectId: string
@@ -8342,6 +8349,7 @@ export interface IpcChannelMap
     CanvasWindowCloseConfirmedResponse,
   ]
   'quick-create:window:open': [QuickCreateWindowOpenRequest, QuickCreateWindowOpenResponse]
+  'remote-control:window:open': [RemoteControlWindowOpenRequest, RemoteControlWindowOpenResponse]
   'canvas:project:delete': [CanvasProjectDeleteRequest, CanvasProjectDeleteResponse]
   'canvas:project:update-cover': [CanvasProjectUpdateCoverRequest, CanvasProjectUpdateCoverResponse]
   'canvas:project:default-root': [CanvasProjectDefaultRootRequest, CanvasProjectDefaultRootResponse]
