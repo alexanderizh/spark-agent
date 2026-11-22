@@ -172,7 +172,8 @@ export function RemoteChatPane({
    * 这里用「渲染期按 prop 调整 state」而不是 effect 来切换：effect 里改会和下面
    * 清空待发附件的那段抢执行顺序（同一 commit 里后写的赢），渲染期处理则天然在前面。
    * 初值给哨兵，首帧必然不相等 —— 远程视图是 lazy 挂载的，切到别的页面再回来组件
-   * 会重建，靠这一步把模块级缓存里的草稿取回来。
+   * 会重建，靠这一步把模块级缓存里的草稿取回来（缓存里的最新值由下面的
+   * write-through effect 保证，单靠这里的切换存档救不了「卸载时没人写」的情况）。
    */
   const [composeKey, setComposeKey] = useState<{ deviceId: string; sessionId: string | null }>({
     deviceId: '',
@@ -205,6 +206,21 @@ export function RemoteChatPane({
     activeQueueTargetRef.current = { deviceId, sessionId }
     activeHistoryTargetRef.current = { deviceId, sessionId }
   }, [deviceId, sessionId])
+
+  /**
+   * 草稿随打随存（write-through）：模块级缓存与输入区 state 始终同值。
+   *
+   * 上面 composeKey 那段只在「会话/设备切换」时存档；但远程视图是按路由条件渲染的
+   * （App.tsx 的 switch），切到别的界面整个组件直接卸载，state 销毁时没有任何代码
+   * 往缓存里写 —— 再切回来只能取回上一次会话切换时的旧草稿（通常就是空），打了一半
+   * 的字就丢了。这里在每次内容变化时同步写回，组件无论因为什么路径卸载/重建，
+   * 缓存里都是最新值。空白草稿在 writeRemoteDraft 里等同删除，不会堆积空条目；
+   * 发送清空（handleSend 里的 clearRemoteDraft + 空值删除）语义保持一致。
+   */
+  useEffect(() => {
+    if (sessionId == null) return
+    writeRemoteDraft(deviceId, sessionId, { text: draft, attachments: pendingAttachments })
+  }, [deviceId, sessionId, draft, pendingAttachments])
 
   // 运行时配置（助手 / 模型 / 权限）：目录按设备缓存，运行时按会话拉一次
   const config = useRemoteComposerConfig(deviceId, sessionId)
