@@ -1,7 +1,7 @@
 <view class="login-page theme-root {{themeClass}}">
   <view class="brand">
     <image class="brand-logo" src="/assets/brand/logo.png" mode="aspectFit" />
-    <view class="brand-name t-strong">SparkWork</view>
+    <view class="brand-name t-strong">Velmora Spark</view>
     <view class="brand-slogan t-subtitle">桌面端的移动伴侣 · 账号同步 · 设备互通</view>
   </view>
 

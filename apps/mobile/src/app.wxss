@@ -1,5 +1,5 @@
 /*
- * SparkWork 移动端全局样式 — Cursor 移动端风格重构。
+ * Velmora Spark 移动端全局样式 — Cursor 移动端风格重构。
  *
  * 设计令牌（对齐 Cursor iOS App，浅色暖白 / 深色中性灰双主题）：
  *   浅色背景 #F7F6F4 / 卡片 #FFFFFF；深色背景 #171716 / 卡片 #242422。

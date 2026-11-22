@@ -18,7 +18,7 @@
   "window": {
     "navigationBarBackgroundColor": "@navBgColor",
     "navigationBarTextStyle": "@navTxtStyle",
-    "navigationBarTitleText": "SparkWork",
+    "navigationBarTitleText": "Velmora Spark",
     "backgroundColor": "@bgColor",
     "backgroundTextStyle": "@bgTxtStyle"
   },

@@ -1,5 +1,5 @@
 {
-  "navigationBarTitleText": "登录 SparkWork",
+  "navigationBarTitleText": "登录 Velmora Spark",
   "usingComponents": {
     "captcha-image": "/components/captcha-image/index"
   }

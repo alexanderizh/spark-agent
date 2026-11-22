@@ -17,7 +17,7 @@ Page({
     /** 示例设备 */
     device: {
       name: 'MacBook Pro（示例）',
-      meta: '在线 · SparkWork 0.15.22 · macOS',
+      meta: '在线 · SparkWork 0.15.29 · macOS',
     },
     /** 示例会话 */
     sessions: [

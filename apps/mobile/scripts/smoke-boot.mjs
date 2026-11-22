@@ -99,7 +99,7 @@ globalThis.wx = {
     options?.success?.({ errMsg: 'redirectTo:ok' })
   },
 }
-globalThis.getApp = () => ({ globalData: { appName: 'SparkWork' } })
+globalThis.getApp = () => ({ globalData: { appName: 'Velmora Spark' } })
 globalThis.App = () => {
   appRegistered = true
 }
