@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
@@ -233,13 +234,26 @@ export class WorkspaceToolExecutor implements ToolExecutor {
     context: ToolCallContext,
     callId: string,
   ): Promise<ToolOutcome> {
-    const shell = process.env.SHELL ?? (process.platform === 'win32' ? 'cmd.exe' : '/bin/sh')
+    const shell = resolveShell()
     const command = stringArg(args.command, 'command')
     // Argument style follows the shell, not the platform: a SHELL override on
     // Windows points at a POSIX shell (Git Bash sets SHELL for every Windows
     // process), and feeding it cmd.exe flags fails with "Is a directory".
-    const posixStyle = process.platform !== 'win32' || process.env.SHELL !== undefined
-    const shellArgs = posixStyle ? ['-lc', command] : ['/d', '/s', '/c', command]
+    //
+    // POSIX-native commands additionally run login+interactive so rc files like
+    // ~/.bashrc load: the user's aliases become readable via `alias` and
+    // directly usable in commands, which plain `-lc` cannot offer —
+    // non-interactive shells skip interactive rc blocks and keep alias
+    // expansion disabled. The job-control notice an interactive shell prints
+    // without a tty is stripped from stderr below. Windows stays on -lc even
+    // under Git Bash: interactive rc files there commonly route node/npm
+    // through winpty aliases that require a tty and would break every command.
+    const shellArgs =
+      process.platform === 'win32'
+        ? process.env.SHELL !== undefined
+          ? ['-lc', command]
+          : ['/d', '/s', '/c', command]
+        : ['-lic', command]
     if (args.yield_ms !== undefined) {
       return this.#processes.start(
         callId,
@@ -258,7 +272,10 @@ export class WorkspaceToolExecutor implements ToolExecutor {
       signal: context.signal,
       env: withCustomEnvironment(this.customEnv),
     })
-    const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
+    const output = [result.stdout, stripInteractiveShellNoise(result.stderr)]
+      .filter(Boolean)
+      .join('\n')
+      .trim()
     return {
       ok: result.exitCode === 0,
       content: `${output}${output ? '\n' : ''}exit ${result.exitCode}`,
@@ -433,6 +450,41 @@ function asCode(error: unknown): unknown {
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+let cachedPosixShell: string | undefined
+
+/**
+ * SHELL wins whenever the environment carries it (login contexts, Git Bash on
+ * Windows). Without it a POSIX agent process usually runs detached from any
+ * login session, where a /bin/sh fallback would silently lose the user's bash
+ * setup — including the aliases interactive rc files define — so prefer bash
+ * whenever it exists.
+ */
+function resolveShell(): string {
+  if (process.env.SHELL) return process.env.SHELL
+  if (process.platform === 'win32') return 'cmd.exe'
+  cachedPosixShell ??= existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh'
+  return cachedPosixShell
+}
+
+/**
+ * Interactive shells without a controlling terminal emit two fixed bash
+ * notices at startup. They precede every command's real output, so strip
+ * leading occurrences instead of the command's own stderr.
+ */
+const INTERACTIVE_SHELL_NOISE =
+  /^bash: (?:cannot set terminal process group \(-?\d+\): Inappropriate ioctl for device|no job control in this shell)\r?$/u
+
+function stripInteractiveShellNoise(stderr: string): string {
+  const lines = stderr.split('\n')
+  let index = 0
+  while (index < lines.length) {
+    const line = lines[index]
+    if (line === undefined || !INTERACTIVE_SHELL_NOISE.test(line.trimEnd())) break
+    index += 1
+  }
+  return lines.slice(index).join('\n')
 }
 
 function stringArg(value: unknown, name: string): string {

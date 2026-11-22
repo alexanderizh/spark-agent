@@ -165,8 +165,22 @@ function isSecretName(name: string): boolean {
 function terminateTree(pid: number | undefined, signal: NodeJS.Signals): void {
   if (!pid) return
   try {
-    if (process.platform === 'win32') process.kill(pid, signal)
-    else process.kill(-pid, signal)
+    if (process.platform === 'win32') {
+      // Windows has no process groups, so kill(pid, signal) only reaches the
+      // shell itself — and the login+interactive shells the bash tool spawns
+      // both ignore SIGTERM and outlive their children, leaving grandchildren
+      // holding the output pipes and the close event hanging. taskkill /T
+      // tears down the whole descendant tree instead.
+      const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      })
+      killer.on('error', () => {
+        /* taskkill ships with every Windows install; ignore impossible ENOENT. */
+      })
+    } else {
+      process.kill(-pid, signal)
+    }
   } catch (error) {
     // ESRCH means the process/group already exited. EPERM can occur on POSIX
     // when a very short-lived detached group disappears or its id is reused

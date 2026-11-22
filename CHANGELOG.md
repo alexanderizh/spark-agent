@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **Spark 引擎的 bash 工具在 Linux/macOS 上能读取并使用终端别名**：远程会话（agent 跑在 Linux 主机上）此前用 `bash -lc` 执行命令，非交互 shell 会跳过 `~/.bashrc` 的交互段并关闭别名展开，agent 既看不到也用不了用户配置的别名。现在 POSIX 平台改为 `bash -lic`（login + interactive）：`.bash_profile` → `.bashrc` 完整加载，别名可直接执行、可用 `alias` 命令列出；无终端时的 bash 作业控制提示已从输出中剥离。Windows 保持 `-lc` 不变（Git Bash 的交互 rc 常把 node/npm 指到需要 tty 的 winpty 别名，开了交互模式反而会炸）。顺带修复：Windows 上命令取消/输出超限终止改用 `taskkill /T` 结束整棵进程树，此前复合命令的孙进程会攥着输出管道导致取消挂起；SHELL 未设置的 POSIX 环境优先回落 `/bin/bash` 而不是 `/bin/sh`，别名与用户 shell 配置不再因 init 启动而丢失。
+
 ### 改进
 
 - **小程序品牌名改为 Velmora Spark（桌面端与 Web 端保持不变）**：小程序内的产品名原先跟桌面端一样叫 SparkWork，现在统一为 Velmora Spark——`app.json` / 工作台页 / 登录页的原生导航栏标题（「登录 Velmora Spark」）、启动分流页与登录页的品牌大字、全局 `appName` 全量替换，设计预览壳（`preview/index.html`）与 README/工程描述同步更新。**指代桌面端产品的文案保持 SparkWork**：「与桌面端 SparkWork 使用同一账号体系」「在电脑端 SparkWork 打开设置 → 生态 → 移动端桥接」「或 SparkWork 桌面端操作」，以及示例页里的桌面端设备标识；账号体系与中继服务的「Spark 平台」也不改（那是平台名，不是产品名）。

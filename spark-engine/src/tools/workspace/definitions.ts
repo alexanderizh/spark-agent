@@ -140,7 +140,7 @@ export const workspaceToolDefinitions: readonly ToolDefinition[] = [
   {
     name: 'bash',
     description:
-      'Run a non-interactive shell command with bounded output and process-group cancellation. Optional yield_ms (0..30000) starts a turn-owned managed command, returning process_id for process_wait/process_cancel. It has a 120-second lifetime and must finish within this turn. A running status is not completion; do not restart the command.',
+      'Run a shell command with bounded output and process-group cancellation. POSIX commands run in a login+interactive shell, so rc files like ~/.bashrc load and their aliases and functions are directly usable (list them with `alias`). Optional yield_ms (0..30000) starts a turn-owned managed command, returning process_id for process_wait/process_cancel. It has a 120-second lifetime and must finish within this turn. A running status is not completion; do not restart the command.',
     inputSchema: {
       type: 'object',
       properties: {

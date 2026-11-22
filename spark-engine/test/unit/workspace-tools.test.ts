@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,7 +16,10 @@ const roots: string[] = []
 
 afterEach(async () => {
   delete process.env.SPARK_TEST_SECRET_TOKEN
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  // Login+interactive shells tear down slightly after the tool call resolves;
+  // retry so a lingering handle does not fail unrelated assertions.
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 describe('workspace tools', () => {
@@ -113,6 +117,30 @@ describe('workspace tools', () => {
     expect(result.ok).toBe(true)
     expect(result.content).toContain('missing')
     expect(result.content).not.toContain('sensitive-value')
+  })
+
+  it('exposes interactive rc-file aliases to POSIX shell commands', async () => {
+    // The bash tool only runs login+interactive on POSIX-native platforms;
+    // Windows keeps -lc because winpty aliases there require a tty.
+    const shell = process.env.SHELL ?? ''
+    const bashAvailable = process.platform !== 'win32' && (shell.includes('bash') || existsSync('/bin/bash'))
+    if (!bashAvailable) return // cmd.exe, Git Bash on Windows, and non-bash shells
+
+    const root = await createRoot()
+    const home = (await createRoot()).replaceAll('\\', '/')
+    await writeFile(join(home, '.bash_profile'), '[ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"\n')
+    await writeFile(
+      join(home, '.bashrc'),
+      'case $- in *i*) ;; *) return ;; esac\nalias spark_alias_probe=\'echo ALIAS_LOADED\'\n',
+    )
+    const executor = new WorkspaceToolExecutor(root, new MemoryArtifactStore(), { HOME: home })
+    const result = await execute(executor, 'bash', { command: 'spark_alias_probe' })
+    expect(result.ok).toBe(true)
+    expect(result.content).toContain('ALIAS_LOADED')
+    expect(result.content).toContain('exit 0')
+    // The tty-less interactive shell's startup notices must not leak through.
+    expect(result.content).not.toContain('no job control in this shell')
+    expect(result.content).not.toContain('cannot set terminal process group')
   })
 
   it('cancels the complete shell process group', { timeout: 60_000 }, async () => {
