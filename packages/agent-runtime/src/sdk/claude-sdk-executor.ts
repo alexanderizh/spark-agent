@@ -320,6 +320,19 @@ function buildIsolatedRuntimeEnv(
   env.ANTHROPIC_DEFAULT_SONNET_MODEL = sonnet
   env.ANTHROPIC_DEFAULT_OPUS_MODEL = opus
   env.ANTHROPIC_SMALL_FAST_MODEL = haiku
+  // CLI 2.1.319（SDK 0.3.319+）起对第三方模型存在两层工具门控：
+  // 1. 任务工具（TaskCreate/TaskUpdate/TaskGet/TaskList）的 isEnabled 门控对
+  //    模型名不在 Claude 家族白名单的会话默认禁用，只有 CLAUDE_CODE_ENABLE_TODO_TOOLS
+  //    能显式开启 —— 不开启则会话任务列表（前端从 task_* 工具事件提取）永远无数据；
+  // 2. ToolSearch（工具延迟加载）默认开启，任务工具被 defer 进检索池，
+  //    第三方模型不会主动检索加载，同样拿不到任务工具。
+  // 官方 Claude 模型不受影响（白名单命中且模型会主动使用 ToolSearch），保持引擎
+  // 原生行为；第三方模型渠道显式开启任务工具并关闭 ToolSearch，恢复全量直出。
+  // customEnv 的显式值已在上方合并，这里只补缺省，用户配置始终优先。
+  if (!model.trim().startsWith('claude-')) {
+    if (env.CLAUDE_CODE_ENABLE_TODO_TOOLS == null) env.CLAUDE_CODE_ENABLE_TODO_TOOLS = 'true'
+    if (env.ENABLE_TOOL_SEARCH == null) env.ENABLE_TOOL_SEARCH = 'false'
+  }
   return finalizeManagedRuntimeEnv(env)
 }
 
