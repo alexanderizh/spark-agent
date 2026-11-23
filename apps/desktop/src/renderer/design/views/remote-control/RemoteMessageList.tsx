@@ -32,6 +32,7 @@ import { MessageHoverBar } from '../chat/MessageHoverBar'
 import { getMessageTtsPlayer } from '../chat/MessageTtsPlayer'
 import { useMessageTtsAvailable } from '../chat/useMessageTtsAvailable'
 import type { FileOpenHandler } from '../../components/fileOpenRouting'
+import { useOptionalToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { RemoteAttachmentStrip } from './RemoteAttachmentStrip'
 import type { RemoteAttachmentRef } from './RemoteAttachmentStrip'
@@ -360,6 +361,7 @@ function AssistantMessageItem({
         // 下一段（活动摘要 / 正文）的左边缘上，和正文起点抢视线
         <MessageHoverBar
           position="right"
+          timestamp={item.timestamp}
           textContent={item.text}
           {...(ttsAvailable ? { onSpeechToggle: handleSpeechToggle, speechStatus } : {})}
         />
@@ -399,6 +401,7 @@ function MessageItem({
         {/* 操作条复用桌面端 .msg-hover-bar 的形态，hover 到气泡才显形（见 remote-control.less） */}
         <MessageHoverBar
           position="right"
+          timestamp={item.timestamp}
           textContent={item.text}
           {...(onReuseUserMessage != null ? { onResend: () => onReuseUserMessage(item) } : {})}
         />
@@ -669,21 +672,36 @@ export function RemoteMessageList({
   // 正文里的文件路径点击：文档（Office/PDF）开右侧抽屉，其余取回后交给系统应用。
   // 与产物卡片的「预览 / 打开」双轨一致（见 RemoteFileCards）。
   const [docPath, setDocPath] = useState<string | null>(null)
+  const [openingFileCount, setOpeningFileCount] = useState(0)
+  const toast = useOptionalToast()?.toast
   const { invoke: openLocalFile } = useIpcInvoke('file:open')
   const openWithSystemApp = useCallback(
     async (filePath: string) => {
+      const fileName = fileNameOf(filePath)
+      setOpeningFileCount((count) => count + 1)
+      toast?.info(`正在从目标电脑取回：${fileName}`)
       try {
         const cached = await fetchRemoteAttachment(deviceId, filePath)
         const result = await openLocalFile({ filePath: cached.localPath })
-        if (!result.opened) logger.warn('Failed to open remote file with system app', { filePath })
+        if (!result.opened) {
+          const message = result.error ?? '无法用系统应用打开'
+          logger.warn('Failed to open remote file with system app', { filePath, message })
+          toast?.error(`打开远程文件失败：${message}`)
+          return
+        }
+        toast?.success(`已在系统应用中打开：${fileName}`)
       } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause)
         logger.warn('Failed to fetch remote file for preview', {
           filePath,
-          message: cause instanceof Error ? cause.message : String(cause),
+          message,
         })
+        toast?.error(`取回远程文件失败：${message}`)
+      } finally {
+        setOpeningFileCount((count) => Math.max(0, count - 1))
       }
     },
-    [deviceId, openLocalFile],
+    [deviceId, openLocalFile, toast],
   )
   const handleFilePreview = useCallback<FileOpenHandler>(
     (filePath) => {
@@ -708,6 +726,12 @@ export function RemoteMessageList({
           {...(onReuseUserMessage != null ? { onReuseUserMessage } : {})}
         />
       ))}
+      {openingFileCount > 0 && (
+        <div className="rc-file-open-status" role="status" aria-live="polite">
+          <Icons.Spinner size={12} className="spin" />
+          正在取回远程文件{openingFileCount > 1 ? `（${openingFileCount} 个）` : ''}…
+        </div>
+      )}
       {pendingUser != null && (
         <PendingUserBubble
           pending={pendingUser}

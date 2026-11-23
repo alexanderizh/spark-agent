@@ -96,6 +96,7 @@ function makeRepos() {
   const executionRepo = {
     create: vi.fn(() => execution),
     findRunningByTaskId: vi.fn<() => TaskExecutionRow[]>(() => []),
+    cleanupOlderThan: vi.fn(),
     updateStatus: vi.fn(),
   }
   return { task, execution, taskRepo, executionRepo }

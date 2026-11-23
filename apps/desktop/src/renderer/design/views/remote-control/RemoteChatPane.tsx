@@ -199,9 +199,11 @@ export function RemoteChatPane({
   const [queueApiSupported, setQueueApiSupported] = useState<Record<string, boolean>>({})
   const queueWarningsRef = useRef(new Set<string>())
   const activeQueueTargetRef = useRef({ deviceId, sessionId })
+  const activeHistoryTargetRef = useRef({ deviceId, sessionId })
 
   useLayoutEffect(() => {
     activeQueueTargetRef.current = { deviceId, sessionId }
+    activeHistoryTargetRef.current = { deviceId, sessionId }
   }, [deviceId, sessionId])
 
   // 运行时配置（助手 / 模型 / 权限）：目录按设备缓存，运行时按会话拉一次
@@ -281,14 +283,16 @@ export function RemoteChatPane({
     if (id == null) return
     const current = historyRef.current
     if (current.loading || !current.hasMore || current.cursor == null) return
+    const isActiveRequest = () => {
+      const active = activeHistoryTargetRef.current
+      return active.deviceId === deviceId && active.sessionId === id
+    }
     // 冷却：前插会改变容器高度并触发 scroll，不冷却会「加载→重排→又触发加载」
     if (Date.now() - lastTopLoadAtRef.current < HISTORY_LOAD_COOLDOWN_MS) return
     lastTopLoadAtRef.current = Date.now()
     applyHistory({ ...current, loading: true })
     // 顶部翻页绝不能落回底部
     stickToBottomRef.current = false
-    const node = scrollRef.current
-    const anchor = { height: node?.scrollHeight ?? 0, top: node?.scrollTop ?? 0 }
     try {
       let cursor: number | null = current.cursor
       // 显式标 boolean：上面 `!current.hasMore` 的守卫会把属性收窄成 true
@@ -300,6 +304,7 @@ export function RemoteChatPane({
         page += 1
       ) {
         const response = await call<RemoteHistoryPage>(deviceId, 'GET', buildHistoryUrl(id, cursor))
+        if (!isActiveRequest()) return
         const batch = Array.isArray(response.events) ? response.events : []
         const known = [
           ...eventsRef.current.map((event) => event.id),
@@ -316,12 +321,17 @@ export function RemoteChatPane({
         if (next != null) cursor = next
         if (collected.length > 0) break
       }
+      if (!isActiveRequest()) return
       if (collected.length > 0) {
+        // Capture immediately before the prepend; live events may change height during the request.
+        const node = scrollRef.current
+        const anchor = { height: node?.scrollHeight ?? 0, top: node?.scrollTop ?? 0 }
         pendingAnchorRef.current = anchor
         applyEvents(mergeRemoteEvents(eventsRef.current, collected))
       }
       applyHistory({ hasMore, cursor, loading: false })
     } catch (cause) {
+      if (!isActiveRequest()) return
       applyHistory({ ...current, loading: false })
       setError(cause instanceof Error ? cause.message : String(cause))
     }

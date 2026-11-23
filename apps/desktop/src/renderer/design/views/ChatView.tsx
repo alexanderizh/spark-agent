@@ -6161,6 +6161,9 @@ function renderBlocks(
           <PresentedFilesList
             key={i}
             files={block.files}
+            {...(options.workspaceRootPath != null
+              ? { workspaceRootPath: options.workspaceRootPath }
+              : {})}
             {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
           />
         )

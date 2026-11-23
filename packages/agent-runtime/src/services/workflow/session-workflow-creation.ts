@@ -19,9 +19,12 @@ export function assertSessionWorkflowBindingCreationReady(
      * draft 放行与图结构），仅保留功能开关要求。
      */
     launchSource?: 'editor-test' | 'tool-package'
+    scheduledTaskSession?: boolean
   },
 ): void {
   if (binding == null) return
+  // Internally scheduled chats must suppress inherited workflows even while binding writes are disabled.
+  if (options?.scheduledTaskSession && binding.mode === 'disabled') return
   const flags = readSessionWorkflowFeatureFlags(new SettingsRepository(db))
   if (!flags.writeEnabled) {
     throw new SparkError('CAPABILITY_DISABLED', '会话工作流挂载功能尚未启用。')

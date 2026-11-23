@@ -155,6 +155,28 @@ describe('explicit presented attachments', () => {
     expect((await openFileMenu()).map((item) => item.textContent)).toEqual(['复制路径'])
   })
 
+  it('resolves relative attachment paths against the workspace root for desktop actions', async () => {
+    invoke.mockImplementation((channel: string) => {
+      if (channel === 'file:stat-kind') return Promise.resolve({ kind: 'file' })
+      return Promise.resolve({ revealed: true })
+    })
+    await act(async () =>
+      root.render(
+        <PresentedFilesList files={[{ path: 'apps/report.md' }]} workspaceRootPath="/workspace" />,
+      ),
+    )
+    const items = await openFileMenu()
+    expect(items.map((item) => item.textContent)).toContain('在 Finder 中显示')
+    await act(async () => items.find((item) => item.textContent === '在 Finder 中显示')?.click())
+    expect(invoke).toHaveBeenCalledWith('file:stat-kind', { path: '/workspace/apps/report.md' })
+    expect(invoke).toHaveBeenCalledWith('file:reveal', { filePath: '/workspace/apps/report.md' })
+  })
+
+  it('keeps relative paths local-only when no workspace root is available', async () => {
+    await act(async () => root.render(<PresentedFilesList files={[{ path: 'apps/report.md' }]} />))
+    expect((await openFileMenu()).map((item) => item.textContent)).toEqual(['复制路径'])
+  })
+
   it('skips empty paths consistently and renders no empty wrapper', async () => {
     const files = [{ path: '' }, { path: '  ' }]
     expect(filterPresentedFiles(files)).toEqual([])

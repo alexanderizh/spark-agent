@@ -264,6 +264,56 @@ describe('buildRemoteTimeline', () => {
     })
   })
 
+  it('positions a finalized assistant segment after interleaved tools', () => {
+    const finalTimestamp = '2026-11-20T13:20:00.000Z'
+    const items = buildRemoteTimeline([
+      ev({ id: 'u1', seq: 1, type: 'user_message', content: 'question' }),
+      ev({
+        id: 'a1',
+        seq: 2,
+        type: 'assistant_message',
+        content: 'Draft ',
+        mode: 'delta',
+        segmentId: 'main',
+      }),
+      ev({ id: 'call', seq: 3, type: 'tool_call', toolName: 'bash', toolCallId: 'call-1' }),
+      ev({
+        id: 'result',
+        seq: 4,
+        type: 'tool_result',
+        toolCallId: 'call-1',
+        toolStatus: 'success',
+        content: 'done',
+      }),
+      ev({
+        id: 'a2',
+        seq: 5,
+        type: 'assistant_message',
+        content: 'answer',
+        mode: 'delta',
+        segmentId: 'main',
+      }),
+      ev({
+        id: 'final',
+        seq: 6,
+        type: 'assistant_message',
+        content: 'Draft answer',
+        mode: 'complete',
+        isFinal: true,
+        timestamp: finalTimestamp,
+      }),
+    ])
+
+    expect(items.map((item) => item.kind)).toEqual(['user', 'tool', 'assistant'])
+    expect(items[0]).toMatchObject({ kind: 'user', seq: 1 })
+    expect(items[2]).toMatchObject({
+      kind: 'assistant',
+      seq: 6,
+      timestamp: finalTimestamp,
+      text: 'Draft answer',
+    })
+  })
+
   it('agent_error 折叠成一条错误提示', () => {
     const items = buildRemoteTimeline([
       ev({ id: '1', seq: 1, type: 'agent_error', content: '模型调用失败' }),

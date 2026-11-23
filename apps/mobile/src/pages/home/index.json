@@ -1,6 +1,6 @@
 {
   "navigationStyle": "custom",
-  "navigationBarTitleText": "SparkWork",
+  "navigationBarTitleText": "Velmora Spark",
   "usingComponents": {
     "empty-state": "../../components/empty-state/index",
     "sheet-panel": "../../components/sheet-panel/index"

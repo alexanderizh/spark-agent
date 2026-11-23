@@ -34,7 +34,14 @@ import {
 import type { RemoteDeviceSwitcherMode } from './remoteViewState'
 import { useRemoteRelay } from './useRemoteBridge'
 import { useRemoteSessionTitle } from './useRemoteSessionTree'
+import {
+  clampRemoteProjectPanelWidth,
+  readRemoteProjectPanelWidth,
+  rememberRemoteProjectPanelWidth,
+  type RemoteProjectPanelTab,
+} from './remoteProjectPanelState'
 import './remote-control.less'
+import './remote-control-improvements.less'
 
 function formatSeenAt(value: string | null): string {
   if (!value) return '未知'
@@ -131,6 +138,8 @@ export function RemoteControlView() {
    */
   const [projectPanelOpen, setProjectPanelOpen] = useState(false)
   const [panelPinnedProjectId, setPanelPinnedProjectId] = useState<string | null>(null)
+  const [panelTab, setPanelTab] = useState<RemoteProjectPanelTab>('session')
+  const [projectPanelWidth, setProjectPanelWidth] = useState(readRemoteProjectPanelWidth)
 
   const onlineDevices = useMemo(
     () => relay.devices.filter((device) => device.online),
@@ -184,6 +193,12 @@ export function RemoteControlView() {
   // 标题栏跟随侧栏缓存（改名后立刻同步），所以要在组件顶层取，不能在 renderBody 里
   const sessionTitle = useRemoteSessionTitle(activeDeviceId ?? '', activeSessionId)
 
+  const handleProjectPanelResize = useCallback((nextWidth: number, commit: boolean) => {
+    const width = clampRemoteProjectPanelWidth(nextWidth)
+    setProjectPanelWidth(width)
+    if (commit) rememberRemoteProjectPanelWidth(width)
+  }, [])
+
   const handleSelectDevice = useCallback((next: string) => {
     setPickedDeviceId(next)
     rememberLastDevice(next)
@@ -205,6 +220,7 @@ export function RemoteControlView() {
   /** 项目右键菜单 → 打开信息面板并锁定该项目（不受会话切换影响） */
   const handleOpenProjectInfo = useCallback((projectId: string) => {
     setPanelPinnedProjectId(projectId)
+    setPanelTab('project')
     setProjectPanelOpen(true)
   }, [])
 
@@ -212,6 +228,7 @@ export function RemoteControlView() {
   const handleToggleProjectPanel = useCallback(() => {
     setProjectPanelOpen((open) => !open)
     setPanelPinnedProjectId(null)
+    setPanelTab('session')
   }, [])
 
   const handleCloseProjectPanel = useCallback(() => {
@@ -231,6 +248,15 @@ export function RemoteControlView() {
       })
     },
     [activeDeviceId],
+  )
+
+  const handleSelectSessionFromPanel = useCallback(
+    (next: string) => {
+      handleSelectSession(next)
+      setPanelPinnedProjectId(null)
+      setPanelTab('session')
+    },
+    [handleSelectSession],
   )
 
   const handleClearSession = useCallback(() => {
@@ -384,6 +410,13 @@ export function RemoteControlView() {
           <RemoteProjectPanel
             deviceId={activeDeviceId}
             projectId={panelProjectId}
+            sessionId={activeSessionId}
+            sessionTitle={sessionTitle}
+            activeTab={panelTab}
+            onTabChange={setPanelTab}
+            width={projectPanelWidth}
+            onResize={handleProjectPanelResize}
+            onSelectSession={handleSelectSessionFromPanel}
             onClose={handleCloseProjectPanel}
           />
         )}

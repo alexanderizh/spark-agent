@@ -1,5 +1,5 @@
 {
-  "description": "SparkWork 移动端（微信小程序）。miniprogramRoot 指向构建产物 dist/，源码在 src/，由 `pnpm build`（tsc + 静态资产拷贝）生成。",
+  "description": "Velmora Spark 移动端（微信小程序）。miniprogramRoot 指向构建产物 dist/，源码在 src/，由 `pnpm build`（tsc + 静态资产拷贝）生成。",
   "miniprogramRoot": "dist/",
   "projectname": "sparkwork-mobile",
   "appid": "wx12cbdf3aa0e04de8",

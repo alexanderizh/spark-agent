@@ -12,8 +12,11 @@ import {
   createContext,
   useContext,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
 import type { WorkspaceGitCommitEntry, WorkspaceGitFileChange } from '@spark/protocol'
@@ -28,6 +31,15 @@ import {
 import { RemoteFileCards } from './RemoteFileCards'
 import type { RemoteAgentFileEntry } from './remoteEventMerge'
 import { useRemoteProjectPanel } from './useRemoteProjectPanel'
+import {
+  filterProjectArtifacts,
+  parseRemoteArtifactType,
+  REMOTE_PROJECT_PANEL_MAX_WIDTH,
+  REMOTE_PROJECT_PANEL_MIN_WIDTH,
+  type RemoteArtifactScope,
+  type RemoteArtifactType,
+  type RemoteProjectPanelTab,
+} from './remoteProjectPanelState'
 
 // ─── diff 拉取的上下文透传 ──────────────────────────────────────────────────────
 
@@ -162,10 +174,78 @@ function CommitRow({ commit }: { commit: WorkspaceGitCommitEntry }) {
 export interface RemoteProjectPanelProps {
   deviceId: string
   projectId: string
+  sessionId: string | null
+  sessionTitle: string | null
+  activeTab: RemoteProjectPanelTab
+  width: number
+  onResize: (width: number, commit: boolean) => void
+  onTabChange: (tab: RemoteProjectPanelTab) => void
+  onSelectSession: (sessionId: string) => void
   onClose: () => void
 }
 
-export function RemoteProjectPanel({ deviceId, projectId, onClose }: RemoteProjectPanelProps) {
+export function RemoteProjectPanel({
+  deviceId,
+  projectId,
+  sessionId,
+  sessionTitle,
+  activeTab,
+  width,
+  onResize,
+  onTabChange,
+  onSelectSession,
+  onClose,
+}: RemoteProjectPanelProps) {
+  const [artifactScope, setArtifactScope] = useState<RemoteArtifactScope>('session')
+  const [artifactType, setArtifactType] = useState<RemoteArtifactType>('all')
+  const [resizing, setResizing] = useState(false)
+  const resizeStartRef = useRef<{
+    pointerId: number
+    clientX: number
+    width: number
+    currentWidth: number
+  } | null>(null)
+
+  const handleResizeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    resizeStartRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      width,
+      currentWidth: width,
+    }
+    setResizing(true)
+  }
+
+  const handleResizeMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = resizeStartRef.current
+    if (start == null || event.pointerId !== start.pointerId) return
+    const nextWidth = start.width + start.clientX - event.clientX
+    start.currentWidth = nextWidth
+    onResize(nextWidth, false)
+  }
+
+  const handleResizeEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = resizeStartRef.current
+    if (start == null || event.pointerId !== start.pointerId) return
+    resizeStartRef.current = null
+    setResizing(false)
+    const finalWidth =
+      event.type === 'pointerup' ? start.width + start.clientX - event.clientX : start.currentWidth
+    onResize(finalWidth, true)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  const handleResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const delta = event.key === 'ArrowLeft' ? 16 : event.key === 'ArrowRight' ? -16 : 0
+    if (delta === 0) return
+    event.preventDefault()
+    onResize(width + delta, true)
+  }
   // 左侧栏维护的项目/会话缓存：订阅版本号驱动重渲染，面板自己不发列表请求
   const storeVersion = useSyncExternalStore(
     subscribeRemoteSessionStore,
@@ -204,21 +284,31 @@ export function RemoteProjectPanel({ deviceId, projectId, onClose }: RemoteProje
   }, [storeVersion, projectId])
   const sessionRows = sessionInfo.rows
 
+  const filteredArtifacts = useMemo(
+    () =>
+      filterProjectArtifacts(
+        snapshot.artifacts?.artifacts ?? [],
+        sessionId,
+        artifactScope,
+        artifactType,
+      ),
+    [artifactScope, artifactType, sessionId, snapshot.artifacts],
+  )
   const artifactEntries = useMemo<RemoteAgentFileEntry[]>(
     () =>
-      (snapshot.artifacts?.artifacts ?? []).map((item) => ({
+      filteredArtifacts.map((item) => ({
         path: item.path,
         ...(item.title != null ? { title: item.title } : {}),
       })),
-    [snapshot.artifacts],
+    [filteredArtifacts],
   )
   const artifactMetaByPath = useMemo(() => {
     const map = new Map<string, string>()
-    for (const item of snapshot.artifacts?.artifacts ?? []) {
+    for (const item of filteredArtifacts) {
       map.set(item.path, `${item.sessionTitle} · ${formatRelativeTime(item.presentedAt)}`)
     }
     return map
-  }, [snapshot.artifacts])
+  }, [filteredArtifacts])
 
   const git = snapshot.git
   const gitReady = git?.status.state.kind === 'ready'
@@ -227,14 +317,14 @@ export function RemoteProjectPanel({ deviceId, projectId, onClose }: RemoteProje
 
   const panelBody: ReactNode = (
     <>
-      {rootPath.length > 0 && (
+      {activeTab === 'project' && rootPath.length > 0 && (
         <div className="rc-panel-rootpath" title={rootPath}>
           {/* 内层 span 命中 less 的 bidi 纠偏规则：容器 rtl 截头留尾，文本本体保持 ltr */}
           <span>{rootPath}</span>
         </div>
       )}
 
-      {unsupported && (
+      {activeTab === 'project' && unsupported && (
         <div className="rc-panel-placeholder">
           <Icons.GitBranch size={20} />
           <p>这台电脑的 SparkWork 版本较旧，还不支持项目信息面板。</p>
@@ -242,7 +332,7 @@ export function RemoteProjectPanel({ deviceId, projectId, onClose }: RemoteProje
         </div>
       )}
 
-      {!unsupported && error != null && (
+      {activeTab !== 'session' && !unsupported && error != null && (
         <div className="rc-pane-hint error">
           {error}
           <button type="button" className="rc-link-btn" onClick={refresh}>
@@ -251,11 +341,11 @@ export function RemoteProjectPanel({ deviceId, projectId, onClose }: RemoteProje
         </div>
       )}
 
-      {!unsupported && loading && git == null && (
+      {activeTab !== 'session' && !unsupported && loading && git == null && (
         <div className="rc-pane-hint">正在读取项目信息…</div>
       )}
 
-      {!unsupported && !loading && git != null && !gitReady && (
+      {activeTab === 'project' && !unsupported && !loading && git != null && !gitReady && (
         <div className="rc-panel-placeholder">
           <Icons.GitBranch size={20} />
           {git.status.state.kind === 'not_repository' ? (
@@ -270,7 +360,7 @@ export function RemoteProjectPanel({ deviceId, projectId, onClose }: RemoteProje
         </div>
       )}
 
-      {!unsupported && gitReady && git != null && (
+      {activeTab === 'project' && !unsupported && gitReady && git != null && (
         <>
           <div className="rc-git-overview">
             <span className="rc-git-branch" title="当前分支">
@@ -339,68 +429,141 @@ export function RemoteProjectPanel({ deviceId, projectId, onClose }: RemoteProje
         </>
       )}
 
-      <div className="rc-panel-section">
-        <div className="rc-panel-section-head">
-          <span>会话活动</span>
-          <span className="rc-panel-section-count">{sessionInfo.total}</span>
+      {activeTab === 'session' && (
+        <div className="rc-panel-section">
+          <div className="rc-panel-section-head">
+            <span>会话活动</span>
+            <span className="rc-panel-section-count">{sessionInfo.total}</span>
+          </div>
+          {sessionId == null ? (
+            <div className="rc-panel-empty">尚未选择会话；选择下方会话以打开对话</div>
+          ) : (
+            <div className="rc-panel-current-session" title={sessionTitle || '当前会话'}>
+              当前会话：{sessionTitle || '未命名会话'}
+            </div>
+          )}
+          {sessionRows.length === 0 ? (
+            <div className="rc-panel-empty">
+              {projectId === UNASSIGNED_PROJECT_ID ? '没有未归属会话' : '这个项目下还没有会话'}
+            </div>
+          ) : (
+            <div className="rc-panel-sessions">
+              {sessionRows.map((session) => (
+                <button
+                  type="button"
+                  key={session.id}
+                  className={`rc-panel-session${session.id === sessionId ? ' is-selected' : ''}`}
+                  title={session.preview || session.title}
+                  aria-current={session.id === sessionId ? 'page' : undefined}
+                  onClick={() => onSelectSession(session.id)}
+                >
+                  <span className="rc-panel-session-title">{session.title || '未命名会话'}</span>
+                  {session.status === 'running' ? (
+                    <span className="rc-running">
+                      <span className="rc-running-dot" />
+                      运行中
+                    </span>
+                  ) : (
+                    <span className="rc-panel-session-time">
+                      {formatRelativeTime(session.updatedAt)}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        {sessionRows.length === 0 ? (
-          <div className="rc-panel-empty">
-            {projectId === UNASSIGNED_PROJECT_ID ? '没有未归属会话' : '这个项目下还没有会话'}
-          </div>
-        ) : (
-          <div className="rc-panel-sessions">
-            {sessionRows.map((session) => (
-              <div
-                key={session.id}
-                className="rc-panel-session"
-                title={session.preview || session.title}
-              >
-                <span className="rc-panel-session-title">{session.title || '未命名会话'}</span>
-                {session.status === 'running' ? (
-                  <span className="rc-running">
-                    <span className="rc-running-dot" />
-                    运行中
-                  </span>
-                ) : (
-                  <span className="rc-panel-session-time">
-                    {formatRelativeTime(session.updatedAt)}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
 
-      <div className="rc-panel-section">
-        <div className="rc-panel-section-head">
-          <span>产物</span>
-          <span className="rc-panel-section-count">{artifactEntries.length}</span>
-        </div>
-        {artifactEntries.length === 0 ? (
-          <div className="rc-panel-empty">
-            {unsupported ? '对方版本较旧，暂无法读取产物' : '最近会话没有产出文件'}
+      {activeTab === 'artifacts' && (
+        <div className="rc-panel-section">
+          <div className="rc-panel-section-head">
+            <span>产物</span>
+            <span className="rc-panel-section-count">{artifactEntries.length}</span>
           </div>
-        ) : (
-          <RemoteFileCards
-            deviceId={deviceId}
-            files={artifactEntries}
-            meta={(file) => {
-              const meta = artifactMetaByPath.get(file.path)
-              return meta != null ? <span className="rc-file-meta-text">{meta}</span> : null
-            }}
-          />
-        )}
-        {(snapshot.artifacts?.truncated ?? false) && (
-          <div className="rc-panel-hint-note">产物较多，仅显示最近一部分</div>
-        )}
-      </div>
+          <div className="rc-artifact-controls">
+            <div className="rc-artifact-scope" role="group" aria-label="产物范围">
+              <button
+                type="button"
+                aria-pressed={artifactScope === 'session'}
+                onClick={() => setArtifactScope('session')}
+              >
+                当前会话
+              </button>
+              <button
+                type="button"
+                aria-pressed={artifactScope === 'project'}
+                onClick={() => setArtifactScope('project')}
+              >
+                项目近期
+              </button>
+            </div>
+            <select
+              className="rc-artifact-type-filter"
+              aria-label="按文件类型筛选"
+              value={artifactType}
+              onChange={(event) =>
+                setArtifactType(parseRemoteArtifactType(event.currentTarget.value))
+              }
+            >
+              <option value="all">全部类型</option>
+              <option value="image">图片</option>
+              <option value="document">文档</option>
+              <option value="text">文本</option>
+              <option value="code">代码</option>
+              <option value="other">其他</option>
+            </select>
+          </div>
+          {artifactScope === 'project' && (
+            <div className="rc-panel-hint-note">按最近 20 个会话汇总</div>
+          )}
+          {artifactEntries.length === 0 ? (
+            <div className="rc-panel-empty">
+              {unsupported
+                ? '对方版本较旧，暂无法读取产物'
+                : artifactScope === 'session' && sessionId == null
+                  ? '先选择一个会话，或查看项目近期产物'
+                  : '没有符合筛选条件的产物'}
+            </div>
+          ) : (
+            <RemoteFileCards
+              deviceId={deviceId}
+              files={artifactEntries}
+              meta={(file) => {
+                const meta = artifactMetaByPath.get(file.path)
+                return meta != null ? <span className="rc-file-meta-text">{meta}</span> : null
+              }}
+            />
+          )}
+          {(snapshot.artifacts?.truncated ?? false) && (
+            <div className="rc-panel-hint-note">产物较多，仅显示最近一部分</div>
+          )}
+        </div>
+      )}
     </>
   )
 
   return (
-    <aside className="rc-project-panel">
+    <aside
+      className={`rc-project-panel${resizing ? ' is-resizing' : ''}`}
+      style={{ width }}
+      aria-label="项目侧栏"
+    >
+      <div
+        className="rc-project-panel-resizer"
+        role="separator"
+        aria-label="调整右侧面板宽度"
+        aria-orientation="vertical"
+        aria-valuemin={REMOTE_PROJECT_PANEL_MIN_WIDTH}
+        aria-valuemax={REMOTE_PROJECT_PANEL_MAX_WIDTH}
+        aria-valuenow={width}
+        tabIndex={0}
+        onPointerDown={handleResizeStart}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeEnd}
+        onPointerCancel={handleResizeEnd}
+        onKeyDown={handleResizeKeyDown}
+      />
       <div className="rc-panel-head">
         <span className="rc-panel-title">
           <Icons.Folder size={13} />
@@ -431,7 +594,34 @@ export function RemoteProjectPanel({ deviceId, projectId, onClose }: RemoteProje
         </div>
       </div>
 
-      <div className="rc-panel-scroll">
+      <div className="rc-panel-tabs" role="tablist" aria-label="项目侧栏视图">
+        {(
+          [
+            ['session', '会话'],
+            ['project', '项目'],
+            ['artifacts', '产物'],
+          ] as const
+        ).map(([tab, label]) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            id={`rc-panel-tab-${tab}`}
+            aria-controls="rc-panel-content"
+            aria-selected={activeTab === tab}
+            onClick={() => onTabChange(tab)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        className="rc-panel-scroll"
+        id="rc-panel-content"
+        role="tabpanel"
+        aria-labelledby={`rc-panel-tab-${activeTab}`}
+      >
         <RemoteProjectPanelContext.Provider value={{ loadDiff }}>
           {panelBody}
         </RemoteProjectPanelContext.Provider>

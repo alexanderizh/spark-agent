@@ -982,6 +982,104 @@ describe('CodexAppServerExecutor', () => {
       })
     })
 
+    it('turn/plan/updated 通知：结构化计划步骤映射 todo_write 工具对（0.16x 继任 todo_list）', async () => {
+      const planUpdated = (plan: unknown[]) => ({
+        kind: 'notify',
+        method: 'turn/plan/updated',
+        params: {
+          threadId: THREAD_ID,
+          turnId: 'server-turn-1',
+          plan,
+          explanation: '修复计划',
+        },
+      })
+      const { events, error } = await runScenario({
+        steps: [
+          planUpdated([
+            { step: '探索仓库', status: 'completed' },
+            { step: '定位缺陷', status: 'inProgress' },
+            { step: '编写补丁', status: 'pending' },
+          ]),
+          planUpdated([
+            { step: '探索仓库', status: 'completed' },
+            { step: '定位缺陷', status: 'completed' },
+            { step: '编写补丁', status: 'inProgress' },
+          ]),
+          agentMessageCompletedStep('done'),
+        ],
+      })
+      expect(error).toBeNull()
+      const toolCalls = eventsOf(events, 'tool_call')
+      // 多次更新复用同一 toolCallId：tool_call 只发一次，tool_result 始终最新。
+      expect(toolCalls).toHaveLength(1)
+      expect(toolCalls[0]).toMatchObject({
+        toolCallId: `turn-plan-${TURN_ID}`,
+        toolName: 'todo_write',
+        source: 'builtin',
+      })
+      const toolResults = eventsOf(events, 'tool_result').filter(
+        (event) => 'toolName' in event && event.toolName === 'todo_write',
+      )
+      expect(toolResults).toHaveLength(2)
+      expect(toolResults.at(-1)).toMatchObject({
+        toolCallId: `turn-plan-${TURN_ID}`,
+        status: 'success',
+        output: {
+          todos: [
+            { content: '探索仓库', status: 'completed' },
+            { content: '定位缺陷', status: 'completed' },
+            // codex camelCase 状态映射为前端 normalizeTodo 认可的三态
+            { content: '编写补丁', status: 'in_progress' },
+          ],
+        },
+      })
+    })
+
+    it('turn/plan/updated 空计划：不产出任何 todo 事件', async () => {
+      const { events, error } = await runScenario({
+        steps: [
+          {
+            kind: 'notify',
+            method: 'turn/plan/updated',
+            params: { threadId: THREAD_ID, turnId: 'server-turn-1', plan: [] },
+          },
+          agentMessageCompletedStep('done'),
+        ],
+      })
+      expect(error).toBeNull()
+      expect(
+        eventsOf(events, 'tool_call').filter(
+          (event) => 'toolName' in event && event.toolName === 'todo_write',
+        ),
+      ).toHaveLength(0)
+    })
+
+    it('todo_list（snake_case）条目同样映射 todo_write（双拼写兼容）', async () => {
+      const { events, error } = await runScenario({
+        steps: [
+          {
+            kind: 'notify',
+            method: 'item/completed',
+            params: {
+              threadId: THREAD_ID,
+              turnId: 'server-turn-1',
+              item: {
+                type: 'todo_list',
+                id: 'todo-2',
+                items: [{ content: 'a', status: 'pending' }],
+              },
+            },
+          },
+          agentMessageCompletedStep('done'),
+        ],
+      })
+      expect(error).toBeNull()
+      expect(eventsOf(events, 'tool_call')[0]).toMatchObject({
+        toolCallId: 'todo-2',
+        toolName: 'todo_write',
+      })
+    })
+
     it('error item 映射：条目级错误 emit CODEX_SDK_ITEM_ERROR（对齐 Sdk 载具）', async () => {
       const { events, error } = await runScenario({
         steps: [

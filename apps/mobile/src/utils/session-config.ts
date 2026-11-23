@@ -2,8 +2,11 @@
  * 新建会话配置（首页 / 项目页等「发送首条消息时建会话」的入口共用）。
  *
  * 选项来自桌面端目录 bridge.getCatalog。权限与推理只列目标端真实支持的档位，
- * 不再塞一个「电脑默认」合成项——初始档位取默认助手在电脑上的当前设置
- * （catalog.agents[].permissionMode / reasoningEffort），用户不改就不会改变行为。
+ * 不再塞一个「电脑默认」合成项——初始推理档取默认助手在电脑上的当前设置
+ * （catalog.agents[].reasoningEffort），用户不改就不会改变行为。
+ * 权限初始档固定为默认助手 adapter 的「自动审批」档（2026-11-20）：移动端
+ * 大多数操作自动执行、必要操作才弹审批；与桌面端建移动会话的兜底
+ * （defaultRemotePermissionMode）同口径，不再镜像电脑端助手的权限档。
  */
 
 import type { BridgeCatalog } from '../api/bridge'
@@ -22,6 +25,14 @@ export interface SessionConfigOption {
   value?: string
 }
 
+/** 各 adapter 的「自动审批」档（与桌面端 defaultRemotePermissionMode 同口径） */
+const AUTO_PERMISSION_BY_ADAPTER: Record<string, string> = {
+  claude: 'claude-auto',
+  'claude-sdk': 'claude-auto',
+  codex: 'codex-auto-review',
+  spark: 'spark-auto',
+}
+
 /** 新会话的默认模型档（用户未选择时沿用电脑端默认，不 patch） */
 export const DEFAULT_MODEL_OPTION: SessionConfigOption = { id: 'default', label: '电脑默认模型' }
 
@@ -34,12 +45,20 @@ export function defaultCatalogAdapter(catalog: BridgeCatalog): string {
   return catalog.agents.find((agent) => agent.isDefault)?.agentAdapter ?? 'claude'
 }
 
-/** 默认助手在电脑上的权限档；没配或不被支持时回到第一档（不存在的返回空串） */
+/**
+ * 新会话默认权限档：固定取默认助手 adapter 的「自动审批」档，不再镜像电脑端
+ * 助手的权限档（此前电脑端助手配了每步确认，移动端新建会话就跟着每步确认，
+ * 移动端用起来每一步都要点审批，体验极差）。
+ * 目录里没有对应自动档时（旧版桌面端等）回落电脑端助手档位，再退第一档。
+ */
 export function defaultPermissionId(catalog: BridgeCatalog): string {
   const agent = catalog.agents.find((item) => item.isDefault)
-  const modes = catalog.permissionModes?.[agent?.agentAdapter ?? 'claude'] ?? []
-  const preferred = agent?.permissionMode
-  if (preferred != null && modes.includes(preferred)) return preferred
+  const adapter = agent?.agentAdapter ?? 'claude'
+  const modes = catalog.permissionModes?.[adapter] ?? []
+  const autoMode = AUTO_PERMISSION_BY_ADAPTER[adapter]
+  if (autoMode != null && modes.includes(autoMode)) return autoMode
+  const legacy = agent?.permissionMode
+  if (legacy != null && modes.includes(legacy)) return legacy
   return modes[0] ?? ''
 }
 

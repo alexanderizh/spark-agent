@@ -474,6 +474,86 @@ describe('ClaudeSDKExecutor', () => {
     expect(settings?.env?.ANTHROPIC_AUTH_TOKEN).toBe('ep-stepfun')
   })
 
+  it('enables todo tools and disables tool search for non-Claude models', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]),
+    )
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      model: 'glm-5.3',
+      apiKey: 'sk-glm',
+      apiEndpoint: 'https://open.bigmodel.cn/api/anthropic',
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    // CLI 2.1.319 对非 Claude 家族模型默认禁用任务工具并 defer 进 ToolSearch
+    // 检索池；不显式兜底则会话任务列表永远无数据（前端从 task_* 事件提取）。
+    expect(options.env?.CLAUDE_CODE_ENABLE_TODO_TOOLS).toBe('true')
+    expect(options.env?.ENABLE_TOOL_SEARCH).toBe('false')
+  })
+
+  it('keeps engine-native tool gating for Claude family models', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]),
+    )
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      apiKey: 'sk-ant-api03-official',
+      apiEndpoint: 'https://api.anthropic.com',
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    expect(options.env?.CLAUDE_CODE_ENABLE_TODO_TOOLS).toBeUndefined()
+    expect(options.env?.ENABLE_TOOL_SEARCH).toBeUndefined()
+  })
+
+  it('lets customEnv override the todo tool / tool search defaults', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]),
+    )
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      model: 'glm-5.3',
+      apiKey: 'sk-glm',
+      apiEndpoint: 'https://open.bigmodel.cn/api/anthropic',
+      customEnv: {
+        ENABLE_TOOL_SEARCH: 'auto:40',
+        CLAUDE_CODE_ENABLE_TODO_TOOLS: 'false',
+      },
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    expect(options.env?.ENABLE_TOOL_SEARCH).toBe('auto:40')
+    expect(options.env?.CLAUDE_CODE_ENABLE_TODO_TOOLS).toBe('false')
+  })
+
   it('preserves Spark xhigh reasoning as Claude xhigh effort', async () => {
     queryMock.mockReturnValue(
       messages([

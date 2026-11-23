@@ -16,6 +16,6 @@ App({
   },
   // 全局状态（页面经 getApp() 读取；响应式更新走 store/auth 的事件订阅）
   globalData: {
-    appName: 'SparkWork',
+    appName: 'Velmora Spark',
   },
 })

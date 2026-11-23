@@ -1,7 +1,7 @@
 <view class="entry-page theme-root {{themeClass}}">
   <view class="entry-brand">
     <image class="entry-logo" src="/assets/brand/logo.png" mode="aspectFit" />
-    <text class="entry-name">SparkWork</text>
+    <text class="entry-name">Velmora Spark</text>
     <text class="entry-hint">{{hint}}</text>
   </view>
   <view wx:if="{{failed}}" class="entry-retry" hover-class="entry-retry--hover" bindtap="go">

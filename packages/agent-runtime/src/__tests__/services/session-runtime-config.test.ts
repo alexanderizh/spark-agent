@@ -1942,9 +1942,8 @@ describe('SessionService runtime provider/model resolution', () => {
           'mcp__spark_computer__start_task',
           ...(agentAdapter === 'claude-sdk'
             ? [
-                'mcp__spark_platform__session_schedule_list',
-                'mcp__spark_platform__session_schedule_create',
-                'mcp__spark_platform__session_schedule_delete',
+                'mcp__spark_platform__platform_methods_search',
+                'mcp__spark_platform__platform_invoke',
                 'mcp__spark_tool_results__read',
                 'mcp__spark_tool_results__search',
               ]
@@ -1954,10 +1953,10 @@ describe('SessionService runtime provider/model resolution', () => {
       expect(String(config?.skillSystemPrompt ?? '')).toContain('GOVERNED COMPUTER USE PROMPT')
       // 渐进式披露：session-schedule 手册不再常驻，目录条目 + capability_load 指引取代。
       expect(String(config?.skillSystemPrompt ?? '')).toContain('[Capability Catalog]')
-      expect(String(config?.skillSystemPrompt ?? '')).toContain(
-        'mcp__spark_platform__capability_load',
-      )
+      expect(String(config?.skillSystemPrompt ?? '')).toContain('capability_load')
       expect(String(config?.skillSystemPrompt ?? '')).toContain('- session-schedule — ')
+      expect(String(config?.skillSystemPrompt ?? '')).toContain('application_schedule_*')
+      expect(String(config?.skillSystemPrompt ?? '')).toContain('project_schedule_*')
       expect(String(config?.skillSystemPrompt ?? '')).toContain('- computer-use — ')
       expect(String(config?.skillSystemPrompt ?? '')).not.toContain(
         'After creation succeeds, tell the user briefly and end the current turn',
@@ -2623,7 +2622,7 @@ describe('SessionService runtime provider/model resolution', () => {
     const skillPrompt = String(config?.skillSystemPrompt ?? '')
     expect(skillPrompt).toContain('[Capability Catalog]')
     expect(skillPrompt).toContain('- media-generation — ')
-    expect(skillPrompt).toContain('mcp__spark_platform__capability_load')
+    expect(skillPrompt).toContain('capability_load')
     expect(skillPrompt).toContain('## Media Generation Capability')
     expect(skillPrompt).toContain('mcp__spark_media__describe_model')
     expect(skillPrompt).toContain('mcp__spark_media__list_models')

@@ -197,11 +197,27 @@ export function applyEvents(timeline: ChatTimeline, events: BridgeEvent[]): Chat
       }
 
       case 'assistant_message': {
-        // 最终完整消息（isFinal，无 segmentId）：桌面端在流式分段之外会补一条
-        // final 收尾消息。口径与桌面端渲染管线一致：按内容去重收尾、不覆盖此前
-        // 各段叙述 —— 分段气泡必须保留原位，穿插其间的工具日志才不会被打乱时序
-        // （旧行为把全部分段归并成一条大正文，工具日志会被整体挤到正文之后）。
-        if (event.isFinal === true && event.segmentId == null) {
+        // 回合级收尾消息（isFinal）：桌面端在流式分段之外会补一条 final 收尾消息。
+        // 各执行器的收尾键形态（与桌面端渲染管线 cross-check 过）：
+        //   claude          isFinal + 无 segmentId；
+        //   codex sdk/cli   isFinal + segmentId=`codex[-sdk]-{turnId}`（以 turnId 结尾）；
+        //   codex openai    每轮 complete（isFinal 末轮为 true）+ `codex-api-{turnId}-{round}`
+        //                   （不以 turnId 结尾 → 按分段渲染，各轮正文独立成段）；
+        //   spark           每段 complete 都带 isFinal + `spark-seg-{n}`（非收尾，
+        //                   必须按分段渲染，否则同回合各段互相吞并丢内容）。
+        // 据此判定：无 segmentId、segmentId 以 turnId 结尾（回合级收尾键）、或该
+        // segmentId 已有分段气泡（收尾复用分段键）→ 回合收尾对账；否则按新分段。
+        // 旧实现要求 segmentId == null 才走收尾对账，codex 的收尾会落到分段路径：
+        // 整轮总结被当成新分段渲染，而各分段气泡原样保留 —— 同一段输出显示两遍。
+        const finalKey = event.segmentId
+        const isTurnFinal =
+          event.isFinal === true &&
+          (finalKey == null ||
+            (event.turnId != null &&
+              finalKey !== event.turnId &&
+              finalKey.endsWith(event.turnId)) ||
+            messages.some((item) => item.role === 'assistant' && item.key === `a:${finalKey}`))
+        if (isTurnFinal) {
           const finalText = event.content ?? ''
           const turnAssistantIndexes: number[] = []
           messages.forEach((item, index) => {

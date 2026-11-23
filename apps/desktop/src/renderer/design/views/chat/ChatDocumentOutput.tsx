@@ -106,10 +106,13 @@ function parseDocumentOutputLine(line: string): { filePath: string; label?: stri
 export function DocumentOutputCard({
   filePath,
   label,
+  workspaceRootPath,
   onFilePreview,
 }: {
   filePath: string
   label?: string
+  /** 相对路径解析基准目录（会话工作区根），供右键「在文件夹中显示」定位本机文件 */
+  workspaceRootPath?: string | null
   onFilePreview?: FileOpenHandler
 }) {
   const normalizedPath = normalizeFileReference(filePath)
@@ -169,6 +172,7 @@ export function DocumentOutputCard({
       {contextMenu != null && (
         <FilePathContextMenu
           filePath={normalizedPath}
+          workspaceRootPath={workspaceRootPath}
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
@@ -193,6 +197,7 @@ export function renderDocumentOutputParagraph(
   seenDocumentKeys: Set<string>,
   onFilePreview: FileOpenHandler | undefined,
   keyPrefix: string,
+  workspaceRootPath?: string | null,
 ): ReactNode | null {
   const lines = text
     .split('\n')
@@ -213,6 +218,7 @@ export function renderDocumentOutputParagraph(
         key={`${keyPrefix}-${index}-${key}`}
         filePath={item.filePath}
         {...(item.label != null ? { label: item.label } : {})}
+        {...(workspaceRootPath != null ? { workspaceRootPath } : {})}
         {...(onFilePreview != null ? { onFilePreview } : {})}
       />,
     ]

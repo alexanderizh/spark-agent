@@ -49,7 +49,7 @@ function bridgeEvents(): MobileBridgeEvent[] {
           content: event.content,
           mode: event.mode,
           isFinal: event.isFinal,
-          segmentId: event.segmentId,
+          ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
         },
       ]
     return []
@@ -74,7 +74,9 @@ describe('Codex persisted-event replay', () => {
       id: `second-${event.id}`,
       turnId: 'second-turn',
       seq: event.seq + 100,
-      segmentId: event.segmentId?.replace(turnId, 'second-turn'),
+      ...(event.segmentId != null
+        ? { segmentId: event.segmentId.replace(turnId, 'second-turn') }
+        : {}),
     }))
     const timeline = buildRemoteTimeline([...first, ...second])
     expect(timeline.map((item) => item.kind)).toEqual(['user', 'assistant', 'user', 'assistant'])

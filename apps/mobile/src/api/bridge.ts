@@ -488,7 +488,10 @@ export function submitTurn(
   attachmentPaths?: string[],
   deviceId?: string,
   clientMessageId?: string,
-): Promise<{ turnId: string; /** false = 已入队等当前回合结束（旧版桌面端不返回，缺省按未排队处理） */ started?: boolean }> {
+): Promise<{
+  turnId: string
+  /** false = 已入队等当前回合结束（旧版桌面端不返回，缺省按未排队处理） */ started?: boolean
+}> {
   return request<{ turnId: string; started?: boolean }>(
     `/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
     'POST',
@@ -506,6 +509,32 @@ export function cancelTurn(sessionId: string, deviceId?: string): Promise<{ canc
   return request<{ cancelled: boolean }>(
     `/v1/sessions/${encodeURIComponent(sessionId)}/cancel`,
     'POST',
+    undefined,
+    deviceId,
+  )
+}
+
+// ─── 会话队列（当前回合运行中时后续消息排队，桌面端权威快照） ──────────────────
+
+export interface BridgeQueuedTurn {
+  turnId: string
+  message: string
+  enqueuedAt: string
+  attachments?: BridgeAttachment[]
+}
+
+export interface BridgeSessionQueue {
+  running: boolean
+  queuedTurns: BridgeQueuedTurn[]
+  /** 队列因上一回合出错暂停（turn_error 暂停门）；null = 正常 */
+  paused: { reason: string; errorMessage?: string; pausedAt: string } | null
+}
+
+/** 拉取会话排队快照（GET /v1/sessions/:id/queue；旧版桌面端 404 → null 由调用方降级） */
+export function getSessionQueue(sessionId: string, deviceId?: string): Promise<BridgeSessionQueue> {
+  return request<BridgeSessionQueue>(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/queue`,
+    'GET',
     undefined,
     deviceId,
   )

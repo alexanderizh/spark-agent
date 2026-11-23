@@ -479,7 +479,7 @@ export function TurnFileSummaryCard({
             })}
           </span>
         )}
-        <span className="spacer" style={{flexGrow: 1}} />
+        <span className="spacer" style={{ flexGrow: 1 }} />
         {hasSummaryStats && (
           <span className="diff-stats turn-summary-total-stats">
             {totalAdds !== 0 && <span className="add">+{totalAdds}</span>}
@@ -579,6 +579,7 @@ export function TurnFileSummaryCard({
           {fileContextMenu != null && (
             <FilePathContextMenu
               filePath={fileContextMenu.filePath}
+              workspaceRootPath={workspaceRootPath}
               x={fileContextMenu.x}
               y={fileContextMenu.y}
               onClose={() => setFileContextMenu(null)}

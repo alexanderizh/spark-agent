@@ -1049,6 +1049,44 @@ export class CodexAppServerExecutor
         if (compactEvent != null) this.emit(compactEvent)
         return
       }
+      case 'turn/plan/updated': {
+        // codex 0.16x app-server 的结构化计划步骤通知（旧 todo_list 条目的继任者，
+        // 0.167.0 schema：TurnPlanUpdatedNotification，plan: [{step,status}] +
+        // 可选 explanation）。映射为 todo_write 工具对，与旧载具（codex-sdk/cli
+        // executor 的 todo_list → todo_write）及前端提取契约
+        // （extractLatestTodoProgressTasks 按 toolCallId 关联最新快照）保持一致。
+        // 同一轮多次更新复用同一 toolCallId：tool_call 去重，tool_result 始终携带
+        // 最新清单，前端按 id 取末次覆盖。
+        const steps = Array.isArray(record.plan) ? record.plan : []
+        const todos = steps.flatMap((step): Array<{ content: string; status: string }> => {
+          if (step == null || typeof step !== 'object') return []
+          const entry = step as { step?: unknown; status?: unknown }
+          if (typeof entry.step !== 'string' || entry.step.length === 0) return []
+          // codex 的 camelCase 状态映射为前端 normalizeTodo 认可的三态。
+          const status =
+            entry.status === 'completed'
+              ? 'completed'
+              : entry.status === 'inProgress'
+                ? 'in_progress'
+                : 'pending'
+          return [{ content: entry.step, status }]
+        })
+        if (todos.length === 0) return
+        const state = this.currentState
+        if (state == null) return
+        state.toolCalledSinceText = true
+        const toolCallId = `turn-plan-${this.requireTurnId()}`
+        this.emitToolCallOnce(state, toolCallId, 'todo_write', { todos }, 'builtin')
+        this.emit({
+          type: 'tool_result',
+          toolCallId,
+          toolName: 'todo_write',
+          status: 'success',
+          output: { todos },
+          ...this.makeCurrentBase(),
+        })
+        return
+      }
       default:
         // 未消费的通知（fs/changed、account/* 等）静默忽略。
         return
@@ -1185,10 +1223,14 @@ export class CodexAppServerExecutor
         })
         return
       }
-      case 'todoList': {
+      case 'todoList':
+      case 'todo_list': {
         // 对齐 Sdk 载具与方案映射表：todo 更新映射 todo_write 工具对。
         // 每次 todo 版本（started/completed）都带 tool_result（tool_call 去重），
         // 渲染层按 toolCallId 关联最新版本。
+        // 说明：0.167.0 官方 schema（ThreadItem 19 变体）尚无此条目类型，
+        // todoList（camelCase 推定）/ todo_list（旧 SDK 流拼写）双兼容，
+        // 上游任一形态落地即可接住。
         state.toolCalledSinceText = true
         const todos = Array.isArray(item.items) ? item.items : []
         this.emitToolCallOnce(state, item.id, 'todo_write', { todos }, 'builtin')

@@ -1,8 +1,8 @@
 {
   "name": "@spark/mobile",
-  "version": "1.7.2",
+  "version": "1.7.5",
   "private": true,
-  "description": "SparkWork 移动端（微信小程序）— 桌面端的移动伴侣：底部 tab 导航（工作台/项目/我的）、项目内直建会话、筛选条件本地记忆，账号登录同步、同步状态、设备与会话管理",
+  "description": "Velmora Spark 移动端（微信小程序）— 桌面端的移动伴侣：底部 tab 导航（工作台/项目/我的）、项目内直建会话、筛选条件本地记忆，账号登录同步、同步状态、设备与会话管理",
   "scripts": {
     "dev": "node scripts/build.mjs --watch",
     "build": "node scripts/build.mjs && node scripts/verify-dist.mjs && node scripts/verify-wxml-methods.mjs",
@@ -19,6 +19,7 @@
     "smoke:interactions": "node scripts/smoke-interactions.mjs",
     "smoke:home-composer": "node scripts/smoke-home-composer.mjs",
     "smoke:chat-upgrade": "node scripts/smoke-chat-upgrade.mjs",
+    "smoke:chat-final-segment": "node scripts/smoke-chat-final-segment.mjs",
     "smoke:chat-order": "node scripts/smoke-chat-order.mjs",
     "smoke:chat-gap": "node scripts/smoke-chat-gap.mjs",
     "smoke:chat-turn-rail": "node scripts/smoke-chat-turn-rail.mjs",

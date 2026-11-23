@@ -37,7 +37,7 @@
   "simple-git-hooks": {
     "pre-commit": "node scripts/check-commit-time.mjs && pnpm exec lint-staged && node scripts/check-file-size.mjs",
     "commit-msg": "pnpm exec commitlint --edit $1",
-    "pre-push": "node scripts/check-push-email.mjs"
+    "pre-push": "node scripts/check-push-email.mjs \"$@\""
   },
   "lint-staged": {
     "*.{ts,tsx,mjs}": [

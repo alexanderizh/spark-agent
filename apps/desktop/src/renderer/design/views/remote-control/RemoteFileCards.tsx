@@ -7,6 +7,7 @@
 import { useState, type ReactNode } from 'react'
 import type { RemoteAgentFileEntry } from './remoteEventMerge'
 import { Icons } from '../../Icons'
+import { ImagePreviewModal } from '../../components/ImagePreviewModal'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { RemoteDocPreview } from './RemoteDocPreview'
 import { RemoteHtmlPreview } from './RemoteHtmlPreview'
@@ -41,6 +42,7 @@ function RemoteFileRow({
 }) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [docOpen, setDocOpen] = useState(false)
+  const [imagePreview, setImagePreview] = useState<{ src: string; fileName: string } | null>(null)
   const [opening, setOpening] = useState(false)
   const [openError, setOpenError] = useState<string | null>(null)
   const remoteFile = useRemoteFile(deviceId, file.path, previewOpen)
@@ -49,6 +51,7 @@ function RemoteFileRow({
   // 文档（Office/PDF）走右侧抽屉，其余能在气泡里就地展开
   const canPreview = canPreviewRemoteFile(file.path)
   const docPreview = usesDocumentPreview(file.path)
+  const imageSrc = remoteFile.localPath == null ? null : remoteFileUrl(remoteFile.localPath)
   const { invoke: openLocalFile } = useIpcInvoke('file:open')
 
   const handleOpen = async () => {
@@ -66,15 +69,42 @@ function RemoteFileRow({
     }
   }
 
+  const handleNameClick = () => {
+    if (docPreview) {
+      setDocOpen(true)
+      return
+    }
+    if (canPreview) {
+      setPreviewOpen((value) => !value)
+      return
+    }
+    void handleOpen()
+  }
+
   return (
     <div className="rc-file">
       <div className="rc-file-row">
         <span className="rc-file-icon">
           <FileKindIcon kind={kind} />
         </span>
-        <span className="rc-file-name" title={file.path}>
+        <button
+          type="button"
+          className="rc-file-name rc-file-name-button"
+          title={
+            docPreview
+              ? `在侧栏预览：${file.path}`
+              : canPreview
+                ? `预览：${file.path}`
+                : `打开：${file.path}`
+          }
+          aria-label={`${docPreview ? '预览' : canPreview ? '切换预览' : '打开'}：${name}`}
+          aria-expanded={canPreview ? (docPreview ? docOpen : previewOpen) : undefined}
+          disabled={opening}
+          onClick={handleNameClick}
+        >
+          {opening && <Icons.Spinner size={12} className="spin" />}
           {name}
-        </span>
+        </button>
         {meta != null && <span className="rc-file-meta">{meta(file)}</span>}
         <div className="rc-file-actions">
           {canPreview && (
@@ -106,17 +136,20 @@ function RemoteFileRow({
       {openError != null && <div className="rc-file-error">{openError}</div>}
 
       {previewOpen && (
-        <div className="rc-file-preview">
+        <div className={`rc-file-preview${kind === 'image' ? ' rc-file-preview-image' : ''}`}>
           {remoteFile.loading && <div className="rc-file-hint">正在从目标电脑取回…</div>}
           {remoteFile.error != null && <div className="rc-file-error">{remoteFile.error}</div>}
           {!remoteFile.loading && remoteFile.error == null && remoteFile.localPath != null && (
             <>
-              {kind === 'image' && (
-                <img
-                  className="rc-file-image"
-                  src={remoteFileUrl(remoteFile.localPath)}
-                  alt={name}
-                />
+              {kind === 'image' && imageSrc != null && (
+                <button
+                  type="button"
+                  className="rc-file-image-trigger"
+                  aria-label={`放大预览：${name}`}
+                  onClick={() => setImagePreview({ src: imageSrc, fileName: name })}
+                >
+                  <img className="rc-file-image" src={imageSrc} alt={name} />
+                </button>
               )}
               {kind === 'html' && remoteFile.text != null && (
                 <RemoteHtmlPreview html={remoteFile.text} title={name} />
@@ -130,6 +163,15 @@ function RemoteFileRow({
             </>
           )}
         </div>
+      )}
+
+      {imagePreview != null && (
+        <ImagePreviewModal
+          src={imagePreview.src}
+          alt={imagePreview.fileName}
+          fileName={imagePreview.fileName}
+          onClose={() => setImagePreview(null)}
+        />
       )}
 
       {docOpen && (

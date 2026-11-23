@@ -114,14 +114,14 @@
             <view wx:elif="{{item.attachmentOnly && item.attachments.length === 0}}" class="bubble-user bubble-user--attach-only">
               <text>附件</text>
             </view>
-            <!-- 本地队列态：发送中 / 失败可重试 -->
+            <!-- 本地队列态：发送中 / 失败可重试 / 已送达但目标端排队中 -->
             <view
               wx:if="{{item.sendStatus}}"
-              class="msg-send-state {{item.sendStatus === 'failed' ? 'msg-send-state--failed' : ''}}"
+              class="msg-send-state {{item.sendStatus === 'failed' ? 'msg-send-state--failed' : ''}} {{item.sendStatus === 'queued' ? 'msg-send-state--queued' : ''}}"
               data-clientid="{{item.clientId}}"
               bindtap="onSendStateTap"
             >
-              <text>{{item.sendStatus === 'failed' ? '发送失败 · 点击重试' : '发送中…'}}</text>
+              <text>{{item.sendStatus === 'failed' ? '发送失败 · 点击重试' : (item.sendStatus === 'queued' ? '排队中 · 等当前回合结束' : '发送中…')}}</text>
             </view>
           </view>
 
@@ -174,7 +174,15 @@
                     data-idx="{{pIdx}}"
                     bindtap="onMediaImageTap"
                   />
-                  <!-- 未解析前用同尺寸占位，避免图片回填时整列高度突变 -->
+                  <!-- 未解析前用同尺寸占位；全部解析失败变为可点击重试 -->
+                  <view
+                    wx:elif="{{item.failed}}"
+                    class="media-thumb media-thumb--failed"
+                    data-key="{{item.key}}"
+                    bindtap="onMediaRetry"
+                  >
+                    <text>加载失败 点击重试</text>
+                  </view>
                   <view wx:else class="media-thumb media-thumb--pending"></view>
                 </block>
               </view>
@@ -263,8 +271,30 @@
     />
   </view>
 
-  <!-- 挂起交互卡：权限审批 + 用户问答（桌面端弹卡的移动端等价物，置于输入区上方） -->
-  <view wx:if="{{approvalCards.length > 0 || questionCards.length > 0}}" class="ia-stack">
+  <!-- 挂起交互卡：待执行队列 + 权限审批 + 用户问答（桌面端弹卡的移动端等价物，置于输入区上方） -->
+  <view wx:if="{{queueItems.length > 0 || approvalCards.length > 0 || questionCards.length > 0}}" class="ia-stack">
+    <!-- 待执行队列：当前回合运行中，后续消息在电脑端排队等起跑 -->
+    <view wx:if="{{queueItems.length > 0}}" class="ia-card ia-card--queue">
+      <view class="ia-head row gap-8">
+        <view class="ia-dot ia-dot--queue"></view>
+        <text class="ia-title ellipsis">待执行队列 · {{queueItems.length}} 条</text>
+      </view>
+      <view wx:if="{{queuePausedReason}}" class="queue-paused">
+        <text>{{queuePausedReason}}</text>
+      </view>
+      <view
+        wx:for="{{queueItems}}"
+        wx:key="turnId"
+        class="queue-row row gap-8"
+      >
+        <text class="queue-index">{{item.index}}</text>
+        <text class="queue-summary ellipsis grow">{{item.summary}}</text>
+        <text class="queue-time">{{item.timeLabel}}</text>
+      </view>
+      <view class="queue-hint">
+        <text>当前回合结束后按顺序自动执行</text>
+      </view>
+    </view>
     <!-- 权限审批卡 -->
     <view
       wx:for="{{approvalCards}}"
