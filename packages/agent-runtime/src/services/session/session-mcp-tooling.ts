@@ -23,10 +23,12 @@ import {
   SettingsRepository,
   TaskExecutionRepository,
   WorkflowRepository,
+  WorkspaceRepository,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 import {
+  AUTO_ROUTER_PROVIDER_TYPE,
   normalizeVoiceAssistantRouteBinding,
   VOICE_ASSISTANT_ROUTE_KEY,
   VOICE_ASSISTANT_SETTINGS_CATEGORY,
@@ -46,7 +48,10 @@ import type {
 import { resolveMcpConfig } from '../../mcp/index.js'
 import { getDebugLogServer } from '../debug-log-server.service.js'
 import { resolveProviderApiKey } from '../provider-credential-resolver.js'
+import { ProviderService } from '../provider.service.js'
 import { ScheduledTaskService } from '../scheduled-task.service.js'
+import { ProjectScheduleAgentTools } from './project-schedule-agent-tools.js'
+import { ApplicationScheduleAgentTools } from '../application-schedule-agent-tools.js'
 import { SessionScheduleAgentTools } from '../session-schedule-agent-tools.js'
 import { VoiceControlAgentTools } from '../voice-control-agent-tools.js'
 import { SessionHistoryRetrievalTools } from './session-history-retrieval-tools.js'
@@ -106,6 +111,7 @@ export interface SessionMcpToolingHost {
   getMcpOAuthProvider(): McpOAuthTokenProvider | undefined
   getPlatformBridge(): PlatformBridgeService
   getPluginManager(): PluginManager | null
+  getScheduledTaskService?(): ScheduledTaskService | null
   getCustomToolService(): CustomToolService | null
   getToolPackageService(): ToolPackageService
   getUserSkillsDir(): string | null
@@ -252,6 +258,42 @@ export class SessionMcpTooling {
     }
 
     const subAppRuntime = this.host.getSubAppRuntimeBridge()
+    const desktopSchedules = this.host.getScheduledTaskService?.()
+    const schedules =
+      desktopSchedules ??
+      new ScheduledTaskService(
+        new ScheduledTaskRepository(this.db),
+        new TaskExecutionRepository(this.db),
+      )
+    const scheduleChanged = (action: 'create' | 'update' | 'delete', id: string) =>
+      this.host.getPlatformConfigChangedHandler()?.('scheduled-task', action, id)
+    const sessionScheduleTools = new SessionScheduleAgentTools(schedules, scheduleChanged)
+    const agents = new AgentRepository(this.db)
+    const teams = new TeamDefinitionRepository(this.db)
+    const providers = new ProviderProfileRepository(this.db)
+    const workspaces = new WorkspaceRepository(this.db)
+    const readScheduleOptions = async () => ({
+      agents: agents.list().map(({ id, name }) => ({ id, name })),
+      teams: teams
+        .list()
+        .filter(({ hostAgentId }) => agents.get(hostAgentId)?.enabled)
+        .map(({ id, name }) => ({ id, name })),
+      workspaces: workspaces.listAll(workspaces.countAll()).map(({ id, name }) => ({ id, name })),
+      models: (
+        await new ProviderService(providers).listProviders({ includeScheduledBlocked: true })
+      ).flatMap((profile) => {
+        const ids =
+          profile.providerType === AUTO_ROUTER_PROVIDER_TYPE
+            ? [profile.id]
+            : new Set([
+                ...(profile.defaultModel ? [profile.defaultModel] : []),
+                ...profile.modelIds,
+              ])
+        return Array.from(ids, (id) => ({ id, providerName: profile.name }))
+      }),
+    })
+    const notifySessionCreated = (id: string) =>
+      this.host.getPlatformConfigChangedHandler()?.('session-dispatch', 'create', id)
     const deps = {
       skillService: new SkillService(skillRepo),
       skillLoader,
@@ -263,10 +305,10 @@ export class SessionMcpTooling {
       // and non-desktop embeddings that do not own those listeners.
       customToolService: this.host.getCustomToolService() ?? new CustomToolService(this.db),
       toolPackageService: this.host.getToolPackageService(),
-      providerRepo: new ProviderProfileRepository(this.db),
+      providerRepo: providers,
       workflowRepo: new WorkflowRepository(this.db),
-      agentRepo: new AgentRepository(this.db),
-      teamRepo: new TeamDefinitionRepository(this.db),
+      agentRepo: agents,
+      teamRepo: teams,
       settingsRepo,
       // spark_app MCP 桥（subapp.* RPC）直访子应用仓库
       subAppRepo: new SubAppRepository(this.db),
@@ -274,19 +316,31 @@ export class SessionMcpTooling {
       subAppPlatformRepo: new SubAppPlatformRepository(this.db),
       ...(subAppRuntime != null ? { subAppRuntime } : {}),
       pluginManager,
-      sessionScheduleTools: new SessionScheduleAgentTools(
-        new ScheduledTaskService(
-          new ScheduledTaskRepository(this.db),
-          new TaskExecutionRepository(this.db),
-        ),
-        (action, id) => this.host.getPlatformConfigChangedHandler()?.('scheduled-task', action, id),
-      ),
+      sessionScheduleTools,
+      ...(desktopSchedules != null
+        ? {
+            applicationScheduleTools: new ApplicationScheduleAgentTools(
+              desktopSchedules,
+              scheduleChanged,
+              readScheduleOptions,
+            ),
+            scheduleExecutionTools: desktopSchedules,
+            projectScheduleTools: new ProjectScheduleAgentTools(
+              new SessionRepository(this.db),
+              this.host.getSessionService(),
+              sessionScheduleTools,
+              desktopSchedules,
+              notifySessionCreated,
+              workspaces,
+            ),
+          }
+        : {}),
       // 会话全量历史检索（session_history.* RPC）：直读 append-only 的 agent_events
       sessionHistoryTools: new SessionHistoryRetrievalTools(new SessionHistoryRepository(this.db)),
       sessionDispatch: new SessionDispatch(
         new SessionRepository(this.db),
         this.host.getSessionService(),
-        (id) => this.host.getPlatformConfigChangedHandler()?.('session-dispatch', 'create', id),
+        notifySessionCreated,
       ),
       sessionDispatchAuthorization: this.dispatchAuthorization,
       // 语音会话应用控制（voice.* RPC）：desktop 注入执行器，惰性取用（未装配时安全降级）

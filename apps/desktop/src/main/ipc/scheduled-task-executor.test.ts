@@ -32,7 +32,11 @@ describe('runSessionScheduledTaskTurn', () => {
     })
     expect(onSessionCreated).toHaveBeenCalledWith('session-1')
     expect(renameSessionTitle).not.toHaveBeenCalled()
-    expect(result).toEqual({ sessionId: 'session-1', output: 'Turn turn-1 queued' })
+    expect(result).toEqual({
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      output: 'Turn turn-1 queued',
+    })
   })
 
   it('rejects archived or missing target sessions', async () => {

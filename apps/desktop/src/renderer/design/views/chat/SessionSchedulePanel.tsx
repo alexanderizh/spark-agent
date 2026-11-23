@@ -144,7 +144,14 @@ export function SessionSchedulePanel({
 
   useEffect(() => {
     if (!open || window.spark?.on == null) return
-    return window.spark.on('stream:scheduled-task:execution', () => void loadTasks())
+    const stopExecution = window.spark.on('stream:scheduled-task:execution', () => void loadTasks())
+    const stopConfig = window.spark.on('stream:config:changed', (event) => {
+      if (event.scope === 'scheduled-task') void loadTasks()
+    })
+    return () => {
+      stopExecution?.()
+      stopConfig?.()
+    }
   }, [loadTasks, open])
 
   const enabledCount = useMemo(() => tasks.filter((task) => task.enabled).length, [tasks])

@@ -42,12 +42,15 @@ describe('spark_platform MCP server', () => {
 
   it('keeps every discoverable method inside the fixed handler allow-list', () => {
     const source = readFileSync(SERVER, 'utf8')
-    const definitions = source.match(/function platformMethodDefinitions\(\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+    const definitions =
+      source.match(/function platformMethodDefinitions\(\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
     const methodMap = source.match(/const methodMap = \{([\s\S]*?)\n {2}\}/)?.[1] ?? ''
     const definitionNames = [...definitions.matchAll(/name: '([a-z][a-z0-9_]+)'/g)]
       .map((match) => match[1])
       .filter((name): name is string => typeof name === 'string')
-    const mappedNames = new Set([...methodMap.matchAll(/^\s+([a-z][a-z0-9_]+): '/gm)].map((match) => match[1]))
+    const mappedNames = new Set(
+      [...methodMap.matchAll(/^\s+([a-z][a-z0-9_]+): '/gm)].map((match) => match[1]),
+    )
 
     expect(definitionNames.length).toBeGreaterThan(100)
     expect(definitionNames.filter((name) => !mappedNames.has(name))).toEqual([])
@@ -59,7 +62,10 @@ describe('spark_platform MCP server', () => {
       jsonrpc: '2.0',
       id: 2,
       method: 'tools/call',
-      params: { name: 'platform_methods_search', arguments: { query: 'providers_media_configure', limit: 1 } },
+      params: {
+        name: 'platform_methods_search',
+        arguments: { query: 'providers_media_configure', limit: 1 },
+      },
     })
     const payload = JSON.parse(res.result.content[0].text)
     expect(payload.methods).toHaveLength(1)
@@ -250,7 +256,9 @@ describe('spark_platform MCP server', () => {
       let body = ''
       for await (const chunk of req) body += chunk
       received.push(JSON.parse(body))
-      res.end(JSON.stringify({ ok: true, data: { accepted: true, sessionId: 'new', turnId: 'turn' } }))
+      res.end(
+        JSON.stringify({ ok: true, data: { accepted: true, sessionId: 'new', turnId: 'turn' } }),
+      )
     })
     await new Promise<void>((resolve) => bridge?.listen(0, '127.0.0.1', resolve))
     const address = bridge.address()
@@ -261,26 +269,44 @@ describe('spark_platform MCP server', () => {
       SPARK_SESSION_DISPATCH_TOKEN: 'test-token',
     })
     const search = await callMcp(child, {
-      jsonrpc: '2.0', id: 31, method: 'tools/call',
+      jsonrpc: '2.0',
+      id: 31,
+      method: 'tools/call',
       params: { name: 'platform_methods_search', arguments: { query: '新开会话派发' } },
     })
     expect(JSON.parse(search.result.content[0].text).methods).toContainEqual(
       expect.objectContaining({ name: 'sessions_dispatch' }),
     )
-    const args = { title: 'Fix downloads', task: 'Reproduce the observed failure.', requestKey: 'download' }
-    const invoke = (id: number, arguments_: Record<string, unknown>) => callMcp(child!, {
-      jsonrpc: '2.0', id, method: 'tools/call',
-      params: { name: 'platform_invoke', arguments: { method: 'sessions_dispatch', arguments: arguments_ } },
-    })
+    const args = {
+      title: 'Fix downloads',
+      task: 'Reproduce the observed failure.',
+      requestKey: 'download',
+    }
+    const invoke = (id: number, arguments_: Record<string, unknown>) =>
+      callMcp(child!, {
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: {
+          name: 'platform_invoke',
+          arguments: { method: 'sessions_dispatch', arguments: arguments_ },
+        },
+      })
     const spoofed = await invoke(32, { ...args, sessionId: 'another' })
     expect(spoofed.result.isError).toBe(true)
     expect(received).toHaveLength(0)
     const result = await invoke(33, args)
-    expect(JSON.parse(result.result.content[0].text)).toEqual({ accepted: true, sessionId: 'new', turnId: 'turn' })
-    expect(received).toEqual([{
-      method: 'sessions.dispatch',
-      params: { ...args, sessionId: 'current', dispatchToken: 'test-token' },
-    }])
+    expect(JSON.parse(result.result.content[0].text)).toEqual({
+      accepted: true,
+      sessionId: 'new',
+      turnId: 'turn',
+    })
+    expect(received).toEqual([
+      {
+        method: 'sessions.dispatch',
+        params: { ...args, sessionId: 'current', dispatchToken: 'test-token' },
+      },
+    ])
   })
 
   it('routes custom tool draft creation to the production bridge method', async () => {
@@ -426,10 +452,10 @@ describe('spark_platform MCP server', () => {
         arguments: {
           method: 'providers_media_configure',
           arguments: {
-          name: '自定义图片渠道',
-          apiEndpoint: 'https://media.example/v1',
-          defaultModel: 'image-model',
-          models: [{ modelId: 'image-model', manifest: { id: 'manifest-placeholder' } }],
+            name: '自定义图片渠道',
+            apiEndpoint: 'https://media.example/v1',
+            defaultModel: 'image-model',
+            models: [{ modelId: 'image-model', manifest: { id: 'manifest-placeholder' } }],
             apiKey: 'secret-forwarded-only-to-bridge',
           },
         },
@@ -447,6 +473,56 @@ describe('spark_platform MCP server', () => {
       },
     })
     expect(JSON.stringify(res)).not.toContain('secret-forwarded-only-to-bridge')
+  })
+
+  it('discovers application and target-session schedules and forwards only trusted identity', async () => {
+    const seen: unknown[] = []
+    bridge = createServer(async (req, res) => {
+      req.setEncoding('utf8')
+      let body = ''
+      for await (const chunk of req) body += chunk
+      seen.push(JSON.parse(body))
+      res.end(JSON.stringify({ ok: true, data: { tasks: [] } }))
+    })
+    await new Promise<void>((resolve) => bridge?.listen(0, '127.0.0.1', resolve))
+    const address = bridge.address()
+    if (address == null || typeof address === 'string') throw new Error('Expected TCP address')
+    child = start({
+      SPARK_PLATFORM_BRIDGE_PORT: String(address.port),
+      SPARK_SESSION_ID: 'real-source',
+      SPARK_SESSION_DISPATCH_TOKEN: 'trusted-token',
+    })
+    const search = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 61,
+      method: 'tools/call',
+      params: {
+        name: 'platform_methods_search',
+        arguments: { query: '新增应用级定时任务', limit: 3 },
+      },
+    })
+    expect(JSON.stringify(search)).toContain('application_schedule_create')
+    const invoke = (id: number, method: string, args: Record<string, unknown>) =>
+      callMcp(child!, {
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { name: 'platform_invoke', arguments: { method, arguments: args } },
+      })
+    const invalid = await invoke(62, 'application_schedule_list', { sessionId: 'injected' })
+    expect(invalid.result.isError).toBe(true)
+    await invoke(63, 'application_schedule_list', { query: 'summary' })
+    await invoke(64, 'project_schedule_list_target', { targetId: 'target' })
+    expect(seen).toEqual([
+      {
+        method: 'application_schedule.list',
+        params: { query: 'summary', sessionId: 'real-source', dispatchToken: 'trusted-token' },
+      },
+      {
+        method: 'project_schedule.list_target',
+        params: { targetId: 'target', sessionId: 'real-source', dispatchToken: 'trusted-token' },
+      },
+    ])
   })
 
   it('routes schedule calls with the trusted current session id', async () => {
@@ -481,10 +557,10 @@ describe('spark_platform MCP server', () => {
         arguments: {
           method: 'session_schedule_create',
           arguments: {
-          sessionId: 'model-supplied-session',
-          name: 'Check third-party job',
-          triggerType: 'interval',
-          intervalSeconds: 60,
+            sessionId: 'model-supplied-session',
+            name: 'Check third-party job',
+            triggerType: 'interval',
+            intervalSeconds: 60,
             promptTemplate: 'Check the job and delete this schedule when complete.',
           },
         },
@@ -538,8 +614,8 @@ describe('spark_platform MCP server', () => {
         arguments: {
           method: 'session_history_search',
           arguments: {
-          sessionId: 'model-supplied-session',
-          query: 'Router.tsx',
+            sessionId: 'model-supplied-session',
+            query: 'Router.tsx',
             limit: 10,
           },
         },
@@ -554,9 +630,9 @@ describe('spark_platform MCP server', () => {
         arguments: {
           method: 'session_history_read',
           arguments: {
-          sessionId: 'model-supplied-session',
-          mode: 'event',
-          turnId: 'turn-1',
+            sessionId: 'model-supplied-session',
+            mode: 'event',
+            turnId: 'turn-1',
             seq: 3,
           },
         },

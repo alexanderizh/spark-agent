@@ -14,6 +14,7 @@
  */
 import { request as httpRequest } from 'node:http'
 import readline from 'node:readline'
+import { SCHEDULE_METHOD_DEFINITIONS, SCHEDULE_METHOD_MAP } from './platform-schedule-methods.mjs'
 
 const BRIDGE_PORT = Number(process.env.SPARK_PLATFORM_BRIDGE_PORT || 0)
 const BRIDGE_HOST = '127.0.0.1'
@@ -71,85 +72,6 @@ function rpc(method, params) {
     req.write(body)
     req.end()
   })
-}
-
-const SESSION_SCHEDULE_MUTABLE_PROPERTIES = {
-  name: { type: 'string', minLength: 1, maxLength: 200, description: '任务名称' },
-  description: { type: 'string', maxLength: 2000, description: '可选说明' },
-  enabled: { type: 'boolean', description: '是否启用' },
-  triggerType: {
-    type: 'string',
-    enum: ['interval', 'cron', 'once'],
-    description: '触发方式：固定间隔、Cron 或单次',
-  },
-  intervalSeconds: {
-    anyOf: [{ type: 'integer', minimum: 10, maximum: 31536000 }, { type: 'null' }],
-    description: '固定间隔秒数，最少 10 秒',
-  },
-  cronExpression: {
-    anyOf: [{ type: 'string', minLength: 1, maxLength: 200 }, { type: 'null' }],
-    description: 'Cron 表达式',
-  },
-  runAt: {
-    anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }],
-    description: '单次执行时间（ISO 8601）',
-  },
-  timezone: {
-    type: 'string',
-    minLength: 1,
-    maxLength: 100,
-    description: '时区，默认 system',
-  },
-  startAt: {
-    anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }],
-    description: '可选开始时间（ISO 8601）',
-  },
-  endAt: {
-    anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }],
-    description: '可选结束时间（ISO 8601）',
-  },
-  maxExecutions: {
-    type: 'integer',
-    minimum: 0,
-    maximum: 1000000,
-    description: '最大执行次数；0 表示不限',
-  },
-  promptTemplate: {
-    type: 'string',
-    minLength: 1,
-    maxLength: 100000,
-    description: '唤醒时发送给当前会话的完整任务指令；应包含检查目标、完成条件和清理要求',
-  },
-  timeoutSeconds: { type: 'integer', minimum: 10, maximum: 86400, description: '单次执行超时秒数' },
-  maxRetries: { type: 'integer', minimum: 0, maximum: 100, description: '失败重试次数' },
-  retryDelaySeconds: {
-    type: 'integer',
-    minimum: 0,
-    maximum: 86400,
-    description: '重试初始延迟秒数',
-  },
-  retryBackoff: {
-    type: 'string',
-    enum: ['fixed', 'linear', 'exponential'],
-    description: '重试退避策略',
-  },
-  concurrencyPolicy: {
-    type: 'string',
-    enum: ['skip', 'queue', 'cancel'],
-    description: '上次执行仍在运行时的策略；默认 queue',
-  },
-  tags: {
-    type: 'array',
-    maxItems: 50,
-    items: { type: 'string', minLength: 1, maxLength: 80 },
-    description: '标签',
-  },
-  historyRetentionDays: {
-    type: 'integer',
-    minimum: 1,
-    maximum: 3650,
-    description: '执行记录保留天数',
-  },
 }
 
 const CUSTOM_MEDIA_MODEL_SCHEMA = {
@@ -2307,59 +2229,7 @@ function platformMethodDefinitions() {
       },
     },
 
-    // ── Current-session Scheduled Tasks ──
-    {
-      name: 'session_schedule_list',
-      description: '列出当前会话挂载的全部定时任务。创建轮询任务前先调用，避免重复创建。',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-      },
-    },
-    {
-      name: 'session_schedule_get',
-      description: '读取当前会话中的一个定时任务。只能访问当前会话。',
-      inputSchema: {
-        type: 'object',
-        required: ['id'],
-        properties: {
-          id: { type: 'string', minLength: 1, maxLength: 200, description: '任务 ID' },
-        },
-      },
-    },
-    {
-      name: 'session_schedule_create',
-      description:
-        '在当前会话创建持久化定时唤醒任务。任务会跟随会话当前 Agent、模型、权限与工作区配置；完成目标后必须删除。',
-      inputSchema: {
-        type: 'object',
-        required: ['name', 'triggerType', 'promptTemplate'],
-        properties: SESSION_SCHEDULE_MUTABLE_PROPERTIES,
-      },
-    },
-    {
-      name: 'session_schedule_update',
-      description: '修改当前会话中的定时任务，包括调度频率、唤醒指令和启停状态。',
-      inputSchema: {
-        type: 'object',
-        required: ['id'],
-        properties: {
-          id: { type: 'string', description: '任务 ID' },
-          ...SESSION_SCHEDULE_MUTABLE_PROPERTIES,
-        },
-      },
-    },
-    {
-      name: 'session_schedule_delete',
-      description: '删除当前会话中的定时任务。轮询目标完成、取消、永久阻塞或不再需要时应立即调用。',
-      inputSchema: {
-        type: 'object',
-        required: ['id'],
-        properties: {
-          id: { type: 'string', description: '任务 ID' },
-        },
-      },
-    },
+    ...SCHEDULE_METHOD_DEFINITIONS,
 
     // ── Current-session full history retrieval ──
     {
@@ -2369,9 +2239,25 @@ function platformMethodDefinitions() {
       inputSchema: {
         type: 'object',
         properties: {
-          requestKey: { type: 'string', minLength: 1, maxLength: 120, description: '每次独立派发使用新键，同一次派发重试沿用原键' },
-          title: { type: 'string', minLength: 1, maxLength: 120, description: '供用户在会话侧栏识别的任务标题' },
-          task: { type: 'string', minLength: 1, maxLength: 24000, description: '完整任务：目标、范围、已确认需求、复现、关键原始报错、相关可访问文件、已尝试事项和验收标准。不要包含密钥、无关历史或原会话 ID；无项目会话的工作目录不会共享。新会话自行执行，不继续分派。' },
+          requestKey: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 120,
+            description: '每次独立派发使用新键，同一次派发重试沿用原键',
+          },
+          title: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 120,
+            description: '供用户在会话侧栏识别的任务标题',
+          },
+          task: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 24000,
+            description:
+              '完整任务：目标、范围、已确认需求、复现、关键原始报错、相关可访问文件、已尝试事项和验收标准。不要包含密钥、无关历史或原会话 ID；无项目会话的工作目录不会共享。新会话自行执行，不继续分派。',
+          },
         },
         required: ['requestKey', 'title', 'task'],
         additionalProperties: false,
@@ -2461,7 +2347,8 @@ const PLATFORM_METHOD_BY_NAME = new Map(PLATFORM_METHODS.map((tool) => [tool.nam
 const PLATFORM_METHOD_SEARCH_INDEX = PLATFORM_METHODS.map((tool) => ({
   tool,
   name: tool.name.toLowerCase(),
-  searchableText: `${tool.name} ${tool.description} ${JSON.stringify(tool.inputSchema)}`.toLowerCase(),
+  searchableText:
+    `${tool.name} ${tool.description} ${JSON.stringify(tool.inputSchema)}`.toLowerCase(),
 }))
 
 const PLATFORM_METHOD_SEARCH_DOMAINS = [
@@ -2475,9 +2362,18 @@ const PLATFORM_METHOD_SEARCH_DOMAINS = [
   { pattern: /团队|team/i, prefix: 'teams_' },
   { pattern: /设置|偏好|setting/i, prefix: 'settings_' },
   { pattern: /看板|任务|board/i, prefix: 'board_' },
-  { pattern: /定时任务|计划任务|schedule/i, prefix: 'session_schedule_' },
+  { pattern: /应用级|应用定时任务|application.schedule/i, prefix: 'application_schedule_' },
+  { pattern: /会话计划|计划任务|session.schedule/i, prefix: 'session_schedule_' },
+  {
+    pattern:
+      /目标会话|已有会话|项目.*计划|工作区.*计划|跨会话|会话.*挂.*任务|新建会话.*计划|project.schedule/i,
+    prefix: 'project_schedule_',
+  },
   { pattern: /会话历史|会话记录|session history/i, prefix: 'session_history_' },
-  { pattern: /新(?:开|建)?会话|会话派发|(?:new session|session dispatch)/i, prefix: 'sessions_dispatch' },
+  {
+    pattern: /新(?:开|建)?会话|会话派发|(?:new session|session dispatch)/i,
+    prefix: 'sessions_dispatch',
+  },
   { pattern: /github|代码仓库|仓库协作/i, prefix: 'github_' },
   { pattern: /安装包|运行时|制品|artifact/i, prefix: 'artifacts_' },
 ]
@@ -2487,11 +2383,20 @@ const PLATFORM_METHOD_SEARCH_OPERATIONS = [
     pattern: /配置|创建|新增|添加|安装|configure|config|create|install/i,
     methodPattern: /_(configure|create|update|install|add|set_[a-z0-9_]+)$/,
   },
-  { pattern: /修改|更新|编辑|更换|update|edit|change/i, methodPattern: /_(update|save|set_[a-z0-9_]+)$/ },
-  { pattern: /删除|移除|卸载|delete|remove|uninstall/i, methodPattern: /_(delete|remove|uninstall)$/ },
+  {
+    pattern: /修改|更新|编辑|更换|启用|停用|恢复|暂停|update|edit|change/i,
+    methodPattern: /_(update|save|set_[a-z0-9_]+)$/,
+  },
+  { pattern: /立即执行|run.now/i, methodPattern: /_run_now$/ },
+  { pattern: /执行历史|执行记录|executions/i, methodPattern: /_executions$/ },
+  {
+    pattern: /删除|移除|卸载|delete|remove|uninstall/i,
+    methodPattern: /_(delete|remove|uninstall)$/,
+  },
   {
     pattern: /查询|查看|获取|列表|搜索|检查|诊断|list|get|search|inspect|status|diagnos/i,
-    methodPattern: /_(list|get|search|inspect|status|diagnose|health_check|discover_models|resolve)$/,
+    methodPattern:
+      /_(list|get|search|inspect|status|diagnose|health_check|discover_models|resolve)$/,
   },
 ]
 
@@ -2507,7 +2412,12 @@ function toolDefinitions() {
         required: ['query'],
         properties: {
           query: { type: 'string', minLength: 1, maxLength: 300, description: '管理目标或关键词' },
-          limit: { type: 'integer', minimum: 1, maximum: 20, description: '最多返回多少项，默认 5' },
+          limit: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 20,
+            description: '最多返回多少项，默认 5',
+          },
         },
       },
     },
@@ -2520,8 +2430,17 @@ function toolDefinitions() {
         additionalProperties: false,
         required: ['method', 'arguments'],
         properties: {
-          method: { type: 'string', minLength: 1, maxLength: 100, description: '搜索结果中的精确方法名' },
-          arguments: { type: 'object', additionalProperties: true, description: '该方法的参数对象' },
+          method: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 100,
+            description: '搜索结果中的精确方法名',
+          },
+          arguments: {
+            type: 'object',
+            additionalProperties: true,
+            description: '该方法的参数对象',
+          },
         },
       },
     },
@@ -2535,7 +2454,9 @@ function validateArguments(schema, value, path = 'arguments') {
       : `${path} must match one of the allowed schemas`
   }
   if (Array.isArray(schema.oneOf)) {
-    const matchingBranches = schema.oneOf.filter((branch) => validateArguments(branch, value, path) == null)
+    const matchingBranches = schema.oneOf.filter(
+      (branch) => validateArguments(branch, value, path) == null,
+    )
     return matchingBranches.length === 1 ? null : `${path} must match exactly one allowed schema`
   }
   if (Array.isArray(schema.allOf)) {
@@ -2547,7 +2468,8 @@ function validateArguments(schema, value, path = 'arguments') {
 
   const types = Array.isArray(schema.type) ? schema.type : schema.type ? [schema.type] : []
   const matchesType = (type) => {
-    if (type === 'object') return value != null && typeof value === 'object' && !Array.isArray(value)
+    if (type === 'object')
+      return value != null && typeof value === 'object' && !Array.isArray(value)
     if (type === 'array') return Array.isArray(value)
     if (type === 'string') return typeof value === 'string'
     if (type === 'boolean') return typeof value === 'boolean'
@@ -2605,7 +2527,8 @@ function validateArguments(schema, value, path = 'arguments') {
     }
     return null
   }
-  if (schema.enum && !schema.enum.includes(value)) return `${path} must be one of: ${schema.enum.join(', ')}`
+  if (schema.enum && !schema.enum.includes(value))
+    return `${path} must be one of: ${schema.enum.join(', ')}`
   if (typeof value === 'string' && schema.minLength != null && value.length < schema.minLength) {
     return `${path} must contain at least ${schema.minLength} characters`
   }
@@ -2639,8 +2562,14 @@ function searchTerms(query) {
 
 function searchPlatformMethods(query, limit = 5) {
   const terms = searchTerms(query)
-  const matchingDomains = PLATFORM_METHOD_SEARCH_DOMAINS.filter(({ pattern }) => pattern.test(query))
-  const matchingOperations = PLATFORM_METHOD_SEARCH_OPERATIONS.filter(({ pattern }) => pattern.test(query))
+  const exact = PLATFORM_METHOD_BY_NAME.get(query.trim().toLowerCase())
+  if (exact) return [exact]
+  const matchingDomains = PLATFORM_METHOD_SEARCH_DOMAINS.filter(({ pattern }) =>
+    pattern.test(query),
+  )
+  const matchingOperations = PLATFORM_METHOD_SEARCH_OPERATIONS.filter(({ pattern }) =>
+    pattern.test(query),
+  )
   const scored = PLATFORM_METHOD_SEARCH_INDEX.map(({ tool, name, searchableText }) => {
     let score = terms.reduce((total, term) => {
       if (name.includes(term)) return total + 5
@@ -2655,7 +2584,11 @@ function searchPlatformMethods(query, limit = 5) {
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.tool.name.localeCompare(b.tool.name))
     .slice(0, limit)
-    .map(({ tool }) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }))
+    .map(({ tool }) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    }))
 }
 
 // ─── Tool Call Handler ───────────────────────────────────────────────
@@ -2770,11 +2703,7 @@ async function handleToolCall(name, args) {
     referenced_sessions_list: 'referenced_sessions.list',
     referenced_session_read: 'referenced_session.read',
     referenced_session_search: 'referenced_session.search',
-    session_schedule_list: 'session_schedule.list',
-    session_schedule_get: 'session_schedule.get',
-    session_schedule_create: 'session_schedule.create',
-    session_schedule_update: 'session_schedule.update',
-    session_schedule_delete: 'session_schedule.delete',
+    ...SCHEDULE_METHOD_MAP,
     session_history_list: 'session_history.list',
     session_history_read: 'session_history.read',
     session_history_search: 'session_history.search',
@@ -2805,6 +2734,8 @@ async function handleToolCall(name, args) {
   if (
     name.startsWith('sessions_') ||
     name.startsWith('session_schedule_') ||
+    name.startsWith('application_schedule_') ||
+    name.startsWith('project_schedule_') ||
     name.startsWith('session_history_') ||
     name.startsWith('referenced_session')
   ) {
@@ -2817,7 +2748,15 @@ async function handleToolCall(name, args) {
     rpcArgs.sessionId = SESSION_ID
   }
 
-  if (name === 'sessions_dispatch') rpcArgs.dispatchToken = SESSION_DISPATCH_TOKEN
+  if (
+    name === 'sessions_dispatch' ||
+    name.startsWith('application_schedule_') ||
+    name.startsWith('project_schedule_') ||
+    name === 'session_schedule_run_now' ||
+    name === 'session_schedule_executions'
+  ) {
+    rpcArgs.dispatchToken = SESSION_DISPATCH_TOKEN
+  }
 
   // Skills tools: attach the session id (from env, never model-provided) so the
   // bridge can scope skills_list/skills_load to this session's effective skill
@@ -2843,23 +2782,33 @@ async function handleToolCall(name, args) {
 async function handleGatewayCall(name, args) {
   if (name === 'platform_methods_search') {
     const issue = validateArguments(toolDefinitions()[0].inputSchema, args)
-    if (issue) return { content: [{ type: 'text', text: `Invalid arguments: ${issue}` }], isError: true }
+    if (issue)
+      return { content: [{ type: 'text', text: `Invalid arguments: ${issue}` }], isError: true }
     const methods = searchPlatformMethods(args.query, args.limit ?? 5)
     return {
-      content: [{ type: 'text', text: JSON.stringify({ methods, returned: methods.length }, null, 2) }],
+      content: [
+        { type: 'text', text: JSON.stringify({ methods, returned: methods.length }, null, 2) },
+      ],
     }
   }
 
   if (name === 'platform_invoke') {
     const issue = validateArguments(toolDefinitions()[1].inputSchema, args)
-    if (issue) return { content: [{ type: 'text', text: `Invalid arguments: ${issue}` }], isError: true }
+    if (issue)
+      return { content: [{ type: 'text', text: `Invalid arguments: ${issue}` }], isError: true }
     const target = PLATFORM_METHOD_BY_NAME.get(args.method)
     if (!target) {
-      return { content: [{ type: 'text', text: `Unknown platform method: ${args.method}` }], isError: true }
+      return {
+        content: [{ type: 'text', text: `Unknown platform method: ${args.method}` }],
+        isError: true,
+      }
     }
     const argumentIssue = validateArguments(target.inputSchema, args.arguments)
     if (argumentIssue) {
-      return { content: [{ type: 'text', text: `Invalid arguments: ${argumentIssue}` }], isError: true }
+      return {
+        content: [{ type: 'text', text: `Invalid arguments: ${argumentIssue}` }],
+        isError: true,
+      }
     }
     return handleToolCall(args.method, args.arguments)
   }

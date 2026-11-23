@@ -230,6 +230,7 @@ import { DEFAULT_DISPATCH_GOVERNANCE_CONFIG } from '@spark/agent-runtime'
 import { buildBridgeSessionTitle } from '../services/mobile-bridge-session-title.js'
 import type { TaskExecutorFn } from '@spark/agent-runtime'
 import { runSessionScheduledTaskTurn } from './scheduled-task-executor.js'
+import { resolveScheduledTaskTeam } from './scheduled-task-team.js'
 import {
   compileInvocationRequest,
   compileMediaRequest,
@@ -2362,9 +2363,15 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
     return result
   }
 
+  const team = resolveScheduledTaskTeam(
+    params.agentId ? null : params.teamId,
+    new TeamDefinitionRepository(getDatabase()),
+    getAgentRepository(),
+  )
+  const executionAgentId = team?.hostAgentId ?? params.agentId
   // 按 user-selected model > agent's model > default 的优先级解析 provider/model
   const runtime = await resolveScheduledTaskRuntime({
-    agentId: params.agentId,
+    agentId: executionAgentId,
     modelId: params.modelId,
   })
 
@@ -2374,7 +2381,7 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
 
   // agentAdapter / permissionMode：仅在解析到 agent 自身 adapter（非 runtime 兜底）时显式传，
   // 其余情况交给 createSession 按 agent.agentAdapter/permissionMode 回退，避免 runtime 默认覆盖 agent 配置。
-  const isAgentAdapterFromAgent = runtime.agentId != null && params.agentId != null
+  const isAgentAdapterFromAgent = runtime.agentId != null && executionAgentId != null
   const explicitAgentAdapter = isAgentAdapterFromAgent ? runtime.agentAdapter : undefined
   // mapTaskPermissionMode 仅在用户/任务显式指定时返回非 undefined；其余情况不传，让 createSession 按 agent 回退。
   const explicitPermissionMode = mapTaskPermissionMode(params.permissionMode, runtime.agentAdapter)
@@ -2390,6 +2397,8 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
     ...(explicitPermissionMode != null ? { permissionMode: explicitPermissionMode } : {}),
     title: `${SCHEDULED_TASK_SESSION_TITLE_PREFIX}${params.taskName}`,
   })
+
+  if (team != null) sessionRepo.patchMetadata(created.sessionId, { team })
 
   // Notify renderer to refresh session list (same as session:create IPC handler)
   pushStreamEvent('stream:session:created', {
@@ -3162,6 +3171,7 @@ function getSessionService(): SessionService {
     })
     _sessionService.setPluginManager(pluginManager)
     _sessionService.setCustomToolService(getCustomToolService())
+    _sessionService.setScheduledTaskService(getScheduledTaskService())
     registerSessionServiceForShutdown(_sessionService)
     // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
     _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())

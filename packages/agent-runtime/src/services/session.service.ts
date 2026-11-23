@@ -196,6 +196,7 @@ import {
 } from './plugin-runtime/plugin-runtime-mcp-bridge.js'
 import { RuntimeBroker } from './plugin-runtime/runtime-broker.js'
 import { registerBuiltinRuntimeAdapters } from './plugin-runtime/builtin-runtimes.js'
+import type { ScheduledTaskService } from './scheduled-task.service.js'
 import type { CustomToolService } from './custom-tools/custom-tool.service.js'
 import { CustomToolRuntimeCatalog } from './custom-tools/custom-tool-runtime-catalog.js'
 import { ToolPackageService } from './tool-packages/tool-package.service.js'
@@ -1300,6 +1301,7 @@ export class SessionService {
   private readonly platformBridge: PlatformBridgeService
   private subAppRuntimeBridge: PlatformBridgeDeps['subAppRuntime']
   private pluginManager: PluginManager | null = null
+  private scheduledTaskService: ScheduledTaskService | null = null
   private customToolService: CustomToolService | null = null
   private customToolRuntimeUnsubscribe: (() => void) | null = null
   private readonly toolPackageService: ToolPackageService
@@ -3115,27 +3117,30 @@ export class SessionService {
     }
   }
 
-  async createSession(params: {
-    providerProfileId: string
-    modelId?: string
-    agentId?: string
-    agentAdapter?: AgentAdapterKind
-    permissionMode?: SessionPermissionMode
-    chatMode?: SessionChatMode
-    reasoningEffort?: SparkReasoningEffort
-    fastMode?: boolean
-    debugMode?: boolean
-    cliSparkOverride?: CliSparkOverride | null
-    title?: string
-    workspaceId?: string
-    workflowBinding?: SessionWorkflowBindingCreate
-    /**
-     * WorkflowSessionLauncher 内部启动来源：跳过面向用户的挂载 Preflight
-     * （launcher 已自行校验），并把启动入口原子写入会话元数据供 Run 审计。
-     * 仅限服务端内部调用，不经 session:create IPC 暴露。
-     */
-    workflowBindingSource?: 'editor-test' | 'tool-package'
-  }, dispatch?: { sessionId: string; dispatchFingerprint: string }): Promise<SessionCreateResponse> {
+  async createSession(
+    params: {
+      providerProfileId: string
+      modelId?: string
+      agentId?: string
+      agentAdapter?: AgentAdapterKind
+      permissionMode?: SessionPermissionMode
+      chatMode?: SessionChatMode
+      reasoningEffort?: SparkReasoningEffort
+      fastMode?: boolean
+      debugMode?: boolean
+      cliSparkOverride?: CliSparkOverride | null
+      title?: string
+      workspaceId?: string
+      workflowBinding?: SessionWorkflowBindingCreate
+      /**
+       * WorkflowSessionLauncher 内部启动来源：跳过面向用户的挂载 Preflight
+       * （launcher 已自行校验），并把启动入口原子写入会话元数据供 Run 审计。
+       * 仅限服务端内部调用，不经 session:create IPC 暴露。
+       */
+      workflowBindingSource?: 'editor-test' | 'tool-package'
+    },
+    dispatch?: { sessionId: string; dispatchFingerprint: string; origin?: 'scheduled-task' },
+  ): Promise<SessionCreateResponse> {
     const sessionRepo = new SessionRepository(this.db)
     const id = dispatch?.sessionId ?? crypto.randomUUID()
     if (params.workspaceId != null) {
@@ -3144,6 +3149,7 @@ export class SessionService {
     }
     const agent = this.resolveAgent(params.agentId)
     assertSessionWorkflowBindingCreationReady(this.db, params.workflowBinding, agent.id, {
+      scheduledTaskSession: dispatch?.origin === 'scheduled-task',
       ...(params.workflowBindingSource != null
         ? { launchSource: params.workflowBindingSource }
         : {}),
@@ -3174,7 +3180,9 @@ export class SessionService {
         }),
       applyMetadata: (created) => {
         if (dispatch != null) {
-          sessionRepo.patchMetadata(created.id, { dispatchFingerprint: dispatch.dispatchFingerprint })
+          sessionRepo.patchMetadata(created.id, {
+            dispatchFingerprint: dispatch.dispatchFingerprint,
+          })
         }
         if (params.debugMode !== undefined) {
           sessionRepo.patchMetadata(created.id, { debugMode: params.debugMode })
@@ -9299,6 +9307,44 @@ export class SessionService {
 
   getPluginManager(): PluginManager | null {
     return this.pluginManager
+  }
+
+  async confirmScheduleOperation(sessionId: string, questionText: string): Promise<void> {
+    const turnId = this.turnRegistry.runningTurnId(sessionId)
+    if (this.onQuestion == null || turnId == null || this.turnRegistry.isTurnCancelled(turnId)) {
+      throw new Error('Schedule approval requires an active interactive turn')
+    }
+    const question: UserQuestionPrompt = {
+      id: crypto.randomUUID(),
+      header: '计划任务授权',
+      question: questionText,
+      type: 'single_choice',
+      options: [
+        { label: '批准', value: 'approve' },
+        { label: '拒绝', value: 'reject' },
+      ],
+    }
+    const release = this.pendingUserQuestionGate.enter(sessionId)
+    try {
+      const answers = await this.onQuestion(sessionId, [question], { turnId })
+      if (
+        this.turnRegistry.runningTurnId(sessionId) !== turnId ||
+        this.turnRegistry.isTurnCancelled(turnId) ||
+        !isWorkflowApprovalApprovedImpl(answers, question, 0)
+      ) {
+        throw new Error('Schedule operation was not approved')
+      }
+    } finally {
+      release()
+    }
+  }
+
+  setScheduledTaskService(service: ScheduledTaskService): void {
+    this.scheduledTaskService = service
+  }
+
+  getScheduledTaskService(): ScheduledTaskService | null {
+    return this.scheduledTaskService
   }
 
   getCustomToolService(): CustomToolService | null {
