@@ -11,7 +11,7 @@
  *   - agent_status 终态 / agent_error    → 结束指示
  */
 
-import type { BridgeEvent } from '../api/bridge'
+import type { BridgeEvent } from './chat-event'
 import { normalizeTextEvents, sortEvents } from './chat-order'
 
 export interface ChatMessage {

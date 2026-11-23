@@ -18,7 +18,7 @@
  *      若都交给 applyEvents，delta 会被追加到已有全文后面 → agent 输出重复两遍。
  */
 
-import type { BridgeEvent } from '../api/bridge'
+import type { BridgeEvent } from './chat-event'
 
 /** seq → timestamp → id 的稳定排序；不修改入参 */
 export function sortEvents(events: BridgeEvent[]): BridgeEvent[] {

@@ -16,6 +16,10 @@
  * 缺省 = 服务端选主桌面端）。
  */
 
+import type { BridgeApprovalDecision, BridgeInteractions } from '../utils/chat-interactions'
+import type { BridgeCreateTaskInput, BridgeScheduledTask } from '../utils/task-types'
+export type { BridgeCreateTaskInput, BridgeScheduledTask } from '../utils/task-types'
+import type { BridgeEvent } from '../utils/chat-event'
 import { getItem, StorageKeys } from '../utils/storage'
 import type { BridgeSessionLabelKey } from '../utils/sidebar-order'
 import * as relay from './relay'
@@ -94,23 +98,6 @@ export interface BridgeAttachment {
   name?: string
 }
 
-export interface BridgeScheduledTask {
-  id: string
-  name: string
-  description: string
-  enabled: boolean
-  triggerType: 'interval' | 'cron' | 'once'
-  intervalSeconds?: number | null
-  cronExpression?: string | null
-  runAt?: string | null
-  prompt: string
-  status: string
-  executionCount: number
-  lastRunAt?: string | null
-  nextRunAt?: string | null
-  lastError?: string | null
-}
-
 export interface BridgeCommandItem {
   name: string
   description: string
@@ -133,39 +120,7 @@ export interface BridgeProjectSummary {
   runningSessionCount?: number
 }
 
-export type BridgeEventType =
-  | 'user_message'
-  | 'assistant_message'
-  | 'agent_thinking'
-  | 'tool_call'
-  | 'tool_result'
-  | 'agent_status'
-  | 'agent_error'
-  | 'presented_files'
-
-export interface BridgeEvent {
-  id: string
-  seq: number
-  turnId: string
-  type: BridgeEventType
-  timestamp: string
-  content?: string
-  mode?: 'delta' | 'complete'
-  isFinal?: boolean
-  segmentId?: string
-  toolName?: string
-  toolCallId?: string
-  toolStatus?: 'success' | 'error'
-  status?: string
-  statusMessage?: string
-  /** presented_files：agent 呈现的产物文件（端上按扩展名过滤图片后走本地缓存展示） */
-  files?: { path: string; title?: string }[]
-  /**
-   * user_message：随消息提交的附件（旧版桌面端不透出，缺省 undefined）。
-   * 端上渲染历史附件缩略图（图片经本地缓存解析），文件仅显名。
-   */
-  attachments?: { type: 'image' | 'file'; path: string; name?: string }[]
-}
+export type { BridgeEvent, BridgeEventType } from '../utils/chat-event'
 
 // ─── 中继链路（唯一传输） ─────────────────────────────────────────────────────
 
@@ -648,56 +603,10 @@ export function getSessionLineage(
 
 // ─── 挂起交互（权限审批 + 用户问答；与桌面端审批卡/问答卡同源） ─────────────────
 
-export interface BridgeApprovalItem {
-  requestId: string
-  sessionId: string
-  toolName: string
-  /** 权限动作分类（file_write / command_exec / …） */
-  action: string
-  riskLevel: 'low' | 'medium' | 'high'
-  toolInput: Record<string, unknown>
-  /** ISO；旧版桌面端缺省为空串 */
-  createdAt: string
-  defaultToNo?: boolean
-}
-
-export interface BridgeQuestionOption {
-  label: string
-  description?: string
-  value?: string
-  allowsFreeText?: boolean
-  freeTextPlaceholder?: string
-}
-
-export interface BridgeQuestionPrompt {
-  id?: string
-  question: string
-  header: string
-  type?: 'single_choice' | 'multi_choice' | 'text'
-  required?: boolean
-  placeholder?: string
-  multiline?: boolean
-  allowSkip?: boolean
-  allowOther?: boolean
-  otherOptionLabel?: string
-  otherPlaceholder?: string
-  options?: BridgeQuestionOption[]
-  multiSelect?: boolean
-}
-
-export interface BridgeQuestionItem {
-  questionId: string
-  sessionId: string
-  createdAt: string
-  questions: BridgeQuestionPrompt[]
-}
-
-export interface BridgeInteractions {
-  approvals: BridgeApprovalItem[]
-  questions: BridgeQuestionItem[]
-}
-
-export type BridgeApprovalDecision = 'allow-once' | 'allow-session' | 'deny'
+export type {
+  BridgeApprovalDecision, BridgeApprovalItem, BridgeInteractions, BridgeQuestionItem,
+  BridgeQuestionOption, BridgeQuestionPrompt,
+} from '../utils/chat-interactions'
 
 /**
  * 会话挂起交互快照（审批卡 + 问答卡轮询数据源）。
@@ -893,17 +802,6 @@ export function listSessionTasks(
     undefined,
     deviceId,
   )
-}
-
-export interface BridgeCreateTaskInput {
-  name: string
-  prompt: string
-  triggerType: 'interval' | 'cron' | 'once'
-  intervalSeconds?: number
-  cronExpression?: string
-  runAt?: string
-  timeoutSeconds?: number
-  maxRetries?: number
 }
 
 export function createSessionTask(

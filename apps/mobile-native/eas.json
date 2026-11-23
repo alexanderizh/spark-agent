@@ -1,0 +1,15 @@
+{
+  "cli": {
+    "appVersionSource": "local"
+  },
+  "build": {
+    "iphone-preview": {
+      "ios": {
+        "distribution": "internal",
+        "image": "sdk-56",
+        "buildConfiguration": "Release",
+        "prebuildCommand": "prebuild --no-install --template expo-template-bare-minimum@56.0.38"
+      }
+    }
+  }
+}

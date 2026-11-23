@@ -10,6 +10,9 @@
  */
 
 import type { BridgeCatalog } from '../api/bridge'
+import { PERMISSION_LABELS, REASONING_LABELS } from './session-config-labels'
+
+export { PERMISSION_LABELS, REASONING_LABELS } from './session-config-labels'
 
 export interface SessionConfigOption {
   id: string
@@ -20,31 +23,6 @@ export interface SessionConfigOption {
   modelId?: string | null
   /** 推理强度档位原值 */
   value?: string
-}
-
-export const REASONING_LABELS: Record<string, string> = {
-  minimal: '最省',
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '超高',
-  max: '极致',
-}
-
-export const PERMISSION_LABELS: Record<string, string> = {
-  'claude-ask': '每步确认',
-  'claude-auto-edits': '自动编辑',
-  'claude-plan': '规划模式',
-  'claude-auto': '自动审批',
-  'claude-bypass': '免确认',
-  'codex-default': '默认',
-  'codex-auto-review': '自动审批',
-  'codex-full-access': '完全访问',
-  'spark-default': '默认',
-  'spark-accept-edits': '接受编辑',
-  'spark-plan': '规划模式',
-  'spark-bypass': '免确认',
-  'spark-auto': '自动审批',
 }
 
 /** 各 adapter 的「自动审批」档（与桌面端 defaultRemotePermissionMode 同口径） */

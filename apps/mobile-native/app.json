@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "SparkWork",
+    "slug": "sparkwork-native-prototype",
+    "version": "0.1.0",
+    "ios": {
+      "bundleIdentifier": "com.sparkagent.companion.prototype"
+    },
+    "android": {
+      "package": "com.sparkagent.companion.prototype",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FDFDFD"
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "61ecf1eb-0545-43b3-b07d-6def7d1131be"
+      }
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "../mobile/src/assets/brand/logo.png",
+          "imageWidth": 76,
+          "backgroundColor": "#FAFAFA",
+          "dark": {
+            "backgroundColor": "#171716"
+          }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "用于在对话中发送相册图片。",
+          "cameraPermission": "用于拍照并发送到对话。",
+          "microphonePermission": "用于在对话中录音并转写为文字。"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "用于在对话中录音并转写为文字。",
+          "enableBackgroundPlayback": false
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "用于预览对话中的图片。",
+          "savePhotosPermission": "用于将对话图片保存到相册。",
+          "granularPermissions": ["photo"]
+        }
+      ]
+    ],
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png"
+  }
+}
