@@ -13,7 +13,12 @@ import type {
   MobileBridgeCommandItem,
   MobileBridgeEvent,
   RemoteAgentAttachmentSummary,
+  SessionCancelQueuedTurnResponse,
+  SessionClearQueuedTurnsResponse,
   SessionGetQueueResponse,
+  SessionQueuedTurn,
+  SessionReorderQueuedTurnsResponse,
+  SessionSendQueuedTurnNowResponse,
   UserQuestionPrompt,
 } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
@@ -21,6 +26,7 @@ import { Icons } from '../../Icons'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { useOptionalToast } from '../../components/Toast'
 import { UserQuestionDock } from '../chat/UserQuestionDock'
+import { projectQueuedTurnsForDisplay } from '../chat/internal-turn-message-visibility'
 import {
   RemoteApprovalCard,
   toApprovalRequest,
@@ -286,6 +292,177 @@ export function RemoteChatPane({
       }
     },
     [call, deviceId, queueApiSupported, sessionId],
+  )
+
+  // ─── 队列管理（与本地会话队列同能力：排序 / 立即执行 / 编辑 / 移除 / 清空） ──
+
+  const [queueBusy, setQueueBusy] = useState(false)
+  const [queueClearing, setQueueClearing] = useState(false)
+  const [queueReordering, setQueueReordering] = useState(false)
+
+  /** 队列操作响应回写：把最新排队列表灌回当前快照（不碰 running——由事件流维护） */
+  const applyQueueTurns = useCallback(
+    (targetSessionId: string, queuedTurns: SessionQueuedTurn[]) => {
+      const active = activeQueueTargetRef.current
+      if (active.deviceId !== deviceId || active.sessionId !== targetSessionId) return
+      setQueueSnapshot((previous) =>
+        previous != null && previous.sessionId === targetSessionId
+          ? { ...previous, queuedTurns }
+          : previous,
+      )
+    },
+    [deviceId],
+  )
+
+  /** 队列操作统一壳：目标校验 → 请求 → 快照回写 → 兜底刷新；失败弹 toast 不打断 */
+  const runQueueAction = useCallback(
+    async (
+      targetSessionId: string,
+      action: () => Promise<SessionQueuedTurn[]>,
+      onDone?: (queuedTurns: SessionQueuedTurn[]) => void,
+    ) => {
+      setQueueBusy(true)
+      try {
+        const queuedTurns = await action()
+        applyQueueTurns(targetSessionId, queuedTurns)
+        onDone?.(queuedTurns)
+        setError(null)
+        // 暂停态 / running 等衍生状态以快照为准，操作后兜底拉一次
+        void refreshQueueState(targetSessionId)
+      } catch (cause) {
+        toast?.error(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        setQueueBusy(false)
+      }
+    },
+    [applyQueueTurns, refreshQueueState, toast],
+  )
+
+  const queuePath = useCallback(
+    (targetSessionId: string, suffix: string) =>
+      `/v1/sessions/${encodeURIComponent(targetSessionId)}/queue${suffix}`,
+    [],
+  )
+
+  const handleQueueRemove = useCallback(
+    (turn: SessionQueuedTurn) => {
+      if (sessionId == null) return
+      void runQueueAction(sessionId, async () => {
+        const res = await call<SessionCancelQueuedTurnResponse>(
+          deviceId,
+          'DELETE',
+          queuePath(sessionId, `/${encodeURIComponent(turn.turnId)}`),
+        )
+        return res.queuedTurns
+      })
+    },
+    [call, deviceId, queuePath, runQueueAction, sessionId],
+  )
+
+  const handleQueueSendNow = useCallback(
+    (turn: SessionQueuedTurn) => {
+      if (sessionId == null) return
+      void runQueueAction(sessionId, async () => {
+        const res = await call<SessionSendQueuedTurnNowResponse>(
+          deviceId,
+          'POST',
+          queuePath(sessionId, `/${encodeURIComponent(turn.turnId)}/send-now`),
+        )
+        if (res.started) setRunning(true)
+        return res.queuedTurns
+      })
+    },
+    [call, deviceId, queuePath, runQueueAction, sessionId],
+  )
+
+  const handleQueueClear = useCallback(() => {
+    if (sessionId == null || queueClearing) return
+    setQueueClearing(true)
+    void (async () => {
+      try {
+        const res = await call<SessionClearQueuedTurnsResponse>(
+          deviceId,
+          'POST',
+          queuePath(sessionId, '/clear'),
+        )
+        applyQueueTurns(sessionId, res.queuedTurns)
+        setError(null)
+        void refreshQueueState(sessionId)
+      } catch (cause) {
+        toast?.error(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        setQueueClearing(false)
+      }
+    })()
+  }, [applyQueueTurns, call, deviceId, queueClearing, queuePath, refreshQueueState, sessionId, toast])
+
+  const handleQueueReorder = useCallback(
+    (turnIds: string[]) => {
+      if (sessionId == null || queueReordering) return
+      const previous = queueSnapshot?.sessionId === sessionId ? queueSnapshot : null
+      if (previous == null || turnIds.length !== previous.queuedTurns.length) return
+      // 乐观更新：拖完立即生效，失败回滚旧顺序
+      const byTurnId = new Map(previous.queuedTurns.map((turn) => [turn.turnId, turn]))
+      const reordered = turnIds
+        .map((turnId) => byTurnId.get(turnId))
+        .filter((turn): turn is SessionQueuedTurn => turn != null)
+      if (reordered.length !== previous.queuedTurns.length) return
+      setQueueReordering(true)
+      setQueueSnapshot({ ...previous, queuedTurns: reordered })
+      void (async () => {
+        try {
+          const res = await call<SessionReorderQueuedTurnsResponse>(
+            deviceId,
+            'POST',
+            queuePath(sessionId, '/reorder'),
+            { turnIds },
+          )
+          applyQueueTurns(sessionId, res.queuedTurns)
+          setRunning(res.running)
+          setError(null)
+        } catch (cause) {
+          setQueueSnapshot(previous)
+          toast?.error(cause instanceof Error ? cause.message : String(cause))
+        } finally {
+          setQueueReordering(false)
+        }
+      })()
+    },
+    [applyQueueTurns, call, deviceId, queuePath, queueReordering, queueSnapshot, sessionId, toast],
+  )
+
+  /**
+   * 编辑排队消息 = 撤回该排队轮，并把正文与附件回填输入框（与本地队列编辑同语义）。
+   * 附件直接复用目标端已有路径，不重新上传。内部排队轮（hidden / 非 user 来源）
+   * 在面板上就没有编辑按钮，这里再守一道。
+   */
+  const handleQueueEdit = useCallback(
+    (turn: SessionQueuedTurn) => {
+      if (sessionId == null || queueBusy) return
+      if (
+        turn.userMessageVisibility === 'hidden' ||
+        (turn.turnSource != null && turn.turnSource !== 'user')
+      ) {
+        return
+      }
+      void runQueueAction(sessionId, async () => {
+        const res = await call<SessionCancelQueuedTurnResponse>(
+          deviceId,
+          'DELETE',
+          queuePath(sessionId, `/${encodeURIComponent(turn.turnId)}`),
+        )
+        // 撤回成功后再回填：正文按展示文本（与本地编辑回填同一投影口径）
+        setDraft(projectQueuedTurnsForDisplay([turn])[0]?.message ?? turn.message)
+        setPendingAttachments(
+          (turn.attachments ?? []).map((attachment) => ({
+            type: attachment.type === 'image' ? ('image' as const) : ('file' as const),
+            path: attachment.path,
+          })),
+        )
+        return res.queuedTurns
+      })
+    },
+    [call, deviceId, queueBusy, queuePath, runQueueAction, sessionId],
   )
 
   /**
@@ -1104,6 +1281,14 @@ export function RemoteChatPane({
         config={config}
         commands={commands}
         queueSnapshot={queueSnapshot?.sessionId === sessionId ? queueSnapshot : null}
+        queueBusy={queueBusy}
+        queueClearing={queueClearing}
+        queueReordering={queueReordering}
+        onQueueClear={handleQueueClear}
+        onQueueEdit={handleQueueEdit}
+        onQueueSendNow={handleQueueSendNow}
+        onQueueRemove={handleQueueRemove}
+        onQueueReorder={handleQueueReorder}
         {...(activeQuickReplies != null ? { quickReplies: activeQuickReplies } : {})}
         onPickQuickReply={(reply) => void handleSend({ quickReply: reply })}
         onDismissQuickReplies={() =>

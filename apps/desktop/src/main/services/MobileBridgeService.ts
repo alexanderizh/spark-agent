@@ -54,8 +54,12 @@ import type {
   MobileBridgeUpdateSessionRequest,
   MobileBridgeUploadAttachmentsRequest,
   MobileBridgeWorkflowBindingResponse,
+  SessionCancelQueuedTurnResponse,
+  SessionClearQueuedTurnsResponse,
   SessionGetQueueResponse,
+  SessionReorderQueuedTurnsResponse,
   SessionSearchResponse,
+  SessionSendQueuedTurnNowResponse,
   SidebarOrderState,
   SidebarOrderUpdateRequest,
 } from '@spark/protocol'
@@ -160,6 +164,23 @@ export interface MobileBridgeDeps {
   ): Promise<{ turnId: string; started: boolean }>
   /** Current authoritative queue snapshot for a session. */
   getSessionQueue(sessionId: string): Promise<SessionGetQueueResponse>
+  /** 撤回一条排队回合（仅排队中；正在执行的回合走 cancelTurn） */
+  cancelQueuedTurn(
+    sessionId: string,
+    turnId: string,
+  ): Promise<SessionCancelQueuedTurnResponse>
+  /** 清空全部排队回合（不含正在执行的回合） */
+  clearQueuedTurns(sessionId: string): Promise<SessionClearQueuedTurnsResponse>
+  /** 重排排队回合（turnIds 必须是当前队列的全量排列） */
+  reorderQueuedTurns(
+    sessionId: string,
+    turnIds: string[],
+  ): Promise<SessionReorderQueuedTurnsResponse>
+  /** 立即执行一条排队回合（其余回合保持排队顺序） */
+  sendQueuedTurnNow(
+    sessionId: string,
+    turnId: string,
+  ): Promise<SessionSendQueuedTurnNowResponse>
   /** 取消进行中的回合 */
   cancelTurn(sessionId: string): Promise<void>
 
@@ -720,6 +741,96 @@ export class MobileBridgeService {
       try {
         const snapshot = await this.requireDeps().getSessionQueue(decodeURIComponent(rawId))
         this.sendJson(res, 200, snapshot)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    // ─── 排队回合操作（远程控制端队列管理；与桌面端 session:* IPC 同语义） ──────
+    // 注意：reorder / clear 是字面量段，必须排在 :turnId 通配路由之前。
+
+    const queueReorderMatch = /^\/v1\/sessions\/([^/]+)\/queue\/reorder$/.exec(path)
+    if (queueReorderMatch && req.method === 'POST') {
+      const rawId = queueReorderMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      const payload = await this.readJson<{ turnIds?: unknown }>(req)
+      const turnIds = payload.turnIds
+      if (
+        !Array.isArray(turnIds) ||
+        turnIds.length === 0 ||
+        turnIds.some((item) => typeof item !== 'string' || item.length === 0)
+      ) {
+        this.sendJson(res, 400, {
+          error: { code: 'BAD_REQUEST', message: 'turnIds 必须是非空的字符串数组' },
+        })
+        return
+      }
+      try {
+        const result = await this.requireDeps().reorderQueuedTurns(
+          decodeURIComponent(rawId),
+          turnIds,
+        )
+        this.sendJson(res, 200, result)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    const queueClearMatch = /^\/v1\/sessions\/([^/]+)\/queue\/clear$/.exec(path)
+    if (queueClearMatch && req.method === 'POST') {
+      const rawId = queueClearMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      try {
+        const result = await this.requireDeps().clearQueuedTurns(decodeURIComponent(rawId))
+        this.sendJson(res, 200, result)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    const queueTurnMatch = /^\/v1\/sessions\/([^/]+)\/queue\/([^/]+)$/.exec(path)
+    if (queueTurnMatch && req.method === 'DELETE') {
+      const rawId = queueTurnMatch[1]
+      const rawTurnId = queueTurnMatch[2]
+      if (rawId == null || rawTurnId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      try {
+        const result = await this.requireDeps().cancelQueuedTurn(
+          decodeURIComponent(rawId),
+          decodeURIComponent(rawTurnId),
+        )
+        this.sendJson(res, 200, result)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    const queueSendNowMatch = /^\/v1\/sessions\/([^/]+)\/queue\/([^/]+)\/send-now$/.exec(path)
+    if (queueSendNowMatch && req.method === 'POST') {
+      const rawId = queueSendNowMatch[1]
+      const rawTurnId = queueSendNowMatch[2]
+      if (rawId == null || rawTurnId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      try {
+        const result = await this.requireDeps().sendQueuedTurnNow(
+          decodeURIComponent(rawId),
+          decodeURIComponent(rawTurnId),
+        )
+        this.sendJson(res, 200, result)
       } catch (error) {
         this.sendSparkError(res, error)
       }

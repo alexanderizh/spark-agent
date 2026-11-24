@@ -518,6 +518,39 @@ describe('buildRemoteTimeline — 回合级收尾消息', () => {
     expect(items[0]).toMatchObject({ kind: 'assistant', text: full })
   })
 
+  it('spark-engine 多步回合的逐步收尾不吞掉中间正文段', () => {
+    // spark-engine 每一步 assistant.completed 都发 isFinal=true（各自 segmentId），
+    // 而不是回合级一条。对账必须按各自 seq 处，不能等全部分段落位后统一对：
+    // 否则第一步的收尾面对「全部三段」必然对不上，触发「收敛成一条」清空其余段，
+    // 界面上就只剩最后一段正文（历史 bug：回合结束后展开折叠看不到之前的正文）。
+    const items = buildRemoteTimeline([
+      ev({ id: 'u', seq: 0, type: 'user_message', content: '干活' }),
+      ev({ id: 'd1', seq: 1, type: 'assistant_message', content: '第一段', mode: 'delta', segmentId: 's1' }),
+      ev({ id: 'c1', seq: 2, type: 'assistant_message', content: '第一段', mode: 'complete', segmentId: 's1', isFinal: true }),
+      ev({ id: 't1', seq: 3, type: 'tool_call', toolCallId: 'call-1', toolName: 'bash' }),
+      ev({ id: 'r1', seq: 4, type: 'tool_result', toolCallId: 'call-1', toolName: 'bash', content: 'ok' }),
+      ev({ id: 'd2', seq: 5, type: 'assistant_message', content: '第二段', mode: 'delta', segmentId: 's2' }),
+      ev({ id: 'c2', seq: 6, type: 'assistant_message', content: '第二段', mode: 'complete', segmentId: 's2', isFinal: true }),
+      ev({ id: 't2', seq: 7, type: 'tool_call', toolCallId: 'call-2', toolName: 'bash' }),
+      ev({ id: 'r2', seq: 8, type: 'tool_result', toolCallId: 'call-2', toolName: 'bash', content: 'done' }),
+      ev({ id: 'd3', seq: 9, type: 'assistant_message', content: '总结段', mode: 'delta', segmentId: 's3' }),
+      ev({ id: 'c3', seq: 10, type: 'assistant_message', content: '总结段', mode: 'complete', segmentId: 's3', isFinal: true }),
+      ev({ id: 'st', seq: 11, type: 'agent_status', status: 'completed' }),
+    ])
+
+    expect(items.filter((item) => item.kind === 'assistant').map((item) => (item.kind === 'assistant' ? item.text : ''))).toEqual([
+      '第一段',
+      '第二段',
+      '总结段',
+    ])
+    // 回合结束 + 收尾已到：所有分段都不再流式
+    expect(
+      items
+        .filter((item) => item.kind === 'assistant')
+        .every((item) => (item.kind === 'assistant' ? !item.streaming : true)),
+    ).toBe(true)
+  })
+
   it('不同回合的相同收尾正文都保留', () => {
     const items = buildRemoteTimeline([
       ev({

@@ -25,6 +25,7 @@ import type {
   MobileBridgeCatalog,
   MobileBridgeCommandItem,
   SessionGetQueueResponse,
+  SessionQueuedTurn,
 } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { useComposerVoice } from '../../voice/useComposerVoice'
@@ -73,6 +74,15 @@ export interface RemoteComposerProps {
   onSend: () => void
   onStop: () => void
   queueSnapshot: SessionGetQueueResponse | null
+  /** 队列管理操作（与本地会话队列一致）；任一操作在途时 busy 置真整面板禁用 */
+  queueBusy?: boolean
+  queueClearing?: boolean
+  queueReordering?: boolean
+  onQueueClear: () => void
+  onQueueEdit: (turn: SessionQueuedTurn) => void
+  onQueueSendNow: (turn: SessionQueuedTurn) => void
+  onQueueRemove: (turn: SessionQueuedTurn) => void
+  onQueueReorder: (turnIds: string[]) => void
   /** 运行时配置（助手 / 模型 / 权限） */
   config: RemoteComposerConfigState
   /** 目标端斜杠命令目录（旧版目标端为空数组 → 不弹补全） */
@@ -102,6 +112,14 @@ export function RemoteComposer({
   onSend,
   onStop,
   queueSnapshot,
+  queueBusy,
+  queueClearing,
+  queueReordering,
+  onQueueClear,
+  onQueueEdit,
+  onQueueSendNow,
+  onQueueRemove,
+  onQueueReorder,
   config,
   commands,
   quickReplies,
@@ -317,7 +335,17 @@ export function RemoteComposer({
   return (
     <div className={`rc-composer${voiceInputActive ? ' is-voice' : ''}`}>
       {installToast}
-      <RemoteQueuePanel snapshot={queueSnapshot} />
+      <RemoteQueuePanel
+        snapshot={queueSnapshot}
+        {...(queueBusy != null ? { busy: queueBusy } : {})}
+        {...(queueClearing != null ? { clearing: queueClearing } : {})}
+        {...(queueReordering != null ? { reordering: queueReordering } : {})}
+        onClear={onQueueClear}
+        onEdit={onQueueEdit}
+        onSendNow={onQueueSendNow}
+        onRemove={onQueueRemove}
+        onReorder={onQueueReorder}
+      />
       <RemoteAttachmentStrip
         deviceId={deviceId}
         attachments={attachments}

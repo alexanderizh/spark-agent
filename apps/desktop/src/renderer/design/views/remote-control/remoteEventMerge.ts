@@ -206,14 +206,6 @@ export function buildRemoteTimeline(events: MobileBridgeEvent[]): RemoteTimeline
   const items: RemoteTimelineItem[] = []
   const textIndex = new Map<string, number>()
   const toolIndex = new Map<string, number>()
-  /** 回合级收尾消息：等所有分段都落位后再对账，避免中途改动下标 */
-  const turnFinals: Array<{
-    turnId: string
-    id: string
-    seq: number
-    timestamp: string
-    text: string
-  }> = []
   /** 已收到终态（idle/completed/cancelled/error）的回合：流式光标要收敛 */
   const closedTurns = new Set<string>()
 
@@ -256,8 +248,15 @@ export function buildRemoteTimeline(events: MobileBridgeEvent[]): RemoteTimeline
       if (content.length === 0 && event.mode !== 'complete') continue
       // 与本地 MessageBuilder 一致：isFinal 是回合收尾，不因带 segmentId 变成新分段。
       // Codex 收尾使用独立 segmentId；按分段渲染会把已输出的正文再画一遍。
+      //
+      // 就地对账（在收尾自己的 seq 位置）：spark-engine 每一步 assistant.completed
+      // 都发 isFinal=true，而不是回合级一条。若攒到最后统一对账，第一步的收尾面对
+      // 的是「全部 N 段」，拼接/末段/前缀三条规则全部不中，走进「收敛成一条」把
+      // 中间正文段清空——回合结束后界面只剩最后一段总结。按 seq 就地处理时，每条
+      // 收尾只面对它之前的分段，逐步收尾逐条命中丢弃规则；Claude/Codex 每回合只有
+      // 一条收尾且 seq 最大，就地对账与统一对账结果一致。
       if (event.type === 'assistant_message' && event.isFinal === true) {
-        turnFinals.push({
+        reconcileTurnFinal(items, {
           turnId: event.turnId,
           id: event.id,
           seq: event.seq,
@@ -358,7 +357,6 @@ export function buildRemoteTimeline(events: MobileBridgeEvent[]): RemoteTimeline
     }
   }
 
-  for (const final of turnFinals) reconcileTurnFinal(items, final)
   const orderedItems = sortTimelineItems(items)
   settleStreaming(orderedItems, closedTurns)
 
@@ -380,6 +378,11 @@ function sortTimelineItems(items: RemoteTimelineItem[]): RemoteTimelineItem[] {
  *   4. 内容对不上（分段缺失/漂移）→ 内容正确性优先，收敛成一条。
  * 没有该回合的分段时（历史只有收尾消息或分段被分页截掉）直接落一条；跨回合
  * 的相同正文不能视为重复。
+ *
+ * 在收尾消息自身的 seq 位置被调用（见 buildRemoteTimeline 内的拦截点）：
+ * 只能看到 seq 更早的分段。pushStandalone 只在数组尾部追加、其余仅原地改字段，
+ * 不破坏主循环里 textIndex/toolIndex 记录的下标；最终顺序由 sortTimelineItems
+ * 按 seq 兜底。
  */
 function reconcileTurnFinal(
   items: RemoteTimelineItem[],

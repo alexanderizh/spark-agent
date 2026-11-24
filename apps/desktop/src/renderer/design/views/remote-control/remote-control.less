@@ -2878,65 +2878,13 @@
   color: var(--text-muted, #8d8a86);
 }
 
-.rc-queue-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 20px;
-  margin-bottom: 3px;
-  font-size: var(--font-xs, 12px);
-}
-
-.rc-queue-title {
+/* 队列已暂停徽标：独立于本地 QueuedTaskList 的头部之上 */
+.rc-queue-paused {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-width: 0;
-  color: var(--text, #23231f);
-  font-weight: 550;
-}
-
-.rc-queue-paused {
-  flex: none;
+  margin-bottom: 3px;
   color: var(--warning, #b7791f);
-}
-
-.rc-queue-list {
-  max-height: 116px;
-  overflow-y: auto;
-}
-
-.rc-queue-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-height: 25px;
-  padding: 4px 0;
-  border-top: 1px solid color-mix(in srgb, var(--divider, #efede8) 62%, transparent);
   font-size: var(--font-xs, 12px);
-}
-
-.rc-queue-index {
-  flex: none;
-  width: 14px;
-  color: var(--text-faint, #9b9489);
-  font-variant-numeric: tabular-nums;
-}
-
-.rc-queue-message {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  color: var(--text-muted, #8d8a86);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rc-queue-attachments {
-  flex: none;
-  color: var(--text-faint, #9b9489);
-  font-size: var(--font-2xs, 11px);
 }
 
 .rc-composer-body {

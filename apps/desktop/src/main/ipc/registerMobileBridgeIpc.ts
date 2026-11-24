@@ -1087,6 +1087,17 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
 
     getSessionQueue: async (sessionId) => deps.getSessionService().getQueueState({ sessionId }),
 
+    cancelQueuedTurn: async (sessionId, turnId) =>
+      deps.getSessionService().cancelQueuedTurn({ sessionId, turnId }),
+
+    clearQueuedTurns: async (sessionId) => deps.getSessionService().clearQueuedTurns({ sessionId }),
+
+    reorderQueuedTurns: async (sessionId, turnIds) =>
+      deps.getSessionService().reorderQueuedTurns({ sessionId, turnIds }),
+
+    sendQueuedTurnNow: async (sessionId, turnId) =>
+      deps.getSessionService().sendQueuedTurnNow({ sessionId, turnId }),
+
     cancelTurn: async (sessionId) => {
       await deps.getSessionService().cancelTurn(sessionId)
     },
