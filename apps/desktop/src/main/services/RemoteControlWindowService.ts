@@ -9,9 +9,9 @@ import electron from 'electron'
 import type { BrowserWindowConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { createLogger } from '@spark/shared'
-import type { RemoteControlWindowOpenResponse } from '@spark/protocol'
+import type { RemoteControlWindowOpenResponse, RemoteControlWindowState } from '@spark/protocol'
 import { registerAppShutdownCleanup } from '../app-shutdown.js'
-import { registerAppWindow } from '../windows/index.js'
+import { registerAppWindow, sendToMainWindow } from '../windows/index.js'
 import { buildWindowChromeOptions } from '../window-chrome.js'
 import { typedIpcHandle } from '../ipc/typed-ipc.js'
 
@@ -48,11 +48,20 @@ function buildRemoteControlWindowUrl(rendererUrl: string): string {
 
 export class RemoteControlWindowService {
   private win: RemoteControlBrowserWindow | null = null
+  private stateRevision = 0
+  private windowOpen = false
 
   constructor(private readonly deps: RemoteControlWindowServiceDeps) {}
 
   getWindow(): RemoteControlBrowserWindow | null {
     return this.win != null && !this.win.isDestroyed() ? this.win : null
+  }
+
+  getState(): RemoteControlWindowState {
+    return {
+      open: this.windowOpen && this.getWindow() != null,
+      revision: this.stateRevision,
+    }
   }
 
   async open(): Promise<RemoteControlWindowOpenResponse> {
@@ -69,7 +78,9 @@ export class RemoteControlWindowService {
       if (hasPreventDefault(event)) event.preventDefault()
     })
     win.on('closed', () => {
-      if (this.win === win) this.win = null
+      if (this.win !== win) return
+      this.win = null
+      this.setWindowOpen(false, win.id)
     })
     registerAppWindow(win as never)
     this.win = win
@@ -79,17 +90,21 @@ export class RemoteControlWindowService {
         const rendererUrl = this.deps.getRendererUrl()
         if (rendererUrl != null) {
           await win.loadURL(buildRemoteControlWindowUrl(rendererUrl))
-          win.show()
-          win.focus()
-          return { success: true, windowId: win.id }
+        } else {
+          await win.loadFile(this.deps.getRendererFile(), {
+            query: { window: 'remote-control' },
+          })
         }
+      } else {
+        await win.loadFile(this.deps.getRendererFile(), {
+          query: { window: 'remote-control' },
+        })
       }
 
-      await win.loadFile(this.deps.getRendererFile(), {
-        query: { window: 'remote-control' },
-      })
+      if (win.isDestroyed() || this.win !== win) return { success: false }
       win.show()
       win.focus()
+      this.setWindowOpen(true, win.id)
       return { success: true, windowId: win.id }
     } catch (error) {
       log.error(`Failed to load remote control window: ${String(error)}`)
@@ -104,7 +119,17 @@ export class RemoteControlWindowService {
     if (win == null || win.isDestroyed()) return false
     win.destroy()
     this.win = null
+    this.setWindowOpen(false, win.id)
     return true
+  }
+
+  private setWindowOpen(open: boolean, windowId: number): void {
+    if (this.windowOpen === open) return
+    this.windowOpen = open
+    this.stateRevision += 1
+    const state = this.getState()
+    sendToMainWindow('stream:remote-control:window-state', state)
+    log.info('Remote control window state changed', { ...state, windowId })
   }
 }
 
@@ -161,7 +186,13 @@ export function getRemoteControlWindowService(): RemoteControlWindowService {
 
 /** IPC 注册独立导出：ipc/index.ts 已过万行，不再向其堆叠 handler 逻辑 */
 export function registerRemoteControlWindowIpc(): void {
-  typedIpcHandle('remote-control:window:open', async (): Promise<RemoteControlWindowOpenResponse> => {
-    return getRemoteControlWindowService().open()
+  typedIpcHandle(
+    'remote-control:window:open',
+    async (): Promise<RemoteControlWindowOpenResponse> => {
+      return getRemoteControlWindowService().open()
+    },
+  )
+  typedIpcHandle('remote-control:window:get-state', async () => {
+    return getRemoteControlWindowService().getState()
   })
 }

@@ -269,6 +269,36 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
     expect(pageErrors).toEqual([])
   })
 
+  test('moves remote control into its window and restores it after close', async ({}, testInfo) => {
+    test.setTimeout(60_000)
+    await dismissOnboarding(page)
+    await page.getByRole('button', { name: '远程', exact: true }).click()
+    await expect(page.getByRole('button', { name: '在独立窗口中打开' })).toBeVisible()
+
+    const capabilityDialog = page.getByRole('dialog', { name: '安装可选功能' })
+    if (await capabilityDialog.isVisible().catch(() => false)) {
+      await capabilityDialog.getByRole('button', { name: /^稍\s*后$/ }).click()
+    }
+    await expect(capabilityDialog).toBeHidden()
+
+    const remoteWindowPromise = electronApp.waitForEvent('window')
+    await page.getByRole('button', { name: '在独立窗口中打开' }).click()
+    const remoteWindow = await remoteWindowPromise
+    remoteWindow.on('pageerror', (error) => pageErrors.push(error))
+    await remoteWindow.waitForLoadState('domcontentloaded')
+
+    await expect(remoteWindow.locator('.remote-control')).toBeVisible()
+    await expect(page.getByRole('status')).toHaveText('已在独立窗口打开')
+    await expect(page.locator('.remote-control')).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath('remote-main-window-notice.png') })
+    await remoteWindow.screenshot({ path: testInfo.outputPath('remote-standalone-window.png') })
+
+    await remoteWindow.close()
+    await expect(page.locator('.remote-control')).toBeVisible()
+    await expect(page.getByRole('button', { name: '在独立窗口中打开' })).toBeVisible()
+    expect(pageErrors).toEqual([])
+  })
+
   test('shows Codex Runtime diagnostics and safely restarts only idle runtimes', async ({
     browserName: _browserName,
   }, testInfo) => {

@@ -7479,6 +7479,11 @@ export interface RemoteControlWindowOpenResponse {
   success: boolean
   windowId?: number
 }
+export interface RemoteControlWindowState {
+  open: boolean
+  /** Monotonically increasing within the main process, for resolving snapshot/event races. */
+  revision: number
+}
 
 /** `canvas:project:delete` — 软删除（status=deleted）或物理删除项目+快照 */
 export interface CanvasProjectDeleteRequest {
@@ -8350,6 +8355,7 @@ export interface IpcChannelMap
   ]
   'quick-create:window:open': [QuickCreateWindowOpenRequest, QuickCreateWindowOpenResponse]
   'remote-control:window:open': [RemoteControlWindowOpenRequest, RemoteControlWindowOpenResponse]
+  'remote-control:window:get-state': [Record<string, never>, RemoteControlWindowState]
   'canvas:project:delete': [CanvasProjectDeleteRequest, CanvasProjectDeleteResponse]
   'canvas:project:update-cover': [CanvasProjectUpdateCoverRequest, CanvasProjectUpdateCoverResponse]
   'canvas:project:default-root': [CanvasProjectDefaultRootRequest, CanvasProjectDefaultRootResponse]
@@ -8940,6 +8946,8 @@ export interface IpcStreamChannelMap extends RemoteAgentIpcStreamChannelMap {
   'stream:workflow:tool-call': WorkflowToolCallEvent
   /** 独立画布窗口收到系统关闭请求，renderer 应先弹出画布离开守卫。 */
   'stream:canvas-window:close-request': CanvasWindowCloseRequestPayload
+  /** 远程控制独立窗口状态变化，仅推送给主窗口 renderer。 */
+  'stream:remote-control:window-state': RemoteControlWindowState
   /** Remote connection config/runtime changed */
   'stream:remote:changed': {
     reason: 'connection-saved' | 'connection-deleted' | 'pairing-updated' | 'runtime-updated'

@@ -79,6 +79,7 @@ import { getSidebarAutoSyncAction } from './sidebarAutoSync'
 import { shouldOverlaySidebar } from './sidebarResponsiveLayout'
 import { resolveSidebarNavVisibility } from './sidebarNavVisibility'
 import { resolveSidebarActiveWorkspaceId } from './design/sidebar-session-routing'
+import { useRemoteControlWindowState } from './design/views/remote-control/useRemoteControlWindowState'
 import { PressureNoticeHost } from './design/settings-performance/PressureNoticeHost'
 import { ComputerKillSwitchNoticeHost } from './design/components/ComputerKillSwitchNoticeHost'
 import { DreamNoticeHost } from './design/components/DreamNoticeHost'
@@ -1386,6 +1387,7 @@ function Shell() {
   const auth = useAuth()
   const { t: tr } = useI18n()
   const { toast } = useToast()
+  const remoteControlWindowOpen = useRemoteControlWindowState()
   const scaleRef = useRef<HTMLDivElement>(null)
   const [wikiCandidateReviewRequest, setWikiCandidateReviewRequest] = useState(0)
   const [wikiCandidateReviewHandled, setWikiCandidateReviewHandled] = useState(0)
@@ -2113,7 +2115,14 @@ function Shell() {
       case 'account-center':
         return <AccountCenterView />
       case 'remote-control':
-        return <RemoteControlView />
+        return remoteControlWindowOpen ? (
+          <div className="remote-control-window-notice" role="status">
+            <Icons.ExternalLink size={20} aria-hidden="true" />
+            <span>已在独立窗口打开</span>
+          </div>
+        ) : (
+          <RemoteControlView />
+        )
       case 'lobe-preview':
         return <LobePreviewView />
       case 'onboarding':
@@ -2156,7 +2165,7 @@ function Shell() {
    * 并且内置侧栏展开按钮。否则侧栏折叠时上面会多出一条 52px 的空 shell-titlebar，
    * 把视图顶下去一大截（用户反馈「离顶部 header 太远」就是这条）。
    */
-  const remoteOwnHeader = t.view === 'remote-control'
+  const remoteOwnHeader = t.view === 'remote-control' && !remoteControlWindowOpen
   const viewOwnsTitlebar = canvasOwnHeader || remoteOwnHeader
   // Keep the shared drag strip, but allow full-bleed views to extend their
   // surface into it. This preserves the native-window hit area while avoiding
