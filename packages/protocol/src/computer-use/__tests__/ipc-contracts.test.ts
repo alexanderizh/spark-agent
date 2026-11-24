@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { assert, describe, expect, it } from 'vitest'
 import * as protocol from '../../index.js'
 
 interface RuntimeSchema {
@@ -88,6 +88,22 @@ describe('computer use IPC schemas', () => {
     expect(registry['computer-use:approve-action']).toBeDefined()
     expect(registry['app-snapshot:capture-frontmost']).toBeDefined()
     expect(registry['app-snapshot:delete']).toBeDefined()
+  })
+
+  it.each([
+    'computer-use:get-capabilities',
+    'computer-use:diagnose-native-host',
+    'computer-use:get-settings',
+    'computer-use:list-apps',
+    'app-snapshot:get-capabilities',
+  ])('accepts a missing or empty request for %s', (channel) => {
+    const schema = exportedRegistry('IpcSchemaRegistry')[channel]
+    assert(schema, `${channel} must have a request schema`)
+
+    expect(schema.safeParse(undefined).success).toBe(true)
+    expect(schema.safeParse({}).success).toBe(true)
+    expect(schema.safeParse({ unexpected: true }).success).toBe(false)
+    expect(schema.safeParse(null).success).toBe(false)
   })
 
   it('binds approvals to the displayed action and target digests', () => {

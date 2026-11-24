@@ -24,7 +24,8 @@ import {
 import type { ComputerSession } from './session.js'
 import type { VerificationSpec } from './verification.js'
 
-const EmptyRequestSchema = z.object({}).strict()
+// No-argument IPC callers send undefined. Preserve support for an explicit empty object.
+const EmptyRequestSchema = z.object({}).strict().optional()
 const ComputerSessionIdRequestSchema = z
   .object({ computerSessionId: ComputerUseIdentifierSchema })
   .strict()
