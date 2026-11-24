@@ -2,6 +2,8 @@
  * AuthService 内部类型
  */
 
+import type { DeepLinkScheme } from '../../build-flavor.js'
+
 /** edu-server 统一响应格式 */
 export interface EduApiResult<T = unknown> {
   code: number
@@ -26,6 +28,7 @@ export interface AuthServiceConfig {
   keytarService: string
   /** 网络请求超时（毫秒）*/
   requestTimeoutMs?: number
+  desktopLoginScheme?: DeepLinkScheme
 }
 
 /** AuthService 状态快照 */

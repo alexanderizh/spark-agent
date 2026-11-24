@@ -12,9 +12,16 @@
  * 安全约定：deep link 属于不可信输入（浏览器历史、Windows 命令行 argv、
  * 恶意程序抢注同协议均可构造），因此每个 host 只接受严格格式的参数，
  * 并且**绝不承载任何凭证**（见桌面端浏览器登录设计：只传 state）。
+ *
+ * scheme 由调用方按当前实例的打包身份传入（见 build-flavor.ts）：生产安装包为
+ * spark-agent，dev 打包产物为 spark-agent-dev。不传即生产行为；非法 scheme 只会
+ * 让所有链接解析落空，绝不会放宽校验。
  */
 
-const PROTOCOL = 'spark-agent:'
+import { PRODUCTION_DEEP_LINK_SCHEME } from '../build-flavor.js'
+
+/** RFC 3986 scheme */
+const SCHEME_RE = /^[a-z][a-z0-9+.-]*$/
 const MAX_CODE_LENGTH = 256
 /** state：与服务端 32~128 个十六进制字符的约定一致（桌面端生成 64 字符） */
 const MAX_STATE_LENGTH = 128
@@ -29,10 +36,10 @@ function hasUnsafeCharacters(value: string): boolean {
   return /[\s\p{Cc}]/u.test(value)
 }
 
-function parseTarget(value: string): URL | null {
+function parseTarget(value: string, scheme: string): URL | null {
   try {
     const target = new URL(value)
-    return target.protocol === PROTOCOL ? target : null
+    return target.protocol === `${scheme}:` ? target : null
   } catch {
     return null
   }
@@ -52,8 +59,12 @@ function parseAuthCallback(target: URL): DeepLinkRoute | null {
   return { kind: 'auth-callback', state }
 }
 
-export function parseDeepLinkRoute(value: string): DeepLinkRoute | null {
-  const target = parseTarget(value)
+export function parseDeepLinkRoute(
+  value: string,
+  scheme: string = PRODUCTION_DEEP_LINK_SCHEME,
+): DeepLinkRoute | null {
+  if (!SCHEME_RE.test(scheme)) return null
+  const target = parseTarget(value, scheme)
   if (!target) return null
   switch (target.hostname) {
     case 'redeem':
@@ -65,9 +76,12 @@ export function parseDeepLinkRoute(value: string): DeepLinkRoute | null {
   }
 }
 
-export function findDeepLinkRoute(values: readonly string[]): DeepLinkRoute | null {
+export function findDeepLinkRoute(
+  values: readonly string[],
+  scheme: string = PRODUCTION_DEEP_LINK_SCHEME,
+): DeepLinkRoute | null {
   for (const value of values) {
-    const route = parseDeepLinkRoute(value)
+    const route = parseDeepLinkRoute(value, scheme)
     if (route) return route
   }
   return null

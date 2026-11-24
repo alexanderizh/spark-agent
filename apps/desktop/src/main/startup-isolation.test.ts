@@ -4,12 +4,14 @@ import {
   resolveAuthKeytarService,
   shouldEnableSingleInstanceLock,
   shouldRegisterDefaultProtocolClient,
+  shouldRunInstallArtifactHousekeeping,
 } from './startup-isolation.js'
 
 describe('startup isolation configuration', () => {
   it('keeps production startup protections enabled by default', () => {
     expect(shouldEnableSingleInstanceLock(false, {})).toBe(true)
     expect(shouldRegisterDefaultProtocolClient({})).toBe(true)
+    expect(shouldRunInstallArtifactHousekeeping({})).toBe(true)
     expect(resolveAuthKeytarService({})).toBe('SparkAgent.CloudAuth')
   })
 
@@ -17,16 +19,23 @@ describe('startup isolation configuration', () => {
     const env = {
       SPARK_ALLOW_MULTIPLE_INSTANCES: '1',
       SPARK_SKIP_PROTOCOL_REGISTRATION: '1',
+      SPARK_SKIP_INSTALL_HOUSEKEEPING: '1',
       SPARK_AUTH_KEYTAR_SERVICE: ' SparkAgent.CloudAuth.E2E.123 ',
     }
 
     expect(shouldEnableSingleInstanceLock(false, env)).toBe(false)
     expect(shouldRegisterDefaultProtocolClient(env)).toBe(false)
+    expect(shouldRunInstallArtifactHousekeeping(env)).toBe(false)
     expect(resolveAuthKeytarService(env)).toBe('SparkAgent.CloudAuth.E2E.123')
   })
 
   it('continues to disable the lock for development', () => {
     expect(shouldEnableSingleInstanceLock(true, {})).toBe(false)
+  })
+
+  it('gives packaged dev its own keytar service by default', () => {
+    expect(resolveAuthKeytarService({}, true)).toBe('SparkAgent.CloudAuth.Dev')
+    expect(resolveAuthKeytarService({ SPARK_AUTH_KEYTAR_SERVICE: 'Explicit' }, true)).toBe('Explicit')
   })
 
   it('ignores blank keytar service overrides', () => {

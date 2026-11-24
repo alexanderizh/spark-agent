@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthDesktopLoginStatusEvent } from '@spark/protocol'
+import { DEV_DEEP_LINK_SCHEME, type DeepLinkScheme } from '../../build-flavor.js'
 import { DesktopBrowserLogin, DesktopLoginUnavailableError } from './DesktopBrowserLogin.js'
 
 const TTL_MS = 300_000
@@ -8,6 +9,7 @@ const POLL_INTERVAL_MS = 2_000
 function createHarness(
   overrides: {
     webLoginUrl?: string | null
+    callbackScheme?: DeepLinkScheme
     opened?: boolean
     poll?: (state: string) => Promise<'pending' | 'bound' | 'expired'>
     exchange?: (state: string, verifier: string) => Promise<void>
@@ -20,6 +22,7 @@ function createHarness(
   const login = new DesktopBrowserLogin({
     resolveWebLoginUrl: async () =>
       'webLoginUrl' in overrides ? overrides.webLoginUrl! : 'https://web.example/login',
+    ...(overrides.callbackScheme == null ? {} : { callbackScheme: overrides.callbackScheme }),
     openExternal: async (url) => {
       openedUrls.push(url)
       return overrides.opened ?? true
@@ -72,6 +75,7 @@ describe('DesktopBrowserLogin', () => {
 
     const { desktop, state, challenge } = parseLaunchedUrl(first(h.openedUrls))
     expect(desktop).toBe('1')
+    expect(new URL(result.webLoginUrl).searchParams.get('callback_scheme')).toBe('spark-agent')
     expect(state).toMatch(/^[0-9a-f]{64}$/)
     expect(challenge).toMatch(/^[0-9a-f]{64}$/)
     expect(result.webLoginUrl).toBe(first(h.openedUrls))
@@ -87,6 +91,16 @@ describe('DesktopBrowserLogin', () => {
     const target = new URL(first(h.openedUrls))
     expect(target.pathname).toBe('/login')
     expect(target.searchParams.get('sso')).toBe('1')
+    h.login.shutdown()
+  })
+
+  it('requests the dev callback scheme and overrides URL defaults', async () => {
+    const h = createHarness({
+      webLoginUrl: 'https://web.example/login?callback_scheme=spark-agent',
+      callbackScheme: DEV_DEEP_LINK_SCHEME,
+    })
+    const { webLoginUrl } = await h.login.start()
+    expect(new URL(webLoginUrl).searchParams.getAll('callback_scheme')).toEqual(['spark-agent-dev'])
     h.login.shutdown()
   })
 

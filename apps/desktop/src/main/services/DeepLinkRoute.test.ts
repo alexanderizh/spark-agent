@@ -56,4 +56,35 @@ describe('deep link routes', () => {
     })
     expect(findDeepLinkRoute(['--flag'])).toBeNull()
   })
+
+  it('honours the dev package scheme only when it is the configured scheme', () => {
+    const devLink = 'spark-agent-dev://redeem?code=SPARK-CODE-123'
+    // 默认（生产）scheme 下，dev 链接与其他陌生协议一样被忽略
+    expect(parseDeepLinkRoute(devLink)).toBeNull()
+    expect(findDeepLinkRoute([devLink])).toBeNull()
+    expect(parseDeepLinkRoute(devLink, 'spark-agent-dev')).toEqual({
+      kind: 'redeem',
+      code: 'SPARK-CODE-123',
+    })
+    expect(findDeepLinkRoute(['--flag', devLink], 'spark-agent-dev')).toEqual({
+      kind: 'redeem',
+      code: 'SPARK-CODE-123',
+    })
+  })
+
+  it('stops responding to the production scheme once the dev scheme is configured', () => {
+    // dev 打包产物与生产安装包抢同一条 deep link 的根因就在这里
+    expect(
+      parseDeepLinkRoute('spark-agent://redeem?code=SPARK-CODE-123', 'spark-agent-dev'),
+    ).toBeNull()
+    expect(
+      parseDeepLinkRoute(`spark-agent://auth-callback?state=${STATE}`, 'spark-agent-dev'),
+    ).toBeNull()
+  })
+
+  it('fails closed on a malformed scheme override', () => {
+    for (const scheme of ['', 'spark agent', 'Spark-Agent', 'spark-agent:', 'a/b']) {
+      expect(parseDeepLinkRoute('spark-agent://redeem?code=SPARK-CODE-123', scheme)).toBeNull()
+    }
+  })
 })

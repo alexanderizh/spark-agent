@@ -10,6 +10,7 @@
  * 说明：
  *   - 这套实现不依赖 electron-updater 的 zip / yml 元数据解析。
  *   - macOS 采用 dmg 安装镜像：下载完成后打开镜像并退出当前实例，由用户把新 .app 拖入替换。
+ *     新版本启动后由 InstallArtifactHousekeeping 注销并弹出已安装完成的残留镜像。
  *   - Windows 采用 exe 安装器，下载完成后会启动安装器并退出当前应用。
  *   - 两端在启动安装包后都会退出当前实例（否则旧实例残留会导致安装无法进行）。
  */
@@ -23,6 +24,8 @@ import { basename, join, resolve } from 'node:path'
 import { app, powerMonitor } from 'electron'
 import { createLogger } from '@spark/shared'
 import type { UpdateStatus, UpdateInfo, UpdateProgressInfo, UpdateChannel } from '@spark/protocol'
+import { isDevFlavoredPackage } from '../build-flavor.js'
+import { recordMacInstaller } from './MacInstallerReceipt.js'
 import { pruneUpdaterCacheDirs } from './updaterCache.js'
 
 const log = createLogger('update-service')
@@ -546,7 +549,7 @@ export class UpdateService {
     }
   }
 
-  constructor() {
+  constructor(private readonly isDevPackage = false) {
     this.status = {
       state: 'idle',
       currentVersion: app.getVersion(),
@@ -576,6 +579,8 @@ export class UpdateService {
     if (options.lastCheckedAt != null) {
       this.status.lastCheckedAt = options.lastCheckedAt
     }
+
+    if (this.isDevPackage) return
 
     const loadedConfig = loadReleaseFeedConfig()
     this.releaseFeedConfig = loadedConfig.config
@@ -610,7 +615,7 @@ export class UpdateService {
   }
 
   startAutoCheck(): void {
-    if (!this.preferences.autoCheck) {
+    if (this.isDevPackage || !this.preferences.autoCheck) {
       this.stopAutoCheck()
       return
     }
@@ -629,6 +634,7 @@ export class UpdateService {
   }
 
   async checkForUpdates(reason: UpdateCheckReason = 'manual'): Promise<UpdateStatus> {
+    if (this.isDevPackage) return this.getStatus()
     if (this.status.state === 'checking' || this.status.state === 'downloading') {
       return this.status
     }
@@ -1161,7 +1167,15 @@ export class UpdateService {
   private launchInstaller(filePath: string): boolean {
     try {
       if (process.platform === 'darwin') {
-        const child = spawn('open', [filePath], {
+        let imagePath = filePath
+        if (app.isPackaged && this.releaseInfo != null) {
+          try {
+            imagePath = recordMacInstaller(app.getPath('userData'), filePath, this.releaseInfo.version)
+          } catch (error) {
+            log.warn(`Could not record macOS installer for cleanup: ${String(error)}`)
+          }
+        }
+        const child = spawn('/usr/bin/open', [imagePath], {
           detached: true,
           stdio: 'ignore',
         })
@@ -1196,7 +1210,7 @@ let _instance: UpdateService | null = null
 
 export function getUpdateService(): UpdateService {
   if (_instance == null) {
-    _instance = new UpdateService()
+    _instance = new UpdateService(isDevFlavoredPackage(app.getName()))
   }
   return _instance
 }

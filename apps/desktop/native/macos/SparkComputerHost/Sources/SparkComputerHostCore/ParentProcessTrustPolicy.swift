@@ -47,7 +47,11 @@ public enum ParentProcessTrustError: Error, Equatable, Sendable {
 
 public enum ParentProcessTrustPolicy {
   public static let hostIdentifier = "com.spark-agent.desktop.computer-host"
+  #if SPARK_COMPUTER_DEV_PARENT
+  public static let parentIdentifier = "com.spark-agent.desktop.dev"
+  #else
   public static let parentIdentifier = "com.spark-agent.desktop"
+  #endif
 
   public static func validate(
     host: ProcessCodeIdentity,

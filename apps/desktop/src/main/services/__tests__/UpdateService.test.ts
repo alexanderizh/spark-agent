@@ -91,6 +91,15 @@ describe('UpdateService automatic checks', () => {
     rmSync(mocks.state.userDataPath, { recursive: true, force: true })
   })
 
+  it('does not poll or offer production updates for a dev package', async () => {
+    service = new UpdateService(true)
+    service.initialize({ preferences: { autoCheck: true } })
+    service.setAutoCheck(true)
+    expect((await service.checkForUpdates()).state).toBe('idle')
+    await vi.advanceTimersByTimeAsync(THIRTY_MINUTES_MS)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('checks on startup and continues every 30 minutes when jitter is neutral', async () => {
     fetchMock.mockImplementation(async () => versionResponse())
     service = new UpdateService()

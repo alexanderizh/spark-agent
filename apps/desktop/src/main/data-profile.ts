@@ -15,9 +15,9 @@
  *   - SPARK_DATA_PROFILE=production 可让 dev 运行时强制使用生产目录，
  *     仅在需要主动检查生产数据时显式使用。
  *
- * 本地打 dev 安装包时请使用 package.json 中的 *:dev 脚本（通过
- * --config.extraMetadata.name=@spark/desktop-dev 修改包内 name，使 userData 天然隔离，
- * 不触碰 productName / 可执行名 / appId / 安装包名）。
+ * 本地打 dev 安装包时请使用 package.json 中的 *:dev 脚本（electron-builder.dev.yml
+ * 把包内 name 改为 @spark/desktop-dev，使 userData 天然隔离；同时分离 productName、
+ * 显示名、bundle ID 和 deep link scheme，详见 build-flavor.ts）。
  */
 
 import { basename, dirname, join } from 'path'

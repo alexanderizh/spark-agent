@@ -78,6 +78,7 @@ export class AuthService {
     })
     this.desktopLogin = new DesktopBrowserLogin({
       resolveWebLoginUrl: () => this.resolveWebLoginUrl(),
+      ...(config.desktopLoginScheme === undefined ? {} : { callbackScheme: config.desktopLoginScheme }),
       openExternal: (url) => this.openInSystemBrowser(url),
       pollBinding: (state) => this.pollDesktopLoginBinding(state),
       exchange: (state, codeVerifier) => this.exchangeDesktopLogin(state, codeVerifier),

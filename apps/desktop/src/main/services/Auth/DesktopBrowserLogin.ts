@@ -24,6 +24,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import { createLogger } from '@spark/shared'
 import type { AuthDesktopLoginPhase, AuthDesktopLoginStatusEvent } from '@spark/protocol'
 
+import { PRODUCTION_DEEP_LINK_SCHEME, type DeepLinkScheme } from '../../build-flavor.js'
+
 const log = createLogger('auth:desktop-login')
 
 /** 与服务端 Redis 条目 TTL 保持一致：整个授权窗口 5 分钟 */
@@ -33,6 +35,7 @@ const DEFAULT_POLL_INTERVAL_MS = 2_000
 export interface DesktopLoginDeps {
   /** 解析网页登录页地址（服务端下发优先）；返回 null 表示未配置 */
   resolveWebLoginUrl: () => Promise<string | null>
+  callbackScheme?: DeepLinkScheme
   /** 打开系统浏览器；返回 false 表示被安全策略拦截或打开失败 */
   openExternal: (url: string) => Promise<boolean>
   /** 轮询服务端是否已完成绑定（只读、非消费、不返回凭证） */
@@ -102,6 +105,7 @@ export class DesktopBrowserLogin {
     target.searchParams.set('desktop', '1')
     target.searchParams.set('state', state)
     target.searchParams.set('challenge', codeChallenge)
+    target.searchParams.set('callback_scheme', this.deps.callbackScheme ?? PRODUCTION_DEEP_LINK_SCHEME)
 
     const opened = await this.deps.openExternal(target.toString())
     if (!opened) {

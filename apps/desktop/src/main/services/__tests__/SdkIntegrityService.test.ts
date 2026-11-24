@@ -1,3 +1,4 @@
+import { effectiveBuilderFileFilters, loadEffectiveBuilderConfig } from '../../../../e2e/effective-builder-config.js'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -195,10 +196,10 @@ describe('SdkIntegrityService', () => {
     expect(pkg.dependencies?.['@openai/codex-sdk']).toBe('0.167.0')
   })
 
-  it('excludes Codex native vendor binaries from Electron asar archives', () => {
-    const builderConfig = readFileSync(join(process.cwd(), 'electron-builder.yml'), 'utf-8')
+  it('excludes Codex native vendor binaries from Electron asar archives', async () => {
+    const builderConfig = effectiveBuilderFileFilters(await loadEffectiveBuilderConfig())
 
-    expect(builderConfig).toContain("'!**/node_modules/@openai/codex-*/vendor/**'")
-    expect(builderConfig).not.toContain("'**/node_modules/@openai/codex-*/vendor/**/bin/codex'")
+    expect(builderConfig).toContain('!**/node_modules/@openai/codex-*/vendor/**')
+    expect(builderConfig).not.toContain('**/node_modules/@openai/codex-*/vendor/**/bin/codex')
   })
 })

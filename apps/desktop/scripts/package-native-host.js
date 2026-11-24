@@ -87,6 +87,7 @@ async function packageMacNativeHost(context) {
 
   const packageRoot = path.resolve(__dirname, '../native/macos/SparkComputerHost')
   const swiftArchitecture = architecture === 'x64' ? 'x86_64' : 'arm64'
+  const swiftArguments = macNativeHostSwiftArguments(packageRoot, context.packager.appInfo.id, localTrust)
   await runCommand(
     'swift',
     [
@@ -95,7 +96,7 @@ async function packageMacNativeHost(context) {
       'release',
       '--arch',
       swiftArchitecture,
-      ...(localTrust ? ['-Xswiftc', '-DSPARK_COMPUTER_LOCAL_TRUST'] : []),
+      ...swiftArguments,
     ],
     {
       cwd: packageRoot,
@@ -105,6 +106,7 @@ async function packageMacNativeHost(context) {
     packageRoot,
     configuration: 'release',
     swiftArchitecture,
+    swiftArguments,
   })
   const appName = context.packager.appInfo.productFilename
   const appPath = path.join(context.appOutDir, `${appName}.app`)
@@ -164,6 +166,19 @@ async function packageMacNativeHost(context) {
     `[after-pack] Native Host: packaged ${architecture}, trust=${localTrust ? 'local' : 'signed'}, sha256=${manifest.sha256}`,
   )
   return { packaged: true, destinationExecutable, manifestPath, manifest, buildInfoPath, buildInfo }
+}
+
+function macNativeHostSwiftArguments(packageRoot, appId, localTrust) {
+  const trustArguments = localTrust ? ['-Xswiftc', '-DSPARK_COMPUTER_LOCAL_TRUST'] : []
+  if (appId === 'com.spark-agent.desktop') return trustArguments
+  if (appId !== 'com.spark-agent.desktop.dev') {
+    throw new Error(`Unsupported macOS app identity for Native Host: ${appId}`)
+  }
+  return [
+    '--scratch-path', path.join(packageRoot, '.build', 'dev-parent'),
+    '-Xswiftc', '-DSPARK_COMPUTER_DEV_PARENT',
+    ...trustArguments,
+  ]
 }
 
 function macNativeHostDestinationPaths(appPath, architecture) {
@@ -319,4 +334,5 @@ module.exports = {
   parseCodeSignatureOutput,
   resolveMacNativeHostTrustMode,
   macNativeHostDestinationPaths,
+  macNativeHostSwiftArguments,
 }

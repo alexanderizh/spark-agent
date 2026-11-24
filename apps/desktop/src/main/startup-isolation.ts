@@ -13,6 +13,14 @@ export function shouldRegisterDefaultProtocolClient(env: StartupEnvironment): bo
   return env.SPARK_SKIP_PROTOCOL_REGISTRATION !== '1'
 }
 
-export function resolveAuthKeytarService(env: StartupEnvironment): string {
-  return env.SPARK_AUTH_KEYTAR_SERVICE?.trim() || DEFAULT_AUTH_KEYTAR_SERVICE
+/** 是否在启动后巡检并回收已安装完成的 dmg 安装镜像（见 services/InstallArtifactHousekeeping.ts）。 */
+export function shouldRunInstallArtifactHousekeeping(env: StartupEnvironment): boolean {
+  return env.SPARK_SKIP_INSTALL_HOUSEKEEPING !== '1'
+}
+
+export function resolveAuthKeytarService(env: StartupEnvironment, isDevPackage = false): string {
+  return (
+    env.SPARK_AUTH_KEYTAR_SERVICE?.trim() ||
+    (isDevPackage ? `${DEFAULT_AUTH_KEYTAR_SERVICE}.Dev` : DEFAULT_AUTH_KEYTAR_SERVICE)
+  )
 }

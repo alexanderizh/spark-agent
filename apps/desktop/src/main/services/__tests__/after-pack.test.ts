@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { effectiveBuilderFileFilters, loadEffectiveBuilderConfig } from '../../../../e2e/effective-builder-config.js'
 
 const {
   pruneMacElectronLocales,
@@ -60,6 +61,7 @@ const {
   parseCodeSignatureOutput,
   resolveMacNativeHostTrustMode,
   macNativeHostDestinationPaths,
+  macNativeHostSwiftArguments,
 } = require('../../../../scripts/package-native-host.js') as {
   createNativeHostManifest: (input: {
     executable: Buffer
@@ -75,6 +77,7 @@ const {
     teamIdentifier: string
   }
   resolveMacNativeHostTrustMode: (environment: NodeJS.ProcessEnv) => 'signed' | 'local' | 'auto'
+  macNativeHostSwiftArguments: (root: string, appId: string, local: boolean) => string[]
   macNativeHostDestinationPaths: (
     appPath: string,
     architecture: 'arm64' | 'x64',
@@ -244,14 +247,14 @@ describe('after-pack ONNX runtime pruning', () => {
     ).toBe(false)
   })
 
-  it('excludes the unused ONNX web runtime from production packaging', () => {
-    const config = readFileSync(join(__dirname, '../../../../electron-builder.yml'), 'utf8')
+  it('excludes the unused ONNX web runtime from production packaging', async () => {
+    const config = await loadEffectiveBuilderConfig()
 
-    expect(config).toContain("'!**/node_modules/onnxruntime-web/**'")
+    expect(effectiveBuilderFileFilters(config)).toContain('!**/node_modules/onnxruntime-web/**')
   })
 
-  it('keeps the optional depth runtime dependency closure out of the base package', () => {
-    const config = readFileSync(join(__dirname, '../../../../electron-builder.yml'), 'utf8')
+  it('keeps the optional depth runtime dependency closure out of the base package', async () => {
+    const config = await loadEffectiveBuilderConfig()
     const packageJson = JSON.parse(
       readFileSync(join(__dirname, '../../../../package.json'), 'utf8'),
     ) as {
@@ -259,28 +262,28 @@ describe('after-pack ONNX runtime pruning', () => {
       devDependencies?: Record<string, string>
     }
 
-    expect(config).toContain("'!**/node_modules/@huggingface/transformers/**'")
-    expect(config).toContain("'!**/node_modules/onnxruntime-node/**'")
+    expect(effectiveBuilderFileFilters(config)).toContain('!**/node_modules/@huggingface/transformers/**')
+    expect(effectiveBuilderFileFilters(config)).toContain('!**/node_modules/onnxruntime-node/**')
     expect(packageJson.dependencies).not.toHaveProperty('@huggingface/transformers')
     expect(packageJson.devDependencies).toHaveProperty('@huggingface/transformers', '4.2.0')
   })
 
-  it('configures the beforePack hook that filters foreign ONNX native runtimes', () => {
-    const config = readFileSync(join(__dirname, '../../../../electron-builder.yml'), 'utf8')
+  it('configures the beforePack hook that filters foreign ONNX native runtimes', async () => {
+    const config = await loadEffectiveBuilderConfig()
 
-    expect(config).toContain('beforePack: scripts/before-pack.js')
+    expect(config.beforePack).toBe('scripts/before-pack.js')
   })
 
-  it('excludes local Playwright output from release packaging', () => {
-    const config = readFileSync(join(__dirname, '../../../../electron-builder.yml'), 'utf8')
+  it('excludes local Playwright output from release packaging', async () => {
+    const config = await loadEffectiveBuilderConfig()
 
-    expect(config).toContain("'!output{,/**/*}'")
+    expect(effectiveBuilderFileFilters(config)).toContain('!output{,/**/*}')
   })
 
-  it('keeps optional Office Viewer assets out of the base package', () => {
-    const config = readFileSync(join(__dirname, '../../../../electron-builder.yml'), 'utf8')
+  it('keeps optional Office Viewer assets out of the base package', async () => {
+    const config = await loadEffectiveBuilderConfig()
 
-    expect(config).toContain("'!out/renderer/file-viewer{,/**/*}'")
+    expect(effectiveBuilderFileFilters(config)).toContain('!out/renderer/file-viewer{,/**/*}')
   })
 
   it('resolves the packaged resources path and target architecture', async () => {
@@ -815,4 +818,18 @@ TeamIdentifier=ABCDE12345
       ),
     ).rejects.toThrow('handshake failed')
   })
+})
+
+it('compiles Native Host for the resolved macOS parent identity', async () => {
+  const config = await loadEffectiveBuilderConfig('electron-builder.dev.yml')
+  if (config.appId == null) throw new Error('Dev bundle ID is missing')
+  const root = '/fixture'
+  expect(macNativeHostSwiftArguments(root, config.appId, false)).toEqual([
+    '--scratch-path',
+    join(root, '.build', 'dev-parent'),
+    '-Xswiftc',
+    '-DSPARK_COMPUTER_DEV_PARENT',
+  ])
+  expect(macNativeHostSwiftArguments(root, 'com.spark-agent.desktop', false)).toEqual([])
+  expect(() => macNativeHostSwiftArguments(root, 'unknown', false)).toThrow('Unsupported')
 })

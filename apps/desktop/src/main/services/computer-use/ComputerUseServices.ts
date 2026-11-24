@@ -1,5 +1,6 @@
 import { app, nativeImage } from 'electron'
 import { join } from 'node:path'
+import { resolveAppBundleId } from '../../build-flavor.js'
 import {
   ApplicationSnapshotRepository,
   ComputerActionRepository,
@@ -152,7 +153,7 @@ export function createComputerUseServices(
     backend,
     backend,
     appControlBridge,
-    new Set(['com.spark-agent.desktop']),
+    new Set([resolveAppBundleId(app.getName())]),
   )
   const diagnostics = new ComputerUseNativeHostDiagnostics({
     backend,

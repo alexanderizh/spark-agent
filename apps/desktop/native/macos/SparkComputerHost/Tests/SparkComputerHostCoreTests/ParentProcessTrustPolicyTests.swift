@@ -8,8 +8,15 @@ final class ParentProcessTrustPolicyTests: XCTestCase {
     teamIdentifier: "ABCDE12345",
     isAppleAnchored: true
   )
+  #if SPARK_COMPUTER_DEV_PARENT
+  private static let expectedParentID = "com.spark-agent.desktop.dev"
+  private static let otherParentID = "com.spark-agent.desktop"
+  #else
+  private static let expectedParentID = "com.spark-agent.desktop"
+  private static let otherParentID = "com.spark-agent.desktop.dev"
+  #endif
   private let trustedParent = ProcessCodeIdentity(
-    identifier: "com.spark-agent.desktop",
+    identifier: ParentProcessTrustPolicyTests.expectedParentID,
     teamIdentifier: "ABCDE12345",
     isAppleAnchored: true
   )
@@ -39,6 +46,17 @@ final class ParentProcessTrustPolicyTests: XCTestCase {
       isAppleAnchored: true
     )
 
+    XCTAssertThrowsError(try ParentProcessTrustPolicy.validate(host: trustedHost, parent: parent)) {
+      XCTAssertEqual($0 as? ParentProcessTrustError, .unexpectedParentIdentifier)
+    }
+  }
+
+  func testRejectsOtherBuildFlavorFromTheSameTeam() {
+    let parent = ProcessCodeIdentity(
+      identifier: Self.otherParentID,
+      teamIdentifier: trustedHost.teamIdentifier,
+      isAppleAnchored: true
+    )
     XCTAssertThrowsError(try ParentProcessTrustPolicy.validate(host: trustedHost, parent: parent)) {
       XCTAssertEqual($0 as? ParentProcessTrustError, .unexpectedParentIdentifier)
     }

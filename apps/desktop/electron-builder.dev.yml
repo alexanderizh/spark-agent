@@ -1,0 +1,15 @@
+# 本地 dev 打包身份。直接继承 base，避免继承生产协议（extends 会合并数组）。
+extends: ./electron-builder.base.yml
+appId: com.spark-agent.desktop.dev
+productName: Spark Agent Dev
+directories:
+  output: dist-dev
+protocols:
+  - name: SparkWork redemption (dev)
+    schemes:
+      - spark-agent-dev
+extraMetadata:
+  name: '@spark/desktop-dev'
+mac:
+  extendInfo:
+    CFBundleDisplayName: SparkWork Dev

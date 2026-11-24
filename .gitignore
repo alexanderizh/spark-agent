@@ -9,6 +9,8 @@ apps/desktop/native/windows/spark-computer-host/target/
 
 # ---- 构建产物 ----------------------------
 dist/
+# dev 打包产物（electron-builder.dev.yml 的 directories.output）
+dist-dev/
 out/
 build/
 !apps/desktop/build/

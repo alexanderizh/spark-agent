@@ -198,6 +198,8 @@ import {
   shouldEnableSingleInstanceLock,
   shouldRegisterDefaultProtocolClient,
 } from './startup-isolation.js'
+import { isDevFlavoredPackage, resolveDeepLinkScheme } from './build-flavor.js'
+import { scheduleInstallArtifactHousekeeping } from './services/InstallArtifactHousekeeping.js'
 import { RendererCrashRecovery } from './services/renderer-crash-recovery.js'
 
 const log = createLogger('main')
@@ -376,7 +378,7 @@ function dispatchDeepLinkRoute(route: DeepLinkRoute): void {
 }
 
 function routeDeepLink(value: string): void {
-  const route = parseDeepLinkRoute(value)
+  const route = parseDeepLinkRoute(value, deepLinkScheme)
   if (route) dispatchDeepLinkRoute(route)
 }
 
@@ -400,12 +402,12 @@ async function processPendingPlatformRedeemCodes(): Promise<void> {
   }
 }
 
-if (shouldRegisterDefaultProtocolClient(process.env)) {
-  if (is.dev && process.argv[1]) {
-    app.setAsDefaultProtocolClient('spark-agent', process.execPath, [process.argv[1]])
-  } else {
-    app.setAsDefaultProtocolClient('spark-agent')
-  }
+const isDevPackage = isDevFlavoredPackage(app.getName())
+const deepLinkScheme = resolveDeepLinkScheme(app.getName(), app.isPackaged)
+
+// 源码运行使用登录轮询，不修改已安装应用的系统默认协议处理程序。
+if (app.isPackaged && shouldRegisterDefaultProtocolClient(process.env)) {
+  app.setAsDefaultProtocolClient(deepLinkScheme)
 }
 
 app.on('open-url', (event, value) => {
@@ -417,14 +419,14 @@ const ownsSingleInstanceLock = installSingleInstanceLock(
   app,
   showMainWindow,
   (commandLine) => {
-    const route = findDeepLinkRoute(commandLine)
+    const route = findDeepLinkRoute(commandLine, deepLinkScheme)
     if (route) dispatchDeepLinkRoute(route)
   },
   shouldEnableSingleInstanceLock(is.dev, process.env),
   () => requestApplicationQuit('single-instance-lock-not-owned'),
 )
 
-const initialDeepLinkRoute = findDeepLinkRoute(process.argv)
+const initialDeepLinkRoute = findDeepLinkRoute(process.argv, deepLinkScheme)
 if (initialDeepLinkRoute?.kind === 'redeem') {
   pendingRedeemCodes.add(initialDeepLinkRoute.code)
 } else if (initialDeepLinkRoute?.kind === 'auth-callback') {
@@ -1399,7 +1401,8 @@ async function initializeApp(): Promise<void> {
   try {
     initAuthService({
       defaultBaseUrl: process.env.SPARK_EDUGEN_BASE_URL?.trim() || 'https://www.yiqibyte.com/',
-      keytarService: resolveAuthKeytarService(process.env),
+      keytarService: resolveAuthKeytarService(process.env, isDevPackage),
+      desktopLoginScheme: deepLinkScheme,
       requestTimeoutMs: 30_000,
     })
     await getAuthService().start({
@@ -1593,6 +1596,17 @@ async function initializeApp(): Promise<void> {
           break
       }
     },
+  })
+
+  // 4.5 安装残留巡检：macOS 上一轮 dmg 更新后镜像通常仍挂载在 /Volumes，既让启动台
+  //     多出一个同名应用，又会在弹出后给 LaunchServices 留下无法清除的登记项。
+  //     延迟在后台注销并弹出「已安装完成」的镜像；任何失败只记日志。
+  scheduleInstallArtifactHousekeeping({
+    isPackaged: app.isPackaged,
+    isDevPackage,
+    userData: app.getPath('userData'),
+    currentVersion: app.getVersion(),
+    runningExecutable: process.execPath,
   })
 
   // 5. SDK 完整性自检（延迟 5 秒，确保窗口已加载完成）
