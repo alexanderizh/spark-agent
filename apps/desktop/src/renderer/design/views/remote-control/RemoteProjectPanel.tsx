@@ -2,10 +2,11 @@
  * 远程项目信息面板（工作区右侧栏）。
  *
  * 只读展示被控电脑上项目的 git 快照（分支 / 变更文件 + diff / 最近提交）、
- * 项目下会话活动与产物聚合。数据层见 useRemoteProjectPanel；git 端点是
+ * 产物聚合、会话检查器与配置。数据层见 useRemoteProjectPanel；git 端点是
  * 2026-11 新增的 /v1/projects/:id/git 族，旧版目标端 404 → 面板渲染降级占位。
+ * 2026-11-25 复审移除「会话」tab：会话列表与左侧栏完全重复，不再保留。
  *
- * 项目名与会话活动直接读 remoteSessionStore 模块级缓存（左侧栏已在维护，
+ * 项目名直接读 remoteSessionStore 模块级缓存（左侧栏已在维护，
  * 面板不重复请求），git 快照与产物走本面板自己的 hook（30s 轮询 + 手动刷新）。
  */
 import {
@@ -24,7 +25,6 @@ import { Icons } from '../../Icons'
 import {
   getRemoteSessionStore,
   formatRelativeTime,
-  sortSessionRows,
   subscribeRemoteSessionStore,
   UNASSIGNED_PROJECT_ID,
 } from './remoteSessionStore'
@@ -189,7 +189,6 @@ export interface RemoteProjectPanelProps {
   width: number
   onResize: (width: number, commit: boolean) => void
   onTabChange: (tab: RemoteProjectPanelTab) => void
-  onSelectSession: (sessionId: string) => void
   onClose: () => void
 }
 
@@ -203,7 +202,6 @@ export function RemoteProjectPanel({
   width,
   onResize,
   onTabChange,
-  onSelectSession,
   onClose,
 }: RemoteProjectPanelProps) {
   const [artifactScope, setArtifactScope] = useState<RemoteArtifactScope>('session')
@@ -287,24 +285,6 @@ export function RemoteProjectPanel({
     project?.name || (projectId === UNASSIGNED_PROJECT_ID ? '未归属会话' : '未命名项目')
   const rootPath = snapshot.git?.rootPath || project?.rootPath || ''
 
-  /**
-   * 项目下会话（展开过的桶优先，搜索全量窗口兜底），按侧栏同口径排序取前 8 条渲染。
-   * total 用桶的服务端总数（徽标显示真实会话数，而不是渲染条数）；兜底路径没有
-   * total，只能给过滤后的行数。
-   */
-  const sessionInfo = useMemo(() => {
-    const bucket = store.sessions[projectId]
-    if (bucket != null && bucket.rows.length > 0) {
-      return { rows: sortSessionRows(bucket.rows).slice(0, 8), total: bucket.total }
-    }
-    const rows = (store.allSessions?.rows ?? []).filter(
-      (row) => (row.projectId ?? UNASSIGNED_PROJECT_ID) === projectId,
-    )
-    return { rows: sortSessionRows(rows).slice(0, 8), total: rows.length }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeVersion, projectId])
-  const sessionRows = sessionInfo.rows
-
   // REST 聚合 + 当前会话时间线（presented_files 事件）按路径去重合并：
   // 聊天里刚出现的文件卡片即时进面板，不等 30s 轮询（2026-11-25）
   const mergedArtifacts = useMemo(
@@ -360,7 +340,7 @@ export function RemoteProjectPanel({
         </div>
       )}
 
-      {activeTab !== 'session' && !unsupported && error != null && (
+      {!unsupported && error != null && (
         <div className="rc-pane-hint error">
           {error}
           <button type="button" className="rc-link-btn" onClick={refresh}>
@@ -369,7 +349,7 @@ export function RemoteProjectPanel({
         </div>
       )}
 
-      {activeTab !== 'session' && !unsupported && loading && git == null && (
+      {!unsupported && loading && git == null && (
         <div className="rc-pane-hint">正在读取项目信息…</div>
       )}
 
@@ -455,52 +435,6 @@ export function RemoteProjectPanel({
             )}
           </div>
         </>
-      )}
-
-      {activeTab === 'session' && (
-        <div className="rc-panel-section">
-          <div className="rc-panel-section-head">
-            <span>会话活动</span>
-            <span className="rc-panel-section-count">{sessionInfo.total}</span>
-          </div>
-          {sessionId == null ? (
-            <div className="rc-panel-empty">尚未选择会话；选择下方会话以打开对话</div>
-          ) : (
-            <div className="rc-panel-current-session" title={sessionTitle || '当前会话'}>
-              当前会话：{sessionTitle || '未命名会话'}
-            </div>
-          )}
-          {sessionRows.length === 0 ? (
-            <div className="rc-panel-empty">
-              {projectId === UNASSIGNED_PROJECT_ID ? '没有未归属会话' : '这个项目下还没有会话'}
-            </div>
-          ) : (
-            <div className="rc-panel-sessions">
-              {sessionRows.map((session) => (
-                <button
-                  type="button"
-                  key={session.id}
-                  className={`rc-panel-session${session.id === sessionId ? ' is-selected' : ''}`}
-                  title={session.preview || session.title}
-                  aria-current={session.id === sessionId ? 'page' : undefined}
-                  onClick={() => onSelectSession(session.id)}
-                >
-                  <span className="rc-panel-session-title">{session.title || '未命名会话'}</span>
-                  {session.status === 'running' ? (
-                    <span className="rc-running">
-                      <span className="rc-running-dot" />
-                      运行中
-                    </span>
-                  ) : (
-                    <span className="rc-panel-session-time">
-                      {formatRelativeTime(session.updatedAt)}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       )}
 
       {activeTab === 'artifacts' && (
@@ -590,6 +524,7 @@ export function RemoteProjectPanel({
           sessionId={sessionId}
           sessionTitle={sessionTitle}
           projectName={projectName}
+          rootPath={rootPath}
           deviceLabel={deviceLabel}
           summary={timelineSummary}
           artifacts={mergedArtifacts}
@@ -665,7 +600,6 @@ export function RemoteProjectPanel({
       <div className="rc-panel-tabs" role="tablist" aria-label="项目侧栏视图">
         {(
           [
-            ['session', '会话'],
             ['project', '项目'],
             ['artifacts', '产物'],
             ['inspector', '检查器'],

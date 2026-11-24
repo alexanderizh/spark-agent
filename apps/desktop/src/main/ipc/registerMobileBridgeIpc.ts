@@ -19,6 +19,7 @@ import { hostname } from 'node:os'
 import { randomUUID, randomBytes } from 'node:crypto'
 import type {
   AgentEvent,
+  EnvVarItem,
   MobileBridgeApprovalDecision,
   MobileBridgeApprovalItem,
   MobileBridgeAttachment,
@@ -30,8 +31,12 @@ import type {
   MobileBridgeQuestionItem,
   MobileBridgeRelaySettings,
   MobileBridgeRelayStatus,
+  MobileBridgeRuntimeConfigUpdateRequest,
   MobileBridgeScheduledTask,
+  MobileBridgeSessionHookBindingRequest,
+  MobileBridgeSessionHooksResponse,
   MobileBridgeSessionRuntime,
+  MobileBridgeSessionRuntimeConfigResponse,
   MobileBridgeSessionSummary,
   MobileBridgeSetWorkflowBindingRequest,
   MobileBridgeSkillItem,
@@ -61,7 +66,9 @@ import type {
   SkillService,
   WorkspaceService,
 } from '@spark/agent-runtime'
+import { RuntimeCompositionService } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
+import { getHookSystemV2 } from '../hooks/hook-system-v2.js'
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { SidebarOrderController } from './registerSidebarOrderIpc.js'
 import { readSessionPreviews } from './mobile-bridge-session-preview.js'
@@ -69,6 +76,7 @@ import {
   AgentRepository,
   SessionRepository,
   SettingsRepository,
+  SkillRepository,
   WorkflowRepository,
   WorkspaceRepository,
 } from '@spark/storage'
@@ -1675,6 +1683,125 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
           .all(...sessionRows.map((row) => row.id)),
       ] as [ProjectArtifactEventRow[], ProjectArtifactEventRow[]]
       return mergeProjectArtifacts({ projectId, titleBySession, presentedRows, fileChangeRows })
+    },
+
+    // ─── 会话运行配置 + Hooks（远程配置面板；2026-11-25 对齐本地 ChatConfigPanel） ──
+
+    getSessionRuntimeConfig: async (sessionId) => {
+      const db = getDatabase()
+      const sessionRow = db.raw
+        .prepare('SELECT id, project_id FROM sessions WHERE id = ?')
+        .get(sessionId) as { id: string; project_id: string | null } | undefined
+      if (sessionRow == null) {
+        throw new SparkError('NOT_FOUND', '会话不存在')
+      }
+      // 未归属会话 project_id = 'default'（与 listSessions 同口径）：project 层按
+      // 无 workspaceId 语义返回空层，前端只展示会话层。
+      const workspaceId = sessionRow.project_id ?? 'default'
+      const hasProjectLayer = workspaceId !== 'default'
+      const composition = new RuntimeCompositionService(
+        new SkillRepository(db),
+        new SettingsRepository(db),
+      )
+      const refs = {
+        sessionId,
+        ...(hasProjectLayer ? { workspaceId } : {}),
+      }
+      return {
+        workspaceId,
+        prompt: composition.getPromptConfig(refs),
+        env: composition.getEnvConfig(refs),
+        filter: composition.getPromptFilterConfig(refs),
+      }
+    },
+
+    updateRuntimeConfigLayer: async (kind, payload) => {
+      const db = getDatabase()
+      // scopeRef 必须真实存在，防止中继链路写入孤儿 settings 行
+      const refRow =
+        payload.scope === 'session'
+          ? (db.raw.prepare('SELECT id FROM sessions WHERE id = ?').get(payload.scopeRef) as
+              | { id: string }
+              | undefined)
+          : (db.raw.prepare('SELECT id FROM workspaces WHERE id = ?').get(payload.scopeRef) as
+              | { id: string }
+              | undefined)
+      if (refRow == null) {
+        throw new SparkError('NOT_FOUND', 'scopeRef 对应的会话或项目不存在')
+      }
+      const composition = new RuntimeCompositionService(
+        new SkillRepository(db),
+        new SettingsRepository(db),
+      )
+      if (kind === 'prompt') {
+        const content = typeof payload.value?.content === 'string' ? payload.value.content : ''
+        const enabled =
+          typeof payload.value?.enabled === 'boolean' ? payload.value.enabled : content.trim().length > 0
+        composition.updatePromptConfig(payload.scope, payload.scopeRef, { enabled, content })
+        return
+      }
+      if (kind === 'env') {
+        const rawVars = Array.isArray(payload.value?.vars) ? payload.value.vars : []
+        const vars: EnvVarItem[] = []
+        for (const raw of rawVars) {
+          if (raw == null || typeof raw !== 'object') continue
+          const row = raw as Record<string, unknown>
+          if (typeof row.key !== 'string') continue
+          vars.push({
+            key: row.key,
+            value: typeof row.value === 'string' ? row.value : '',
+            ...(typeof row.description === 'string' && row.description.length > 0
+              ? { description: row.description }
+              : {}),
+          })
+        }
+        composition.updateEnvConfig(payload.scope, payload.scopeRef, {
+          enabled: payload.value?.enabled !== false,
+          vars,
+        })
+        return
+      }
+      // prompt-filter：disabledSources undefined = 删除该层（恢复继承），语义同桌面端 IPC
+      const disabledSources = payload.disabledSources
+      if (
+        disabledSources !== undefined &&
+        (!Array.isArray(disabledSources) || disabledSources.some((id) => typeof id !== 'string'))
+      ) {
+        throw new SparkError('VALIDATION_FAILED', 'disabledSources 必须是字符串数组或 undefined')
+      }
+      composition.updatePromptFilterConfig(payload.scope, payload.scopeRef, disabledSources)
+    },
+
+    listSessionHooks: async (sessionId): Promise<MobileBridgeSessionHooksResponse> => {
+      const items = getHookSystemV2({
+        db: getDatabase(),
+        getSessionService: () => deps.getSessionService(),
+      }).management.listEffective(sessionId)
+      return { items }
+    },
+
+    upsertSessionHookBinding: async (sessionId, payload) => {
+      getHookSystemV2({
+        db: getDatabase(),
+        getSessionService: () => deps.getSessionService(),
+      }).management.upsertBinding({
+        hookId: payload.hookId,
+        scopeKind: 'session',
+        scopeId: sessionId,
+        enabled: payload.enabled,
+        // 重新启用时透传客户端携带的执行哈希授权（哈希由渲染端按当前 Hook 定义
+        // 计算，main 不自行计算），会话覆盖立即生效；与本地面板同语义
+        ...(payload.enabled
+          ? {
+              ...(typeof payload.authorizeExecutionHash === 'string'
+                ? { authorizeExecutionHash: payload.authorizeExecutionHash }
+                : {}),
+              ...(typeof payload.authorizedEffect === 'string'
+                ? { authorizedEffect: payload.authorizedEffect }
+                : {}),
+            }
+          : {}),
+      })
     },
   }
 }

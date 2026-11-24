@@ -13,6 +13,9 @@
  */
 
 import type {
+  EnvConfigGetResponse,
+  PromptConfigGetResponse,
+  PromptFilterConfigGetResponse,
   SessionLabelKey,
   SessionSearchResponse,
   WorkspaceGitCommitEntry,
@@ -20,9 +23,11 @@ import type {
   WorkspaceGitStatusResponse,
 } from './ipc/index.js'
 import type { SidebarOrderState, SidebarOrderUpdateRequest } from './sidebar-order.js'
+import type { HookEffectiveBindingV1 } from './hooks-v2.js'
 
 export type { SessionLabelKey, SessionSearchResponse, SidebarOrderState, SidebarOrderUpdateRequest }
 export type { WorkspaceGitCommitEntry, WorkspaceGitFileDiffResponse, WorkspaceGitStatusResponse }
+export type { EnvConfigGetResponse, PromptConfigGetResponse, PromptFilterConfigGetResponse }
 
 import type { UserQuestionPrompt } from './ipc/index.js'
 import type {
@@ -128,6 +133,50 @@ export interface MobileBridgeProjectArtifactsResponse {
   artifacts: MobileBridgeProjectArtifactItem[]
   /** true = 事件扫描触达条数上限，可能还有更早产物未列出 */
   truncated?: boolean
+}
+
+// ─── 会话运行配置（GET /v1/sessions/:id/runtime-config；远程配置面板数据源） ────
+//
+// 形状对齐桌面端「会话配置面板」（ChatConfigPanel）的三个 IPC 读通道：
+// prompt-config:get / env-config:get / prompt-filter:get，一次聚合返回避免
+// 中继三次往返。project 层的 scopeRef = 会话归属项目 id（workspaceId）。
+
+export interface MobileBridgeSessionRuntimeConfigResponse {
+  /** 会话归属项目 id（workspaceId）；'default' = 未归属（无 project 层配置） */
+  workspaceId: string
+  prompt: PromptConfigGetResponse
+  env: EnvConfigGetResponse
+  filter: PromptFilterConfigGetResponse
+}
+
+/**
+ * PUT /v1/runtime-config/:kind 请求体。kind ∈ prompt | env | prompt-filter；
+ * scope/scopeRef 语义与桌面端同名 IPC 一致（project → workspaceId，session → sessionId）。
+ * prompt: value={enabled,content}；env: value={enabled,vars}；prompt-filter: disabledSources（undefined=删层）。
+ */
+export interface MobileBridgeRuntimeConfigUpdateRequest {
+  scope: 'project' | 'session'
+  scopeRef: string
+  value?: { enabled?: boolean; content?: string; vars?: unknown }
+  disabledSources?: string[] | undefined
+}
+
+// ─── 会话 Hooks（GET/PUT /v1/sessions/:id/hooks；远程配置面板 Hooks 区块数据源） ──
+//
+// 类型复用 @spark/protocol hooks-v2 的 HookEffectiveBindingV1 / HookBindingV1。
+// PUT 语义 = hookV2:upsert-binding 的会话作用域子集：scopeKind 恒为 'session'。
+
+/** GET /v1/sessions/:id/hooks 响应 */
+export interface MobileBridgeSessionHooksResponse {
+  items: HookEffectiveBindingV1[]
+}
+
+/** PUT /v1/sessions/:id/hooks 请求体（启用时须带授权字段，语义同 hookV2:upsert-binding） */
+export interface MobileBridgeSessionHookBindingRequest {
+  hookId: string
+  enabled: boolean
+  authorizeExecutionHash?: string
+  authorizedEffect?: string
 }
 
 // ─── 会话搜索（GET /v1/search；标题 LIKE + 内容 FTS5，复用桌面端 session:search 响应形状） ──

@@ -41,9 +41,13 @@ import type {
   MobileBridgeProjectGitResponse,
   MobileBridgeProjectListResponse,
   MobileBridgeProjectSummary,
+  MobileBridgeRuntimeConfigUpdateRequest,
   MobileBridgeScheduledTask,
+  MobileBridgeSessionHookBindingRequest,
+  MobileBridgeSessionHooksResponse,
   MobileBridgeSessionListResponse,
   MobileBridgeSessionRuntime,
+  MobileBridgeSessionRuntimeConfigResponse,
   MobileBridgeSessionSummary,
   MobileBridgeSetWorkflowBindingRequest,
   MobileBridgeSidebarOrderUpdateResponse,
@@ -287,6 +291,27 @@ export interface MobileBridgeDeps {
   ): Promise<MobileBridgeProjectGitDiffResponse>
   /** 项目产物聚合（最近会话的 presented_files，同路径保留最近一次） */
   getProjectArtifacts(projectId: string): Promise<MobileBridgeProjectArtifactsResponse>
+
+  // ─── 会话运行配置 + Hooks（远程配置面板；2026-11-25 对齐本地 ChatConfigPanel） ──
+
+  /**
+   * 会话运行配置聚合读（prompt / env / prompt-filter 三层一次返回，避免中继三次
+   * 往返）。形状对齐桌面端 prompt-config:get / env-config:get / prompt-filter:get；
+   * project 层的 scopeRef = 会话归属项目 id。旧版桌面端无此端点，控制端 404 降级。
+   */
+  getSessionRuntimeConfig(sessionId: string): Promise<MobileBridgeSessionRuntimeConfigResponse>
+  /** 写单层配置（kind ∈ prompt | env | prompt-filter；scope/scopeRef 语义同桌面端 IPC） */
+  updateRuntimeConfigLayer(
+    kind: 'prompt' | 'env' | 'prompt-filter',
+    request: MobileBridgeRuntimeConfigUpdateRequest,
+  ): Promise<void>
+  /** 会话 Hooks 生效列表（语义同 hookV2:list-effective） */
+  listSessionHooks(sessionId: string): Promise<MobileBridgeSessionHooksResponse>
+  /** 写会话作用域 Hook 绑定（启用须带授权字段；语义同 hookV2:upsert-binding） */
+  upsertSessionHookBinding(
+    sessionId: string,
+    request: MobileBridgeSessionHookBindingRequest,
+  ): Promise<void>
 }
 
 /**
@@ -479,6 +504,95 @@ export class MobileBridgeService {
       try {
         const body = await this.requireDeps().getProjectArtifacts(decodeURIComponent(rawId))
         this.sendJson(res, 200, body)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    // ─── 会话运行配置（远程配置面板；对齐本地 ChatConfigPanel 数据通道，2026-11-25） ──
+
+    // 聚合读：prompt / env / prompt-filter 三层一次返回（workspaceId 由会话归属解析）
+    const sessionRuntimeConfigMatch = /^\/v1\/sessions\/([^/]+)\/runtime-config$/.exec(path)
+    if (sessionRuntimeConfigMatch && req.method === 'GET') {
+      const rawId = sessionRuntimeConfigMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      try {
+        const body = await this.requireDeps().getSessionRuntimeConfig(decodeURIComponent(rawId))
+        this.sendJson(res, 200, body)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    // 单层写：kind ∈ prompt | env | prompt-filter；scope/scopeRef 校验同桌面端语义
+    const runtimeConfigLayerMatch = /^\/v1\/runtime-config\/(prompt|env|prompt-filter)$/.exec(path)
+    if (runtimeConfigLayerMatch && req.method === 'PUT') {
+      const kind = runtimeConfigLayerMatch[1]
+      const payload = await this.readJson<MobileBridgeRuntimeConfigUpdateRequest>(req)
+      if (
+        payload == null ||
+        (payload.scope !== 'project' && payload.scope !== 'session') ||
+        typeof payload.scopeRef !== 'string' ||
+        payload.scopeRef.length === 0
+      ) {
+        this.sendJson(res, 400, {
+          error: { code: 'BAD_REQUEST', message: 'scope 必须是 project/session 且 scopeRef 非空' },
+        })
+        return
+      }
+      if (kind !== 'prompt' && kind !== 'env' && kind !== 'prompt-filter') {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      try {
+        await this.requireDeps().updateRuntimeConfigLayer(kind, payload)
+        this.sendJson(res, 200, { ok: true })
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+
+    // ─── 会话 Hooks（远程配置面板 Hooks 区块；语义同 hookV2:list-effective / upsert-binding） ──
+
+    const sessionHooksMatch = /^\/v1\/sessions\/([^/]+)\/hooks$/.exec(path)
+    if (sessionHooksMatch && req.method === 'GET') {
+      const rawId = sessionHooksMatch[1]
+      if (rawId == null) {
+        this.sendJson(res, 404, { error: { code: 'NOT_FOUND', message: '接口不存在' } })
+        return
+      }
+      try {
+        const body = await this.requireDeps().listSessionHooks(decodeURIComponent(rawId))
+        this.sendJson(res, 200, body)
+      } catch (error) {
+        this.sendSparkError(res, error)
+      }
+      return
+    }
+    if (sessionHooksMatch && req.method === 'PUT') {
+      const rawId = sessionHooksMatch[1]
+      const payload = await this.readJson<MobileBridgeSessionHookBindingRequest>(req)
+      if (
+        rawId == null ||
+        payload == null ||
+        typeof payload.hookId !== 'string' ||
+        payload.hookId.length === 0 ||
+        typeof payload.enabled !== 'boolean'
+      ) {
+        this.sendJson(res, 400, {
+          error: { code: 'BAD_REQUEST', message: 'hookId 与 enabled 为必填' },
+        })
+        return
+      }
+      try {
+        await this.requireDeps().upsertSessionHookBinding(decodeURIComponent(rawId), payload)
+        this.sendJson(res, 200, { ok: true })
       } catch (error) {
         this.sendSparkError(res, error)
       }

@@ -116,7 +116,6 @@ function RemoteFileRow({
           {opening && <Icons.Spinner size={12} className="spin" />}
           {name}
         </button>
-        {meta != null && <span className="rc-file-meta">{meta(file)}</span>}
         <div className="rc-file-actions">
           {canPreview && (
             <button
@@ -143,6 +142,10 @@ function RemoteFileRow({
           </button>
         </div>
       </div>
+
+      {/* meta 独立成行（2026-11-25 复审）：行内 45% 上限在窄面板会把文件名挤到零宽，
+          两行布局让名字独占一行安全省略，「会话 · 时间」整行显示 */}
+      {meta != null && <div className="rc-file-meta">{meta(file)}</div>}
 
       {openError != null && <div className="rc-file-error">{openError}</div>}
 

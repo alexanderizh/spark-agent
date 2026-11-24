@@ -13,11 +13,11 @@ export const REMOTE_PROJECT_PANEL_DEFAULT_OPEN = true
 export type RemoteArtifactScope = 'session' | 'project'
 export type RemoteArtifactType = 'all' | 'image' | 'document' | 'text' | 'code' | 'other'
 /**
- * 面板 tab（2026-11-25 对齐本地会话侧面板）：静态 会话/项目/产物/检查器/配置，
+ * 面板 tab（2026-11-25 对齐本地会话侧面板）：静态 项目/产物/检查器/配置，
  * 外加动态 `preview:<远程路径>` 预览 tab（产物卡片点击打开，对齐本地 openUnifiedSidePanel）。
+ * 2026-11-25 复审移除「会话」tab：其内容（项目会话列表）与左侧栏完全重复。
  */
 export type RemoteProjectPanelTab =
-  | 'session'
   | 'project'
   | 'artifacts'
   | 'inspector'

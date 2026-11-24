@@ -93,18 +93,26 @@ export function collectDocumentOutputKeys(text: string): string[] {
  * 末段扩展名命中文档白名单，也不应把整行折叠成文档卡片。
  *
  * 判定规则：
- * - 不允许空白字符与 markdown/括号语法；
+ * - 不允许空白字符与 markdown/括号语法；`allowSpaces` 选项供显式 markdown
+ *   链接目标放行段内普通空格（tab/换行等控制空白仍拒绝），裸路径行不启用；
  * - 必须具备明确路径形状：盘符（含 /G:/ 风格链接）、UNC、Unix 绝对路径、
  *   ~ 开头、./ 或 ../ 开头，或至少含一个路径分隔符的纯路径段相对路径。
  */
-export function isPathShapedFileReference(value: string): boolean {
+export function isPathShapedFileReference(
+  value: string,
+  options?: { allowSpaces?: boolean },
+): boolean {
   const raw = value.trim()
   if (raw.length === 0) return false
   if (/^file:\/\//i.test(raw)) return true
 
   const filePath = normalizeFileReference(raw)
   if (filePath.length === 0) return false
-  if (/\s/.test(filePath)) return false
+  if (/\s/.test(filePath)) {
+    // 仅放行段内普通空格（U+0020）；其余空白（tab/换行/nbsp 等）一律拒绝
+    const onlyPlainSpaces = !/\s/.test(filePath.replace(/ /g, ''))
+    if (!(options?.allowSpaces === true && onlyPlainSpaces)) return false
+  }
   if (/[[\]()<>"]/.test(filePath)) return false
   if (/^[A-Za-z]:[\\/]/.test(filePath)) return true
   if (/^\/[A-Za-z]:[\\/]/.test(filePath)) return true
@@ -124,8 +132,32 @@ function parseDocumentOutputLine(line: string): { filePath: string; label?: stri
 
   const link = trimmed.match(/^\[([^\]]+)]\(([^)]+)\)$/)
   if (link) {
-    const filePath = link[2] ?? ''
+    const rawTarget = link[2] ?? ''
+    // CommonMark 尖括号形式（[标签](<my report.md>)）是显式字面目标：
+    // 剥壳后校验与返回，段内空格放行（仅拒绝控制空白）。
+    const bracketed = rawTarget.match(/^<(.+)>$/)
+    const filePath = bracketed?.[1] ?? rawTarget
     if (!isDocumentOutputReference(filePath)) return null
+    if (bracketed != null) {
+      if (/[\t\n\r\f\v]/.test(filePath)) return null
+    } else if (/\s/.test(filePath)) {
+      // 裸空格目标（[标签](my report.md)）：渲染器宽容解析下的明确指路意图，
+      // 放行段内普通空格但拒绝句读标点与控制空白——散文 target 几乎必含
+      // 句读，真文件名罕见；裸路径行（非链接）仍一概拒绝空格，散文防线不动。
+      if (/[\t\n\r\f\v]/.test(filePath)) return null
+      if (/[,;，。；：！？、…]/.test(filePath)) return null
+      const isSpacedSimpleFileName = /^[^/\\()[\]<>\"]+$/.test(filePath)
+      if (
+        !isPathShapedFileReference(filePath, { allowSpaces: true }) &&
+        !isSpacedSimpleFileName
+      ) {
+        return null
+      }
+    } else {
+      // 无空格目标：原守卫不变
+      const isSimpleFileName = /^[^/\\\s()[\]<>\"]+$/.test(normalizeFileReference(filePath))
+      if (!isPathShapedFileReference(filePath) && !isSimpleFileName) return null
+    }
     const label = link[1]
     return label != null ? { filePath, label } : { filePath }
   }

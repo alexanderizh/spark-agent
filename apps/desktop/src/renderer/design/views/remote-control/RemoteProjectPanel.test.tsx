@@ -8,7 +8,6 @@ import type { RemoteProjectPanelTab } from './remoteProjectPanelState'
 
 const mocks = vi.hoisted(() => ({
   onResize: vi.fn(),
-  onSelectSession: vi.fn(),
   store: {
     version: 1,
     projects: [{ id: 'project-1', name: 'Project One', rootPath: '/workspace/project-one' }],
@@ -40,7 +39,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./remoteSessionStore', () => ({
   getRemoteSessionStore: () => mocks.store,
   formatRelativeTime: () => '刚刚',
-  sortSessionRows: (rows: unknown[]) => rows,
   subscribeRemoteSessionStore: () => () => undefined,
   UNASSIGNED_PROJECT_ID: 'default',
 }))
@@ -102,7 +100,7 @@ vi.mock('./RemoteFileCards', () => ({
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function PanelHarness() {
-  const [activeTab, setActiveTab] = useState<RemoteProjectPanelTab>('session')
+  const [activeTab, setActiveTab] = useState<RemoteProjectPanelTab>('artifacts')
   return (
     <RemoteProjectPanel
       deviceId="device-1"
@@ -114,7 +112,6 @@ function PanelHarness() {
       width={340}
       onResize={mocks.onResize}
       onTabChange={setActiveTab}
-      onSelectSession={mocks.onSelectSession}
       onClose={() => undefined}
     />
   )
@@ -147,10 +144,11 @@ describe('RemoteProjectPanel', () => {
     act(() => button.click())
   }
 
-  it('switches sessions from the session view', () => {
-    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('会话')
-    clickButton('Other session')
-    expect(mocks.onSelectSession).toHaveBeenCalledWith('session-2')
+  it('defaults to the artifacts view and no longer renders a session tab', () => {
+    const tabs = [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)
+    expect(tabs).toEqual(['项目', '产物', '检查器', '配置'])
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('产物')
+    expect(container.textContent).not.toContain('会话活动')
   })
 
   it('filters project artifacts by session, scope, and file type', () => {
@@ -179,6 +177,18 @@ describe('RemoteProjectPanel', () => {
     expect(container.querySelector('[data-testid="artifact-files"]')?.textContent).not.toContain(
       '/workspace/project-one/other.ts',
     )
+  })
+
+  it('renders the local-parity inspector with kv rows and journey sections', () => {
+    clickButton('检查器')
+    expect(container.querySelector('.session-panel-heading')?.textContent).toContain('会话检查器')
+    expect(container.querySelector('.inspector-section')?.textContent).toContain('会话信息')
+    const kvRows = [...container.querySelectorAll('.kv-row')].map((row) => row.textContent ?? '')
+    expect(kvRows.some((text) => text.includes('消息数'))).toBe(true)
+    expect(kvRows.some((text) => text.includes('设备'))).toBe(true)
+    // 过程产物 / 工具调用用本地 journey 行样式（InspectorCollapsibleSection 折叠区块）
+    expect(container.querySelectorAll('.inspector-collapsible-section').length).toBe(2)
+    expect(container.querySelector('.chat-journey__list')).not.toBeNull()
   })
 
   it('supports keyboard resizing with bounded width callbacks', () => {

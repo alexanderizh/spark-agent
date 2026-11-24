@@ -153,7 +153,8 @@ export function RemoteControlView() {
     rememberRemoteProjectPanelOpen(next)
   }, [])
   const [panelPinnedProjectId, setPanelPinnedProjectId] = useState<string | null>(null)
-  const [panelTab, setPanelTab] = useState<RemoteProjectPanelTab>('session')
+  // 面板默认落在「产物」（最高频视图）；「会话」tab 已移除——列表与左侧栏重复（2026-11-25）
+  const [panelTab, setPanelTab] = useState<RemoteProjectPanelTab>('artifacts')
   const [projectPanelWidth, setProjectPanelWidth] = useState(readRemoteProjectPanelWidth)
 
   const onlineDevices = useMemo(
@@ -243,7 +244,7 @@ export function RemoteControlView() {
   const handleToggleProjectPanel = useCallback(() => {
     setProjectPanelOpen(!projectPanelOpen)
     setPanelPinnedProjectId(null)
-    setPanelTab('session')
+    setPanelTab('artifacts')
   }, [projectPanelOpen, setProjectPanelOpen])
 
   const handleCloseProjectPanel = useCallback(() => {
@@ -263,15 +264,6 @@ export function RemoteControlView() {
       })
     },
     [activeDeviceId],
-  )
-
-  const handleSelectSessionFromPanel = useCallback(
-    (next: string) => {
-      handleSelectSession(next)
-      setPanelPinnedProjectId(null)
-      setPanelTab('session')
-    },
-    [handleSelectSession],
   )
 
   const handleClearSession = useCallback(() => {
@@ -442,7 +434,6 @@ export function RemoteControlView() {
             onTabChange={setPanelTab}
             width={projectPanelWidth}
             onResize={handleProjectPanelResize}
-            onSelectSession={handleSelectSessionFromPanel}
             onClose={handleCloseProjectPanel}
           />
         )}

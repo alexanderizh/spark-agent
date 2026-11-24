@@ -43,75 +43,54 @@
   cursor: col-resize;
 }
 
+/* 面板 tab 栏：小型 pill 单行排布，超宽时左右滚动（2026-11-25 复审——
+   旧版 3 列 grid 在 4 个静态 tab + 动态预览下必然折行）。
+   视觉对齐本地统一侧面板 unified-side-panel-tab 的 pill 语言。 */
 .rc-panel-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  align-items: center;
+  gap: 2px;
   flex: none;
+  padding: 0 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
   border-bottom: 1px solid var(--divider, #efede8);
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 
   > button {
     position: relative;
-    min-width: 0;
-    height: 34px;
-    padding: 0 6px;
-    border: 0;
+    flex: none;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: var(--r-md, 6px);
     background: transparent;
-    color: var(--text-faint, #9b9489);
+    color: var(--text-muted, #8d8a86);
     font: inherit;
     font-size: 12px;
+    white-space: nowrap;
     cursor: pointer;
 
     &:hover {
+      background: color-mix(in srgb, var(--text, #23231f) 8%, transparent);
       color: var(--text, #23231f);
     }
 
     &[aria-selected='true'] {
+      background: color-mix(in srgb, var(--text, #23231f) 12%, transparent);
+      border-color: color-mix(in srgb, var(--border, #efede8) 78%, transparent);
       color: var(--text-strong, #11100e);
       font-weight: 500;
-
-      &::after {
-        position: absolute;
-        right: 12px;
-        bottom: -1px;
-        left: 12px;
-        height: 2px;
-        background: var(--primary, #3b82f6);
-        content: '';
-      }
     }
 
     &:focus-visible {
       outline: 2px solid var(--primary, #3b82f6);
       outline-offset: -2px;
     }
-  }
-}
-
-.rc-panel-current-session {
-  margin: 8px 0;
-  padding: 7px 8px;
-  border-left: 2px solid var(--primary, #3b82f6);
-  background: var(--bg-sunken, #f2f2f2);
-  color: var(--text-muted, #8d8a86);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-
-.rc-panel-session {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-
-  &:hover,
-  &.is-selected {
-    background: var(--bg-sunken, #f2f2f2);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--primary, #3b82f6);
-    outline-offset: -2px;
   }
 }
 
@@ -195,11 +174,10 @@
   }
 }
 
-.rc-project-panel .rc-file-name {
-  white-space: normal;
-  overflow-wrap: anywhere;
-  text-overflow: clip;
-}
+/* 2026-11-25 复审：移除 .rc-project-panel .rc-file-name 的
+   white-space:normal + overflow-wrap:anywhere 覆盖——窄面板时名字列被
+   meta 和操作按钮挤到零宽，anywhere 允许逐字断行，文件名被竖排成一字一行。
+   恢复基础样式的 nowrap + ellipsis，meta 另起一行（见 RemoteFileCards）。 */
 
 .rc-file-name-button .spin {
   flex: none;
@@ -217,4 +195,33 @@
   background: var(--bg-sunken, #f2f2f2);
   color: var(--text-muted, #8d8a86);
   font-size: 11px;
+}
+
+/* ─── 检查器 / 配置 tab：本地 session-panel 视觉接管（2026-11-25） ─────────────
+   两个 tab 的内容组件复用本地会话侧面板的类名（session-panel / inspector
+   scroll / inspector-section / runtime-env-* 等，样式由 SessionPanelDesign.less
+   与 ChatInspectorPanel.less 全局提供）。这里只做布局适配：滚动职责从
+   .rc-panel-scroll 移交给 .inspector（本地面板同款），并抵消全局
+   .inspector 的 height: calc(100vh - 45px)（在面板宿主内不成立）。 */
+
+.rc-panel-scroll:has(> .rc-session-panel-host) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.rc-session-panel-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.rc-session-panel-host > .inspector {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+  padding-bottom: var(--pad-lg);
 }
