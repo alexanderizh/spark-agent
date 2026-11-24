@@ -104,15 +104,22 @@ export interface MobileBridgeProjectGitResponse {
  */
 export type MobileBridgeProjectGitDiffResponse = WorkspaceGitFileDiffResponse
 
-/** 项目产物条目：最近会话里 presented_files 的聚合（同路径保留最近一次） */
+/**
+ * 项目产物条目：最近会话里 presented_files + file_change 的聚合（同路径保留最近一次）。
+ * 扩展名白名单与本地 journey 口径一致（仅文档/多媒体，见 isJourneyArtifactPath）。
+ */
 export interface MobileBridgeProjectArtifactItem {
   path: string
   title?: string
-  /** 最近一次呈现该文件的会话 */
+  /** 最近一次产出/呈现该文件的会话 */
   sessionId: string
   sessionTitle: string
-  /** ISO 时间（事件落库时间） */
+  /** ISO 时间（两个事件源取最新；字段名保留旧名，向后兼容） */
   presentedAt: string
+  /** 是否被 presented_files 显式呈现过（false = 仅 file_change 的过程产物） */
+  presented?: boolean
+  /** 变更类型合集（file_change 源：create/modify/delete） */
+  changeTypes?: string[]
 }
 
 /** GET /v1/projects/:id/artifacts 响应：项目产物聚合（被控端只扫最近 20 个会话的窗口） */

@@ -83,7 +83,7 @@ function buildService(overrides: Partial<MobileBridgeDeps> = {}): {
       error: null,
     })),
     saveAttachments: vi.fn(async () => []),
-    readAttachmentContent: vi.fn(async () => null),
+    readAttachmentContent: vi.fn(async () => ({ ok: false as const, reason: 'outside_whitelist' as const })),
     transcribeAudio: vi.fn(async () => ({ kind: 'failed' as const, message: 'unused' })),
     listSessionTasks: vi.fn(async () => []),
     createSessionTask: vi.fn(async () => {

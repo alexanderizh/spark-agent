@@ -26,7 +26,6 @@ import type {
   MobileBridgeCommandItem,
   MobileBridgeCreateScheduledTaskRequest,
   MobileBridgeEvent,
-  MobileBridgeProjectArtifactItem,
   MobileBridgeProjectSummary,
   MobileBridgeQuestionItem,
   MobileBridgeRelaySettings,
@@ -75,7 +74,13 @@ import {
 } from '@spark/storage'
 import { PASTED_IMAGE_MAX_EDGE, resizePastedImageBuffer } from '../services/PastedImageResizer.js'
 import { calibrateMobileBridgeSessionAdapter } from '../services/mobile-bridge-session-adapter.js'
-import { isPathWithinRoots } from './mobile-bridge-path-policy.js'
+import { isPathWithinRoots, normalizeDriveLetterPath } from './mobile-bridge-path-policy.js'
+import {
+  mergeProjectArtifacts,
+  PROJECT_ARTIFACT_EVENT_LIMIT,
+  PROJECT_ARTIFACT_SESSION_WINDOW,
+  type ProjectArtifactEventRow,
+} from './mobile-bridge-project-artifacts.js'
 import {
   emptyGitStatus,
   getWorkspaceGitFileDiff,
@@ -1276,30 +1281,69 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
     },
 
     readAttachmentContent: async (candidate) => {
-      if (!isWhitelistedAttachmentPath(candidate)) {
-        // 安全敏感事件留痕（探测/越权读取在日志可追溯）
-        log.warn(`mobile bridge attachment rejected (outside whitelist): ${candidate}`)
-        return null
+      // VSCode 风格 /G:/ 链接先归一成真实盘符路径（isPathWithinRoots 内部亦兜底一层）
+      const requested = normalizeDriveLetterPath(candidate)
+      const whitelistRoots = (): string[] => [mobileAttachmentRootDir(), ...workspaceRootsProvider()]
+
+      // realpath 复核：candidate 或其父级是 symlink 指向白名单外时拒绝（防逃逸），
+      // 同步前缀校验防 ../ 逃逸，这里补上软链这一层。'escape' = 软链逃逸，null = 读不到
+      const resolveReal = async (value: string): Promise<string | 'escape' | null> => {
+        try {
+          const realPath = await fs.realpath(value)
+          return isWhitelistedAttachmentPath(realPath) ? realPath : 'escape'
+        } catch {
+          return null
+        }
+      }
+
+      let target: string | null = null
+      if (path.isAbsolute(requested)) {
+        if (!isWhitelistedAttachmentPath(requested)) {
+          // 安全敏感事件留痕（探测/越权读取在日志可追溯）
+          log.warn(`mobile bridge attachment rejected (outside whitelist): ${candidate}`)
+          return { ok: false, reason: 'outside_whitelist' }
+        }
+        const real = await resolveReal(requested)
+        if (real === 'escape') {
+          log.warn(`mobile bridge attachment rejected (symlink escape): ${candidate}`)
+          return { ok: false, reason: 'outside_whitelist' }
+        }
+        if (real == null) {
+          log.warn(`mobile bridge attachment rejected (not_found): ${candidate}`)
+          return { ok: false, reason: 'not_found' }
+        }
+        target = real
+      } else {
+        // 相对路径兜底：file_change 事件里常存会话相对路径（如 .spark-agent/x.md），
+        // 以各白名单根为基准逐个尝试，取第一个真实存在的文件；根内也找不到按 not_found
+        for (const root of whitelistRoots()) {
+          const joined = await resolveReal(path.join(root, requested))
+          if (joined === 'escape') {
+            log.warn(`mobile bridge attachment rejected (symlink escape): ${candidate}`)
+            return { ok: false, reason: 'outside_whitelist' }
+          }
+          if (joined != null) {
+            target = joined
+            break
+          }
+        }
+        if (target == null) {
+          log.warn(`mobile bridge attachment rejected (not_found): ${candidate}`)
+          return { ok: false, reason: 'not_found' }
+        }
       }
       try {
-        // realpath 复核：candidate 或其父级是 symlink 指向白名单外时拒绝（防逃逸），
-        // 同步前缀校验防 ../ 逃逸，这里补上软链这一层
-        const realPath = await fs.realpath(candidate)
-        if (!isWhitelistedAttachmentPath(realPath)) {
-          log.warn(`mobile bridge attachment rejected (symlink escape): ${candidate}`)
-          return null
-        }
         // 体积上限：工作区内构建产物/日志可能巨大，整体读入 + base64 + JSON 序列化
         // 会在主进程产生约 3 份峰值副本（本项目有长任务 OOM 前科），超限拒绝
-        const stats = await fs.stat(realPath)
+        const stats = await fs.stat(target)
         if (stats.size > MAX_ATTACHMENT_READ_BYTES) {
           log.warn(`mobile bridge attachment rejected (too large ${stats.size}B): ${candidate}`)
-          return null
+          return { ok: false, reason: 'too_large' }
         }
-        const data = await fs.readFile(realPath)
-        return { data, mimeType: mimeFromExtension(candidate) }
+        const data = await fs.readFile(target)
+        return { ok: true, data, mimeType: mimeFromExtension(target) }
       } catch {
-        return null
+        return { ok: false, reason: 'not_found' }
       }
     },
 
@@ -1567,83 +1611,70 @@ function buildDeps(deps: MobileBridgeIpcDeps): MobileBridgeDeps {
     },
 
     getProjectArtifacts: async (projectId) => {
-      if (projectId === 'default') return { projectId, artifacts: [] }
       const db = getDatabase()
       // worktree 会话在侧栏归到 base 项目（与 listSessions 同口径）：聚合产物同样
       // 把 worktree 子项目的会话算进来，不然 worktree 里跑出的产物会「消失」。
-      const projectIds = [projectId]
-      const worktrees = db.raw
-        .prepare(
-          `SELECT id, worktree_meta_json FROM workspaces
-           WHERE archived_at IS NULL AND worktree_meta_json IS NOT NULL`,
-        )
-        .all() as { id: string; worktree_meta_json: string | null }[]
-      for (const worktree of worktrees) {
-        if (parseWorktreeBaseId(worktree.worktree_meta_json) === projectId) {
-          projectIds.push(worktree.id)
+      // 'default' 是虚拟未归属项目（2026-11-25 修复：此前硬编码返回空，远程
+      // 默认项目面板永远空白），改为聚合未归属会话。
+      let projectIds: string[] | null
+      if (projectId === 'default') {
+        projectIds = null
+      } else {
+        projectIds = [projectId]
+        const worktrees = db.raw
+          .prepare(
+            `SELECT id, worktree_meta_json FROM workspaces
+             WHERE archived_at IS NULL AND worktree_meta_json IS NOT NULL`,
+          )
+          .all() as { id: string; worktree_meta_json: string | null }[]
+        for (const worktree of worktrees) {
+          if (parseWorktreeBaseId(worktree.worktree_meta_json) === projectId) {
+            projectIds.push(worktree.id)
+          }
         }
       }
-      const idPlaceholders = projectIds.map(() => '?').join(',')
       // 扫描窗口：最近 20 个活跃会话。产物按「最近会话优先」聚合，更早会话的产物
       // 让位给窗口（truncated 标记给控制端一句说明），避免老项目全表扫事件。
-      const ARTIFACT_SESSION_WINDOW = 20
-      const sessionRows = db.raw
-        .prepare(
-          `SELECT id, title FROM sessions
-           WHERE archived_at IS NULL AND project_id IN (${idPlaceholders})
-           ORDER BY updated_at DESC LIMIT ${ARTIFACT_SESSION_WINDOW}`,
-        )
-        .all(...projectIds) as { id: string; title: string }[]
+      const sessionRows = (
+        projectIds == null
+          ? db.raw
+              .prepare(
+                `SELECT id, title FROM sessions
+                 WHERE archived_at IS NULL AND (project_id = 'default' OR project_id IS NULL)
+                 ORDER BY updated_at DESC LIMIT ${PROJECT_ARTIFACT_SESSION_WINDOW}`,
+              )
+              .all()
+          : db.raw
+              .prepare(
+                `SELECT id, title FROM sessions
+                 WHERE archived_at IS NULL AND project_id IN (${projectIds.map(() => '?').join(',')})
+                 ORDER BY updated_at DESC LIMIT ${PROJECT_ARTIFACT_SESSION_WINDOW}`,
+              )
+              .all(...projectIds)
+      ) as { id: string; title: string }[]
       if (sessionRows.length === 0) return { projectId, artifacts: [] }
       const titleBySession = new Map(
         sessionRows.map((row) => [row.id, row.title || '未命名会话'] as const),
       )
       const sessionPlaceholders = sessionRows.map(() => '?').join(',')
-      const eventRows = db.raw
-        .prepare(
-          `SELECT session_id, event_json, created_at FROM agent_events
-           WHERE event_type = 'presented_files' AND session_id IN (${sessionPlaceholders})
-           ORDER BY created_at DESC, rowid DESC LIMIT 300`,
-        )
-        .all(...sessionRows.map((row) => row.id)) as Array<{
-        session_id: string
-        event_json: string
-        created_at: string
-      }>
-      const truncated = eventRows.length >= 300
-      // 同一文件多次呈现只保留最近一次（rows 已按时间倒序，首个即最新）
-      const latestByPath = new Map<string, MobileBridgeProjectArtifactItem>()
-      for (const row of eventRows) {
-        let rawFiles: unknown
-        try {
-          rawFiles = (JSON.parse(row.event_json) as { files?: unknown }).files
-        } catch {
-          continue
-        }
-        if (!Array.isArray(rawFiles)) continue
-        for (const file of rawFiles) {
-          if (file == null || typeof file !== 'object') continue
-          const filePath = (file as { path?: unknown }).path
-          if (typeof filePath !== 'string' || filePath.length === 0) continue
-          if (latestByPath.has(filePath)) continue
-          const title = (file as { title?: unknown }).title
-          latestByPath.set(filePath, {
-            path: filePath,
-            ...(typeof title === 'string' && title.length > 0 ? { title } : {}),
-            sessionId: row.session_id,
-            sessionTitle: titleBySession.get(row.session_id) ?? '未命名会话',
-            presentedAt: normalizeSqliteTimestampUtc(row.created_at),
-          })
-        }
-      }
-      const artifacts = [...latestByPath.values()].sort((a, b) =>
-        a.presentedAt < b.presentedAt ? 1 : a.presentedAt > b.presentedAt ? -1 : 0,
-      )
-      return {
-        projectId,
-        artifacts,
-        ...(truncated ? { truncated: true } : {}),
-      }
+      // 双事件源：presented_files（显式交付）+ file_change（过程产物），合并见聚合模块
+      const [presentedRows, fileChangeRows] = [
+        db.raw
+          .prepare(
+            `SELECT session_id, event_json, created_at FROM agent_events
+             WHERE event_type = 'presented_files' AND session_id IN (${sessionPlaceholders})
+             ORDER BY created_at DESC, rowid DESC LIMIT ${PROJECT_ARTIFACT_EVENT_LIMIT}`,
+          )
+          .all(...sessionRows.map((row) => row.id)),
+        db.raw
+          .prepare(
+            `SELECT session_id, event_json, created_at FROM agent_events
+             WHERE event_type = 'file_change' AND session_id IN (${sessionPlaceholders})
+             ORDER BY created_at DESC, rowid DESC LIMIT ${PROJECT_ARTIFACT_EVENT_LIMIT}`,
+          )
+          .all(...sessionRows.map((row) => row.id)),
+      ] as [ProjectArtifactEventRow[], ProjectArtifactEventRow[]]
+      return mergeProjectArtifacts({ projectId, titleBySession, presentedRows, fileChangeRows })
     },
   }
 }

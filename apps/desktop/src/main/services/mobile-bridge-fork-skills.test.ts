@@ -68,7 +68,7 @@ function buildService(overrides: Partial<MobileBridgeDeps> = {}): MobileBridgeSe
       error: null,
     })),
     saveAttachments: vi.fn(async () => []),
-    readAttachmentContent: vi.fn(async () => null),
+    readAttachmentContent: vi.fn(async () => ({ ok: false as const, reason: 'outside_whitelist' as const })),
     transcribeAudio: vi.fn(async () => ({ kind: 'failed' as const, message: 'not used' })),
     listSessionTasks: vi.fn(async () => []),
     createSessionTask: vi.fn(async () => {
@@ -314,14 +314,39 @@ describe('mobile bridge fork / lineage / skills routes', () => {
 })
 
 describe('mobile bridge attachment whitelist contract', () => {
-  it('白名单外的附件路径由 deps 拒绝 → 404（route 合同）', async () => {
+  it('白名单外的附件路径由 deps 拒绝 → 403 结构化错误（route 合同，2026-11-25 三态化）', async () => {
     const service = buildService()
     const result = await service.invokeRelay(
       'GET',
       `/v1/attachments/content?path=${encodeURIComponent('/etc/passwd')}`,
       undefined,
     )
-    expect(result.status).toBe(404)
+    expect(result.status).toBe(403)
+    const body = result.body as { error: { code: string; message: string } }
+    expect(body.error.code).toBe('ATTACHMENT_OUTSIDE_WHITELIST')
+    expect(body.error.message).toContain('白名单')
+  })
+
+  it('白名单内但文件不存在 → 404 / 超限 → 413（三态合同）', async () => {
+    const service = buildService({
+      readAttachmentContent: vi.fn(async (requestedPath: string) =>
+        requestedPath.includes('missing')
+          ? ({ ok: false, reason: 'not_found' } as const)
+          : ({ ok: false, reason: 'too_large' } as const),
+      ),
+    })
+    const missing = await service.invokeRelay(
+      'GET',
+      `/v1/attachments/content?path=${encodeURIComponent('G:\\ws\\missing.md')}`,
+      undefined,
+    )
+    expect(missing.status).toBe(404)
+    const tooLarge = await service.invokeRelay(
+      'GET',
+      `/v1/attachments/content?path=${encodeURIComponent('G:\\ws\\huge.bin')}`,
+      undefined,
+    )
+    expect(tooLarge.status).toBe(413)
   })
 })
 

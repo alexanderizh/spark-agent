@@ -63,6 +63,10 @@ import type {
   SidebarOrderState,
   SidebarOrderUpdateRequest,
 } from '@spark/protocol'
+import {
+  attachmentReadFailureToHttp,
+  type MobileBridgeAttachmentReadResult,
+} from '../ipc/mobile-bridge-attachment.js'
 
 const log = createLogger('mobile-bridge')
 
@@ -219,8 +223,8 @@ export interface MobileBridgeDeps {
     sessionId: string,
     files: MobileBridgeUploadAttachmentsRequest['files'],
   ): Promise<MobileBridgeAttachment[]>
-  /** 附件内容读取（仅白名单目录内路径；null = 路径非法或不存在） */
-  readAttachmentContent(path: string): Promise<{ data: Buffer; mimeType: string } | null>
+  /** 附件内容读取（仅白名单目录内路径；失败带结构化 reason 供中继层映射三态文案） */
+  readAttachmentContent(path: string): Promise<MobileBridgeAttachmentReadResult>
   /** 语音转写（本地 SenseVoice → 云渠道兜底） */
   transcribeAudio(input: {
     audioPath: string
@@ -1324,11 +1328,11 @@ export class MobileBridgeService {
     }
     try {
       const content = await this.requireDeps().readAttachmentContent(requestedPath)
-      if (content == null) {
-        return {
-          status: 404,
-          body: { error: { code: 'NOT_FOUND', message: '附件不存在或不在白名单内' } },
-        }
+      if (!content.ok) {
+        // 三态结构化错误（2026-11-25）：白名单外 403 / 不存在 404 / 超大 413，
+        // 控制端直接透传 message，远程面板取回失败不再千篇一律 404
+        const http = attachmentReadFailureToHttp(content.reason)
+        return { status: http.status, body: { error: { code: http.code, message: http.message } } }
       }
       return {
         status: 200,
