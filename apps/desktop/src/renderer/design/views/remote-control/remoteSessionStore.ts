@@ -11,7 +11,11 @@
  *   - 搜索命中才拉「全部会话」（limit 200），TTL 60s。
  * 旧的实现是一次拉 projects(100) + sessions(80)，后者带 preview 几十 KB，且滚不滚动都付。
  */
-import type { MobileBridgeProjectSummary, MobileBridgeSessionSummary } from '@spark/protocol'
+import type {
+  MobileBridgeEvent,
+  MobileBridgeProjectSummary,
+  MobileBridgeSessionSummary,
+} from '@spark/protocol'
 
 export const PROJECTS_TTL_MS = 60_000
 export const SESSIONS_TTL_MS = 25_000
@@ -266,6 +270,68 @@ export function patchSessionInStore(
     for (const bucket of Object.values(store.sessions)) bucket.rows = apply(bucket.rows)
     if (store.allSessions != null) store.allSessions.rows = apply(store.allSessions.rows)
   })
+}
+
+// ─── 实时事件回流（聊天区事件流 → 侧栏会话行） ──────────────────────────────
+
+/** 与目标端 readSessionPreviews 同一截断口径（压缩空白 + 前 60 字） */
+const PREVIEW_MAX_CHARS = 60
+
+/** agent_status → 摘要 status（completed / cancelled 在摘要层都归为 idle） */
+function statusFromAgentEvent(status: string): 'running' | 'idle' | 'error' | null {
+  if (status === 'running') return 'running'
+  if (status === 'idle' || status === 'completed' || status === 'cancelled') return 'idle'
+  if (status === 'error') return 'error'
+  return null
+}
+
+function previewFromContent(content: string): string {
+  return content.replace(/\s+/g, ' ').trim().slice(0, PREVIEW_MAX_CHARS)
+}
+
+/**
+ * 一批实时事件 → 会话摘要字段补丁（纯函数，单测覆盖）。
+ *
+ * 聊天区订阅的事件流此前只喂对话时间线，左侧列表要等下一轮 30s 轮询才看得到
+ * 「运行中 ↔ 结束」与最新一条消息的变化。这里把 agent_status / user_message
+ * 映射成 status / updatedAt / preview，让侧栏与聊天区保持同一节奏。
+ *
+ * 只做绝对值覆盖、不做计数增减：订阅重连会回放当前回合事件，绝对值幂等；
+ * 项目角标仍由 30s 轮询校正，不在这里碰。无关事件（tool_call、assistant delta
+ * 等）返回 null，调用方据此跳过写回。
+ */
+export function deriveLiveSessionPatch(
+  events: readonly MobileBridgeEvent[],
+): Partial<MobileBridgeSessionSummary> | null {
+  let patch: Partial<MobileBridgeSessionSummary> | null = null
+  for (const event of events) {
+    if (event.type === 'user_message') {
+      // user_message 没有 delta 语义，防御性跳过，避免把半截文本写进预览
+      if (event.mode === 'delta') continue
+      const preview = previewFromContent(event.content ?? '')
+      if (preview.length === 0) continue
+      patch = { ...(patch ?? {}), preview, updatedAt: event.timestamp }
+    } else if (event.type === 'agent_status') {
+      const status = statusFromAgentEvent(event.status ?? '')
+      if (status == null) continue
+      patch = { ...(patch ?? {}), status }
+      // 回合开始的时间戳由 user_message 事件带；running 不动 updatedAt
+      if (status !== 'running') patch.updatedAt = event.timestamp
+    }
+  }
+  return patch
+}
+
+/** 实时事件写回侧栏缓存（会话不在任何已加载的桶里时跳过，避免无谓的 version bump） */
+export function patchSessionFromLiveEvents(
+  deviceId: string,
+  sessionId: string,
+  events: readonly MobileBridgeEvent[],
+): void {
+  const patch = deriveLiveSessionPatch(events)
+  if (patch == null) return
+  if (findSessionProjectId(deviceId, sessionId) == null) return
+  patchSessionInStore(deviceId, sessionId, patch)
 }
 
 /** 删除成功后本地移除，并把项目角标减一 */

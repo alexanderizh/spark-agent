@@ -38,6 +38,7 @@ import {
 import { ATTACHMENT_ONLY_TEXT, toReusableDraft } from './remoteMessageReuse'
 import { resolvePendingQuickReplies } from './remoteQuickReplies'
 import { fileNameOf } from './remoteRichContent'
+import { patchSessionFromLiveEvents } from './remoteSessionStore'
 import { buildQuickReplyMessage } from '../../services/quick-reply-suggestions'
 import { shouldShowScrollToBottom } from '../chat-scroll'
 import {
@@ -437,6 +438,9 @@ export function RemoteChatPane({
   const handleStreamEvents = useCallback(
     (incoming: MobileBridgeEvent[]) => {
       applyEvents(mergeRemoteEvents(eventsRef.current, incoming))
+      // 左侧列表实时同步：状态（运行中 ↔ 结束）与最新消息预览立即写回会话缓存，
+      // 不等 30s 轮询；写回是绝对值覆盖，订阅重连回放同批事件也不会重复累计
+      if (sessionId != null) patchSessionFromLiveEvents(deviceId, sessionId, incoming)
       for (const event of incoming) {
         if (event.type !== 'agent_status') continue
         if (event.status === 'running') setRunning(true)
@@ -450,7 +454,7 @@ export function RemoteChatPane({
         }
       }
     },
-    [applyEvents],
+    [applyEvents, deviceId, sessionId],
   )
 
   useRemoteSessionStream(deviceId, sessionId, handleStreamEvents)

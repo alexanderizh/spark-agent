@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import type { MobileBridgeProjectSummary, MobileBridgeSessionSummary } from '@spark/protocol'
+import type {
+  MobileBridgeEvent,
+  MobileBridgeProjectSummary,
+  MobileBridgeSessionSummary,
+} from '@spark/protocol'
 import {
   UNASSIGNED_PROJECT_ID,
   appendSessionPage,
   buildProjectRows,
+  deriveLiveSessionPatch,
   filterSessions,
   formatRelativeTime,
   getRemoteSessionStore,
@@ -11,6 +16,7 @@ import {
   insertSessionInStore,
   isStale,
   patchProjectInStore,
+  patchSessionFromLiveEvents,
   patchSessionInStore,
   removeProjectFromStore,
   removeSessionFromStore,
@@ -290,5 +296,148 @@ describe('本地写回', () => {
       total: 1,
     })
     expect(store.sessions.p2?.rows.map((row) => row.id)).toEqual(['z'])
+  })
+})
+
+describe('deriveLiveSessionPatch', () => {
+  const event = (partial: Partial<MobileBridgeEvent> & { type: MobileBridgeEvent['type'] }) =>
+    ({
+      id: 'e1',
+      seq: 1,
+      turnId: 't1',
+      timestamp: '2026-11-25T10:00:00.000Z',
+      ...partial,
+    }) as MobileBridgeEvent
+
+  it('user_message 更新 preview 与 updatedAt（压缩空白、截 60 字）', () => {
+    const long = `把  回测\n参数   收窄到${'x'.repeat(80)}`
+    const patch = deriveLiveSessionPatch([
+      event({ type: 'user_message', content: long, timestamp: '2026-11-25T10:01:00.000Z' }),
+    ])
+    expect(patch?.preview).toBe(`把 回测 参数 收窄到${'x'.repeat(49)}`)
+    expect(patch?.preview).toHaveLength(60)
+    expect(patch?.updatedAt).toBe('2026-11-25T10:01:00.000Z')
+    expect(patch?.status).toBeUndefined()
+  })
+
+  it('纯空白 user_message 不产生补丁', () => {
+    expect(deriveLiveSessionPatch([event({ type: 'user_message', content: '  \n ' })])).toBeNull()
+  })
+
+  it('agent_status 映射：running→running，completed/cancelled→idle，error→error', () => {
+    expect(
+      deriveLiveSessionPatch([event({ type: 'agent_status', status: 'running' })])?.status,
+    ).toBe('running')
+    expect(
+      deriveLiveSessionPatch([event({ type: 'agent_status', status: 'completed' })])?.status,
+    ).toBe('idle')
+    expect(
+      deriveLiveSessionPatch([event({ type: 'agent_status', status: 'cancelled' })])?.status,
+    ).toBe('idle')
+    expect(deriveLiveSessionPatch([event({ type: 'agent_status', status: 'error' })])?.status).toBe(
+      'error',
+    )
+  })
+
+  it('running 不动 updatedAt，结束态刷新 updatedAt', () => {
+    expect(
+      deriveLiveSessionPatch([
+        event({ type: 'agent_status', status: 'running', timestamp: '2026-11-25T10:02:00.000Z' }),
+      ])?.updatedAt,
+    ).toBeUndefined()
+    expect(
+      deriveLiveSessionPatch([
+        event({ type: 'agent_status', status: 'completed', timestamp: '2026-11-25T10:03:00.000Z' }),
+      ])?.updatedAt,
+    ).toBe('2026-11-25T10:03:00.000Z')
+  })
+
+  it('同批多事件按顺序覆盖（后者生效）', () => {
+    const patch = deriveLiveSessionPatch([
+      event({ type: 'user_message', content: '帮我跑一遍', timestamp: '2026-11-25T10:01:00.000Z' }),
+      event({
+        type: 'agent_status',
+        status: 'completed',
+        timestamp: '2026-11-25T10:05:00.000Z',
+      }),
+    ])
+    expect(patch?.status).toBe('idle')
+    expect(patch?.preview).toBe('帮我跑一遍')
+    expect(patch?.updatedAt).toBe('2026-11-25T10:05:00.000Z')
+  })
+
+  it('无关事件（tool_call / assistant delta / 空批次）返回 null', () => {
+    expect(deriveLiveSessionPatch([])).toBeNull()
+    expect(deriveLiveSessionPatch([event({ type: 'tool_call', toolName: 'Bash' })])).toBeNull()
+    expect(
+      deriveLiveSessionPatch([
+        event({ type: 'assistant_message', content: '半个字', mode: 'delta' }),
+      ]),
+    ).toBeNull()
+  })
+
+  it('未知 agent_status 值忽略', () => {
+    expect(deriveLiveSessionPatch([event({ type: 'agent_status', status: 'thinking' })])).toBeNull()
+  })
+})
+
+describe('patchSessionFromLiveEvents', () => {
+  const DEVICE = 'dev-live-patch'
+
+  const seed = () => {
+    updateRemoteSessionStore(DEVICE, (store) => {
+      store.projects = [project({ id: 'p1', name: '项目一', sessionCount: 1 })]
+      store.sessions.p1 = {
+        rows: [session({ id: 'a', title: '会话 A', projectId: 'p1' })],
+        total: 1,
+        fetchedAt: Date.now(),
+      }
+      store.allSessions = {
+        rows: [session({ id: 'a', title: '会话 A', projectId: 'p1' })],
+        total: 1,
+        fetchedAt: Date.now(),
+      }
+    })
+    return getRemoteSessionStore(DEVICE)
+  }
+
+  const event = (partial: Partial<MobileBridgeEvent> & { type: MobileBridgeEvent['type'] }) =>
+    ({
+      id: 'e1',
+      seq: 1,
+      turnId: 't1',
+      timestamp: '2026-11-25T10:00:00.000Z',
+      ...partial,
+    }) as MobileBridgeEvent
+
+  it('写回项目桶与全量窗口里的同一会话', () => {
+    const store = seed()
+    patchSessionFromLiveEvents(DEVICE, 'a', [
+      event({ type: 'agent_status', status: 'running' }),
+    ])
+    expect(store.sessions.p1?.rows[0]?.status).toBe('running')
+    expect(store.allSessions?.rows[0]?.status).toBe('running')
+    expect(store.version).toBeGreaterThan(0)
+  })
+
+  it('会话不在任何桶里时安全 no-op', () => {
+    const store = seed()
+    const versionBefore = store.version
+    patchSessionFromLiveEvents(DEVICE, 'ghost', [
+      event({ type: 'agent_status', status: 'running' }),
+    ])
+    expect(store.version).toBe(versionBefore)
+  })
+
+  it('同批事件重放（订阅重连）结果幂等', () => {
+    const store = seed()
+    const batch = [
+      event({ type: 'user_message', content: '重放我', timestamp: '2026-11-25T10:01:00.000Z' }),
+      event({ type: 'agent_status', status: 'running', timestamp: '2026-11-25T10:02:00.000Z' }),
+    ]
+    patchSessionFromLiveEvents(DEVICE, 'a', batch)
+    const afterFirst = store.sessions.p1?.rows[0]
+    patchSessionFromLiveEvents(DEVICE, 'a', batch)
+    expect(store.sessions.p1?.rows[0]).toEqual(afterFirst)
   })
 })
