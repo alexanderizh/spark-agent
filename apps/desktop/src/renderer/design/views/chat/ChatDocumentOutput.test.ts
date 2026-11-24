@@ -3,6 +3,8 @@ import {
   collectDocumentOutputKeys,
   filterDocumentOutputFiles,
   isDocumentOutputReference,
+  isPathShapedFileReference,
+  renderDocumentOutputParagraph,
 } from './ChatDocumentOutput'
 
 describe('ChatDocumentOutput', () => {
@@ -42,5 +44,47 @@ describe('ChatDocumentOutput', () => {
       '/tmp/slides.pptx',
     ])
     expect(collectDocumentOutputKeys('生成结果：\n/tmp/report.pdf')).toEqual([])
+  })
+
+  it('accepts path-shaped references for bare-path detection', () => {
+    expect(isPathShapedFileReference('G:\\spark\\reports\\周报.md')).toBe(true)
+    expect(isPathShapedFileReference('G:/spark/reports/report.md')).toBe(true)
+    expect(isPathShapedFileReference('/G:/spark/reports/report.md')).toBe(true)
+    expect(isPathShapedFileReference('/tmp/report.pdf')).toBe(true)
+    expect(isPathShapedFileReference('~/.spark-agent/notes.md')).toBe(true)
+    expect(isPathShapedFileReference('./.spark-agent/task-state-inbox.md')).toBe(true)
+    expect(isPathShapedFileReference('../reports/report.md')).toBe(true)
+    expect(isPathShapedFileReference('.spark-agent/task-state-inbox.md')).toBe(true)
+    expect(isPathShapedFileReference('\\\\server\\share\\report.docx')).toBe(true)
+    expect(isPathShapedFileReference('file:///G:/spark/reports/report.md')).toBe(true)
+  })
+
+  it('rejects prose lines from bare-path detection', () => {
+    // 事故原文：整句散文含空格与 markdown 链接，不应折叠成文档卡片
+    expect(
+      isPathShapedFileReference(
+        '本轮诊断记录已更新到 [.spark-agent/task-state-inbox.md](/G:/spark/spark-agent/.spark-agent/task-state-inbox.md)。',
+      ),
+    ).toBe(false)
+    expect(isPathShapedFileReference('请见 README.md 文档')).toBe(false)
+    expect(isPathShapedFileReference('如 report.pdf 所示')).toBe(false)
+    expect(isPathShapedFileReference('README.md')).toBe(false)
+    expect(isPathShapedFileReference('')).toBe(false)
+    expect(isPathShapedFileReference('已更新到 report.md')).toBe(false)
+  })
+
+  it('keeps prose with embedded document links as regular markdown text', () => {
+    const incident =
+      '本轮诊断记录已更新到 [.spark-agent/task-state-inbox.md](/G:/spark/spark-agent/.spark-agent/task-state-inbox.md)。'
+    expect(collectDocumentOutputKeys(incident)).toEqual([])
+    expect(
+      renderDocumentOutputParagraph(incident, new Set(), undefined, 'test'),
+    ).toBeNull()
+    // 合法裸路径行仍折叠成卡片
+    expect(collectDocumentOutputKeys('G:\\spark\\reports\\周报.md')).toEqual([
+      'g:/spark/reports/周报.md',
+    ])
+    // 整行 markdown 链接（href 显式给路径）仍折叠成卡片
+    expect(collectDocumentOutputKeys('[报告](/tmp/report.pdf)')).toEqual(['/tmp/report.pdf'])
   })
 })
