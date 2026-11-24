@@ -38,6 +38,10 @@ export function useRemoteProjectPanel(deviceId: string, projectId: string | null
   const [error, setError] = useState<string | null>(null)
   /** 目标端没有 git 端点（旧版桌面端 404）：面板降级占位，轮询同步停掉 */
   const [unsupported, setUnsupported] = useState(false)
+  /** 产物端点独立错误态（2026-11-25）：失败不再被吞掉伪装成「0 产物」 */
+  const [artifactsError, setArtifactsError] = useState<string | null>(null)
+  /** 目标端没有产物端点（旧版桌面端 404）：产物区降级占位 */
+  const [artifactsUnsupported, setArtifactsUnsupported] = useState(false)
   /** 请求序号：切换项目后晚到的旧响应直接丢弃，防止内容串项目 */
   const requestSeqRef = useRef(0)
 
@@ -75,6 +79,8 @@ export function useRemoteProjectPanel(deviceId: string, projectId: string | null
           setUnsupported(true)
           setSnapshot(IDLE_SNAPSHOT)
           setError(null)
+          setArtifactsError(null)
+          setArtifactsUnsupported(false)
           return
         }
         const next: RemoteProjectPanelSnapshot = {
@@ -91,6 +97,25 @@ export function useRemoteProjectPanel(deviceId: string, projectId: string | null
               : String(gitResult.reason)
             : null,
         )
+        // 产物失败分类：404 = 目标端版本旧（无端点）；其余 = 真实错误，如实展示
+        if (artifactsResult.status === 'fulfilled') {
+          setArtifactsError(null)
+          setArtifactsUnsupported(false)
+        } else {
+          const reason = artifactsResult.reason
+          const status =
+            reason != null && typeof reason === 'object' && 'status' in reason
+              ? (reason as { status?: number }).status
+              : undefined
+          setArtifactsUnsupported(status === 404)
+          setArtifactsError(
+            status === 404
+              ? null
+              : reason instanceof Error
+                ? reason.message
+                : String(reason ?? '产物读取失败'),
+          )
+        }
       } finally {
         if (seq === requestSeqRef.current) {
           setLoading(false)
@@ -106,6 +131,8 @@ export function useRemoteProjectPanel(deviceId: string, projectId: string | null
     setSnapshot(IDLE_SNAPSHOT)
     setUnsupported(false)
     setError(null)
+    setArtifactsError(null)
+    setArtifactsUnsupported(false)
     if (projectId == null) return
     void load('initial')
   }, [deviceId, load, projectId])
@@ -134,7 +161,17 @@ export function useRemoteProjectPanel(deviceId: string, projectId: string | null
     [call, deviceId, projectId],
   )
 
-  return { snapshot, loading, refreshing, error, unsupported, refresh, loadDiff }
+  return {
+    snapshot,
+    loading,
+    refreshing,
+    error,
+    unsupported,
+    artifactsError,
+    artifactsUnsupported,
+    refresh,
+    loadDiff,
+  }
 }
 
 // ─── 单文件 diff（点击变更文件按需拉取；失败可重试） ────────────────────────────

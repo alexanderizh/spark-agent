@@ -31,9 +31,16 @@ import {
 import { RemoteFileCards } from './RemoteFileCards'
 import type { RemoteAgentFileEntry } from './remoteEventMerge'
 import { useRemoteProjectPanel } from './useRemoteProjectPanel'
+import { useRemoteSessionTimelineSummary } from './useRemoteSessionTimelineSummary'
+import { RemoteSessionInspector } from './RemoteSessionInspector'
+import { RemoteSessionConfigPanel } from './RemoteSessionConfigPanel'
+import { RemotePreviewTab } from './RemotePreviewTab'
 import {
   filterProjectArtifacts,
+  mergeSessionTimelineArtifacts,
   parseRemoteArtifactType,
+  remoteFilePreviewPanelKind,
+  remotePathOfPreviewPanelTab,
   REMOTE_PROJECT_PANEL_MAX_WIDTH,
   REMOTE_PROJECT_PANEL_MIN_WIDTH,
   type RemoteArtifactScope,
@@ -176,6 +183,8 @@ export interface RemoteProjectPanelProps {
   projectId: string
   sessionId: string | null
   sessionTitle: string | null
+  /** 当前连接设备的展示名（检查器「会话信息」用） */
+  deviceLabel: string
   activeTab: RemoteProjectPanelTab
   width: number
   onResize: (width: number, commit: boolean) => void
@@ -189,6 +198,7 @@ export function RemoteProjectPanel({
   projectId,
   sessionId,
   sessionTitle,
+  deviceLabel,
   activeTab,
   width,
   onResize,
@@ -253,8 +263,19 @@ export function RemoteProjectPanel({
     () => 0,
   )
   const store = getRemoteSessionStore(deviceId)
-  const { snapshot, loading, refreshing, error, unsupported, refresh, loadDiff } =
-    useRemoteProjectPanel(deviceId, projectId)
+  const {
+    snapshot,
+    loading,
+    refreshing,
+    error,
+    unsupported,
+    artifactsError,
+    artifactsUnsupported,
+    refresh,
+    loadDiff,
+  } = useRemoteProjectPanel(deviceId, projectId)
+  // 当前会话时间线摘要（事件流订阅）：产物即时并入 + 检查器工具统计的数据源
+  const timelineSummary = useRemoteSessionTimelineSummary(deviceId, sessionId)
 
   const project = useMemo(
     () => store.projects.find((item) => item.id === projectId) ?? null,
@@ -284,15 +305,20 @@ export function RemoteProjectPanel({
   }, [storeVersion, projectId])
   const sessionRows = sessionInfo.rows
 
-  const filteredArtifacts = useMemo(
+  // REST 聚合 + 当前会话时间线（presented_files 事件）按路径去重合并：
+  // 聊天里刚出现的文件卡片即时进面板，不等 30s 轮询（2026-11-25）
+  const mergedArtifacts = useMemo(
     () =>
-      filterProjectArtifacts(
+      mergeSessionTimelineArtifacts(
         snapshot.artifacts?.artifacts ?? [],
+        timelineSummary.files,
         sessionId,
-        artifactScope,
-        artifactType,
       ),
-    [artifactScope, artifactType, sessionId, snapshot.artifacts],
+    [sessionId, snapshot.artifacts, timelineSummary.files],
+  )
+  const filteredArtifacts = useMemo(
+    () => filterProjectArtifacts(mergedArtifacts, sessionId, artifactScope, artifactType),
+    [artifactScope, artifactType, mergedArtifacts, sessionId],
   )
   const artifactEntries = useMemo<RemoteAgentFileEntry[]>(
     () =>
@@ -314,6 +340,8 @@ export function RemoteProjectPanel({
   const gitReady = git?.status.state.kind === 'ready'
   const files = git?.status.files ?? []
   const commits = git?.recentCommits ?? []
+  // 动态预览 tab：activeTab 为 preview:<远程路径> 时渲染取回渲染区
+  const previewPath = remotePathOfPreviewPanelTab(activeTab)
 
   const panelBody: ReactNode = (
     <>
@@ -517,28 +545,68 @@ export function RemoteProjectPanel({
           {artifactScope === 'project' && (
             <div className="rc-panel-hint-note">按最近 20 个会话汇总</div>
           )}
-          {artifactEntries.length === 0 ? (
+          {artifactsUnsupported && (
+            <div className="rc-panel-placeholder">
+              <Icons.Package size={20} />
+              <p>这台电脑的 SparkWork 版本较旧，暂无法读取产物。</p>
+            </div>
+          )}
+          {!artifactsUnsupported && artifactsError != null && (
+            <div className="rc-pane-hint error">
+              产物读取失败：{artifactsError}
+              <button type="button" className="rc-link-btn" onClick={refresh}>
+                重试
+              </button>
+            </div>
+          )}
+          {!artifactsUnsupported && artifactEntries.length === 0 && artifactsError == null ? (
             <div className="rc-panel-empty">
-              {unsupported
-                ? '对方版本较旧，暂无法读取产物'
-                : artifactScope === 'session' && sessionId == null
-                  ? '先选择一个会话，或查看项目近期产物'
-                  : '没有符合筛选条件的产物'}
+              {artifactScope === 'session' && sessionId == null
+                ? '先选择一个会话，或查看项目近期产物'
+                : '没有符合筛选条件的产物'}
             </div>
           ) : (
-            <RemoteFileCards
-              deviceId={deviceId}
-              files={artifactEntries}
-              meta={(file) => {
-                const meta = artifactMetaByPath.get(file.path)
-                return meta != null ? <span className="rc-file-meta-text">{meta}</span> : null
-              }}
-            />
+            !artifactsUnsupported && (
+              <RemoteFileCards
+                deviceId={deviceId}
+                files={artifactEntries}
+                onOpenPreview={(file) => onTabChange(remoteFilePreviewPanelKind(file.path))}
+                meta={(file) => {
+                  const meta = artifactMetaByPath.get(file.path)
+                  return meta != null ? <span className="rc-file-meta-text">{meta}</span> : null
+                }}
+              />
+            )
           )}
           {(snapshot.artifacts?.truncated ?? false) && (
             <div className="rc-panel-hint-note">产物较多，仅显示最近一部分</div>
           )}
         </div>
+      )}
+
+      {activeTab === 'inspector' && (
+        <RemoteSessionInspector
+          deviceId={deviceId}
+          sessionId={sessionId}
+          sessionTitle={sessionTitle}
+          projectName={projectName}
+          deviceLabel={deviceLabel}
+          summary={timelineSummary}
+          artifacts={mergedArtifacts}
+          onOpenPreview={(filePath) => onTabChange(remoteFilePreviewPanelKind(filePath))}
+        />
+      )}
+
+      {activeTab === 'config' && (
+        <RemoteSessionConfigPanel deviceId={deviceId} sessionId={sessionId} />
+      )}
+
+      {previewPath != null && (
+        <RemotePreviewTab
+          deviceId={deviceId}
+          remotePath={previewPath}
+          onClose={() => onTabChange('artifacts')}
+        />
       )}
     </>
   )
@@ -600,6 +668,8 @@ export function RemoteProjectPanel({
             ['session', '会话'],
             ['project', '项目'],
             ['artifacts', '产物'],
+            ['inspector', '检查器'],
+            ['config', '配置'],
           ] as const
         ).map(([tab, label]) => (
           <button
@@ -614,6 +684,19 @@ export function RemoteProjectPanel({
             {label}
           </button>
         ))}
+        {previewPath != null && (
+          <button
+            type="button"
+            role="tab"
+            id="rc-panel-tab-preview"
+            aria-controls="rc-panel-content"
+            aria-selected
+            title={previewPath}
+            onClick={() => onTabChange(activeTab)}
+          >
+            预览
+          </button>
+        )}
       </div>
 
       <div

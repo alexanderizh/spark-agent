@@ -3898,3 +3898,214 @@
 .rc-file-meta-text {
   font: inherit;
 }
+
+/* ─── 检查器 / 配置 / 预览 tab（2026-11-25 面板对齐本地会话侧面板） ───────── */
+
+/* 配置面板（rc-cfg-*：rc-config-* 已被输入框配置菜单占用，避开命名冲突） */
+.rc-cfg-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+
+  & + .rc-cfg-row {
+    border-top: 1px solid var(--divider, rgba(0, 0, 0, 0.06));
+  }
+}
+
+.rc-cfg-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.rc-cfg-label-text {
+  font-size: var(--font-xs, 12px);
+  font-weight: 600;
+  color: var(--text-strong, #11100e);
+}
+
+.rc-cfg-label-hint {
+  font-size: 11px;
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-cfg-select {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
+  border-radius: var(--r-sm, 6px);
+  background: var(--panel, #fff);
+  color: var(--text, #1a1917);
+  font-size: var(--font-xs, 12px);
+
+  &:hover:not(:disabled) {
+    border-color: var(--border-strong, rgba(0, 0, 0, 0.18));
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: var(--primary, #4f7cff);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+.rc-cfg-static {
+  font-size: var(--font-xs, 12px);
+  color: var(--text-muted, #6f6a60);
+}
+
+/* 检查器 */
+.rc-inspector-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.rc-inspector-info-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  min-width: 0;
+}
+
+.rc-inspector-info-label {
+  flex: none;
+  width: 44px;
+  font-size: 11px;
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-inspector-info-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-xs, 12px);
+  color: var(--text, #1a1917);
+}
+
+.rc-inspector-artifacts {
+  display: flex;
+  flex-direction: column;
+}
+
+.rc-inspector-artifact-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-sunken, #f2f2f2);
+  }
+
+  & + .rc-inspector-artifact-row {
+    margin-top: 1px;
+  }
+}
+
+.rc-inspector-artifact-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-xs, 12px);
+  color: var(--text, #1a1917);
+}
+
+.rc-inspector-artifact-meta {
+  font-size: 11px;
+  color: var(--text-faint, #9b9489);
+}
+
+.rc-inspector-tools {
+  display: flex;
+  flex-direction: column;
+}
+
+.rc-inspector-tool-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  min-width: 0;
+}
+
+.rc-inspector-tool-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-xs, 12px);
+  color: var(--text, #1a1917);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.rc-inspector-tool-nums {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+
+  .is-running {
+    color: var(--primary, #4f7cff);
+  }
+
+  .is-error {
+    color: var(--danger, #d5442c);
+  }
+
+  .is-total {
+    color: var(--text-faint, #9b9489);
+  }
+}
+
+/* 预览动态 tab */
+.rc-preview-tab {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.rc-preview-tab-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--divider, rgba(0, 0, 0, 0.06));
+  color: var(--text-muted, #6f6a60);
+}
+
+.rc-preview-tab-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-xs, 12px);
+  color: var(--text-strong, #11100e);
+}
+
+.rc-preview-tab-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}

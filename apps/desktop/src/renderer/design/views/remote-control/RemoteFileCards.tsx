@@ -8,6 +8,7 @@ import { useState, type ReactNode } from 'react'
 import type { RemoteAgentFileEntry } from './remoteEventMerge'
 import { Icons } from '../../Icons'
 import { ImagePreviewModal } from '../../components/ImagePreviewModal'
+import { FileMarkdownView } from '../../components/FileMarkdownView'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { RemoteDocPreview } from './RemoteDocPreview'
 import { RemoteHtmlPreview } from './RemoteHtmlPreview'
@@ -34,11 +35,17 @@ function RemoteFileRow({
   deviceId,
   file,
   meta,
+  onOpenPreview,
 }: {
   deviceId: string
   file: RemoteAgentFileEntry
   /** 行内补充信息（项目面板标注「所属会话 · 时间」用；消息流不传，行为不变） */
   meta?: (file: RemoteAgentFileEntry) => ReactNode
+  /**
+   * 产物面板传入：点击文件名改为打开右侧「预览」动态 tab（对齐本地 openUnifiedSidePanel）。
+   * 消息流不传该 prop，卡片保持原「就地展开 / 抽屉」行为不变。
+   */
+  onOpenPreview?: (file: RemoteAgentFileEntry) => void
 }) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [docOpen, setDocOpen] = useState(false)
@@ -70,6 +77,10 @@ function RemoteFileRow({
   }
 
   const handleNameClick = () => {
+    if (onOpenPreview != null) {
+      onOpenPreview(file)
+      return
+    }
     if (docPreview) {
       setDocOpen(true)
       return
@@ -154,7 +165,11 @@ function RemoteFileRow({
               {kind === 'html' && remoteFile.text != null && (
                 <RemoteHtmlPreview html={remoteFile.text} title={name} />
               )}
-              {(kind === 'markdown' || kind === 'text' || kind === 'code') && (
+              {kind === 'markdown' && remoteFile.text != null && (
+                // 2026-11-25：md 从 <pre> 裸文本升级为本地同款 Markdown 渲染（FilePreviewPanel 同源）
+                <FileMarkdownView content={remoteFile.text} />
+              )}
+              {(kind === 'text' || kind === 'code') && (
                 <pre className="rc-file-text">{remoteFile.text ?? '（该文件不支持内联预览）'}</pre>
               )}
               {kind === 'html' && remoteFile.text == null && (
@@ -190,10 +205,13 @@ export function RemoteFileCards({
   deviceId,
   files,
   meta,
+  onOpenPreview,
 }: {
   deviceId: string
   files: RemoteAgentFileEntry[]
   meta?: (file: RemoteAgentFileEntry) => ReactNode
+  /** 见 RemoteFileRow.onOpenPreview：产物面板传入后，点击文件名打开预览 tab */
+  onOpenPreview?: (file: RemoteAgentFileEntry) => void
 }) {
   if (files.length === 0) return null
   return (
@@ -209,6 +227,7 @@ export function RemoteFileCards({
           deviceId={deviceId}
           file={file}
           {...(meta != null ? { meta } : {})}
+          {...(onOpenPreview != null ? { onOpenPreview } : {})}
         />
       ))}
     </div>

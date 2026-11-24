@@ -72,8 +72,21 @@ vi.mock('./useRemoteProjectPanel', () => ({
     refreshing: false,
     error: null,
     unsupported: false,
+    artifactsError: null,
+    artifactsUnsupported: false,
     refresh: vi.fn(),
     loadDiff: vi.fn().mockResolvedValue({ diff: '' }),
+  }),
+}))
+
+vi.mock('./useRemoteSessionTimelineSummary', () => ({
+  useRemoteSessionTimelineSummary: () => ({
+    files: [],
+    toolCalls: [],
+    messageCount: 0,
+    lastActivityAt: null,
+    loading: false,
+    error: null,
   }),
 }))
 
@@ -96,6 +109,7 @@ function PanelHarness() {
       projectId="project-1"
       sessionId="session-1"
       sessionTitle="Current session"
+      deviceLabel="Device One"
       activeTab={activeTab}
       width={340}
       onResize={mocks.onResize}

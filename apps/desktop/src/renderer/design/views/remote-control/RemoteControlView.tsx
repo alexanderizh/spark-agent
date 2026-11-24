@@ -38,7 +38,9 @@ import { useRemoteRelay } from './useRemoteBridge'
 import { useRemoteSessionTitle } from './useRemoteSessionTree'
 import {
   clampRemoteProjectPanelWidth,
+  readRemoteProjectPanelOpen,
   readRemoteProjectPanelWidth,
+  rememberRemoteProjectPanelOpen,
   rememberRemoteProjectPanelWidth,
   type RemoteProjectPanelTab,
 } from './remoteProjectPanelState'
@@ -137,10 +139,19 @@ export function RemoteControlView() {
   /** 正在保存备注名的设备：按钮显示 spinner，避免连点写出多条 */
   const [aliasPendingId, setAliasPendingId] = useState<string | null>(null)
   /**
-   * 右侧项目信息面板：open 是显式开关；pinnedProjectId 是项目右键菜单锁定的项目。
+   * 右侧项目信息面板：open 是显式开关（持久化，2026-11-25 起默认打开——
+   * 未持久化过时展开；手动关过则跟随用户选择，不再强开）；
+   * pinnedProjectId 是项目右键菜单锁定的项目。
    * 不锁定时面板跟随当前选中会话的项目（会话切换自动跟随，无需手动刷新）。
    */
-  const [projectPanelOpen, setProjectPanelOpen] = useState(false)
+  const [projectPanelOpen, setProjectPanelOpenState] = useState(() =>
+    readRemoteProjectPanelOpen(),
+  )
+  /** 开关统一走这里：状态与持久化同步写（用户手动关过就记住，下次不再强开） */
+  const setProjectPanelOpen = useCallback((next: boolean) => {
+    setProjectPanelOpenState(next)
+    rememberRemoteProjectPanelOpen(next)
+  }, [])
   const [panelPinnedProjectId, setPanelPinnedProjectId] = useState<string | null>(null)
   const [panelTab, setPanelTab] = useState<RemoteProjectPanelTab>('session')
   const [projectPanelWidth, setProjectPanelWidth] = useState(readRemoteProjectPanelWidth)
@@ -230,10 +241,10 @@ export function RemoteControlView() {
 
   /** 聊天头部按钮：开着就关；没开则跟随当前会话项目打开（没有选中会话时不响应） */
   const handleToggleProjectPanel = useCallback(() => {
-    setProjectPanelOpen((open) => !open)
+    setProjectPanelOpen(!projectPanelOpen)
     setPanelPinnedProjectId(null)
     setPanelTab('session')
-  }, [])
+  }, [projectPanelOpen, setProjectPanelOpen])
 
   const handleCloseProjectPanel = useCallback(() => {
     setProjectPanelOpen(false)
@@ -426,6 +437,7 @@ export function RemoteControlView() {
             projectId={panelProjectId}
             sessionId={activeSessionId}
             sessionTitle={sessionTitle}
+            deviceLabel={deviceLabel(activeDevice)}
             activeTab={panelTab}
             onTabChange={setPanelTab}
             width={projectPanelWidth}
