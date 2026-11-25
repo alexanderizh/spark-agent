@@ -1,29 +1,336 @@
 /**
- * 远程侧栏的筛选浮层（对齐桌面端 SidebarFilterMenu 的语义，按远程数据裁剪）。
+ * 远程侧栏的筛选浮层 —— 与桌面端侧栏 SidebarFilterMenu 同构的「行式」设计。
  *
- * 五个维度：状态 / 标记 / 项目（多选 OR，空 = 全部）、最近活动（单选）、只看置顶（开关）。
- * 只有项目维度能在树上就地生效；状态/标记/活动/置顶一开，宿主会切到「结果视图」
- * 全量拉一遍再过滤（会话树是懒加载的，未展开的项目没有会话行可筛）。
+ * 每个筛选维度默认收起为一行（行尾显示当前值，启用时高亮），悬停才从右侧展开
+ * 二级子菜单勾选；「只看置顶」是开关行，底部「清除全部」。样式直接复用
+ * SidebarFilterMenu.less / session-labels.less，不另造一套视觉。
  *
- * 项目维度单独做成「选择器」子视图：项目数量只增不减（用户侧动辄几十个），
- * chip 平铺会把 232px 的面板拉成一条长龙；子视图还能让列表占满整个面板高度，
- * 不像内嵌列表那样和上面三个维度抢空间、出现「面板滚一层、列表再滚一层」。
+ * 维度与语义沿用 remoteSessionFilters：状态 / 标记 / 项目（多选 OR，空 = 全部）、
+ * 最近活动（单选）、只看置顶（开关）。只有项目维度能在树上就地生效；状态/标记/
+ * 活动/置顶一开，宿主会切到「结果视图」全量拉一遍再过滤（会话树是懒加载的，
+ * 未展开的项目没有会话行可筛）。
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { Dropdown } from '@lobehub/ui'
+import { Switch } from 'antd'
+// 行式筛选器的视觉与本地侧栏完全一致：直接复用同一份样式与标记色板
+import '../../SidebarFilterMenu.less'
+import '../../session-labels.less'
 import { Icons } from '../../Icons'
+import { getSidebarLabelFilterColorClass } from '../../session-labels'
 import {
   REMOTE_ACTIVITY_FILTER_OPTIONS,
   REMOTE_STATUS_FILTER_OPTIONS,
   countActiveFilterFacets,
+  isRemoteFilterActive,
   toggleFilterValue,
+  type RemoteActivityFilter,
   type RemoteLabelFilter,
   type RemoteSessionFilter,
+  type RemoteStatusFilter,
 } from './remoteSessionFilters'
-import { REMOTE_SESSION_LABELS } from './remoteSessionLabels'
+import { REMOTE_SESSION_LABELS, sessionLabelText } from './remoteSessionLabels'
 import type { RemoteProjectRow } from './remoteSessionStore'
 
-/** 收起态最多显示几个已选项目 chip，其余收进「+N」 */
-const MAX_PROJECT_CHIPS = 3
+/** 二级子菜单与一级弹层的相对定位（与本地 SidebarFilterMenu 相同的 placement 值） */
+const SUBMENU_PLACEMENT = 'rightTop' as unknown as 'topRight'
+
+interface SubMenuOption<T extends string> {
+  value: T
+  label: string
+  hint?: string
+  /** 标记色点 class（仅标记维度的具体标记有） */
+  dotClass?: string | undefined
+}
+
+/** 多选行的行值文案：空选择=「全部」；单选显示该项；多选显示「首个 +N」。 */
+function formatMultiSelectRowLabel(labels: readonly string[], allText: string): string {
+  const [first, ...rest] = labels
+  if (first == null) return allText
+  if (rest.length === 0) return first
+  return `${first} +${rest.length}`
+}
+
+/* ─── SubMenu — 单选二级浮层内容（不带 chrome，由 Dropdown 外层负责） ─── */
+function SubMenu<T extends string>({
+  options,
+  current,
+  onSelect,
+}: {
+  options: ReadonlyArray<SubMenuOption<T>>
+  current: T | null
+  onSelect: (value: T) => void
+}) {
+  return (
+    <div className="sidebar-filter-submenu">
+      {options.map((opt) => {
+        const active = opt.value === current
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            className={`sidebar-filter-submenu-item${active ? ' is-active' : ''}`}
+            onClick={() => onSelect(opt.value)}
+          >
+            <span className="sidebar-filter-submenu-item-label">
+              <span className="sidebar-filter-submenu-item-text">
+                {opt.dotClass != null && (
+                  <span className={`session-label-dot ${opt.dotClass}`} aria-hidden />
+                )}
+                {opt.label}
+              </span>
+              {opt.hint && <span className="sidebar-filter-submenu-item-hint">{opt.hint}</span>}
+            </span>
+            {active && <Icons.Check size={14} className="sidebar-filter-submenu-check" />}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ─── MultiSelectSubMenu — 多选二级浮层；首项「全部」= 清空该维度选择 ───
+ * 「全部」不进 options：真实值是字面量联合类型，哨兵混进去要么类型撒谎、
+ * 要么与真实 id 撞车，单独渲染首项两边都干净。 */
+function MultiSelectSubMenu<T extends string>({
+  allLabel,
+  options,
+  selectedValues,
+  onClear,
+  onToggle,
+}: {
+  allLabel: string
+  options: ReadonlyArray<SubMenuOption<T>>
+  selectedValues: ReadonlySet<T>
+  onClear: () => void
+  onToggle: (value: T) => void
+}) {
+  const allActive = selectedValues.size === 0
+  return (
+    <div className="sidebar-filter-submenu">
+      <button
+        type="button"
+        className={`sidebar-filter-submenu-item${allActive ? ' is-active' : ''}`}
+        onClick={onClear}
+      >
+        <span className="sidebar-filter-submenu-item-label">
+          <span className="sidebar-filter-submenu-item-text">{allLabel}</span>
+        </span>
+        {allActive && <Icons.Check size={14} className="sidebar-filter-submenu-check" />}
+      </button>
+      {options.map((opt) => {
+        const active = selectedValues.has(opt.value)
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            className={`sidebar-filter-submenu-item${active ? ' is-active' : ''}`}
+            onClick={() => onToggle(opt.value)}
+          >
+            <span className="sidebar-filter-submenu-item-label">
+              <span className="sidebar-filter-submenu-item-text">
+                {opt.dotClass != null && (
+                  <span className={`session-label-dot ${opt.dotClass}`} aria-hidden />
+                )}
+                {opt.label}
+              </span>
+              {opt.hint && <span className="sidebar-filter-submenu-item-hint">{opt.hint}</span>}
+            </span>
+            {active && <Icons.Check size={14} className="sidebar-filter-submenu-check" />}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ─── 行 — 一级菜单条目，悬停展开二级 Trigger ─── */
+function FilterRow({
+  label,
+  valueLabel,
+  highlighted,
+  children,
+}: {
+  label: string
+  valueLabel: string
+  highlighted?: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Dropdown
+      menu={{ items: [] }}
+      open={open}
+      onOpenChange={setOpen}
+      trigger={['hover']}
+      placement={SUBMENU_PLACEMENT}
+      align={{ offset: [4, 0], overflow: { shiftX: true, adjustY: true } }}
+      popupRender={() => children}
+    >
+      <button type="button" className={`sidebar-filter-row${open ? ' is-open' : ''}`}>
+        <span className="sidebar-filter-row-label">{label}</span>
+        <span className={`sidebar-filter-row-value${highlighted ? ' is-highlight' : ''}`}>
+          {valueLabel}
+        </span>
+        <Icons.ChevronRight size={12} className="sidebar-filter-row-chev" />
+      </button>
+    </Dropdown>
+  )
+}
+
+/* ─── 主弹层内容 ─── */
+function FilterPopupContent({
+  filter,
+  projects,
+  onChange,
+  onClear,
+}: {
+  filter: RemoteSessionFilter
+  projects: RemoteProjectRow[]
+  onChange: (next: RemoteSessionFilter) => void
+  onClear: () => void
+}) {
+  const statusOptions = useMemo<ReadonlyArray<SubMenuOption<RemoteStatusFilter>>>(
+    () =>
+      REMOTE_STATUS_FILTER_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+      })),
+    [],
+  )
+  const activityOptions = useMemo<ReadonlyArray<SubMenuOption<RemoteActivityFilter>>>(
+    () =>
+      REMOTE_ACTIVITY_FILTER_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+      })),
+    [],
+  )
+  const labelOptions = useMemo<ReadonlyArray<SubMenuOption<RemoteLabelFilter>>>(
+    () => [
+      { value: 'unlabeled', label: '未标记' },
+      ...REMOTE_SESSION_LABELS.map((meta) => ({
+        value: meta.key,
+        label: meta.label,
+        // 具体标记带状态色点，与本地侧栏筛选器共用同一套色板
+        dotClass: getSidebarLabelFilterColorClass(meta.key),
+      })),
+    ],
+    [],
+  )
+  const projectOptions = useMemo<ReadonlyArray<SubMenuOption<string>>>(
+    () => projects.map((project) => ({ value: project.id, label: project.name })),
+    [projects],
+  )
+
+  const statusLabelByValue = useMemo(
+    () => new Map(REMOTE_STATUS_FILTER_OPTIONS.map((option) => [option.value, option.label])),
+    [],
+  )
+  const activityLabelByValue = useMemo(
+    () => new Map(REMOTE_ACTIVITY_FILTER_OPTIONS.map((option) => [option.value, option.label])),
+    [],
+  )
+  const projectNameById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project.name])),
+    [projects],
+  )
+
+  const toggleProject = (projectId: string) => {
+    onChange({ ...filter, projectIds: toggleFilterValue(filter.projectIds, projectId) })
+  }
+  const toggleStatus = (value: RemoteStatusFilter) => {
+    onChange({ ...filter, statuses: toggleFilterValue(filter.statuses, value) })
+  }
+  const toggleLabel = (value: RemoteLabelFilter) => {
+    onChange({ ...filter, labels: toggleFilterValue(filter.labels, value) })
+  }
+
+  // 行值文案：空选择=「全部」；多选显示「首个 +N」（悬停子菜单可见完整勾选）
+  const statusValueLabel = formatMultiSelectRowLabel(
+    filter.statuses.map((value) => statusLabelByValue.get(value) ?? value),
+    '全部',
+  )
+  const projectValueLabel = formatMultiSelectRowLabel(
+    filter.projectIds.map((id) => projectNameById.get(id) ?? id),
+    '全部项目',
+  )
+  const labelValueLabel = formatMultiSelectRowLabel(
+    filter.labels.map((value) =>
+      value === 'unlabeled' ? '未标记' : (sessionLabelText(value) ?? value),
+    ),
+    '全部',
+  )
+
+  // 有选择就保持高亮，清空成全部才熄灭（与本地侧栏一致）
+  const statusHighlight = filter.statuses.length > 0
+  const projectHighlight = filter.projectIds.length > 0
+  const activityHighlight = filter.activity !== 'all'
+  const labelsHighlight = filter.labels.length > 0
+
+  return (
+    <>
+      <FilterRow label="状态" valueLabel={statusValueLabel} highlighted={statusHighlight}>
+        <MultiSelectSubMenu
+          allLabel="全部"
+          options={statusOptions}
+          selectedValues={new Set(filter.statuses)}
+          onClear={() => onChange({ ...filter, statuses: [] })}
+          onToggle={toggleStatus}
+        />
+      </FilterRow>
+      <FilterRow label="项目" valueLabel={projectValueLabel} highlighted={projectHighlight}>
+        <MultiSelectSubMenu
+          allLabel="全部项目"
+          options={projectOptions}
+          selectedValues={new Set(filter.projectIds)}
+          onClear={() => onChange({ ...filter, projectIds: [] })}
+          onToggle={toggleProject}
+        />
+      </FilterRow>
+      <FilterRow
+        label="最近活动"
+        valueLabel={activityLabelByValue.get(filter.activity) ?? filter.activity}
+        highlighted={activityHighlight}
+      >
+        <SubMenu
+          options={activityOptions}
+          current={filter.activity}
+          onSelect={(value) => onChange({ ...filter, activity: value })}
+        />
+      </FilterRow>
+      <div className="sidebar-filter-divider" />
+      <FilterRow label="标记" valueLabel={labelValueLabel} highlighted={labelsHighlight}>
+        <MultiSelectSubMenu
+          allLabel="全部"
+          options={labelOptions}
+          selectedValues={new Set(filter.labels)}
+          onClear={() => onChange({ ...filter, labels: [] })}
+          onToggle={toggleLabel}
+        />
+      </FilterRow>
+      <div className="sidebar-filter-divider" />
+      <div className="sidebar-filter-setting">
+        <span className="sidebar-filter-setting-label">只看置顶</span>
+        <Switch
+          size="small"
+          checked={filter.pinnedOnly}
+          onChange={(checked) => onChange({ ...filter, pinnedOnly: checked })}
+          aria-label="只看置顶"
+        />
+      </div>
+      <div className="sidebar-filter-divider" />
+      <button
+        type="button"
+        className="sidebar-filter-clear"
+        onClick={onClear}
+        disabled={!isRemoteFilterActive(filter)}
+      >
+        清除全部
+      </button>
+    </>
+  )
+}
 
 export interface RemoteSessionFilterMenuProps {
   filter: RemoteSessionFilter
@@ -41,71 +348,31 @@ export function RemoteSessionFilterMenu({
   onClear,
 }: RemoteSessionFilterMenuProps) {
   const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement | null>(null)
   const activeCount = countActiveFilterFacets(filter)
-  /** 面板内的「选择项目」子视图：占满面板，列表不被上面几个维度挤压 */
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [projectQuery, setProjectQuery] = useState('')
-  const projectSearchRef = useRef<HTMLInputElement | null>(null)
-
-  /** 关整个面板时顺手把选择器与搜索词收回去：下次打开是紧凑形态 */
-  const closePanel = useCallback(() => {
-    setOpen(false)
-    setPickerOpen(false)
-    setProjectQuery('')
-  }, [])
-
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (event: MouseEvent) => {
-      const node = rootRef.current
-      if (node != null && event.target instanceof Node && node.contains(event.target)) return
-      closePanel()
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      // 先退选择器，再退面板：Esc 一次只退一层，符合「返回」的直觉
-      if (pickerOpen) setPickerOpen(false)
-      else closePanel()
-    }
-    document.addEventListener('mousedown', onPointerDown, true)
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown, true)
-      document.removeEventListener('keydown', onKeyDown, true)
-    }
-  }, [closePanel, open, pickerOpen])
-
-  // 进入选择器就聚焦搜索框：项目多的时候，摊开列表再去找输入框是多余动作
-  useEffect(() => {
-    if (pickerOpen) projectSearchRef.current?.focus()
-  }, [pickerOpen])
-
-  const labelOptions: ReadonlyArray<{ value: RemoteLabelFilter; label: string }> = [
-    { value: 'unlabeled', label: '未标记' },
-    ...REMOTE_SESSION_LABELS.map((meta) => ({ value: meta.key, label: meta.label })),
-  ]
-
-  const toggleProject = (projectId: string) => {
-    onChange({ ...filter, projectIds: toggleFilterValue(filter.projectIds, projectId) })
-  }
-  const selectedProjects = projects.filter((project) => filter.projectIds.includes(project.id))
-  const normalizedQuery = projectQuery.trim().toLowerCase()
-  const visibleProjects =
-    normalizedQuery.length === 0
-      ? projects
-      : projects.filter((project) => project.name.toLowerCase().includes(normalizedQuery))
 
   return (
-    <div className="rc-filter-wrap" ref={rootRef}>
+    <Dropdown
+      menu={{ items: [] }}
+      open={open}
+      onOpenChange={setOpen}
+      trigger={['click']}
+      placement="bottomRight"
+      popupRender={() => (
+        <div className="sidebar-filter-menu" onClick={(event) => event.stopPropagation()}>
+          <FilterPopupContent
+            filter={filter}
+            projects={projects}
+            onChange={onChange}
+            onClear={onClear}
+          />
+        </div>
+      )}
+    >
       <button
         type="button"
         className={`rc-icon-btn${activeCount > 0 ? ' is-active' : ''}`}
-        onClick={() => {
-          if (open) closePanel()
-          else setOpen(true)
-        }}
-        aria-haspopup="dialog"
+        onClick={(event) => event.stopPropagation()}
+        aria-haspopup="menu"
         aria-expanded={open}
         title={activeCount > 0 ? `筛选（${activeCount} 项已启用）` : '筛选会话'}
         aria-label="筛选会话"
@@ -113,245 +380,6 @@ export function RemoteSessionFilterMenu({
         <Icons.ListFilter size={13} />
         {activeCount > 0 && <span className="rc-filter-badge">{activeCount}</span>}
       </button>
-
-      {open && (
-        <div
-          className={`rc-filter-menu${pickerOpen ? ' is-picker' : ''}`}
-          role="dialog"
-          aria-label={pickerOpen ? '选择项目' : '筛选会话'}
-        >
-          {pickerOpen ? (
-            <>
-              <div className="rc-picker-head">
-                <button
-                  type="button"
-                  className="rc-picker-back"
-                  onClick={() => setPickerOpen(false)}
-                  title="返回筛选"
-                  aria-label="返回筛选"
-                >
-                  <Icons.ChevronLeft size={12} />
-                </button>
-                <span className="rc-picker-title">选择项目</span>
-                <span className="rc-picker-count">
-                  {filter.projectIds.length}/{projects.length}
-                </span>
-              </div>
-
-              <input
-                ref={projectSearchRef}
-                className="rc-filter-search"
-                value={projectQuery}
-                onChange={(event) => setProjectQuery(event.target.value)}
-                placeholder="搜索项目"
-                aria-label="搜索项目"
-              />
-
-              <div className="rc-picker-list" role="group" aria-label="项目列表">
-                {visibleProjects.length === 0 ? (
-                  <div className="rc-filter-empty">没有匹配的项目</div>
-                ) : (
-                  visibleProjects.map((project) => {
-                    const selected = filter.projectIds.includes(project.id)
-                    return (
-                      <button
-                        key={project.id}
-                        type="button"
-                        className={`rc-filter-picker-item${selected ? ' is-selected' : ''}`}
-                        onClick={() => toggleProject(project.id)}
-                        role="checkbox"
-                        aria-checked={selected}
-                        title={project.name}
-                      >
-                        <span className="rc-filter-check">
-                          {selected && <Icons.Check size={10} />}
-                        </span>
-                        <span className="rc-filter-picker-name">{project.name}</span>
-                      </button>
-                    )
-                  })
-                )}
-              </div>
-
-              <div className="rc-picker-foot">
-                <button
-                  type="button"
-                  className="rc-link-btn"
-                  disabled={filter.projectIds.length === 0}
-                  onClick={() => onChange({ ...filter, projectIds: [] })}
-                >
-                  清空
-                </button>
-                <button
-                  type="button"
-                  className="rc-picker-done"
-                  onClick={() => setPickerOpen(false)}
-                >
-                  完成
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="rc-filter-head">
-                <span>筛选</span>
-                <button
-                  type="button"
-                  className="rc-link-btn"
-                  onClick={onClear}
-                  disabled={activeCount === 0}
-                >
-                  清除全部
-                </button>
-              </div>
-
-              <FilterGroup title="状态">
-                {REMOTE_STATUS_FILTER_OPTIONS.map((option) => (
-                  <FilterOption
-                    key={option.value}
-                    label={option.label}
-                    selected={filter.statuses.includes(option.value)}
-                    onClick={() =>
-                      onChange({
-                        ...filter,
-                        statuses: toggleFilterValue(filter.statuses, option.value),
-                      })
-                    }
-                  />
-                ))}
-              </FilterGroup>
-
-              <FilterGroup title="标记">
-                {labelOptions.map((option) => (
-                  <FilterOption
-                    key={option.value}
-                    label={option.label}
-                    selected={filter.labels.includes(option.value)}
-                    onClick={() =>
-                      onChange({
-                        ...filter,
-                        labels: toggleFilterValue(filter.labels, option.value),
-                      })
-                    }
-                  />
-                ))}
-              </FilterGroup>
-
-              <FilterGroup title="最近活动" single>
-                {REMOTE_ACTIVITY_FILTER_OPTIONS.map((option) => (
-                  <FilterOption
-                    key={option.value}
-                    label={option.label}
-                    selected={filter.activity === option.value}
-                    onClick={() => onChange({ ...filter, activity: option.value })}
-                  />
-                ))}
-              </FilterGroup>
-
-              {/*
-               * 项目：这里只放一行摘要（已选几个 / 全部），点它进选择器。
-               * 直接把几十个项目铺成 chip 会把面板拉成长条，也很难扫读。
-               */}
-              <div className="rc-filter-group">
-                <div className="rc-filter-group-title">
-                  <button
-                    type="button"
-                    className="rc-filter-picker-entry"
-                    onClick={() => setPickerOpen(true)}
-                    disabled={projects.length === 0}
-                    title={projects.length === 0 ? '还没有项目' : '选择要筛选的项目'}
-                  >
-                    <span>项目</span>
-                    <span className="rc-filter-picker-entry-value">
-                      {projects.length === 0
-                        ? '还没有项目'
-                        : selectedProjects.length === 0
-                          ? `全部（${projects.length}）`
-                          : `已选 ${selectedProjects.length} / ${projects.length}`}
-                    </span>
-                    {projects.length > 0 && <Icons.ChevronRight size={10} />}
-                  </button>
-                </div>
-                {selectedProjects.length > 0 && (
-                  <div className="rc-filter-options">
-                    {selectedProjects.slice(0, MAX_PROJECT_CHIPS).map((project) => (
-                      <FilterOption
-                        key={project.id}
-                        label={project.name}
-                        selected
-                        onClick={() => toggleProject(project.id)}
-                      />
-                    ))}
-                    {selectedProjects.length > MAX_PROJECT_CHIPS && (
-                      <button
-                        type="button"
-                        className="rc-filter-more"
-                        onClick={() => setPickerOpen(true)}
-                        title="查看全部已选项目"
-                      >
-                        +{selectedProjects.length - MAX_PROJECT_CHIPS}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <FilterGroup title="其它">
-                <FilterOption
-                  label="只看置顶"
-                  selected={filter.pinnedOnly}
-                  onClick={() => onChange({ ...filter, pinnedOnly: !filter.pinnedOnly })}
-                />
-              </FilterGroup>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function FilterGroup({
-  title,
-  single = false,
-  children,
-}: {
-  title: string
-  /** 单选组（点击即替换），用来区分活动时间与多选维度 */
-  single?: boolean
-  children: ReactNode
-}) {
-  return (
-    <div className={`rc-filter-group${single ? ' is-single' : ''}`}>
-      <div className="rc-filter-group-title">{title}</div>
-      <div className="rc-filter-options">{children}</div>
-    </div>
-  )
-}
-
-function FilterOption({
-  label,
-  selected,
-  onClick,
-}: {
-  label: string
-  selected: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      className={`rc-filter-opt${selected ? ' is-selected' : ''}`}
-      onClick={onClick}
-      aria-pressed={selected}
-      title={label}
-    >
-      <span className="rc-filter-opt-label">{label}</span>
-      {selected && (
-        <span className="rc-filter-opt-check">
-          <Icons.Check size={11} />
-        </span>
-      )}
-    </button>
+    </Dropdown>
   )
 }
