@@ -39,10 +39,11 @@ import {
   serializeRemoteCollaborationMessageFingerprintPayload,
 } from '@spark/protocol'
 import type { SparkDatabase } from '@spark/storage'
-import type { SessionService } from '@spark/agent-runtime'
+import type { SessionService, SettingsService } from '@spark/agent-runtime'
 import { createLogger } from '@spark/shared'
 import { RemoteAgentArtifactStore } from './RemoteAgentArtifactStore.js'
 import { RemoteAgentRelayClient } from './RemoteAgentRelayClient.js'
+import { buildDeviceListResponse } from '../ipc/remote-agent-device-directory.js'
 
 const log = createLogger('remote-agent:collaboration')
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -56,6 +57,7 @@ export interface RemoteAgentCollaborationServiceDeps {
   getCurrentUserId(): string | null
   getLocalDeviceId(): string
   getSessionService(): SessionService
+  getSettingsService(): SettingsService
   getLocalAttachmentRoot(): string
   getRelayClient(): RemoteAgentRelayClient
   getArtifactRoot(): string
@@ -173,13 +175,29 @@ export class RemoteAgentCollaborationService {
     return { sessionId }
   }
 
+  /**
+   * 设备列表 = relay 在线列表 ∪ 本地历史目录 + 本机备注名。
+   * 刻意不要求 relay 在线：relay 掉线、目标机离线时，agent 仍应能回答
+   * 「有哪些机器、别名是什么」—— 数据来自 relay 客户端缓存与持久化目录，
+   * 口径与界面 IPC（`remote-agent:relay:list-devices`）完全一致。
+   */
   private async devicesList(): Promise<{ devices: RemoteAgentDeviceSummary[] }> {
-    const client = await this.requireConnectedRelay()
+    const live = this.deps.getRelayClient().listDevices().devices
+    try {
+      return buildDeviceListResponse(
+        this.deps.getSettingsService(),
+        live,
+        this.deps.getLocalDeviceId,
+      )
+    } catch (error) {
+      log.warn(
+        `读取设备目录失败，回落 relay 在线列表：${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
     const localDeviceId = this.deps.getLocalDeviceId()
     return {
-      devices: client
-        .listDevices()
-        .devices.filter((device) => device.deviceId !== localDeviceId)
+      devices: live
+        .filter((device) => device.deviceId !== localDeviceId)
         .map((device) => ({ ...device })),
     }
   }

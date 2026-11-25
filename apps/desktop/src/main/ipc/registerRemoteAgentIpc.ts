@@ -41,7 +41,9 @@ import {
   applyDeviceAliases,
   readDeviceAliases,
   writeDeviceAlias,
+  type DeviceAliasMap,
 } from './remote-agent-device-aliases.js'
+import { buildDeviceListResponse, upsertDeviceDirectory } from './remote-agent-device-directory.js'
 
 const log = createLogger('remote-agent:ipc')
 
@@ -76,15 +78,25 @@ const REMOTE_AGENT_TOOL_METHODS = [
   'artifact_transfer',
 ] as const
 
-/** 设备列表的统一出口：过滤本机 + 合并本机备注名 */
+/** 设备列表的统一出口：历史目录合并 + 过滤本机 + 合并本机备注名 */
 function listDevicesWithAliases(deps: RemoteAgentIpcDeps): RemoteAgentDeviceListResponse {
   const response = relayClient?.listDevices() ?? { devices: [] }
+  try {
+    return buildDeviceListResponse(
+      deps.getSettingsService(),
+      response.devices,
+      deps.getLocalDeviceId,
+    )
+  } catch (error) {
+    log.warn(`读取设备目录失败：${error instanceof Error ? error.message : String(error)}`)
+  }
+  // 目录读取失败时降级为旧行为：只回 relay 在线列表 + 备注名尽力合并
   const visible = excludeLocalDevice(response.devices, deps.getLocalDeviceId)
-  let aliases = {}
+  let aliases: DeviceAliasMap
   try {
     aliases = readDeviceAliases(deps.getSettingsService())
-  } catch (error) {
-    log.warn(`读取设备备注名失败：${error instanceof Error ? error.message : String(error)}`)
+  } catch {
+    aliases = {}
   }
   return { devices: applyDeviceAliases(visible, aliases) }
 }
@@ -116,6 +128,12 @@ function getRelayClient(deps: RemoteAgentIpcDeps): RemoteAgentRelayClient {
       collaborationService?.handleRelayStatus(status)
     },
     onDevicesChange: (devices) => {
+      // relay 每次推送设备列表都落一次本机目录，机器掉线后界面/agent 仍可查到它
+      try {
+        upsertDeviceDirectory(deps.getSettingsService(), devices.devices)
+      } catch (error) {
+        log.warn(`写入设备目录失败：${error instanceof Error ? error.message : String(error)}`)
+      }
       pushStreamEvent('stream:remote-agent:devices', listDevicesWithAliases(deps))
       coordinator?.handleDevicesChange(devices)
     },
@@ -134,6 +152,7 @@ function getRelayClient(deps: RemoteAgentIpcDeps): RemoteAgentRelayClient {
     getCurrentUserId: deps.getCurrentUserId,
     getLocalDeviceId: deps.getLocalDeviceId,
     getSessionService: deps.getSessionService,
+    getSettingsService: deps.getSettingsService,
     getLocalAttachmentRoot: deps.getLocalAttachmentRoot,
     getRelayClient: () => client,
     getArtifactRoot: () => path.join(app.getPath('userData'), 'remote-agent-results'),

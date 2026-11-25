@@ -41,7 +41,7 @@ const tools = [
   {
     name: 'devices_list',
     description:
-      'List online and recently seen Spark devices available to this Spark platform account.',
+      'List Spark devices available to this Spark platform account, including previously connected devices that are currently offline. Each device has: name (self-reported hostname), alias (local nickname the user set on THIS machine; when the user asks for a machine 别名/nickname, answer with alias and fall back to name only if alias is absent), version, online, lastSeenAt. Offline devices keep the last known name/version/lastSeenAt.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
